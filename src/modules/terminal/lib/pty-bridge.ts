@@ -40,11 +40,7 @@ export async function openPty(
     }
   };
 
-  const id = await invoke<number>("pty_open", {
-    cols,
-    rows,
-    onEvent: channel,
-  });
+  const id = await invoke<number>("pty_open", { cols, rows, onEvent: channel });
 
   return {
     id,
