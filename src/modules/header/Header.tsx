@@ -35,10 +35,17 @@ export function Header({
       data-tauri-drag-region
       className="flex h-10 items-center gap-2 border-b border-card/80 bg-card pr-2 pl-20 select-none"
     >
-      <IconButton onClick={onToggleSidebar} title="Toggle sidebar">
-        <HugeiconsIcon icon={SidebarLeftIcon} size={16} strokeWidth={1.75} />
-      </IconButton>
+      <Button
+        onClick={onToggleSidebar}
+        title="Toggle sidebar"
+        variant="ghost"
+        size="icon"
+        className="rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground"
+      >
+        <HugeiconsIcon icon={SidebarLeftIcon} size={18} strokeWidth={1.75} />
+      </Button>
 
+      <span className="w-px bg-border h-full mx-1" />
       <TabBar
         tabs={tabs}
         activeId={activeId}
@@ -51,31 +58,15 @@ export function Header({
 
       <SearchInline ref={searchRef} addon={searchAddon} />
 
-      <IconButton onClick={onOpenSettings} title="Settings">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground"
+        onClick={onOpenSettings}
+        title="Settings"
+      >
         <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
-      </IconButton>
+      </Button>
     </div>
-  );
-}
-
-function IconButton({
-  onClick,
-  title,
-  children,
-}: {
-  onClick: () => void;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="size-7 rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground"
-      onClick={onClick}
-      title={title}
-    >
-      {children}
-    </Button>
   );
 }

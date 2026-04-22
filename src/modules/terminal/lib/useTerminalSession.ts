@@ -11,7 +11,7 @@ import { openPty, type PtySession } from "./pty-bridge";
 
 const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
 const FONT_SIZE = 14;
-const MAX_WRAP_WIPE_ROWS = 8;
+const RESIZE_DEBOUNCE_MS = 10;
 
 type Options = {
   container: React.RefObject<HTMLDivElement | null>;
@@ -95,21 +95,27 @@ export function useTerminalSession({
       }
 
       term.onData((data) => pty?.write(data));
-      term.onResize(({ cols, rows }) => pty?.resize(cols, rows));
 
-      let rafId = 0;
-      const onWinResize = () => {
-        if (rafId) return;
-        rafId = requestAnimationFrame(() => {
-          rafId = 0;
+      let lastCols = term.cols;
+      let lastRows = term.rows;
+      let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const observer = new ResizeObserver(() => {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          resizeTimer = null;
+          if (disposed) return;
           fit.fit();
-          wipeWrappedPrompt(term, prompt.getMarker());
-        });
-      };
-      window.addEventListener("resize", onWinResize);
+          if (term.cols === lastCols && term.rows === lastRows) return;
+          lastCols = term.cols;
+          lastRows = term.rows;
+          pty?.resize(term.cols, term.rows);
+        }, RESIZE_DEBOUNCE_MS);
+      });
+      observer.observe(container.current);
       cleanups.push(() => {
-        window.removeEventListener("resize", onWinResize);
-        if (rafId) cancelAnimationFrame(rafId);
+        observer.disconnect();
+        if (resizeTimer) clearTimeout(resizeTimer);
       });
 
       if (visible) term.focus();
@@ -134,20 +140,4 @@ export function useTerminalSession({
     });
     return () => cancelAnimationFrame(id);
   }, [visible]);
-}
-
-function wipeWrappedPrompt(
-  term: Terminal,
-  marker: ReturnType<typeof registerPromptTracker>["getMarker"] extends () => infer T
-    ? T
-    : never,
-) {
-  if (!marker) return;
-  const buf = term.buffer.active;
-  if (buf.type !== "normal") return;
-  const promptLine = marker.line;
-  const cursorLine = buf.baseY + buf.cursorY;
-  const delta = cursorLine - promptLine;
-  if (delta <= 0 || delta > MAX_WRAP_WIPE_ROWS) return;
-  term.write(`\x1b[${delta}A\r\x1b[J`);
 }

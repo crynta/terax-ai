@@ -1,7 +1,12 @@
-import { Cancel01Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Cancel01Icon,
+  Folder01Icon,
+  Folder02Icon,
+  PlusSignIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { Tab } from "./lib/useTabs";
 
 type Props = {
@@ -18,7 +23,7 @@ export function TabBar({ tabs, activeId, onSelect, onNew, onClose }: Props) {
       <Tabs
         value={String(activeId)}
         onValueChange={(v) => onSelect(Number(v))}
-        className="min-w-0 flex-shrink"
+        className="min-w-0 shrink"
       >
         <TabsList className="h-7 gap-0.5 bg-transparent p-0">
           {tabs.map((t) => (
@@ -27,7 +32,20 @@ export function TabBar({ tabs, activeId, onSelect, onNew, onClose }: Props) {
               value={String(t.id)}
               className="group h-7 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground transition-colors data-[state=active]:bg-white/10 data-[state=active]:text-foreground hover:text-foreground/80"
             >
-              <span className="max-w-[160px] truncate">
+              <span className="max-w-50 truncate flex items-center gap-2 px-4">
+                {t.id == activeId ? (
+                  <HugeiconsIcon
+                    icon={Folder02Icon}
+                    size={14}
+                    strokeWidth={2}
+                  />
+                ) : (
+                  <HugeiconsIcon
+                    icon={Folder01Icon}
+                    size={14}
+                    strokeWidth={2}
+                  />
+                )}
                 {labelFor(t)}
               </span>
               {tabs.length > 1 && (
