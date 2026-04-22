@@ -103,7 +103,40 @@ export const catppuccinMocha: ITheme = {
   brightWhite: "#a6adc8",
 };
 
+/**
+ * Shadcn Dark — matches the design tokens in App.css (dark mode).
+ * Background tracks shadcn's `--background` (oklch 0.148 / hue 228 → near-black with
+ * a faint cool cast). ANSI slots use Tailwind's 400/500 scales so colored output
+ * sits naturally next to shadcn UI components.
+ */
+export const shadcnDark: ITheme = {
+  background: "#0a0d12",
+  foreground: "#fafafa",
+  cursor: "#fafafa",
+  cursorAccent: "#0a0d12",
+  selectionBackground: "#27272a",
+
+  black: "#18181b",
+  red: "#ef4444",
+  green: "#22c55e",
+  yellow: "#eab308",
+  blue: "#3b82f6",
+  magenta: "#a855f7",
+  cyan: "#06b6d4",
+  white: "#e4e4e7",
+
+  brightBlack: "#52525b",
+  brightRed: "#f87171",
+  brightGreen: "#4ade80",
+  brightYellow: "#facc15",
+  brightBlue: "#60a5fa",
+  brightMagenta: "#c084fc",
+  brightCyan: "#22d3ee",
+  brightWhite: "#fafafa",
+};
+
 export const themes = {
+  shadcnDark,
   nord,
   tokyoNight,
   catppuccinMocha,

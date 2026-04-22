@@ -137,7 +137,20 @@
 /*
  * xterm.js overrides — kept outside @layer so they win against the addon's
  * own stylesheet (which is not in any layer and would otherwise override).
+ *
+ * Newer xterm renders scrollbars as real <div class="scrollbar vertical|horizontal">
+ * children rather than relying on native overflow scrollbars. Both code paths exist
+ * across versions, so we hide both.
  */
+.xterm .scrollbar,
+.xterm .scrollbar.vertical,
+.xterm .scrollbar.horizontal {
+  display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
+}
 .xterm .xterm-viewport,
 .xterm-viewport {
   scrollbar-width: none !important;

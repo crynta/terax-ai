@@ -33,46 +33,33 @@ export function SearchBar({ addon, open, onClose }: Props) {
   };
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        top: 12,
-        right: 12,
-        zIndex: 10,
-        background: "#1a1f2e",
-        padding: 6,
-        borderRadius: 6,
-        boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    <Input
+      ref={inputRef}
+      value={q}
+      placeholder="Search"
+      className="h-7 w-48 bg-card absolute right-4 top-12 z-10 text-sm"
+      onChange={(e) => {
+        const next = e.target.value;
+        setQ(next);
+        if (addon && next) {
+          addon.findNext(next, {
+            incremental: true,
+            decorations: DECORATIONS,
+          });
+        } else {
+          addon?.clearDecorations();
+        }
       }}
-    >
-      <Input
-        ref={inputRef}
-        value={q}
-        placeholder="Find"
-        className="h-8 w-56"
-        onChange={(e) => {
-          const next = e.target.value;
-          setQ(next);
-          if (addon && next) {
-            addon.findNext(next, {
-              incremental: true,
-              decorations: DECORATIONS,
-            });
-          } else {
-            addon?.clearDecorations();
-          }
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            find(!e.shiftKey);
-          } else if (e.key === "Escape") {
-            e.preventDefault();
-            addon?.clearDecorations();
-            onClose();
-          }
-        }}
-      />
-    </div>
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          find(!e.shiftKey);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          addon?.clearDecorations();
+          onClose();
+        }
+      }}
+    />
   );
 }

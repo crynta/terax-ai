@@ -1,149 +1,152 @@
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
-
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { FitAddon } from "@xterm/addon-fit";
-import { SearchAddon } from "@xterm/addon-search";
-import { WebLinksAddon } from "@xterm/addon-web-links";
-import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { useEffect, useRef, useState } from "react";
 import "./App.css";
+
+import type { SearchAddon } from "@xterm/addon-search";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Header, type Tab } from "./Header";
 import { SearchBar } from "./SearchBar";
+import { TerminalPane } from "./TerminalPane";
 import { ThemeProvider } from "./components/theme-provider";
 import { TooltipProvider } from "./components/ui/tooltip";
-import { openPty, type PtySession } from "./pty";
-import { nord } from "./themes";
+import { shadcnDark } from "./themes";
 
-const ACTIVE_THEME = nord;
-const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
-const FONT_SIZE = 13;
+const ACTIVE_THEME = shadcnDark;
 
 export default function App() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [searchAddon, setSearchAddon] = useState<SearchAddon | null>(null);
+  const [tabs, setTabs] = useState<Tab[]>([{ id: 1, title: "shell" }]);
+  const [activeId, setActiveId] = useState(1);
   const [searchOpen, setSearchOpen] = useState(false);
+  const nextIdRef = useRef(2);
+  const searchAddonsRef = useRef<Map<number, SearchAddon>>(new Map());
+  const [activeSearchAddon, setActiveSearchAddon] =
+    useState<SearchAddon | null>(null);
 
+  // Keep the active search addon in sync when tab changes.
   useEffect(() => {
-    let pty: PtySession | null = null;
-    let disposed = false;
-    let term: Terminal | null = null;
-    const cleanups: Array<() => void> = [];
+    setActiveSearchAddon(searchAddonsRef.current.get(activeId) ?? null);
+  }, [activeId, tabs]);
 
-    (async () => {
-      // Wait for the web font to be loaded — otherwise xterm/WebGL caches glyph
-      // metrics from the fallback font and characters render misaligned.
-      await document.fonts.load(`${FONT_SIZE}px "JetBrains Mono"`);
-      if (disposed) return;
+  const newTab = useCallback(() => {
+    const id = nextIdRef.current++;
+    setTabs((t) => [...t, { id, title: "shell" }]);
+    setActiveId(id);
+  }, []);
 
-      term = new Terminal({
-        fontFamily: FONT_FAMILY,
-        fontSize: FONT_SIZE,
-        lineHeight: 1.25,
-        letterSpacing: 0,
-        theme: ACTIVE_THEME,
-        cursorBlink: true,
-        cursorStyle: "bar",
-        cursorInactiveStyle: "outline",
-        scrollback: 10_000,
-        smoothScrollDuration: 80,
-        allowProposedApi: true,
+  const closeTab = useCallback(
+    (id: number) => {
+      setTabs((curr) => {
+        if (curr.length <= 1) return curr;
+        const idx = curr.findIndex((t) => t.id === id);
+        const next = curr.filter((t) => t.id !== id);
+        searchAddonsRef.current.delete(id);
+        if (id === activeId) {
+          // Activate neighbour: prefer the one to the left.
+          const fallback = next[Math.max(0, idx - 1)];
+          if (fallback) setActiveId(fallback.id);
+        }
+        return next;
       });
+    },
+    [activeId],
+  );
 
-      const fit = new FitAddon();
-      term.loadAddon(fit);
+  const handleSearchReady = useCallback(
+    (id: number, addon: SearchAddon) => {
+      searchAddonsRef.current.set(id, addon);
+      if (id === activeId) setActiveSearchAddon(addon);
+    },
+    [activeId],
+  );
 
-      const search = new SearchAddon();
-      term.loadAddon(search);
-
-      const webLinks = new WebLinksAddon((_event, uri) => {
-        openUrl(uri).catch(console.error);
-      });
-      term.loadAddon(webLinks);
-
-      term.open(containerRef.current!);
-      fit.fit();
-      term.focus();
-
-      // WebGL must load after open(). Fall back to DOM on context loss.
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
-      try {
-        term.loadAddon(webgl);
-      } catch (e) {
-        console.warn("WebGL renderer unavailable, falling back to DOM:", e);
-      }
-
-      setSearchAddon(search);
-
-      const session = await openPty(term.cols, term.rows, {
-        onData: (bytes) => term?.write(bytes),
-        onExit: (code) => {
-          term?.write(`\r\n\x1b[2m[process exited: ${code}]\x1b[0m\r\n`);
-          if (term) term.options.disableStdin = true;
-        },
-      });
-      if (disposed) {
-        session.close();
-        return;
-      }
-      pty = session;
-      term.onData((data) => pty?.write(data));
-      term.onResize(({ cols, rows }) => pty?.resize(cols, rows));
-
-      const onWinResize = () => fit.fit();
-      window.addEventListener("resize", onWinResize);
-      cleanups.push(() => window.removeEventListener("resize", onWinResize));
-    })();
-
+  // Keyboard shortcuts: ⌘T new, ⌘W close, ⌘F search, ⌘1-9 jump.
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+
+      if (e.key === "t") {
+        e.preventDefault();
+        newTab();
+      } else if (e.key === "w") {
+        e.preventDefault();
+        closeTab(activeId);
+      } else if (e.key === "f") {
         e.preventDefault();
         setSearchOpen(true);
+      } else if (/^[1-9]$/.test(e.key)) {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = tabs[idx];
+        if (target) {
+          e.preventDefault();
+          setActiveId(target.id);
+        }
       }
     };
     window.addEventListener("keydown", onKey);
-    cleanups.push(() => window.removeEventListener("keydown", onKey));
-
-    return () => {
-      disposed = true;
-      cleanups.forEach((fn) => fn());
-      pty?.close();
-      term?.dispose();
-      setSearchAddon(null);
-    };
-  }, []);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeId, newTab, closeTab, tabs]);
 
   return (
     <ThemeProvider>
       <TooltipProvider>
         <div
+          className="dark"
           style={{
             position: "relative",
             display: "flex",
             flexDirection: "column",
             height: "100vh",
             background: ACTIVE_THEME.background,
+            color: "#fafafa",
             overflow: "hidden",
           }}
         >
-          {/* Drag strip below traffic lights — leaves room for native window controls */}
-          <div
-            data-tauri-drag-region
-            style={{ height: 32, flexShrink: 0 }}
+          <Header
+            tabs={tabs}
+            activeId={activeId}
+            onSelect={setActiveId}
+            onNew={newTab}
+            onClose={closeTab}
+            onToggleSidebar={() => {
+              /* TODO: file explorer */
+            }}
+            onOpenSearch={() => setSearchOpen(true)}
+            onOpenSettings={() => {
+              /* TODO: settings */
+            }}
           />
+
           <div
-            ref={containerRef}
             style={{
               flex: 1,
               minHeight: 0,
-              padding: "0 16px 12px",
+              padding: "8px 12px 10px",
               boxSizing: "border-box",
+              position: "relative",
             }}
-          />
+          >
+            {tabs.map((t) => (
+              <div
+                key={t.id}
+                style={{
+                  position: "absolute",
+                  inset: "8px 12px 10px",
+                  // All panes live in DOM; only active is `display: block`.
+                }}
+              >
+                <TerminalPane
+                  tabId={t.id}
+                  visible={t.id === activeId}
+                  onSearchReady={handleSearchReady}
+                />
+              </div>
+            ))}
+          </div>
+
           <SearchBar
-            addon={searchAddon}
+            addon={activeSearchAddon}
             open={searchOpen}
             onClose={() => setSearchOpen(false)}
           />
