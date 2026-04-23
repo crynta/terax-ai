@@ -13,9 +13,9 @@ export function useTabs(initial?: Partial<Tab>) {
   const [activeId, setActiveId] = useState(1);
   const nextIdRef = useRef(2);
 
-  const newTab = useCallback(() => {
+  const newTab = useCallback((cwd?: string) => {
     const id = nextIdRef.current++;
-    setTabs((t) => [...t, { id, title: "shell" }]);
+    setTabs((t) => [...t, { id, title: "shell", cwd }]);
     setActiveId(id);
     return id;
   }, []);

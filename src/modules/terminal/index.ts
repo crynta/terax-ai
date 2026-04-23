@@ -1,1 +1,1 @@
-export { TerminalPane } from "./TerminalPane";
+export { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";

@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::pty;
+use modules::{fs, pty};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,6 +12,7 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_close,
+            fs::list_subdirs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -29,13 +29,14 @@ pub struct Session {
 pub fn spawn(
     cols: u16,
     rows: u16,
+    cwd: Option<String>,
     on_event: Channel<PtyEvent>,
 ) -> Result<(Arc<Session>, PtySize), String> {
     let pty_system = native_pty_system();
     let size = PtySize { rows, cols, pixel_width: 0, pixel_height: 0 };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = shell_init::build_command()?;
+    let cmd = shell_init::build_command(cwd)?;
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 

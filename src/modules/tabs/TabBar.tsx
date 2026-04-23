@@ -30,7 +30,7 @@ export function TabBar({ tabs, activeId, onSelect, onNew, onClose }: Props) {
             <TabsTrigger
               key={t.id}
               value={String(t.id)}
-              className="group h-7 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground transition-colors data-[state=active]:bg-white/10 data-[state=active]:text-foreground hover:text-foreground/80"
+              className="group h-7 gap-1.5 rounded-md px-2.5 text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80"
             >
               <span className="max-w-50 truncate flex items-center gap-2 px-4">
                 {t.id == activeId ? (
@@ -56,7 +56,7 @@ export function TabBar({ tabs, activeId, onSelect, onNew, onClose }: Props) {
                     e.stopPropagation();
                     onClose(t.id);
                   }}
-                  className="rounded p-0.5 opacity-0 transition-opacity hover:bg-white/10 hover:opacity-100 group-hover:opacity-60"
+                  className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
                 >
                   <HugeiconsIcon
                     icon={Cancel01Icon}
@@ -72,7 +72,7 @@ export function TabBar({ tabs, activeId, onSelect, onNew, onClose }: Props) {
       <Button
         variant="ghost"
         size="icon"
-        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-white/5 hover:text-foreground"
+        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
         onClick={onNew}
         title="New tab (⌘T)"
       >

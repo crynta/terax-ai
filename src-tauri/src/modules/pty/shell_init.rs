@@ -22,12 +22,17 @@ impl Shell {
     }
 }
 
-pub fn build_command() -> Result<CommandBuilder, String> {
+pub fn build_command(cwd: Option<String>) -> Result<CommandBuilder, String> {
     let (shell, shell_path) = Shell::detect();
     let mut cmd = CommandBuilder::new(&shell_path);
     cmd.env("TERM", "xterm-256color");
     cmd.env("TERAX_TERMINAL", "1");
-    if let Ok(cwd) = std::env::current_dir() {
+
+    let resolved_cwd = cwd
+        .map(PathBuf::from)
+        .filter(|p| p.is_dir())
+        .or_else(|| std::env::current_dir().ok());
+    if let Some(cwd) = resolved_cwd {
         cmd.cwd(cwd);
     }
 

@@ -5,7 +5,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
@@ -16,6 +16,7 @@ const RESIZE_DEBOUNCE_MS = 10;
 type Options = {
   container: React.RefObject<HTMLDivElement | null>;
   visible: boolean;
+  initialCwd?: string;
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
@@ -24,16 +25,17 @@ type Options = {
 export function useTerminalSession({
   container,
   visible,
+  initialCwd,
   onSearchReady,
   onExit,
   onCwd,
 }: Options) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const ptyRef = useRef<PtySession | null>(null);
 
   useEffect(() => {
     let disposed = false;
-    let pty: PtySession | null = null;
     const cleanups: Array<() => void> = [];
 
     (async () => {
@@ -81,20 +83,26 @@ export function useTerminalSession({
       );
       onSearchReady?.(search);
 
-      pty = await openPty(term.cols, term.rows, {
-        onData: (bytes) => term.write(bytes),
-        onExit: (code) => {
-          term.write(`\r\n\x1b[2m[process exited: ${code}]\x1b[0m\r\n`);
-          term.options.disableStdin = true;
-          onExit?.(code);
+      const pty = await openPty(
+        term.cols,
+        term.rows,
+        {
+          onData: (bytes) => term.write(bytes),
+          onExit: (code) => {
+            term.write(`\r\n\x1b[2m[process exited: ${code}]\x1b[0m\r\n`);
+            term.options.disableStdin = true;
+            onExit?.(code);
+          },
         },
-      });
+        initialCwd,
+      );
       if (disposed) {
         pty.close();
         return;
       }
+      ptyRef.current = pty;
 
-      term.onData((data) => pty?.write(data));
+      term.onData((data) => pty.write(data));
 
       let lastCols = term.cols;
       let lastRows = term.rows;
@@ -109,7 +117,7 @@ export function useTerminalSession({
           if (term.cols === lastCols && term.rows === lastRows) return;
           lastCols = term.cols;
           lastRows = term.rows;
-          pty?.resize(term.cols, term.rows);
+          pty.resize(term.cols, term.rows);
         }, RESIZE_DEBOUNCE_MS);
       });
       observer.observe(container.current);
@@ -124,7 +132,8 @@ export function useTerminalSession({
     return () => {
       disposed = true;
       cleanups.forEach((fn) => fn());
-      pty?.close();
+      ptyRef.current?.close();
+      ptyRef.current = null;
       termRef.current?.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -132,12 +141,19 @@ export function useTerminalSession({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!visible) return;
-    const id = requestAnimationFrame(() => {
-      fitRef.current?.fit();
-      termRef.current?.focus();
-    });
-    return () => cancelAnimationFrame(id);
+    fitRef.current?.fit();
+    termRef.current?.focus();
   }, [visible]);
+
+  const write = useCallback((data: string) => {
+    ptyRef.current?.write(data);
+  }, []);
+
+  const focus = useCallback(() => {
+    termRef.current?.focus();
+  }, []);
+
+  return { write, focus };
 }

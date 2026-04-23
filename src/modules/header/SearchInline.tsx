@@ -32,18 +32,18 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     };
 
     return (
-      <div className="relative">
+      <div className="relative hidden sm:block">
         <HugeiconsIcon
           icon={Search01Icon}
           size={13}
           strokeWidth={1.75}
-          className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+          className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground"
         />
         <Input
           ref={inputRef}
           value={q}
           placeholder="Search"
-          className="h-7 w-40 bg-white/5 pl-7 text-xs placeholder:text-muted-foreground/70  focus-visible:ring-0"
+          className="h-7 w-32 bg-muted/60 pr-14 pl-7 text-xs placeholder:text-muted-foreground/70 focus-visible:ring-0 md:w-44"
           onChange={(e) => {
             const next = e.target.value;
             setQ(next);

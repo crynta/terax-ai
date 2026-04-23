@@ -27,6 +27,7 @@ export async function openPty(
   cols: number,
   rows: number,
   handlers: PtyHandlers,
+  cwd?: string,
 ): Promise<PtySession> {
   const channel = new Channel<PtyEvent>();
   channel.onmessage = (event) => {
@@ -40,7 +41,12 @@ export async function openPty(
     }
   };
 
-  const id = await invoke<number>("pty_open", { cols, rows, onEvent: channel });
+  const id = await invoke<number>("pty_open", {
+    cols,
+    rows,
+    cwd: cwd ?? null,
+    onEvent: channel,
+  });
 
   return {
     id,

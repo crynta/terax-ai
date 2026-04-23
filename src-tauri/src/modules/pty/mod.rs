@@ -22,9 +22,10 @@ pub fn pty_open(
     state: tauri::State<PtyState>,
     cols: u16,
     rows: u16,
+    cwd: Option<String>,
     on_event: Channel<PtyEvent>,
 ) -> Result<u32, String> {
-    let (session, _) = session::spawn(cols, rows, on_event)?;
+    let (session, _) = session::spawn(cols, rows, cwd, on_event)?;
     let id = {
         let mut n = state.next_id.lock().unwrap();
         *n += 1;
