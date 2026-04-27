@@ -25,6 +25,8 @@ export type EditorPaneHandle = {
   findNext: () => void;
   findPrevious: () => void;
   clearQuery: () => void;
+  getSelection: () => string | null;
+  getPath: () => string;
 };
 
 type Props = {
@@ -116,8 +118,16 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
             effects: setSearchQuery.of(new SearchQuery({ search: "" })),
           });
         },
+        getSelection: () => {
+          const view = cmRef.current?.view;
+          if (!view) return null;
+          const { from, to } = view.state.selection.main;
+          if (from === to) return null;
+          return view.state.sliceDoc(from, to);
+        },
+        getPath: () => path,
       }),
-      [],
+      [path],
     );
 
     if (doc.status === "loading") {

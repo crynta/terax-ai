@@ -1,3 +1,9 @@
 export { AiInput, type AiInputHandle } from "./AiInput";
-export { AiSessionView } from "./AiSessionView";
-export { useSessions, type AgentSession } from "./lib/useSession";
+export { AiPanel, type AiPanelHandle } from "./AiPanel";
+export {
+  useChatStore,
+  getOrCreateChat,
+  sendToTab,
+  stopTab,
+} from "./lib/chatStore";
+export { getOpenAiKey, hasOpenAiKey } from "./lib/keyring";

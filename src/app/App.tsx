@@ -6,10 +6,9 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  AiInput,
-  type AiInputHandle,
-  AiSessionView,
-  useSessions,
+  AiPanel,
+  type AiPanelHandle,
+  useChatStore,
 } from "@/modules/ai";
 import { EditorStack, type EditorPaneHandle } from "@/modules/editor";
 import { FileExplorer } from "@/modules/explorer";
@@ -32,7 +31,7 @@ import {
 import { ThemeProvider } from "@/modules/theme";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
@@ -56,7 +55,7 @@ export default function App() {
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
-  const aiInputRef = useRef<AiInputHandle | null>(null);
+  const aiPanelRef = useRef<AiPanelHandle | null>(null);
 
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
   const toggleSidebar = useCallback(() => {
@@ -75,10 +74,10 @@ export default function App() {
 
   const [aiOpen, setAiOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const sessions = useSessions();
+  const dropChat = useChatStore((s) => s.drop);
+  const setLive = useChatStore((s) => s.setLive);
 
   const activeTab = tabs.find((t) => t.id === activeId);
-  const activeSession = sessions.get(activeId);
   const isTerminalTab = activeTab?.kind === "terminal";
   const isEditorTab = activeTab?.kind === "editor";
 
@@ -106,10 +105,10 @@ export default function App() {
       searchAddons.current.delete(id);
       terminalRefs.current.delete(id);
       editorRefs.current.delete(id);
-      sessions.clear(id);
+      dropChat(id);
       closeTab(id);
     },
-    [closeTab, sessions],
+    [closeTab, dropChat],
   );
 
   const handleClose = useCallback(
@@ -136,13 +135,38 @@ export default function App() {
     [tabs, activeId, setActiveId],
   );
 
+  const captureActiveSelection = useCallback((): string | null => {
+    const t = tabs.find((x) => x.id === activeId);
+    if (!t) return null;
+    if (t.kind === "terminal") {
+      return terminalRefs.current.get(activeId)?.getSelection() ?? null;
+    }
+    if (t.kind === "editor") {
+      return editorRefs.current.get(activeId)?.getSelection() ?? null;
+    }
+    return null;
+  }, [tabs, activeId]);
+
   const toggleAi = useCallback(() => {
     setAiOpen((prev) => {
       const next = !prev;
-      if (next) setTimeout(() => aiInputRef.current?.focus(), 50);
+      if (next) {
+        const selection = captureActiveSelection();
+        setTimeout(() => {
+          if (selection) {
+            const quoted = `> ${selection
+              .trim()
+              .split("\n")
+              .join("\n> ")}\n\n`;
+            aiPanelRef.current?.prefill(quoted);
+          } else {
+            aiPanelRef.current?.focus();
+          }
+        }, 50);
+      }
       return next;
     });
-  }, []);
+  }, [captureActiveSelection]);
 
   const openNewTab = useCallback(() => {
     newTab(inheritedCwdForNewTab());
@@ -177,13 +201,6 @@ export default function App() {
       }, 80);
     },
     [newTab],
-  );
-
-  const handleAiSubmit = useCallback(
-    (prompt: string) => {
-      sessions.start(activeId, prompt);
-    },
-    [sessions, activeId],
   );
 
   const handleOpenFile = useCallback(
@@ -292,6 +309,20 @@ export default function App() {
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
 
+  useEffect(() => {
+    setLive({
+      getCwd: () => {
+        const t = tabs.find((x) => x.id === activeId);
+        return t?.kind === "terminal" ? (t.cwd ?? null) : null;
+      },
+      getTerminalContext: () => {
+        const t = tabs.find((x) => x.id === activeId);
+        if (t?.kind !== "terminal") return null;
+        return terminalRefs.current.get(activeId)?.getBuffer(300) ?? null;
+      },
+    });
+  }, [setLive, activeId, tabs]);
+
   return (
     <ThemeProvider>
       <TooltipProvider>
@@ -345,9 +376,7 @@ export default function App() {
                 >
                   <ResizablePanel
                     id="main"
-                    defaultSize={
-                      aiOpen && activeSession && isTerminalTab ? 65 : 100
-                    }
+                    defaultSize={aiOpen ? 60 : 100}
                     minSize={25}
                   >
                     <div className="relative h-full">
@@ -382,12 +411,12 @@ export default function App() {
                       </div>
                     </div>
                   </ResizablePanel>
-                  {aiOpen && activeSession && isTerminalTab ? (
+                  {aiOpen ? (
                     <>
                       <ResizableHandle />
-                      <ResizablePanel id="ai" defaultSize={35} minSize={15}>
+                      <ResizablePanel id="ai" defaultSize={40} minSize={20}>
                         <motion.div
-                          key="ai-session"
+                          key="ai-panel"
                           initial={{ opacity: 0, y: 8 }}
                           animate={{ opacity: 1, y: 0 }}
                           transition={{
@@ -397,7 +426,11 @@ export default function App() {
                           }}
                           className="h-full"
                         >
-                          <AiSessionView session={activeSession} />
+                          <AiPanel
+                            ref={aiPanelRef}
+                            tabId={activeId}
+                            onClose={() => setAiOpen(false)}
+                          />
                         </motion.div>
                       </ResizablePanel>
                     </>
@@ -405,29 +438,6 @@ export default function App() {
                 </ResizablePanelGroup>
               </ResizablePanel>
             </ResizablePanelGroup>
-
-            <AnimatePresence initial={false}>
-              {aiOpen && isTerminalTab && (
-                <motion.div
-                  key="ai-input"
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: "auto", opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 320,
-                    damping: 32,
-                  }}
-                  className="overflow-hidden"
-                >
-                  <AiInput
-                    ref={aiInputRef}
-                    onSubmit={handleAiSubmit}
-                    onClose={() => setAiOpen(false)}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
           </main>
 
           <StatusBar
@@ -436,10 +446,10 @@ export default function App() {
             home={home}
             onCd={sendCd}
             aiOpen={aiOpen}
-            canSubmit={activeSession?.status !== "thinking"}
+            canSubmit={true}
             onOpenAi={toggleAi}
             onSubmit={() => {
-              aiInputRef.current?.focus();
+              aiPanelRef.current?.focus();
             }}
           />
 

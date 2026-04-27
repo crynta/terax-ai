@@ -155,5 +155,24 @@ export function useTerminalSession({
     termRef.current?.focus();
   }, []);
 
-  return { write, focus };
+  const getBuffer = useCallback((maxLines = 200): string | null => {
+    const t = termRef.current;
+    if (!t) return null;
+    const buf = t.buffer.active;
+    const total = buf.length;
+    const lines: string[] = [];
+    const start = Math.max(0, total - maxLines);
+    for (let i = start; i < total; i++) {
+      lines.push(buf.getLine(i)?.translateToString(true) ?? "");
+    }
+    while (lines.length && lines[lines.length - 1] === "") lines.pop();
+    return lines.join("\n");
+  }, []);
+
+  const getSelection = useCallback((): string | null => {
+    const sel = termRef.current?.getSelection() ?? "";
+    return sel.length > 0 ? sel : null;
+  }, []);
+
+  return { write, focus, getBuffer, getSelection };
 }

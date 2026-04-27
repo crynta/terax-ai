@@ -12,6 +12,7 @@
     "log:default",
     "os:default",
     "dialog:default",
-    "store:default"
+    "store:default",
+    "keyring:default"
   ]
 }

@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, pty};
+use modules::{fs, pty, shell};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -14,6 +14,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_keyring::init())
         .manage(pty::PtyState::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
@@ -29,6 +30,7 @@ pub fn run() {
             fs::mutate::fs_create_dir,
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
+            shell::shell_run_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
