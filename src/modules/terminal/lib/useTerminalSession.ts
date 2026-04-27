@@ -45,7 +45,7 @@ export function useTerminalSession({
       const term = new Terminal({
         fontFamily: FONT_FAMILY,
         fontSize: FONT_SIZE,
-        lineHeight: 1.25,
+        lineHeight: 1.05,
         theme: buildTerminalTheme(),
         cursorBlink: true,
         cursorStyle: "bar",
