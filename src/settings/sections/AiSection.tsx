@@ -5,6 +5,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
   MODELS,
@@ -14,29 +15,28 @@ import {
   type ProviderId,
 } from "@/modules/ai/config";
 import { clearKey, getAllKeys, setKey } from "@/modules/ai/lib/keyring";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   emitKeysChanged,
-  loadPreferences,
+  setCustomInstructions,
   setDefaultModel,
 } from "@/modules/settings/store";
-import {
-  ArrowDown01Icon,
-} from "@hugeicons/core-free-icons";
+import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useState } from "react";
-import { ProviderKeyCard } from "../components/ProviderKeyCard";
+import { useEffect, useRef, useState } from "react";
 import { ProviderIcon } from "../components/ProviderIcon";
+import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
 
 type KeysMap = Record<ProviderId, string | null>;
 
 export function AiSection() {
   const [keys, setKeys] = useState<KeysMap | null>(null);
-  const [defaultModel, setDefault] = useState<ModelId | null>(null);
+  const defaultModel = usePreferencesStore((s) => s.defaultModelId);
+  const customInstructions = usePreferencesStore((s) => s.customInstructions);
 
   useEffect(() => {
     void getAllKeys().then(setKeys);
-    void loadPreferences().then((p) => setDefault(p.defaultModelId));
   }, []);
 
   const onSave = async (provider: ProviderId, value: string) => {
@@ -51,15 +51,8 @@ export function AiSection() {
     await emitKeysChanged();
   };
 
-  const onPickDefault = async (id: ModelId) => {
-    setDefault(id);
-    await setDefaultModel(id);
-  };
-
-  if (!keys || !defaultModel) {
-    return (
-      <div className="text-[12px] text-muted-foreground">Loading…</div>
-    );
+  if (!keys) {
+    return <div className="text-[12px] text-muted-foreground">Loading…</div>;
   }
 
   const defaultModelInfo = getModel(defaultModel);
@@ -72,9 +65,7 @@ export function AiSection() {
       />
 
       <div className="flex flex-col gap-2">
-        <label className="text-[11px] font-medium tracking-tight text-muted-foreground">
-          Default model
-        </label>
+        <Label>Default model</Label>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -115,7 +106,9 @@ export function AiSection() {
                     <DropdownMenuItem
                       key={m.id}
                       disabled={!hasKey}
-                      onSelect={() => hasKey && onPickDefault(m.id as ModelId)}
+                      onSelect={() =>
+                        hasKey && void setDefaultModel(m.id as ModelId)
+                      }
                       className={cn(
                         "flex items-center justify-between gap-2 text-[12px]",
                         m.id === defaultModel && "bg-accent/50",
@@ -136,10 +129,8 @@ export function AiSection() {
         </DropdownMenu>
       </div>
 
-      <div className="flex flex-col gap-3">
-        <label className="text-[11px] font-medium tracking-tight text-muted-foreground">
-          API keys
-        </label>
+      <div className="flex flex-col gap-2">
+        <Label>API keys</Label>
         <div className="flex flex-col gap-2">
           {PROVIDERS.map((p) => (
             <ProviderKeyCard
@@ -152,6 +143,64 @@ export function AiSection() {
           ))}
         </div>
       </div>
+
+      <CustomInstructionsBlock value={customInstructions} />
     </div>
+  );
+}
+
+function CustomInstructionsBlock({ value }: { value: string }) {
+  const [draft, setDraft] = useState(value);
+  const [savedTick, setSavedTick] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hadFirstSync = useRef(false);
+
+  // Sync external changes (cross-window updates) into the textarea, but only
+  // when the local draft is up to date — don't clobber typing.
+  useEffect(() => {
+    if (!hadFirstSync.current) {
+      hadFirstSync.current = true;
+      setDraft(value);
+      return;
+    }
+  }, [value]);
+
+  const queueSave = (next: string) => {
+    setDraft(next);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      void setCustomInstructions(next).then(() => {
+        setSavedTick((n) => n + 1);
+      });
+    }, 350);
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <Label>Custom instructions</Label>
+        {savedTick > 0 ? (
+          <span className="text-[10px] text-muted-foreground">Saved</span>
+        ) : null}
+      </div>
+      <Textarea
+        value={draft}
+        onChange={(e) => queueSave(e.target.value)}
+        placeholder="e.g. Always reply in concise bullet points. Prefer pnpm over npm. My machine is an M-series Mac."
+        className="min-h-[120px] resize-y bg-card/60 font-sans text-[12px] leading-relaxed"
+      />
+      <p className="text-[10.5px] text-muted-foreground">
+        Appended to the system prompt for every conversation, after Terax's core
+        rules.
+      </p>
+    </div>
+  );
+}
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
+      {children}
+    </span>
   );
 }

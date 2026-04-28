@@ -10,6 +10,7 @@ import {
   type ModelId,
   type ProviderId,
 } from "../config";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { EMPTY_PROVIDER_KEYS, type ProviderKeys } from "../lib/keyring";
 import {
   deleteSessionData,
@@ -138,6 +139,8 @@ function makeChat(sessionId: string): Chat<UIMessage> {
     getKeys: () => useChatStore.getState().apiKeys,
     toolContext,
     getModelId: () => useChatStore.getState().selectedModelId,
+    getCustomInstructions: () =>
+      usePreferencesStore.getState().customInstructions,
     getLive: () => {
       const live = useChatStore.getState().live;
       return {

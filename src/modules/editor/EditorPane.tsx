@@ -5,10 +5,9 @@ import {
   setSearchQuery,
 } from "@codemirror/search";
 import { keymap } from "@codemirror/view";
-// import { aura } from "@uiw/codemirror-theme-aura";
-// import { tokyoNight } from "@uiw/codemirror-theme-tokyo-night";
-import { atomone } from "@uiw/codemirror-theme-atomone";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
+import { EDITOR_THEME_EXT } from "./lib/themes";
 import {
   forwardRef,
   useEffect,
@@ -45,6 +44,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
   function EditorPane({ path, onDirtyChange, onSaved }, ref) {
     const { doc, onChange, save } = useDocument({ path, onDirtyChange });
     const cmRef = useRef<ReactCodeMirrorRef>(null);
+    const editorThemeId = usePreferencesStore((s) => s.editorTheme);
+    const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
 
     // Stabilize save + onSaved via refs so the extensions array never changes
     // identity — a new identity makes @uiw/react-codemirror reconfigure the
@@ -171,7 +172,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           ref={cmRef}
           value={doc.content}
           onChange={onChange}
-          theme={atomone}
+          theme={themeExt}
           extensions={extensions}
           height="100%"
           className="flex-1 min-h-0 overflow-hidden"

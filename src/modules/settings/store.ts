@@ -4,30 +4,85 @@ import { DEFAULT_MODEL_ID, type ModelId } from "@/modules/ai/config";
 
 export type ThemePref = "system" | "light" | "dark";
 
+export const EDITOR_THEMES = [
+  "atomone",
+  "aura",
+  "copilot",
+  "github-dark",
+  "github-light",
+  "nord",
+  "tokyo-night",
+  "xcode-dark",
+  "xcode-light",
+] as const;
+
+export type EditorThemeId = (typeof EDITOR_THEMES)[number];
+
+export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
+  atomone: "Atom One",
+  aura: "Aura",
+  copilot: "Copilot",
+  "github-dark": "GitHub Dark",
+  "github-light": "GitHub Light",
+  nord: "Nord",
+  "tokyo-night": "Tokyo Night",
+  "xcode-dark": "Xcode Dark",
+  "xcode-light": "Xcode Light",
+};
+
 export type Preferences = {
   theme: ThemePref;
   defaultModelId: ModelId;
+  editorTheme: EditorThemeId;
+  customInstructions: string;
+  autostart: boolean;
+  restoreWindowState: boolean;
 };
 
 const STORE_PATH = "terax-settings.json";
 const KEY_THEME = "theme";
 const KEY_DEFAULT_MODEL = "defaultModelId";
+const KEY_EDITOR_THEME = "editorTheme";
+const KEY_CUSTOM_INSTRUCTIONS = "customInstructions";
+const KEY_AUTOSTART = "autostart";
+const KEY_RESTORE_WINDOW = "restoreWindowState";
 
-const DEFAULTS: Preferences = {
+export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
   defaultModelId: DEFAULT_MODEL_ID,
+  editorTheme: "atomone",
+  customInstructions: "",
+  autostart: false,
+  restoreWindowState: true,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
 
 export async function loadPreferences(): Promise<Preferences> {
-  const [theme, defaultModelId] = await Promise.all([
+  const [
+    theme,
+    defaultModelId,
+    editorTheme,
+    customInstructions,
+    autostart,
+    restoreWindowState,
+  ] = await Promise.all([
     store.get<ThemePref>(KEY_THEME),
     store.get<ModelId>(KEY_DEFAULT_MODEL),
+    store.get<EditorThemeId>(KEY_EDITOR_THEME),
+    store.get<string>(KEY_CUSTOM_INSTRUCTIONS),
+    store.get<boolean>(KEY_AUTOSTART),
+    store.get<boolean>(KEY_RESTORE_WINDOW),
   ]);
   return {
-    theme: theme ?? DEFAULTS.theme,
-    defaultModelId: defaultModelId ?? DEFAULTS.defaultModelId,
+    theme: theme ?? DEFAULT_PREFERENCES.theme,
+    defaultModelId: defaultModelId ?? DEFAULT_PREFERENCES.defaultModelId,
+    editorTheme: editorTheme ?? DEFAULT_PREFERENCES.editorTheme,
+    customInstructions:
+      customInstructions ?? DEFAULT_PREFERENCES.customInstructions,
+    autostart: autostart ?? DEFAULT_PREFERENCES.autostart,
+    restoreWindowState:
+      restoreWindowState ?? DEFAULT_PREFERENCES.restoreWindowState,
   };
 }
 
@@ -41,13 +96,43 @@ export async function setDefaultModel(value: ModelId): Promise<void> {
   await store.save();
 }
 
+export async function setEditorTheme(value: EditorThemeId): Promise<void> {
+  await store.set(KEY_EDITOR_THEME, value);
+  await store.save();
+}
+
+export async function setCustomInstructions(value: string): Promise<void> {
+  await store.set(KEY_CUSTOM_INSTRUCTIONS, value);
+  await store.save();
+}
+
+export async function setAutostart(value: boolean): Promise<void> {
+  await store.set(KEY_AUTOSTART, value);
+  await store.save();
+}
+
+export async function setRestoreWindowState(value: boolean): Promise<void> {
+  await store.set(KEY_RESTORE_WINDOW, value);
+  await store.save();
+}
+
+export type PrefKey = keyof Preferences;
+
 /** Subscribe to changes from any window (settings → main). */
 export function onPreferencesChange(
-  cb: (key: "theme" | "defaultModelId", value: unknown) => void,
+  cb: (key: PrefKey, value: unknown) => void,
 ): Promise<UnlistenFn> {
+  const map: Record<string, PrefKey> = {
+    [KEY_THEME]: "theme",
+    [KEY_DEFAULT_MODEL]: "defaultModelId",
+    [KEY_EDITOR_THEME]: "editorTheme",
+    [KEY_CUSTOM_INSTRUCTIONS]: "customInstructions",
+    [KEY_AUTOSTART]: "autostart",
+    [KEY_RESTORE_WINDOW]: "restoreWindowState",
+  };
   return store.onChange<unknown>((key, value) => {
-    if (key === KEY_THEME) cb("theme", value);
-    else if (key === KEY_DEFAULT_MODEL) cb("defaultModelId", value);
+    const mapped = map[key];
+    if (mapped) cb(mapped, value);
   });
 }
 

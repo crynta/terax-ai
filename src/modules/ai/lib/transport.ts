@@ -18,6 +18,7 @@ type Deps = {
   getKeys: () => ProviderKeys;
   toolContext: ToolContext;
   getModelId: () => ModelId;
+  getCustomInstructions: () => string;
   getLive: () => LiveSnapshot;
   onStep?: (step: string | null) => void;
 };
@@ -31,6 +32,7 @@ export function createContextAwareTransport(deps: Deps) {
       const agent = createTeraxAgent({
         keys: deps.getKeys(),
         modelId: deps.getModelId(),
+        customInstructions: deps.getCustomInstructions(),
         toolContext: deps.toolContext,
         onStep: deps.onStep,
       });
@@ -45,6 +47,7 @@ export function createContextAwareTransport(deps: Deps) {
       const agent = createTeraxAgent({
         keys: deps.getKeys(),
         modelId: deps.getModelId(),
+        customInstructions: deps.getCustomInstructions(),
         toolContext: deps.toolContext,
         onStep: deps.onStep,
       });

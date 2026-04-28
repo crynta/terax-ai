@@ -1,6 +1,8 @@
 import { cn } from "@/lib/utils";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   InformationCircleIcon,
+  PlugSocketIcon,
   Settings01Icon,
   SparklesIcon,
 } from "@hugeicons/core-free-icons";
@@ -9,10 +11,13 @@ import { useEffect, useState } from "react";
 import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
 import { AboutSection } from "./sections/AboutSection";
 import { AiSection } from "./sections/AiSection";
+import { ConnectionsSection } from "./sections/ConnectionsSection";
 import { GeneralSection } from "./sections/GeneralSection";
 
+type AnyTab = SettingsTab | "connections";
+
 type TabDef = {
-  id: SettingsTab;
+  id: AnyTab;
   label: string;
   icon: typeof Settings01Icon;
 };
@@ -20,24 +25,37 @@ type TabDef = {
 const TABS: TabDef[] = [
   { id: "general", label: "General", icon: Settings01Icon },
   { id: "ai", label: "AI", icon: SparklesIcon },
+  { id: "connections", label: "Connections", icon: PlugSocketIcon },
   { id: "about", label: "About", icon: InformationCircleIcon },
 ];
 
-function readInitialTab(): SettingsTab {
+function readInitialTab(): AnyTab {
   if (typeof window === "undefined") return "general";
   const url = new URL(window.location.href);
   const t = url.searchParams.get("tab");
-  if (t === "general" || t === "ai" || t === "about") return t;
+  if (t === "general" || t === "ai" || t === "about" || t === "connections") {
+    return t;
+  }
   return "general";
 }
 
 export function SettingsApp() {
-  const [active, setActive] = useState<SettingsTab>(readInitialTab);
+  const [active, setActive] = useState<AnyTab>(readInitialTab);
+  const init = usePreferencesStore((s) => s.init);
+
+  useEffect(() => {
+    void init();
+  }, [init]);
 
   useEffect(() => {
     const onTab = (e: Event) => {
       const detail = (e as CustomEvent<string>).detail;
-      if (detail === "general" || detail === "ai" || detail === "about") {
+      if (
+        detail === "general" ||
+        detail === "ai" ||
+        detail === "about" ||
+        detail === "connections"
+      ) {
         setActive(detail);
       }
     };
@@ -46,39 +64,38 @@ export function SettingsApp() {
   }, []);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground select-none">
-      <aside
+    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
+      <header
         data-tauri-drag-region
-        className="flex w-[180px] shrink-0 flex-col gap-1 border-r border-border/60 bg-card/60 px-3 pt-12 pb-3"
+        className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 bg-card/60 pr-3 pl-22"
       >
-        <div className="mb-2 flex items-center gap-2 px-2">
-          <img src="/logo.png" alt="" className="size-3.5" draggable={false} />
-          <span className="text-[11px] font-semibold tracking-tight">
-            Settings
-          </span>
-        </div>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setActive(t.id)}
-            className={cn(
-              "flex h-8 items-center gap-2 rounded-md px-2 text-[12px] transition-colors",
-              active === t.id
-                ? "bg-accent text-foreground"
-                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-            )}
-          >
-            <HugeiconsIcon icon={t.icon} size={14} strokeWidth={1.75} />
-            <span>{t.label}</span>
-          </button>
-        ))}
-      </aside>
+        <nav className="flex flex-1 items-center justify-center gap-0.5">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActive(t.id)}
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[11.5px] transition-colors",
+                active === t.id
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              )}
+            >
+              <HugeiconsIcon icon={t.icon} size={13} strokeWidth={1.75} />
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </nav>
+      </header>
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto px-7 pt-12 pb-7">
-        {active === "general" && <GeneralSection />}
-        {active === "ai" && <AiSection />}
-        {active === "about" && <AboutSection />}
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto px-8 pt-6 pb-7">
+        <div className="mx-auto w-full max-w-[560px]">
+          {active === "general" && <GeneralSection />}
+          {active === "ai" && <AiSection />}
+          {active === "connections" && <ConnectionsSection />}
+          {active === "about" && <AboutSection />}
+        </div>
       </main>
     </div>
   );

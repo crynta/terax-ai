@@ -21,6 +21,7 @@ import { buildTools, type ToolContext } from "../tools/tools";
 type AgentDeps = {
   keys: ProviderKeys;
   modelId?: ModelId;
+  customInstructions?: string;
   toolContext: ToolContext;
   onStep?: (step: string | null) => void;
 };
@@ -70,12 +71,17 @@ function buildModel(modelId: ModelId, keys: ProviderKeys) {
 export function createTeraxAgent({
   keys,
   modelId = DEFAULT_MODEL_ID,
+  customInstructions,
   toolContext,
   onStep,
 }: AgentDeps) {
+  const trimmed = customInstructions?.trim();
+  const instructions = trimmed
+    ? `${SYSTEM_PROMPT}\n\nUSER CUSTOM INSTRUCTIONS — follow these unless they conflict with safety rules above:\n${trimmed}`
+    : SYSTEM_PROMPT;
   return new Agent({
     model: buildModel(modelId, keys),
-    instructions: SYSTEM_PROMPT,
+    instructions,
     tools: buildTools(toolContext),
     stopWhen: stepCountIs(MAX_AGENT_STEPS),
     onStepFinish: (step) => {

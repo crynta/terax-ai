@@ -24,7 +24,8 @@ import {
   type SearchTarget,
 } from "@/modules/header";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
-import { onKeysChanged, onPreferencesChange } from "@/modules/settings/store";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { onKeysChanged } from "@/modules/settings/store";
 import {
   ShortcutsDialog,
   useGlobalShortcuts,
@@ -42,7 +43,6 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import type { ModelId } from "@/modules/ai/config";
 
 export default function App() {
   const {
@@ -109,25 +109,18 @@ export default function App() {
     };
   }, [setApiKeys]);
 
-  // Mirror the saved default model into the live store, and react to changes
-  // made in the settings window.
+  // Hydrate the cross-window preference store and mirror the default model
+  // into chatStore so the dropdown reflects what the user picked in Settings.
+  const initPrefs = usePreferencesStore((s) => s.init);
+  const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
+  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   useEffect(() => {
-    let alive = true;
-    void import("@/modules/settings/store").then(async ({ loadPreferences }) => {
-      const prefs = await loadPreferences();
-      if (!alive) return;
-      setSelectedModelId(prefs.defaultModelId);
-    });
-    const unlistenP = onPreferencesChange((key, value) => {
-      if (key === "defaultModelId" && typeof value === "string") {
-        setSelectedModelId(value as ModelId);
-      }
-    });
-    return () => {
-      alive = false;
-      void unlistenP.then((fn) => fn());
-    };
-  }, [setSelectedModelId]);
+    void initPrefs();
+  }, [initPrefs]);
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    setSelectedModelId(prefDefaultModel);
+  }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
 
   const hydrateSessions = useChatStore((s) => s.hydrateSessions);
   useEffect(() => {

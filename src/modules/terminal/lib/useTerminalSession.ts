@@ -174,5 +174,11 @@ export function useTerminalSession({
     return sel.length > 0 ? sel : null;
   }, []);
 
-  return { write, focus, getBuffer, getSelection };
+  const applyTheme = useCallback(() => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.theme = buildTerminalTheme();
+  }, []);
+
+  return { write, focus, getBuffer, getSelection, applyTheme };
 }
