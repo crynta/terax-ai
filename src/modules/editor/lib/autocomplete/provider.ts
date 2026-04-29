@@ -4,7 +4,7 @@ import {
   type AutocompleteProviderId,
 } from "@/modules/ai/config";
 import { buildLanguageModel } from "@/modules/ai/lib/agent";
-import type { ProviderKeys } from "@/modules/ai/lib/keyring";
+import { EMPTY_PROVIDER_KEYS } from "@/modules/ai/lib/keyring";
 import { generateText } from "ai";
 import {
   buildUserPrompt,
@@ -15,11 +15,16 @@ import {
 export type CompletionDeps = {
   provider: AutocompleteProviderId;
   modelId: string;
-  keys: ProviderKeys;
+  /** API key for the configured provider, or null for keyless (LM Studio). */
+  apiKey: string | null;
   lmstudioBaseURL: string;
 };
 
-const MAX_OUTPUT_TOKENS = 128;
+const MAX_OUTPUT_TOKENS_DEFAULT = 128;
+// Reasoning models burn output tokens on internal thought before producing
+// any visible content; with a tight cap they finish_reason="length" with
+// empty text. The trim step still caps visible output at MAX_LINES.
+const MAX_OUTPUT_TOKENS_REASONING = 1024;
 
 export async function requestCompletion(
   req: CompletionRequest,
@@ -28,15 +33,13 @@ export async function requestCompletion(
 ): Promise<string> {
   const modelId =
     deps.modelId.trim() || DEFAULT_AUTOCOMPLETE_MODEL[deps.provider];
-  const model = buildLanguageModel(deps.provider, deps.keys, modelId, {
+  const keys = { ...EMPTY_PROVIDER_KEYS, [deps.provider]: deps.apiKey };
+  const model = buildLanguageModel(deps.provider, keys, modelId, {
     lmstudioBaseURL: deps.lmstudioBaseURL || LMSTUDIO_DEFAULT_BASE_URL,
   });
 
-  // gpt-oss models on Cerebras/Groq are reasoning models — without lowering
-  // the reasoning effort they spend the whole token budget thinking and
-  // return empty content. Pass the OpenAI-compatible knob through.
-  const isGptOss = /\bgpt-oss\b/i.test(modelId);
-  const providerOptions = isGptOss
+  const isReasoning = /\bgpt-oss\b/i.test(modelId);
+  const providerOptions = isReasoning
     ? {
         cerebras: { reasoningEffort: "low" },
         groq: { reasoningEffort: "low" },
@@ -48,8 +51,10 @@ export async function requestCompletion(
     model,
     system: COMPLETION_SYSTEM_PROMPT,
     prompt: buildUserPrompt(req),
-    maxOutputTokens: MAX_OUTPUT_TOKENS,
-    maxRetries: 1,
+    maxOutputTokens: isReasoning
+      ? MAX_OUTPUT_TOKENS_REASONING
+      : MAX_OUTPUT_TOKENS_DEFAULT,
+    maxRetries: 0,
     abortSignal: signal,
     temperature: 0.2,
     ...(providerOptions ? { providerOptions } : {}),
@@ -58,13 +63,10 @@ export async function requestCompletion(
   return cleanCompletion(text);
 }
 
-/** Strip accidental fences/labels, trim to a sane suggestion. */
 function cleanCompletion(raw: string): string {
   let t = raw;
-  // Drop wrapping triple-fence if the model couldn't resist.
   const fence = t.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```\s*$/);
   if (fence) t = fence[1];
-  // If the model echoed a leading marker, drop it.
   t = t.replace(/^<\|cursor\|>/, "");
   return t;
 }

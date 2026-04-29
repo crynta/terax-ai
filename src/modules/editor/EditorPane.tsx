@@ -19,9 +19,7 @@ import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import { resolveLanguage } from "./lib/languageResolver";
 import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
-import { getAllKeys } from "@/modules/ai/lib/keyring";
-import type { ProviderKeys } from "@/modules/ai/lib/keyring";
-import { EMPTY_PROVIDER_KEYS } from "@/modules/ai/lib/keyring";
+import { getKey } from "@/modules/ai/lib/keyring";
 import { onKeysChanged } from "@/modules/settings/store";
 
 export type EditorPaneHandle = {
@@ -55,24 +53,33 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const editorThemeId = usePreferencesStore((s) => s.editorTheme);
     const languageRef = useRef<string | null>(null);
-    const keysRef = useRef<ProviderKeys>(EMPTY_PROVIDER_KEYS);
+    const apiKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
       let cancelled = false;
-      void getAllKeys().then((k) => {
-        if (!cancelled) keysRef.current = k;
+      const refresh = async () => {
+        const provider = usePreferencesStore.getState().autocompleteProvider;
+        if (provider === "lmstudio") {
+          apiKeyRef.current = null;
+          return;
+        }
+        const k = await getKey(provider);
+        if (!cancelled) apiKeyRef.current = k;
+      };
+      void refresh();
+      let unlistenKeys: (() => void) | undefined;
+      void onKeysChanged(() => void refresh()).then((un) => {
+        unlistenKeys = un;
       });
-      let unlisten: (() => void) | undefined;
-      void onKeysChanged(() => {
-        void getAllKeys().then((k) => {
-          if (!cancelled) keysRef.current = k;
-        });
-      }).then((un) => {
-        unlisten = un;
+      const unsubPrefs = usePreferencesStore.subscribe((state, prev) => {
+        if (state.autocompleteProvider !== prev.autocompleteProvider) {
+          void refresh();
+        }
       });
       return () => {
         cancelled = true;
-        unlisten?.();
+        unlistenKeys?.();
+        unsubPrefs();
       };
     }, []);
     const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
@@ -99,7 +106,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               enabled: s.autocompleteEnabled,
               provider: s.autocompleteProvider,
               modelId: s.autocompleteModelId,
-              keys: keysRef.current,
+              apiKey: apiKeyRef.current,
               lmstudioBaseURL: s.lmstudioBaseURL,
             };
           },
