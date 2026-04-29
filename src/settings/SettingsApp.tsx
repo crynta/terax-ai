@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   InformationCircleIcon,
@@ -8,7 +9,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
-import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
 import { AboutSection } from "./sections/AboutSection";
 import { AiSection } from "./sections/AiSection";
 import { ConnectionsSection } from "./sections/ConnectionsSection";
@@ -69,7 +69,10 @@ export function SettingsApp() {
         data-tauri-drag-region
         className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 bg-card/60 pr-3 pl-22"
       >
-        <nav className="flex flex-1 items-center justify-center gap-0.5">
+        <nav
+          className="flex flex-1 items-center justify-center gap-0.5"
+          data-tauri-drag-region
+        >
           {TABS.map((t) => (
             <button
               key={t.id}

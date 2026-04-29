@@ -9,6 +9,7 @@ type Props = {
   registerHandle: (id: number, handle: TerminalPaneHandle | null) => void;
   onSearchReady: (id: number, addon: SearchAddon) => void;
   onCwd: (id: number, cwd: string) => void;
+  onDetectedLocalUrl: (id: number, url: string) => void;
 };
 
 export function TerminalStack({
@@ -17,12 +18,14 @@ export function TerminalStack({
   registerHandle,
   onSearchReady,
   onCwd,
+  onDetectedLocalUrl,
 }: Props) {
   const terminals = tabs.filter((t) => t.kind === "terminal");
 
   const registerRef = useRef(registerHandle);
   const searchReadyRef = useRef(onSearchReady);
   const cwdRef = useRef(onCwd);
+  const detectedUrlRef = useRef(onDetectedLocalUrl);
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -32,11 +35,15 @@ export function TerminalStack({
   useEffect(() => {
     cwdRef.current = onCwd;
   }, [onCwd]);
+  useEffect(() => {
+    detectedUrlRef.current = onDetectedLocalUrl;
+  }, [onDetectedLocalUrl]);
 
   type Bundle = {
     setRef: (h: TerminalPaneHandle | null) => void;
     onSearch: (addon: SearchAddon) => void;
     onCwd: (cwd: string) => void;
+    onDetectedUrl: (url: string) => void;
   };
   const bundles = useRef(new Map<number, Bundle>());
   const getBundle = (id: number): Bundle => {
@@ -46,6 +53,7 @@ export function TerminalStack({
         setRef: (h) => registerRef.current(id, h),
         onSearch: (addon) => searchReadyRef.current(id, addon),
         onCwd: (cwd) => cwdRef.current(id, cwd),
+        onDetectedUrl: (url) => detectedUrlRef.current(id, url),
       };
       bundles.current.set(id, b);
     }
@@ -72,6 +80,7 @@ export function TerminalStack({
               ref={b.setRef}
               onSearchReady={(_id, addon) => b.onSearch(addon)}
               onCwd={(_id, cwd) => b.onCwd(cwd)}
+              onDetectedLocalUrl={(_id, url) => b.onDetectedUrl(url)}
             />
           </div>
         );

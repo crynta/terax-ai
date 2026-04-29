@@ -20,7 +20,15 @@ type Options = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
+  onDetectedLocalUrl?: (url: string) => void;
 };
+
+// Matches dev-server-style local URLs (vite, next dev, webpack, …). Anchors
+// on a word boundary so we don't catch substrings of longer paths.
+const LOCAL_URL_RE =
+  /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d{1,5})?(?:\/[^\s\x1b]*)?/g;
+
+const URL_DECODER = new TextDecoder("utf-8", { fatal: false });
 
 export function useTerminalSession({
   container,
@@ -29,7 +37,13 @@ export function useTerminalSession({
   onSearchReady,
   onExit,
   onCwd,
+  onDetectedLocalUrl,
 }: Options) {
+  const detectedRef = useRef<string | null>(null);
+  const onDetectedRef = useRef(onDetectedLocalUrl);
+  useEffect(() => {
+    onDetectedRef.current = onDetectedLocalUrl;
+  }, [onDetectedLocalUrl]);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const ptyRef = useRef<PtySession | null>(null);
@@ -87,7 +101,23 @@ export function useTerminalSession({
         term.cols,
         term.rows,
         {
-          onData: (bytes) => term.write(bytes),
+          onData: (bytes) => {
+            term.write(bytes);
+            // Sniff for dev-server URLs in raw output. Byte-level prefilter
+            // (':' '/' '/') skips decode+regex on the overwhelming majority
+            // of chunks (ordinary terminal output, log tails, test runs).
+            if (onDetectedRef.current && containsSchemeSeparator(bytes)) {
+              const text = URL_DECODER.decode(bytes, { stream: true });
+              const matches = text.match(LOCAL_URL_RE);
+              if (matches && matches.length > 0) {
+                const url = stripTrailingPunct(matches[matches.length - 1]);
+                if (url && url !== detectedRef.current) {
+                  detectedRef.current = url;
+                  onDetectedRef.current(url);
+                }
+              }
+            }
+          },
           onExit: (code) => {
             term.write(`\r\n\x1b[2m[process exited: ${code}]\x1b[0m\r\n`);
             term.options.disableStdin = true;
@@ -181,4 +211,21 @@ export function useTerminalSession({
   }, []);
 
   return { write, focus, getBuffer, getSelection, applyTheme };
+}
+
+function stripTrailingPunct(url: string): string {
+  return url.replace(/[.,);\]]+$/, "");
+}
+
+// Looks for the literal byte sequence ":" "/" "/" — the cheapest signal
+// that a chunk *might* contain a URL. Avoids per-chunk UTF-8 decode + regex
+// scan when running noisy commands.
+function containsSchemeSeparator(bytes: Uint8Array): boolean {
+  const n = bytes.length;
+  for (let i = 0; i < n - 2; i++) {
+    if (bytes[i] === 0x3a && bytes[i + 1] === 0x2f && bytes[i + 2] === 0x2f) {
+      return true;
+    }
+  }
+  return false;
 }

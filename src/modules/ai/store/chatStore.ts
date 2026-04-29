@@ -31,6 +31,7 @@ type Live = {
   injectIntoActivePty: (text: string) => boolean;
   getWorkspaceRoot: () => string | null;
   getActiveFile: () => string | null;
+  openPreview: (url: string) => boolean;
 };
 
 export type AgentRunStatus =
@@ -117,6 +118,7 @@ const NOOP_LIVE: Live = {
   injectIntoActivePty: () => false,
   getWorkspaceRoot: () => null,
   getActiveFile: () => null,
+  openPreview: () => false,
 };
 
 // Per-session Chat instances. Transport reads the keys map lazily, so a key
@@ -133,6 +135,7 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       useChatStore.getState().live.getTerminalContext(),
     injectIntoActivePty: (text) =>
       useChatStore.getState().live.injectIntoActivePty(text),
+    openPreview: (url) => useChatStore.getState().live.openPreview(url),
   };
 
   const transport = createContextAwareTransport({

@@ -36,6 +36,12 @@ export type ToolContext = {
    * prompt, ready to inspect and run with ↵.
    */
   injectIntoActivePty: (text: string) => boolean;
+  /**
+   * Open a new preview tab (in-app iframe) at the given URL. Used by
+   * `open_preview` after the AI starts a dev server, so the user lands on
+   * the rendered page without leaving the terminal.
+   */
+  openPreview: (url: string) => boolean;
 };
 
 function resolvePath(rawPath: string, cwd: string | null): string {
@@ -169,6 +175,23 @@ export function buildTools(ctx: ToolContext) {
             command: trimmed,
           };
         return { command: trimmed, explanation, injected: true };
+      },
+    }),
+
+    open_preview: tool({
+      description:
+        "Open a preview tab (in-app iframe) at the given URL. Use this after starting a dev server (e.g. `pnpm dev`, `npm run dev`) to surface the rendered page next to the terminal. Localhost URLs work best; arbitrary external sites may be blocked by X-Frame-Options.",
+      inputSchema: z.object({
+        url: z
+          .url()
+          .describe(
+            "Full URL to load (e.g. http://localhost:5173). Must include scheme.",
+          ),
+      }),
+      execute: async ({ url }) => {
+        const ok = ctx.openPreview(url);
+        if (!ok) return { error: "preview surface unavailable", url };
+        return { url, ok: true };
       },
     }),
 

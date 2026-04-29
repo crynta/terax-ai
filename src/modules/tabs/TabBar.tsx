@@ -1,4 +1,10 @@
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
@@ -6,6 +12,8 @@ import {
   Cancel01Icon,
   Folder01Icon,
   Folder02Icon,
+  ComputerTerminal02Icon,
+  Globe02Icon,
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -17,6 +25,7 @@ type Props = {
   activeId: number;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onNewPreview: () => void;
   onClose: (id: number) => void;
   compact?: boolean;
 };
@@ -26,6 +35,7 @@ export function TabBar({
   activeId,
   onSelect,
   onNew,
+  onNewPreview,
   onClose,
   compact,
 }: Props) {
@@ -83,12 +93,12 @@ export function TabBar({
                 >
                   <TabIcon tab={t} active={t.id === activeId} />
                   <span className="truncate">{labelFor(t)}</span>
-                  {t.kind === "editor" && t.dirty && (
+                  {t.kind === "editor" && t.dirty ? (
                     <span
                       aria-label="Unsaved changes"
                       className="size-1.5 shrink-0 rounded-full bg-foreground/70"
                     />
-                  )}
+                  ) : null}
                 </span>
                 {tabs.length > 1 && (
                   <span
@@ -111,15 +121,37 @@ export function TabBar({
             ))}
           </TabsList>
         </Tabs>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={onNew}
-          title="New tab (⌘T)"
-        >
-          <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="New tab"
+            >
+              <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-44">
+            <DropdownMenuItem onSelect={() => onNew()}>
+              <HugeiconsIcon
+                icon={ComputerTerminal02Icon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Terminal</span>
+              <span className="text-xs text-muted-foreground">⌘T</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onNewPreview()}>
+              <HugeiconsIcon
+                icon={Globe02Icon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Preview</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -129,6 +161,16 @@ function TabIcon({ tab, active }: { tab: Tab; active: boolean }) {
   if (tab.kind === "editor") {
     const url = fileIconUrl(tab.title);
     return url ? <img src={url} alt="" className="size-3.5 shrink-0" /> : null;
+  }
+  if (tab.kind === "preview") {
+    return (
+      <HugeiconsIcon
+        icon={Globe02Icon}
+        size={14}
+        strokeWidth={1.75}
+        className="shrink-0"
+      />
+    );
   }
   return (
     <HugeiconsIcon
@@ -142,6 +184,7 @@ function TabIcon({ tab, active }: { tab: Tab; active: boolean }) {
 
 function labelFor(t: Tab): string {
   if (t.kind === "editor") return t.title;
+  if (t.kind === "preview") return t.title;
   if (!t.cwd) return t.title;
   const parts = t.cwd.split("/").filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "/";

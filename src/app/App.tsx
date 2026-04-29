@@ -18,6 +18,7 @@ import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
 import { EditorStack, type EditorPaneHandle } from "@/modules/editor";
 import { FileExplorer } from "@/modules/explorer";
+import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import {
   Header,
   type SearchInlineHandle,
@@ -44,6 +45,16 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    const ua = new URL(a);
+    const ub = new URL(b);
+    return ua.host === ub.host && ua.protocol === ub.protocol;
+  } catch {
+    return a === b;
+  }
+}
+
 export default function App() {
   const {
     tabs,
@@ -51,6 +62,7 @@ export default function App() {
     setActiveId,
     newTab,
     openFileTab,
+    newPreviewTab,
     closeTab,
     updateTab,
     selectByIndex,
@@ -62,6 +74,11 @@ export default function App() {
   const searchInlineRef = useRef<SearchInlineHandle | null>(null);
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
+  const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
+  const detectedUrls = useRef<Map<number, string>>(new Map());
+  const [activeDetectedUrl, setActiveDetectedUrl] = useState<string | null>(
+    null,
+  );
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
@@ -130,6 +147,7 @@ export default function App() {
   const activeTab = tabs.find((t) => t.id === activeId);
   const isTerminalTab = activeTab?.kind === "terminal";
   const isEditorTab = activeTab?.kind === "editor";
+  const isPreviewTab = activeTab?.kind === "preview";
 
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
@@ -140,7 +158,26 @@ export default function App() {
   useEffect(() => {
     setActiveSearchAddon(searchAddons.current.get(activeId) ?? null);
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
+    setActiveDetectedUrl(detectedUrls.current.get(activeId) ?? null);
   }, [activeId]);
+
+  const handleDetectedLocalUrl = useCallback(
+    (id: number, url: string) => {
+      detectedUrls.current.set(id, url);
+      if (id === activeId) setActiveDetectedUrl(url);
+    },
+    [activeId],
+  );
+
+  // Suppress the chip once a preview tab already targets the detected URL —
+  // avoids prompting users to re-open a tab they already have.
+  const detectedPreviewUrl = useMemo(() => {
+    if (!isTerminalTab || !activeDetectedUrl) return null;
+    const alreadyOpen = tabs.some(
+      (t) => t.kind === "preview" && sameOrigin(t.url, activeDetectedUrl),
+    );
+    return alreadyOpen ? null : activeDetectedUrl;
+  }, [isTerminalTab, activeDetectedUrl, tabs]);
 
   const handleSearchReady = useCallback(
     (id: number, addon: SearchAddon) => {
@@ -155,6 +192,8 @@ export default function App() {
       searchAddons.current.delete(id);
       terminalRefs.current.delete(id);
       editorRefs.current.delete(id);
+      previewRefs.current.delete(id);
+      detectedUrls.current.delete(id);
       closeTab(id);
     },
     [closeTab],
@@ -370,9 +409,22 @@ export default function App() {
   const activeFilePath =
     activeTab?.kind === "editor" ? activeTab.path : null;
 
+  const openPreviewTab = useCallback(
+    (url: string) => {
+      const id = newPreviewTab(url);
+      // Focus the address bar if the URL is empty so the user can type.
+      if (!url) {
+        setTimeout(() => previewRefs.current.get(id)?.focusAddressBar(), 0);
+      }
+      return id;
+    },
+    [newPreviewTab],
+  );
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "tab.new": openNewTab,
+      "tab.newPreview": () => openPreviewTab(""),
       "tab.close": () => handleClose(activeId),
       "tab.next": () => cycleTab(1),
       "tab.prev": () => cycleTab(-1),
@@ -388,6 +440,7 @@ export default function App() {
       cycleTab,
       handleClose,
       openNewTab,
+      openPreviewTab,
       selectByIndex,
       togglePanelAndFocus,
       askFromSelection,
@@ -412,6 +465,19 @@ export default function App() {
       if (id === activeId) setActiveEditorHandle(h);
     },
     [activeId],
+  );
+
+  const registerPreviewHandle = useCallback(
+    (id: number, h: PreviewPaneHandle | null) => {
+      if (h) previewRefs.current.set(id, h);
+      else previewRefs.current.delete(id);
+    },
+    [],
+  );
+
+  const handlePreviewUrl = useCallback(
+    (id: number, url: string) => updateTab(id, { url }),
+    [updateTab],
   );
 
   const handleTerminalCwd = useCallback(
@@ -467,8 +533,12 @@ export default function App() {
         const t = tabs.find((x) => x.id === activeId);
         return t?.kind === "editor" ? t.path : null;
       },
+      openPreview: (url: string) => {
+        openPreviewTab(url);
+        return true;
+      },
     });
-  }, [setLive, activeId, tabs, explorerRoot, home]);
+  }, [setLive, activeId, tabs, explorerRoot, home, openPreviewTab]);
 
   const shell = (
     <ThemeProvider>
@@ -479,6 +549,7 @@ export default function App() {
             activeId={activeId}
             onSelect={setActiveId}
             onNew={openNewTab}
+            onNewPreview={() => openPreviewTab("")}
             onClose={handleClose}
             onToggleSidebar={toggleSidebar}
             onOpenShortcuts={() => setShortcutsOpen(true)}
@@ -532,6 +603,7 @@ export default function App() {
                         registerHandle={registerTerminalHandle}
                         onSearchReady={handleSearchReady}
                         onCwd={handleTerminalCwd}
+                        onDetectedLocalUrl={handleDetectedLocalUrl}
                       />
                     </div>
                     <div
@@ -546,6 +618,20 @@ export default function App() {
                         activeId={activeId}
                         registerHandle={registerEditorHandle}
                         onDirtyChange={handleEditorDirty}
+                      />
+                    </div>
+                    <div
+                      className={cn(
+                        "absolute inset-0 px-3 pt-2 pb-2",
+                        !isPreviewTab && "invisible pointer-events-none",
+                      )}
+                      aria-hidden={!isPreviewTab}
+                    >
+                      <PreviewStack
+                        tabs={tabs}
+                        activeId={activeId}
+                        registerHandle={registerPreviewHandle}
+                        onUrlChange={handlePreviewUrl}
                       />
                     </div>
                   </div>
@@ -583,6 +669,10 @@ export default function App() {
             onCd={sendCd}
             onOpenMini={openMini}
             hasComposer={hasComposer}
+            detectedPreviewUrl={detectedPreviewUrl}
+            onOpenPreview={() => {
+              if (detectedPreviewUrl) openPreviewTab(detectedPreviewUrl);
+            }}
           />
 
           {hasComposer ? <AgentRunBridge /> : null}

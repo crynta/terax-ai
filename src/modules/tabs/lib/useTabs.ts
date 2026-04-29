@@ -15,18 +15,35 @@ export type EditorTab = {
   dirty: boolean;
 };
 
-export type Tab = TerminalTab | EditorTab;
+export type PreviewTab = {
+  id: number;
+  kind: "preview";
+  title: string;
+  url: string;
+};
+
+export type Tab = TerminalTab | EditorTab | PreviewTab;
 
 export type TabPatch = Partial<{
   title: string;
   cwd: string;
   path: string;
   dirty: boolean;
+  url: string;
 }>;
 
 function basename(path: string): string {
   const parts = path.split("/").filter(Boolean);
   return parts.length ? parts[parts.length - 1] : path;
+}
+
+function titleFromUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.host || url;
+  } catch {
+    return url || "preview";
+  }
 }
 
 export function useTabs(initial?: Partial<TerminalTab>) {
@@ -75,6 +92,16 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return targetId as number | null;
   }, []);
 
+  const newPreviewTab = useCallback((url: string) => {
+    const id = nextIdRef.current++;
+    setTabs((t) => [
+      ...t,
+      { id, kind: "preview", title: titleFromUrl(url), url },
+    ]);
+    setActiveId(id);
+    return id;
+  }, []);
+
   const closeTab = useCallback((id: number) => {
     setTabs((curr) => {
       if (curr.length <= 1) return curr;
@@ -96,6 +123,16 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             ...x,
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.cwd !== undefined && { cwd: patch.cwd }),
+          };
+        }
+        if (x.kind === "preview") {
+          return {
+            ...x,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.url !== undefined && {
+              url: patch.url,
+              title: patch.title ?? titleFromUrl(patch.url),
+            }),
           };
         }
         return {
@@ -122,6 +159,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setActiveId,
     newTab,
     openFileTab,
+    newPreviewTab,
     closeTab,
     updateTab,
     selectByIndex,

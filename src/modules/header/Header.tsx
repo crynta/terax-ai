@@ -19,6 +19,7 @@ type Props = {
   activeId: number;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onNewPreview: () => void;
   onClose: (id: number) => void;
   onToggleSidebar: () => void;
   onOpenShortcuts: () => void;
@@ -34,6 +35,7 @@ export function Header({
   activeId,
   onSelect,
   onNew,
+  onNewPreview,
   onClose,
   onToggleSidebar,
   onOpenShortcuts,
@@ -82,6 +84,7 @@ export function Header({
           activeId={activeId}
           onSelect={onSelect}
           onNew={onNew}
+          onNewPreview={onNewPreview}
           onClose={onClose}
           compact={compact}
         />

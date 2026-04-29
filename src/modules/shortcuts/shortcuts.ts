@@ -9,6 +9,7 @@
 
 export type ShortcutId =
   | "tab.new"
+  | "tab.newPreview"
   | "tab.close"
   | "tab.next"
   | "tab.prev"
@@ -45,6 +46,13 @@ export const SHORTCUTS: Shortcut[] = [
     keys: ["⌘", "T"],
     group: "Tabs",
     match: (e) => isMod(e) && e.key.toLowerCase() === "t",
+  },
+  {
+    id: "tab.newPreview",
+    label: "New preview tab",
+    keys: ["⌘", "P"],
+    group: "Tabs",
+    match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "p",
   },
   {
     id: "tab.close",

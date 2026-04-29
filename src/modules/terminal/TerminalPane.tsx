@@ -22,11 +22,20 @@ type Props = {
   onSearchReady?: (tabId: number, addon: SearchAddon) => void;
   onExit?: (tabId: number, code: number) => void;
   onCwd?: (tabId: number, cwd: string) => void;
+  onDetectedLocalUrl?: (tabId: number, url: string) => void;
 };
 
 export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
   function TerminalPane(
-    { tabId, visible, initialCwd, onSearchReady, onExit, onCwd },
+    {
+      tabId,
+      visible,
+      initialCwd,
+      onSearchReady,
+      onExit,
+      onCwd,
+      onDetectedLocalUrl,
+    },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -39,6 +48,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onSearchReady: (a) => onSearchReady?.(tabId, a),
       onExit: (c) => onExit?.(tabId, c),
       onCwd: (c) => onCwd?.(tabId, c),
+      onDetectedLocalUrl: (u) => onDetectedLocalUrl?.(tabId, u),
     });
 
     useEffect(() => {
