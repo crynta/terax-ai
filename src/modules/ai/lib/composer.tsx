@@ -199,6 +199,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
     // Slash-command interception. `/plan` toggles plan mode; `/init` rewrites
     // the prompt to the TERAX.md scan template before sending.
     let effectiveText = trimmed;
+    let commandMarker: string | null = null;
     if (trimmed.startsWith("/")) {
       const outcome = tryRunSlashCommand(trimmed);
       if (outcome.kind === "handled") {
@@ -208,6 +209,9 @@ export function AiComposerProvider({ children }: ProviderProps) {
       }
       if (outcome.kind === "send-prompt") {
         effectiveText = outcome.prompt;
+        if (outcome.commandName) {
+          commandMarker = `<terax-command name="${outcome.commandName}" />`;
+        }
       }
     }
 
@@ -244,6 +248,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
       allSnippetBlocks.push(block);
     }
     const composed = [
+      commandMarker ?? "",
       allSnippetBlocks.join("\n\n"),
       selectionBlocks.join("\n\n"),
       fileBlocks.join("\n\n"),

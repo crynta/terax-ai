@@ -14,13 +14,9 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
-import {
-  Tool,
-  ToolContent,
-  ToolHeader,
-  ToolInput,
-  ToolOutput,
-} from "@/components/ai-elements/tool";
+import { Tool } from "@/components/ai-elements/tool";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { SLASH_COMMANDS, TERAX_CMD_RE } from "../lib/slashCommands";
 import { Spinner } from "@/components/ui/spinner";
 import type {
   ChatStatus,
@@ -30,6 +26,33 @@ import type {
   UIMessagePart,
 } from "ai";
 import { AiToolApproval } from "./AiToolApproval";
+
+function CommandSnippet({ name }: { name: string }) {
+  const meta = SLASH_COMMANDS[name];
+  if (!meta) {
+    return (
+      <div className="inline-flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/40 px-2 py-1 font-mono text-[11px]">
+        /{name}
+      </div>
+    );
+  }
+  return (
+    <div className="inline-flex max-w-full items-center gap-2 rounded-md border border-border/50 bg-muted/40 px-2 py-1">
+      <HugeiconsIcon
+        icon={meta.icon}
+        size={12}
+        strokeWidth={1.75}
+        className="shrink-0 text-foreground"
+      />
+      <span className="font-mono text-[11px] text-foreground">
+        {meta.invocation}
+      </span>
+      <span className="truncate text-[11px] text-muted-foreground">
+        {meta.label}
+      </span>
+    </div>
+  );
+}
 
 type AnyToolPart = ToolUIPart | DynamicToolUIPart;
 type AnyPart = UIMessagePart<Record<string, never>, Record<string, never>>;
@@ -120,14 +143,22 @@ function RenderedMessage({
   onApproval: (id: string, approved: boolean) => void;
 }) {
   if (message.role === "user") {
-    const text = message.parts
+    const rawText = message.parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
       .map((p) => p.text)
       .join("\n");
+
+    const cmdMatch = rawText.match(TERAX_CMD_RE);
+    const commandName = cmdMatch?.[1] ?? null;
+    const text = cmdMatch ? rawText.slice(cmdMatch[0].length) : rawText;
+
     return (
       <Message from="user">
         <MessageContent>
-          <p className="whitespace-pre-wrap wrap-break-word">{text}</p>
+          {commandName ? <CommandSnippet name={commandName} /> : null}
+          {text ? (
+            <p className="whitespace-pre-wrap wrap-break-word">{text}</p>
+          ) : null}
         </MessageContent>
       </Message>
     );
@@ -213,36 +244,13 @@ function RenderedTool({
     );
   }
 
-  if (part.type === "dynamic-tool") {
-    return (
-      <Tool defaultOpen={part.state === "output-error"}>
-        <ToolHeader
-          type="dynamic-tool"
-          state={part.state}
-          toolName={toolName}
-          title={toolName}
-        />
-        <ToolContent>
-          <ToolInput input={part.input} />
-          <ToolOutput
-            output={"output" in part ? part.output : undefined}
-            errorText={"errorText" in part ? part.errorText : undefined}
-          />
-        </ToolContent>
-      </Tool>
-    );
-  }
-
   return (
-    <Tool defaultOpen={part.state === "output-error"}>
-      <ToolHeader type={part.type} state={part.state} title={toolName} />
-      <ToolContent>
-        <ToolInput input={part.input} />
-        <ToolOutput
-          output={"output" in part ? part.output : undefined}
-          errorText={"errorText" in part ? part.errorText : undefined}
-        />
-      </ToolContent>
-    </Tool>
+    <Tool
+      toolName={toolName}
+      state={part.state}
+      input={part.input}
+      output={"output" in part ? part.output : undefined}
+      errorText={"errorText" in part ? part.errorText : undefined}
+    />
   );
 }

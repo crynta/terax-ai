@@ -17,6 +17,7 @@ import {
   Settings01Icon,
   ShieldUserIcon,
   SparklesIcon,
+  Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { AgentIconId } from "../lib/agents";
@@ -50,11 +51,11 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
       <DropdownMenuTrigger asChild>
         <Button
           size="xs"
-          variant="secondary"
+          variant="outline"
           className={cn(
             !isMiniWindow
               ? "flex h-6 items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
-              : "text-xs",
+              : "text-xs mr-1",
           )}
           title={`Agent: ${active.name}`}
         >
@@ -79,7 +80,7 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
               key={a.id}
               onSelect={() => setActiveId(a.id)}
               className={cn(
-                "flex items-start gap-2 text-[12px]",
+                "flex items-start gap-2 pr-2 text-[12px]",
                 a.id === activeId && "bg-accent/40",
               )}
             >
@@ -87,14 +88,27 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
                 icon={Icon}
                 size={13}
                 strokeWidth={1.75}
-                className="mt-0.5 text-muted-foreground"
+                className={cn(
+                  "mt-0.5",
+                  a.id === activeId
+                    ? "text-foreground"
+                    : "text-muted-foreground",
+                )}
               />
-              <span className="flex min-w-0 flex-col">
+              <span className="flex min-w-0 flex-1 flex-col">
                 <span>{a.name}</span>
                 <span className="line-clamp-1 text-[10.5px] text-muted-foreground">
                   {a.description}
                 </span>
               </span>
+              {a.id === activeId ? (
+                <HugeiconsIcon
+                  icon={Tick02Icon}
+                  size={12}
+                  strokeWidth={2}
+                  className="mt-0.5 shrink-0 text-foreground"
+                />
+              ) : null}
             </DropdownMenuItem>
           );
         })}
@@ -121,7 +135,7 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
                     strokeWidth={1.75}
                     className="mt-0.5 text-muted-foreground"
                   />
-                  <span className="flex min-w-0 flex-col">
+                  <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate">{a.name}</span>
                     {a.description ? (
                       <span className="line-clamp-1 text-[10.5px] text-muted-foreground">
@@ -129,6 +143,14 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
                       </span>
                     ) : null}
                   </span>
+                  {a.id === activeId ? (
+                    <HugeiconsIcon
+                      icon={Tick02Icon}
+                      size={12}
+                      strokeWidth={2}
+                      className="mt-0.5 shrink-0 text-foreground"
+                    />
+                  ) : null}
                 </DropdownMenuItem>
               );
             })}

@@ -84,25 +84,90 @@ export type ModelInfo = {
 
 export const MODELS = [
   // OpenAI
-  { id: "gpt-4o-mini", provider: "openai", label: "GPT-4o mini", hint: "Fast, default" },
-  { id: "gpt-5.5", provider: "openai", label: "GPT-5.5", hint: "Higher quality" },
-  { id: "gpt-5.3-codex", provider: "openai", label: "GPT-5.3 Codex", hint: "Coding" },
+  {
+    id: "gpt-5.4-mini",
+    provider: "openai",
+    label: "GPT-5.4 mini",
+    hint: "Fast, default",
+  },
+  {
+    id: "gpt-5.5",
+    provider: "openai",
+    label: "GPT-5.5",
+    hint: "Higher quality",
+  },
+  {
+    id: "gpt-5.3-codex",
+    provider: "openai",
+    label: "GPT-5.3 Codex",
+    hint: "Coding",
+  },
   // Anthropic
-  { id: "claude-haiku-4-5", provider: "anthropic", label: "Claude Haiku 4.5", hint: "Fast" },
-  { id: "claude-sonnet-4-6", provider: "anthropic", label: "Claude Sonnet 4.6", hint: "Balanced" },
-  { id: "claude-opus-4-7", provider: "anthropic", label: "Claude Opus 4.7", hint: "Best" },
+  {
+    id: "claude-haiku-4-5",
+    provider: "anthropic",
+    label: "Claude Haiku 4.5",
+    hint: "Fast",
+  },
+  {
+    id: "claude-sonnet-4-6",
+    provider: "anthropic",
+    label: "Claude Sonnet 4.6",
+    hint: "Balanced",
+  },
+  {
+    id: "claude-opus-4-7",
+    provider: "anthropic",
+    label: "Claude Opus 4.7",
+    hint: "Best",
+  },
   // Google
-  { id: "gemini-3.1-pro", provider: "google", label: "Gemini 3.1 Pro", hint: "Best" },
-  { id: "gemini-3-flash", provider: "google", label: "Gemini 3 Flash", hint: "Fast" },
+  {
+    id: "gemini-3.1-pro",
+    provider: "google",
+    label: "Gemini 3.1 Pro",
+    hint: "Best",
+  },
+  {
+    id: "gemini-3-flash",
+    provider: "google",
+    label: "Gemini 3 Flash",
+    hint: "Fast",
+  },
   // xAI
-  { id: "grok-4.20-reasoning", provider: "xai", label: "Grok 4.20 Reasoning", hint: "Reasoning" },
-  { id: "grok-4.20-non-reasoning", provider: "xai", label: "Grok 4.20", hint: "Fast" },
+  {
+    id: "grok-4.20-reasoning",
+    provider: "xai",
+    label: "Grok 4.20 Reasoning",
+    hint: "Reasoning",
+  },
+  {
+    id: "grok-4.20-non-reasoning",
+    provider: "xai",
+    label: "Grok 4.20",
+    hint: "Fast",
+  },
   // Cerebras (autocomplete-tier)
-  { id: "gpt-oss-120b", provider: "cerebras", label: "GPT-OSS 120B", hint: "Cerebras · ultra-fast" },
+  {
+    id: "gpt-oss-120b",
+    provider: "cerebras",
+    label: "GPT-OSS 120B",
+    hint: "Cerebras · ultra-fast",
+  },
   // Groq (autocomplete-tier)
-  { id: "openai/gpt-oss-20b", provider: "groq", label: "GPT-OSS 20B", hint: "Groq · ultra-fast" },
+  {
+    id: "openai/gpt-oss-20b",
+    provider: "groq",
+    label: "GPT-OSS 20B",
+    hint: "Groq · ultra-fast",
+  },
   // LM Studio (local; model id is user-supplied at runtime)
-  { id: "lmstudio-local", provider: "lmstudio", label: "LM Studio (local)", hint: "Custom local model" },
+  {
+    id: "lmstudio-local",
+    provider: "lmstudio",
+    label: "LM Studio (local)",
+    hint: "Custom local model",
+  },
 ] as const satisfies readonly ModelInfo[];
 
 export type ModelId = (typeof MODELS)[number]["id"];
@@ -113,7 +178,31 @@ export function getModel(id: ModelId): ModelInfo {
   return m;
 }
 
-export const DEFAULT_MODEL_ID: ModelId = "gpt-4o-mini";
+export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
+
+/** Approximate context window (in tokens) per model. Used for the
+ *  context-usage indicator in the AI mini-window header. Conservative
+ *  estimates — actual provider limits may shift. */
+export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
+  "gpt-5.4-mini": 400_000,
+  "gpt-5.5": 1_050_000,
+  "gpt-5.3-codex": 400_000,
+  "claude-haiku-4-5": 200_000,
+  "claude-sonnet-4-6": 200_000,
+  "claude-opus-4-7": 200_000,
+  "gemini-3.1-pro": 1_000_000,
+  "gemini-3-flash": 1_000_000,
+  "grok-4.20-reasoning": 2_000_000,
+  "grok-4.20-non-reasoning": 2_000_000,
+  "gpt-oss-120b": 128_000,
+  "openai/gpt-oss-20b": 128_000,
+  "lmstudio-local": 32_000,
+};
+
+export function getModelContextLimit(modelId: string | undefined): number {
+  if (!modelId) return 128_000;
+  return MODEL_CONTEXT_LIMITS[modelId] ?? 128_000;
+}
 
 /** Providers that do not require an API key (e.g. local servers). */
 export const KEYLESS_PROVIDERS: readonly ProviderId[] = ["lmstudio"] as const;
@@ -131,7 +220,10 @@ export const AUTOCOMPLETE_PROVIDERS: readonly AutocompleteProviderId[] = [
   "lmstudio",
 ] as const;
 
-export const DEFAULT_AUTOCOMPLETE_MODEL: Record<AutocompleteProviderId, string> = {
+export const DEFAULT_AUTOCOMPLETE_MODEL: Record<
+  AutocompleteProviderId,
+  string
+> = {
   cerebras: "gpt-oss-120b",
   groq: "openai/gpt-oss-20b",
   lmstudio: "qwen2.5-coder-7b-instruct",

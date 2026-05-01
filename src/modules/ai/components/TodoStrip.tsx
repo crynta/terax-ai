@@ -1,8 +1,17 @@
+import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { CheckmarkSquare02Icon, SquareIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect } from "react";
-import { useTodosStore } from "../store/todoStore";
 import type { Todo } from "../lib/todos";
+import { useTodosStore } from "../store/todoStore";
 
 type Props = { sessionId: string | null };
 
@@ -10,11 +19,9 @@ const EMPTY_TODOS: Todo[] = [];
 
 export function TodoStrip({ sessionId }: Props) {
   const hydrate = useTodosStore((s) => s.hydrate);
-  // Select the stored slot directly. Returning `s.bySession[id] ?? []` would
-  // produce a fresh `[]` every render and loop useSyncExternalStore.
-  const todos = useTodosStore((s) =>
-    sessionId ? s.bySession[sessionId] : undefined,
-  ) ?? EMPTY_TODOS;
+  const todos =
+    useTodosStore((s) => (sessionId ? s.bySession[sessionId] : undefined)) ??
+    EMPTY_TODOS;
 
   useEffect(() => {
     if (sessionId) void hydrate(sessionId);
@@ -23,52 +30,71 @@ export function TodoStrip({ sessionId }: Props) {
   if (!sessionId || todos.length === 0) return null;
 
   const completed = todos.filter((t) => t.status === "completed").length;
+  const pct = Math.round((completed / todos.length) * 100);
 
   return (
-    <div className="shrink-0 border-b border-border/60 bg-muted/20 px-2.5 py-1.5">
-      <div className="mb-1 flex items-center justify-between">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Plan
-        </span>
-        <span className="text-[10px] tabular-nums text-muted-foreground">
+    <div className="shrink-0 border-t border-border/80 bg-muted/20 px-3 py-1.5">
+      <div className="my-1.5 flex items-center gap-2">
+        <span className="text-[11px] font-medium text-foreground">Todos</span>
+        <Progress value={pct} className="h-1 flex-1" />
+        <span className="text-[11px] tabular-nums font-mono text-muted-foreground">
           {completed}/{todos.length}
         </span>
       </div>
       <ul className="flex flex-col gap-0.5">
         {todos.map((t) => (
-          <li
-            key={t.id}
-            className="flex items-start gap-2 rounded px-1 py-0.5 text-[11px]"
-          >
-            <span className="mt-[3px] inline-flex size-3 shrink-0 items-center justify-center">
-              {t.status === "in_progress" ? (
-                <Spinner className="size-3" />
-              ) : (
-                <span
-                  className={cn(
-                    "size-2 rounded-full border",
-                    t.status === "completed"
-                      ? "border-emerald-500/40 bg-emerald-500/40"
-                      : "border-muted-foreground/40",
-                  )}
-                />
-              )}
-            </span>
-            <span
-              className={cn(
-                "min-w-0 flex-1 leading-snug",
-                t.status === "completed"
-                  ? "text-muted-foreground/60 line-through"
-                  : t.status === "in_progress"
-                    ? "text-foreground"
-                    : "text-muted-foreground",
-              )}
-            >
-              {t.title}
-            </span>
-          </li>
+          <TodoRow key={t.id} todo={t} />
         ))}
       </ul>
     </div>
+  );
+}
+
+function TodoRow({ todo }: { todo: Todo }) {
+  const isInProgress = todo.status === "in_progress";
+  const row = (
+    <li
+      className={cn(
+        "flex items-start gap-2 rounded px-1.5 py-1 text-[11px] leading-snug",
+        isInProgress && "border-l-2 border-foreground/50 bg-muted/40",
+      )}
+    >
+      <span className="mt-[2px] inline-flex size-3.5 shrink-0 items-center justify-center">
+        {isInProgress ? (
+          <Spinner className="size-3" />
+        ) : (
+          <HugeiconsIcon
+            icon={
+              todo.status === "completed" ? CheckmarkSquare02Icon : SquareIcon
+            }
+            strokeWidth={1.75}
+          />
+        )}
+      </span>
+      <span
+        className={cn(
+          "min-w-0 flex-1",
+          todo.status === "completed"
+            ? "text-muted-foreground/60 line-through"
+            : isInProgress
+              ? "text-foreground"
+              : "text-muted-foreground",
+        )}
+      >
+        {todo.title}
+      </span>
+    </li>
+  );
+
+  if (!todo.description) return row;
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>{row}</TooltipTrigger>
+        <TooltipContent side="left" className="max-w-xs text-[11px]">
+          {todo.description}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

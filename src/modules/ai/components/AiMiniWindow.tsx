@@ -1,3 +1,11 @@
+import {
+  Context,
+  ContextContent,
+  ContextContentBody,
+  ContextContentFooter,
+  ContextContentHeader,
+  ContextTrigger,
+} from "@/components/ai-elements/context";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,6 +29,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
 import { useEffect, useMemo } from "react";
+import { getModel, getModelContextLimit } from "../config";
 import type { SessionMeta } from "../lib/sessions";
 import { useAgentsStore } from "../store/agentsStore";
 import { getOrCreateChat, useChatStore } from "../store/chatStore";
@@ -81,14 +90,14 @@ export function AiMiniWindow() {
       transition={{ type: "spring", stiffness: 320, damping: 32 }}
       data-ai-mini-window
       className={cn(
-        "no-scrollbar-deep fixed right-4 bottom-12 z-40 flex h-[36rem] w-[28rem] flex-col overflow-hidden",
-        "rounded-xl border border-border/60 bg-card/95 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl dark:ring-white/5",
+        "no-scrollbar-deep fixed right-4 bottom-12 z-40 flex h-[42rem] w-[34rem] flex-col overflow-hidden",
+        "rounded-2xl border border-border/40 bg-card/90 shadow-2xl ring-1 ring-black/5 backdrop-blur-2xl dark:ring-white/5",
         "text-[12px]",
       )}
     >
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/5 to-transparent"
+        className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-foreground/[0.03] to-transparent"
       />
       {sessionId ? (
         <Body
@@ -128,10 +137,10 @@ function Body({
         isBusy={isBusy}
         onClose={onClose}
         onExpand={onExpand}
+        messages={helpers.messages}
       />
 
       <PlanModeStrip />
-      <TodoStrip sessionId={sessionId} />
 
       <div className="flex min-h-0 flex-1 flex-col">
         {helpers.messages.length === 0 ? (
@@ -149,6 +158,8 @@ function Body({
           </div>
         )}
       </div>
+
+      <TodoStrip sessionId={sessionId} />
     </>
   );
 }
@@ -159,16 +170,19 @@ function PlanModeStrip() {
   const disable = usePlanStore((s) => s.disable);
   if (!active) return null;
   return (
-    <div className="flex shrink-0 items-center justify-between border-b border-amber-500/30 bg-amber-500/10 px-2.5 py-1">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
-        Plan mode {queueLen > 0 ? `· ${queueLen} queued` : "· no edits queued"}
+    <div className="flex shrink-0 items-center gap-2 border-b border-border/40 bg-muted/40 px-3 py-1.5">
+      <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
+      <span className="text-[11px] font-medium text-foreground">Plan mode</span>
+      <span className="text-[11px] text-muted-foreground">
+        {queueLen > 0 ? `· ${queueLen} queued` : "· no edits queued"}
       </span>
+      <span className="flex-1" />
       <button
         type="button"
         onClick={() => disable()}
-        className="rounded px-1.5 py-0.5 text-[10px] text-amber-700 hover:bg-amber-500/20 dark:text-amber-400"
+        className="rounded px-1.5 py-0.5 text-[10.5px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
-        exit
+        Exit
       </button>
     </div>
   );
@@ -200,37 +214,33 @@ function Header({
   step,
   isBusy,
   onClose,
+  messages,
 }: {
   step: string | null;
   isBusy: boolean;
   onClose: () => void;
   onExpand: () => void;
+  messages?: UIMessage[];
 }) {
   const customAgents = useAgentsStore((s) => s.customAgents);
   void customAgents;
 
   return (
-    <div className="relative flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-2.5">
+    <div className="relative flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
       <div className="flex min-w-0 items-center gap-1.5">
         <AgentSwitcher isMiniWindow />
-        {/* <Badge variant="outline" className="size-7 p-0">
-          <HugeiconsIcon icon={AgentIcon} size={12} strokeWidth={1.75} />
-        </Badge> */}
-        {/* <div className="flex min-w-0 flex-col leading-tight">
-          <span className="text-[11px] font-semibold tracking-tight">
-            {activeAgent.name}
-          </span>
-        </div> */}
+        {messages !== undefined ? (
+          <ContextIndicator messages={messages} />
+        ) : null}
       </div>
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div className="flex shrink-0 items-center gap-1">
         {isBusy ? (
           <span className="flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">
             <Spinner className="size-2.5" />
-            <span className="truncate">{step ?? "Thinking…"}</span>
+            <span className="max-w-32 truncate">{step ?? "Thinking…"}</span>
           </span>
-        ) : (
-          <SessionPicker />
-        )}
+        ) : null}
+        <SessionPicker />
         <Button
           type="button"
           size="icon"
@@ -244,6 +254,75 @@ function Header({
         </Button>
       </div>
     </div>
+  );
+}
+
+function estimateTokens(messages: UIMessage[]): number {
+  let chars = 0;
+  for (const m of messages) {
+    for (const p of m.parts) {
+      if (p.type === "text") {
+        chars += (p as { text?: string }).text?.length ?? 0;
+      } else if (p.type === "reasoning") {
+        chars += (p as { text?: string }).text?.length ?? 0;
+      } else if (typeof p.type === "string" && p.type.startsWith("tool-")) {
+        const tp = p as unknown as { input?: unknown; output?: unknown };
+        if (tp.input) chars += JSON.stringify(tp.input).length;
+        if (tp.output) chars += JSON.stringify(tp.output).length;
+      }
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+function ContextIndicator({ messages }: { messages: UIMessage[] }) {
+  const modelId = useChatStore((s) => s.selectedModelId);
+  const used = useMemo(() => estimateTokens(messages), [messages]);
+  const max = getModelContextLimit(modelId);
+  const modelLabel = useMemo(() => {
+    try {
+      return getModel(modelId).label;
+    } catch {
+      return modelId;
+    }
+  }, [modelId]);
+
+  return (
+    <Context usedTokens={used} maxTokens={max} modelId={modelId}>
+      <ContextTrigger className="h-6 gap-1 px-0 text-[10.5px]" />
+      <ContextContent className="w-64 text-[11px]">
+        <ContextContentHeader />
+        <ContextContentBody>
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span>Model</span>
+            <span className="font-mono text-foreground">{modelLabel}</span>
+          </div>
+          <div className="mt-1 flex items-center justify-between text-muted-foreground">
+            <span>Estimated used</span>
+            <span className="font-mono text-foreground">
+              {formatTokens(used)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span>Window</span>
+            <span className="font-mono text-foreground">
+              {formatTokens(max)}
+            </span>
+          </div>
+        </ContextContentBody>
+        <ContextContentFooter>
+          <span className="text-[10px] italic text-muted-foreground">
+            Token count is approximate (chars / 4).
+          </span>
+        </ContextContentFooter>
+      </ContextContent>
+    </Context>
   );
 }
 
@@ -265,13 +344,12 @@ function SessionPicker() {
         <button
           type="button"
           className={cn(
-            "flex min-w-0 max-w-[12rem] items-center gap-1 rounded-md px-1.5 py-0.5",
-            "text-[10.5px] text-muted-foreground transition-colors",
+            "flex min-w-0 max-w-48 items-center gap-1 rounded-md px-1.5 py-1",
+            "text-[11px] text-muted-foreground transition-colors",
             "hover:bg-accent hover:text-foreground",
           )}
           title="Switch session"
         >
-          <span className="size-1 shrink-0 rounded-full bg-muted-foreground/60" />
           <span className="truncate">{active.title || "New chat"}</span>
           <HugeiconsIcon
             icon={ArrowDown01Icon}
@@ -352,35 +430,39 @@ function SessionRow({
 
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-5 p-6 text-center">
-      <img src="/logo.png" alt="Terax" className="size-16" />
-      <div className="space-y-1">
-        <p className="text-[13px] font-semibold tracking-tight">
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8 py-10 text-center">
+      <img src="/logo.png" alt="Terax" className="size-14 opacity-90" />
+      <div className="space-y-1.5">
+        <p className="text-[14px] font-semibold tracking-tight">
           Ask Terax anything
         </p>
-        <p className="max-w-xs text-[11px] leading-relaxed text-muted-foreground">
-          Terax sees the active terminal — cwd, last commands, and recent
-          output. Pick a starter or just type below.
+        <p className="max-w-[18rem] text-[11.5px] leading-relaxed text-muted-foreground">
+          Terax sees the active terminal — cwd, recent commands, and output.
         </p>
       </div>
-      <div className="flex w-full flex-col gap-2">
+      <div className="flex w-full flex-col gap-1">
         {SUGGESTIONS.map((s) => (
-          <Button
+          <button
             key={s.label}
             type="button"
             onClick={() => onPick(s.text)}
-            className="group flex items-center gap-2.5 rounded-lg border border-border/60 bg-background/40 h-12 text-left transition-all hover:border-primary/20 hover:bg-accent"
+            className={cn(
+              "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left",
+              "transition-colors hover:bg-muted/60",
+            )}
           >
-            <div className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover:bg-primary/15 group-hover:text-primary">
-              <HugeiconsIcon icon={s.icon} size={12} strokeWidth={1.75} />
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground transition-colors group-hover:bg-foreground/10 group-hover:text-foreground">
+              <HugeiconsIcon icon={s.icon} size={13} strokeWidth={1.75} />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[11.5px] font-medium text-foreground">
+              <div className="text-[12px] font-medium text-foreground">
                 {s.label}
               </div>
-              <div className="text-[10px] text-muted-foreground">{s.hint}</div>
+              <div className="text-[10.5px] text-muted-foreground">
+                {s.hint}
+              </div>
             </div>
-          </Button>
+          </button>
         ))}
       </div>
     </div>

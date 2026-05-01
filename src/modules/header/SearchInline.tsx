@@ -118,7 +118,7 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
                 placeholder={
                   target?.kind === "editor" ? "Search in file" : "Search"
                 }
-                className="h-7 w-full bg-muted/60 pr-7 pl-7 text-xs placeholder:text-muted-foreground/70 focus-visible:ring-0"
+                className="h-7 w-full bg-muted/80 pr-7 pl-7 text-xs placeholder:text-muted-foreground/70 focus-visible:ring-0"
                 onChange={(e) => {
                   const next = e.target.value;
                   setQ(next);

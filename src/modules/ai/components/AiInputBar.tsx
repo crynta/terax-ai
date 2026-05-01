@@ -13,7 +13,6 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useComposer, type FileAttachment } from "../lib/composer";
 import type { Snippet } from "../lib/snippets";
-import { useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SnippetPickerContent } from "./SnippetPicker";
@@ -45,8 +44,6 @@ function detectSnippetTrigger(
 
 export function AiInputBar() {
   const c = useComposer();
-  const step = useChatStore((s) => s.agentMeta.step);
-  const status = useChatStore((s) => s.agentMeta.status);
   const snippets = useSnippetsStore((s) => s.snippets);
 
   const [trigger, setTrigger] = useState<SnippetTrigger | null>(null);
@@ -109,16 +106,11 @@ export function AiInputBar() {
     if (s) onPickSnippet(s);
   };
 
-  const statusLabel =
-    status === "awaiting-approval"
-      ? "Approval needed"
-      : c.voice.recording
-        ? "Listening…"
-        : c.voice.transcribing
-          ? "Transcribing…"
-          : c.isBusy
-            ? (step ?? "Thinking…")
-            : null;
+  const voiceLabel = c.voice.recording
+    ? "Listening…"
+    : c.voice.transcribing
+      ? "Transcribing…"
+      : null;
 
   return (
     <div className="shrink-0 border-t border-border/60 bg-card/40 px-3 py-2">
@@ -206,21 +198,21 @@ export function AiInputBar() {
         </Popover>
 
         <AnimatePresence initial={false}>
-          {statusLabel && (
+          {voiceLabel && (
             <motion.div
-              key={statusLabel}
+              key={voiceLabel}
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: 0.12 }}
-              className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+              className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground"
             >
               {c.voice.recording ? (
                 <span className="size-1.5 animate-pulse rounded-full bg-destructive" />
               ) : (
                 <Spinner className="size-3" />
               )}
-              <span className="truncate">{statusLabel}</span>
+              <span className="truncate">{voiceLabel}</span>
             </motion.div>
           )}
         </AnimatePresence>

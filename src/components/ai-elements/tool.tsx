@@ -1,174 +1,690 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import {
-  CheckmarkCircle01Icon,
-  ArrowDown01Icon,
-  CircleIcon,
-  Clock01Icon,
-  Wrench01Icon,
-  CancelCircleIcon,
+  CheckListIcon,
+  Edit02Icon,
+  EyeIcon,
+  File01Icon,
+  FileEditIcon,
+  FilePlusIcon,
+  Folder01Icon,
+  FolderAddIcon,
+  FolderOpenIcon,
+  GlobalSearchIcon,
+  RobotIcon,
+  SparklesIcon,
+  TerminalIcon,
+  ToolsIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import type { ComponentProps, ReactNode } from "react";
-import { isValidElement } from "react";
+import { isValidElement, useState } from "react";
 
-import { CodeBlock } from "./code-block";
-
-export type ToolProps = ComponentProps<typeof Collapsible>;
-
-export const Tool = ({ className, ...props }: ToolProps) => (
-  <Collapsible
-    className={cn("group not-prose mb-4 w-full rounded-md border", className)}
-    {...props}
-  />
-);
+import type { BundledLanguage } from "shiki";
+import { CodeBlockContent } from "./code-block";
 
 export type ToolPart = ToolUIPart | DynamicToolUIPart;
 
-export type ToolHeaderProps = {
-  title?: string;
-  className?: string;
-} & (
-  | { type: ToolUIPart["type"]; state: ToolUIPart["state"]; toolName?: never }
-  | {
-      type: DynamicToolUIPart["type"];
-      state: DynamicToolUIPart["state"];
-      toolName: string;
+const TOOL_META: Record<string, { label: string; icon: typeof File01Icon }> = {
+  read_file: { label: "Read", icon: File01Icon },
+  list_directory: { label: "List", icon: FolderOpenIcon },
+  write_file: { label: "Write", icon: FilePlusIcon },
+  create_directory: { label: "Create dir", icon: FolderAddIcon },
+  edit: { label: "Edit", icon: FileEditIcon },
+  multi_edit: { label: "Edit", icon: Edit02Icon },
+  bash_run: { label: "Run", icon: TerminalIcon },
+  bash_background: { label: "Spawn", icon: TerminalIcon },
+  bash_logs: { label: "Logs", icon: TerminalIcon },
+  bash_list: { label: "Jobs", icon: TerminalIcon },
+  bash_kill: { label: "Kill", icon: TerminalIcon },
+  grep: { label: "Search", icon: GlobalSearchIcon },
+  glob: { label: "Glob", icon: Folder01Icon },
+  suggest_command: { label: "Suggest", icon: SparklesIcon },
+  open_preview: { label: "Preview", icon: EyeIcon },
+  run_subagent: { label: "Subagent", icon: RobotIcon },
+  todo_write: { label: "Todos", icon: CheckListIcon },
+};
+
+const STATUS_DOT: Record<ToolPart["state"], string> = {
+  "approval-requested": "bg-amber-500",
+  "approval-responded": "bg-sky-500",
+  "input-streaming": "bg-muted-foreground/40",
+  "input-available": "bg-amber-500 animate-pulse",
+  "output-available": "bg-transparent border border-muted-foreground/40",
+  "output-denied": "bg-orange-500",
+  "output-error": "bg-destructive",
+};
+
+const STATUS_LABEL: Record<ToolPart["state"], string> = {
+  "approval-requested": "awaiting approval",
+  "approval-responded": "responded",
+  "input-streaming": "preparing",
+  "input-available": "running",
+  "output-available": "done",
+  "output-denied": "denied",
+  "output-error": "error",
+};
+
+function deriveSummary(toolName: string, input: unknown): string | null {
+  if (!input || typeof input !== "object") return null;
+  const i = input as Record<string, unknown>;
+  const str = (k: string) =>
+    typeof i[k] === "string" ? (i[k] as string) : null;
+
+  switch (toolName) {
+    case "read_file":
+    case "write_file":
+    case "edit":
+    case "multi_edit":
+    case "create_directory":
+    case "list_directory":
+      return str("path");
+    case "bash_run":
+    case "bash_background":
+      return str("command");
+    case "bash_logs":
+    case "bash_kill":
+      return str("id");
+    case "grep":
+      return str("pattern") ?? str("query");
+    case "glob":
+      return str("pattern");
+    case "suggest_command":
+      return str("intent") ?? str("description");
+    case "open_preview":
+      return str("path") ?? str("url");
+    case "run_subagent":
+      return str("agent") ?? str("task");
+    case "todo_write": {
+      const items = Array.isArray(i.todos) ? i.todos : null;
+      return items
+        ? `${items.length} item${items.length === 1 ? "" : "s"}`
+        : null;
     }
-);
+    default:
+      return null;
+  }
+}
 
-const statusLabels: Record<ToolPart["state"], string> = {
-  "approval-requested": "Awaiting Approval",
-  "approval-responded": "Responded",
-  "input-available": "Running",
-  "input-streaming": "Pending",
-  "output-available": "Completed",
-  "output-denied": "Denied",
-  "output-error": "Error",
+export type ToolProps = ComponentProps<typeof Collapsible> & {
+  toolName: string;
+  state: ToolPart["state"];
+  input?: unknown;
+  output?: unknown;
+  errorText?: string;
 };
 
-const statusIcons: Record<ToolPart["state"], ReactNode> = {
-  "approval-requested": <HugeiconsIcon icon={Clock01Icon} size={16} className="text-yellow-600" />,
-  "approval-responded": <HugeiconsIcon icon={CheckmarkCircle01Icon} size={16} className="text-blue-600" />,
-  "input-available": <HugeiconsIcon icon={Clock01Icon} size={16} className="text-yellow-600 animate-pulse" />,
-  "input-streaming": <HugeiconsIcon icon={CircleIcon} size={16} />,
-  "output-available": <HugeiconsIcon icon={CheckmarkCircle01Icon} size={16} className="text-green-600" />,
-  "output-denied": <HugeiconsIcon icon={CancelCircleIcon} size={16} className="text-orange-600" />,
-  "output-error": <HugeiconsIcon icon={CancelCircleIcon} size={16} className="text-red-600" />,
-};
-
-export const getStatusBadge = (status: ToolPart["state"]) => (
-  <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
-    {statusIcons[status]}
-    {statusLabels[status]}
-  </Badge>
-);
-
-export const ToolHeader = ({
+export const Tool = ({
   className,
-  title,
-  type,
-  state,
   toolName,
-  ...props
-}: ToolHeaderProps) => {
-  const derivedName =
-    type === "dynamic-tool" ? toolName : type.split("-").slice(1).join("-");
-
-  return (
-    <CollapsibleTrigger
-      className={cn(
-        "flex w-full items-center justify-between gap-4 p-3",
-        className
-      )}
-      {...props}
-    >
-      <div className="flex items-center gap-2">
-        <HugeiconsIcon icon={Wrench01Icon} size={16} className="text-muted-foreground" />
-        <span className="font-medium text-sm">{title ?? derivedName}</span>
-        {getStatusBadge(state)}
-      </div>
-      <HugeiconsIcon icon={ArrowDown01Icon} size={16} className="text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
-    </CollapsibleTrigger>
-  );
-};
-
-export type ToolContentProps = ComponentProps<typeof CollapsibleContent>;
-
-export const ToolContent = ({ className, ...props }: ToolContentProps) => (
-  <CollapsibleContent
-    className={cn(
-      "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 space-y-4 p-4 text-popover-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
-      className
-    )}
-    {...props}
-  />
-);
-
-export type ToolInputProps = ComponentProps<"div"> & {
-  input: ToolPart["input"];
-};
-
-export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
-  <div className={cn("space-y-2 overflow-hidden", className)} {...props}>
-    <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-      Parameters
-    </h4>
-    <div className="rounded-md bg-muted/50">
-      <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
-    </div>
-  </div>
-);
-
-export type ToolOutputProps = ComponentProps<"div"> & {
-  output: ToolPart["output"];
-  errorText: ToolPart["errorText"];
-};
-
-export const ToolOutput = ({
-  className,
+  state,
+  input,
   output,
   errorText,
+  defaultOpen,
   ...props
-}: ToolOutputProps) => {
-  if (!(output || errorText)) {
-    return null;
-  }
+}: ToolProps) => {
+  const meta = TOOL_META[toolName];
+  const Icon = meta?.icon ?? ToolsIcon;
+  const label = meta?.label ?? toolName;
+  const summary = deriveSummary(toolName, input);
+  const isError = state === "output-error";
+  const open = defaultOpen ?? isError;
+  const hasDetails =
+    Boolean(input) || output !== undefined || Boolean(errorText);
 
-  let Output = <div>{output as ReactNode}</div>;
+  return (
+    <Collapsible
+      defaultOpen={open}
+      className={cn("group/tool not-prose w-full", className)}
+      {...props}
+    >
+      <CollapsibleTrigger
+        disabled={!hasDetails}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left",
+          "text-[12px] transition-colors",
+          "hover:bg-muted/60 disabled:cursor-default disabled:hover:bg-transparent",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        )}
+      >
+        <span
+          className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[state])}
+          aria-label={STATUS_LABEL[state]}
+        />
+        <HugeiconsIcon
+          icon={Icon}
+          size={13}
+          strokeWidth={1.75}
+          className="shrink-0 text-muted-foreground"
+        />
+        <span className="shrink-0 font-medium text-foreground">{label}</span>
+        {summary ? (
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+            {summary}
+          </span>
+        ) : (
+          <span className="flex-1" />
+        )}
+        {isError && (
+          <span className="shrink-0 text-[10px] font-medium text-destructive">
+            failed
+          </span>
+        )}
+      </CollapsibleTrigger>
 
-  if (typeof output === "object" && !isValidElement(output)) {
-    Output = (
-      <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />
+      {hasDetails && (
+        <CollapsibleContent
+          className={cn(
+            "overflow-hidden",
+            "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+            "data-[state=open]:animate-in data-[state=open]:fade-in-0",
+          )}
+        >
+          <div className="ml-3 mt-1 space-y-2 border-l border-border/60 pl-3 pb-1">
+            {input ? <ToolInput toolName={toolName} input={input} /> : null}
+            <ToolOutput
+              toolName={toolName}
+              output={output}
+              errorText={errorText}
+            />
+          </div>
+        </CollapsibleContent>
+      )}
+    </Collapsible>
+  );
+};
+
+function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
+  if (input == null) return null;
+  const preview = renderInputPreview(toolName, input);
+  if (preview) {
+    return (
+      <div className="space-y-1">
+        <div className="text-[10px] font-medium text-muted-foreground">
+          Input
+        </div>
+        {preview}
+      </div>
     );
-  } else if (typeof output === "string") {
-    Output = <CodeBlock code={output} language="json" />;
+  }
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] font-medium text-muted-foreground">Input</div>
+      <CodeBlockMini
+        code={
+          typeof input === "string" ? input : JSON.stringify(input, null, 2)
+        }
+        language="json"
+      />
+    </div>
+  );
+}
+
+function renderInputPreview(
+  toolName: string,
+  input: unknown,
+): ReactNode | null {
+  if (!input || typeof input !== "object") return null;
+  const i = input as Record<string, unknown>;
+  const str = (k: string) =>
+    typeof i[k] === "string" ? (i[k] as string) : null;
+
+  if (toolName === "bash_run" || toolName === "bash_background") {
+    const cmd = str("command");
+    const cwd = str("cwd");
+    if (!cmd) return null;
+    return (
+      <div className="space-y-1">
+        {cwd ? (
+          <div className="font-mono text-[10px] text-muted-foreground">
+            {cwd}
+          </div>
+        ) : null}
+        <pre className="overflow-auto rounded bg-muted/40 p-2 font-mono text-[11px] leading-relaxed">
+          {cmd}
+        </pre>
+      </div>
+    );
+  }
+  if (
+    toolName === "read_file" ||
+    toolName === "list_directory" ||
+    toolName === "create_directory" ||
+    toolName === "open_preview"
+  ) {
+    const path = str("path") ?? str("url");
+    if (!path) return null;
+    return (
+      <div className="font-mono text-[11px] text-muted-foreground">{path}</div>
+    );
+  }
+  if (toolName === "grep") {
+    const pat = str("pattern") ?? str("query");
+    const path = str("path") ?? str("root");
+    if (!pat) return null;
+    return (
+      <div className="space-y-0.5 font-mono text-[11px]">
+        <div className="text-foreground">{pat}</div>
+        {path ? <div className="text-muted-foreground">{path}</div> : null}
+      </div>
+    );
+  }
+  return null;
+}
+
+function ToolOutput({
+  toolName,
+  output,
+  errorText,
+}: {
+  toolName: string;
+  output: unknown;
+  errorText?: string;
+}) {
+  if (errorText) {
+    return (
+      <div className="space-y-1">
+        <div className="text-[10px] font-medium text-destructive">Error</div>
+        <div className="rounded bg-destructive/10 px-2 py-1.5 font-mono text-[11px] text-destructive whitespace-pre-wrap">
+          {errorText}
+        </div>
+      </div>
+    );
+  }
+  if (output === undefined || output === null) return null;
+
+  const custom = renderToolOutput(toolName, output);
+  if (custom) return custom;
+
+  let body: ReactNode;
+  if (typeof output === "string") {
+    body = <CodeBlockMini code={output} language="text" />;
+  } else if (typeof output === "object" && !isValidElement(output)) {
+    body = (
+      <CodeBlockMini code={JSON.stringify(output, null, 2)} language="json" />
+    );
+  } else {
+    body = <div className="text-[12px]">{output as ReactNode}</div>;
   }
 
   return (
-    <div className={cn("space-y-2", className)} {...props}>
-      <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-        {errorText ? "Error" : "Result"}
-      </h4>
-      <div
-        className={cn(
-          "overflow-x-auto rounded-md text-xs [&_table]:w-full",
-          errorText
-            ? "bg-destructive/10 text-destructive"
-            : "bg-muted/50 text-foreground"
-        )}
-      >
-        {errorText && <div>{errorText}</div>}
-        {Output}
+    <div className="space-y-1">
+      <div className="text-[10px] font-medium text-muted-foreground">
+        Output
       </div>
+      {body}
     </div>
   );
+}
+
+const EXT_LANG: Record<string, BundledLanguage> = {
+  ts: "ts" as BundledLanguage,
+  tsx: "tsx" as BundledLanguage,
+  js: "js" as BundledLanguage,
+  jsx: "jsx" as BundledLanguage,
+  json: "json" as BundledLanguage,
+  md: "md" as BundledLanguage,
+  rs: "rs" as BundledLanguage,
+  py: "py" as BundledLanguage,
+  sh: "bash" as BundledLanguage,
+  bash: "bash" as BundledLanguage,
+  zsh: "bash" as BundledLanguage,
+  css: "css" as BundledLanguage,
+  html: "html" as BundledLanguage,
+  yaml: "yaml" as BundledLanguage,
+  yml: "yaml" as BundledLanguage,
+  toml: "toml" as BundledLanguage,
+  go: "go" as BundledLanguage,
 };
+
+function langFromPath(path: string): BundledLanguage {
+  const m = path.match(/\.([a-z0-9]+)$/i);
+  if (!m) return "text" as BundledLanguage;
+  return EXT_LANG[m[1].toLowerCase()] ?? ("text" as BundledLanguage);
+}
+
+function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
+  if (!output || typeof output !== "object") return null;
+  const o = output as Record<string, unknown>;
+
+  if (toolName === "read_file") {
+    const path = typeof o.path === "string" ? o.path : "";
+    const content = typeof o.content === "string" ? o.content : "";
+    const size = typeof o.size === "number" ? o.size : null;
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2 text-[10px]">
+          <span className="font-mono text-muted-foreground">{path}</span>
+          {size != null ? (
+            <span className="text-muted-foreground">{formatBytes(size)}</span>
+          ) : null}
+        </div>
+        <CodeBlockMini code={content} language={langFromPath(path)} />
+      </div>
+    );
+  }
+
+  if (toolName === "list_directory") {
+    const entries = Array.isArray(o.entries)
+      ? (o.entries as Array<{ name: string; kind: string }>)
+      : [];
+    if (entries.length === 0) {
+      return (
+        <div className="text-[11px] italic text-muted-foreground">empty</div>
+      );
+    }
+    const dirs = entries.filter(
+      (e) => e.kind === "directory" || e.kind === "dir",
+    );
+    const files = entries.filter(
+      (e) => !(e.kind === "directory" || e.kind === "dir"),
+    );
+    return (
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-[11px]">
+        {dirs.map((e) => (
+          <div
+            key={`d-${e.name}`}
+            className="flex items-center gap-1.5 truncate"
+          >
+            <HugeiconsIcon
+              icon={FolderOpenIcon}
+              size={11}
+              strokeWidth={1.75}
+              className="shrink-0 text-muted-foreground"
+            />
+            <span className="truncate text-foreground">{e.name}/</span>
+          </div>
+        ))}
+        {files.map((e) => (
+          <div
+            key={`f-${e.name}`}
+            className="flex items-center gap-1.5 truncate"
+          >
+            <HugeiconsIcon
+              icon={File01Icon}
+              size={11}
+              strokeWidth={1.75}
+              className="shrink-0 text-muted-foreground"
+            />
+            <span className="truncate text-muted-foreground">{e.name}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (toolName === "bash_run") {
+    return <BashRunOutput data={o} />;
+  }
+
+  if (toolName === "grep") {
+    const hits = Array.isArray(o.hits)
+      ? (o.hits as Array<{
+          rel?: string;
+          path?: string;
+          line: number;
+          text: string;
+        }>)
+      : [];
+    const pattern = typeof o.pattern === "string" ? o.pattern : null;
+    const truncated = Boolean(o.truncated);
+    const filesScanned =
+      typeof o.files_scanned === "number" ? o.files_scanned : null;
+
+    if (hits.length === 0) {
+      return (
+        <div className="text-[11px] italic text-muted-foreground">
+          no matches
+          {filesScanned != null ? ` · ${filesScanned} files scanned` : ""}
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-1">
+        <div className="max-h-72 overflow-auto rounded bg-muted/30 font-mono text-[11px]">
+          {hits.slice(0, 200).map((h, idx) => (
+            <div
+              key={`${h.rel ?? h.path}-${h.line}-${idx}`}
+              className="flex gap-2 border-b border-border/30 px-2 py-1 last:border-b-0 hover:bg-muted/60"
+            >
+              <span className="shrink-0 text-muted-foreground">
+                {h.rel ?? h.path}:{h.line}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-foreground">
+                {pattern ? highlightMatch(h.text, pattern) : h.text}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <span>
+            {hits.length} hit{hits.length === 1 ? "" : "s"}
+            {filesScanned != null ? ` · ${filesScanned} files` : ""}
+          </span>
+          {truncated ? (
+            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
+              truncated
+            </span>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (toolName === "glob") {
+    const matches = Array.isArray(o.matches)
+      ? (o.matches as string[])
+      : Array.isArray(o.paths)
+        ? (o.paths as string[])
+        : [];
+    if (matches.length === 0) {
+      return (
+        <div className="text-[11px] italic text-muted-foreground">
+          no matches
+        </div>
+      );
+    }
+    return (
+      <div className="max-h-60 overflow-auto rounded bg-muted/30 px-2 py-1 font-mono text-[11px]">
+        {matches.slice(0, 300).map((p) => (
+          <div key={p} className="truncate text-muted-foreground">
+            {p}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (toolName === "edit" || toolName === "multi_edit") {
+    const ok = o.ok === true || typeof o.replacements === "number";
+    if (ok) {
+      const reps = typeof o.replacements === "number" ? o.replacements : null;
+      const path = typeof o.path === "string" ? o.path : "";
+      return (
+        <div className="flex items-center gap-1.5 font-mono text-[11px]">
+          <span className="text-emerald-600 dark:text-emerald-400">✓</span>
+          {reps != null ? (
+            <span className="text-foreground">
+              {reps} replacement{reps === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          {path ? (
+            <span className="text-muted-foreground">· {path}</span>
+          ) : null}
+        </div>
+      );
+    }
+  }
+
+  if (toolName === "write_file" || toolName === "create_directory") {
+    const path = typeof o.path === "string" ? o.path : "";
+    const bytes = typeof o.bytesWritten === "number" ? o.bytesWritten : null;
+    return (
+      <div className="flex items-center gap-1.5 font-mono text-[11px]">
+        <span className="text-emerald-600 dark:text-emerald-400">✓</span>
+        <span className="text-foreground">
+          {toolName === "create_directory" ? "created" : "wrote"}
+        </span>
+        {path ? <span className="text-muted-foreground">· {path}</span> : null}
+        {bytes != null ? (
+          <span className="text-muted-foreground">({formatBytes(bytes)})</span>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (toolName === "bash_background") {
+    const handle = typeof o.handle === "string" ? o.handle : null;
+    const cmd = typeof o.command === "string" ? o.command : "";
+    return (
+      <div className="space-y-0.5 font-mono text-[11px]">
+        <div className="flex items-center gap-1.5">
+          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          {handle ? <span className="text-foreground">{handle}</span> : null}
+          <span className="text-muted-foreground">running</span>
+        </div>
+        {cmd ? (
+          <div className="truncate text-muted-foreground">{cmd}</div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function BashRunOutput({ data }: { data: Record<string, unknown> }) {
+  const stdout = typeof data.stdout === "string" ? data.stdout : "";
+  const stderr = typeof data.stderr === "string" ? data.stderr : "";
+  const exit = typeof data.exit_code === "number" ? data.exit_code : null;
+  const cwdAfter = typeof data.cwd_after === "string" ? data.cwd_after : null;
+  const truncated = Boolean(data.truncated);
+  const timedOut = Boolean(data.timed_out);
+
+  const hasStdout = stdout.length > 0;
+  const hasStderr = stderr.length > 0;
+  const initial = hasStdout ? "stdout" : hasStderr ? "stderr" : "stdout";
+  const [tab, setTab] = useState<"stdout" | "stderr">(initial);
+
+  const tabs: Array<{
+    key: "stdout" | "stderr";
+    label: string;
+    count: number;
+  }> = [
+    { key: "stdout", label: "stdout", count: stdout.length },
+    { key: "stderr", label: "stderr", count: stderr.length },
+  ];
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={cn(
+              "rounded px-1.5 py-0.5 font-mono text-[10px] transition-colors",
+              tab === t.key
+                ? "bg-foreground/10 text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+              t.count === 0 && "opacity-40",
+            )}
+            disabled={t.count === 0}
+          >
+            {t.label}
+            {t.count > 0 ? (
+              <span className="ml-1 text-muted-foreground">{t.count}</span>
+            ) : null}
+          </button>
+        ))}
+        <span className="flex-1" />
+        {exit != null ? (
+          <span
+            className={cn(
+              "rounded px-1.5 py-0.5 font-mono text-[10px]",
+              exit === 0
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                : "bg-destructive/15 text-destructive",
+            )}
+          >
+            exit {exit}
+          </span>
+        ) : null}
+        {timedOut ? (
+          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-400">
+            timed out
+          </span>
+        ) : null}
+        {truncated ? (
+          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-400">
+            truncated
+          </span>
+        ) : null}
+      </div>
+      <pre className="max-h-72 overflow-auto rounded bg-muted/40 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+        {tab === "stdout" ? stdout || " " : stderr || " "}
+      </pre>
+      {cwdAfter ? (
+        <div className="font-mono text-[10px] text-muted-foreground">
+          cwd → {cwdAfter}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function highlightMatch(text: string, pattern: string): ReactNode {
+  if (!pattern) return text;
+  let re: RegExp;
+  try {
+    re = new RegExp(
+      `(${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+      "gi",
+    );
+  } catch {
+    return text;
+  }
+  const parts = text.split(re);
+  return parts.map((p, i) =>
+    i % 2 === 1 ? (
+      <mark key={i} className="rounded bg-amber-500/30 px-0.5 text-foreground">
+        {p}
+      </mark>
+    ) : (
+      <span key={i}>{p}</span>
+    ),
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function CodeBlockMini({ code, language }: { code: string; language: string }) {
+  return (
+    <div className="overflow-hidden rounded bg-muted/40 [&_pre]:!bg-transparent [&_pre]:!p-2 [&_pre]:text-[11px] [&>div]:max-h-60">
+      <CodeBlockContent code={code} language={language as BundledLanguage} />
+    </div>
+  );
+}
+
+// Compatibility re-exports — the previous API exposed these subcomponents,
+// but the new compact <Tool /> takes everything via props. Kept as no-ops
+// to avoid breaking accidental imports.
+export const ToolHeader = () => null;
+export const ToolContent = ({ children }: { children?: ReactNode }) => (
+  <>{children}</>
+);
+export { ToolInput, ToolOutput };
