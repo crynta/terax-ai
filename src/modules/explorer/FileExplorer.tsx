@@ -19,7 +19,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FileTreeNode } from "./FileTreeNode";
 import { InlineInput } from "./InlineInput";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
@@ -61,6 +61,32 @@ export function FileExplorer({
   const [results, setResults] = useState<SearchHit[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  type FlatItem = { path: string; isDir: boolean };
+  const flat = useMemo<FlatItem[]>(() => {
+    if (!rootPath) return [];
+    const out: FlatItem[] = [];
+    const walk = (parent: string) => {
+      const node = tree.nodes[parent];
+      if (!node || node.status !== "loaded") return;
+      for (const e of node.entries) {
+        const p = tree.joinPath(parent, e.name);
+        const isDir = e.kind === "dir";
+        out.push({ path: p, isDir });
+        if (isDir && tree.expanded.has(p)) walk(p);
+      }
+    };
+    walk(rootPath);
+    return out;
+  }, [rootPath, tree.nodes, tree.expanded, tree.joinPath]);
+
+  useEffect(() => {
+    if (selectedPath && !flat.some((f) => f.path === selectedPath)) {
+      setSelectedPath(null);
+    }
+  }, [flat, selectedPath]);
 
   useEffect(() => {
     if (!rootPath) return;
@@ -115,8 +141,82 @@ export function FileExplorer({
   const pendingAtRoot =
     tree.pendingCreate?.parentPath === rootPath ? tree.pendingCreate : null;
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (tree.renaming || tree.pendingCreate || query.trim()) return;
+    const target = e.target as HTMLElement;
+    if (
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.isContentEditable
+    )
+      return;
+    if (flat.length === 0) return;
+
+    const currentIdx = selectedPath
+      ? flat.findIndex((f) => f.path === selectedPath)
+      : -1;
+
+    const move = (next: number) => {
+      const clamped = Math.max(0, Math.min(flat.length - 1, next));
+      const path = flat[clamped].path;
+      setSelectedPath(path);
+      requestAnimationFrame(() => {
+        const el = listRef.current?.querySelector<HTMLElement>(
+          `[data-fs-path="${CSS.escape(path)}"]`,
+        );
+        el?.scrollIntoView({ block: "nearest" });
+      });
+    };
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        move(currentIdx < 0 ? 0 : currentIdx + 1);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        move(currentIdx < 0 ? flat.length - 1 : currentIdx - 1);
+        break;
+      case "ArrowRight": {
+        if (currentIdx < 0) return;
+        e.preventDefault();
+        const item = flat[currentIdx];
+        if (item.isDir) {
+          if (!tree.expanded.has(item.path)) tree.toggle(item.path);
+          else move(currentIdx + 1);
+        }
+        break;
+      }
+      case "ArrowLeft": {
+        if (currentIdx < 0) return;
+        e.preventDefault();
+        const item = flat[currentIdx];
+        if (item.isDir && tree.expanded.has(item.path)) {
+          tree.toggle(item.path);
+        } else {
+          const parent = item.path.slice(0, item.path.lastIndexOf("/"));
+          if (parent && parent !== rootPath) setSelectedPath(parent);
+        }
+        break;
+      }
+      case "Enter":
+        if (currentIdx < 0) return;
+        e.preventDefault();
+        {
+          const item = flat[currentIdx];
+          if (item.isDir) tree.toggle(item.path);
+          else onOpenFile(item.path);
+        }
+        break;
+    }
+  };
+
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="flex h-full flex-col outline-none"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
         <span
           className="flex-1 flex truncate text-xs font-medium text-foreground/80"
@@ -250,7 +350,7 @@ export function FileExplorer({
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <ScrollArea className="min-h-0 flex-1">
-              <div className="py-1">
+              <div className="py-1" ref={listRef}>
                 {pendingAtRoot && (
                   <div
                     className="flex w-full items-center gap-1.5 px-1.5 py-0.5 text-xs"
@@ -290,6 +390,8 @@ export function FileExplorer({
                       onOpenFile={onOpenFile}
                       onRevealInTerminal={onRevealInTerminal}
                       onAttachToAgent={onAttachToAgent}
+                      selectedPath={selectedPath}
+                      onSelectPath={setSelectedPath}
                     />
                   ))}
               </div>

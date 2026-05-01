@@ -15,7 +15,16 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
+import { Prec } from "@codemirror/state";
+import { vim } from "@replit/codemirror-vim";
+import {
+  buildSharedExtensions,
+  languageCompartment,
+  vimCompartment,
+} from "./lib/extensions";
+import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
+
+initVimGlobals();
 import { resolveLanguage } from "./lib/languageResolver";
 import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
@@ -37,6 +46,7 @@ type Props = {
   path: string;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
+  onClose?: () => void;
 };
 
 function formatBytes(n: number): string {
@@ -46,12 +56,13 @@ function formatBytes(n: number): string {
 }
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
-  function EditorPane({ path, onDirtyChange, onSaved }, ref) {
+  function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
     const { doc, onChange, save, reload } = useDocument({ path, onDirtyChange });
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const editorThemeId = usePreferencesStore((s) => s.editorTheme);
+    const vimMode = usePreferencesStore((s) => s.vimMode);
     const languageRef = useRef<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
 
@@ -91,12 +102,28 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     saveRef.current = save;
     const onSavedRef = useRef(onSaved);
     onSavedRef.current = onSaved;
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
 
     const pathRef = useRef(path);
     pathRef.current = path;
 
     const extensions = useMemo(
       () => [
+        // basicSetup is added before user extensions by @uiw/react-codemirror,
+        // so we must elevate vim's precedence to win the keymap.
+        vimCompartment.of(
+          usePreferencesStore.getState().vimMode ? Prec.highest(vim()) : [],
+        ),
+        vimHandlersExtension(() => ({
+          save: () => {
+            void (async () => {
+              await saveRef.current();
+              onSavedRef.current?.();
+            })();
+          },
+          close: () => onCloseRef.current?.(),
+        })),
         ...buildSharedExtensions(),
         languageCompartment.of([]),
         inlineCompletion({
@@ -129,6 +156,16 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       ],
       [],
     );
+
+    useEffect(() => {
+      const view = cmRef.current?.view;
+      if (!view) return;
+      view.dispatch({
+        effects: vimCompartment.reconfigure(
+          vimMode ? Prec.highest(vim()) : [],
+        ),
+      });
+    }, [vimMode]);
 
     useEffect(() => {
       let cancelled = false;

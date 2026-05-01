@@ -70,15 +70,6 @@ const STATUS_LABEL: Record<AiDiffStatus, string> = {
   rejected: "Rejected",
 };
 
-const STATUS_TONE: Record<AiDiffStatus, string> = {
-  pending:
-    "border-yellow-500/40 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400",
-  approved:
-    "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  rejected:
-    "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400",
-};
-
 const STATUS_BADGE: Record<
   AiDiffStatus,
   "outline" | "secondary" | "destructive"

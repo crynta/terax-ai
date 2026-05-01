@@ -1,6 +1,6 @@
 import catppuccinIcons from "@iconify-json/catppuccin/icons.json";
 import { EXT_TO_LANGUAGE_ID } from "./constants";
-import * as fileIconsMod from "./fileicons";
+import * as fileIconsMod from "./fileIcons";
 import * as folderIconsMod from "./folderIcons";
 
 const catFileNames = fileIconsMod.fileNames as Record<string, string>;

@@ -646,6 +646,7 @@ export default function App() {
                         activeId={activeId}
                         registerHandle={registerEditorHandle}
                         onDirtyChange={handleEditorDirty}
+                        onCloseTab={disposeTab}
                       />
                     </div>
                     <div

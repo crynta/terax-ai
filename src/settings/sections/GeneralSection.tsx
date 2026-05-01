@@ -15,6 +15,7 @@ import {
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
+  setVimMode,
   type EditorThemeId,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
@@ -45,6 +46,7 @@ export function GeneralSection() {
   const editorTheme = usePreferencesStore((s) => s.editorTheme);
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
+  const vimMode = usePreferencesStore((s) => s.vimMode);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -136,6 +138,15 @@ export function GeneralSection() {
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+        <SettingRow
+          title="Vim mode"
+          description="Enable Vim keybindings in the code editor."
+        >
+          <Switch
+            checked={vimMode}
+            onCheckedChange={(v) => void setVimMode(v)}
+          />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">

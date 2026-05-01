@@ -8,6 +8,7 @@ import { EditorView } from "@codemirror/view";
 export const languageCompartment = new Compartment();
 export const readOnlyCompartment = new Compartment();
 export const wrapCompartment = new Compartment();
+export const vimCompartment = new Compartment();
 
 // Only what basicSetup doesn't already cover, to avoid duplicate extensions.
 // basicSetup gives us line numbers, fold gutter, history, indentOnInput,
@@ -65,6 +66,19 @@ export function buildSharedExtensions(): Extension[] {
       },
       ".cm-cursor, .cm-dropCursor": {
         borderLeftColor: "var(--foreground)",
+      },
+      // Vim normal-mode block cursor — translucent foreground, no rose hue.
+      ".cm-fat-cursor": {
+        background:
+          "color-mix(in srgb, var(--foreground) 35%, transparent) !important",
+        outline:
+          "1px solid color-mix(in srgb, var(--foreground) 55%, transparent) !important",
+        color: "var(--foreground) !important",
+      },
+      "&:not(.cm-focused) .cm-fat-cursor": {
+        background: "transparent !important",
+        outline:
+          "1px solid color-mix(in srgb, var(--foreground) 35%, transparent) !important",
       },
       ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection":
         {

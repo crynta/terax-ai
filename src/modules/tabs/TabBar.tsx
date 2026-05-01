@@ -10,9 +10,9 @@ import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import {
   Cancel01Icon,
+  ComputerTerminal02Icon,
   Folder01Icon,
   Folder02Icon,
-  ComputerTerminal02Icon,
   GitCompareIcon,
   Globe02Icon,
   PencilEdit02Icon,
@@ -156,11 +156,7 @@ export function TabBar({
               <span className="text-xs text-muted-foreground">⌘E</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewPreview()}>
-              <HugeiconsIcon
-                icon={Globe02Icon}
-                size={14}
-                strokeWidth={1.75}
-              />
+              <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
               <span className="flex-1">Preview</span>
               <span className="text-xs text-muted-foreground">⌘P</span>
             </DropdownMenuItem>

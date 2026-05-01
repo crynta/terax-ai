@@ -30,6 +30,8 @@ type Props = {
   onOpenFile: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
+  selectedPath: string | null;
+  onSelectPath: (path: string) => void;
 };
 
 function FileTreeNodeImpl({
@@ -41,6 +43,8 @@ function FileTreeNodeImpl({
   onOpenFile,
   onRevealInTerminal,
   onAttachToAgent,
+  selectedPath,
+  onSelectPath,
 }: Props) {
   const path = tree.joinPath(parentPath, entry.name);
   const isDir = entry.kind === "dir";
@@ -54,9 +58,12 @@ function FileTreeNodeImpl({
 
   const handleClick = useCallback(() => {
     if (tree.renaming) return;
+    onSelectPath(path);
     if (isDir) tree.toggle(path);
     else onOpenFile(path);
-  }, [isDir, path, tree, onOpenFile]);
+  }, [isDir, path, tree, onOpenFile, onSelectPath]);
+
+  const isSelected = selectedPath === path;
 
   const pendingInThisDir =
     isDir && isExpanded && tree.pendingCreate?.parentPath === path
@@ -91,10 +98,12 @@ function FileTreeNodeImpl({
           ) : (
             <button
               type="button"
+              data-fs-path={path}
               onClick={handleClick}
               onDoubleClick={() => !isDir && tree.beginRename(path)}
               className={cn(
                 "group flex w-full items-center gap-2 rounded-sm px-1.5 py-0.5 text-left text-[13px] text-foreground/85 transition-colors hover:bg-accent/70 cursor-pointer",
+                isSelected && "bg-accent text-foreground",
               )}
               style={{ paddingLeft: 6 + depth * 12 }}
             >
@@ -249,6 +258,8 @@ function FileTreeNodeImpl({
             onOpenFile={onOpenFile}
             onRevealInTerminal={onRevealInTerminal}
             onAttachToAgent={onAttachToAgent}
+            selectedPath={selectedPath}
+            onSelectPath={onSelectPath}
           />
         ))}
     </>
