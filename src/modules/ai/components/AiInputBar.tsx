@@ -12,10 +12,11 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useComposer, type FileAttachment } from "../lib/composer";
+import { SLASH_COMMANDS } from "../lib/slashCommands";
 import type { Snippet } from "../lib/snippets";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { AgentSwitcher } from "./AgentSwitcher";
-import { SnippetPickerContent } from "./SnippetPicker";
+import { SnippetPickerContent, type PickerItem } from "./SnippetPicker";
 
 type SnippetTrigger = {
   start: number;
@@ -64,32 +65,47 @@ export function AiInputBar() {
 
   useEffect(updateTrigger, [c.value, c.textareaRef]);
 
-  const filteredSnippets = useMemo(() => {
+  const filteredItems = useMemo<PickerItem[]>(() => {
     if (!trigger) return [];
     const q = trigger.query;
-    if (!q) return snippets;
-    return snippets.filter(
-      (s) =>
-        s.handle.includes(q) ||
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q),
-    );
+    const cmdItems: PickerItem[] = Object.values(SLASH_COMMANDS)
+      .filter(
+        (c) => !q || c.name.includes(q) || c.label.toLowerCase().includes(q),
+      )
+      .map((command) => ({ kind: "command", command }));
+    const snipItems: PickerItem[] = snippets
+      .filter(
+        (s) =>
+          !q ||
+          s.handle.includes(q) ||
+          s.name.toLowerCase().includes(q) ||
+          s.description.toLowerCase().includes(q),
+      )
+      .map((snippet) => ({ kind: "snippet", snippet }));
+    return [...cmdItems, ...snipItems];
   }, [trigger, snippets]);
 
   useEffect(() => {
-    if (activeIndex >= filteredSnippets.length) setActiveIndex(0);
-  }, [filteredSnippets.length, activeIndex]);
+    if (activeIndex >= filteredItems.length) setActiveIndex(0);
+  }, [filteredItems.length, activeIndex]);
 
   const pickerOpen = trigger !== null;
 
-  const onPickSnippet = (snippet: Snippet) => {
+  const onPickItem = (item: PickerItem) => {
     if (!trigger) return;
     const before = c.value.slice(0, trigger.start);
-    const after = c.value.slice(trigger.end);
-    const needsSpace = after.length === 0 || !/^\s/.test(after);
-    const insert = `#${snippet.handle}${needsSpace ? " " : ""}`;
+    const afterRaw = c.value.slice(trigger.end);
+    let insert = "";
+    if (item.kind === "snippet") {
+      const needsSpace = afterRaw.length === 0 || !/^\s/.test(afterRaw);
+      insert = `#${item.snippet.handle}${needsSpace ? " " : ""}`;
+      c.addSnippet(item.snippet);
+    } else {
+      c.addCommand(item.command);
+    }
+    const after =
+      item.kind === "command" ? afterRaw.replace(/^\s+/, "") : afterRaw;
     c.setValue(`${before}${insert}${after}`);
-    c.addSnippet(snippet);
     setTrigger(null);
     setActiveIndex(0);
     requestAnimationFrame(() => {
@@ -102,8 +118,8 @@ export function AiInputBar() {
   };
 
   const pickActive = () => {
-    const s = filteredSnippets[activeIndex];
-    if (s) onPickSnippet(s);
+    const it = filteredItems[activeIndex];
+    if (it) onPickItem(it);
   };
 
   const voiceLabel = c.voice.recording
@@ -131,6 +147,8 @@ export function AiInputBar() {
             const re = new RegExp(`(^|\\s)#${snip.handle}\\b ?`);
             c.setValue((v) => v.replace(re, (_m, lead: string) => lead));
           }}
+          commands={c.pickedCommands}
+          onRemoveCommand={(name) => c.removeCommand(name)}
         />
 
         <Popover open={pickerOpen}>
@@ -148,10 +166,7 @@ export function AiInputBar() {
                     if (e.key === "ArrowDown") {
                       e.preventDefault();
                       setActiveIndex((i) =>
-                        Math.min(
-                          i + 1,
-                          Math.max(0, filteredSnippets.length - 1),
-                        ),
+                        Math.min(i + 1, Math.max(0, filteredItems.length - 1)),
                       );
                       return;
                     }
@@ -161,7 +176,7 @@ export function AiInputBar() {
                       return;
                     }
                     if (e.key === "Tab" || e.key === "Enter") {
-                      if (filteredSnippets.length > 0) {
+                      if (filteredItems.length > 0) {
                         e.preventDefault();
                         pickActive();
                         return;
@@ -178,7 +193,7 @@ export function AiInputBar() {
                     c.submit();
                   }
                 }}
-                placeholder="Ask Terax anything   -   # for snippets"
+                placeholder="Ask Terax anything   -   # for snippets & commands"
                 rows={1}
                 disabled={c.isBusy}
                 className={cn(
@@ -190,9 +205,9 @@ export function AiInputBar() {
             </div>
           </PopoverAnchor>
           <SnippetPickerContent
-            snippets={filteredSnippets}
+            items={filteredItems}
             activeIndex={activeIndex}
-            onPick={onPickSnippet}
+            onPick={onPickItem}
             onHover={setActiveIndex}
           />
         </Popover>
@@ -226,16 +241,49 @@ function ChipsRow({
   onRemoveFile,
   snippets,
   onRemoveSnippet,
+  commands,
+  onRemoveCommand,
 }: {
   files: FileAttachment[];
   onRemoveFile: (id: string) => void;
   snippets: Snippet[];
   onRemoveSnippet: (id: string) => void;
+  commands: { name: string; label: string; icon: typeof HashtagIcon }[];
+  onRemoveCommand: (name: string) => void;
 }) {
-  if (files.length === 0 && snippets.length === 0) return null;
+  if (files.length === 0 && snippets.length === 0 && commands.length === 0)
+    return null;
   return (
     <div className="flex flex-wrap gap-1">
       <AnimatePresence initial={false}>
+        {commands.map((cmd) => (
+          <motion.div
+            key={`cmd-${cmd.name}`}
+            layout
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.92 }}
+            transition={{ duration: 0.12 }}
+            className="group flex items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[11px]"
+            title={cmd.label}
+          >
+            <HugeiconsIcon
+              icon={cmd.icon}
+              size={11}
+              strokeWidth={1.75}
+              className="text-muted-foreground"
+            />
+            <span className="font-medium">#{cmd.name}</span>
+            <button
+              type="button"
+              onClick={() => onRemoveCommand(cmd.name)}
+              className="ml-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+              aria-label="Remove command"
+            >
+              <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
+            </button>
+          </motion.div>
+        ))}
         {snippets.map((s) => (
           <motion.div
             key={`snip-${s.id}`}

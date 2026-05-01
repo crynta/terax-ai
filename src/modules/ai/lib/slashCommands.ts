@@ -1,7 +1,4 @@
-import {
-  CheckListIcon,
-  SparklesIcon,
-} from "@hugeicons/core-free-icons";
+import { CheckListIcon, SparklesIcon } from "@hugeicons/core-free-icons";
 import { usePlanStore } from "../store/planStore";
 
 /**
@@ -30,7 +27,6 @@ export type SlashCommandMeta = {
   name: string;
   invocation: string;
   label: string;
-  description: string;
   icon: typeof SparklesIcon;
 };
 
@@ -39,19 +35,18 @@ export const SLASH_COMMANDS: Record<string, SlashCommandMeta> = {
     name: "init",
     invocation: "/init",
     label: "Initialize workspace",
-    description: "Scan the project and create TERAX.md",
     icon: SparklesIcon,
   },
   plan: {
     name: "plan",
     invocation: "/plan",
     label: "Plan mode",
-    description: "Queue file edits for review before applying",
     icon: CheckListIcon,
   },
 };
 
-export const TERAX_CMD_RE = /^<terax-command\s+name="([a-z0-9-]+)"(?:\s+state="([a-z]+)")?\s*\/>(?:\n+|$)/;
+export const TERAX_CMD_RE =
+  /^<terax-command\s+name="([a-z0-9-]+)"(?:\s+state="([a-z]+)")?\s*\/>(?:\n+|$)/;
 
 export function wrapWithCommandMarker(prompt: string, name: string): string {
   return `<terax-command name="${name}" />\n\n${prompt}`;
@@ -59,8 +54,10 @@ export function wrapWithCommandMarker(prompt: string, name: string): string {
 
 export function tryRunSlashCommand(input: string): SlashOutcome {
   const trimmed = input.trim();
-  if (!trimmed.startsWith("/")) return { kind: "none" };
+  const lead = trimmed[0];
+  if (lead !== "/" && lead !== "#") return { kind: "none" };
   const [head, ...rest] = trimmed.slice(1).split(/\s+/);
+  if (lead === "#" && !SLASH_COMMANDS[head]) return { kind: "none" };
   const tail = rest.join(" ").trim();
 
   switch (head) {

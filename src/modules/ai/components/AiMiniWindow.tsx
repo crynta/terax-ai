@@ -440,18 +440,18 @@ function EmptyState({ onPick }: { onPick: (text: string) => void }) {
           Terax sees the active terminal — cwd, recent commands, and output.
         </p>
       </div>
-      <div className="flex w-full flex-col gap-1">
+      <div className="flex w-full flex-col gap-2.5">
         {SUGGESTIONS.map((s) => (
           <button
             key={s.label}
             type="button"
             onClick={() => onPick(s.text)}
             className={cn(
-              "group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left",
-              "transition-colors hover:bg-muted/60",
+              "group flex items-center gap-2.5 bg-card/70 rounded-lg px-2.5 py-2 border border-border text-left",
+              "transition-colors hover:bg-muted/50 hover:text-foreground",
             )}
           >
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground transition-colors group-hover:bg-foreground/10 group-hover:text-foreground">
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground transition-colors group-hover:bg-foreground/5 group-hover:text-foreground">
               <HugeiconsIcon icon={s.icon} size={13} strokeWidth={1.75} />
             </div>
             <div className="min-w-0 flex-1">
