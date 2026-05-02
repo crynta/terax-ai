@@ -16,8 +16,6 @@ jobs:
         include:
           - platform: ubuntu-22.04
             args: ""
-          - platform: ubuntu-22.04-arm
-            args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -32,13 +30,13 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
-          version: 9
+          version: 10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version: 24
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
