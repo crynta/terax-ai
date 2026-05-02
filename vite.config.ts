@@ -14,10 +14,11 @@ export default defineConfig(async ({ mode }) => ({
     },
   },
   esbuild: {
-    drop:
+    drop: mode === "production" ? (["debugger"] as ["debugger"]) : [],
+    pure:
       mode === "production"
-        ? (["console", "debugger"] as ("console" | "debugger")[])
-        : ([] as ("console" | "debugger")[]),
+        ? ["console.debug", "console.info", "console.trace"]
+        : [],
   },
   build: {
     target: "esnext",
@@ -35,7 +36,8 @@ export default defineConfig(async ({ mode }) => ({
           // don't bloat the initial load (lazy-imported in agent.ts).
           if (id.includes("@ai-sdk/anthropic")) return "ai-anthropic";
           if (id.includes("@ai-sdk/google")) return "ai-google";
-          if (id.includes("@ai-sdk/openai-compatible")) return "ai-openai-compat";
+          if (id.includes("@ai-sdk/openai-compatible"))
+            return "ai-openai-compat";
           if (id.includes("@ai-sdk/openai")) return "ai-openai";
           if (id.includes("@ai-sdk/cerebras")) return "ai-cerebras";
           if (id.includes("@ai-sdk/groq")) return "ai-groq";
@@ -43,8 +45,14 @@ export default defineConfig(async ({ mode }) => ({
           if (id.includes("@ai-sdk/")) return "ai-sdk-shared";
 
           if (id.includes("/xterm/") || id.includes("@xterm/")) return "xterm";
-          if (id.includes("@codemirror/") || id.includes("@uiw/codemirror") || id.includes("@replit/codemirror")) return "codemirror";
-          if (id.includes("/streamdown/") || id.includes("@streamdown/")) return "streamdown";
+          if (
+            id.includes("@codemirror/") ||
+            id.includes("@uiw/codemirror") ||
+            id.includes("@replit/codemirror")
+          )
+            return "codemirror";
+          if (id.includes("/streamdown/") || id.includes("@streamdown/"))
+            return "streamdown";
           // Only the shiki core/engine in one chunk. Grammars and themes
           // stay split (one chunk per file) — they load lazily on first use.
           if (
@@ -53,9 +61,16 @@ export default defineConfig(async ({ mode }) => ({
             id.includes("/shiki/dist/index")
           )
             return "shiki";
-          if (id.includes("/motion/") || id.includes("framer-motion")) return "motion";
-          if (id.includes("/react-dom/") || id.includes("/react/") || id.includes("/scheduler/")) return "react";
-          if (id.includes("@radix-ui/") || id.includes("/radix-ui/")) return "radix";
+          if (id.includes("/motion/") || id.includes("framer-motion"))
+            return "motion";
+          if (
+            id.includes("/react-dom/") ||
+            id.includes("/react/") ||
+            id.includes("/scheduler/")
+          )
+            return "react";
+          if (id.includes("@radix-ui/") || id.includes("/radix-ui/"))
+            return "radix";
         },
       },
     },

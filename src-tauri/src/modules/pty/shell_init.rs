@@ -8,7 +8,9 @@
 // Safety notes:
 // - Files are written atomically (tmp + rename) to avoid a half-written rc
 //   being sourced by a parallel shell spawn.
-// - Nested shells are guarded by $__TERAX_HOOKS_LOADED so we never double-install.
+// - $__TERAX_HOOKS_LOADED guards re-sourcing within a single shell (e.g. user
+//   runs `source ~/.zshrc`). It is intentionally NOT exported — each nested
+//   interactive shell installs its own hooks for its own prompt.
 // - User's existing ZDOTDIR is preserved via TERAX_USER_ZDOTDIR — otherwise a
 //   user with `ZDOTDIR=~/.config/zsh` would have every `$ZDOTDIR/...` path in
 //   their config silently point at our cache dir.
@@ -59,6 +61,11 @@ pub fn build_command(cwd: Option<String>) -> Result<CommandBuilder, String> {
     let resolved_cwd = cwd
         .map(PathBuf::from)
         .filter(|p| p.is_dir())
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .filter(|p| p.is_dir())
+        })
         .or_else(|| std::env::current_dir().ok());
     if let Some(cwd) = resolved_cwd {
         cmd.cwd(cwd);

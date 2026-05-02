@@ -61,3 +61,4 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
 
   _terax_precmd
 fi
+:

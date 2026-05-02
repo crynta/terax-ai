@@ -13,7 +13,7 @@
 
 ---
 
-Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React 19. It pairs a native PTY backend with a modern UI — multi-tab terminals, an integrated code editor, a file explorer, and a first-class AI side-panel that works with your own API keys (or fully local models via LM Studio). Around 20 MB on disk, no telemetry, keys stored in the OS keychain.
+Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React 19. It pairs a native PTY backend with a modern UI — multi-tab terminals, an integrated code editor, a file explorer, and a first-class AI side-panel that works with your own API keys (or fully local models via LM Studio). Under 10 MB on disk, no telemetry, keys stored in the OS keychain.
 
 ## Screenshots
 
@@ -57,7 +57,7 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 - Tasks, plans, search, file read/write tools with approval flow
 
 **Quality**
-- Lightweight and fast (~20 MB bundle)
+- Lightweight and fast (~7 MB bundle)
 - API keys stored in the OS keychain (`tauri-plugin-keyring`) — never on disk
 - No telemetry, no account required
 
