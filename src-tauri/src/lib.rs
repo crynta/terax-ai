@@ -20,16 +20,21 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
+    let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
         .title("Settings")
         .inner_size(720.0, 520.0)
         .min_inner_size(720.0, 520.0)
         .max_inner_size(720.0, 520.0)
-        .resizable(false)
+        .resizable(false);
+
+    // Overlay title bar + hidden title are macOS-only APIs; on Linux/Windows
+    // we just use the platform default chrome.
+    #[cfg(target_os = "macos")]
+    let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true)
-        .build()
-        .map_err(|e| e.to_string())?;
+        .hidden_title(true);
+
+    builder.build().map_err(|e| e.to_string())?;
     Ok(())
 }
 
