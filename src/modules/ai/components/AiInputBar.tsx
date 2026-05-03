@@ -6,6 +6,7 @@ import {
   Cancel01Icon,
   CodeIcon,
   HashtagIcon,
+  Key01Icon,
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -382,11 +383,13 @@ export type AiInputBarProps = { tabId: number };
 export function AiInputBarConnect({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="shrink-0 border-t border-border/60 bg-card/40 px-3 py-2">
-      <div className="flex h-10 items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/60 px-3 text-xs">
+      <div className="flex h-10 items-center justify-between gap-3 rounded-lg px-3 text-xs">
         <span className="text-muted-foreground">
-          Connect OpenAI to enable Terax — your key stays in your OS keychain.
+          Connect any AI provider (or use local models) - your key stays in your
+          OS keychain.
         </span>
-        <Button size="sm" onClick={onAdd} className="h-7">
+        <Button size="xs" onClick={onAdd}>
+          <HugeiconsIcon icon={Key01Icon} />
           Add API key
         </Button>
       </div>

@@ -1,8 +1,3 @@
-import {
-  deletePassword,
-  getPassword,
-  setPassword,
-} from "tauri-plugin-keyring-api";
 import { invoke } from "@tauri-apps/api/core";
 import {
   getProvider,
@@ -27,7 +22,10 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
 export async function getKey(provider: ProviderId): Promise<string | null> {
   if (!providerNeedsKey(provider)) return null;
   try {
-    const v = await getPassword(KEYRING_SERVICE, getProvider(provider).keyringAccount);
+    const v = await invoke<string | null>("secrets_get", {
+      service: KEYRING_SERVICE,
+      account: getProvider(provider).keyringAccount,
+    });
     return v && v.length > 0 ? v : null;
   } catch {
     return null;
@@ -40,13 +38,20 @@ export async function setKey(provider: ProviderId, key: string): Promise<void> {
   }
   const trimmed = key.trim();
   if (!trimmed) throw new Error("API key is empty");
-  await setPassword(KEYRING_SERVICE, getProvider(provider).keyringAccount, trimmed);
+  await invoke("secrets_set", {
+    service: KEYRING_SERVICE,
+    account: getProvider(provider).keyringAccount,
+    password: trimmed,
+  });
 }
 
 export async function clearKey(provider: ProviderId): Promise<void> {
   if (!providerNeedsKey(provider)) return;
   try {
-    await deletePassword(KEYRING_SERVICE, getProvider(provider).keyringAccount);
+    await invoke("secrets_delete", {
+      service: KEYRING_SERVICE,
+      account: getProvider(provider).keyringAccount,
+    });
   } catch {
     // already absent — fine
   }
@@ -56,9 +61,7 @@ export async function getAllKeys(): Promise<ProviderKeys> {
   const out = { ...EMPTY_PROVIDER_KEYS };
   const need = PROVIDERS.filter((p) => providerNeedsKey(p.id));
   try {
-    // Single IPC roundtrip — the per-provider plugin call would otherwise
-    // fan out across the bridge and add visible latency at startup.
-    const results = await invoke<(string | null)[]>("keyring_get_all", {
+    const results = await invoke<(string | null)[]>("secrets_get_all", {
       service: KEYRING_SERVICE,
       accounts: need.map((p) => p.keyringAccount),
     });
@@ -68,8 +71,6 @@ export async function getAllKeys(): Promise<ProviderKeys> {
     });
     return out;
   } catch {
-    // Fall back to per-provider lookup if the batch command isn't available
-    // (older binary, dev-rebuild lag).
     const entries = await Promise.all(
       need.map(async (p) => [p.id, await getKey(p.id)] as const),
     );

@@ -8,7 +8,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useState } from "react";
 import { InlineInput } from "./InlineInput";
 import {
   copyToClipboard,
@@ -51,6 +51,8 @@ function FileTreeNodeImpl({
   const isExpanded = isDir && tree.expanded.has(path);
   const children = isExpanded ? tree.nodes[path] : undefined;
   const isRenaming = tree.renaming === path;
+
+  const [isConfirming, setIsConfirming] = useState(false);
 
   const iconUrl = isDir
     ? folderIconUrl(entry.name, isExpanded)
@@ -195,17 +197,17 @@ function FileTreeNodeImpl({
           <ContextMenuItem
             className={COMPACT_ITEM}
             variant="destructive"
-            onSelect={() => {
-              if (
-                window.confirm(
-                  `Delete "${entry.name}"${isDir ? " and all its contents" : ""}?`,
-                )
-              ) {
+            onSelect={(e) => {
+              e.preventDefault();
+              if (isConfirming) {
                 void tree.deletePath(path);
+              } else {
+                setIsConfirming(true);
               }
             }}
+            onMouseLeave={() => setTimeout(() => setIsConfirming(false), 1500)}
           >
-            Delete
+            {isConfirming ? "Click again to confirm" : "Delete"}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>

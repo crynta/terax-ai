@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, pty, shell};
+use modules::{fs, pty, secrets, shell};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[tauri::command]
@@ -37,25 +37,17 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     #[cfg(target_os = "linux")]
     let builder = builder.decorations(false).transparent(true);
 
-    builder.build().map_err(|e| e.to_string())?;
-    Ok(())
-}
+    let window = builder.build().map_err(|e| e.to_string())?;
 
-/// Batch-read multiple keyring entries in a single IPC call. The plugin's
-/// per-key `get_password` command costs one round-trip each; on cold boot
-/// we fan that out across every provider we know about, even unconfigured
-/// ones — which shows up as a wave of `plugin:keyring|get_password` rows.
-/// This collapses the wave into one command.
-#[tauri::command]
-async fn keyring_get_all(service: String, accounts: Vec<String>) -> Vec<Option<String>> {
-    accounts
-        .into_iter()
-        .map(|a| {
-            keyring::Entry::new(&service, &a)
-                .ok()
-                .and_then(|e| e.get_password().ok())
-        })
-        .collect()
+    // Some Linux compositors (notably GNOME/Mutter with CSD-by-default)
+    // ignore the builder-time decorations flag and force-draw a header bar.
+    // Re-asserting it after the window is realized makes mutter respect it.
+    #[cfg(target_os = "linux")]
+    {
+        let _ = window.set_decorations(false);
+    }
+    let _ = window;
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -73,9 +65,9 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_keyring::init())
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
+        .manage(secrets::SecretsState::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -102,7 +94,10 @@ pub fn run() {
             shell::shell_bg_kill,
             shell::shell_bg_list,
             open_settings_window,
-            keyring_get_all,
+            secrets::secrets_get,
+            secrets::secrets_set,
+            secrets::secrets_delete,
+            secrets::secrets_get_all,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

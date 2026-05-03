@@ -14,7 +14,6 @@
     "log:default",
     "os:default",
     "store:default",
-    "keyring:default",
     "autostart:allow-enable",
     "autostart:allow-disable",
     "autostart:allow-is-enabled"
