@@ -5,9 +5,10 @@
   <p><strong>Open-source lightweight cross-platform AI-native terminal (ADE)</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-0.5.6-blue" alt="version" />
+    <img src="https://img.shields.io/badge/version-0.5.8-blue" alt="version" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
-    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20(soon)-lightgrey" alt="platform" />
+
   </p>
 </div>
 
@@ -20,10 +21,10 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 <table>
   <tr>
     <td align="center"><img src="docs/terminal.png" alt="Terminal" /><br/><sub>Multi-tab terminal with WebGL rendering</sub></td>
-    <td align="center"><img src="docs/editor.png" alt="Editor" /><br/><sub>CodeMirror 6 editor with AI autocomplete and Vim mode</sub></td>
+    <td align="center"><img src="docs/web-preview.png" alt="Web preview" /><br/><sub>Web preview of local dev servers</sub></td>
   </tr>
   <tr>
-    <td colspan="2" align="center"><img src="docs/ai-window.png" alt="AI window" /><br/><sub>BYOK AI assistant with tools, agents, and approval flow</sub></td>
+    <td colspan="2" align="center"><img src="docs/ai-workflow.png" alt="AI window" /><br/><sub>AI agentic workflow with edit diffs in the code editor</sub></td>
   </tr>
 </table>
 
