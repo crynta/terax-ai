@@ -40,7 +40,22 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15"
-    }
+    },
+    "linux": {
+      "deb": {
+        "section": "utils",
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      },
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "gtk3"]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "category": "DeveloperTool",
+    "shortDescription": "AI-native terminal emulator",
+    "longDescription": "Terax — an open-source AI-native terminal emulator with multi-tab, file explorer, code editor, web preview, voice input, and AI agents."
   },
   "plugins": {
     "updater": {

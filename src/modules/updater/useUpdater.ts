@@ -19,7 +19,12 @@ interface Options {
   manual?: boolean;
 }
 
-export function useUpdater() {
+interface HookOptions {
+  /** When false, the hook does not run an automatic check on mount. */
+  autoCheck?: boolean;
+}
+
+export function useUpdater({ autoCheck = true }: HookOptions = {}) {
   const [status, setStatus] = useState<UpdaterStatus>({ kind: "idle" });
 
   const runCheck = useCallback(async ({ manual }: Options = {}) => {
@@ -70,8 +75,9 @@ export function useUpdater() {
   }, []);
 
   useEffect(() => {
+    if (!autoCheck) return;
     void runCheck();
-  }, [runCheck]);
+  }, [autoCheck, runCheck]);
 
   return { status, check: runCheck, install, dismiss };
 }

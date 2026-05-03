@@ -23,8 +23,11 @@ export function AboutSection() {
   const [version, setVersion] = useState("");
   const [name, setName] = useState("Terax");
   const [build, setBuild] = useState("");
-  const { status, check } = useUpdater();
+  const { status, check, install } = useUpdater({ autoCheck: false });
   const checking = status.kind === "checking";
+  const downloading = status.kind === "downloading";
+  const available = status.kind === "available";
+  const ready = status.kind === "ready";
   const checkLabel =
     status.kind === "uptodate"
       ? "You're up to date"
@@ -32,7 +35,17 @@ export function AboutSection() {
         ? "Check failed — retry"
         : checking
           ? "Checking…"
-          : "Check for updates";
+          : downloading
+            ? "Downloading…"
+            : ready
+              ? "Restart to install"
+              : available
+                ? `Install v${status.update.version}`
+                : "Check for updates";
+  const onUpdateClick = () => {
+    if (available) void install();
+    else void check({ manual: true });
+  };
 
   useEffect(() => {
     void getVersion().then(setVersion);
@@ -91,30 +104,46 @@ export function AboutSection() {
         </dd>
       </dl>
 
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          onClick={() => void check({ manual: true })}
-          disabled={checking}
-        >
-          {checkLabel}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void openUrl(REPO_URL)}
-          className="gap-1.5"
-        >
-          <HugeiconsIcon icon={GithubIcon} size={12} strokeWidth={1.75} />
-          View on GitHub
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void openUrl(`${REPO_URL}/issues/new`)}
-        >
-          Report an issue
-        </Button>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            onClick={onUpdateClick}
+            disabled={checking || downloading || ready}
+          >
+            {checkLabel}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void openUrl(REPO_URL)}
+            className="gap-1.5"
+          >
+            <HugeiconsIcon icon={GithubIcon} size={12} strokeWidth={1.75} />
+            View on GitHub
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void openUrl(`${REPO_URL}/issues/new`)}
+          >
+            Report an issue
+          </Button>
+        </div>
+        {status.kind === "error" && (
+          <p className="font-mono text-[10.5px] break-all text-destructive/80">
+            {status.message}
+          </p>
+        )}
+        {downloading && status.contentLength ? (
+          <p className="text-[11px] text-muted-foreground">
+            {Math.min(
+              100,
+              Math.round((status.downloaded / status.contentLength) * 100),
+            )}
+            %
+          </p>
+        ) : null}
       </div>
     </div>
   );

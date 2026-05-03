@@ -6,11 +6,13 @@
     "linux"
   ],
   "windows": [
-    "main"
+    "main",
+    "settings"
   ],
   "permissions": [
     "autostart:default",
     "window-state:default",
-    "updater:default"
+    "updater:default",
+    "process:default"
   ]
 }

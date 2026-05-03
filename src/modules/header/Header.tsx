@@ -1,4 +1,6 @@
 import { Button } from "@/components/ui/button";
+import { WindowControls } from "@/components/WindowControls";
+import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
 import {
@@ -59,11 +61,36 @@ export function Header({
     return () => ro.disconnect();
   }, []);
 
+  const sideButtons = (
+    <>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        onClick={onOpenShortcuts}
+        title="Keyboard shortcuts (⌘K)"
+      >
+        <HugeiconsIcon icon={KeyboardIcon} size={16} strokeWidth={1.75} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        onClick={onOpenSettings}
+        title="Settings"
+      >
+        <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
+      </Button>
+    </>
+  );
+
   return (
     <div
       ref={rootRef}
       data-tauri-drag-region
-      className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card pr-2 pl-20 select-none"
+      className={`flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card select-none ${
+        IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
+      }`}
     >
       <Button
         onClick={onToggleSidebar}
@@ -75,7 +102,14 @@ export function Header({
         <HugeiconsIcon icon={SidebarLeftIcon} size={18} strokeWidth={1.75} />
       </Button>
 
-      <span className="mr-1 h-full w-px shrink-0 bg-border" />
+      {!IS_MAC && (
+        <>
+          {sideButtons}
+          <span className="mx-1 h-5 w-px shrink-0 bg-border" />
+        </>
+      )}
+
+      {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border" />}
 
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
@@ -96,25 +130,14 @@ export function Header({
 
       <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={onOpenShortcuts}
-        title="Keyboard shortcuts (⌘K)"
-      >
-        <HugeiconsIcon icon={KeyboardIcon} size={16} strokeWidth={1.75} />
-      </Button>
+      {IS_MAC && sideButtons}
 
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={onOpenSettings}
-        title="Settings"
-      >
-        <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
-      </Button>
+      {USE_CUSTOM_WINDOW_CONTROLS && (
+        <>
+          <span className="ml-1 h-5 w-px shrink-0 bg-border" />
+          <WindowControls />
+        </>
+      )}
     </div>
   );
 }

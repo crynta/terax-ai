@@ -1,0 +1,15 @@
+{
+  "version": "0.5.8",
+  "notes": "See the assets to download and install. Auto-update is built in.",
+  "pub_date": "2026-05-02T21:29:53.709Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScE5BNjJpdjJyTytOUTl6U0pqVTVMSzFRYTk4TmR6dWtlOHdnYU1ObzQwMmZhV1lyMkNkTWFRZGF6cXREdFNhRHMxbG0yL1ZSSEhCUXZNbXlld0dlTDFZWmJ5aWZTR2c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc3NzQ5MDQ4CWZpbGU6VGVyYXguYXBwLnRhci5negpFVk1JeGYxMGJxVXc3NlFuM1hvbm5MUTBOT2t5b3hlazBaSGpMaER2MW1QcGJWbGFOc2dncThMV0RNM2NrRDE1S2xEV0VvZFpIZEZwUlc3Mm5UOEhCUT09Cg==",
+      "url": "https://github.com/crynta/terax-ai/releases/download/v0.5.8/Terax.app.tar.gz"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVScE5BNjJpdjJyTzVQRnloQkpxS2lFb3R5ekU3b2xQNEkvQXdtekZHOXppVnBRUFJUeUtBVVRGeWVPYk5JbE9wYUw4ekVZU2lpdTRCOFhMbVFsUnZuY0QwQy8rRHVCM1FjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc3NzU3MzgzCWZpbGU6VGVyYXhfMC41LjhfYW1kNjQuQXBwSW1hZ2UKZmlsMFhvc1UwQkF5QThid0lKMVVMaHBjQTBkdGpGaHJEV3VXTG9UNndtNHpDOEY0aDNMVk5XYlg1SFpKUFhnWUFqQWFlMzA5aUVrZ3lDSzlsaXpnQlE9PQo=",
+      "url": "https://github.com/crynta/terax-ai/releases/download/v0.5.8/Terax_0.5.8_amd64.AppImage"
+    }
+  }
+}
