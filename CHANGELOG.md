@@ -2,6 +2,15 @@
 
 All notable changes to Terax. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/) (pre-`1.0`, minor bumps may include breaking changes).
 
+## [0.5.9] — 2026
+
+## Added
+- Window management for linux
+
+## Changed
+- Secrets (keyring) redesign
+- Auto updater stabilization
+
 ## [0.5.8] — 2026
 
 ### Added

@@ -5,7 +5,7 @@
   <p><strong>Open-source lightweight cross-platform AI-native terminal (ADE)</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-0.5.8-blue" alt="version" />
+    <img src="https://img.shields.io/badge/version-0.5.9-blue" alt="version" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20(soon)-lightgrey" alt="platform" />
 
@@ -59,14 +59,14 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 
 **Quality**
 - Lightweight and fast (~7 MB bundle)
-- API keys stored in the OS keychain (`tauri-plugin-keyring`) — never on disk
+- API keys stored in the OS keychain 
 - No telemetry, no account required
 
 ## Configure AI
 
 1. Open **Settings → AI**.
 2. Pick a provider and paste your API key. For local inference, point Terax at your LM Studio endpoint.
-3. Keys are written to the OS keychain via `tauri-plugin-keyring` — they never touch disk or `localStorage`.
+3. Keys are written to the OS keychain via `keyring` — they never touch disk or `localStorage`.
 
 ## Build from source
 
@@ -92,26 +92,9 @@ cd src-tauri && cargo clippy    # Rust lint
 
 Tauri 2 · Rust · `portable-pty` · React 19 · TypeScript · xterm.js · CodeMirror 6 · Vercel AI SDK v6 · Tailwind v4 · shadcn/ui · Zustand
 
-## Project layout
-
-```
-src-tauri/        Rust backend — PTY, FS, shell, plugin wiring
-src/
-  modules/
-    terminal/     xterm.js sessions + OSC handlers
-    editor/       CodeMirror stack
-    explorer/     File tree
-    tabs/         Tab model (terminal | editor)
-    ai/           Agent, sessions, tools, mini-window
-    header/       Top bar, inline search
-    statusbar/    Bottom bar
-    shortcuts/    Keymap
-  components/     shadcn/ui + AI Elements
-```
-
 ## Contributing
 
-Issues and PRs are welcome! Feel free to open issues, suggest features, or submit pull requests.
+Issues and PRs are welcome! Feel free to open issues, suggest features, or submit pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
 ## License
 
