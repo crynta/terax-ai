@@ -375,7 +375,7 @@ export default function App() {
       const quoted = path.includes(" ")
         ? `'${path.replace(/'/g, `'\\''`)}'`
         : path;
-      term.write(`cd ${quoted}\n`);
+      term.write(`cd ${quoted}\r`);
       term.focus();
     },
     [activeId],
@@ -390,7 +390,7 @@ export default function App() {
         const quoted = path.includes(" ")
           ? `'${path.replace(/'/g, `'\\''`)}'`
           : path;
-        t.write(`cd ${quoted}\n`);
+        t.write(`cd ${quoted}\r`);
         t.focus();
       }, 80);
     },

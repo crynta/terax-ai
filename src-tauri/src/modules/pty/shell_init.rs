@@ -24,6 +24,8 @@ fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
         .or_else(|| dirs::home_dir().filter(|p| p.is_dir()))
         .or_else(|| std::env::current_dir().ok());
     if let Some(cwd) = resolved_cwd {
+        #[cfg(windows)]
+        let cwd = PathBuf::from(cwd.to_string_lossy().replace('/', "\\"));
         log::info!("pty cwd: {}", cwd.display());
         cmd.cwd(cwd);
     } else {
@@ -101,7 +103,10 @@ mod unix {
                 cmd.arg("-i");
             }
             Shell::Other => {
-                log::info!("unsupported shell '{}', spawning without integration", shell_path);
+                log::info!(
+                    "unsupported shell '{}', spawning without integration",
+                    shell_path
+                );
             }
         }
         Ok(cmd)
