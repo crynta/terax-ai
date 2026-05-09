@@ -34,6 +34,8 @@ pub struct Session {
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     pub writer: Mutex<Box<dyn Write + Send>>,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    #[cfg(windows)]
+    _job: Option<super::job::PtyJob>,
 }
 
 impl Drop for Session {
@@ -74,10 +76,24 @@ pub fn spawn(
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
+    #[cfg(windows)]
+    let job = match child.process_id() {
+        Some(pid) => match super::job::PtyJob::create_for(pid) {
+            Ok(j) => Some(j),
+            Err(e) => {
+                log::warn!("pty job-object setup failed for pid={pid}: {e}");
+                None
+            }
+        },
+        None => None,
+    };
+
     let session = Arc::new(Session {
         master: Mutex::new(pair.master),
         writer: Mutex::new(writer),
         killer: Mutex::new(killer),
+        #[cfg(windows)]
+        _job: job,
     });
 
     let pending: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::with_capacity(READ_BUF)));

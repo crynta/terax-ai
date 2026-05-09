@@ -1,29 +1,26 @@
 use std::io::Read;
 use std::path::PathBuf;
-use std::process::{Child, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::SystemTime;
 
 use serde::Serialize;
+use shared_child::SharedChild;
 
 use super::ringbuffer::BoundedRingBuffer;
 
 const RING_CAP: usize = 4 * 1024 * 1024;
 
-/// One spawned background process with bounded log capture and lifecycle
-/// status. Mirrors how `pty::session::Session` is owned via `Arc`.
 pub struct BackgroundProc {
     pub command: String,
     pub cwd: Option<String>,
     pub started_at_ms: u64,
-    pub child: Mutex<Option<Child>>,
+    pub child: Arc<SharedChild>,
     pub buffer: Mutex<BoundedRingBuffer>,
     pub exited: AtomicBool,
     pub exit_code: AtomicI32,
-    /// Sentinel value when no exit code captured yet (process still alive,
-    /// or terminated by signal).
     pub exit_unknown: AtomicBool,
 }
 
@@ -65,9 +62,7 @@ impl BackgroundProc {
     }
 
     pub fn kill(&self) {
-        if let Some(child) = self.child.lock().unwrap().as_mut() {
-            let _ = child.kill();
-        }
+        let _ = self.child.kill();
     }
 
     pub fn info(&self, handle: u32) -> BackgroundProcInfo {
@@ -113,10 +108,10 @@ pub fn spawn(command: String, cwd: Option<String>) -> Result<Arc<BackgroundProc>
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
-
-    let stdout_pipe = child.stdout.take().ok_or("no stdout pipe")?;
-    let stderr_pipe = child.stderr.take().ok_or("no stderr pipe")?;
+    let shared = SharedChild::spawn(&mut cmd).map_err(|e| e.to_string())?;
+    let stdout_pipe = shared.take_stdout().ok_or("no stdout pipe")?;
+    let stderr_pipe = shared.take_stderr().ok_or("no stderr pipe")?;
+    let child = Arc::new(shared);
 
     let started_at_ms = SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -127,14 +122,13 @@ pub fn spawn(command: String, cwd: Option<String>) -> Result<Arc<BackgroundProc>
         command: trimmed,
         cwd,
         started_at_ms,
-        child: Mutex::new(Some(child)),
+        child,
         buffer: Mutex::new(BoundedRingBuffer::new(RING_CAP)),
         exited: AtomicBool::new(false),
         exit_code: AtomicI32::new(0),
         exit_unknown: AtomicBool::new(false),
     });
 
-    // Stdout drainer.
     {
         let proc_ref = proc.clone();
         let mut pipe = stdout_pipe;
@@ -143,15 +137,12 @@ pub fn spawn(command: String, cwd: Option<String>) -> Result<Arc<BackgroundProc>
             loop {
                 match pipe.read(&mut buf) {
                     Ok(0) => break,
-                    Ok(n) => {
-                        proc_ref.buffer.lock().unwrap().push(&buf[..n]);
-                    }
+                    Ok(n) => proc_ref.buffer.lock().unwrap().push(&buf[..n]),
                     Err(_) => break,
                 }
             }
         });
     }
-    // Stderr drainer (interleaved into the same buffer, prefixed).
     {
         let proc_ref = proc.clone();
         let mut pipe = stderr_pipe;
@@ -160,34 +151,24 @@ pub fn spawn(command: String, cwd: Option<String>) -> Result<Arc<BackgroundProc>
             loop {
                 match pipe.read(&mut buf) {
                     Ok(0) => break,
-                    Ok(n) => {
-                        proc_ref.buffer.lock().unwrap().push(&buf[..n]);
-                    }
+                    Ok(n) => proc_ref.buffer.lock().unwrap().push(&buf[..n]),
                     Err(_) => break,
                 }
             }
         });
     }
-    // Reaper.
     {
         let proc_ref = proc.clone();
+        let child_for_wait = proc.child.clone();
         thread::spawn(move || {
-            let status_opt = {
-                let mut guard = proc_ref.child.lock().unwrap();
-                guard.as_mut().map(|c| c.wait())
-            };
-            if let Some(Ok(status)) = status_opt {
-                if let Some(code) = status.code() {
-                    proc_ref.exit_code.store(code, Ordering::Release);
-                } else {
-                    proc_ref.exit_unknown.store(true, Ordering::Release);
-                }
-            } else {
-                proc_ref.exit_unknown.store(true, Ordering::Release);
+            match child_for_wait.wait() {
+                Ok(status) => match status.code() {
+                    Some(code) => proc_ref.exit_code.store(code, Ordering::Release),
+                    None => proc_ref.exit_unknown.store(true, Ordering::Release),
+                },
+                Err(_) => proc_ref.exit_unknown.store(true, Ordering::Release),
             }
             proc_ref.exited.store(true, Ordering::Release);
-            // Drop the child handle to release fds.
-            *proc_ref.child.lock().unwrap() = None;
         });
     }
 

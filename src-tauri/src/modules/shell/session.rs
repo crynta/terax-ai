@@ -57,12 +57,7 @@ impl ShellSession {
             return Err("empty command".into());
         }
         let cwd = self.current_cwd();
-
-        // Append a cwd-reporting tail. Run with `set +e` semantics by
-        // capturing $? right after the command, then printing the sentinel.
-        let wrapped = format!(
-            "{trimmed}\n__terax_rc=$?\nprintf '\\n%s%s\\n' '{CWD_SENTINEL}' \"$(pwd)\"\nexit $__terax_rc\n",
-        );
+        let wrapped = wrap_with_sentinel(&trimmed);
 
         let (tx, rx) = mpsc::channel::<Result<super::CommandOutput, String>>();
         let cwd_for_thread = cwd.clone();
@@ -79,7 +74,7 @@ impl ShellSession {
                 *self.cwd.lock().unwrap() = p;
             }
         }
-        let resolved_cwd = self.current_cwd().to_string_lossy().into_owned();
+        let resolved_cwd = crate::modules::fs::to_canon(self.current_cwd());
 
         Ok(SessionRunOutput {
             stdout: stdout_clean,
@@ -90,6 +85,20 @@ impl ShellSession {
             cwd_after: resolved_cwd,
         })
     }
+}
+
+#[cfg(unix)]
+fn wrap_with_sentinel(command: &str) -> String {
+    format!(
+        "{command}\n__terax_rc=$?\nprintf '\\n%s%s\\n' '{CWD_SENTINEL}' \"$(pwd)\"\nexit $__terax_rc\n",
+    )
+}
+
+#[cfg(windows)]
+fn wrap_with_sentinel(command: &str) -> String {
+    format!(
+        "{command}\n$__terax_rc = if ($null -ne $LASTEXITCODE) {{ $LASTEXITCODE }} elseif ($?) {{ 0 }} else {{ 1 }}\n\"`n{CWD_SENTINEL}$($PWD.Path)\"\nexit $__terax_rc\n",
+    )
 }
 
 fn strip_cwd_sentinel(stdout: &str, _fallback: &PathBuf) -> (String, Option<String>) {

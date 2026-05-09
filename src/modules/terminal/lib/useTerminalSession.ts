@@ -55,7 +55,14 @@ export function useTerminalSession({
     let disposed = false;
     const cleanups: Array<() => void> = [];
 
-    (async () => {
+    // Deferred a tick so any same-commit mount → cleanup → mount sequence
+    // (HMR/dev-only effects) cancels the first spawn before it reaches Rust.
+    const startTimer = setTimeout(() => {
+      if (disposed || !container.current) return;
+      void start();
+    }, 0);
+
+    const start = async () => {
       await document.fonts.load(`${FONT_SIZE}px "JetBrains Mono"`);
       if (disposed || !container.current) return;
 
@@ -195,10 +202,11 @@ export function useTerminalSession({
       });
 
       if (visible) term.focus();
-    })();
+    };
 
     return () => {
       disposed = true;
+      clearTimeout(startTimer);
       cleanups.forEach((fn) => fn());
       ptyRef.current?.close();
       ptyRef.current = null;

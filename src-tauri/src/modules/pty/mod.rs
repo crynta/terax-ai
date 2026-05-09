@@ -1,3 +1,5 @@
+#[cfg(windows)]
+mod job;
 mod session;
 pub(crate) mod shell_init;
 
