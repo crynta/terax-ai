@@ -32,16 +32,15 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         .title_bar_style(tauri::TitleBarStyle::Overlay)
         .hidden_title(true);
 
-    // On Linux we render our own titlebar + rounded shell, so drop the
-    // native chrome and make the window transparent.
-    #[cfg(target_os = "linux")]
+    // On Linux/Windows we render our own titlebar, so drop native chrome
+    // and make the window transparent.
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     let builder = builder.decorations(false).transparent(true);
 
     let window = builder.build().map_err(|e| e.to_string())?;
 
-    // Some Linux compositors (notably GNOME/Mutter with CSD-by-default)
-    // ignore the builder-time decorations flag and force-draw a header bar.
-    // Re-asserting it after the window is realized makes mutter respect it.
+    // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the
+    // builder-time decorations flag — re-assert it after realize.
     #[cfg(target_os = "linux")]
     {
         let _ = window.set_decorations(false);

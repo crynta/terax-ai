@@ -7,7 +7,7 @@
   <p>
     <img src="https://img.shields.io/badge/version-0.5.9-blue" alt="version" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
-    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20(soon)-lightgrey" alt="platform" />
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
 
   </p>
 </div>
@@ -61,6 +61,12 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 - Lightweight and fast (~7 MB bundle)
 - API keys stored in the OS keychain 
 - No telemetry, no account required
+
+## Windows notes
+
+- **SmartScreen warning**: Windows will show "Windows protected your PC" on first launch because we (temporarily) don't have a code-signing certificate yet. Click **More info** → **Run anyway**. This is normal for unsigned open-source apps.
+
+The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `powershell.exe` (Windows PowerShell 5.1) → `cmd.exe`.
 
 ## Configure AI
 

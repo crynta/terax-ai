@@ -39,9 +39,11 @@ export function registerPromptTracker(term: Terminal): PromptTracker {
 function parseOsc7(data: string): string | null {
   const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
   if (!m) return null;
+  let path = m[1];
   try {
-    return decodeURIComponent(m[1]);
-  } catch {
-    return m[1];
-  }
+    path = decodeURIComponent(path);
+  } catch {}
+  // /C:/Users/foo -> C:/Users/foo so it's a valid Windows path.
+  if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
+  return path;
 }
