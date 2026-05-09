@@ -15,6 +15,8 @@ const FONT_SIZE = 14;
 type Options = {
   container: React.RefObject<HTMLDivElement | null>;
   visible: boolean;
+  /** This pane has keyboard focus within the visible tab. */
+  focused?: boolean;
   initialCwd?: string;
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
@@ -30,12 +32,15 @@ const LOCAL_URL_RE =
 export function useTerminalSession({
   container,
   visible,
+  focused = true,
   initialCwd,
   onSearchReady,
   onExit,
   onCwd,
   onDetectedLocalUrl,
 }: Options) {
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
   const detectedRef = useRef<string | null>(null);
   const onDetectedRef = useRef(onDetectedLocalUrl);
   const onCwdRef = useRef(onCwd);
@@ -194,7 +199,7 @@ export function useTerminalSession({
         if (ptyTimer) clearTimeout(ptyTimer);
       });
 
-      if (visible) term.focus();
+      if (visible && focusedRef.current) term.focus();
     })();
 
     return () => {
@@ -212,8 +217,8 @@ export function useTerminalSession({
   useLayoutEffect(() => {
     if (!visible) return;
     fitRef.current?.fit();
-    termRef.current?.focus();
-  }, [visible]);
+    if (focused) termRef.current?.focus();
+  }, [visible, focused]);
 
   const write = useCallback((data: string) => {
     ptyRef.current?.write(data);

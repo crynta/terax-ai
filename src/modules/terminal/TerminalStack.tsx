@@ -1,15 +1,26 @@
 import type { Tab } from "@/modules/tabs";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useEffect, useRef } from "react";
-import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
+import { PaneTreeView } from "./PaneTreeView";
+import type { TerminalPaneHandle } from "./TerminalPane";
+import { leafIds } from "./lib/panes";
 
 type Props = {
   tabs: Tab[];
   activeId: number;
-  registerHandle: (id: number, handle: TerminalPaneHandle | null) => void;
-  onSearchReady: (id: number, addon: SearchAddon) => void;
-  onCwd: (id: number, cwd: string) => void;
-  onDetectedLocalUrl: (id: number, url: string) => void;
+  /** Register/unregister handle by leaf id (not tab id). */
+  registerHandle: (leafId: number, handle: TerminalPaneHandle | null) => void;
+  onSearchReady: (leafId: number, addon: SearchAddon) => void;
+  onCwd: (leafId: number, cwd: string) => void;
+  onDetectedLocalUrl: (leafId: number, url: string) => void;
+  onFocusLeaf: (tabId: number, leafId: number) => void;
+};
+
+type Bundle = {
+  setRef: (h: TerminalPaneHandle | null) => void;
+  onSearch: (addon: SearchAddon) => void;
+  onCwd: (cwd: string) => void;
+  onDetectedUrl: (url: string) => void;
 };
 
 export function TerminalStack({
@@ -19,6 +30,7 @@ export function TerminalStack({
   onSearchReady,
   onCwd,
   onDetectedLocalUrl,
+  onFocusLeaf,
 }: Props) {
   const terminals = tabs.filter((t) => t.kind === "terminal");
 
@@ -39,29 +51,24 @@ export function TerminalStack({
     detectedUrlRef.current = onDetectedLocalUrl;
   }, [onDetectedLocalUrl]);
 
-  type Bundle = {
-    setRef: (h: TerminalPaneHandle | null) => void;
-    onSearch: (addon: SearchAddon) => void;
-    onCwd: (cwd: string) => void;
-    onDetectedUrl: (url: string) => void;
-  };
   const bundles = useRef(new Map<number, Bundle>());
-  const getBundle = (id: number): Bundle => {
-    let b = bundles.current.get(id);
+  const getBundle = (leafId: number): Bundle => {
+    let b = bundles.current.get(leafId);
     if (!b) {
       b = {
-        setRef: (h) => registerRef.current(id, h),
-        onSearch: (addon) => searchReadyRef.current(id, addon),
-        onCwd: (cwd) => cwdRef.current(id, cwd),
-        onDetectedUrl: (url) => detectedUrlRef.current(id, url),
+        setRef: (h) => registerRef.current(leafId, h),
+        onSearch: (addon) => searchReadyRef.current(leafId, addon),
+        onCwd: (cwd) => cwdRef.current(leafId, cwd),
+        onDetectedUrl: (url) => detectedUrlRef.current(leafId, url),
       };
-      bundles.current.set(id, b);
+      bundles.current.set(leafId, b);
     }
     return b;
   };
 
   useEffect(() => {
-    const live = new Set(terminals.map((t) => t.id));
+    const live = new Set<number>();
+    for (const t of terminals) for (const id of leafIds(t.paneTree)) live.add(id);
     for (const id of bundles.current.keys()) {
       if (!live.has(id)) bundles.current.delete(id);
     }
@@ -70,17 +77,15 @@ export function TerminalStack({
   return (
     <div className="relative h-full w-full">
       {terminals.map((t) => {
-        const b = getBundle(t.id);
+        const tabVisible = t.id === activeId;
         return (
           <div key={t.id} className="absolute inset-0">
-            <TerminalPane
-              tabId={t.id}
-              visible={t.id === activeId}
-              initialCwd={t.kind === "terminal" ? t.cwd : undefined}
-              ref={b.setRef}
-              onSearchReady={(_id, addon) => b.onSearch(addon)}
-              onCwd={(_id, cwd) => b.onCwd(cwd)}
-              onDetectedLocalUrl={(_id, url) => b.onDetectedUrl(url)}
+            <PaneTreeView
+              node={t.paneTree}
+              tabVisible={tabVisible}
+              activeLeafId={t.activeLeafId}
+              onFocusLeaf={(leafId) => onFocusLeaf(t.id, leafId)}
+              getBundle={getBundle}
             />
           </div>
         );

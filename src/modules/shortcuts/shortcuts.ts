@@ -15,13 +15,23 @@ export type ShortcutId =
   | "tab.next"
   | "tab.prev"
   | "tab.selectByIndex"
+  | "pane.splitRight"
+  | "pane.splitDown"
+  | "pane.focusNext"
+  | "pane.focusPrev"
   | "search.focus"
   | "ai.toggle"
   | "ai.askSelection"
   | "shortcuts.open"
   | "sidebar.toggle";
 
-export type ShortcutGroup = "General" | "Tabs" | "Search" | "AI" | "View";
+export type ShortcutGroup =
+  | "General"
+  | "Tabs"
+  | "Panes"
+  | "Search"
+  | "AI"
+  | "View";
 
 export type Shortcut = {
   id: ShortcutId;
@@ -64,10 +74,38 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "tab.close",
-    label: "Close tab",
+    label: "Close tab or pane",
     keys: ["⌘", "W"],
     group: "Tabs",
     match: (e) => isMod(e) && e.key.toLowerCase() === "w",
+  },
+  {
+    id: "pane.splitRight",
+    label: "Split pane right",
+    keys: ["⌘", "D"],
+    group: "Panes",
+    match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "d",
+  },
+  {
+    id: "pane.splitDown",
+    label: "Split pane down",
+    keys: ["⌘", "⇧", "D"],
+    group: "Panes",
+    match: (e) => isMod(e) && e.shiftKey && e.key.toLowerCase() === "d",
+  },
+  {
+    id: "pane.focusNext",
+    label: "Focus next pane",
+    keys: ["⌘", "]"],
+    group: "Panes",
+    match: (e) => isMod(e) && !e.shiftKey && e.key === "]",
+  },
+  {
+    id: "pane.focusPrev",
+    label: "Focus previous pane",
+    keys: ["⌘", "["],
+    group: "Panes",
+    match: (e) => isMod(e) && !e.shiftKey && e.key === "[",
   },
   {
     id: "tab.next",
@@ -124,6 +162,7 @@ export const SHORTCUTS: Shortcut[] = [
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
+  "Panes",
   "View",
   "Search",
   "AI",
