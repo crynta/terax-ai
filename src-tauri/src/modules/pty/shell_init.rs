@@ -157,10 +157,7 @@ mod unix {
 
 #[cfg(windows)]
 mod windows {
-    use std::ffi::OsString;
-    use std::fs;
-    use std::path::{Path, PathBuf};
-
+    use base64::{engine::general_purpose::STANDARD as B64, Engine};
     use portable_pty::CommandBuilder;
 
     const PROFILE_PS1: &str = include_str!("scripts/profile.ps1");
@@ -178,19 +175,13 @@ mod windows {
         super::apply_common(&mut cmd, cwd);
 
         if is_powershell {
-            match prepare_ps_profile() {
-                Ok(profile) => {
-                    cmd.arg("-NoLogo");
-                    cmd.arg("-NoExit");
-                    cmd.arg("-ExecutionPolicy");
-                    cmd.arg("Bypass");
-                    cmd.arg("-File");
-                    cmd.arg(profile);
-                }
-                Err(e) => {
-                    log::warn!("powershell shell integration disabled: {e}");
-                }
-            }
+            let encoded = encode_pwsh(PROFILE_PS1);
+            cmd.arg("-NoLogo");
+            cmd.arg("-NoExit");
+            cmd.arg("-ExecutionPolicy");
+            cmd.arg("Bypass");
+            cmd.arg("-EncodedCommand");
+            cmd.arg(encoded);
         } else {
             log::info!("spawning {} without shell integration", shell_name);
         }
@@ -199,35 +190,12 @@ mod windows {
         Ok(cmd)
     }
 
-    fn integration_root() -> Result<PathBuf, String> {
-        let home = dirs::home_dir().ok_or_else(|| "could not resolve home dir".to_string())?;
-        let root = home.join(".cache").join("terax").join("shell-integration");
-        fs::create_dir_all(&root).map_err(|e| format!("create {}: {e}", root.display()))?;
-        Ok(root)
-    }
-
-    fn prepare_ps_profile() -> Result<PathBuf, String> {
-        let dir = integration_root()?.join("powershell");
-        fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-        let file = dir.join("profile.ps1");
-        write_if_changed(&file, PROFILE_PS1)?;
-        Ok(file)
-    }
-
-    fn write_if_changed(path: &Path, content: &str) -> Result<(), String> {
-        if let Ok(existing) = fs::read_to_string(path) {
-            if existing == content {
-                return Ok(());
-            }
-        }
-        let mut tmp: OsString = path.as_os_str().to_owned();
-        tmp.push(".__terax_tmp__");
-        let tmp = PathBuf::from(tmp);
-        fs::write(&tmp, content).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-        fs::rename(&tmp, path).map_err(|e| {
-            let _ = fs::remove_file(&tmp);
-            format!("rename {} -> {}: {e}", tmp.display(), path.display())
-        })
+    fn encode_pwsh(script: &str) -> String {
+        let bytes: Vec<u8> = script
+            .encode_utf16()
+            .flat_map(|c| c.to_le_bytes())
+            .collect();
+        B64.encode(&bytes)
     }
 }
 
