@@ -686,12 +686,15 @@ export default function App() {
                       data-ai-input-bar
                       initial={false}
                       animate={{
-                        height: panelOpen ? "auto" : 0,
-                        opacity: panelOpen ? 1 : 0,
+                        // Collapse the docked input row while the mini chat
+                        // window is open — otherwise the floating mini window
+                        // (fixed bottom-right) overshadows it (#40).
+                        height: panelOpen && !miniOpen ? "auto" : 0,
+                        opacity: panelOpen && !miniOpen ? 1 : 0,
                       }}
                       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                       className="overflow-hidden"
-                      aria-hidden={!panelOpen}
+                      aria-hidden={!panelOpen || miniOpen}
                     >
                       {hasComposer ? (
                         <AiInputBar />
