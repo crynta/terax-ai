@@ -144,7 +144,8 @@ export function ModelsSection() {
         <div className="flex items-baseline justify-between">
           <Label>API keys</Label>
           <span className="text-[10.5px] text-muted-foreground">
-            {configuredCount} of {PROVIDERS.filter((p) => providerNeedsKey(p.id)).length} configured
+            {configuredCount} of{" "}
+            {PROVIDERS.filter((p) => providerNeedsKey(p.id)).length} configured
           </span>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

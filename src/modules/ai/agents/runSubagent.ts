@@ -46,9 +46,14 @@ export async function runSubagent({
     if (t in readOnly) filtered[t] = readOnly[t];
   }
 
-  const model = await buildLanguageModel(getModel(modelId).provider, keys, getModel(modelId).id, {
-    lmstudioBaseURL,
-  });
+  const model = await buildLanguageModel(
+    getModel(modelId).provider,
+    keys,
+    getModel(modelId).id,
+    {
+      lmstudioBaseURL,
+    },
+  );
 
   // The Agent constructor's tools generic infers `never` when passed a
   // dynamic record, so cast through unknown for both `tools` and
@@ -61,9 +66,11 @@ export async function runSubagent({
   } as never);
 
   const start = Date.now();
-  const result = await (agent as unknown as {
-    generate: (a: { prompt: string }) => Promise<unknown>;
-  }).generate({ prompt });
+  const result = await (
+    agent as unknown as {
+      generate: (a: { prompt: string }) => Promise<unknown>;
+    }
+  ).generate({ prompt });
   const durationMs = Date.now() - start;
 
   // Best-effort summary extraction across SDK shape variations.

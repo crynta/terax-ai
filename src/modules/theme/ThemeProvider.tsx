@@ -69,7 +69,10 @@ export function ThemeProvider({
       writeFastTheme(p.theme);
     });
     const unlistenP = onPreferencesChange((key, value) => {
-      if (key === "theme" && (value === "system" || value === "light" || value === "dark")) {
+      if (
+        key === "theme" &&
+        (value === "system" || value === "light" || value === "dark")
+      ) {
         setThemeState(value);
         writeFastTheme(value);
       }

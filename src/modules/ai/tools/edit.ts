@@ -15,8 +15,7 @@ async function applyEdits(
   kind: "edit" | "multi_edit",
 ): Promise<EditResult> {
   const r = await native.readFile(abs);
-  if (r.kind === "binary")
-    return { error: "binary file refused", path: abs };
+  if (r.kind === "binary") return { error: "binary file refused", path: abs };
   if (r.kind === "toolarge")
     return { error: `file too large (${r.size} bytes)`, path: abs };
 
@@ -118,7 +117,9 @@ export function buildEditTools(ctx: ToolContext) {
         path: z.string(),
         old_string: z
           .string()
-          .describe("Exact substring to replace. Must be unique unless replace_all."),
+          .describe(
+            "Exact substring to replace. Must be unique unless replace_all.",
+          ),
         new_string: z.string().describe("Replacement substring."),
         replace_all: z.boolean().optional(),
       }),
@@ -134,7 +135,11 @@ export function buildEditTools(ctx: ToolContext) {
             path: abs,
           };
         }
-        return applyEdits(abs, [{ old_string, new_string, replace_all }], "edit");
+        return applyEdits(
+          abs,
+          [{ old_string, new_string, replace_all }],
+          "edit",
+        );
       },
     }),
 

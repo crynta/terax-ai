@@ -86,7 +86,7 @@ export function TabBar({
                 data-tab-id={t.id}
                 className={cn(
                   "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
-                  compact ? "px-1.5!" : "ps-2! pe-1!"
+                  compact ? "px-1.5!" : "ps-2! pe-1!",
                 )}
               >
                 <span

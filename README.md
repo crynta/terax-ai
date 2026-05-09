@@ -31,25 +31,30 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 ## Features
 
 **Terminal**
+
 - xterm.js + WebGL renderer, multi-tab with background streaming
 - Native PTY backend via `portable-pty` (zsh, bash, pwsh, …)
 - Shell integration (cwd reporting, prompt markers) via injected init scripts
 - Inline search, link detection, true-color
 
 **Editor**
+
 - CodeMirror 6 with language support for TS/JS, Rust, Python, HTML/CSS, JSON, Markdown
 - Inline AI autocomplete and AI edit diffs
 - Vim mode
 - Prebuilt themes: Tokyo Night, Nord, GitHub, Atom One, Aura, Copilot, Xcode
 
 **File Explorer**
+
 - Catppuccin icon theme (Material Icon Theme resolver)
 - Fuzzy search, keyboard navigation, inline rename, context actions
 
 **Web Preview**
+
 - Auto-detects local dev servers and opens them in a preview tab
 
 **AI (BYOK)**
+
 - Providers: OpenAI, Anthropic, Google, Groq, xAI, Cerebras, OpenAI-compatible
 - Local / offline models via LM Studio
 - Voice input, edit diffs, multi-agent and sub-agents
@@ -58,8 +63,9 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 - Tasks, plans, search, file read/write tools with approval flow
 
 **Quality**
+
 - Lightweight and fast (~7 MB bundle)
-- API keys stored in the OS keychain 
+- API keys stored in the OS keychain
 - No telemetry, no account required
 
 ## Configure AI
@@ -71,11 +77,13 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 ## Build from source
 
 **Prerequisites**
+
 - Rust (stable) — https://rustup.rs
 - Node 20+ and [pnpm](https://pnpm.io)
 - Platform-specific Tauri prerequisites — https://tauri.app/start/prerequisites/
 
 **Run**
+
 ```bash
 pnpm install
 pnpm tauri dev          # development
@@ -83,6 +91,7 @@ pnpm tauri build        # production bundle
 ```
 
 **Checks**
+
 ```bash
 pnpm exec tsc --noEmit          # frontend type-check
 cd src-tauri && cargo clippy    # Rust lint

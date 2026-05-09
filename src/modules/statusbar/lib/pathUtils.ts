@@ -5,8 +5,11 @@ export type Segment = {
 };
 
 export function segmentsFromCwd(cwd: string, home: string | null): Segment[] {
-  const usingHome = home !== null && (cwd === home || cwd.startsWith(home + "/"));
-  const tail = usingHome ? cwd.slice(home.length).replace(/^\//, "") : cwd.replace(/^\//, "");
+  const usingHome =
+    home !== null && (cwd === home || cwd.startsWith(home + "/"));
+  const tail = usingHome
+    ? cwd.slice(home.length).replace(/^\//, "")
+    : cwd.replace(/^\//, "");
   const parts = tail === "" ? [] : tail.split("/").filter(Boolean);
 
   const segments: Segment[] = [];

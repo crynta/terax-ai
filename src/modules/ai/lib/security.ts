@@ -122,18 +122,31 @@ export function checkShellCommand(cmd: string): SafetyResult {
       c,
     )
   ) {
-    return { ok: false, reason: "Refused: command attempts to recursively delete the filesystem root." };
+    return {
+      ok: false,
+      reason:
+        "Refused: command attempts to recursively delete the filesystem root.",
+    };
   }
   if (/--no-preserve-root/.test(c)) {
     return { ok: false, reason: "Refused: --no-preserve-root is not allowed." };
   }
   // dd to a raw disk device
   if (/\bdd\b[^|]*\bof=\/dev\/(disk|sd|nvme|hd)/i.test(c)) {
-    return { ok: false, reason: "Refused: dd to a block device is not allowed." };
+    return {
+      ok: false,
+      reason: "Refused: dd to a block device is not allowed.",
+    };
   }
   // mkfs / fdisk / diskutil eraseDisk
-  if (/\b(mkfs(\.[a-z0-9]+)?|fdisk|parted)\b/.test(c) || /\bdiskutil\s+erase/i.test(c)) {
-    return { ok: false, reason: "Refused: disk-formatting commands are not allowed." };
+  if (
+    /\b(mkfs(\.[a-z0-9]+)?|fdisk|parted)\b/.test(c) ||
+    /\bdiskutil\s+erase/i.test(c)
+  ) {
+    return {
+      ok: false,
+      reason: "Refused: disk-formatting commands are not allowed.",
+    };
   }
   return { ok: true };
 }

@@ -111,11 +111,7 @@ function PlanRow({
   const stats = isDir
     ? null
     : diffStats(item.originalContent, item.proposedContent);
-  const Icon = isDir
-    ? FolderAddIcon
-    : isNew
-      ? FilePlusIcon
-      : FileEditIcon;
+  const Icon = isDir ? FolderAddIcon : isNew ? FilePlusIcon : FileEditIcon;
 
   return (
     <li className="group/row overflow-hidden rounded-md border border-border/50 bg-card">

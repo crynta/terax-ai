@@ -84,9 +84,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const openFileTab = useCallback((path: string) => {
     let targetId: number | null = null;
     setTabs((curr) => {
-      const existing = curr.find(
-        (t) => t.kind === "editor" && t.path === path,
-      );
+      const existing = curr.find((t) => t.kind === "editor" && t.path === path);
       if (existing) {
         targetId = existing.id;
         return curr;

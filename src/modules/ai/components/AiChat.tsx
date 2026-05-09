@@ -85,7 +85,8 @@ export function AiChatView({
   const showSpinner = isBusy && lastMessage?.role === "user";
 
   const onApproval = useCallback(
-    (id: string, approved: boolean) => addToolApprovalResponse({ id, approved }),
+    (id: string, approved: boolean) =>
+      addToolApprovalResponse({ id, approved }),
     [addToolApprovalResponse],
   );
 

@@ -52,7 +52,7 @@ export const ConversationEmptyState = ({
   <div
     className={cn(
       "flex size-full flex-col items-center justify-center gap-3 p-8 text-center",
-      className
+      className,
     )}
     {...props}
   >
@@ -87,7 +87,7 @@ export const ConversationScrollButton = ({
       <Button
         className={cn(
           "absolute bottom-3 left-1/2 size-7 -translate-x-1/2 rounded-full border-border/50 bg-background/90 shadow-md backdrop-blur dark:bg-background/80 dark:hover:bg-muted",
-          className
+          className,
         )}
         onClick={handleScrollToBottom}
         size="icon"
@@ -126,8 +126,8 @@ export const messagesToMarkdown = (
   messages: UIMessage[],
   formatMessage: (
     message: UIMessage,
-    index: number
-  ) => string = defaultFormatMessage
+    index: number,
+  ) => string = defaultFormatMessage,
 ): string => messages.map((msg, i) => formatMessage(msg, i)).join("\n\n");
 
 export const ConversationDownload = ({
@@ -155,7 +155,7 @@ export const ConversationDownload = ({
     <Button
       className={cn(
         "absolute top-4 right-4 rounded-full dark:bg-background dark:hover:bg-muted",
-        className
+        className,
       )}
       onClick={handleDownload}
       size="icon"

@@ -108,8 +108,7 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_AUTOCOMPLETE_MODEL) ??
       DEFAULT_PREFERENCES.autocompleteModelId,
     lmstudioBaseURL:
-      get<string>(KEY_LMSTUDIO_BASE_URL) ??
-      DEFAULT_PREFERENCES.lmstudioBaseURL,
+      get<string>(KEY_LMSTUDIO_BASE_URL) ?? DEFAULT_PREFERENCES.lmstudioBaseURL,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
   };
 }

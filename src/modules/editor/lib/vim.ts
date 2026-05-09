@@ -7,7 +7,9 @@ export type VimHandlers = { save: () => void; close: () => void };
 const handlers = new WeakMap<EditorView, VimHandlers>();
 
 /** A CodeMirror extension that binds :w / :q handlers to this view. */
-export function vimHandlersExtension(getHandlers: () => VimHandlers): Extension {
+export function vimHandlersExtension(
+  getHandlers: () => VimHandlers,
+): Extension {
   return ViewPlugin.define((view) => {
     handlers.set(view, getHandlers());
     return {

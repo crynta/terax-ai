@@ -1,10 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import {
-  CheckmarkCircle01Icon,
-  CopyIcon,
-} from "@hugeicons/core-free-icons";
+import { CheckmarkCircle01Icon, CopyIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -13,10 +10,38 @@ import type { BundledLanguage } from "shiki";
 import { CodeBlockContent } from "./code-block";
 
 const SUPPORTED = new Set<string>([
-  "ts", "tsx", "js", "jsx", "json", "md", "markdown",
-  "sh", "bash", "zsh", "shell", "rs", "rust", "py", "python",
-  "css", "html", "yaml", "yml", "toml", "go", "java", "c", "cpp",
-  "ruby", "swift", "kotlin", "sql", "diff", "text", "txt", "plaintext",
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "json",
+  "md",
+  "markdown",
+  "sh",
+  "bash",
+  "zsh",
+  "shell",
+  "rs",
+  "rust",
+  "py",
+  "python",
+  "css",
+  "html",
+  "yaml",
+  "yml",
+  "toml",
+  "go",
+  "java",
+  "c",
+  "cpp",
+  "ruby",
+  "swift",
+  "kotlin",
+  "sql",
+  "diff",
+  "text",
+  "txt",
+  "plaintext",
 ]);
 
 const ALIASES: Record<string, BundledLanguage> = {

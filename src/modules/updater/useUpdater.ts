@@ -56,7 +56,11 @@ export function useUpdater({ autoCheck = true }: HookOptions = {}) {
       await update.downloadAndInstall((event) => {
         if (event.event === "Started") {
           total = event.data.contentLength ?? null;
-          setStatus({ kind: "downloading", downloaded: 0, contentLength: total });
+          setStatus({
+            kind: "downloading",
+            downloaded: 0,
+            contentLength: total,
+          });
         } else if (event.event === "Progress") {
           downloaded += event.data.chunkLength;
           setStatus({ kind: "downloading", downloaded, contentLength: total });

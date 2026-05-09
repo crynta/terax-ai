@@ -1,6 +1,6 @@
 # TERAX.md
 
-Terax supports TERAX.md file at the workspace root (similiar to AGENTS.md, CLAUDE.md, etc.) 
+Terax supports TERAX.md file at the workspace root (similiar to AGENTS.md, CLAUDE.md, etc.)
 
 ## Project
 
@@ -47,7 +47,7 @@ BYOK. Currently OpenAI-only via `@ai-sdk/openai`; default model in `config.ts` (
 - **Agent**: `lib/agent.ts` builds a `Experimental_Agent` with `stopWhen: stepCountIs(MAX_AGENT_STEPS)` and the system prompt from `config.ts`.
 - **Sessions** (`lib/sessions.ts` + `store/chatStore.ts`): conversations are organized into named sessions, persisted via `tauri-plugin-store` at `terax-ai-sessions.json` (list + `activeId` + per-session `messages:<id>` keys). `chatStore.ts` keeps a module-scoped `Map<sessionId, Chat<UIMessage>>`; `getOrCreateChat(apiKey, sessionId)` lazily constructs a `Chat`, seeded with persisted messages from a hydration map populated by `hydrateSessions()` (called once from `App.tsx`). `AgentRunBridge` mirrors the active session's messages back to disk on every change and auto-derives the title from the first user message. Switching the API key wipes the chat map; sessions persist. Session UI (switch / new / delete) lives in `AiMiniWindow`'s header.
 - **Composer** (`lib/composer.tsx`): a React context providing the shared input state (text, attachments, voice) for both the docked `AiInputBar` and any other surface. Attachments include image, text-file, and `selection` kinds — selections come from `useChatStore.attachSelection(text, source)` (drained into chips, not pasted into the textarea) and are wrapped as `<selection source="terminal|editor">…</selection>` blocks at submit. Composer doesn't run `useChat` itself — it derives `isBusy` from `agentMeta.status` so it can mount safely before sessions hydrate.
-- **Live context bridge**: `App.tsx` calls `setLive({ getCwd, getTerminalContext, … })` so tools can read the *currently active* terminal's cwd + last 300 lines of buffer. Keep this lazy — don't pre-snapshot, the active tab changes.
+- **Live context bridge**: `App.tsx` calls `setLive({ getCwd, getTerminalContext, … })` so tools can read the _currently active_ terminal's cwd + last 300 lines of buffer. Keep this lazy — don't pre-snapshot, the active tab changes.
 - **Tools** (`tools/tools.ts`): `read_file`, `list_directory` auto-execute; `write_file`, `create_directory`, `run_command` set `needsApproval: true` and the AI SDK pauses for an in-UI confirmation card. `lib/security.ts` is a deny-list that refuses obvious secret paths (`.env*`, `.ssh/`, credentials) — apply it on **both** read and write paths and don't bypass it. Auto-send after approval response uses `lastAssistantMessageIsCompleteWithApprovalResponses`.
 
 ### UI conventions
