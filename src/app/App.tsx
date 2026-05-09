@@ -43,7 +43,9 @@ import { StatusBar } from "@/modules/statusbar";
 import { useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
   disposeSession,
+  hasLeaf,
   leafIds,
+  respawnSession,
   TerminalStack,
   type TerminalPaneHandle,
 } from "@/modules/terminal";
@@ -83,6 +85,7 @@ export default function App() {
     focusNextPaneInTab,
     splitActivePane,
     closeActivePane,
+    closePaneByLeaf,
   } = useTabs();
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
@@ -255,10 +258,8 @@ export default function App() {
     [closeTab],
   );
 
-  // Drop terminal-leaf-keyed entries when their leaves disappear (pane
-  // close, tab close, etc.) and dispose the underlying xterm + PTY. The
-  // session itself outlives React re-mounts caused by split/unsplit, so
-  // disposal must be driven by the pane tree, not by component lifecycles.
+  // Drives session disposal off the pane tree, not React lifecycles —
+  // split/unsplit re-mount components but the leaf is still live.
   const liveLeavesRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     const live = new Set<number>();
@@ -598,6 +599,25 @@ export default function App() {
     [focusPane],
   );
 
+  const handleLeafExit = useCallback(
+    (leafId: number, _code: number) => {
+      const all = tabsRef.current;
+      const tab = all.find(
+        (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
+      );
+      if (!tab || tab.kind !== "terminal") return;
+      const isLast =
+        leafIds(tab.paneTree).length === 1 &&
+        all.filter((t) => t.kind === "terminal").length === 1;
+      if (isLast) {
+        void respawnSession(leafId, tab.cwd);
+      } else {
+        closePaneByLeaf(leafId);
+      }
+    },
+    [closePaneByLeaf],
+  );
+
   const handleEditorDirty = useCallback(
     (id: number, dirty: boolean) => updateTab(id, { dirty }),
     [updateTab],
@@ -715,6 +735,7 @@ export default function App() {
                         onSearchReady={handleSearchReady}
                         onCwd={handleTerminalCwd}
                         onDetectedLocalUrl={handleDetectedLocalUrl}
+                        onExit={handleLeafExit}
                         onFocusLeaf={handleFocusLeaf}
                       />
                     </div>

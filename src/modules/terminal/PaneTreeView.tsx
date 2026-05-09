@@ -13,6 +13,7 @@ type LeafBundle = {
   onSearch: (addon: SearchAddon) => void;
   onCwd: (cwd: string) => void;
   onDetectedUrl: (url: string) => void;
+  onExit: (code: number) => void;
 };
 
 type Props = {
@@ -35,8 +36,7 @@ export function PaneTreeView({
     const b = getBundle(node.id);
     return (
       <div
-        // Mouse-down (capture) wins before xterm consumes the event, so
-        // clicking an inactive pane immediately promotes it to focused.
+        // Capture beats xterm's mouse handler so click-to-focus works.
         onMouseDownCapture={() => {
           if (!focused) onFocusLeaf(node.id);
         }}
@@ -51,6 +51,7 @@ export function PaneTreeView({
           onSearchReady={(_id, addon) => b.onSearch(addon)}
           onCwd={(_id, cwd) => b.onCwd(cwd)}
           onDetectedLocalUrl={(_id, url) => b.onDetectedUrl(url)}
+          onExit={(_id, code) => b.onExit(code)}
         />
       </div>
     );

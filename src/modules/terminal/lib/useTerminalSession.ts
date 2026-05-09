@@ -22,10 +22,8 @@ type Callbacks = {
   onDetectedLocalUrl?: (url: string) => void;
 };
 
-// Session lives outside React so split / unsplit only re-parent the DOM,
-// they don't tear down the xterm Terminal or close the PTY. Real disposal
-// happens via `disposeSession`, called from App.tsx when a leaf actually
-// disappears from the pane tree.
+// Lives outside React so split/unsplit re-parent the DOM without tearing
+// down the term or PTY. Real disposal: `disposeSession`.
 type Session = {
   term: Terminal;
   fitAddon: FitAddon;
@@ -98,9 +96,8 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   };
   sessions.set(leafId, session);
 
-  // Per-session decoder so interleaved chunks across leaves don't splice
-  // a multi-byte UTF-8 codepoint between unrelated streams.
-  const urlDecoder = new TextDecoder("utf-8", { fatal: false });
+  // Routes through session.pty so respawn doesn't need to rebind.
+  term.onData((data) => session.pty?.write(data));
 
   session.ready = (async () => {
     await document.fonts.load(`${FONT_SIZE}px "JetBrains Mono"`);
@@ -115,41 +112,75 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
       }),
     );
 
-    const pty = await openPty(
-      term.cols,
-      term.rows,
-      {
-        onData: (bytes) => {
-          term.write(bytes);
-          if (containsSchemeSeparator(bytes)) {
-            const text = urlDecoder.decode(bytes, { stream: true });
-            const matches = text.match(LOCAL_URL_RE);
-            if (matches && matches.length > 0) {
-              const url = stripTrailingPunct(matches[matches.length - 1]);
-              if (url && url !== session.lastDetectedUrl) {
-                session.lastDetectedUrl = url;
-                session.callbacks.onDetectedLocalUrl?.(url);
-              }
-            }
-          }
-        },
-        onExit: (code) => {
-          term.write(`\r\n\x1b[2m[process exited: ${code}]\x1b[0m\r\n`);
-          term.options.disableStdin = true;
-          session.callbacks.onExit?.(code);
-        },
-      },
-      initialCwd,
-    );
+    const pty = await openPtyForSession(session, initialCwd);
     if (session.disposed) {
       pty.close();
       return;
     }
     session.pty = pty;
-    term.onData((data) => pty.write(data));
   })();
 
   return session;
+}
+
+function openPtyForSession(
+  s: Session,
+  cwd: string | undefined,
+): Promise<PtySession> {
+  // Fresh decoder per pty so a partial UTF-8 codepoint from a prior shell
+  // doesn't leak into the new one.
+  const urlDecoder = new TextDecoder("utf-8", { fatal: false });
+  return openPty(
+    s.term.cols,
+    s.term.rows,
+    {
+      onData: (bytes) => {
+        s.term.write(bytes);
+        if (containsSchemeSeparator(bytes)) {
+          const text = urlDecoder.decode(bytes, { stream: true });
+          const matches = text.match(LOCAL_URL_RE);
+          if (matches && matches.length > 0) {
+            const url = stripTrailingPunct(matches[matches.length - 1]);
+            if (url && url !== s.lastDetectedUrl) {
+              s.lastDetectedUrl = url;
+              s.callbacks.onDetectedLocalUrl?.(url);
+            }
+          }
+        }
+      },
+      onExit: (code) => {
+        s.term.options.disableStdin = true;
+        s.callbacks.onExit?.(code);
+      },
+    },
+    cwd,
+  );
+}
+
+export async function respawnSession(
+  leafId: number,
+  cwd?: string,
+): Promise<void> {
+  const s = sessions.get(leafId);
+  if (!s || s.disposed) return;
+  s.pty?.close();
+  s.pty = null;
+  s.term.reset();
+  s.term.options.disableStdin = false;
+  s.lastSentCols = 0;
+  s.lastSentRows = 0;
+  s.lastDetectedUrl = null;
+  const pty = await openPtyForSession(s, cwd);
+  if (s.disposed) {
+    pty.close();
+    return;
+  }
+  s.pty = pty;
+  if (s.observer) {
+    pty.resize(s.term.cols, s.term.rows);
+    s.lastSentCols = s.term.cols;
+    s.lastSentRows = s.term.rows;
+  }
 }
 
 function attachSession(
@@ -208,9 +239,8 @@ function attachSession(
     s.pty.resize(s.term.cols, s.term.rows);
   };
 
-  // Defer one frame so the new container's layout is finalized before fit.
-  // First attach + every re-parent both go through this — keeps PTY and
-  // term cols in sync without waiting on the ResizeObserver to trip.
+  // rAF so container has post-layout size; also pushes SIGWINCH after a
+  // re-parent (otherwise the shell stays at the previous geometry).
   requestAnimationFrame(() => {
     if (s.disposed) return;
     s.fitAddon.fit();
@@ -242,8 +272,7 @@ function attachSession(
     s.observer.observe(container);
   });
 
-  // Re-emit known state to the new mount so App.tsx state stays in sync
-  // after a re-attach (the previous detach cleared callbacks).
+  // Re-sync App state after re-attach (prior detach cleared callbacks).
   if (s.lastCwd !== null) callbacks.onCwd?.(s.lastCwd);
   if (s.lastDetectedUrl !== null)
     callbacks.onDetectedLocalUrl?.(s.lastDetectedUrl);

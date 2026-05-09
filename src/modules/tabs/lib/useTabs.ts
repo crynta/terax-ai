@@ -316,10 +316,33 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [],
   );
 
-  /**
-   * Close the active leaf of `tabId`. If the leaf was the last one, closes
-   * the tab. Returns `true` if the whole tab was closed.
-   */
+  const closePaneByLeaf = useCallback((leafId: number): void => {
+    setTabs((curr) => {
+      const tab = curr.find(
+        (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
+      );
+      if (!tab || tab.kind !== "terminal") return curr;
+      const newTree = removeLeaf(tab.paneTree, leafId);
+      if (newTree === null) {
+        if (curr.length <= 1) return curr;
+        const idx = curr.findIndex((x) => x.id === tab.id);
+        const next = curr.filter((x) => x.id !== tab.id);
+        setActiveId((active) =>
+          active === tab.id ? next[Math.max(0, idx - 1)].id : active,
+        );
+        return next;
+      }
+      const remaining = leafIds(newTree);
+      const newActive =
+        tab.activeLeafId === leafId ? remaining[0] : tab.activeLeafId;
+      return curr.map((x) =>
+        x.id === tab.id
+          ? { ...x, paneTree: newTree, activeLeafId: newActive }
+          : x,
+      );
+    });
+  }, []);
+
   const closeActivePane = useCallback((tabId: number): boolean => {
     let closedTab = false;
     setTabs((curr) => {
@@ -365,5 +388,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     focusNextPaneInTab,
     splitActivePane,
     closeActivePane,
+    closePaneByLeaf,
   };
 }

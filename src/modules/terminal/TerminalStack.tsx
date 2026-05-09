@@ -13,6 +13,7 @@ type Props = {
   onSearchReady: (leafId: number, addon: SearchAddon) => void;
   onCwd: (leafId: number, cwd: string) => void;
   onDetectedLocalUrl: (leafId: number, url: string) => void;
+  onExit: (leafId: number, code: number) => void;
   onFocusLeaf: (tabId: number, leafId: number) => void;
 };
 
@@ -21,6 +22,7 @@ type Bundle = {
   onSearch: (addon: SearchAddon) => void;
   onCwd: (cwd: string) => void;
   onDetectedUrl: (url: string) => void;
+  onExit: (code: number) => void;
 };
 
 export function TerminalStack({
@@ -30,6 +32,7 @@ export function TerminalStack({
   onSearchReady,
   onCwd,
   onDetectedLocalUrl,
+  onExit,
   onFocusLeaf,
 }: Props) {
   const terminals = tabs.filter((t) => t.kind === "terminal");
@@ -38,6 +41,7 @@ export function TerminalStack({
   const searchReadyRef = useRef(onSearchReady);
   const cwdRef = useRef(onCwd);
   const detectedUrlRef = useRef(onDetectedLocalUrl);
+  const exitRef = useRef(onExit);
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -50,6 +54,9 @@ export function TerminalStack({
   useEffect(() => {
     detectedUrlRef.current = onDetectedLocalUrl;
   }, [onDetectedLocalUrl]);
+  useEffect(() => {
+    exitRef.current = onExit;
+  }, [onExit]);
 
   const bundles = useRef(new Map<number, Bundle>());
   const getBundle = (leafId: number): Bundle => {
@@ -60,6 +67,7 @@ export function TerminalStack({
         onSearch: (addon) => searchReadyRef.current(leafId, addon),
         onCwd: (cwd) => cwdRef.current(leafId, cwd),
         onDetectedUrl: (url) => detectedUrlRef.current(leafId, url),
+        onExit: (code) => exitRef.current(leafId, code),
       };
       bundles.current.set(leafId, b);
     }
