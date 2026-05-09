@@ -36,6 +36,22 @@ export function registerPromptTracker(term: Terminal): PromptTracker {
   };
 }
 
+export type TeraxOpenInput = {
+  file: string;
+};
+
+export function registerTeraxOpenHandler(
+  term: Terminal,
+  onTeraxOpen: (input: TeraxOpenInput) => void,
+): () => void {
+  const d = term.parser.registerOscHandler(8888, (data) => {
+    const input = parseTeraxOpen(data);
+    if (input) onTeraxOpen(input);
+    return true;
+  });
+  return () => d.dispose();
+}
+
 function parseOsc7(data: string): string | null {
   const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
   if (!m) return null;
@@ -43,5 +59,18 @@ function parseOsc7(data: string): string | null {
     return decodeURIComponent(m[1]);
   } catch {
     return m[1];
+  }
+}
+
+function parseTeraxOpen(data: string): TeraxOpenInput | null {
+  // Parse format: "file=/path/to/file"
+  const fileMatch = data.match(/file=([^;]+)/);
+
+  if (!fileMatch) return null;
+
+  try {
+    return { file: decodeURIComponent(fileMatch[1]) };
+  } catch {
+    return { file: fileMatch[1] };
   }
 }

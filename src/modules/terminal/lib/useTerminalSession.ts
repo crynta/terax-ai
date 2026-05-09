@@ -6,8 +6,10 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
+import { registerCwdHandler, registerPromptTracker, registerTeraxOpenHandler, type TeraxOpenInput } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
+
+export type { TeraxOpenInput };
 
 const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
 const FONT_SIZE = 14;
@@ -20,6 +22,7 @@ type Options = {
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
   onDetectedLocalUrl?: (url: string) => void;
+  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 // Matches dev-server-style local URLs (vite, next dev, webpack, …). Anchors
@@ -35,18 +38,21 @@ export function useTerminalSession({
   onExit,
   onCwd,
   onDetectedLocalUrl,
+  onTeraxOpen,
 }: Options) {
   const detectedRef = useRef<string | null>(null);
   const onDetectedRef = useRef(onDetectedLocalUrl);
   const onCwdRef = useRef(onCwd);
   const onExitRef = useRef(onExit);
   const onSearchReadyRef = useRef(onSearchReady);
+  const onTeraxOpenRef = useRef(onTeraxOpen);
   useEffect(() => {
     onDetectedRef.current = onDetectedLocalUrl;
     onCwdRef.current = onCwd;
     onExitRef.current = onExit;
     onSearchReadyRef.current = onSearchReady;
-  }, [onDetectedLocalUrl, onCwd, onExit, onSearchReady]);
+    onTeraxOpenRef.current = onTeraxOpen;
+  }, [onDetectedLocalUrl, onCwd, onExit, onSearchReady, onTeraxOpen]);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const ptyRef = useRef<PtySession | null>(null);
@@ -99,6 +105,7 @@ export function useTerminalSession({
       const prompt = registerPromptTracker(term);
       cleanups.push(
         registerCwdHandler(term, (cwd) => onCwdRef.current?.(cwd)),
+        registerTeraxOpenHandler(term, (input) => onTeraxOpenRef.current?.(input)),
         prompt.dispose,
       );
       onSearchReadyRef.current?.(search);
