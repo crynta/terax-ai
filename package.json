@@ -96,6 +96,10 @@
     "vite": "^7.0.4"
   },
   "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "msw"
+    ],
     "overrides": {
       "shiki": "^4.0.2"
     }

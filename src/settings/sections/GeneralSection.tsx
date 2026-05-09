@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +16,8 @@ import {
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
+  setTerminalFontFamily,
+  setTerminalFontSize,
   setVimMode,
   type EditorThemeId,
 } from "@/modules/settings/store";
@@ -27,7 +30,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 
@@ -47,6 +50,14 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
+  const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
+
+  const [fontFamilyDraft, setFontFamilyDraft] = useState(terminalFontFamily);
+  const [fontSizeDraft, setFontSizeDraft] = useState(terminalFontSize.toString());
+
+  useEffect(() => setFontFamilyDraft(terminalFontFamily), [terminalFontFamily]);
+  useEffect(() => setFontSizeDraft(terminalFontSize.toString()), [terminalFontSize]);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -147,6 +158,45 @@ export function GeneralSection() {
             onCheckedChange={(v) => void setVimMode(v)}
           />
         </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Terminal</Label>
+        <div className="flex flex-col gap-2">
+          <SettingRow
+            title="Font family"
+            description="CSS font-family string used in the terminal."
+          >
+            <Input
+              value={fontFamilyDraft}
+              onChange={(e) => setFontFamilyDraft(e.target.value)}
+              onBlur={() => {
+                const v = fontFamilyDraft.trim();
+                if (v && v !== terminalFontFamily) void setTerminalFontFamily(v);
+              }}
+              className="h-8 w-[200px] text-xs"
+            />
+          </SettingRow>
+          <SettingRow
+            title="Font size"
+            description="Size of the terminal font in pixels."
+          >
+            <Input
+              type="number"
+              value={fontSizeDraft}
+              onChange={(e) => setFontSizeDraft(e.target.value)}
+              onBlur={() => {
+                const v = Number(fontSizeDraft);
+                if (!isNaN(v) && v > 0 && v !== terminalFontSize) {
+                  void setTerminalFontSize(v);
+                }
+              }}
+              className="h-8 w-[100px] text-xs"
+              min={8}
+              max={72}
+            />
+          </SettingRow>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">

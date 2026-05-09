@@ -8,9 +8,9 @@ import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 
-const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
-const FONT_SIZE = 14;
+
 
 type Options = {
   container: React.RefObject<HTMLDivElement | null>;
@@ -51,17 +51,20 @@ export function useTerminalSession({
   const fitRef = useRef<FitAddon | null>(null);
   const ptyRef = useRef<PtySession | null>(null);
 
+  const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
+  const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
+
   useEffect(() => {
     let disposed = false;
     const cleanups: Array<() => void> = [];
 
     (async () => {
-      await document.fonts.load(`${FONT_SIZE}px "JetBrains Mono"`);
+      await document.fonts.load(`${terminalFontSize}px "JetBrains Mono"`);
       if (disposed || !container.current) return;
 
       const term = new Terminal({
-        fontFamily: FONT_FAMILY,
-        fontSize: FONT_SIZE,
+        fontFamily: terminalFontFamily,
+        fontSize: terminalFontSize,
         lineHeight: 1.05,
         theme: buildTerminalTheme(),
         cursorBlink: true,
@@ -214,6 +217,14 @@ export function useTerminalSession({
     fitRef.current?.fit();
     termRef.current?.focus();
   }, [visible]);
+
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.options.fontFamily = terminalFontFamily;
+      termRef.current.options.fontSize = terminalFontSize;
+      fitRef.current?.fit();
+    }
+  }, [terminalFontFamily, terminalFontSize]);
 
   const write = useCallback((data: string) => {
     ptyRef.current?.write(data);

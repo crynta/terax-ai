@@ -48,6 +48,8 @@ export type Preferences = {
   autocompleteModelId: string;
   lmstudioBaseURL: string;
   vimMode: boolean;
+  terminalFontFamily: string;
+  terminalFontSize: number;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -62,6 +64,8 @@ const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_VIM_MODE = "vimMode";
+const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
+const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -75,6 +79,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
   vimMode: false,
+  terminalFontFamily: '"JetBrains Mono", SFMono-Regular, Menlo, monospace',
+  terminalFontSize: 14,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -111,6 +117,12 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_LMSTUDIO_BASE_URL) ??
       DEFAULT_PREFERENCES.lmstudioBaseURL,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    terminalFontFamily:
+      get<string>(KEY_TERMINAL_FONT_FAMILY) ??
+      DEFAULT_PREFERENCES.terminalFontFamily,
+    terminalFontSize:
+      get<number>(KEY_TERMINAL_FONT_SIZE) ??
+      DEFAULT_PREFERENCES.terminalFontSize,
   };
 }
 
@@ -171,6 +183,16 @@ export async function setVimMode(value: boolean): Promise<void> {
   await store.save();
 }
 
+export async function setTerminalFontFamily(value: string): Promise<void> {
+  await store.set(KEY_TERMINAL_FONT_FAMILY, value);
+  await store.save();
+}
+
+export async function setTerminalFontSize(value: number): Promise<void> {
+  await store.set(KEY_TERMINAL_FONT_SIZE, value);
+  await store.save();
+}
+
 export type PrefKey = keyof Preferences;
 
 /** Subscribe to changes from any window (settings → main). */
@@ -189,6 +211,8 @@ export function onPreferencesChange(
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
+    [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
   };
   return store.onChange<unknown>((key, value) => {
     const mapped = map[key];
