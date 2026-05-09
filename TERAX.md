@@ -58,6 +58,30 @@ BYOK. Currently OpenAI-only via `@ai-sdk/openai`; default model in `config.ts` (
 - Animation: `motion` (Framer Motion successor). Resizable layout: `react-resizable-panels`.
 - Path imports: always `@/…`, never relative across modules.
 
+### GitHub Copilot provider (`src/modules/ai/lib/copilot.ts` + `src-tauri/src/modules/copilot.rs`)
+
+Copilot is a keyless OAuth-based provider. All HTTP calls go through Rust (`invoke`) to avoid webview CORS.
+
+- **Device flow**: `copilot_start_device_flow` (POST `github.com/login/device/code`) → `copilot_poll_token` (poll `github.com/login/oauth/access_token`) → `copilot_exchange_token` (POST `api.github.com/copilot_internal/v2/token` — exchanges gho_token for copilot_token)
+- **Token lifecycle**: copilot_token (30min expiry) auto-refreshed via gho_token in `copilot_ensure_token` Rust command (60s buffer). Both stored in OS keychain via `secrets` module.
+- **Models**: fetched dynamically from `api.githubcopilot.com/models` — no hardcoded model list. `getModel()` in `config.ts` returns a fallback for unknown IDs.
+- **Chat endpoint**: `api.githubcopilot.com/chat/completions` (no `/v1/` prefix) — `createCopilotFetch()` rewrites `/v1/chat/completions` → `/chat/completions`, injects Bearer token + Copilot headers.
+- **Client ID**: `Iv1.b507a08c87ecfe98`
+- **UI**: `src/settings/components/CopilotCard.tsx` — OAuth device flow UI (sign-in, auto-copy device code, model dropdown, sign-out). Sits in Settings → Models section.
+- **Default model**: stored as `github-copilot/{modelId}` in preferences.
+
+### CI/CD (`.github/workflows/release.yml`)
+
+Triggers on **every push** (not just tags). Builds on three runners:
+
+| Runner | Arch | Output |
+|---|---|---|
+| `ubuntu-22.04` | x86_64 | `.deb` + `.AppImage` |
+| `macos-13` | x86_64 (Intel) | `.app` |
+| `macos-14` | ARM (Apple Silicon) | `.app` |
+
+Release (GitHub Release with assets) only happens on `v*` tag pushes via `tauri-apps/tauri-action@v0`.
+
 ### Tauri capabilities
 
 `src-tauri/capabilities/default.json` is the allowlist for plugin APIs available to the webview. New plugins (dialog, keyring, store, opener, os, log are already wired in `lib.rs`) usually need both a `Cargo.toml` dep, a `.plugin(...)` line in `lib.rs`, and a capability entry.
