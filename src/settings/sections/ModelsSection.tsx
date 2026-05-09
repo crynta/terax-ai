@@ -33,6 +33,7 @@ import {
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
+import { CopilotCard } from "../components/CopilotCard";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
@@ -158,6 +159,15 @@ export function ModelsSection() {
             />
           ))}
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>GitHub Copilot</Label>
+        <p className="text-[10.5px] leading-relaxed text-muted-foreground -mt-1">
+          Sign in with GitHub OAuth to use models from your Copilot subscription.
+          Models are fetched dynamically from the Copilot API — no hardcoded list.
+        </p>
+        <CopilotCard />
       </div>
 
       <AutocompleteBlock keys={keys} />

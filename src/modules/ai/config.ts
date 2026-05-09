@@ -7,7 +7,8 @@ export type ProviderId =
   | "xai"
   | "cerebras"
   | "groq"
-  | "lmstudio";
+  | "lmstudio"
+  | "github-copilot";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -66,6 +67,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
+  },
+  {
+    id: "github-copilot",
+    label: "GitHub Copilot",
+    keyringAccount: "copilot-gho-token",
+    keyPrefix: "gho_",
+    consoleUrl: "https://github.com/settings/tokens",
   },
 ] as const;
 
@@ -170,12 +178,13 @@ export const MODELS = [
   },
 ] as const satisfies readonly ModelInfo[];
 
-export type ModelId = (typeof MODELS)[number]["id"];
+export type ModelId = (typeof MODELS)[number]["id"] | (string & {});
 
 export function getModel(id: ModelId): ModelInfo {
   const m = MODELS.find((x) => x.id === id);
-  if (!m) throw new Error(`Unknown model: ${id}`);
-  return m;
+  if (m) return m;
+  // Fallback for dynamic models (e.g. GitHub Copilot models fetched at runtime).
+  return { id, provider: "github-copilot", label: id, hint: "" };
 }
 
 export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
@@ -205,7 +214,7 @@ export function getModelContextLimit(modelId: string | undefined): number {
 }
 
 /** Providers that do not require an API key (e.g. local servers). */
-export const KEYLESS_PROVIDERS: readonly ProviderId[] = ["lmstudio"] as const;
+export const KEYLESS_PROVIDERS: readonly ProviderId[] = ["lmstudio", "github-copilot"] as const;
 
 export function providerNeedsKey(id: ProviderId): boolean {
   return !KEYLESS_PROVIDERS.includes(id);
@@ -230,6 +239,9 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Record<
 };
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
+export const COPILOT_CLIENT_ID = "Iv1.b507a08c87ecfe98";
+export const COPILOT_AUTH_SCOPES = "read:user";
+export const COPILOT_BASE_URL = "https://api.githubcopilot.com";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
 

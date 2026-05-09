@@ -17,6 +17,7 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   cerebras: null,
   groq: null,
   lmstudio: null,
+  "github-copilot": null,
 };
 
 export async function getKey(provider: ProviderId): Promise<string | null> {

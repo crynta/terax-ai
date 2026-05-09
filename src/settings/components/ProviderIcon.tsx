@@ -2,6 +2,7 @@ import type { ProviderId } from "@/modules/ai/config";
 import {
   ChatGptIcon,
   ClaudeIcon,
+  CodeIcon,
   ComputerIcon,
   FlashIcon,
   GoogleGeminiIcon,
@@ -10,7 +11,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
-const ICON_BY_PROVIDER = {
+const ICON_BY_PROVIDER: Record<ProviderId, typeof ChatGptIcon> = {
   openai: ChatGptIcon,
   anthropic: ClaudeIcon,
   google: GoogleGeminiIcon,
@@ -18,7 +19,8 @@ const ICON_BY_PROVIDER = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   lmstudio: ComputerIcon,
-} as const satisfies Record<ProviderId, typeof ChatGptIcon>;
+  "github-copilot": CodeIcon,
+};
 
 type Props = {
   provider: ProviderId;

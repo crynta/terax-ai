@@ -15,6 +15,7 @@ import {
   ArrowUpIcon,
   ChatGptIcon,
   ClaudeIcon,
+  CodeIcon,
   ComputerIcon,
   CpuIcon,
   FlashIcon,
@@ -31,13 +32,14 @@ import {
   getModel,
   MODELS,
   PROVIDERS,
+  providerNeedsKey,
   type ModelId,
   type ProviderId,
 } from "../config";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { useChatStore } from "../store/chatStore";
 
-const PROVIDER_ICON = {
+const PROVIDER_ICON: Record<ProviderId, typeof ChatGptIcon> = {
   openai: ChatGptIcon,
   anthropic: ClaudeIcon,
   google: GoogleGeminiIcon,
@@ -45,7 +47,8 @@ const PROVIDER_ICON = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   lmstudio: ComputerIcon,
-} as const satisfies Record<ProviderId, typeof ChatGptIcon>;
+  "github-copilot": CodeIcon,
+};
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
   return (
@@ -196,7 +199,8 @@ function ModelDropdown() {
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
   const current = getModel(selected);
-  const currentProviderHasKey = !!apiKeys[current.provider];
+  const currentProviderHasKey =
+    !providerNeedsKey(current.provider) || !!apiKeys[current.provider];
 
   const onPick = (id: ModelId, providerId: ProviderId) => {
     if (!apiKeys[providerId]) {
@@ -240,7 +244,7 @@ function ModelDropdown() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[240px]">
-        {PROVIDERS.map((p) => {
+        {PROVIDERS.filter((p) => p.id !== "github-copilot").map((p) => {
           const models = MODELS.filter((m) => m.provider === p.id);
           const hasKey = !!apiKeys[p.id];
           return (

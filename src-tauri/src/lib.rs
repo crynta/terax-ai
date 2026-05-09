@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, pty, secrets, shell};
+use modules::{copilot, fs, pty, secrets, shell};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[tauri::command]
@@ -98,6 +98,14 @@ pub fn run() {
             secrets::secrets_set,
             secrets::secrets_delete,
             secrets::secrets_get_all,
+            copilot::copilot_start_device_flow,
+            copilot::copilot_poll_token,
+            copilot::copilot_exchange_token,
+            copilot::copilot_fetch_models,
+            copilot::copilot_persist_auth,
+            copilot::copilot_clear_auth,
+            copilot::copilot_get_auth,
+            copilot::copilot_ensure_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

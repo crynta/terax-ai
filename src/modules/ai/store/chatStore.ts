@@ -7,6 +7,7 @@ import { create } from "zustand";
 import {
   DEFAULT_MODEL_ID,
   getModel,
+  providerNeedsKey,
   type ModelId,
   type ProviderId,
 } from "../config";
@@ -450,12 +451,16 @@ export function getAgentMeta(): AgentMeta {
 
 export function getActiveProviderKey(): string | null {
   const { selectedModelId, apiKeys } = useChatStore.getState();
-  return apiKeys[getModel(selectedModelId).provider] ?? null;
+  const provider = getModel(selectedModelId).provider;
+  if (!providerNeedsKey(provider)) return "keyless-provider";
+  return apiKeys[provider] ?? null;
 }
 
 export function hasKeyForModel(modelId: ModelId): boolean {
   const { apiKeys } = useChatStore.getState();
-  return !!apiKeys[getModel(modelId).provider];
+  const provider = getModel(modelId).provider;
+  if (!providerNeedsKey(provider)) return true;
+  return !!apiKeys[provider];
 }
 
 export function getOrCreateChat(sessionId: string): Chat<UIMessage> {
