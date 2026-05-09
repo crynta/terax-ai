@@ -1,5 +1,6 @@
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
+import { DEFAULT_CODE_FONT_FAMILY } from "@/lib/codeFont";
 import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
@@ -40,6 +41,8 @@ export type Preferences = {
   theme: ThemePref;
   defaultModelId: ModelId;
   editorTheme: EditorThemeId;
+  codeFontFamily: string;
+  codeLigatures: boolean;
   customInstructions: string;
   autostart: boolean;
   restoreWindowState: boolean;
@@ -54,6 +57,8 @@ const STORE_PATH = "terax-settings.json";
 const KEY_THEME = "theme";
 const KEY_DEFAULT_MODEL = "defaultModelId";
 const KEY_EDITOR_THEME = "editorTheme";
+const KEY_CODE_FONT_FAMILY = "codeFontFamily";
+const KEY_CODE_LIGATURES = "codeLigatures";
 const KEY_CUSTOM_INSTRUCTIONS = "customInstructions";
 const KEY_AUTOSTART = "autostart";
 const KEY_RESTORE_WINDOW = "restoreWindowState";
@@ -67,6 +72,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
   defaultModelId: DEFAULT_MODEL_ID,
   editorTheme: "atomone",
+  codeFontFamily: DEFAULT_CODE_FONT_FAMILY,
+  codeLigatures: true,
   customInstructions: "",
   autostart: false,
   restoreWindowState: true,
@@ -91,6 +98,10 @@ export async function loadPreferences(): Promise<Preferences> {
       get<ModelId>(KEY_DEFAULT_MODEL) ?? DEFAULT_PREFERENCES.defaultModelId,
     editorTheme:
       get<EditorThemeId>(KEY_EDITOR_THEME) ?? DEFAULT_PREFERENCES.editorTheme,
+    codeFontFamily:
+      get<string>(KEY_CODE_FONT_FAMILY) ?? DEFAULT_PREFERENCES.codeFontFamily,
+    codeLigatures:
+      get<boolean>(KEY_CODE_LIGATURES) ?? DEFAULT_PREFERENCES.codeLigatures,
     customInstructions:
       get<string>(KEY_CUSTOM_INSTRUCTIONS) ??
       DEFAULT_PREFERENCES.customInstructions,
@@ -126,6 +137,16 @@ export async function setDefaultModel(value: ModelId): Promise<void> {
 
 export async function setEditorTheme(value: EditorThemeId): Promise<void> {
   await store.set(KEY_EDITOR_THEME, value);
+  await store.save();
+}
+
+export async function setCodeFontFamily(value: string): Promise<void> {
+  await store.set(KEY_CODE_FONT_FAMILY, value);
+  await store.save();
+}
+
+export async function setCodeLigatures(value: boolean): Promise<void> {
+  await store.set(KEY_CODE_LIGATURES, value);
   await store.save();
 }
 
@@ -181,6 +202,8 @@ export function onPreferencesChange(
     [KEY_THEME]: "theme",
     [KEY_DEFAULT_MODEL]: "defaultModelId",
     [KEY_EDITOR_THEME]: "editorTheme",
+    [KEY_CODE_FONT_FAMILY]: "codeFontFamily",
+    [KEY_CODE_LIGATURES]: "codeLigatures",
     [KEY_CUSTOM_INSTRUCTIONS]: "customInstructions",
     [KEY_AUTOSTART]: "autostart",
     [KEY_RESTORE_WINDOW]: "restoreWindowState",

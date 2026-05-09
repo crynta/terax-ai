@@ -90,6 +90,8 @@ export function AiDiffPane({
 }: Props) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const editorThemeId = usePreferencesStore((s) => s.editorTheme);
+  const codeFontFamily = usePreferencesStore((s) => s.codeFontFamily);
+  const codeLigatures = usePreferencesStore((s) => s.codeLigatures);
   const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
 
   // The merge extension diffs the current document against `original`.
@@ -97,7 +99,7 @@ export function AiDiffPane({
   // updates its proposal, the surrounding bridge re-creates the tab.
   const extensions = useMemo(
     () => [
-      ...buildSharedExtensions(),
+      ...buildSharedExtensions(codeFontFamily, codeLigatures),
       languageCompartment.of([]),
       EditorState.readOnly.of(true),
       EditorView.editable.of(false),
@@ -111,7 +113,7 @@ export function AiDiffPane({
       }),
       DIFF_THEME,
     ],
-    [originalContent],
+    [codeFontFamily, codeLigatures, originalContent],
   );
 
   // Resolve language by path (same approach as EditorPane).

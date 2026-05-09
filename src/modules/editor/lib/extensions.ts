@@ -9,17 +9,34 @@ export const languageCompartment = new Compartment();
 export const readOnlyCompartment = new Compartment();
 export const wrapCompartment = new Compartment();
 export const vimCompartment = new Compartment();
+export const fontCompartment = new Compartment();
 
 // Only what basicSetup doesn't already cover, to avoid duplicate extensions.
 // basicSetup gives us line numbers, fold gutter, history, indentOnInput,
 // bracketMatching, closeBrackets, autocompletion, highlightActiveLine,
 // highlightSelectionMatches and the search keymap.
-export function buildSharedExtensions(): Extension[] {
+export function buildFontTheme(fontFamily: string, ligatures: boolean): Extension {
+  return EditorView.theme({
+    ".cm-scroller": {
+      fontFamily,
+      fontVariantLigatures: ligatures ? "normal" : "none",
+      fontFeatureSettings: ligatures
+        ? '"calt" 1, "liga" 1, "clig" 1'
+        : '"calt" 0, "liga" 0, "clig" 0',
+      fontSize: "13px",
+      lineHeight: "1.55",
+      backgroundColor: "transparent !important",
+    },
+  });
+}
+
+export function buildSharedExtensions(fontFamily: string, ligatures: boolean): Extension[] {
   return [
     indentUnit.of("  "),
     EditorState.tabSize.of(2),
     search({ top: true }),
     lintGutter(),
+    fontCompartment.of(buildFontTheme(fontFamily, ligatures)),
     EditorView.theme({
       "&, &.cm-editor, &.cm-editor.cm-focused": {
         backgroundColor: "transparent !important",
@@ -28,7 +45,6 @@ export function buildSharedExtensions(): Extension[] {
         padding: "8px",
       },
       ".cm-scroller": {
-        fontFamily: '"JetBrains Mono", SFMono-Regular, Menlo, monospace',
         fontSize: "13px",
         lineHeight: "1.55",
         backgroundColor: "transparent !important",

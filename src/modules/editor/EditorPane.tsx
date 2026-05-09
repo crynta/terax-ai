@@ -18,7 +18,9 @@ import {
 import { Prec } from "@codemirror/state";
 import { vim } from "@replit/codemirror-vim";
 import {
+  buildFontTheme,
   buildSharedExtensions,
+  fontCompartment,
   languageCompartment,
   vimCompartment,
 } from "./lib/extensions";
@@ -63,6 +65,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const editorThemeId = usePreferencesStore((s) => s.editorTheme);
     const vimMode = usePreferencesStore((s) => s.vimMode);
+    const codeFontFamily = usePreferencesStore((s) => s.codeFontFamily);
+    const codeLigatures = usePreferencesStore((s) => s.codeLigatures);
     const languageRef = useRef<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
 
@@ -124,7 +128,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           },
           close: () => onCloseRef.current?.(),
         })),
-        ...buildSharedExtensions(),
+        ...buildSharedExtensions(
+          usePreferencesStore.getState().codeFontFamily,
+          usePreferencesStore.getState().codeLigatures,
+        ),
         languageCompartment.of([]),
         inlineCompletion({
           getPrefs: () => {
@@ -166,6 +173,16 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         ),
       });
     }, [vimMode]);
+
+    useEffect(() => {
+      const view = cmRef.current?.view;
+      if (!view) return;
+      view.dispatch({
+        effects: fontCompartment.reconfigure(
+          buildFontTheme(codeFontFamily, codeLigatures),
+        ),
+      });
+    }, [codeFontFamily, codeLigatures]);
 
     useEffect(() => {
       let cancelled = false;

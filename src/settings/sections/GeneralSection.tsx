@@ -5,6 +5,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -13,6 +14,8 @@ import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
   setAutostart,
+  setCodeFontFamily,
+  setCodeLigatures,
   setEditorTheme,
   setRestoreWindowState,
   setVimMode,
@@ -47,6 +50,8 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const codeFontFamily = usePreferencesStore((s) => s.codeFontFamily);
+  const codeLigatures = usePreferencesStore((s) => s.codeLigatures);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -107,6 +112,29 @@ export function GeneralSection() {
       </div>
 
       <div className="flex flex-col gap-2">
+        <Label>Editor</Label>
+        <SettingRow
+          title="Code font family"
+          description="CSS font-family stack used by terminal and editor. Example: JetBrainsMono Nerd Font, Fira Code, monospace"
+          className="items-center"
+        >
+          <Input
+            value={codeFontFamily}
+            onChange={(e) => void setCodeFontFamily(e.target.value)}
+            className="h-8 w-[340px] max-w-[52vw] rounded-lg px-2.5 font-mono text-[11.5px]"
+            spellCheck={false}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Ligatures"
+          description="Enable programming ligatures in terminal and editor."
+        >
+          <Switch
+            checked={codeLigatures}
+            onCheckedChange={(v) => void setCodeLigatures(v)}
+          />
+        </SettingRow>
+
         <Label>Editor theme</Label>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

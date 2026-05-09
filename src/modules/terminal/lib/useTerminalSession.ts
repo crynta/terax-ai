@@ -1,6 +1,9 @@
+import { getFontLoadFamilies } from "@/lib/codeFont";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
+import { LigaturesAddon } from "@xterm/addon-ligatures";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -9,7 +12,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
-const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
 const FONT_SIZE = 14;
 
 type Options = {
@@ -50,17 +52,26 @@ export function useTerminalSession({
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const ptyRef = useRef<PtySession | null>(null);
+  const ligaturesRef = useRef<LigaturesAddon | null>(null);
+  const ligaturesEnabledRef = useRef(false);
+  const codeFontFamily = usePreferencesStore((s) => s.codeFontFamily);
+  const codeLigatures = usePreferencesStore((s) => s.codeLigatures);
 
   useEffect(() => {
     let disposed = false;
     const cleanups: Array<() => void> = [];
 
     (async () => {
-      await document.fonts.load(`${FONT_SIZE}px "JetBrains Mono"`);
+      const fontFamily = usePreferencesStore.getState().codeFontFamily;
+      await Promise.all(
+        getFontLoadFamilies(fontFamily).map((family) =>
+          document.fonts.load(`${FONT_SIZE}px "${family}"`).catch(() => []),
+        ),
+      );
       if (disposed || !container.current) return;
 
       const term = new Terminal({
-        fontFamily: FONT_FAMILY,
+        fontFamily,
         fontSize: FONT_SIZE,
         lineHeight: 1.05,
         theme: buildTerminalTheme(),
@@ -81,6 +92,16 @@ export function useTerminalSession({
 
       const search = new SearchAddon();
       term.loadAddon(search);
+      try {
+        const ligatures = new LigaturesAddon();
+        ligaturesRef.current = ligatures;
+        if (usePreferencesStore.getState().codeLigatures) {
+          term.loadAddon(ligatures);
+          ligaturesEnabledRef.current = true;
+        }
+      } catch (e) {
+        console.warn("Ligatures addon unavailable:", e);
+      }
       term.loadAddon(
         new WebLinksAddon((_e, uri) => openUrl(uri).catch(console.error)),
       );
@@ -204,6 +225,9 @@ export function useTerminalSession({
       ptyRef.current = null;
       termRef.current?.dispose();
       termRef.current = null;
+      ligaturesRef.current?.dispose();
+      ligaturesRef.current = null;
+      ligaturesEnabledRef.current = false;
       fitRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -248,7 +272,41 @@ export function useTerminalSession({
     term.options.theme = buildTerminalTheme();
   }, []);
 
-  return { write, focus, getBuffer, getSelection, applyTheme };
+  const applyAppearance = useCallback(
+    (fontFamily: string, ligatures: boolean) => {
+      const term = termRef.current;
+      if (!term) return;
+      term.options.fontFamily = fontFamily;
+
+      if (ligatures && !ligaturesEnabledRef.current) {
+        try {
+          const addon = new LigaturesAddon();
+          term.loadAddon(addon);
+          ligaturesRef.current = addon;
+          ligaturesEnabledRef.current = true;
+        } catch (e) {
+          console.warn("Ligatures addon unavailable:", e);
+        }
+      } else if (!ligatures && ligaturesEnabledRef.current) {
+        ligaturesRef.current?.dispose();
+        ligaturesRef.current = null;
+        ligaturesEnabledRef.current = false;
+      }
+
+      fitRef.current?.fit();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    void Promise.all(
+      getFontLoadFamilies(codeFontFamily).map((family) =>
+        document.fonts.load(`${FONT_SIZE}px "${family}"`).catch(() => []),
+      ),
+    ).then(() => applyAppearance(codeFontFamily, codeLigatures));
+  }, [applyAppearance, codeFontFamily, codeLigatures]);
+
+  return { write, focus, getBuffer, getSelection, applyTheme, applyAppearance };
 }
 
 function stripTrailingPunct(url: string): string {
