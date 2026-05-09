@@ -16,12 +16,17 @@ jobs:
         include:
           - platform: ubuntu-22.04
             args: ""
+          - platform: macos-13
+            args: --bundles app
+          - platform: macos-14
+            args: --bundles app
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
