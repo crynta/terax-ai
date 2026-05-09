@@ -24,7 +24,10 @@ fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
         .or_else(|| dirs::home_dir().filter(|p| p.is_dir()))
         .or_else(|| std::env::current_dir().ok());
     if let Some(cwd) = resolved_cwd {
+        log::info!("pty cwd: {}", cwd.display());
         cmd.cwd(cwd);
+    } else {
+        log::warn!("pty cwd: no usable directory, inheriting from process");
     }
 }
 
