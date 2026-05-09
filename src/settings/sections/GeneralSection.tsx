@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +16,8 @@ import {
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
+  setTerminalFontSize,
+  setTerminalWebglEnabled,
   setVimMode,
   type EditorThemeId,
 } from "@/modules/settings/store";
@@ -27,9 +30,12 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
+
+const TERMINAL_FONT_SIZE_MIN = 8;
+const TERMINAL_FONT_SIZE_MAX = 32;
 
 const APPEARANCE: {
   id: ThemePref;
@@ -47,6 +53,20 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const terminalWebglEnabled = usePreferencesStore(
+    (s) => s.terminalWebglEnabled,
+  );
+  const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
+  const [isEditingTerminalFontSize, setIsEditingTerminalFontSize] =
+    useState(false);
+  const [terminalFontSizeDraft, setTerminalFontSizeDraft] = useState(() =>
+    String(terminalFontSize),
+  );
+
+  useEffect(() => {
+    if (isEditingTerminalFontSize) return;
+    setTerminalFontSizeDraft(String(terminalFontSize));
+  }, [isEditingTerminalFontSize, terminalFontSize]);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -76,6 +96,56 @@ export function GeneralSection() {
   };
 
   const onPickEditor = (id: EditorThemeId) => void setEditorTheme(id);
+
+  const onToggleTerminalWebgl = (next: boolean) => {
+    void setTerminalWebglEnabled(next).catch((e) => {
+      console.error("terminal WebGL preference update failed", e);
+    });
+  };
+
+  const onTerminalFontSizeChange = (value: string) => {
+    setTerminalFontSizeDraft(value);
+
+    const fontSize = Number(value);
+    if (
+      !Number.isFinite(fontSize) ||
+      fontSize < TERMINAL_FONT_SIZE_MIN ||
+      fontSize > TERMINAL_FONT_SIZE_MAX
+    ) {
+      return;
+    }
+
+    void setTerminalFontSize(Math.round(fontSize)).catch((e) => {
+      console.error("terminal font size preference update failed", e);
+    });
+  };
+
+  const commitTerminalFontSize = () => {
+    const fontSize = Number(terminalFontSizeDraft);
+    if (
+      !Number.isFinite(fontSize) ||
+      fontSize < TERMINAL_FONT_SIZE_MIN ||
+      fontSize > TERMINAL_FONT_SIZE_MAX
+    ) {
+      setTerminalFontSizeDraft(String(terminalFontSize));
+      setIsEditingTerminalFontSize(false);
+      return;
+    }
+
+    const nextFontSize = Math.round(fontSize);
+    void setTerminalFontSize(nextFontSize).catch((e) => {
+      console.error("terminal font size preference update failed", e);
+    });
+    setTerminalFontSizeDraft(String(nextFontSize));
+    setIsEditingTerminalFontSize(false);
+  };
+
+  const onTerminalFontSizeKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (e.key !== "Enter") return;
+    commitTerminalFontSize();
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -146,6 +216,39 @@ export function GeneralSection() {
             checked={vimMode}
             onCheckedChange={(v) => void setVimMode(v)}
           />
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Terminal</Label>
+        <SettingRow
+          title="Use WebGL renderer"
+          description="Accelerates terminal rendering using your GPU. Turn off if terminal text flickers, appears blurry, or causes graphics issues. Applies to new terminal sessions."
+        >
+          <Switch
+            checked={terminalWebglEnabled}
+            onCheckedChange={onToggleTerminalWebgl}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Font size"
+          description="Set terminal text size in pixels. Applies to new terminal sessions."
+        >
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={TERMINAL_FONT_SIZE_MIN}
+              max={TERMINAL_FONT_SIZE_MAX}
+              step={1}
+              value={terminalFontSizeDraft}
+              onFocus={() => setIsEditingTerminalFontSize(true)}
+              onChange={(e) => onTerminalFontSizeChange(e.currentTarget.value)}
+              onBlur={commitTerminalFontSize}
+              onKeyDown={onTerminalFontSizeKeyDown}
+              className="h-8 w-16 rounded-lg px-2 text-center text-[12px]"
+            />
+            <span className="text-[11px] text-muted-foreground">px</span>
+          </div>
         </SettingRow>
       </div>
 

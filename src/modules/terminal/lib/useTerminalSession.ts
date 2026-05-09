@@ -1,3 +1,7 @@
+import {
+  DEFAULT_PREFERENCES,
+  loadPreferences,
+} from "@/modules/settings/store";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
@@ -10,7 +14,10 @@ import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
 const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
-const FONT_SIZE = 14;
+const FONT_WEIGHT_REGULAR = "400";
+const FONT_WEIGHT_BOLD = "700";
+const TERMINAL_FONT_LOAD_TIMEOUT_MS = 750;
+const TERMINAL_LINE_HEIGHT = 1.2;
 
 type Options = {
   container: React.RefObject<HTMLDivElement | null>;
@@ -56,13 +63,15 @@ export function useTerminalSession({
     const cleanups: Array<() => void> = [];
 
     (async () => {
-      await document.fonts.load(`${FONT_SIZE}px "JetBrains Mono"`);
+      const terminalPreferences = await loadTerminalPreferences();
+      const fontSize = terminalPreferences.fontSize;
+      await waitForTerminalFonts(fontSize);
       if (disposed || !container.current) return;
 
       const term = new Terminal({
         fontFamily: FONT_FAMILY,
-        fontSize: FONT_SIZE,
-        lineHeight: 1.05,
+        fontSize,
+        lineHeight: TERMINAL_LINE_HEIGHT,
         theme: buildTerminalTheme(),
         cursorBlink: true,
         cursorStyle: "bar",
@@ -88,12 +97,21 @@ export function useTerminalSession({
       term.open(container.current);
       fit.fit();
 
-      try {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => webgl.dispose());
-        term.loadAddon(webgl);
-      } catch (e) {
-        console.warn("WebGL renderer unavailable:", e);
+      if (shouldEnableWebglRenderer(terminalPreferences.webglEnabled)) {
+        let webgl: WebglAddon | null = null;
+        try {
+          const addon = new WebglAddon();
+          webgl = addon;
+          // GPU/context loss can corrupt the glyph atlas. Dispose to fall back
+          // to xterm's stable default renderer instead of keeping bad textures.
+          addon.onContextLoss(() => addon.dispose());
+          term.loadAddon(addon);
+          webgl = null;
+          term.clearTextureAtlas();
+        } catch (e) {
+          webgl?.dispose();
+          console.warn("WebGL renderer unavailable:", e);
+        }
       }
 
       const prompt = registerPromptTracker(term);
@@ -249,6 +267,74 @@ export function useTerminalSession({
   }, []);
 
   return { write, focus, getBuffer, getSelection, applyTheme };
+}
+
+async function waitForTerminalFonts(fontSize: number): Promise<void> {
+  if (!("fonts" in document)) return;
+
+  try {
+    await withTimeout(
+      Promise.all([
+        document.fonts.load(
+          `${FONT_WEIGHT_REGULAR} ${fontSize}px "JetBrains Mono"`,
+        ),
+        document.fonts.load(
+          `${FONT_WEIGHT_BOLD} ${fontSize}px "JetBrains Mono"`,
+        ),
+      ]).then(() => undefined),
+      TERMINAL_FONT_LOAD_TIMEOUT_MS,
+    );
+  } catch (e) {
+    console.warn("Terminal font load failed; using fallback monospace font:", e);
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(
+      () => reject(new Error(`Timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function loadTerminalPreferences(): Promise<{
+  fontSize: number;
+  webglEnabled: boolean;
+}> {
+  try {
+    const preferences = await loadPreferences();
+    return {
+      fontSize: preferences.terminalFontSize,
+      webglEnabled: preferences.terminalWebglEnabled,
+    };
+  } catch (e) {
+    console.warn("Terminal preferences unavailable; using defaults:", e);
+    return {
+      fontSize: DEFAULT_PREFERENCES.terminalFontSize,
+      webglEnabled: DEFAULT_PREFERENCES.terminalWebglEnabled,
+    };
+  }
+}
+
+function shouldEnableWebglRenderer(preferenceEnabled: boolean): boolean {
+  if (isExplicitlyDisabled(import.meta.env.VITE_TERMINAL_WEBGL)) return false;
+  return preferenceEnabled;
+}
+
+function isExplicitlyDisabled(value: string | null | undefined): boolean {
+  return value === "0" || value === "false";
 }
 
 function stripTrailingPunct(url: string): string {
