@@ -207,6 +207,6 @@ function labelFor(t: Tab): string {
   if (t.kind === "preview") return t.title;
   if (t.kind === "ai-diff") return t.title;
   if (!t.cwd) return t.title;
-  const parts = t.cwd.split("/").filter(Boolean);
+  const parts = t.cwd.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "/";
 }
