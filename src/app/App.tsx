@@ -115,7 +115,8 @@ export default function App() {
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
-  const hasComposer = hasAnyKey(apiKeys);
+  const customProviders = usePreferencesStore((s) => s.customProviders);
+  const hasComposer = hasAnyKey(apiKeys) || customProviders.length > 0;
 
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {

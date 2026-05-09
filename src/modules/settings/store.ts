@@ -5,6 +5,7 @@ import {
   DEFAULT_MODEL_ID,
   LMSTUDIO_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
+  type CustomProvider,
   type ModelId,
 } from "@/modules/ai/config";
 
@@ -38,16 +39,17 @@ export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
 
 export type Preferences = {
   theme: ThemePref;
-  defaultModelId: ModelId;
+  defaultModelId: ModelId | string;
   editorTheme: EditorThemeId;
   customInstructions: string;
   autostart: boolean;
   restoreWindowState: boolean;
   autocompleteEnabled: boolean;
-  autocompleteProvider: AutocompleteProviderId;
+  autocompleteProvider: AutocompleteProviderId | string;
   autocompleteModelId: string;
   lmstudioBaseURL: string;
   vimMode: boolean;
+  customProviders: CustomProvider[];
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -62,6 +64,7 @@ const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_VIM_MODE = "vimMode";
+const KEY_CUSTOM_PROVIDERS = "customProviders";
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -75,6 +78,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
   vimMode: false,
+  customProviders: [],
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -111,6 +115,9 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_LMSTUDIO_BASE_URL) ??
       DEFAULT_PREFERENCES.lmstudioBaseURL,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    customProviders:
+      get<CustomProvider[]>(KEY_CUSTOM_PROVIDERS) ??
+      DEFAULT_PREFERENCES.customProviders,
   };
 }
 
@@ -119,7 +126,7 @@ export async function setTheme(value: ThemePref): Promise<void> {
   await store.save();
 }
 
-export async function setDefaultModel(value: ModelId): Promise<void> {
+export async function setDefaultModel(value: ModelId | string): Promise<void> {
   await store.set(KEY_DEFAULT_MODEL, value);
   await store.save();
 }
@@ -150,7 +157,7 @@ export async function setAutocompleteEnabled(value: boolean): Promise<void> {
 }
 
 export async function setAutocompleteProvider(
-  value: AutocompleteProviderId,
+  value: AutocompleteProviderId | string,
 ): Promise<void> {
   await store.set(KEY_AUTOCOMPLETE_PROVIDER, value);
   await store.save();
@@ -168,6 +175,13 @@ export async function setLmstudioBaseURL(value: string): Promise<void> {
 
 export async function setVimMode(value: boolean): Promise<void> {
   await store.set(KEY_VIM_MODE, value);
+  await store.save();
+}
+
+export async function setCustomProviders(
+  value: CustomProvider[],
+): Promise<void> {
+  await store.set(KEY_CUSTOM_PROVIDERS, value);
   await store.save();
 }
 
@@ -189,6 +203,7 @@ export function onPreferencesChange(
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_CUSTOM_PROVIDERS]: "customProviders",
   };
   return store.onChange<unknown>((key, value) => {
     const mapped = map[key];

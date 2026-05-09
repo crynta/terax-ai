@@ -286,6 +286,10 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const used = useMemo(() => estimateTokens(messages), [messages]);
   const max = getModelContextLimit(modelId);
   const modelLabel = useMemo(() => {
+    if (modelId.startsWith("custom:")) {
+      const [, , mId] = modelId.split(":");
+      return mId ?? modelId;
+    }
     try {
       return getModel(modelId).label;
     } catch {

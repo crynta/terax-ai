@@ -1,6 +1,6 @@
 import { Experimental_Agent as Agent, stepCountIs } from "ai";
-import { DEFAULT_MODEL_ID, getModel, type ModelId } from "../config";
-import { buildLanguageModel } from "../lib/agent";
+import { DEFAULT_MODEL_ID, getModel, type CustomProvider, type ModelId } from "../config";
+import { buildCustomLanguageModel, buildLanguageModel } from "../lib/agent";
 import type { ProviderKeys } from "../lib/keyring";
 import type { ToolContext } from "../tools/context";
 import { buildFsTools } from "../tools/fs";
@@ -13,7 +13,7 @@ type Args = {
   type: SubagentType;
   prompt: string;
   keys: ProviderKeys;
-  modelId: ModelId;
+  modelId: ModelId | string;
   toolContext: ToolContext;
   lmstudioBaseURL?: string;
 };
@@ -46,9 +46,19 @@ export async function runSubagent({
     if (t in readOnly) filtered[t] = readOnly[t];
   }
 
-  const model = await buildLanguageModel(getModel(modelId).provider, keys, getModel(modelId).id, {
-    lmstudioBaseURL,
-  });
+  let model;
+  if (modelId.startsWith("custom:")) {
+    const [, cpId, ...rest] = modelId.split(":");
+    const mId = rest.join(":");
+    const { usePreferencesStore } = await import("@/modules/settings/preferences");
+    const cp = usePreferencesStore.getState().customProviders.find((c: CustomProvider) => c.id === cpId);
+    if (!cp) throw new Error(`Custom provider "${cpId}" not found.`);
+    model = await buildCustomLanguageModel(cp, mId);
+  } else {
+    model = await buildLanguageModel(getModel(modelId as ModelId).provider, keys, getModel(modelId as ModelId).id, {
+      lmstudioBaseURL,
+    });
+  }
 
   // The Agent constructor's tools generic infers `never` when passed a
   // dynamic record, so cast through unknown for both `tools` and
