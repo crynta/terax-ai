@@ -1,3 +1,4 @@
+import { detectMonoFontFamily } from "@/lib/fonts";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
@@ -13,7 +14,6 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 
 export type { TeraxOpenInput };
 
-const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
 const FONT_SIZE = 14;
 
 type Options = {
@@ -74,12 +74,14 @@ export function useTerminalSession({
     }, 0);
 
     const start = async () => {
-      await document.fonts.load(`${FONT_SIZE}px "JetBrains Mono"`);
+      await document.fonts.ready;
       if (disposed || !container.current) return;
 
       const term = new Terminal({
         fontFamily: terminalFontFamily,
         fontSize: terminalFontSize,
+        fontFamily: detectMonoFontFamily(),
+        fontSize: FONT_SIZE,
         lineHeight: 1.05,
         theme: buildTerminalTheme(),
         cursorBlink: true,

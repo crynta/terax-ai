@@ -30,6 +30,7 @@ import {
   setDefaultModel,
   setLmstudioBaseURL,
 } from "@/modules/settings/store";
+import { invoke } from "@tauri-apps/api/core";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
@@ -195,8 +196,8 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
     setTestStatus("testing");
     try {
       const url = urlDraft.replace(/\/$/, "") + "/models";
-      const res = await fetch(url, { method: "GET" });
-      setTestStatus(res.ok ? "ok" : "fail");
+      const status = await invoke<number>("http_ping", { url });
+      setTestStatus(status >= 200 && status < 400 ? "ok" : "fail");
     } catch {
       setTestStatus("fail");
     }
