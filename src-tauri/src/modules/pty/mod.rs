@@ -1,5 +1,5 @@
 mod session;
-mod shell_init;
+pub(crate) mod shell_init;
 
 use std::collections::HashMap;
 use std::io::Write;
