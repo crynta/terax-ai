@@ -63,11 +63,7 @@ export const native = {
       root: params.root,
       maxResults: params.maxResults ?? null,
     }),
-  runCommand: (
-    command: string,
-    cwd?: string | null,
-    timeoutSecs?: number,
-  ) =>
+  runCommand: (command: string, cwd?: string | null, timeoutSecs?: number) =>
     invoke<CommandOutput>("shell_run_command", {
       command,
       cwd: cwd ?? null,

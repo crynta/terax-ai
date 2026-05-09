@@ -16,10 +16,17 @@ Prereqs: Rust (stable), Node 20+, pnpm, plus your platform's [Tauri prerequisite
 Run these and make sure they pass:
 
 ```bash
+pnpm format:check               # frontend / docs format
 pnpm exec tsc --noEmit          # frontend types
 cd src-tauri && cargo clippy    # Rust lint
 cd src-tauri && cargo fmt       # Rust format
 ```
+
+`pnpm format` rewrites the tree in place if `format:check` flags anything.
+
+A Husky pre-commit hook runs Prettier on staged JS/TS/JSON/MD/CSS/HTML/YAML
+files and `rustfmt` on staged `src-tauri/**/*.rs` files via `lint-staged`,
+so most formatting fixes apply automatically when you `git commit`.
 
 Build a release bundle at least once if you touched anything in `src-tauri/`:
 
@@ -45,9 +52,10 @@ pnpm tauri build
 ## Code style
 
 - Follow the existing patterns. Read adjacent files before adding new ones.
+- TypeScript / JS / JSON / CSS / Markdown: `prettier` (config in `.prettierrc.json`). The pre-commit hook handles staged files automatically.
 - TypeScript: no `any` unless you really mean it.
 - Rust: `cargo fmt` + `clippy` clean.
-- Few comments. Code should explain itself; comments are for the *why*, not the *what*.
+- Few comments. Code should explain itself; comments are for the _why_, not the _what_.
 - No emoji in code or commit messages.
 
 ## Commits & PRs

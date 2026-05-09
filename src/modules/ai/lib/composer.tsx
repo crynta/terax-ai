@@ -1,11 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useWhisperRecording } from "../hooks/useWhisperRecording";
 import { expandSnippetTokens, type Snippet } from "../lib/snippets";
 import { tryRunSlashCommand, type SlashCommandMeta } from "./slashCommands";
@@ -121,9 +115,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
         next.push({
           id: sel.id,
           name:
-            sel.source === "editor"
-              ? "Editor selection"
-              : "Terminal selection",
+            sel.source === "editor" ? "Editor selection" : "Terminal selection",
           kind: "selection",
           mediaType: "text/plain",
           text: sel.text,
@@ -218,7 +210,11 @@ export function AiComposerProvider({ children }: ProviderProps) {
     let effectiveText = trimmed;
     let commandMarker: string | null = null;
     let commandSource = trimmed;
-    if (pickedCommands.length > 0 && !trimmed.startsWith("/") && !trimmed.startsWith("#")) {
+    if (
+      pickedCommands.length > 0 &&
+      !trimmed.startsWith("/") &&
+      !trimmed.startsWith("#")
+    ) {
       commandSource = `#${pickedCommands[0].name} ${trimmed}`.trim();
     }
     if (commandSource.startsWith("/") || commandSource.startsWith("#")) {
@@ -249,10 +245,8 @@ export function AiComposerProvider({ children }: ProviderProps) {
         (f) =>
           `<selection source="${f.source ?? "terminal"}">\n${f.text ?? ""}\n</selection>`,
       );
-    const { body: bodyAfterTokens, blocks: snippetBlocks } = expandSnippetTokens(
-      effectiveText,
-      useSnippetsStore.getState().snippets,
-    );
+    const { body: bodyAfterTokens, blocks: snippetBlocks } =
+      expandSnippetTokens(effectiveText, useSnippetsStore.getState().snippets);
     const seenHandles = new Set<string>();
     const allSnippetBlocks: string[] = [];
     for (const s of pickedSnippets) {

@@ -1,11 +1,6 @@
 import { useTheme } from "@/modules/theme";
 import type { SearchAddon } from "@xterm/addon-search";
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-} from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { useTerminalSession } from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {

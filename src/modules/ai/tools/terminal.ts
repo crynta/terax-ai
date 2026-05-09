@@ -9,9 +9,7 @@ export function buildTerminalTools(ctx: ToolContext) {
       description:
         "Type a single shell command into the user's active terminal at the prompt — WITHOUT executing it. Use this when the answer to the user's question IS a command (e.g. 'ffmpeg one-liner for X', 'git command to undo Y'). Prefer this over prose. Do NOT include a trailing newline.",
       inputSchema: z.object({
-        command: z
-          .string()
-          .describe("The shell command. No trailing newline."),
+        command: z.string().describe("The shell command. No trailing newline."),
         explanation: z
           .string()
           .optional()
@@ -49,6 +47,5 @@ export function buildTerminalTools(ctx: ToolContext) {
         return { url, ok: true };
       },
     }),
-
   } as const;
 }

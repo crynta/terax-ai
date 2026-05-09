@@ -46,9 +46,7 @@ function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
           strokeWidth={1.75}
           className="shrink-0 text-muted-foreground"
         />
-        <span className="text-[12px] font-medium text-foreground">
-          {label}
-        </span>
+        <span className="text-[12px] font-medium text-foreground">{label}</span>
         <span className="ml-auto text-[10px] text-muted-foreground">
           needs approval
         </span>
@@ -180,4 +178,3 @@ function PreviewBlock({
     </pre>
   );
 }
-

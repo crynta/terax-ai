@@ -1,9 +1,6 @@
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import {
-  AlertCircleIcon,
-  ShieldUserIcon,
-} from "@hugeicons/core-free-icons";
+import { AlertCircleIcon, ShieldUserIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useChatStore, type AgentMeta } from "../store/chatStore";
@@ -49,8 +46,7 @@ function describe(meta: AgentMeta): {
 } {
   if (meta.status === "awaiting-approval") {
     return {
-      tone:
-        "border-yellow-500/40 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-500/15",
+      tone: "border-yellow-500/40 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-500/15",
       icon: (
         <HugeiconsIcon icon={ShieldUserIcon} size={12} strokeWidth={1.75} />
       ),
@@ -62,8 +58,7 @@ function describe(meta: AgentMeta): {
   }
   if (meta.status === "error") {
     return {
-      tone:
-        "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15",
+      tone: "border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/15",
       icon: (
         <HugeiconsIcon icon={AlertCircleIcon} size={12} strokeWidth={1.75} />
       ),
@@ -72,8 +67,7 @@ function describe(meta: AgentMeta): {
   }
   // thinking | streaming
   return {
-    tone:
-      "border-border/60 bg-card text-muted-foreground hover:text-foreground",
+    tone: "border-border/60 bg-card text-muted-foreground hover:text-foreground",
     icon: <Spinner className="size-3" />,
     label: meta.step ?? "Thinking…",
   };

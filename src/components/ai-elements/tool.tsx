@@ -155,8 +155,7 @@ const ToolImpl = ({
   // body, which is huge and re-renders per token.
   const showInputBody = !isHeavy && Boolean(input);
   const showOutputBody = !isHeavy && output !== undefined;
-  const hasDetails =
-    showInputBody || showOutputBody || Boolean(errorText);
+  const hasDetails = showInputBody || showOutputBody || Boolean(errorText);
 
   return (
     <Collapsible
@@ -233,8 +232,9 @@ export const Tool = memo(ToolImpl, (a, b) => {
   if (a.output !== b.output) return false;
   if (a.className !== b.className) return false;
   if (HEAVY_CONTENT_TOOLS.has(a.toolName)) {
-    return deriveSummary(a.toolName, a.input) ===
-      deriveSummary(b.toolName, b.input);
+    return (
+      deriveSummary(a.toolName, a.input) === deriveSummary(b.toolName, b.input)
+    );
   }
   return a.input === b.input;
 });

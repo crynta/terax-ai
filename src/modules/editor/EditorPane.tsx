@@ -57,7 +57,10 @@ function formatBytes(n: number): string {
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
   function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
-    const { doc, onChange, save, reload } = useDocument({ path, onDirtyChange });
+    const { doc, onChange, save, reload } = useDocument({
+      path,
+      onDirtyChange,
+    });
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
     const cmRef = useRef<ReactCodeMirrorRef>(null);
@@ -93,7 +96,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         unsubPrefs();
       };
     }, []);
-    const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
+    const themeExt =
+      EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
 
     // Stabilize save + onSaved via refs so the extensions array never changes
     // identity — a new identity makes @uiw/react-codemirror reconfigure the
@@ -161,9 +165,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       const view = cmRef.current?.view;
       if (!view) return;
       view.dispatch({
-        effects: vimCompartment.reconfigure(
-          vimMode ? Prec.highest(vim()) : [],
-        ),
+        effects: vimCompartment.reconfigure(vimMode ? Prec.highest(vim()) : []),
       });
     }, [vimMode]);
 

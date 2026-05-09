@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",
@@ -92,6 +95,9 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.3",
+    "prettier": "^3.8.3",
     "typescript": "~5.8.3",
     "vite": "^7.0.4"
   },
@@ -99,5 +105,9 @@
     "overrides": {
       "shiki": "^4.0.2"
     }
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,mjs,cjs,json,jsonc,md,mdx,yml,yaml,css,html}": "prettier --write",
+    "src-tauri/**/*.rs": "rustfmt --edition 2021"
   }
 }
