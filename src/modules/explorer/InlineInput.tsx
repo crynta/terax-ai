@@ -21,12 +21,16 @@ export function InlineInput({
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
+  const settledRef = useRef(false);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     // Two-tick focus to win against parent click handlers and Radix portal
-    // restorations that can steal focus right after mount.
+    // restorations that can steal focus right after mount. Until the second
+    // tick lands we treat the input as "unsettled" — any blur during that
+    // window is the portal teardown stealing focus, not the user dismissing
+    // the input, so we refocus instead of committing an empty value.
     const focus = () => {
       el.focus({ preventScroll: false });
       const dot = initial.lastIndexOf(".");
@@ -34,7 +38,10 @@ export function InlineInput({
       else el.select();
     };
     focus();
-    const raf = requestAnimationFrame(focus);
+    const raf = requestAnimationFrame(() => {
+      focus();
+      settledRef.current = true;
+    });
     return () => cancelAnimationFrame(raf);
   }, [initial]);
 
@@ -64,7 +71,13 @@ export function InlineInput({
           cancel();
         }
       }}
-      onBlur={commit}
+      onBlur={() => {
+        if (!settledRef.current) {
+          ref.current?.focus({ preventScroll: true });
+          return;
+        }
+        commit();
+      }}
       className="flex-1 truncate rounded-sm border border-border bg-background px-1.5 py-0.5 text-xs text-foreground outline-none ring-0 focus:border-ring"
     />
   );
