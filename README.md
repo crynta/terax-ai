@@ -64,10 +64,7 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 
 ## Windows notes
 
-Terax on Windows is currently in beta. Two things to know:
-
 - **SmartScreen warning**: Windows will show "Windows protected your PC" on first launch because we (temporarily) don't have a code-signing certificate yet. Click **More info** → **Run anyway**. This is normal for unsigned open-source apps.
-- **Shell integration** (CWD tracking, prompt awareness for the AI agent) is currently macOS/Linux only. Windows users get a working terminal with PowerShell 7 / Windows PowerShell / cmd.exe; full integration via `$PROFILE` injection lands in v0.7.
 
 The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `powershell.exe` (Windows PowerShell 5.1) → `cmd.exe`.
 
