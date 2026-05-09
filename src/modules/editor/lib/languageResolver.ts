@@ -15,7 +15,9 @@ const loaders: Record<string, LanguageLoader> = {
   // JavaScript / TypeScript family
   js: () => import("@codemirror/lang-javascript").then((m) => m.javascript()),
   jsx: () =>
-    import("@codemirror/lang-javascript").then((m) => m.javascript({ jsx: true })),
+    import("@codemirror/lang-javascript").then((m) =>
+      m.javascript({ jsx: true }),
+    ),
   mjs: () => import("@codemirror/lang-javascript").then((m) => m.javascript()),
   cjs: () => import("@codemirror/lang-javascript").then((m) => m.javascript()),
   ts: () =>
@@ -37,16 +39,20 @@ const loaders: Record<string, LanguageLoader> = {
   html: () => import("@codemirror/lang-html").then((m) => m.html()),
   htm: () => import("@codemirror/lang-html").then((m) => m.html()),
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
+  php: () => import("@codemirror/lang-php").then((m) => m.php()),
 
   // Legacy-modes: loaders return the raw StreamParser; wrapped below.
   sh: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
-  bash: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
+  bash: () =>
+    import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
   zsh: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
   toml: () => import("@codemirror/legacy-modes/mode/toml").then((m) => m.toml),
   yaml: () => import("@codemirror/legacy-modes/mode/yaml").then((m) => m.yaml),
   yml: () => import("@codemirror/legacy-modes/mode/yaml").then((m) => m.yaml),
   dockerfile: () =>
-    import("@codemirror/legacy-modes/mode/dockerfile").then((m) => m.dockerFile),
+    import("@codemirror/legacy-modes/mode/dockerfile").then(
+      (m) => m.dockerFile,
+    ),
 };
 
 const filenameOverrides: Record<string, LanguageLoader> = {
