@@ -5,6 +5,7 @@ import {
   nextLeafId,
   removeLeaf,
   setLeafCwd as setLeafCwdInTree,
+  siblingLeafOf,
   splitLeaf,
   type PaneNode,
   type SplitDir,
@@ -333,8 +334,11 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         return next;
       }
       const remaining = leafIds(newTree);
-      const newActive =
-        tab.activeLeafId === leafId ? remaining[0] : tab.activeLeafId;
+      let newActive = tab.activeLeafId;
+      if (tab.activeLeafId === leafId) {
+        const sib = siblingLeafOf(tab.paneTree, leafId);
+        newActive = sib && remaining.includes(sib) ? sib : remaining[0];
+      }
       return curr.map((x) =>
         x.id === tab.id
           ? { ...x, paneTree: newTree, activeLeafId: newActive }
@@ -361,7 +365,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         return next;
       }
       const remaining = leafIds(newTree);
-      const newActive = remaining[0];
+      const sib = siblingLeafOf(t.paneTree, target);
+      const newActive =
+        sib && remaining.includes(sib) ? sib : remaining[0];
       return curr.map((x) =>
         x.id === tabId
           ? { ...x, paneTree: newTree, activeLeafId: newActive }

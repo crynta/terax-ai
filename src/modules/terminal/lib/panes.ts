@@ -120,6 +120,32 @@ export function nextLeafId(
   return ids[(idx + delta + ids.length) % ids.length];
 }
 
+// Closest neighbor of `leafId` within its enclosing split — prefer the
+// next sibling, fall back to the previous. Used to pick the new focus
+// when a pane closes (so focus stays in the same neighborhood instead of
+// snapping to the first pane in the tree).
+export function siblingLeafOf(
+  tree: PaneNode,
+  leafId: PaneId,
+): PaneId | null {
+  if (isLeaf(tree)) return null;
+  for (let i = 0; i < tree.children.length; i++) {
+    const c = tree.children[i];
+    if (isLeaf(c) && c.id === leafId) {
+      const sibling = tree.children[i + 1] ?? tree.children[i - 1];
+      if (!sibling) return null;
+      return leafIds(sibling)[0] ?? null;
+    }
+  }
+  for (const c of tree.children) {
+    if (!isLeaf(c)) {
+      const r = siblingLeafOf(c, leafId);
+      if (r !== null) return r;
+    }
+  }
+  return null;
+}
+
 export function hasLeaf(tree: PaneNode, id: PaneId): boolean {
   return leafIds(tree).includes(id);
 }

@@ -36,10 +36,15 @@ export function PaneTreeView({
     const b = getBundle(node.id);
     return (
       <div
-        // Capture beats xterm's mouse handler so click-to-focus works.
         onMouseDownCapture={() => {
           if (!focused) onFocusLeaf(node.id);
         }}
+        // Catches focus from Tab, programmatic focus, or any path that
+        // skips mousedown — keeps activeLeafId in sync with DOM focus.
+        onFocus={() => {
+          if (!focused) onFocusLeaf(node.id);
+        }}
+        data-pane-leaf={node.id}
         className="relative h-full w-full"
       >
         <TerminalPane
