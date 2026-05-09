@@ -1,5 +1,6 @@
 export { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 export { TerminalStack } from "./TerminalStack";
+export { disposeSession } from "./lib/useTerminalSession";
 export {
   hasLeaf,
   isLeaf,

@@ -47,6 +47,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
     const { resolvedTheme } = useTheme();
 
     const session = useTerminalSession({
+      leafId,
       container: containerRef,
       visible,
       focused,

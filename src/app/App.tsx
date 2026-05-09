@@ -42,6 +42,7 @@ import {
 import { StatusBar } from "@/modules/statusbar";
 import { useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
+  disposeSession,
   leafIds,
   TerminalStack,
   type TerminalPaneHandle,
@@ -255,7 +256,10 @@ export default function App() {
   );
 
   // Drop terminal-leaf-keyed entries when their leaves disappear (pane
-  // close, tab close, etc.). Mirrors the bundle pruning inside TerminalStack.
+  // close, tab close, etc.) and dispose the underlying xterm + PTY. The
+  // session itself outlives React re-mounts caused by split/unsplit, so
+  // disposal must be driven by the pane tree, not by component lifecycles.
+  const liveLeavesRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     const live = new Set<number>();
     for (const t of tabs) {
@@ -263,6 +267,10 @@ export default function App() {
         for (const id of leafIds(t.paneTree)) live.add(id);
       }
     }
+    for (const id of liveLeavesRef.current) {
+      if (!live.has(id)) disposeSession(id);
+    }
+    liveLeavesRef.current = live;
     for (const k of [...terminalRefs.current.keys()])
       if (!live.has(k)) terminalRefs.current.delete(k);
     for (const k of [...searchAddons.current.keys()])
