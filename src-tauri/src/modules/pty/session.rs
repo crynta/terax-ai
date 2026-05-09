@@ -1,8 +1,8 @@
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
@@ -82,17 +82,26 @@ pub fn spawn(
 
     let pending: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::with_capacity(READ_BUF)));
     let done = Arc::new(AtomicBool::new(false));
+    let bytes_received = Arc::new(AtomicU64::new(0));
+    let spawn_at = Instant::now();
 
     let pending_r = pending.clone();
+    let bytes_received_r = bytes_received.clone();
     let reader_thread = thread::Builder::new()
         .name("terax-pty-reader".into())
         .spawn(move || {
             let mut buf = [0u8; READ_BUF];
             let mut dropped_bytes: u64 = 0;
+            let mut logged_first = false;
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
+                        if !logged_first {
+                            logged_first = true;
+                            log::info!("pty first byte after {}ms", spawn_at.elapsed().as_millis());
+                        }
+                        bytes_received_r.fetch_add(n as u64, Ordering::Relaxed);
                         let mut g = pending_r.lock().unwrap();
                         if g.len() + n > MAX_PENDING {
                             // Discard the whole backlog rather than slicing
@@ -152,9 +161,59 @@ pub fn spawn(
         })
         .expect("spawn pty flusher thread");
 
+    #[cfg(windows)]
+    {
+        let session_w = session.clone();
+        let bytes_received_w = bytes_received.clone();
+        let done_w = done.clone();
+        thread::Builder::new()
+            .name("terax-pty-conpty-nudge".into())
+            .spawn(move || {
+                let deadlines_ms: [u64; 3] = [400, 900, 1600];
+                let mut elapsed = 0u64;
+                for (i, deadline) in deadlines_ms.iter().enumerate() {
+                    let sleep_ms = deadline - elapsed;
+                    thread::sleep(Duration::from_millis(sleep_ms));
+                    elapsed = *deadline;
+                    if done_w.load(Ordering::Acquire) {
+                        return;
+                    }
+                    if bytes_received_w.load(Ordering::Relaxed) > 0 {
+                        return;
+                    }
+                    let resize_result = {
+                        let mut master = match session_w.master.lock() {
+                            Ok(g) => g,
+                            Err(_) => return,
+                        };
+                        master.resize(size)
+                    };
+                    match resize_result {
+                        Ok(()) => log::warn!(
+                            "conpty stall: nudge #{} at {}ms (no output yet)",
+                            i + 1,
+                            deadline
+                        ),
+                        Err(e) => {
+                            log::warn!("conpty nudge resize failed at {}ms: {e}", deadline);
+                            return;
+                        }
+                    }
+                }
+                if bytes_received_w.load(Ordering::Relaxed) == 0 {
+                    log::error!(
+                        "conpty stall: still no output after {}ms — child may be wedged",
+                        deadlines_ms[deadlines_ms.len() - 1]
+                    );
+                }
+            })
+            .expect("spawn pty conpty-nudge thread");
+    }
+
     let on_event_exit = on_event;
     let pending_e = pending;
     let done_e = done;
+    drop(bytes_received);
     thread::Builder::new()
         .name("terax-pty-waiter".into())
         .spawn(move || {
