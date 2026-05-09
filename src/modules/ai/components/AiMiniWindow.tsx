@@ -90,7 +90,10 @@ export function AiMiniWindow() {
       transition={{ type: "spring", stiffness: 320, damping: 32 }}
       data-ai-mini-window
       className={cn(
-        "no-scrollbar-deep fixed right-4 bottom-12 z-40 flex h-[42rem] w-[34rem] flex-col overflow-hidden",
+        // Sized to leave breathing room around the status bar and never grow
+        // past the available viewport height — older fixed h-[42rem] could
+        // overshadow the docked input bar on shorter windows (#40).
+        "no-scrollbar-deep fixed right-4 bottom-12 z-40 flex w-[min(34rem,calc(100vw-2rem))] max-h-[min(42rem,calc(100vh-5rem))] flex-col overflow-hidden",
         "rounded-2xl border border-border/40 bg-card/90 shadow-2xl ring-1 ring-black/5 backdrop-blur-2xl dark:ring-white/5",
         "text-[12px]",
       )}
