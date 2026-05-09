@@ -1,0 +1,36 @@
+# Build output
+dist/
+dist-ssr/
+
+# Dependencies
+node_modules/
+
+# Rust build artifacts and generated files
+src-tauri/target/
+src-tauri/gen/
+
+# Lockfiles (auto-generated)
+pnpm-lock.yaml
+*.lock
+
+# Binary / asset files
+*.icns
+*.ico
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.woff
+*.woff2
+*.ttf
+*.otf
+
+# Logs
+*.log
+logs/
+
+# Misc
+.DS_Store
+*.tsbuildinfo
