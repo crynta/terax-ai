@@ -36,7 +36,7 @@ type SearchHit = {
 
 type Props = {
   rootPath: string | null;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, pin?: boolean) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;

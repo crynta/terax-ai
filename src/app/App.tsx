@@ -67,6 +67,7 @@ export default function App() {
     setActiveId,
     newTab,
     openFileTab,
+    pinTab,
     newPreviewTab,
     openAiDiffTab,
     setAiDiffStatus,
@@ -398,8 +399,10 @@ export default function App() {
   );
 
   const handleOpenFile = useCallback(
-    (path: string) => {
-      openFileTab(path);
+    (path: string, pin?: boolean) => {
+      // Explorer defaults to preview (pin=false); explicit actions like
+      // context-menu "Open" pass pin=true for a persistent tab.
+      openFileTab(path, pin ?? false);
     },
     [openFileTab],
   );
@@ -583,6 +586,7 @@ export default function App() {
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
             onClose={handleClose}
+            onPin={pinTab}
             onToggleSidebar={toggleSidebar}
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenSettings={() => void openSettingsWindow()}

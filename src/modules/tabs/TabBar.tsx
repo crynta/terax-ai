@@ -20,7 +20,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef } from "react";
-import type { Tab } from "./lib/useTabs";
+import type { EditorTab, Tab } from "./lib/useTabs";
 
 type Props = {
   tabs: Tab[];
@@ -30,6 +30,8 @@ type Props = {
   onNewPreview: () => void;
   onNewEditor: () => void;
   onClose: (id: number) => void;
+  /** Pin (promote) a preview tab to persistent on double-click. */
+  onPin: (id: number) => void;
   compact?: boolean;
 };
 
@@ -41,6 +43,7 @@ export function TabBar({
   onNewPreview,
   onNewEditor,
   onClose,
+  onPin,
   compact,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -79,50 +82,58 @@ export function TabBar({
           onValueChange={(v) => onSelect(Number(v))}
         >
           <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
-            {tabs.map((t) => (
-              <TabsTrigger
-                key={t.id}
-                value={String(t.id)}
-                data-tab-id={t.id}
-                className={cn(
-                  "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
-                  compact ? "px-1.5!" : "ps-2! pe-1!"
-                )}
-              >
-                <span
+            {tabs.map((t) => {
+              const isPreview = t.kind === "editor" && (t as EditorTab).preview;
+              return (
+                <TabsTrigger
+                  key={t.id}
+                  value={String(t.id)}
+                  data-tab-id={t.id}
+                  onDoubleClick={() => isPreview && onPin(t.id)}
                   className={cn(
-                    "flex items-center gap-1.5 truncate",
-                    compact ? "max-w-32" : "max-w-56",
+                    "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
+                    compact ? "px-1.5!" : "ps-2! pe-1!",
                   )}
                 >
-                  <TabIcon tab={t} active={t.id === activeId} />
-                  <span className="truncate">{labelFor(t)}</span>
-                  {t.kind === "editor" && t.dirty ? (
-                    <span
-                      aria-label="Unsaved changes"
-                      className="size-1.5 shrink-0 rounded-full bg-foreground/70"
-                    />
-                  ) : null}
-                </span>
-                {tabs.length > 1 && (
                   <span
-                    role="button"
-                    aria-label="Close tab"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onClose(t.id);
-                    }}
-                    className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
+                    className={cn(
+                      "flex items-center gap-1.5 truncate",
+                      compact ? "max-w-32" : "max-w-56",
+                    )}
                   >
-                    <HugeiconsIcon
-                      icon={Cancel01Icon}
-                      size={11}
-                      strokeWidth={2}
-                    />
+                    <TabIcon tab={t} active={t.id === activeId} />
+                    {/* Preview tabs use italic to signal the transient state,
+                        matching the visual convention from VSCode. */}
+                    <span className={cn("truncate", isPreview && "italic")}>
+                      {labelFor(t)}
+                    </span>
+                    {t.kind === "editor" && t.dirty ? (
+                      <span
+                        aria-label="Unsaved changes"
+                        className="size-1.5 shrink-0 rounded-full bg-foreground/70"
+                      />
+                    ) : null}
                   </span>
-                )}
-              </TabsTrigger>
-            ))}
+                  {tabs.length > 1 && (
+                    <span
+                      role="button"
+                      aria-label="Close tab"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClose(t.id);
+                      }}
+                      className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
+                    >
+                      <HugeiconsIcon
+                        icon={Cancel01Icon}
+                        size={11}
+                        strokeWidth={2}
+                      />
+                    </span>
+                  )}
+                </TabsTrigger>
+              );
+            })}
           </TabsList>
         </Tabs>
         <DropdownMenu>
