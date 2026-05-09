@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, pty, secrets, shell};
+use modules::{fs, net, pty, secrets, shell};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[tauri::command]
@@ -97,6 +97,7 @@ pub fn run() {
             secrets::secrets_set,
             secrets::secrets_delete,
             secrets::secrets_get_all,
+            net::http_ping,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

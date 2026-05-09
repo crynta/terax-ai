@@ -1,3 +1,4 @@
+import { detectMonoFontFamily } from "@/lib/fonts";
 import { indentUnit } from "@codemirror/language";
 import { lintGutter } from "@codemirror/lint";
 import { search } from "@codemirror/search";
@@ -28,7 +29,7 @@ export function buildSharedExtensions(): Extension[] {
         padding: "8px",
       },
       ".cm-scroller": {
-        fontFamily: '"JetBrains Mono", SFMono-Regular, Menlo, monospace',
+        fontFamily: detectMonoFontFamily(),
         fontSize: "13px",
         lineHeight: "1.55",
         backgroundColor: "transparent !important",
