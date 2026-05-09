@@ -7,7 +7,8 @@ export type ProviderId =
   | "xai"
   | "cerebras"
   | "groq"
-  | "lmstudio";
+  | "lmstudio"
+  | "opencode-go";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -59,6 +60,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "groq-api-key",
     keyPrefix: "gsk_",
     consoleUrl: "https://console.groq.com/keys",
+  },
+  {
+    id: "opencode-go",
+    label: "OpenCode Go",
+    keyringAccount: "opencode-go-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://opencode.ai/auth",
   },
   {
     id: "lmstudio",
@@ -161,6 +169,67 @@ export const MODELS = [
     label: "GPT-OSS 20B",
     hint: "Groq · ultra-fast",
   },
+  // OpenCode Go
+  {
+    id: "glm-5.1",
+    provider: "opencode-go",
+    label: "GLM-5.1",
+    hint: "OpenCode Go · highest GLM quality",
+  },
+  {
+    id: "glm-5",
+    provider: "opencode-go",
+    label: "GLM-5",
+    hint: "OpenCode Go · GLM",
+  },
+  {
+    id: "kimi-k2.6",
+    provider: "opencode-go",
+    label: "Kimi K2.6",
+    hint: "OpenCode Go · coding",
+  },
+  {
+    id: "kimi-k2.5",
+    provider: "opencode-go",
+    label: "Kimi K2.5",
+    hint: "OpenCode Go · coding",
+  },
+  {
+    id: "deepseek-v4-pro",
+    provider: "opencode-go",
+    label: "DeepSeek V4 Pro",
+    hint: "OpenCode Go · quality",
+  },
+  {
+    id: "deepseek-v4-flash",
+    provider: "opencode-go",
+    label: "DeepSeek V4 Flash",
+    hint: "OpenCode Go · fast",
+  },
+  {
+    id: "mimo-v2.5-pro",
+    provider: "opencode-go",
+    label: "MiMo-V2.5-Pro",
+    hint: "OpenCode Go · quality",
+  },
+  {
+    id: "mimo-v2.5",
+    provider: "opencode-go",
+    label: "MiMo-V2.5",
+    hint: "OpenCode Go · long context",
+  },
+  {
+    id: "minimax-m2.7",
+    provider: "opencode-go",
+    label: "MiniMax M2.7",
+    hint: "OpenCode Go · Anthropic-compatible",
+  },
+  {
+    id: "minimax-m2.5",
+    provider: "opencode-go",
+    label: "MiniMax M2.5",
+    hint: "OpenCode Go · economical",
+  },
   // LM Studio (local; model id is user-supplied at runtime)
   {
     id: "lmstudio-local",
@@ -196,6 +265,16 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "grok-4.20-non-reasoning": 2_000_000,
   "gpt-oss-120b": 128_000,
   "openai/gpt-oss-20b": 128_000,
+  "glm-5.1": 128_000,
+  "glm-5": 128_000,
+  "kimi-k2.6": 128_000,
+  "kimi-k2.5": 128_000,
+  "deepseek-v4-pro": 128_000,
+  "deepseek-v4-flash": 128_000,
+  "mimo-v2.5-pro": 128_000,
+  "mimo-v2.5": 256_000,
+  "minimax-m2.7": 128_000,
+  "minimax-m2.5": 128_000,
   "lmstudio-local": 32_000,
 };
 
