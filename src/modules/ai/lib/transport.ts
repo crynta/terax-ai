@@ -1,6 +1,6 @@
 import type { UIMessage } from "@ai-sdk/react";
 import { DirectChatTransport } from "ai";
-import { TERMINAL_BUFFER_LINES, type ModelId } from "../config";
+import { TERMINAL_BUFFER_LINES } from "../config";
 import { createTeraxAgent } from "./agent";
 import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
@@ -46,7 +46,7 @@ const MAX_TERMINAL_CHARS = 12_000;
 type Deps = {
   getKeys: () => ProviderKeys;
   toolContext: ToolContext;
-  getModelId: () => ModelId;
+  getModelId: () => string;
   getCustomInstructions: () => string;
   getAgentPersona: () => { name: string; instructions: string } | null;
   getLive: () => LiveSnapshot;

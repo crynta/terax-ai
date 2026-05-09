@@ -2,10 +2,12 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 
 export type PtyEvent =
   | { type: "data"; data: string }
+  | { type: "cwd"; cwd: string }
   | { type: "exit"; code: number };
 
 export type PtyHandlers = {
   onData: (bytes: Uint8Array) => void;
+  onCwd?: (cwd: string) => void;
   onExit?: (code: number) => void;
 };
 
@@ -34,6 +36,9 @@ export async function openPty(
     switch (event.type) {
       case "data":
         handlers.onData(decodeBase64(event.data));
+        break;
+      case "cwd":
+        handlers.onCwd?.(event.cwd);
         break;
       case "exit":
         handlers.onExit?.(event.code);

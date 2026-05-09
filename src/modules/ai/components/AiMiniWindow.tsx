@@ -29,13 +29,14 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
 import { useEffect, useMemo } from "react";
-import { getModel, getModelContextLimit } from "../config";
+import { getModelContextLimit, resolveModel } from "../config";
 import type { SessionMeta } from "../lib/sessions";
 import { useAgentsStore } from "../store/agentsStore";
 import { getOrCreateChat, useChatStore } from "../store/chatStore";
 import { usePlanStore } from "../store/planStore";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { AiChatView } from "./AiChat";
+import { AiInputBar } from "./AiInputBar";
 import { PlanDiffReview } from "./PlanDiffReview";
 import { TodoStrip } from "./TodoStrip";
 
@@ -160,6 +161,8 @@ function Body({
       </div>
 
       <TodoStrip sessionId={sessionId} />
+
+      <AiInputBar />
     </>
   );
 }
@@ -287,7 +290,7 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const max = getModelContextLimit(modelId);
   const modelLabel = useMemo(() => {
     try {
-      return getModel(modelId).label;
+      return resolveModel(modelId).label;
     } catch {
       return modelId;
     }

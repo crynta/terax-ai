@@ -27,7 +27,101 @@ const OVERFLOW_NOTICE: &[u8] =
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum PtyEvent {
     Data { data: String },
+    Cwd { cwd: String },
     Exit { code: i32 },
+}
+
+// Cwd polling cadence. Fast enough that `cd` feels instant in the sidebar,
+// slow enough that the per-tab cost is negligible (one syscall per tick).
+const CWD_POLL_INTERVAL: Duration = Duration::from_millis(400);
+
+/// Read the cwd of a process by PID. Used as a fallback when the shell's OSC 7
+/// integration isn't emitting (custom .zshrc that stomps precmd hooks, foreign
+/// shells, etc.). Returns None when the platform is unsupported or the syscall
+/// fails (typically: process exited between the poll and this call).
+#[cfg(target_os = "macos")]
+fn read_pid_cwd(pid: u32) -> Option<String> {
+    use libproc::libproc::proc_pid::{pidinfo, PIDInfo, PidInfoFlavor};
+
+    // Mirrors macOS `struct vinfo_stat` (sys/proc_info.h). We never read these
+    // fields — the struct only exists so the surrounding layout matches what
+    // the kernel writes via PROC_PIDVNODEPATHINFO.
+    #[repr(C)]
+    #[allow(dead_code)]
+    struct VinfoStat {
+        vst_dev: u32,
+        vst_mode: u16,
+        vst_nlink: u16,
+        vst_ino: u64,
+        vst_uid: u32,
+        vst_gid: u32,
+        vst_atime: i64,
+        vst_atimensec: i64,
+        vst_mtime: i64,
+        vst_mtimensec: i64,
+        vst_ctime: i64,
+        vst_ctimensec: i64,
+        vst_birthtime: i64,
+        vst_birthtimensec: i64,
+        vst_size: i64,
+        vst_blocks: i64,
+        vst_blksize: i32,
+        vst_flags: u32,
+        vst_gen: u32,
+        vst_rdev: u32,
+        vst_qspare: [i64; 2],
+    }
+
+    #[repr(C)]
+    #[allow(dead_code)]
+    struct VnodeInfo {
+        vi_stat: VinfoStat,
+        vi_type: i32,
+        vi_pad: i32,
+        vi_fsid: [u32; 2],
+    }
+
+    const MAXPATHLEN: usize = 1024;
+
+    #[repr(C)]
+    struct VnodeInfoPath {
+        _vip_vi: VnodeInfo,
+        vip_path: [u8; MAXPATHLEN],
+    }
+
+    #[repr(C)]
+    struct ProcVnodePathInfo {
+        pvi_cdir: VnodeInfoPath,
+        _pvi_rdir: VnodeInfoPath,
+    }
+
+    impl PIDInfo for ProcVnodePathInfo {
+        fn flavor() -> PidInfoFlavor {
+            PidInfoFlavor::VNodePathInfo
+        }
+    }
+
+    let info = pidinfo::<ProcVnodePathInfo>(pid as i32, 0).ok()?;
+    let bytes = &info.pvi_cdir.vip_path;
+    let nul = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    if nul == 0 {
+        return None;
+    }
+    std::str::from_utf8(&bytes[..nul])
+        .ok()
+        .map(|s| s.to_string())
+}
+
+#[cfg(target_os = "linux")]
+fn read_pid_cwd(pid: u32) -> Option<String> {
+    let link = format!("/proc/{pid}/cwd");
+    let path = std::fs::read_link(link).ok()?;
+    path.into_os_string().into_string().ok()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn read_pid_cwd(_pid: u32) -> Option<String> {
+    None
 }
 
 pub struct Session {
@@ -68,6 +162,7 @@ pub fn spawn(
     drop(pair.slave);
 
     let killer = child.clone_killer();
+    let child_pid = child.process_id();
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
@@ -148,6 +243,35 @@ pub fn spawn(
             }
         })
         .expect("spawn pty flusher thread");
+
+    // Backend cwd poller. Falls back from OSC 7 by reading the shell's cwd
+    // straight from the kernel — works regardless of what the user's shell
+    // rcfiles do to precmd/preexec hooks. Emits only on change.
+    if let Some(pid) = child_pid {
+        let on_event_cwd = on_event.clone();
+        let done_c = done.clone();
+        thread::Builder::new()
+            .name("terax-pty-cwd-poller".into())
+            .spawn(move || {
+                let mut last: Option<String> = None;
+                loop {
+                    if done_c.load(Ordering::Acquire) {
+                        break;
+                    }
+                    if let Some(cwd) = read_pid_cwd(pid) {
+                        if last.as_deref() != Some(cwd.as_str()) {
+                            if let Err(e) = on_event_cwd.send(PtyEvent::Cwd { cwd: cwd.clone() }) {
+                                log::debug!("pty cwd poller exiting, channel closed: {e}");
+                                break;
+                            }
+                            last = Some(cwd);
+                        }
+                    }
+                    thread::sleep(CWD_POLL_INTERVAL);
+                }
+            })
+            .expect("spawn pty cwd poller thread");
+    }
 
     let on_event_exit = on_event;
     let pending_e = pending;

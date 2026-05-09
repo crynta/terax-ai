@@ -49,6 +49,32 @@ pub fn fs_rename(from: String, to: String) -> Result<(), String> {
     })
 }
 
+/// Saves base64-encoded image bytes to a temp file and returns the path.
+/// Used by the terminal to handle clipboard image paste.
+#[tauri::command]
+pub fn write_temp_image(data: String, ext: String) -> Result<String, String> {
+    use base64::Engine;
+    use std::io::Write;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data)
+        .map_err(|e| e.to_string())?;
+
+    let ext = if ext == "jpeg" { "jpg" } else { ext.as_str() }.to_string();
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+
+    let path = std::env::temp_dir().join(format!("terax-paste-{}.{}", millis, ext));
+    let mut file = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+
+    path.to_str()
+        .map(String::from)
+        .ok_or_else(|| "non-UTF-8 temp path".to_string())
+}
+
 /// Deletes a file or directory (recursively for dirs). Callers are
 /// responsible for confirming destructive operations with the user.
 #[tauri::command]

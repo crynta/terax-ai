@@ -4,6 +4,7 @@ import {
   ClaudeIcon,
   ComputerIcon,
   FlashIcon,
+  Globe02Icon,
   GoogleGeminiIcon,
   Grok02Icon,
   CpuIcon,
@@ -18,6 +19,7 @@ const ICON_BY_PROVIDER = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   lmstudio: ComputerIcon,
+  openrouter: Globe02Icon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 type Props = {

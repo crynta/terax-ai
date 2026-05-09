@@ -5,6 +5,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
@@ -18,24 +19,30 @@ import {
   ComputerIcon,
   CpuIcon,
   FlashIcon,
+  Globe02Icon,
   GoogleGeminiIcon,
   Grok02Icon,
   Message01Icon,
   Mic01Icon,
+  StarIcon,
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  getModel,
+  fetchOpenRouterModels,
+  providerNeedsKey,
+  resolveModel,
   MODELS,
   PROVIDERS,
-  type ModelId,
+  type OpenRouterModel,
   type ProviderId,
 } from "../config";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { useChatStore } from "../store/chatStore";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { toggleOpenrouterFavorite } from "@/modules/settings/store";
 
 const PROVIDER_ICON = {
   openai: ChatGptIcon,
@@ -45,6 +52,7 @@ const PROVIDER_ICON = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   lmstudio: ComputerIcon,
+  openrouter: Globe02Icon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
@@ -195,10 +203,30 @@ function ModelDropdown() {
   const selected = useChatStore((s) => s.selectedModelId);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
-  const current = getModel(selected);
+  const current = resolveModel(selected);
   const currentProviderHasKey = !!apiKeys[current.provider];
 
-  const onPick = (id: ModelId, providerId: ProviderId) => {
+  const [orModels, setOrModels] = useState<OpenRouterModel[]>([]);
+  const [orSearch, setOrSearch] = useState("");
+  const favorites = usePreferencesStore((s) => s.openrouterFavorites);
+  const favoriteSet = new Set(favorites);
+
+  useEffect(() => {
+    const key = apiKeys["openrouter"];
+    if (!key) return;
+    void fetchOpenRouterModels(key).then(setOrModels).catch(() => {});
+  }, [apiKeys]);
+
+  const orQuery = orSearch.trim().toLowerCase();
+  const filteredOrModels = orQuery
+    ? orModels.filter(
+        (m) =>
+          m.name.toLowerCase().includes(orQuery) ||
+          m.id.toLowerCase().includes(orQuery),
+      )
+    : orModels.filter((m) => favoriteSet.has(m.id));
+
+  const onPick = (id: string, providerId: ProviderId) => {
     if (!apiKeys[providerId]) {
       void openSettingsWindow("models");
       return;
@@ -239,9 +267,11 @@ function ModelDropdown() {
           />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[240px]">
-        {PROVIDERS.map((p) => {
-          const models = MODELS.filter((m) => m.provider === p.id);
+      <DropdownMenuContent align="end" className="min-w-[260px]">
+        {PROVIDERS.filter(
+          (p) => !providerNeedsKey(p.id) || !!apiKeys[p.id],
+        ).map((p) => {
+          const staticModels = MODELS.filter((m) => m.provider === p.id);
           const hasKey = !!apiKeys[p.id];
           return (
             <div key={p.id} className="px-1 pt-1.5 first:pt-1">
@@ -252,7 +282,7 @@ function ModelDropdown() {
                   strokeWidth={1.25}
                 />
                 <span>{p.label}</span>
-                {!hasKey ? (
+                {!hasKey && providerNeedsKey(p.id) ? (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -266,22 +296,100 @@ function ModelDropdown() {
                   </button>
                 ) : null}
               </div>
-              {models.map((m) => (
-                <DropdownMenuItem
-                  key={m.id}
-                  disabled={!hasKey}
-                  onSelect={() => onPick(m.id as ModelId, p.id)}
-                  className={cn(
-                    "flex flex-col items-start gap-0 text-xs",
-                    m.id === selected && "bg-accent/40",
-                  )}
-                >
-                  <span className="font-medium">{m.label}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {m.hint}
-                  </span>
-                </DropdownMenuItem>
-              ))}
+              {p.id === "openrouter" ? (
+                hasKey ? (
+                  <>
+                    <div
+                      className="px-1 pb-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Input
+                        value={orSearch}
+                        onChange={(e) => setOrSearch(e.target.value)}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        placeholder={
+                          orModels.length
+                            ? `Search ${orModels.length} models…`
+                            : "Loading…"
+                        }
+                        className="h-7 text-[11px]"
+                      />
+                    </div>
+                    <div className="max-h-[220px] overflow-y-auto">
+                      {filteredOrModels.length === 0 && !orQuery ? (
+                        <div className="px-2 py-3 text-[10.5px] text-muted-foreground">
+                          No favorites yet — search and tap the star to pin
+                          models here.
+                        </div>
+                      ) : null}
+                      {filteredOrModels.map((m) => {
+                        const isFav = favoriteSet.has(m.id);
+                        return (
+                          <DropdownMenuItem
+                            key={m.id}
+                            onSelect={() => onPick(m.id, "openrouter")}
+                            className={cn(
+                              "flex items-start gap-2 text-xs",
+                              m.id === selected && "bg-accent/40",
+                            )}
+                          >
+                            <div className="flex min-w-0 flex-1 flex-col">
+                              <span className="truncate font-medium">
+                                {m.name}
+                              </span>
+                              <span className="truncate font-mono text-[10px] text-muted-foreground">
+                                {m.id}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void toggleOpenrouterFavorite(m.id);
+                              }}
+                              title={
+                                isFav
+                                  ? "Remove from favorites"
+                                  : "Add to favorites"
+                              }
+                              className={cn(
+                                "shrink-0 rounded p-0.5 transition-colors",
+                                isFav
+                                  ? "text-amber-400 hover:text-amber-500"
+                                  : "text-muted-foreground/40 hover:text-foreground",
+                              )}
+                            >
+                              <HugeiconsIcon
+                                icon={StarIcon}
+                                size={12}
+                                strokeWidth={isFav ? 2.5 : 1.75}
+                              />
+                            </button>
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : null
+              ) : (
+                staticModels.map((m) => (
+                  <DropdownMenuItem
+                    key={m.id}
+                    disabled={!hasKey}
+                    onSelect={() => onPick(m.id, p.id)}
+                    className={cn(
+                      "flex flex-col items-start gap-0 text-xs",
+                      m.id === selected && "bg-accent/40",
+                    )}
+                  >
+                    <span className="font-medium">{m.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {m.hint}
+                    </span>
+                  </DropdownMenuItem>
+                ))
+              )}
             </div>
           );
         })}

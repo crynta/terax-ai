@@ -6,8 +6,7 @@ import {
 import { create } from "zustand";
 import {
   DEFAULT_MODEL_ID,
-  getModel,
-  type ModelId,
+  resolveModel,
   type ProviderId,
 } from "../config";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -92,8 +91,8 @@ type StoreState = {
   setApiKeys: (keys: ProviderKeys) => void;
   setApiKey: (provider: ProviderId, key: string | null) => void;
 
-  selectedModelId: ModelId;
-  setSelectedModelId: (id: ModelId) => void;
+  selectedModelId: string;
+  setSelectedModelId: (id: string) => void;
 
   mini: MiniState;
   openMini: () => void;
@@ -450,12 +449,12 @@ export function getAgentMeta(): AgentMeta {
 
 export function getActiveProviderKey(): string | null {
   const { selectedModelId, apiKeys } = useChatStore.getState();
-  return apiKeys[getModel(selectedModelId).provider] ?? null;
+  return apiKeys[resolveModel(selectedModelId).provider] ?? null;
 }
 
-export function hasKeyForModel(modelId: ModelId): boolean {
+export function hasKeyForModel(modelId: string): boolean {
   const { apiKeys } = useChatStore.getState();
-  return !!apiKeys[getModel(modelId).provider];
+  return !!apiKeys[resolveModel(modelId).provider];
 }
 
 export function getOrCreateChat(sessionId: string): Chat<UIMessage> {

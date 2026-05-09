@@ -39,6 +39,7 @@ tauri-plugin-process = "2"
 keyring = { version = "3.6", default-features = false, features = [
 	"apple-native",
 ] }
+libproc = "0.14"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [

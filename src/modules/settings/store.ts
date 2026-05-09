@@ -5,7 +5,6 @@ import {
   DEFAULT_MODEL_ID,
   LMSTUDIO_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
-  type ModelId,
 } from "@/modules/ai/config";
 
 export type ThemePref = "system" | "light" | "dark";
@@ -38,7 +37,7 @@ export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
 
 export type Preferences = {
   theme: ThemePref;
-  defaultModelId: ModelId;
+  defaultModelId: string;
   editorTheme: EditorThemeId;
   customInstructions: string;
   autostart: boolean;
@@ -48,6 +47,7 @@ export type Preferences = {
   autocompleteModelId: string;
   lmstudioBaseURL: string;
   vimMode: boolean;
+  openrouterFavorites: string[];
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -62,6 +62,7 @@ const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_VIM_MODE = "vimMode";
+const KEY_OPENROUTER_FAVORITES = "openrouterFavorites";
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -75,6 +76,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
   vimMode: false,
+  openrouterFavorites: [],
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -88,7 +90,7 @@ export async function loadPreferences(): Promise<Preferences> {
   return {
     theme: get<ThemePref>(KEY_THEME) ?? DEFAULT_PREFERENCES.theme,
     defaultModelId:
-      get<ModelId>(KEY_DEFAULT_MODEL) ?? DEFAULT_PREFERENCES.defaultModelId,
+      get<string>(KEY_DEFAULT_MODEL) ?? DEFAULT_PREFERENCES.defaultModelId,
     editorTheme:
       get<EditorThemeId>(KEY_EDITOR_THEME) ?? DEFAULT_PREFERENCES.editorTheme,
     customInstructions:
@@ -111,6 +113,9 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_LMSTUDIO_BASE_URL) ??
       DEFAULT_PREFERENCES.lmstudioBaseURL,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    openrouterFavorites:
+      get<string[]>(KEY_OPENROUTER_FAVORITES) ??
+      DEFAULT_PREFERENCES.openrouterFavorites,
   };
 }
 
@@ -119,7 +124,7 @@ export async function setTheme(value: ThemePref): Promise<void> {
   await store.save();
 }
 
-export async function setDefaultModel(value: ModelId): Promise<void> {
+export async function setDefaultModel(value: string): Promise<void> {
   await store.set(KEY_DEFAULT_MODEL, value);
   await store.save();
 }
@@ -171,6 +176,21 @@ export async function setVimMode(value: boolean): Promise<void> {
   await store.save();
 }
 
+export async function setOpenrouterFavorites(value: string[]): Promise<void> {
+  await store.set(KEY_OPENROUTER_FAVORITES, value);
+  await store.save();
+}
+
+export async function toggleOpenrouterFavorite(modelId: string): Promise<void> {
+  const current =
+    ((await store.get<string[]>(KEY_OPENROUTER_FAVORITES)) ?? []).slice();
+  const idx = current.indexOf(modelId);
+  if (idx >= 0) current.splice(idx, 1);
+  else current.push(modelId);
+  await store.set(KEY_OPENROUTER_FAVORITES, current);
+  await store.save();
+}
+
 export type PrefKey = keyof Preferences;
 
 /** Subscribe to changes from any window (settings → main). */
@@ -189,6 +209,7 @@ export function onPreferencesChange(
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_OPENROUTER_FAVORITES]: "openrouterFavorites",
   };
   return store.onChange<unknown>((key, value) => {
     const mapped = map[key];

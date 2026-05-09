@@ -1,4 +1,6 @@
 import { buildTerminalTheme } from "@/styles/terminalTheme";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -128,6 +130,7 @@ export function useTerminalSession({
               }
             }
           },
+          onCwd: (cwd) => onCwdRef.current?.(cwd),
           onExit: (code) => {
             term.write(`\r\n\x1b[2m[process exited: ${code}]\x1b[0m\r\n`);
             term.options.disableStdin = true;
@@ -143,6 +146,145 @@ export function useTerminalSession({
       ptyRef.current = pty;
 
       term.onData((data) => pty.write(data));
+
+      // Intercept clipboard image pastes at the capture phase so xterm's
+      // internal textarea never sees them. When the clipboard has an image
+      // (no text), xterm sends nothing to the PTY — Claude Code and other
+      // CLIs never learn a paste was attempted. Instead we write the image
+      // to a temp file and paste the path into the PTY.
+      const handleImagePaste = async (event: ClipboardEvent) => {
+        const active = document.activeElement;
+        // Only act when focus is inside our terminal container.
+        const termEl = container.current;
+        if (!termEl || (!termEl.contains(active) && active !== termEl)) return;
+
+        const items = Array.from(event.clipboardData?.items ?? []);
+        const imgItem = items.find((i) => i.type.startsWith("image/"));
+        if (!imgItem) return; // text/other paste — let xterm handle normally
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        try {
+          const blob = imgItem.getAsFile();
+          if (!blob) return;
+          const buf = await blob.arrayBuffer();
+          const u8 = new Uint8Array(buf);
+
+          // btoa via String.fromCharCode has a call-stack limit on large
+          // images, so we chunk the conversion.
+          let binary = "";
+          const chunk = 8_192;
+          for (let i = 0; i < u8.length; i += chunk) {
+            binary += String.fromCharCode(...u8.subarray(i, i + chunk));
+          }
+
+          const ext =
+            (imgItem.type.split("/")[1] ?? "png").replace("jpeg", "jpg");
+          const path = await invoke<string>("write_temp_image", {
+            data: btoa(binary),
+            ext,
+          });
+          ptyRef.current?.write(path);
+        } catch (err) {
+          console.error("[terax] image paste failed:", err);
+        }
+      };
+
+      document.addEventListener("paste", handleImagePaste, { capture: true });
+      cleanups.push(() =>
+        document.removeEventListener("paste", handleImagePaste, {
+          capture: true,
+        }),
+      );
+
+      // ── Drag-and-drop image support ──────────────────────────────────────
+      // Two channels are needed:
+      //   1. Tauri native drop — fires for files dragged from Finder/Explorer.
+      //      Tauri intercepts these before HTML5 events, but gives us the real
+      //      filesystem path so no temp-file write is required.
+      //   2. HTML5 drop — fires for images dragged from a browser window.
+      //      Here we read the bytes and write to a temp file (same path as paste).
+
+      // Reusable helper: encode an ArrayBuffer as base64 without exceeding the
+      // call-stack limit that `String.fromCharCode(...largeArray)` would hit.
+      const arrayBufferToBase64 = (buf: ArrayBuffer): string => {
+        const u8 = new Uint8Array(buf);
+        let binary = "";
+        const chunk = 8_192;
+        for (let i = 0; i < u8.length; i += chunk) {
+          binary += String.fromCharCode(...u8.subarray(i, i + chunk));
+        }
+        return btoa(binary);
+      };
+
+      const IMAGE_EXT_RE =
+        /\.(png|jpe?g|gif|webp|bmp|tiff?|svg|ico|heic|avif)$/i;
+
+      // 1. Tauri native file-drop (Finder → terminal).
+      //    The payload contains actual filesystem paths — paste the image path
+      //    directly without creating a temp copy.
+      const unlistenDrop = await listen<{
+        paths: string[];
+        position: { x: number; y: number };
+      }>("tauri://drag-drop", (event) => {
+        const termEl = container.current;
+        if (!termEl) return;
+
+        const { paths, position } = event.payload;
+        if (!paths?.length) return;
+
+        // Tauri positions are in physical pixels; convert to CSS pixels.
+        const dpr = window.devicePixelRatio || 1;
+        const lx = position.x / dpr;
+        const ly = position.y / dpr;
+        const rect = termEl.getBoundingClientRect();
+        if (lx < rect.left || lx > rect.right || ly < rect.top || ly > rect.bottom)
+          return;
+
+        const imgPath = paths.find((p) => IMAGE_EXT_RE.test(p));
+        if (!imgPath) return;
+
+        ptyRef.current?.write(imgPath);
+      });
+      cleanups.push(unlistenDrop);
+
+      // 2. HTML5 drop (image dragged from browser / other web source).
+      const handleDragOver = (event: DragEvent) => {
+        if (!event.dataTransfer?.types.includes("Files")) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      };
+
+      const handleDrop = async (event: DragEvent) => {
+        event.preventDefault();
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        const imgFile = files.find((f) => f.type.startsWith("image/"));
+        if (!imgFile) return;
+
+        try {
+          const buf = await imgFile.arrayBuffer();
+          const ext = (imgFile.type.split("/")[1] ?? "png").replace(
+            "jpeg",
+            "jpg",
+          );
+          const path = await invoke<string>("write_temp_image", {
+            data: arrayBufferToBase64(buf),
+            ext,
+          });
+          ptyRef.current?.write(path);
+        } catch (err) {
+          console.error("[terax] image drop failed:", err);
+        }
+      };
+
+      const dropTarget = container.current;
+      dropTarget.addEventListener("dragover", handleDragOver);
+      dropTarget.addEventListener("drop", handleDrop);
+      cleanups.push(() => {
+        dropTarget.removeEventListener("dragover", handleDragOver);
+        dropTarget.removeEventListener("drop", handleDrop);
+      });
 
       // Two-stage debounce:
       //  - FIT runs frequently (~one frame) so xterm visually keeps up with

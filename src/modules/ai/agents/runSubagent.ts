@@ -1,5 +1,5 @@
 import { Experimental_Agent as Agent, stepCountIs } from "ai";
-import { DEFAULT_MODEL_ID, getModel, type ModelId } from "../config";
+import { DEFAULT_MODEL_ID, resolveModel } from "../config";
 import { buildLanguageModel } from "../lib/agent";
 import type { ProviderKeys } from "../lib/keyring";
 import type { ToolContext } from "../tools/context";
@@ -13,7 +13,7 @@ type Args = {
   type: SubagentType;
   prompt: string;
   keys: ProviderKeys;
-  modelId: ModelId;
+  modelId: string;
   toolContext: ToolContext;
   lmstudioBaseURL?: string;
 };
@@ -46,7 +46,7 @@ export async function runSubagent({
     if (t in readOnly) filtered[t] = readOnly[t];
   }
 
-  const model = await buildLanguageModel(getModel(modelId).provider, keys, getModel(modelId).id, {
+  const model = await buildLanguageModel(resolveModel(modelId).provider, keys, resolveModel(modelId).id, {
     lmstudioBaseURL,
   });
 
@@ -95,4 +95,4 @@ function extractText(r: {
   return parts.join("\n").trim() || null;
 }
 
-export const DEFAULT_SUBAGENT_MODEL: ModelId = DEFAULT_MODEL_ID;
+export const DEFAULT_SUBAGENT_MODEL: string = DEFAULT_MODEL_ID;

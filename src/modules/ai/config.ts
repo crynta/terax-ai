@@ -7,7 +7,8 @@ export type ProviderId =
   | "xai"
   | "cerebras"
   | "groq"
-  | "lmstudio";
+  | "lmstudio"
+  | "openrouter";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -66,6 +67,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    keyringAccount: "openrouter-api-key",
+    keyPrefix: "sk-or-",
+    consoleUrl: "https://openrouter.ai/keys",
   },
 ] as const;
 
@@ -230,6 +238,36 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Record<
 };
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
+/** Resolves any model ID — static or dynamic OpenRouter — to a ModelInfo.
+ *  For unknown IDs, returns a synthetic entry with provider "openrouter". */
+export function resolveModel(id: string): ModelInfo {
+  const found = MODELS.find((m) => m.id === id);
+  if (found) return found;
+  return {
+    id,
+    provider: "openrouter",
+    label: id.split("/").pop() ?? id,
+    hint: "OpenRouter",
+  };
+}
+
+export type OpenRouterModel = {
+  id: string;
+  name: string;
+  context_length: number;
+};
+
+export async function fetchOpenRouterModels(
+  apiKey: string,
+): Promise<OpenRouterModel[]> {
+  const res = await fetch("https://openrouter.ai/api/v1/models", {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) throw new Error(`OpenRouter models: ${res.status}`);
+  const data = (await res.json()) as { data: OpenRouterModel[] };
+  return data.data.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
 

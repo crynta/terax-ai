@@ -82,6 +82,7 @@ pub fn run() {
             fs::mutate::fs_create_dir,
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
+            fs::mutate::write_temp_image,
             fs::search::fs_search,
             fs::grep::fs_grep,
             fs::grep::fs_glob,

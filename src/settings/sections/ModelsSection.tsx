@@ -13,11 +13,12 @@ import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   MODELS,
   PROVIDERS,
-  getModel,
+  fetchOpenRouterModels,
   getProvider,
   providerNeedsKey,
+  resolveModel,
   type AutocompleteProviderId,
-  type ModelId,
+  type OpenRouterModel,
   type ProviderId,
 } from "@/modules/ai/config";
 import { clearKey, getAllKeys, setKey } from "@/modules/ai/lib/keyring";
@@ -29,10 +30,11 @@ import {
   setAutocompleteProvider,
   setDefaultModel,
   setLmstudioBaseURL,
+  toggleOpenrouterFavorite,
 } from "@/modules/settings/store";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { ArrowDown01Icon, StarIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
@@ -41,15 +43,30 @@ type KeysMap = Record<ProviderId, string | null>;
 
 export function ModelsSection() {
   const [keys, setKeys] = useState<KeysMap | null>(null);
+  const [orModels, setOrModels] = useState<OpenRouterModel[]>([]);
+  const [orSearch, setOrSearch] = useState("");
   const defaultModel = usePreferencesStore((s) => s.defaultModelId);
+  const favorites = usePreferencesStore((s) => s.openrouterFavorites);
+  const favoriteSet = new Set(favorites);
+
+  const loadOrModels = useCallback((keysMap: KeysMap) => {
+    const key = keysMap["openrouter"];
+    if (!key) return;
+    void fetchOpenRouterModels(key).then(setOrModels).catch(() => {});
+  }, []);
 
   useEffect(() => {
-    void getAllKeys().then(setKeys);
-  }, []);
+    void getAllKeys().then((k) => {
+      setKeys(k);
+      loadOrModels(k);
+    });
+  }, [loadOrModels]);
 
   const onSave = async (provider: ProviderId, value: string) => {
     await setKey(provider, value);
-    setKeys((prev) => (prev ? { ...prev, [provider]: value } : prev));
+    const next = keys ? { ...keys, [provider]: value } : null;
+    setKeys(next);
+    if (next) loadOrModels(next);
     await emitKeysChanged();
   };
 
@@ -63,7 +80,7 @@ export function ModelsSection() {
     return <div className="text-[12px] text-muted-foreground">Loading…</div>;
   }
 
-  const defaultModelInfo = getModel(defaultModel);
+  const defaultModelInfo = resolveModel(defaultModel);
   const configuredCount = PROVIDERS.filter(
     (p) => providerNeedsKey(p.id) && !!keys[p.id],
   ).length;
@@ -98,10 +115,18 @@ export function ModelsSection() {
               />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[260px]">
-            {PROVIDERS.filter((p) => providerNeedsKey(p.id)).map((p) => {
-              const models = MODELS.filter((m) => m.provider === p.id);
+          <DropdownMenuContent align="start" className="min-w-[280px]">
+            {PROVIDERS.filter((p) => providerNeedsKey(p.id) && !!keys[p.id]).map((p) => {
+              const staticModels = MODELS.filter((m) => m.provider === p.id);
               const hasKey = !!keys[p.id];
+              const q = orSearch.trim().toLowerCase();
+              const filteredOrModels = q
+                ? orModels.filter(
+                    (m) =>
+                      m.name.toLowerCase().includes(q) ||
+                      m.id.toLowerCase().includes(q),
+                  )
+                : orModels.filter((m) => favoriteSet.has(m.id));
               return (
                 <div key={p.id} className="px-1 pt-1.5">
                   <div className="mb-1 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -113,26 +138,100 @@ export function ModelsSection() {
                       </span>
                     )}
                   </div>
-                  {models.map((m) => (
-                    <DropdownMenuItem
-                      key={m.id}
-                      disabled={!hasKey}
-                      onSelect={() =>
-                        hasKey && void setDefaultModel(m.id as ModelId)
-                      }
-                      className={cn(
-                        "flex items-center justify-between gap-2 text-[12px]",
-                        m.id === defaultModel && "bg-accent/50",
-                      )}
-                    >
-                      <span className="flex flex-col">
-                        <span>{m.label}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {m.hint}
+                  {p.id === "openrouter" ? (
+                    hasKey ? (
+                      <>
+                        <div
+                          className="px-1 pb-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Input
+                            value={orSearch}
+                            onChange={(e) => setOrSearch(e.target.value)}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            placeholder={
+                              orModels.length
+                                ? `Search ${orModels.length} models…`
+                                : "Loading models…"
+                            }
+                            className="h-7 text-[11px]"
+                          />
+                        </div>
+                        <div className="max-h-[220px] overflow-y-auto">
+                          {filteredOrModels.length === 0 && !q ? (
+                            <div className="px-2 py-3 text-[10.5px] text-muted-foreground">
+                              No favorites yet — search and tap the star to pin
+                              models here.
+                            </div>
+                          ) : null}
+                          {filteredOrModels.map((m) => {
+                            const isFav = favoriteSet.has(m.id);
+                            return (
+                              <DropdownMenuItem
+                                key={m.id}
+                                onSelect={() => void setDefaultModel(m.id)}
+                                className={cn(
+                                  "flex items-start gap-2 text-[12px]",
+                                  m.id === defaultModel && "bg-accent/50",
+                                )}
+                              >
+                                <div className="flex min-w-0 flex-1 flex-col">
+                                  <span className="truncate">{m.name}</span>
+                                  <span className="truncate font-mono text-[10px] text-muted-foreground">
+                                    {m.id}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    void toggleOpenrouterFavorite(m.id);
+                                  }}
+                                  title={
+                                    isFav
+                                      ? "Remove from favorites"
+                                      : "Add to favorites"
+                                  }
+                                  className={cn(
+                                    "shrink-0 rounded p-0.5 transition-colors",
+                                    isFav
+                                      ? "text-amber-400 hover:text-amber-500"
+                                      : "text-muted-foreground/40 hover:text-foreground",
+                                  )}
+                                >
+                                  <HugeiconsIcon
+                                    icon={StarIcon}
+                                    size={12}
+                                    strokeWidth={isFav ? 2.5 : 1.75}
+                                  />
+                                </button>
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : null
+                  ) : (
+                    staticModels.map((m) => (
+                      <DropdownMenuItem
+                        key={m.id}
+                        disabled={!hasKey}
+                        onSelect={() => hasKey && void setDefaultModel(m.id)}
+                        className={cn(
+                          "flex items-center justify-between gap-2 text-[12px]",
+                          m.id === defaultModel && "bg-accent/50",
+                        )}
+                      >
+                        <span className="flex flex-col">
+                          <span>{m.label}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {m.hint}
+                          </span>
                         </span>
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
+                      </DropdownMenuItem>
+                    ))
+                  )}
                 </div>
               );
             })}
