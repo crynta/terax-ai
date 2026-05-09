@@ -9,6 +9,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import { setDefaultModel } from "@/modules/settings/store";
 import {
   Add01Icon,
   ArrowDown01Icon,
@@ -22,6 +23,7 @@ import {
   Grok02Icon,
   Message01Icon,
   Mic01Icon,
+  LinkSquare01Icon,
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -36,6 +38,7 @@ import {
 } from "../config";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { useChatStore } from "../store/chatStore";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 
 const PROVIDER_ICON = {
   openai: ChatGptIcon,
@@ -195,15 +198,21 @@ function ModelDropdown() {
   const selected = useChatStore((s) => s.selectedModelId);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
-  const current = getModel(selected);
-  const currentProviderHasKey = !!apiKeys[current.provider];
+  const customProviders = usePreferencesStore((s) => s.customProviders);
+  const isCustom = selected.startsWith("custom:");
+  const current = isCustom ? null : getModel(selected);
+  const currentLabel = isCustom
+    ? (() => { const [, , mId] = selected.split(":"); return mId ?? "Custom"; })()
+    : current!.label;
+  const currentProviderHasKey = isCustom ? true : !!apiKeys[current!.provider];
 
-  const onPick = (id: ModelId, providerId: ProviderId) => {
-    if (!apiKeys[providerId]) {
+  const onPick = (id: ModelId | string, providerId?: ProviderId) => {
+    if (providerId && !apiKeys[providerId]) {
       void openSettingsWindow("models");
       return;
     }
     setSelected(id);
+    void setDefaultModel(id);
   };
 
   return (
@@ -221,16 +230,11 @@ function ModelDropdown() {
           )}
           title={
             currentProviderHasKey
-              ? `Model: ${current.label}`
-              : `${current.label} — no key configured`
+              ? `Model: ${currentLabel}`
+              : `${currentLabel} — no key configured`
           }
         >
-          {/* <HugeiconsIcon
-            icon={PROVIDER_ICON[current.provider]}
-            size={12}
-            strokeWidth={1.25}
-          /> */}
-          {current.label}
+          {currentLabel}
           <HugeiconsIcon
             icon={ArrowDown01Icon}
             size={11}
@@ -285,6 +289,30 @@ function ModelDropdown() {
             </div>
           );
         })}
+        {customProviders.length > 0 &&
+          customProviders.map((cp) => (
+            <div key={cp.id} className="px-1 pt-1.5">
+              <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[9.5px] font-medium tracking-wide text-muted-foreground uppercase">
+                <HugeiconsIcon icon={LinkSquare01Icon} size={15} strokeWidth={1.25} />
+                <span>{cp.name}</span>
+              </div>
+              {cp.models.map((mId) => (
+                <DropdownMenuItem
+                  key={`${cp.id}:${mId}`}
+                  onSelect={() => onPick(`custom:${cp.id}:${mId}`)}
+                  className={cn(
+                    "flex flex-col items-start gap-0 text-xs",
+                    selected === `custom:${cp.id}:${mId}` && "bg-accent/40",
+                  )}
+                >
+                  <span className="font-medium">{mId}</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {cp.name}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </div>
+          ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );

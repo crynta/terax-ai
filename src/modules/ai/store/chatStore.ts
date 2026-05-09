@@ -92,8 +92,8 @@ type StoreState = {
   setApiKeys: (keys: ProviderKeys) => void;
   setApiKey: (provider: ProviderId, key: string | null) => void;
 
-  selectedModelId: ModelId;
-  setSelectedModelId: (id: ModelId) => void;
+  selectedModelId: ModelId | string;
+  setSelectedModelId: (id: ModelId | string) => void;
 
   mini: MiniState;
   openMini: () => void;
@@ -212,6 +212,7 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       };
     },
     getPlanMode: () => usePlanStore.getState().active,
+    getCustomProviders: () => usePreferencesStore.getState().customProviders,
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
     },
@@ -450,7 +451,8 @@ export function getAgentMeta(): AgentMeta {
 
 export function getActiveProviderKey(): string | null {
   const { selectedModelId, apiKeys } = useChatStore.getState();
-  return apiKeys[getModel(selectedModelId).provider] ?? null;
+  if (selectedModelId.startsWith("custom:")) return null;
+  return apiKeys[getModel(selectedModelId as ModelId).provider] ?? null;
 }
 
 export function hasKeyForModel(modelId: ModelId): boolean {

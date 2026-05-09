@@ -172,7 +172,7 @@ export const MODELS = [
 
 export type ModelId = (typeof MODELS)[number]["id"];
 
-export function getModel(id: ModelId): ModelInfo {
+export function getModel(id: ModelId | string): ModelInfo {
   const m = MODELS.find((x) => x.id === id);
   if (!m) throw new Error(`Unknown model: ${id}`);
   return m;
@@ -232,6 +232,15 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Record<
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
+
+/** A user-defined OpenAI-compatible provider. */
+export type CustomProvider = {
+  id: string;
+  name: string;
+  baseURL: string;
+  apiKey: string;
+  models: string[];
+};
 
 export const SYSTEM_PROMPT = `You are Terax, an AI assistant embedded in a developer terminal emulator.
 

@@ -3,7 +3,8 @@ import {
   LMSTUDIO_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
 } from "@/modules/ai/config";
-import { buildLanguageModel } from "@/modules/ai/lib/agent";
+import { buildCustomLanguageModel, buildLanguageModel } from "@/modules/ai/lib/agent";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { EMPTY_PROVIDER_KEYS } from "@/modules/ai/lib/keyring";
 import { generateText } from "ai";
 import {
@@ -13,7 +14,7 @@ import {
 } from "./prompt";
 
 export type CompletionDeps = {
-  provider: AutocompleteProviderId;
+  provider: string;
   modelId: string;
   /** API key for the configured provider, or null for keyless (LM Studio). */
   apiKey: string | null;
@@ -31,12 +32,23 @@ export async function requestCompletion(
   deps: CompletionDeps,
   signal: AbortSignal,
 ): Promise<string> {
-  const modelId =
-    deps.modelId.trim() || DEFAULT_AUTOCOMPLETE_MODEL[deps.provider];
-  const keys = { ...EMPTY_PROVIDER_KEYS, [deps.provider]: deps.apiKey };
-  const model = await buildLanguageModel(deps.provider, keys, modelId, {
-    lmstudioBaseURL: deps.lmstudioBaseURL || LMSTUDIO_DEFAULT_BASE_URL,
-  });
+  const isCustom = deps.provider.startsWith("custom:");
+  const modelId = isCustom
+    ? deps.modelId.trim() || "default"
+    : deps.modelId.trim() || DEFAULT_AUTOCOMPLETE_MODEL[deps.provider as AutocompleteProviderId];
+
+  let model;
+  if (isCustom) {
+    const cpId = deps.provider.replace("custom:", "");
+    const cp = usePreferencesStore.getState().customProviders.find((c) => c.id === cpId);
+    if (!cp) throw new Error(`Custom provider "${cpId}" not found.`);
+    model = await buildCustomLanguageModel(cp, modelId);
+  } else {
+    const keys = { ...EMPTY_PROVIDER_KEYS, [deps.provider]: deps.apiKey };
+    model = await buildLanguageModel(deps.provider as AutocompleteProviderId, keys, modelId, {
+      lmstudioBaseURL: deps.lmstudioBaseURL || LMSTUDIO_DEFAULT_BASE_URL,
+    });
+  }
 
   const isReasoning = /\bgpt-oss\b/i.test(modelId);
   const providerOptions = isReasoning

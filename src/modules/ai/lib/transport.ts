@@ -1,6 +1,6 @@
 import type { UIMessage } from "@ai-sdk/react";
 import { DirectChatTransport } from "ai";
-import { TERMINAL_BUFFER_LINES, type ModelId } from "../config";
+import { TERMINAL_BUFFER_LINES, type CustomProvider, type ModelId } from "../config";
 import { createTeraxAgent } from "./agent";
 import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
@@ -46,11 +46,12 @@ const MAX_TERMINAL_CHARS = 12_000;
 type Deps = {
   getKeys: () => ProviderKeys;
   toolContext: ToolContext;
-  getModelId: () => ModelId;
+  getModelId: () => ModelId | string;
   getCustomInstructions: () => string;
   getAgentPersona: () => { name: string; instructions: string } | null;
   getLive: () => LiveSnapshot;
   getLmstudioBaseURL?: () => string | undefined;
+  getCustomProviders?: () => CustomProvider[];
   onStep?: (step: string | null) => void;
   getPlanMode?: () => boolean;
 };
@@ -73,6 +74,7 @@ export function createContextAwareTransport(deps: Deps) {
         lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
         planMode: deps.getPlanMode?.(),
         projectMemory,
+        customProviders: deps.getCustomProviders?.(),
       });
       const base = new DirectChatTransport({ agent });
       const augmented = injectContext(options.messages, deps.getLive());
@@ -94,6 +96,7 @@ export function createContextAwareTransport(deps: Deps) {
         lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
         planMode: deps.getPlanMode?.(),
         projectMemory,
+        customProviders: deps.getCustomProviders?.(),
       });
       const base = new DirectChatTransport({ agent });
       type ReconnectArg = Parameters<typeof base.reconnectToStream>[0];
