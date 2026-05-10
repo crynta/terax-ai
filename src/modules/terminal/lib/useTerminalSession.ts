@@ -7,8 +7,25 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { registerCwdHandler, registerPromptTracker, registerTeraxOpenHandler, type TeraxOpenInput } from "./osc-handlers";
+import { dbgTerminalAc, isTerminalAutocompleteDebug } from "./autocomplete/debug";
+import {
+  createThrottle,
+  getPromptLineDiagnostics,
+  isOnPromptLine,
+} from "./autocomplete/extractPrefix";
+import { STATIC_COMMAND_LINES } from "./autocomplete/staticCommands";
+import { HistoryRing } from "./autocomplete/historyRing";
+import { cursorPixelOffset, measureCellMetrics } from "./autocomplete/measureTerminal";
+import { rankSuggestions } from "./autocomplete/rankSuggestions";
+import { UserInputAccumulator } from "./autocomplete/userInputAccumulator";
+import {
+  registerCwdHandler,
+  registerShellIntegrationMarkers,
+  registerTeraxOpenHandler,
+  type TeraxOpenInput,
+} from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
+import type { TerminalAutocompleteUiModel } from "./autocomplete/types";
 
 export type { TeraxOpenInput };
 
@@ -23,6 +40,9 @@ type Options = {
   onCwd?: (cwd: string) => void;
   onDetectedLocalUrl?: (url: string) => void;
   onTeraxOpen?: (input: TeraxOpenInput) => void;
+  /** When unset, terminal autocomplete UI is off. */
+  getTerminalAutocompleteEnabled?: () => boolean;
+  onTerminalAutocompleteModel?: (model: TerminalAutocompleteUiModel | null) => void;
 };
 
 // Matches dev-server-style local URLs (vite, next dev, webpack, …). Anchors
@@ -39,6 +59,8 @@ export function useTerminalSession({
   onCwd,
   onDetectedLocalUrl,
   onTeraxOpen,
+  getTerminalAutocompleteEnabled,
+  onTerminalAutocompleteModel,
 }: Options) {
   const detectedRef = useRef<string | null>(null);
   const onDetectedRef = useRef(onDetectedLocalUrl);
@@ -46,13 +68,26 @@ export function useTerminalSession({
   const onExitRef = useRef(onExit);
   const onSearchReadyRef = useRef(onSearchReady);
   const onTeraxOpenRef = useRef(onTeraxOpen);
+  const getAcEnabledRef = useRef(getTerminalAutocompleteEnabled);
+  const onAcModelRef = useRef(onTerminalAutocompleteModel);
+  const autocompletePickRef = useRef<(index: number) => void>(() => {});
   useEffect(() => {
     onDetectedRef.current = onDetectedLocalUrl;
     onCwdRef.current = onCwd;
     onExitRef.current = onExit;
     onSearchReadyRef.current = onSearchReady;
     onTeraxOpenRef.current = onTeraxOpen;
-  }, [onDetectedLocalUrl, onCwd, onExit, onSearchReady, onTeraxOpen]);
+    getAcEnabledRef.current = getTerminalAutocompleteEnabled;
+    onAcModelRef.current = onTerminalAutocompleteModel;
+  }, [
+    onDetectedLocalUrl,
+    onCwd,
+    onExit,
+    onSearchReady,
+    onTeraxOpen,
+    getTerminalAutocompleteEnabled,
+    onTerminalAutocompleteModel,
+  ]);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const ptyRef = useRef<PtySession | null>(null);
@@ -101,6 +136,11 @@ export function useTerminalSession({
       term.open(container.current);
       fit.fit();
 
+      const el = container.current;
+      if (!el) return;
+      const acLayoutRoot =
+        el.offsetParent instanceof HTMLElement ? el.offsetParent : el;
+
       try {
         const webgl = new WebglAddon();
         webgl.onContextLoss(() => webgl.dispose());
@@ -109,12 +149,203 @@ export function useTerminalSession({
         console.warn("WebGL renderer unavailable:", e);
       }
 
-      const prompt = registerPromptTracker(term);
+      const historyRing = new HistoryRing();
+      const acc = new UserInputAccumulator();
+      const throttleAcFromPty = createThrottle(48);
+      let acSelectedIdx = 0;
+      /** Multi-match list was closed with Esc; ghost-only until another Esc snoozes. */
+      let acDropdownDismissed = false;
+      /** Esc twice: no autocomplete UI until the next shell prompt. */
+      let acSnoozedUntilPrompt = false;
+      let acPublishRaf: number | null = null;
+      const lastAcModelRef: { current: TerminalAutocompleteUiModel | null } = {
+        current: null,
+      };
+
+      const acEnabled = () => getAcEnabledRef.current?.() ?? false;
+
+      const publishAcModel = (m: TerminalAutocompleteUiModel | null) => {
+        lastAcModelRef.current = m;
+        if (acPublishRaf != null) cancelAnimationFrame(acPublishRaf);
+        acPublishRaf = requestAnimationFrame(() => {
+          acPublishRaf = null;
+          onAcModelRef.current?.(lastAcModelRef.current);
+        });
+      };
+
+      const shellMarkers = registerShellIntegrationMarkers(term, {
+        onPromptStart: () => {
+          acc.clear();
+          acSelectedIdx = 0;
+          acDropdownDismissed = false;
+          acSnoozedUntilPrompt = false;
+          publishAcModel(null);
+        },
+      });
+
+      const recomputeAutocomplete = () => {
+        if (!acEnabled()) {
+          publishAcModel(null);
+          return;
+        }
+        if (acSnoozedUntilPrompt) {
+          publishAcModel(null);
+          return;
+        }
+        if (isTerminalAutocompleteDebug()) {
+          const d = getPromptLineDiagnostics(term, shellMarkers);
+          dbgTerminalAc("recompute", {
+            ...d,
+            prefix: acc.get(),
+            cols: term.cols,
+            rows: term.rows,
+          });
+        }
+        if (!isOnPromptLine(term, shellMarkers)) {
+          publishAcModel(null);
+          return;
+        }
+        const prefix = acc.get();
+        if (prefix.length === 0) {
+          acDropdownDismissed = false;
+          publishAcModel(null);
+          return;
+        }
+        const hist = historyRing.matchPrefix(prefix, 24);
+        const ranked = rankSuggestions(prefix, hist, STATIC_COMMAND_LINES);
+        if (ranked.length === 0) {
+          publishAcModel(null);
+          return;
+        }
+        acSelectedIdx = Math.min(Math.max(acSelectedIdx, 0), ranked.length - 1);
+        const line = ranked[acSelectedIdx] ?? ranked[0];
+        const suggestionsOut =
+          acDropdownDismissed && ranked.length > 1 ? [line] : ranked;
+        const si = Math.min(acSelectedIdx, suggestionsOut.length - 1);
+        const primary = suggestionsOut[si] ?? suggestionsOut[0];
+        const ghost =
+          primary.toLowerCase().startsWith(prefix.toLowerCase()) &&
+          primary.length > prefix.length
+            ? primary.slice(prefix.length)
+            : "";
+        const m = measureCellMetrics(term, acLayoutRoot);
+        const cur = cursorPixelOffset(term, m);
+        publishAcModel({
+          ghostSuffix: ghost,
+          suggestions: suggestionsOut,
+          selectedIndex: si,
+          anchorLeft: cur.left,
+          anchorTop: cur.top,
+          cellH: m.cellH,
+          fontFamily: term.options.fontFamily ?? "monospace",
+          fontSize: term.options.fontSize ?? FONT_SIZE,
+        });
+      };
+
+      const applyCompletionIndex = (index: number) => {
+        if (!acEnabled()) return;
+        const prefix = acc.get();
+        const hist = historyRing.matchPrefix(prefix, 24);
+        const ranked = rankSuggestions(prefix, hist, STATIC_COMMAND_LINES);
+        if (ranked.length === 0) return;
+        const pick = ranked[Math.min(Math.max(index, 0), ranked.length - 1)];
+        if (!pick || !pick.toLowerCase().startsWith(prefix.toLowerCase())) return;
+        if (pick.length <= prefix.length) return;
+        const suf = pick.slice(prefix.length);
+        pty.write(suf);
+        acc.set(pick);
+        acSelectedIdx = 0;
+        acDropdownDismissed = false;
+        publishAcModel(null);
+        requestAnimationFrame(() => {
+          if (acEnabled()) recomputeAutocomplete();
+        });
+      };
+
+      autocompletePickRef.current = applyCompletionIndex;
+
       cleanups.push(
         registerCwdHandler(term, (cwd) => onCwdRef.current?.(cwd)),
         registerTeraxOpenHandler(term, (input) => onTeraxOpenRef.current?.(input)),
-        prompt.dispose,
+        shellMarkers.dispose,
+        () => {
+          if (acPublishRaf != null) cancelAnimationFrame(acPublishRaf);
+          publishAcModel(null);
+        },
       );
+
+      term.attachCustomKeyEventHandler((ev) => {
+        if (!acEnabled()) return true;
+        if (ev.type !== "keydown") return true;
+        const dom = ev as unknown as KeyboardEvent;
+
+        if (dom.key === "Escape") {
+          if (!isOnPromptLine(term, shellMarkers)) return true;
+          if (acSnoozedUntilPrompt) return true;
+
+          const modelEsc = lastAcModelRef.current;
+          const hasOpenDropdown = modelEsc && modelEsc.suggestions.length > 1;
+
+          if (hasOpenDropdown) {
+            acDropdownDismissed = true;
+            recomputeAutocomplete();
+            return false;
+          }
+
+          if (acDropdownDismissed && acc.get().length > 0) {
+            acSnoozedUntilPrompt = true;
+            acDropdownDismissed = false;
+            acSelectedIdx = 0;
+            publishAcModel(null);
+            return false;
+          }
+
+          if (
+            modelEsc &&
+            (modelEsc.suggestions.length > 0 || modelEsc.ghostSuffix.length > 0)
+          ) {
+            acSnoozedUntilPrompt = true;
+            acDropdownDismissed = false;
+            acSelectedIdx = 0;
+            publishAcModel(null);
+            return false;
+          }
+
+          return true;
+        }
+
+        const model = lastAcModelRef.current;
+        if (!model || model.suggestions.length === 0) return true;
+        if (model.suggestions.length > 1 && dom.key === "ArrowDown") {
+          dom.preventDefault();
+          acSelectedIdx = Math.min(acSelectedIdx + 1, model.suggestions.length - 1);
+          recomputeAutocomplete();
+          return false;
+        }
+        if (model.suggestions.length > 1 && dom.key === "ArrowUp") {
+          dom.preventDefault();
+          acSelectedIdx = Math.max(acSelectedIdx - 1, 0);
+          recomputeAutocomplete();
+          return false;
+        }
+        if (dom.key === "Tab" && !dom.shiftKey) {
+          const prefix = acc.get();
+          const pick =
+            model.suggestions[
+              Math.min(acSelectedIdx, model.suggestions.length - 1)
+            ];
+          if (
+            pick &&
+            pick.toLowerCase().startsWith(prefix.toLowerCase()) &&
+            pick.length > prefix.length
+          ) {
+            dom.preventDefault();
+            applyCompletionIndex(acSelectedIdx);
+            return false;
+          }
+        }
+        return true;
+      });
       onSearchReadyRef.current?.(search);
 
       // Per-session decoder so interleaved chunks across tabs don't splice
@@ -127,6 +358,7 @@ export function useTerminalSession({
         {
           onData: (bytes) => {
             term.write(bytes);
+            if (acEnabled()) throttleAcFromPty(recomputeAutocomplete);
             // Sniff for dev-server URLs in raw output. Byte-level prefilter
             // (':' '/' '/') skips decode+regex on the overwhelming majority
             // of chunks (ordinary terminal output, log tails, test runs).
@@ -156,7 +388,22 @@ export function useTerminalSession({
       }
       ptyRef.current = pty;
 
-      term.onData((data) => pty.write(data));
+      term.onData((data) => {
+        if (getAcEnabledRef.current?.()) {
+          const { submitted, submittedLine } = acc.applyUserData(data);
+          if (submitted && submittedLine) historyRing.push(submittedLine);
+          if (submitted) {
+            acDropdownDismissed = false;
+            acSnoozedUntilPrompt = false;
+          }
+          acSelectedIdx = 0;
+          recomputeAutocomplete();
+        }
+        pty.write(data);
+        if (getAcEnabledRef.current?.()) {
+          throttleAcFromPty(recomputeAutocomplete);
+        }
+      });
 
       // Two-stage debounce:
       //  - FIT runs frequently (~one frame) so xterm visually keeps up with
@@ -174,7 +421,6 @@ export function useTerminalSession({
       let fitTimer: ReturnType<typeof setTimeout> | null = null;
       let ptyTimer: ReturnType<typeof setTimeout> | null = null;
 
-      const el = container.current;
       const flushPtyResize = () => {
         ptyTimer = null;
         if (disposed) return;
@@ -195,6 +441,7 @@ export function useTerminalSession({
           lastW = w;
           lastH = h;
           fit.fit();
+          if (acEnabled()) recomputeAutocomplete();
           // Schedule (or re-schedule) a single trailing pty.resize. The
           // shell sees one SIGWINCH after the drag settles, not 60+/s.
           if (ptyTimer) clearTimeout(ptyTimer);
@@ -263,7 +510,11 @@ export function useTerminalSession({
     term.options.theme = buildTerminalTheme();
   }, []);
 
-  return { write, focus, getBuffer, getSelection, applyTheme };
+  const applyAutocompletePick = useCallback((index: number) => {
+    autocompletePickRef.current(index);
+  }, []);
+
+  return { write, focus, getBuffer, getSelection, applyTheme, applyAutocompletePick };
 }
 
 function stripTrailingPunct(url: string): string {
