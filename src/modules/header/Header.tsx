@@ -223,12 +223,7 @@ export function Header({
 
       {!IS_MAC && settingsButton}
 
-      {USE_CUSTOM_WINDOW_CONTROLS && (
-        <>
-          <span className="ml-1 h-5 w-px shrink-0 bg-border" />
-          <WindowControls />
-        </>
-      )}
+      {USE_CUSTOM_WINDOW_CONTROLS && <WindowControls />}
     </div>
   );
 }
