@@ -41,10 +41,15 @@ import {
 } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
 import { useTabs, useWorkspaceCwd } from "@/modules/tabs";
-import { TerminalStack, type TerminalPaneHandle, type TeraxOpenInput } from "@/modules/terminal";
+import {
+  TerminalStack,
+  type TeraxOpenInput,
+  type TerminalPaneHandle,
+} from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { homeDir } from "@tauri-apps/api/path";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -57,6 +62,22 @@ function sameOrigin(a: string, b: string): boolean {
     return ua.host === ub.host && ua.protocol === ub.protocol;
   } catch {
     return a === b;
+  }
+}
+
+function isLocalPreviewUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      (url.hostname === "localhost" ||
+        url.hostname === "127.0.0.1" ||
+        url.hostname === "0.0.0.0" ||
+        url.hostname === "::1" ||
+        url.hostname === "[::1]")
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -519,10 +540,22 @@ export default function App() {
 
   const handleTeraxOpen = useCallback(
     (_tabId: number, input: TeraxOpenInput) => {
-      // Always open in a new tab
-      openFileTab(input.file);
+      if (input.kind === "file") {
+        openFileTab(input.file);
+        return;
+      }
+
+      if (
+        input.target === "preview" ||
+        (input.target === "auto" && isLocalPreviewUrl(input.url))
+      ) {
+        openPreviewTab(input.url);
+        return;
+      }
+
+      void openUrl(input.url).catch(console.error);
     },
-    [openFileTab],
+    [openFileTab, openPreviewTab],
   );
 
   const handleEditorDirty = useCallback(

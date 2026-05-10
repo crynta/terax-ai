@@ -36,9 +36,18 @@ export function registerPromptTracker(term: Terminal): PromptTracker {
   };
 }
 
-export type TeraxOpenInput = {
-  file: string;
-};
+export type TeraxOpenTarget = "auto" | "preview" | "browser";
+
+export type TeraxOpenInput =
+  | {
+      kind: "file";
+      file: string;
+    }
+  | {
+      kind: "url";
+      url: string;
+      target: TeraxOpenTarget;
+    };
 
 export function registerTeraxOpenHandler(
   term: Terminal,
@@ -65,14 +74,48 @@ function parseOsc7(data: string): string | null {
 }
 
 function parseTeraxOpen(data: string): TeraxOpenInput | null {
-  // Parse format: "file=/path/to/file"
-  const fileMatch = data.match(/file=([^;]+)/);
+  const params = parseOscParams(data);
+  const file = params.get("file");
+  if (file) return { kind: "file", file };
 
-  if (!fileMatch) return null;
+  const url = params.get("url")?.trim();
+  if (!url || !isSupportedUrl(url)) return null;
 
-  try {
-    return { file: decodeURIComponent(fileMatch[1]) };
-  } catch {
-    return { file: fileMatch[1] };
+  return { kind: "url", url, target: parseTarget(params.get("target")) };
+}
+
+function parseOscParams(data: string): Map<string, string> {
+  const params = new Map<string, string>();
+  for (const part of data.split(";")) {
+    const i = part.indexOf("=");
+    if (i === -1) continue;
+    const key = part.slice(0, i).trim();
+    if (!key) continue;
+    params.set(key, decodeParam(part.slice(i + 1)));
   }
+  return params;
+}
+
+function decodeParam(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function isSupportedUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function parseTarget(value: string | undefined): TeraxOpenTarget {
+  if (value === "preview" || value === "browser" || value === "auto") {
+    return value;
+  }
+  return "auto";
 }

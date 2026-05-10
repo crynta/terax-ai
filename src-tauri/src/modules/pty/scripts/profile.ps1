@@ -26,6 +26,25 @@ function global:__terax_urlencode {
     $sb.ToString()
 }
 
+function global:terax_open_url {
+    param(
+        [string]$Url,
+        [ValidateSet('auto', 'preview', 'browser')]
+        [string]$Target = 'auto'
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Url)) {
+        Write-Error 'usage: terax_open_url <url> [auto|preview|browser]'
+        return
+    }
+
+    $esc = [char]27
+    $urlEnc = __terax_urlencode $Url
+    Write-Host -NoNewline "$esc]8888;url=$urlEnc;target=$Target$esc\"
+}
+
+Set-Alias -Name terax-open -Value terax_open_url -Scope Global -Force
+
 function global:prompt {
     $lec = $LASTEXITCODE
     if ($null -eq $lec) { $lec = if ($?) { 0 } else { 1 } }

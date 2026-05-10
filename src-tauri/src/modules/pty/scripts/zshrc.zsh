@@ -79,8 +79,31 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
     printf '\e]8888;file=%s\e\\' "$(_terax_urlencode "$file")"
   }
 
+  # terax_open_url: open URL on the local machine via OSC 8888.
+  # Usage: terax_open_url <url> [auto|preview|browser]
+  terax_open_url() {
+    local url="$1"
+    local target="${2:-auto}"
+
+    if [[ -z "$url" ]]; then
+      printf "usage: terax_open_url <url> [auto|preview|browser]\n" >&2
+      return 1
+    fi
+
+    case "$target" in
+      auto|preview|browser) ;;
+      *)
+        printf "terax_open_url: target must be auto, preview, or browser\n" >&2
+        return 1
+        ;;
+    esac
+
+    printf '\e]8888;url=%s;target=%s\e\\' "$(_terax_urlencode "$url")" "$target"
+  }
+
   # Shorthand alias.
   alias tp='terax_open'
+  alias terax-open='terax_open_url'
 
   _terax_precmd
 fi
