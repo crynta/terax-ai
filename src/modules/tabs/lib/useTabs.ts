@@ -11,6 +11,9 @@ import {
   type SplitDir,
 } from "@/modules/terminal/lib/panes";
 
+// Browsers cap WebGL contexts at ~16; one xterm renderer per leaf.
+export const MAX_PANES_PER_TAB = 8;
+
 export type TerminalTab = {
   id: number;
   kind: "terminal";
@@ -376,6 +379,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       setTabs((curr) =>
         curr.map((t) => {
           if (t.id !== tabId || t.kind !== "terminal") return t;
+          if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
           const splitId = nextIdRef.current++;
           const leafId = nextIdRef.current++;
           newLeafId = leafId;

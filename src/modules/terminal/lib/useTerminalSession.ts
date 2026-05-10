@@ -49,6 +49,7 @@ type Session = {
   lastH: number;
   lastCwd: string | null;
   lastDetectedUrl: string | null;
+  pendingExit: number | null;
   webglLoaded: boolean;
   ready: Promise<void>;
   disposed: boolean;
@@ -99,6 +100,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     lastH: 0,
     lastCwd: null,
     lastDetectedUrl: null,
+    pendingExit: null,
     webglLoaded: false,
     ready: Promise.resolve(),
     disposed: false,
@@ -172,7 +174,8 @@ function openPtyForSession(
       },
       onExit: (code) => {
         s.term.options.disableStdin = true;
-        s.callbacks.onExit?.(code);
+        if (s.callbacks.onExit) s.callbacks.onExit(code);
+        else s.pendingExit = code;
       },
     },
     cwd,
@@ -299,6 +302,11 @@ function attachSession(
   if (s.lastDetectedUrl !== null)
     callbacks.onDetectedLocalUrl?.(s.lastDetectedUrl);
   callbacks.onSearchReady?.(s.searchAddon);
+  if (s.pendingExit !== null) {
+    const code = s.pendingExit;
+    s.pendingExit = null;
+    callbacks.onExit?.(code);
+  }
 }
 
 function detachSession(leafId: number): void {
@@ -370,12 +378,9 @@ export function useTerminalSession({
     onTeraxOpen,
   };
 
-  ensureSession(leafId, initialCwd);
-
   useEffect(() => {
     let cancelled = false;
-    const s = sessions.get(leafId);
-    if (!s) return;
+    const s = ensureSession(leafId, initialCwd);
     s.ready.then(() => {
       if (cancelled || !container.current) return;
       attachSession(leafId, container.current, {
