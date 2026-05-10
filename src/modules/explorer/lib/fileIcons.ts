@@ -2654,28 +2654,39 @@ const fileIcons: FileIcons = {
   },
 };
 
-const { languageIds, fileExtensions, fileNames } = Object.entries(
-  fileIcons,
-).reduce(
-  ({ languageIds, fileExtensions, fileNames }, [name, icon]) => ({
-    languageIds: {
-      ...languageIds,
-      ...icon.languageIds?.reduce((a, c) => ({ ...a, [c]: name }), {}),
-    },
-    fileExtensions: {
-      ...fileExtensions,
-      ...icon.fileExtensions?.reduce((a, c) => ({ ...a, [c]: name }), {}),
-    },
-    fileNames: {
-      ...fileNames,
-      ...icon.fileNames?.reduce((a, c) => ({ ...a, [c]: name }), {}),
-    },
+const languageIds = Object.entries(fileIcons).reduce<Record<string, string>>(
+  (acc, [name, icon]) => ({
+    ...acc,
+    ...icon.languageIds?.reduce<Record<string, string>>(
+      (a, c) => ({ ...a, [c]: name }),
+      {},
+    ),
   }),
-  {
-    languageIds: {},
-    fileExtensions: {},
-    fileNames: {},
-  },
+  {},
+);
+
+const fileExtensions = Object.entries(fileIcons).reduce<
+  Record<string, string>
+>(
+  (acc, [name, icon]) => ({
+    ...acc,
+    ...icon.fileExtensions?.reduce<Record<string, string>>(
+      (a, c) => ({ ...a, [c]: name }),
+      {},
+    ),
+  }),
+  {},
+);
+
+const fileNames = Object.entries(fileIcons).reduce<Record<string, string>>(
+  (acc, [name, icon]) => ({
+    ...acc,
+    ...icon.fileNames?.reduce<Record<string, string>>(
+      (a, c) => ({ ...a, [c]: name }),
+      {},
+    ),
+  }),
+  {},
 );
 
 export { fileExtensions, fileIcons, fileNames, languageIds };

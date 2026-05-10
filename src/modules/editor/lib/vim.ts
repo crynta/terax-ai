@@ -24,12 +24,12 @@ export function vimHandlersExtension(getHandlers: () => VimHandlers): Extension 
 
 let initialized = false;
 
+type CmAdapter = { cm6?: EditorView };
+const getView = (cm: CmAdapter) => cm.cm6;
+
 export function initVimGlobals(): void {
   if (initialized) return;
   initialized = true;
-
-  type CmAdapter = { cm6?: EditorView };
-  const getView = (cm: CmAdapter) => cm.cm6;
 
   Vim.defineEx("write", "w", (cm: CmAdapter) => {
     const view = getView(cm);
