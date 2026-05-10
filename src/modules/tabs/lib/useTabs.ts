@@ -1,10 +1,26 @@
 import { useCallback, useRef, useState } from "react";
+import {
+  hasLeaf,
+  leafIds,
+  nextLeafId,
+  removeLeaf,
+  setLeafCwd as setLeafCwdInTree,
+  siblingLeafOf,
+  splitLeaf,
+  type PaneNode,
+  type SplitDir,
+} from "@/modules/terminal/lib/panes";
+
+// Browsers cap WebGL contexts at ~16; one xterm renderer per leaf.
+export const MAX_PANES_PER_TAB = 8;
 
 export type TerminalTab = {
   id: number;
   kind: "terminal";
   title: string;
   cwd?: string;
+  paneTree: PaneNode;
+  activeLeafId: number;
 };
 
 export type EditorTab = {
@@ -69,22 +85,39 @@ function titleFromUrl(url: string): string {
 }
 
 export function useTabs(initial?: Partial<TerminalTab>) {
-  const [tabs, setTabs] = useState<Tab[]>([
-    {
-      id: 1,
-      kind: "terminal",
-      title: initial?.title ?? "shell",
-      cwd: initial?.cwd,
-    },
-  ]);
+  const [tabs, setTabs] = useState<Tab[]>(() => {
+    const tabId = 1;
+    const leafId = 2;
+    return [
+      {
+        id: tabId,
+        kind: "terminal",
+        title: initial?.title ?? "shell",
+        cwd: initial?.cwd,
+        paneTree: { kind: "leaf", id: leafId, cwd: initial?.cwd },
+        activeLeafId: leafId,
+      },
+    ];
+  });
   const [activeId, setActiveId] = useState(1);
-  const nextIdRef = useRef(2);
+  const nextIdRef = useRef(3);
 
   const newTab = useCallback((cwd?: string) => {
-    const id = nextIdRef.current++;
-    setTabs((t) => [...t, { id, kind: "terminal", title: "shell", cwd }]);
-    setActiveId(id);
-    return id;
+    const tabId = nextIdRef.current++;
+    const leafId = nextIdRef.current++;
+    setTabs((t) => [
+      ...t,
+      {
+        id: tabId,
+        kind: "terminal",
+        title: "shell",
+        cwd,
+        paneTree: { kind: "leaf", id: leafId, cwd },
+        activeLeafId: leafId,
+      },
+    ]);
+    setActiveId(tabId);
+    return tabId;
   }, []);
 
   /**
@@ -301,6 +334,131 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [tabs],
   );
 
+  /** Update a leaf's cwd; mirror to the tab's `cwd` when the leaf is active. */
+  const setLeafCwd = useCallback((leafId: number, cwd: string) => {
+    setTabs((curr) =>
+      curr.map((t) => {
+        if (t.kind !== "terminal") return t;
+        if (!hasLeaf(t.paneTree, leafId)) return t;
+        const paneTree = setLeafCwdInTree(t.paneTree, leafId, cwd);
+        const isActive = t.activeLeafId === leafId;
+        return { ...t, paneTree, ...(isActive && { cwd }) };
+      }),
+    );
+  }, []);
+
+  const focusPane = useCallback((tabId: number, leafId: number) => {
+    setTabs((curr) =>
+      curr.map((t) => {
+        if (t.id !== tabId || t.kind !== "terminal") return t;
+        if (!hasLeaf(t.paneTree, leafId)) return t;
+        if (t.activeLeafId === leafId) return t;
+        return { ...t, activeLeafId: leafId };
+      }),
+    );
+  }, []);
+
+  const focusNextPaneInTab = useCallback(
+    (tabId: number, delta: 1 | -1) => {
+      setTabs((curr) =>
+        curr.map((t) => {
+          if (t.id !== tabId || t.kind !== "terminal") return t;
+          const next = nextLeafId(t.paneTree, t.activeLeafId, delta);
+          if (next === t.activeLeafId) return t;
+          return { ...t, activeLeafId: next };
+        }),
+      );
+    },
+    [],
+  );
+
+  /** Split the active leaf of `tabId` along `dir`. Returns the new leaf id. */
+  const splitActivePane = useCallback(
+    (tabId: number, dir: SplitDir): number | null => {
+      let newLeafId: number | null = null;
+      setTabs((curr) =>
+        curr.map((t) => {
+          if (t.id !== tabId || t.kind !== "terminal") return t;
+          if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
+          const splitId = nextIdRef.current++;
+          const leafId = nextIdRef.current++;
+          newLeafId = leafId;
+          const paneTree = splitLeaf(
+            t.paneTree,
+            t.activeLeafId,
+            splitId,
+            leafId,
+            dir,
+            t.cwd,
+          );
+          return { ...t, paneTree, activeLeafId: leafId };
+        }),
+      );
+      return newLeafId;
+    },
+    [],
+  );
+
+  const closePaneByLeaf = useCallback((leafId: number): void => {
+    setTabs((curr) => {
+      const tab = curr.find(
+        (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
+      );
+      if (!tab || tab.kind !== "terminal") return curr;
+      const newTree = removeLeaf(tab.paneTree, leafId);
+      if (newTree === null) {
+        if (curr.length <= 1) return curr;
+        const idx = curr.findIndex((x) => x.id === tab.id);
+        const next = curr.filter((x) => x.id !== tab.id);
+        setActiveId((active) =>
+          active === tab.id ? next[Math.max(0, idx - 1)].id : active,
+        );
+        return next;
+      }
+      const remaining = leafIds(newTree);
+      let newActive = tab.activeLeafId;
+      if (tab.activeLeafId === leafId) {
+        const sib = siblingLeafOf(tab.paneTree, leafId);
+        newActive = sib && remaining.includes(sib) ? sib : remaining[0];
+      }
+      return curr.map((x) =>
+        x.id === tab.id
+          ? { ...x, paneTree: newTree, activeLeafId: newActive }
+          : x,
+      );
+    });
+  }, []);
+
+  const closeActivePane = useCallback((tabId: number): boolean => {
+    let closedTab = false;
+    setTabs((curr) => {
+      const t = curr.find((x) => x.id === tabId);
+      if (!t || t.kind !== "terminal") return curr;
+      const target = t.activeLeafId;
+      const newTree = removeLeaf(t.paneTree, target);
+      if (newTree === null) {
+        if (curr.length <= 1) return curr;
+        const idx = curr.findIndex((x) => x.id === tabId);
+        const next = curr.filter((x) => x.id !== tabId);
+        setActiveId((active) =>
+          active === tabId ? next[Math.max(0, idx - 1)].id : active,
+        );
+        closedTab = true;
+        return next;
+      }
+      const remaining = leafIds(newTree);
+      const sib = siblingLeafOf(t.paneTree, target);
+      const newActive =
+        sib && remaining.includes(sib) ? sib : remaining[0];
+      return curr.map((x) =>
+        x.id === tabId
+          ? { ...x, paneTree: newTree, activeLeafId: newActive }
+          : x,
+      );
+    });
+    return closedTab;
+  }, []);
+
   return {
     tabs,
     activeId,
@@ -314,5 +472,11 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     closeTab,
     updateTab,
     selectByIndex,
+    setLeafCwd,
+    focusPane,
+    focusNextPaneInTab,
+    splitActivePane,
+    closeActivePane,
+    closePaneByLeaf,
   };
 }
