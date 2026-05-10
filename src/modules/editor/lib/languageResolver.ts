@@ -37,6 +37,7 @@ const loaders: Record<string, LanguageLoader> = {
   html: () => import("@codemirror/lang-html").then((m) => m.html()),
   htm: () => import("@codemirror/lang-html").then((m) => m.html()),
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
+  php: () => import("@codemirror/lang-php").then((m) => m.php()),
 
   // Legacy-modes: loaders return the raw StreamParser; wrapped below.
   sh: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
