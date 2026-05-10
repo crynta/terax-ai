@@ -6,28 +6,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-release:
+  build:
     permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: ubuntu-22.04
-            args: ""
-          - platform: macos-13
-            args: --bundles app
-          - platform: macos-14
-            args: --bundles app
-          - platform: windows-latest
-            args: --target x86_64-pc-windows-msvc
-
-    runs-on: ${{ matrix.platform }}
+      contents: read
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -39,7 +25,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 11
+          version: 10
 
       - uses: actions/setup-node@v6
         with:
@@ -47,10 +33,6 @@ jobs:
           cache: pnpm
 
       - uses: dtolnay/rust-toolchain@stable
-
-      - name: Add MSVC target (Windows)
-        if: runner.os == 'Windows'
-        run: rustup target add x86_64-pc-windows-msvc
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -66,16 +48,5 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
         working-directory: src-tauri
 
-      - name: Build and publish with Tauri
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: build-${{ github.sha }}
-          releaseName: "Terax build ${{ github.sha }}"
-          releaseBody: "Auto-build from commit ${{ github.sha }}"
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+      - name: Build Tauri app (Linux)
+        run: pnpm tauri build --bundles appimage,deb
