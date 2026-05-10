@@ -1,7 +1,5 @@
-import {
-  DEFAULT_PREFERENCES,
-  loadPreferences,
-} from "@/modules/settings/store";
+import { detectMonoFontFamily } from "@/lib/fonts";
+import { DEFAULT_PREFERENCES, loadPreferences } from "@/modules/settings/store";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
@@ -10,14 +8,10 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
+import { registerCwdHandler, registerPromptTracker, registerTeraxOpenHandler, type TeraxOpenInput } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
-const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
-const FONT_WEIGHT_REGULAR = "400";
-const FONT_WEIGHT_BOLD = "700";
-const TERMINAL_FONT_LOAD_TIMEOUT_MS = 750;
-const TERMINAL_LINE_HEIGHT = 1.2;
+export type { TeraxOpenInput };
 
 type Options = {
   container: React.RefObject<HTMLDivElement | null>;
@@ -27,6 +21,7 @@ type Options = {
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
   onDetectedLocalUrl?: (url: string) => void;
+  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 // Matches dev-server-style local URLs (vite, next dev, webpack, …). Anchors
@@ -42,18 +37,21 @@ export function useTerminalSession({
   onExit,
   onCwd,
   onDetectedLocalUrl,
+  onTeraxOpen,
 }: Options) {
   const detectedRef = useRef<string | null>(null);
   const onDetectedRef = useRef(onDetectedLocalUrl);
   const onCwdRef = useRef(onCwd);
   const onExitRef = useRef(onExit);
   const onSearchReadyRef = useRef(onSearchReady);
+  const onTeraxOpenRef = useRef(onTeraxOpen);
   useEffect(() => {
     onDetectedRef.current = onDetectedLocalUrl;
     onCwdRef.current = onCwd;
     onExitRef.current = onExit;
     onSearchReadyRef.current = onSearchReady;
-  }, [onDetectedLocalUrl, onCwd, onExit, onSearchReady]);
+    onTeraxOpenRef.current = onTeraxOpen;
+  }, [onDetectedLocalUrl, onCwd, onExit, onSearchReady, onTeraxOpen]);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const ptyRef = useRef<PtySession | null>(null);
@@ -62,16 +60,15 @@ export function useTerminalSession({
     let disposed = false;
     const cleanups: Array<() => void> = [];
 
-    (async () => {
+    const start = async () => {
       const terminalPreferences = await loadTerminalPreferences();
-      const fontSize = terminalPreferences.fontSize;
-      await waitForTerminalFonts(fontSize);
+      await document.fonts.ready;
       if (disposed || !container.current) return;
 
       const term = new Terminal({
-        fontFamily: FONT_FAMILY,
-        fontSize,
-        lineHeight: TERMINAL_LINE_HEIGHT,
+        fontFamily: detectMonoFontFamily(),
+        fontSize: terminalPreferences.fontSize,
+        lineHeight: 1.05,
         theme: buildTerminalTheme(),
         cursorBlink: true,
         cursorStyle: "bar",
@@ -117,6 +114,7 @@ export function useTerminalSession({
       const prompt = registerPromptTracker(term);
       cleanups.push(
         registerCwdHandler(term, (cwd) => onCwdRef.current?.(cwd)),
+        registerTeraxOpenHandler(term, (input) => onTeraxOpenRef.current?.(input)),
         prompt.dispose,
       );
       onSearchReadyRef.current?.(search);
@@ -213,10 +211,18 @@ export function useTerminalSession({
       });
 
       if (visible) term.focus();
-    })();
+    };
+
+    // Deferred a tick so any same-commit mount → cleanup → mount sequence
+    // (HMR/dev-only effects) cancels the first spawn before it reaches Rust.
+    const startTimer = setTimeout(() => {
+      if (disposed || !container.current) return;
+      void start();
+    }, 0);
 
     return () => {
       disposed = true;
+      clearTimeout(startTimer);
       cleanups.forEach((fn) => fn());
       ptyRef.current?.close();
       ptyRef.current = null;
@@ -267,46 +273,6 @@ export function useTerminalSession({
   }, []);
 
   return { write, focus, getBuffer, getSelection, applyTheme };
-}
-
-async function waitForTerminalFonts(fontSize: number): Promise<void> {
-  if (!("fonts" in document)) return;
-
-  try {
-    await withTimeout(
-      Promise.all([
-        document.fonts.load(
-          `${FONT_WEIGHT_REGULAR} ${fontSize}px "JetBrains Mono"`,
-        ),
-        document.fonts.load(
-          `${FONT_WEIGHT_BOLD} ${fontSize}px "JetBrains Mono"`,
-        ),
-      ]).then(() => undefined),
-      TERMINAL_FONT_LOAD_TIMEOUT_MS,
-    );
-  } catch (e) {
-    console.warn("Terminal font load failed; using fallback monospace font:", e);
-  }
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(
-      () => reject(new Error(`Timed out after ${timeoutMs}ms`)),
-      timeoutMs,
-    );
-
-    promise.then(
-      (value) => {
-        window.clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        window.clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
 }
 
 async function loadTerminalPreferences(): Promise<{

@@ -84,10 +84,7 @@ fn run_blocking(
     cwd: Option<PathBuf>,
     dur: Duration,
 ) -> Result<CommandOutput, String> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-
-    let mut cmd = Command::new(&shell);
-    cmd.arg("-lc").arg(&command);
+    let mut cmd = build_oneshot_command(&command);
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
@@ -172,9 +169,7 @@ pub fn shell_session_open(
             }
             p
         }
-        None => std::env::var("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/")),
+        None => dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
     };
     let session = Arc::new(ShellSession::new(initial));
     let id = state.next_session_id.fetch_add(1, Ordering::Relaxed);
@@ -187,6 +182,7 @@ pub async fn shell_session_run(
     state: tauri::State<'_, ShellState>,
     id: u32,
     command: String,
+    cwd: Option<String>,
     timeout_secs: Option<u64>,
 ) -> Result<SessionRunOutput, String> {
     let session = state
@@ -201,10 +197,9 @@ pub async fn shell_session_run(
             .unwrap_or(DEFAULT_TIMEOUT_SECS)
             .clamp(1, MAX_TIMEOUT_SECS),
     );
-    // Run on a worker so we don't block the async runtime.
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let _ = tx.send(session.run(command, dur));
+        let _ = tx.send(session.run(command, cwd, dur));
     });
     rx.recv().map_err(|e| e.to_string())?
 }
@@ -260,6 +255,32 @@ pub fn shell_bg_list(state: tauri::State<ShellState>) -> Result<Vec<BackgroundPr
     }
     out.sort_by_key(|i| i.handle);
     Ok(out)
+}
+
+pub(crate) fn build_oneshot_command(command: &str) -> Command {
+    #[cfg(unix)]
+    {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        let mut cmd = Command::new(shell);
+        cmd.arg("-lc").arg(command);
+        cmd
+    }
+    #[cfg(windows)]
+    {
+        let shell = crate::modules::pty::shell_init::windows_shell_path();
+        let mut cmd = Command::new(&shell);
+        let is_cmd = shell
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.eq_ignore_ascii_case("cmd.exe"))
+            .unwrap_or(false);
+        if is_cmd {
+            cmd.arg("/C").arg(command);
+        } else {
+            cmd.arg("-NoProfile").arg("-Command").arg(command);
+        }
+        cmd
+    }
 }
 
 fn drain<R: Read>(reader: &mut R) -> (Vec<u8>, bool) {

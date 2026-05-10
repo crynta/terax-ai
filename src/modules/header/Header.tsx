@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { WindowControls } from "@/components/WindowControls";
-import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { IS_MAC, MOD_KEY, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
 import {
@@ -68,7 +68,7 @@ export function Header({
         size="icon"
         className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
         onClick={onOpenShortcuts}
-        title="Keyboard shortcuts (⌘K)"
+        title={`Keyboard shortcuts (${MOD_KEY}K)`}
       >
         <HugeiconsIcon icon={KeyboardIcon} size={16} strokeWidth={1.75} />
       </Button>

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
@@ -14,8 +15,9 @@ use super::run_blocking_inner;
 /// not an interactive REPL — interactive tools must NOT be invoked here, use
 /// the background process API for long-running work).
 pub struct ShellSession {
-    /// Last known cwd. Updated after every successful command.
     pub cwd: Mutex<PathBuf>,
+    /// While pristine (no `run` yet), caller-provided cwd hints reseed `cwd`.
+    pub pristine: AtomicBool,
     #[allow(dead_code)]
     pub started_at_ms: u64,
 }
@@ -43,6 +45,7 @@ impl ShellSession {
             .unwrap_or(0);
         Self {
             cwd: Mutex::new(initial_cwd),
+            pristine: AtomicBool::new(true),
             started_at_ms,
         }
     }
@@ -51,18 +54,26 @@ impl ShellSession {
         self.cwd.lock().unwrap().clone()
     }
 
-    pub fn run(&self, command: String, timeout: Duration) -> Result<SessionRunOutput, String> {
+    pub fn run(
+        &self,
+        command: String,
+        cwd_hint: Option<String>,
+        timeout: Duration,
+    ) -> Result<SessionRunOutput, String> {
         let trimmed = command.trim().to_string();
         if trimmed.is_empty() {
             return Err("empty command".into());
         }
+        if self.pristine.load(Ordering::Acquire) {
+            if let Some(hint) = cwd_hint.filter(|s| !s.is_empty()) {
+                let p = PathBuf::from(&hint);
+                if p.is_dir() {
+                    *self.cwd.lock().unwrap() = p;
+                }
+            }
+        }
         let cwd = self.current_cwd();
-
-        // Append a cwd-reporting tail. Run with `set +e` semantics by
-        // capturing $? right after the command, then printing the sentinel.
-        let wrapped = format!(
-            "{trimmed}\n__terax_rc=$?\nprintf '\\n%s%s\\n' '{CWD_SENTINEL}' \"$(pwd)\"\nexit $__terax_rc\n",
-        );
+        let wrapped = wrap_with_sentinel(&trimmed);
 
         let (tx, rx) = mpsc::channel::<Result<super::CommandOutput, String>>();
         let cwd_for_thread = cwd.clone();
@@ -70,16 +81,16 @@ impl ShellSession {
             let _ = tx.send(run_blocking_inner(wrapped, Some(cwd_for_thread), timeout));
         });
         let raw = rx.recv().map_err(|e| e.to_string())??;
+        self.pristine.store(false, Ordering::Release);
 
         let (stdout_clean, cwd_after) = strip_cwd_sentinel(&raw.stdout, &cwd);
-        // Update tracked cwd if shell reported a new one and it exists.
         if let Some(ref new_cwd) = cwd_after {
             let p = PathBuf::from(new_cwd);
             if p.is_dir() {
                 *self.cwd.lock().unwrap() = p;
             }
         }
-        let resolved_cwd = self.current_cwd().to_string_lossy().into_owned();
+        let resolved_cwd = crate::modules::fs::to_canon(self.current_cwd());
 
         Ok(SessionRunOutput {
             stdout: stdout_clean,
@@ -90,6 +101,20 @@ impl ShellSession {
             cwd_after: resolved_cwd,
         })
     }
+}
+
+#[cfg(unix)]
+fn wrap_with_sentinel(command: &str) -> String {
+    format!(
+        "{command}\n__terax_rc=$?\nprintf '\\n%s%s\\n' '{CWD_SENTINEL}' \"$(pwd)\"\nexit $__terax_rc\n",
+    )
+}
+
+#[cfg(windows)]
+fn wrap_with_sentinel(command: &str) -> String {
+    format!(
+        "{command}\n$__terax_rc = if ($null -ne $LASTEXITCODE) {{ $LASTEXITCODE }} elseif ($?) {{ 0 }} else {{ 1 }}\n\"`n{CWD_SENTINEL}$($PWD.Path)\"\nexit $__terax_rc\n",
+    )
 }
 
 fn strip_cwd_sentinel(stdout: &str, _fallback: &PathBuf) -> (String, Option<String>) {

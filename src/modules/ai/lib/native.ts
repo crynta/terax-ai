@@ -76,7 +76,12 @@ export const native = {
 
   shellSessionOpen: (cwd?: string | null) =>
     invoke<number>("shell_session_open", { cwd: cwd ?? null }),
-  shellSessionRun: (id: number, command: string, timeoutSecs?: number) =>
+  shellSessionRun: (
+    id: number,
+    command: string,
+    cwd?: string | null,
+    timeoutSecs?: number,
+  ) =>
     invoke<{
       stdout: string;
       stderr: string;
@@ -87,6 +92,7 @@ export const native = {
     }>("shell_session_run", {
       id,
       command,
+      cwd: cwd ?? null,
       timeoutSecs: timeoutSecs ?? null,
     }),
   shellSessionClose: (id: number) =>

@@ -88,6 +88,18 @@ export const DEFAULT_PREFERENCES: Preferences = {
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
 
+// LazyStore.onChange only fires within the writing process. The settings
+// page lives in a separate webview, so writes there never reach the main
+// window's subscribers. Mirror every setter through a Tauri event so any
+// window can listen.
+const PREFS_CHANGED_EVENT = "terax://prefs-changed";
+
+async function writePref<T>(key: string, value: T): Promise<void> {
+  await store.set(key, value);
+  await store.save();
+  await emit(PREFS_CHANGED_EVENT, { key, value });
+}
+
 export async function loadPreferences(): Promise<Preferences> {
   // Single IPC roundtrip — fetching keys individually fans out to one
   // `plugin:store|get` per setting and is the dominant boot cost.
@@ -130,60 +142,49 @@ export async function loadPreferences(): Promise<Preferences> {
 }
 
 export async function setTheme(value: ThemePref): Promise<void> {
-  await store.set(KEY_THEME, value);
-  await store.save();
+  await writePref(KEY_THEME, value);
 }
 
 export async function setDefaultModel(value: ModelId): Promise<void> {
-  await store.set(KEY_DEFAULT_MODEL, value);
-  await store.save();
+  await writePref(KEY_DEFAULT_MODEL, value);
 }
 
 export async function setEditorTheme(value: EditorThemeId): Promise<void> {
-  await store.set(KEY_EDITOR_THEME, value);
-  await store.save();
+  await writePref(KEY_EDITOR_THEME, value);
 }
 
 export async function setCustomInstructions(value: string): Promise<void> {
-  await store.set(KEY_CUSTOM_INSTRUCTIONS, value);
-  await store.save();
+  await writePref(KEY_CUSTOM_INSTRUCTIONS, value);
 }
 
 export async function setAutostart(value: boolean): Promise<void> {
-  await store.set(KEY_AUTOSTART, value);
-  await store.save();
+  await writePref(KEY_AUTOSTART, value);
 }
 
 export async function setRestoreWindowState(value: boolean): Promise<void> {
-  await store.set(KEY_RESTORE_WINDOW, value);
-  await store.save();
+  await writePref(KEY_RESTORE_WINDOW, value);
 }
 
 export async function setAutocompleteEnabled(value: boolean): Promise<void> {
-  await store.set(KEY_AUTOCOMPLETE_ENABLED, value);
-  await store.save();
+  await writePref(KEY_AUTOCOMPLETE_ENABLED, value);
 }
 
 export async function setAutocompleteProvider(
   value: AutocompleteProviderId,
 ): Promise<void> {
-  await store.set(KEY_AUTOCOMPLETE_PROVIDER, value);
-  await store.save();
+  await writePref(KEY_AUTOCOMPLETE_PROVIDER, value);
 }
 
 export async function setAutocompleteModelId(value: string): Promise<void> {
-  await store.set(KEY_AUTOCOMPLETE_MODEL, value);
-  await store.save();
+  await writePref(KEY_AUTOCOMPLETE_MODEL, value);
 }
 
 export async function setLmstudioBaseURL(value: string): Promise<void> {
-  await store.set(KEY_LMSTUDIO_BASE_URL, value);
-  await store.save();
+  await writePref(KEY_LMSTUDIO_BASE_URL, value);
 }
 
 export async function setVimMode(value: boolean): Promise<void> {
-  await store.set(KEY_VIM_MODE, value);
-  await store.save();
+  await writePref(KEY_VIM_MODE, value);
 }
 
 export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
@@ -205,7 +206,7 @@ export async function setTerminalFontSize(value: number): Promise<void> {
 export type PrefKey = keyof Preferences;
 
 /** Subscribe to changes from any window (settings → main). */
-export function onPreferencesChange(
+export async function onPreferencesChange(
   cb: (key: PrefKey, value: unknown) => void,
 ): Promise<UnlistenFn> {
   const map: Record<string, PrefKey> = {
@@ -223,10 +224,23 @@ export function onPreferencesChange(
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
   };
-  return store.onChange<unknown>((key, value) => {
+  // Same-process writes still fire onChange immediately; cross-window writes
+  // arrive via the Tauri event emitted by writePref().
+  const unsubLocal = await store.onChange<unknown>((key, value) => {
     const mapped = map[key];
     if (mapped) cb(mapped, value);
   });
+  const unsubEvent = await listen<{ key: string; value: unknown }>(
+    PREFS_CHANGED_EVENT,
+    (e) => {
+      const mapped = map[e.payload.key];
+      if (mapped) cb(mapped, e.payload.value);
+    },
+  );
+  return () => {
+    unsubLocal();
+    unsubEvent();
+  };
 }
 
 // API key changes are stored in OS keychain (not the prefs store),

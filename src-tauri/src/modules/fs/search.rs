@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use ignore::WalkBuilder;
 use serde::Serialize;
 
+use super::to_canon;
+
 #[derive(Serialize)]
 pub struct SearchHit {
     /// Absolute path of the matched file.
@@ -55,7 +57,7 @@ pub fn fs_search(
             continue;
         }
         let rel = match path.strip_prefix(&root_path) {
-            Ok(r) => r.to_string_lossy().into_owned(),
+            Ok(r) => to_canon(r),
             Err(_) => continue,
         };
         if !rel.to_lowercase().contains(&q) {
@@ -67,7 +69,7 @@ pub fn fs_search(
             .unwrap_or_default();
         let is_dir = dent.file_type().map(|t| t.is_dir()).unwrap_or(false);
         out.push(SearchHit {
-            path: path.to_string_lossy().into_owned(),
+            path: to_canon(path),
             rel,
             name,
             is_dir,

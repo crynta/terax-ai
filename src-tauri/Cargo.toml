@@ -1,6 +1,6 @@
 [package]
 name = "terax"
-version = "0.5.9"
+version = "0.6.0"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
 edition = "2021"
@@ -23,6 +23,7 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 portable-pty = "0.9"
+dirs = "5"
 base64 = "0.22"
 log = "0.4"
 ignore = "0.4"
@@ -30,10 +31,12 @@ grep-regex = "0.1"
 grep-searcher = "0.1"
 grep-matcher = "0.1"
 globset = "0.4"
+shared_child = "1"
 tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"
+reqwest = { version = "0.12", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [
@@ -43,6 +46,12 @@ keyring = { version = "3.6", default-features = false, features = [
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [
 	"windows-native",
+] }
+windows-sys = { version = "0.59", features = [
+	"Win32_Foundation",
+	"Win32_Security",
+	"Win32_System_JobObjects",
+	"Win32_System_Threading",
 ] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

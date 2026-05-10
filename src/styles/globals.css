@@ -221,3 +221,22 @@ html[data-chrome="borderless"] #settings-root {
   height: 0 !important;
   display: none !important;
 }
+
+/* Linux/Windows ship a chunky native Chromium scrollbar that breaks the
+ * frosted-glass aesthetic. Hide it globally — visible scroll affordances are
+ * provided per-region via shadcn <ScrollArea>. macOS native overlay scrollbar
+ * stays untouched. */
+html[data-chrome="borderless"] {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html[data-chrome="borderless"] *,
+html[data-chrome="borderless"] *::before,
+html[data-chrome="borderless"] *::after {
+  scrollbar-width: none;
+}
+html[data-chrome="borderless"] *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
