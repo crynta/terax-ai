@@ -22,8 +22,8 @@ import { InlineInput } from "./InlineInput";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
-import { useFileTree } from "./lib/useFileTree";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
+import { joinPath, useFileTree } from "./lib/useFileTree";
 
 type Props = {
   rootPath: string | null;
@@ -62,7 +62,7 @@ export function FileExplorer({
       const node = tree.nodes[parent];
       if (!node || node.status !== "loaded") return;
       for (const e of node.entries) {
-        const p = tree.joinPath(parent, e.name);
+        const p = joinPath(parent, e.name);
         const isDir = e.kind === "dir";
         out.push({ path: p, isDir });
         if (isDir && tree.expanded.has(p)) walk(p);
@@ -70,7 +70,7 @@ export function FileExplorer({
     };
     walk(rootPath);
     return out;
-  }, [rootPath, tree.nodes, tree.expanded, tree.joinPath]);
+  }, [rootPath, tree.nodes, tree.expanded]);
 
   useEffect(() => {
     if (selectedPath && !flat.some((f) => f.path === selectedPath)) {
