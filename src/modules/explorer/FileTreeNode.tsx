@@ -27,7 +27,12 @@ type Props = {
   rootPath: string;
   depth: number;
   tree: Tree;
-  onOpenFile: (path: string) => void;
+  /**
+   * Called whenever a file should be opened.
+   * `pin` signals persistent intent (e.g. context-menu "Open");
+   * omitting it means the caller decides the default (preview).
+   */
+  onOpenFile: (path: string, pin?: boolean) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   selectedPath: string | null;
@@ -135,7 +140,7 @@ function FileTreeNodeImpl({
           {!isDir && (
             <ContextMenuItem
               className={COMPACT_ITEM}
-              onSelect={() => onOpenFile(path)}
+              onSelect={() => onOpenFile(path, true)}
             >
               Open
             </ContextMenuItem>

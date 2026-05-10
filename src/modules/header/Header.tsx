@@ -26,6 +26,8 @@ type Props = {
   onNewPreview: () => void;
   onNewEditor: () => void;
   onClose: (id: number) => void;
+  /** Promote a preview (transient) tab to persistent. */
+  onPin: (id: number) => void;
   onToggleSidebar: () => void;
   onOpenShortcuts: () => void;
   onOpenSettings: () => void;
@@ -43,6 +45,7 @@ export function Header({
   onNewPreview,
   onNewEditor,
   onClose,
+  onPin,
   onToggleSidebar,
   onOpenShortcuts,
   onOpenSettings,
@@ -136,6 +139,7 @@ export function Header({
           onNewPreview={onNewPreview}
           onNewEditor={onNewEditor}
           onClose={onClose}
+          onPin={onPin}
           compact={compact}
         />
         <div data-tauri-drag-region className="h-full min-w-2 flex-1" />

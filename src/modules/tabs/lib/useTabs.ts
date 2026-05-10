@@ -13,6 +13,12 @@ export type EditorTab = {
   title: string;
   path: string;
   dirty: boolean;
+  /**
+   * True while the tab is in the transient "preview" state — opened by a
+   * single-click in the explorer and not yet pinned by the user. A preview tab
+   * is replaced by the next single-click rather than accumulating.
+   */
+  preview: boolean;
 };
 
 export type PreviewTab = {
@@ -81,31 +87,97 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return id;
   }, []);
 
-  const openFileTab = useCallback((path: string) => {
+  /**
+   * Opens a file in an editor tab.
+   *
+   * - `pin = true` (default) — opens or activates a **persistent** tab.
+   *   If the path is currently in the preview slot it is promoted in-place.
+   *   Use this for programmatic opens (AI diff, New File dialog, etc.).
+   * - `pin = false` — VSCode-style **preview** tab. A single shared slot is
+   *   reused: if a persistent tab for the path already exists it is activated;
+   *   otherwise the current preview slot is replaced with the new path.
+   */
+  const openFileTab = useCallback((path: string, pin = true) => {
     let targetId: number | null = null;
     setTabs((curr) => {
-      const existing = curr.find(
-        (t) => t.kind === "editor" && t.path === path,
-      );
-      if (existing) {
-        targetId = existing.id;
-        return curr;
-      }
-      const id = nextIdRef.current++;
-      targetId = id;
-      return [
-        ...curr,
-        {
+      if (pin) {
+        // Persistent open: find any existing editor tab, pin it if needed.
+        const existing = curr.find(
+          (t) => t.kind === "editor" && t.path === path,
+        );
+        if (existing) {
+          targetId = existing.id;
+          if ((existing as EditorTab).preview) {
+            return curr.map((t) =>
+              t.id === existing.id ? { ...t, preview: false } : t,
+            );
+          }
+          return curr;
+        }
+        const id = nextIdRef.current++;
+        targetId = id;
+        return [
+          ...curr,
+          {
+            id,
+            kind: "editor",
+            title: basename(path),
+            path,
+            dirty: false,
+            preview: false,
+          } satisfies EditorTab,
+        ];
+      } else {
+        // Preview open: persistent tab for this path takes priority.
+        const persistent = curr.find(
+          (t) => t.kind === "editor" && t.path === path && !(t as EditorTab).preview,
+        );
+        if (persistent) {
+          targetId = persistent.id;
+          return curr;
+        }
+        // Reuse the slot if it already shows the same path.
+        const existingPreview = curr.find(
+          (t) => t.kind === "editor" && t.path === path && (t as EditorTab).preview,
+        );
+        if (existingPreview) {
+          targetId = existingPreview.id;
+          return curr;
+        }
+        // Replace the current preview slot, or append a new one.
+        const previewIdx = curr.findIndex(
+          (t) => t.kind === "editor" && (t as EditorTab).preview,
+        );
+        const id = nextIdRef.current++;
+        targetId = id;
+        const tab: EditorTab = {
           id,
           kind: "editor",
           title: basename(path),
           path,
           dirty: false,
-        },
-      ];
+          preview: true,
+        };
+        if (previewIdx === -1) return [...curr, tab];
+        const next = [...curr];
+        next[previewIdx] = tab;
+        return next;
+      }
     });
     if (targetId !== null) setActiveId(targetId);
     return targetId as number | null;
+  }, []);
+
+  /**
+   * Promotes a preview tab to a persistent one. Called on double-click of the
+   * tab title in the tab bar. Dirty edits also auto-promote (see `updateTab`).
+   */
+  const pinTab = useCallback((id: number) => {
+    setTabs((curr) =>
+      curr.map((t) =>
+        t.id === id && t.kind === "editor" ? { ...t, preview: false } : t,
+      ),
+    );
   }, []);
 
   const openAiDiffTab = useCallback(
@@ -205,8 +277,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             }),
           };
         }
+        // editor tab: auto-promote from preview the moment the file becomes dirty.
+        const autoPin =
+          patch.dirty === true && (x as EditorTab).preview
+            ? { preview: false }
+            : {};
         return {
           ...x,
+          ...autoPin,
           ...(patch.title !== undefined && { title: patch.title }),
           ...(patch.dirty !== undefined && { dirty: patch.dirty }),
           ...(patch.path !== undefined && { path: patch.path }),
@@ -229,6 +307,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setActiveId,
     newTab,
     openFileTab,
+    pinTab,
     newPreviewTab,
     openAiDiffTab,
     setAiDiffStatus,
