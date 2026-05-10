@@ -19,6 +19,10 @@ import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
 import {
+  CommandPalette,
+  createCommandPaletteActions,
+} from "@/modules/command-palette";
+import {
   AiDiffStack,
   EditorStack,
   NewEditorDialog,
@@ -105,6 +109,7 @@ export default function App() {
   }, []);
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
   const openMini = useChatStore((s) => s.openMini);
@@ -452,20 +457,37 @@ export default function App() {
     [newPreviewTab],
   );
 
+  const openNewEditorDialog = useCallback(() => {
+    setNewEditorOpen(true);
+  }, []);
+
+  const openShortcutsDialog = useCallback(() => {
+    setShortcutsOpen(true);
+  }, []);
+
+  const focusSearch = useCallback(() => {
+    searchInlineRef.current?.focus();
+  }, []);
+
+  const openSettings = useCallback(() => {
+    void openSettingsWindow();
+  }, []);
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
+      "commandPalette.open": () => setCommandPaletteOpen(true),
       "tab.new": openNewTab,
       "tab.newPreview": () => openPreviewTab(""),
-      "tab.newEditor": () => setNewEditorOpen(true),
+      "tab.newEditor": openNewEditorDialog,
       "tab.close": () => handleClose(activeId),
       "tab.next": () => cycleTab(1),
       "tab.prev": () => cycleTab(-1),
       "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
-      "search.focus": () => searchInlineRef.current?.focus(),
+      "search.focus": focusSearch,
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
-      "settings.open": () => void openSettingsWindow(),
+      "settings.open": openSettings,
       "sidebar.toggle": toggleSidebar,
     }),
     [
@@ -473,8 +495,11 @@ export default function App() {
       cycleTab,
       handleClose,
       openNewTab,
+      openNewEditorDialog,
       openPreviewTab,
       selectByIndex,
+      focusSearch,
+      openSettings,
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
@@ -538,6 +563,45 @@ export default function App() {
       return { kind: "editor", handle: activeEditorHandle };
     return null;
   }, [isTerminalTab, isEditorTab, activeSearchAddon, activeEditorHandle]);
+
+  const commandPaletteActions = useMemo(
+    () =>
+      createCommandPaletteActions({
+        tabs,
+        activeId,
+        searchTarget,
+        explorerRoot,
+        home,
+        openNewTab,
+        openNewEditor: openNewEditorDialog,
+        openNewPreview: () => openPreviewTab(""),
+        closeActiveTab: () => handleClose(activeId),
+        nextTab: () => cycleTab(1),
+        previousTab: () => cycleTab(-1),
+        focusSearch,
+        toggleSidebar,
+        toggleAi: togglePanelAndFocus,
+        openSettings,
+        openShortcuts: openShortcutsDialog,
+      }),
+    [
+      tabs,
+      activeId,
+      searchTarget,
+      explorerRoot,
+      home,
+      openNewTab,
+      openNewEditorDialog,
+      openPreviewTab,
+      handleClose,
+      cycleTab,
+      focusSearch,
+      toggleSidebar,
+      togglePanelAndFocus,
+      openSettings,
+      openShortcutsDialog,
+    ],
+  );
 
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
@@ -753,6 +817,14 @@ export default function App() {
           <ShortcutsDialog
             open={shortcutsOpen}
             onOpenChange={setShortcutsOpen}
+          />
+
+          <CommandPalette
+            open={commandPaletteOpen}
+            onOpenChange={setCommandPaletteOpen}
+            actions={commandPaletteActions}
+            workspaceRoot={explorerRoot}
+            onOpenFile={handleOpenFile}
           />
 
           <NewEditorDialog
