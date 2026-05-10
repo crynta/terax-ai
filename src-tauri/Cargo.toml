@@ -34,6 +34,12 @@ tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"
+walkdir = "2"
+ssh2 = { version = "0.9", features = ["vendored-openssl"] }
+suppaftp = { version = "6", features = ["native-tls"] }
+reqwest = { version = "0.12", features = ["json"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }
+dirs = "5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [
@@ -44,11 +50,21 @@ keyring = { version = "3.6", default-features = false, features = [
 keyring = { version = "3.6", default-features = false, features = [
 	"windows-native",
 ] }
+windows-sys = { version = "0.59", features = [
+	"Win32_Foundation",
+	"Win32_System_Console",
+	"Win32_Security",
+] }
+dunce = "1"
+which = "6"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+pavao = "0.2"
 
 [profile.dev]
 incremental = true

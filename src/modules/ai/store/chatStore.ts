@@ -12,6 +12,7 @@ import {
 } from "../config";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { BUILTIN_AGENTS } from "../lib/agents";
+import { getPreset } from "../agents/presets";
 import { useAgentsStore } from "./agentsStore";
 import { usePlanStore } from "./planStore";
 import { useTodosStore } from "./todoStore";
@@ -118,6 +119,10 @@ type StoreState = {
   patchAgentMeta: (patch: Partial<AgentMeta>) => void;
   resetAgentMeta: () => void;
 
+  // Preset (Mr. Robot etc.)
+  activePresetId: string | null;
+  setActivePresetId: (id: string | null) => void;
+
   // Sessions
   sessionsHydrated: boolean;
   sessions: SessionMeta[];
@@ -212,6 +217,13 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       };
     },
     getPlanMode: () => usePlanStore.getState().active,
+    getActivePreset: () => {
+      const id = useChatStore.getState().activePresetId;
+      if (!id) return null;
+      const preset = getPreset(id);
+      if (!preset) return null;
+      return { systemPrompt: preset.systemPrompt, autonomous: preset.autonomous };
+    },
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
     },
@@ -300,6 +312,9 @@ export const useChatStore = create<StoreState>((set, get) => ({
   patchAgentMeta: (patch) =>
     set((s) => ({ agentMeta: { ...s.agentMeta, ...patch } })),
   resetAgentMeta: () => set({ agentMeta: IDLE_META }),
+
+  activePresetId: null,
+  setActivePresetId: (id) => set({ activePresetId: id }),
 
   sessionsHydrated: false,
   sessions: [],

@@ -17,6 +17,7 @@ import { SLASH_COMMANDS } from "../lib/slashCommands";
 import type { Snippet } from "../lib/snippets";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { AgentSwitcher } from "./AgentSwitcher";
+import { PresetSwitcher } from "./PresetSwitcher";
 import { SnippetPickerContent, type PickerItem } from "./SnippetPicker";
 
 type SnippetTrigger = {
@@ -202,6 +203,7 @@ export function AiInputBar() {
                   "placeholder:text-muted-foreground/60",
                 )}
               />
+              <PresetSwitcher />
               <AgentSwitcher />
             </div>
           </PopoverAnchor>

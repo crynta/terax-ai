@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, pty, secrets, shell};
+use modules::{fs, hacktricks, pty, protocols, protocols::ftp::FtpState, secrets, shell};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[tauri::command]
@@ -37,6 +37,10 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     #[cfg(target_os = "linux")]
     let builder = builder.decorations(false).transparent(true);
 
+    // Windows: use standard window with native controls
+    #[cfg(target_os = "windows")]
+    let builder = builder.decorations(true);
+
     let window = builder.build().map_err(|e| e.to_string())?;
 
     // Some Linux compositors (notably GNOME/Mutter with CSD-by-default)
@@ -68,6 +72,7 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
+        .manage(FtpState::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -98,6 +103,21 @@ pub fn run() {
             secrets::secrets_set,
             secrets::secrets_delete,
             secrets::secrets_get_all,
+            hacktricks::hacktricks_index,
+            hacktricks::hacktricks_search,
+            protocols::ssh::ssh_exec,
+            protocols::ssh::ssh_upload,
+            protocols::ssh::ssh_download,
+            protocols::ftp::ftp_connect,
+            protocols::ftp::ftp_list,
+            protocols::ftp::ftp_get,
+            protocols::ftp::ftp_put,
+            protocols::ftp::ftp_disconnect,
+            protocols::smb::smb_list,
+            protocols::smb::smb_get,
+            protocols::smb::smb_put,
+            protocols::http::http_request,
+            protocols::http::http_fuzz,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

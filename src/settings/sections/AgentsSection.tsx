@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { AGENT_ICONS } from "@/modules/ai/components/AgentSwitcher";
 import {
@@ -20,6 +21,7 @@ import {
   normalizeHandle,
   type Snippet,
 } from "@/modules/ai/lib/snippets";
+import { native } from "@/modules/ai/lib/native";
 import { newAgentId, useAgentsStore } from "@/modules/ai/store/agentsStore";
 import {
   newSnippetId,
@@ -33,8 +35,10 @@ import {
   Delete02Icon,
   Edit02Icon,
   SparklesIcon,
+  TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 
@@ -220,6 +224,8 @@ export function AgentsSection() {
           setEditingSnippet(null);
         }}
       />
+
+      <HackTricksSection />
     </div>
   );
 }
@@ -563,5 +569,93 @@ function Label({ children }: { children: React.ReactNode }) {
     <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+function HackTricksSection() {
+  const [indexing, setIndexing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState<"idle" | "indexing" | "done" | "error">("idle");
+  const [statusText, setStatusText] = useState("");
+  const unlistenRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      unlistenRef.current?.();
+    };
+  }, []);
+
+  const startIndex = async () => {
+    setIndexing(true);
+    setProgress(0);
+    setStatus("indexing");
+    setStatusText("Starting…");
+
+    unlistenRef.current?.();
+    const unsub = await listen<{ done: number; total: number; file: string }>(
+      "hacktricks:progress",
+      (e) => {
+        const { done, total, file } = e.payload;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        setProgress(pct);
+        setStatusText(
+          file
+            ? `Indexing ${done}/${total}: ${file.replace(/^.*[/\\]/, "")}`
+            : `Indexing ${done}/${total}…`,
+        );
+      },
+    );
+    unlistenRef.current = unsub;
+
+    try {
+      const r = await native.hacktricksIndex();
+      setStatus("done");
+      setStatusText(`Indexed ${r.files_indexed} files.`);
+    } catch (e) {
+      setStatus("error");
+      setStatusText(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIndexing(false);
+      unlistenRef.current?.();
+      unlistenRef.current = null;
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <Label>HackTricks Knowledge Base</Label>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 gap-1.5 px-2 text-[11px]"
+          disabled={indexing}
+          onClick={startIndex}
+        >
+          <HugeiconsIcon icon={TerminalIcon} size={12} strokeWidth={1.75} />
+          {indexing ? "Indexing…" : "Index HackTricks"}
+        </Button>
+      </div>
+      {status === "idle" ? (
+        <div className="rounded-lg border border-dashed border-border/60 bg-card/30 px-4 py-6 text-center text-[11px] text-muted-foreground">
+          HackTricks is a community-driven pentesting wiki. Index it locally to enable{" "}
+          <code className="font-mono">hacktricks_search</code> in Mr. Robot and the
+          security subagent.
+        </div>
+      ) : indexing ? (
+        <div className="flex flex-col gap-1.5">
+          <Progress value={progress} className="h-2" />
+          <span className="text-[10.5px] text-muted-foreground">{statusText}</span>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[11px]">
+          {status === "done" ? (
+            <span className="text-green-600 dark:text-green-400">{statusText}</span>
+          ) : (
+            <span className="text-destructive">{statusText}</span>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

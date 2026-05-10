@@ -58,8 +58,7 @@ pub fn fs_grep(
     }
     let cap = max_results
         .unwrap_or(DEFAULT_MAX_RESULTS)
-        .min(HARD_MAX_RESULTS)
-        .max(1);
+        .clamp(1, HARD_MAX_RESULTS);
 
     let matcher = RegexMatcherBuilder::new()
         .case_insensitive(case_insensitive.unwrap_or(false))
@@ -174,7 +173,7 @@ pub fn fs_glob(
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
-    let cap = max_results.unwrap_or(500).min(HARD_MAX_RESULTS).max(1);
+    let cap = max_results.unwrap_or(500).clamp(1, HARD_MAX_RESULTS);
 
     let glob = Glob::new(&pattern).map_err(|e| format!("bad glob: {e}"))?;
     let mut gb = GlobSetBuilder::new();

@@ -53,6 +53,7 @@ type Deps = {
   getLmstudioBaseURL?: () => string | undefined;
   onStep?: (step: string | null) => void;
   getPlanMode?: () => boolean;
+  getActivePreset?: () => { systemPrompt: string; autonomous: boolean } | null;
 };
 
 export function createContextAwareTransport(deps: Deps) {
@@ -63,6 +64,7 @@ export function createContextAwareTransport(deps: Deps) {
     }) {
       const live = deps.getLive();
       const projectMemory = await readTeraxMd(live.workspaceRoot);
+      const preset = deps.getActivePreset?.() ?? null;
       const agent = await createTeraxAgent({
         keys: deps.getKeys(),
         modelId: deps.getModelId(),
@@ -73,6 +75,8 @@ export function createContextAwareTransport(deps: Deps) {
         lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
         planMode: deps.getPlanMode?.(),
         projectMemory,
+        presetSystemPrompt: preset?.systemPrompt ?? null,
+        autonomous: preset?.autonomous ?? false,
       });
       const base = new DirectChatTransport({ agent });
       const augmented = injectContext(options.messages, deps.getLive());
@@ -84,6 +88,7 @@ export function createContextAwareTransport(deps: Deps) {
     async reconnectToStream(options: unknown) {
       const live = deps.getLive();
       const projectMemory = await readTeraxMd(live.workspaceRoot);
+      const preset = deps.getActivePreset?.() ?? null;
       const agent = await createTeraxAgent({
         keys: deps.getKeys(),
         modelId: deps.getModelId(),
@@ -94,6 +99,8 @@ export function createContextAwareTransport(deps: Deps) {
         lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
         planMode: deps.getPlanMode?.(),
         projectMemory,
+        presetSystemPrompt: preset?.systemPrompt ?? null,
+        autonomous: preset?.autonomous ?? false,
       });
       const base = new DirectChatTransport({ agent });
       type ReconnectArg = Parameters<typeof base.reconnectToStream>[0];

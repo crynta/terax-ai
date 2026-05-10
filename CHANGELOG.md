@@ -6,6 +6,7 @@ All notable changes to Terax. Format loosely follows [Keep a Changelog](https://
 
 ## Added
 - Window management for linux
+- **Windows support** - full support for Windows (PowerShell, CMD, Git Bash) via ConPTY
 
 ## Changed
 - Secrets (keyring) redesign

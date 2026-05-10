@@ -36,6 +36,22 @@ export type GrepResponse = {
 export type GlobHit = { path: string; rel: string };
 export type GlobResponse = { hits: GlobHit[]; truncated: boolean };
 
+export type HacktricksSearchResult = {
+  results: { file: string; title: string; excerpt: string; line: number; score: number }[];
+};
+
+export type SshExecResult = { stdout: string; stderr: string; exit_code: number };
+export type FileTransferResult = { ok: boolean; bytes_written: number };
+export type FtpConnectResult = { handle: number; banner: string };
+export type FtpEntry = { name: string; size: number; kind: string };
+export type FtpListResult = { entries: FtpEntry[] };
+export type FtpTransferResult = { ok: boolean; bytes: number };
+export type SmbListResult = { entries: { name: string; kind: string; size: number }[]; shares?: string[] };
+export type SmbTransferResult = { ok: boolean; bytes: number };
+export type HttpResponse = { status: number; headers: Record<string, string>; body: string; elapsed_ms: number };
+export type FuzzHit = { word: string; status: number; length: number; elapsed_ms: number };
+export type FuzzResult = { hits: FuzzHit[]; total_tested: number };
+
 export const native = {
   readFile: (path: string) => invoke<ReadResult>("fs_read_file", { path }),
   writeFile: (path: string, content: string) =>
@@ -113,4 +129,43 @@ export const native = {
         exit_code: number | null;
       }[]
     >("shell_bg_list"),
+
+  // HackTricks
+  hacktricksSearch: (query: string, maxResults?: number) =>
+    invoke<HacktricksSearchResult>("hacktricks_search", { query, maxResults: maxResults ?? null }),
+  hacktricksIndex: () => invoke<{ ok: boolean; files_indexed: number }>("hacktricks_index"),
+
+  // SSH
+  sshExec: (host: string, port: number | null, user: string, password: string | null, keyPath: string | null, command: string) =>
+    invoke<SshExecResult>("ssh_exec", { host, port, user, password, key_path: keyPath, command }),
+  sshUpload: (host: string, port: number | null, user: string, password: string | null, keyPath: string | null, localPath: string, remotePath: string) =>
+    invoke<FileTransferResult>("ssh_upload", { host, port, user, password, key_path: keyPath, local_path: localPath, remote_path: remotePath }),
+  sshDownload: (host: string, port: number | null, user: string, password: string | null, keyPath: string | null, remotePath: string, localPath: string) =>
+    invoke<FileTransferResult>("ssh_download", { host, port, user, password, key_path: keyPath, remote_path: remotePath, local_path: localPath }),
+
+  // FTP
+  ftpConnect: (host: string, port: number | null, user: string | null, password: string | null) =>
+    invoke<FtpConnectResult>("ftp_connect", { host, port, user, password }),
+  ftpList: (handle: number, path: string | null) =>
+    invoke<FtpListResult>("ftp_list", { handle, path }),
+  ftpGet: (handle: number, remotePath: string, localPath: string) =>
+    invoke<FtpTransferResult>("ftp_get", { handle, remote_path: remotePath, local_path: localPath }),
+  ftpPut: (handle: number, localPath: string, remotePath: string) =>
+    invoke<FtpTransferResult>("ftp_put", { handle, local_path: localPath, remote_path: remotePath }),
+  ftpDisconnect: (handle: number) =>
+    invoke<boolean>("ftp_disconnect", { handle }),
+
+  // SMB
+  smbList: (host: string, share: string | null, user: string | null, password: string | null, domain: string | null) =>
+    invoke<SmbListResult>("smb_list", { host, share, user, password, domain }),
+  smbGet: (host: string, share: string, remotePath: string, localPath: string, user: string | null, password: string | null, domain: string | null) =>
+    invoke<SmbTransferResult>("smb_get", { host, share, remote_path: remotePath, local_path: localPath, user, password, domain }),
+  smbPut: (host: string, share: string, remotePath: string, localPath: string, user: string | null, password: string | null, domain: string | null) =>
+    invoke<SmbTransferResult>("smb_put", { host, share, remote_path: remotePath, local_path: localPath, user, password, domain }),
+
+  // HTTP
+  httpRequest: (method: string, url: string, headers: Record<string, string> | null, body: string | null, followRedirects: boolean | null) =>
+    invoke<HttpResponse>("http_request", { method, url, headers, body, follow_redirects: followRedirects }),
+  httpFuzz: (url: string, wordlistPath: string, method: string | null, headers: Record<string, string> | null, matchCodes: number[] | null, filterCodes: number[] | null, threads: number | null) =>
+    invoke<FuzzResult>("http_fuzz", { url, wordlist_path: wordlistPath, method, headers, match_codes: matchCodes, filter_codes: filterCodes, threads }),
 };

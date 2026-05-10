@@ -21,6 +21,21 @@ const MAX_TIMEOUT_SECS: u64 = 300;
 const MAX_OUTPUT_BYTES: usize = 256 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
+#[cfg(target_os = "windows")]
+fn home_dir() -> PathBuf {
+    std::env::var("USERPROFILE")
+        .map(PathBuf::from)
+        .or_else(|_| std::env::var("HOMEPATH").map(PathBuf::from))
+        .unwrap_or_else(|_| PathBuf::from("C:\\"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn home_dir() -> PathBuf {
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/"))
+}
+
 #[derive(Serialize)]
 pub struct CommandOutput {
     pub stdout: String,
@@ -84,10 +99,17 @@ fn run_blocking(
     cwd: Option<PathBuf>,
     dur: Duration,
 ) -> Result<CommandOutput, String> {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let shell = detect_shell();
 
     let mut cmd = Command::new(&shell);
-    cmd.arg("-lc").arg(&command);
+    #[cfg(target_os = "windows")]
+    {
+        cmd.args(["/C", &command]);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        cmd.arg("-lc").arg(&command);
+    }
     if let Some(dir) = cwd {
         cmd.current_dir(dir);
     }
@@ -137,6 +159,40 @@ fn run_blocking(
     })
 }
 
+#[cfg(target_os = "windows")]
+fn detect_shell() -> String {
+    // Check $SHELL first (Git Bash users)
+    if let Ok(shell) = std::env::var("SHELL") {
+        if shell.contains("bash") {
+            return shell;
+        }
+    }
+
+    // Try pwsh (PowerShell 7+)
+    if which::which("pwsh").is_ok() {
+        return which::which("pwsh")
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+    }
+
+    // Try powershell (Windows PowerShell)
+    if which::which("powershell").is_ok() {
+        return which::which("powershell")
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+    }
+
+    // Fall back to CMD
+    std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn detect_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Persistent agent shell state + background process state.
 // ──────────────────────────────────────────────────────────────────────────
@@ -172,9 +228,7 @@ pub fn shell_session_open(
             }
             p
         }
-        None => std::env::var("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from("/")),
+        None => home_dir(),
     };
     let session = Arc::new(ShellSession::new(initial));
     let id = state.next_session_id.fetch_add(1, Ordering::Relaxed);

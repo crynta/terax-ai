@@ -1,10 +1,21 @@
+import { buildAgentBrowserTools } from "./agentBrowser";
 import { buildEditTools } from "./edit";
 import { buildFsTools } from "./fs";
+import { buildKatanaTools } from "./katana";
+import { buildMitmproxyTools } from "./mitmproxy";
+import { buildNucleiTools } from "./nuclei";
 import { buildSearchTools } from "./search";
 import { buildShellTools } from "./shell";
 import { buildSubagentTools } from "./subagent";
 import { buildTerminalTools } from "./terminal";
 import { buildTodoTools } from "./todo";
+import { buildHacktricksTools } from "./hacktricks";
+import { buildProtocolTools } from "./protocols";
+import { buildWordlistTools } from "./wordlists";
+import { buildExploitationTools } from "./exploitation";
+import { buildADTools } from "./activedirectory";
+import { buildQolTools } from "./qol";
+import { buildReportingTools } from "./reporting";
 
 export { resolvePath, type ToolContext } from "./context";
 
@@ -36,6 +47,17 @@ export function buildTools(ctx: import("./context").ToolContext) {
     ...buildSubagentTools(ctx),
     ...buildTerminalTools(ctx),
     ...buildTodoTools(ctx),
+    ...buildHacktricksTools(),
+    ...buildProtocolTools(ctx),
+    ...buildAgentBrowserTools(ctx),
+    ...buildMitmproxyTools(ctx),
+    ...buildKatanaTools(ctx),
+    ...buildNucleiTools(ctx),
+    ...buildWordlistTools(ctx),
+    ...buildExploitationTools(ctx),
+    ...buildADTools(ctx),
+    ...buildQolTools(ctx),
+    ...buildReportingTools(ctx),
   } as const;
 }
 

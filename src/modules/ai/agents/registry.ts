@@ -13,7 +13,13 @@ export type SubagentDef = {
   systemPrompt: string;
 };
 
-const READ_ONLY_TOOLS = ["read_file", "list_directory", "grep", "glob"];
+const READ_ONLY_TOOLS = [
+  "read_file", "list_directory", "grep", "glob", "hacktricks_search",
+  "browser_snapshot", "browser_network", "browser_cookies", "browser_screenshot",
+  "proxy_flows", "web_crawl", "vuln_scan", "vuln_scan_list", "nuclei_templates",
+  "wordlist_get", "hash_identify", "searchsploit_query", "vpn_check",
+  "scope_check", "session_load", "pwn_cyclic", "pwn_checksec",
+];
 
 export const SUBAGENTS: Record<SubagentType, SubagentDef> = {
   explore: {

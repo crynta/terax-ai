@@ -7,7 +7,7 @@
   <p>
     <img src="https://img.shields.io/badge/version-0.5.9-blue" alt="version" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
-    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20(soon)-lightgrey" alt="platform" />
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue" alt="platform" />
 
   </p>
 </div>
@@ -62,6 +62,27 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 - API keys stored in the OS keychain 
 - No telemetry, no account required
 
+## Mr. Robot — Offensive Security Agent
+
+Mr. Robot is a built-in autonomous offensive security agent for penetration testing, CTFs, and Capture the Flag competitions.
+
+**Features:**
+- Fully autonomous — bypasses tool approval prompts (never asks for permission)
+- Local HackTricks knowledge base search (`hacktricks_search`)
+- Protocol tools: SSH, FTP, SMB, HTTP/fuzz — all implemented in Rust
+- Full shell access via the Terax terminal backend
+- Pre-configured pentesting methodology covering recon, enumeration, exploitation, privesc, and reporting
+
+**To use Mr. Robot:**
+1. Open the AI chat panel
+2. Select **🤖 Mr. Robot** from the Preset dropdown (next to the agent switcher)
+3. Optionally index HackTricks: **Settings → Agents → Index HackTricks**
+4. Start talking — Mr. Robot runs autonomously without approval prompts
+
+**Prerequisites:**
+- A Docker/VM environment with pentesting tools (nmap, metasploit, impacket, ffuf, etc.) is recommended for real engagements
+- HackTricks indexing requires a working `git` in PATH and ~200 MB disk space
+
 ## Configure AI
 
 1. Open **Settings → AI**.
@@ -75,11 +96,28 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 - Node 20+ and [pnpm](https://pnpm.io)
 - Platform-specific Tauri prerequisites — https://tauri.app/start/prerequisites/
 
-**Run**
+### macOS / Linux
+
 ```bash
 pnpm install
 pnpm tauri dev          # development
 pnpm tauri build        # production bundle
+```
+
+### Windows
+
+**Requirements:**
+- [MSVC Build Tools 2022](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (Desktop development with C++)
+- [WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 10/11)
+- Optional: [Git for Windows](https://git-scm.com/) - enables Bash shell support
+
+```cmd
+:: Add Windows MSVC target
+rustup target add x86_64-pc-windows-msvc
+
+:: Build
+pnpm install
+pnpm tauri build --target x86_64-pc-windows-msvc
 ```
 
 **Checks**
