@@ -210,30 +210,6 @@ html[data-chrome="borderless"] #settings-root {
   display: none !important;
 }
 
-.command-palette-scrollbar {
-  scrollbar-color: var(--border) transparent !important;
-  scrollbar-width: thin !important;
-  -ms-overflow-style: auto !important;
-}
-.command-palette-scrollbar::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
-  display: block !important;
-}
-.command-palette-scrollbar::-webkit-scrollbar-track {
-  background: transparent !important;
-}
-.command-palette-scrollbar::-webkit-scrollbar-thumb {
-  border: 2px solid transparent !important;
-  border-radius: 999px !important;
-  background: var(--border) !important;
-  background-clip: content-box !important;
-}
-.command-palette-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground) !important;
-  background-clip: content-box !important;
-}
-
 .no-scrollbar-deep,
 .no-scrollbar-deep * {
   scrollbar-width: none !important;

@@ -7,6 +7,7 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -196,80 +197,89 @@ export function CommandPalette({
           placeholder="Run a command or open a file..."
           autoFocus
         />
-        <CommandList className="command-palette-scrollbar max-h-[420px] pr-1">
-          {COMMAND_PALETTE_ACTION_GROUPS.map((group) => {
-            const groupActions = visibleActions.filter((a) => a.group === group);
-            if (groupActions.length === 0) return null;
-            return (
-              <CommandGroup key={group} heading={group}>
-                {groupActions.map((action) => (
-                  <ActionItem
-                    key={action.id}
-                    action={action}
-                    shortcutLabel={formatShortcut(
-                      action.shortcutId,
-                      userShortcuts,
-                    )}
-                    onRun={() => runAction(action)}
-                  />
-                ))}
+        <ScrollArea className="max-h-[420px]">
+          <CommandList className="max-h-none overflow-visible pr-3">
+            {COMMAND_PALETTE_ACTION_GROUPS.map((group) => {
+              const groupActions = visibleActions.filter(
+                (a) => a.group === group,
+              );
+              if (groupActions.length === 0) return null;
+              return (
+                <CommandGroup key={group} heading={group}>
+                  {groupActions.map((action) => (
+                    <ActionItem
+                      key={action.id}
+                      action={action}
+                      shortcutLabel={formatShortcut(
+                        action.shortcutId,
+                        userShortcuts,
+                      )}
+                      onRun={() => runAction(action)}
+                    />
+                  ))}
+                </CommandGroup>
+              );
+            })}
+
+            {showFiles ? (
+              <CommandGroup heading="Files">
+                {!workspaceRoot ? (
+                  <StatusItem label="No workspace root" />
+                ) : error ? (
+                  <>
+                    <StatusItem
+                      label="Could not search workspace"
+                      tone="error"
+                    />
+                    <CommandItem
+                      value={RETRY_VALUE}
+                      onSelect={retry}
+                      className="text-[12.5px]"
+                    >
+                      <HugeiconsIcon
+                        icon={Refresh01Icon}
+                        size={14}
+                        strokeWidth={1.75}
+                      />
+                      <span>Retry file search</span>
+                    </CommandItem>
+                  </>
+                ) : searching && results.length === 0 ? (
+                  <StatusItem label="Searching..." />
+                ) : results.length > 0 ? (
+                  results.map((hit) => (
+                    <CommandItem
+                      key={hit.path}
+                      value={fileValue(hit)}
+                      onSelect={() => openFile(hit)}
+                      className="text-[12.5px]"
+                    >
+                      <img
+                        src={fileIconUrl(hit.name)}
+                        alt=""
+                        className="size-4 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1 truncate">
+                        {hit.name}
+                      </span>
+                      <span className="ml-auto max-w-64 truncate text-[11px] font-normal text-muted-foreground">
+                        {hit.rel}
+                      </span>
+                    </CommandItem>
+                  ))
+                ) : (
+                  <StatusItem label="No files found" />
+                )}
               </CommandGroup>
-            );
-          })}
+            ) : null}
 
-          {showFiles ? (
-            <CommandGroup heading="Files">
-              {!workspaceRoot ? (
-                <StatusItem label="No workspace root" />
-              ) : error ? (
-                <>
-                  <StatusItem label="Could not search workspace" tone="error" />
-                  <CommandItem
-                    value={RETRY_VALUE}
-                    onSelect={retry}
-                    className="text-[12.5px]"
-                  >
-                    <HugeiconsIcon
-                      icon={Refresh01Icon}
-                      size={14}
-                      strokeWidth={1.75}
-                    />
-                    <span>Retry file search</span>
-                  </CommandItem>
-                </>
-              ) : searching && results.length === 0 ? (
-                <StatusItem label="Searching..." />
-              ) : results.length > 0 ? (
-                results.map((hit) => (
-                  <CommandItem
-                    key={hit.path}
-                    value={fileValue(hit)}
-                    onSelect={() => openFile(hit)}
-                    className="text-[12.5px]"
-                  >
-                    <img
-                      src={fileIconUrl(hit.name)}
-                      alt=""
-                      className="size-4 shrink-0"
-                    />
-                    <span className="min-w-0 flex-1 truncate">{hit.name}</span>
-                    <span className="ml-auto max-w-64 truncate text-[11px] font-normal text-muted-foreground">
-                      {hit.rel}
-                    </span>
-                  </CommandItem>
-                ))
-              ) : (
-                <StatusItem label="No files found" />
-              )}
-            </CommandGroup>
-          ) : null}
-
-          {!hasAnyVisibleContent ? (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No commands found.
-            </div>
-          ) : null}
-        </CommandList>
+            {!hasAnyVisibleContent ? (
+              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                No commands found.
+              </div>
+            ) : null}
+          </CommandList>
+        </ScrollArea>
       </Command>
     </CommandDialog>
   );
