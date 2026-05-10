@@ -21,20 +21,6 @@ const MAX_TIMEOUT_SECS: u64 = 300;
 const MAX_OUTPUT_BYTES: usize = 256 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-#[cfg(target_os = "windows")]
-fn home_dir() -> PathBuf {
-    std::env::var("USERPROFILE")
-        .map(PathBuf::from)
-        .or_else(|_| std::env::var("HOMEPATH").map(PathBuf::from))
-        .unwrap_or_else(|_| PathBuf::from("C:\\"))
-}
-
-#[cfg(not(target_os = "windows"))]
-fn home_dir() -> PathBuf {
-    std::env::var("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/"))
-}
 
 #[derive(Serialize)]
 pub struct CommandOutput {
@@ -147,40 +133,6 @@ fn run_blocking(
         timed_out,
         truncated: stdout_truncated || stderr_truncated,
     })
-}
-
-#[cfg(target_os = "windows")]
-fn detect_shell() -> String {
-    // Check $SHELL first (Git Bash users)
-    if let Ok(shell) = std::env::var("SHELL") {
-        if shell.contains("bash") {
-            return shell;
-        }
-    }
-
-    // Try pwsh (PowerShell 7+)
-    if which::which("pwsh").is_ok() {
-        return which::which("pwsh")
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-    }
-
-    // Try powershell (Windows PowerShell)
-    if which::which("powershell").is_ok() {
-        return which::which("powershell")
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-    }
-
-    // Fall back to CMD
-    std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
-}
-
-#[cfg(not(target_os = "windows"))]
-fn detect_shell() -> String {
-    std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
 }
 
 // ──────────────────────────────────────────────────────────────────────────
