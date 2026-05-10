@@ -265,7 +265,7 @@ function AgentCard({
           </span>
         </div>
       </div>
-      <div className="mt-0.5 flex items-center justify-between gap-1">
+      <div className="mt-auto flex items-center justify-between gap-1">
         <Button
           size="sm"
           variant={active ? "default" : "outline"}
