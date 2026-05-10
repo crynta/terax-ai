@@ -36,7 +36,7 @@ export type PromptLineDiagnostics = {
   aDisposed: boolean;
 };
 
-/** Snapshot for debugging prompt-line detection (enable via `debug.ts` storage flag). */
+/** Snapshot of prompt-line detection inputs (used by `isOnPromptLine`). */
 export function getPromptLineDiagnostics(
   term: Terminal,
   markers: Pick<ShellIntegrationMarkers, "getPromptMarker" | "getInputStartMarker">,

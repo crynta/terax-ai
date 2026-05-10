@@ -7,10 +7,8 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { dbgTerminalAc, isTerminalAutocompleteDebug } from "./autocomplete/debug";
 import {
   createThrottle,
-  getPromptLineDiagnostics,
   isOnPromptLine,
 } from "./autocomplete/extractPrefix";
 import { STATIC_COMMAND_LINES } from "./autocomplete/staticCommands";
@@ -191,15 +189,6 @@ export function useTerminalSession({
         if (acSnoozedUntilPrompt) {
           publishAcModel(null);
           return;
-        }
-        if (isTerminalAutocompleteDebug()) {
-          const d = getPromptLineDiagnostics(term, shellMarkers);
-          dbgTerminalAc("recompute", {
-            ...d,
-            prefix: acc.get(),
-            cols: term.cols,
-            rows: term.rows,
-          });
         }
         if (!isOnPromptLine(term, shellMarkers)) {
           publishAcModel(null);
