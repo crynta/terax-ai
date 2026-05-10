@@ -172,12 +172,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       let cancelled = false;
       const ext = path.split(".").pop()?.toLowerCase() ?? null;
       languageRef.current = ext;
-      resolveLanguage(path).then((ext) => {
+      resolveLanguage(path).then((langExt) => {
         if (cancelled) return;
         const view = cmRef.current?.view;
         if (!view) return;
         view.dispatch({
-          effects: languageCompartment.reconfigure(ext ?? []),
+          effects: languageCompartment.reconfigure(langExt ?? []),
         });
       });
       return () => {

@@ -98,15 +98,15 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
     const tryPort = async (port: number) => {
       setNotice(null);
       setCheckingPort(port);
-      const url = `http://localhost:${port}`;
-      const ok = await probeUrl(url);
+      const targetUrl = `http://localhost:${port}`;
+      const ok = await probeUrl(targetUrl);
       setCheckingPort(null);
       if (!ok) {
         setNotice(`No server listening on :${port}.`);
         return;
       }
-      setDraft(url);
-      onSubmit(url);
+      setDraft(targetUrl);
+      onSubmit(targetUrl);
     };
 
     return (
