@@ -15,6 +15,7 @@ import {
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
+  setTerminalAutocompleteEnabled,
   setVimMode,
   type EditorThemeId,
 } from "@/modules/settings/store";
@@ -47,6 +48,9 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const terminalAutocompleteEnabled = usePreferencesStore(
+    (s) => s.terminalAutocompleteEnabled,
+  );
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -145,6 +149,15 @@ export function GeneralSection() {
           <Switch
             checked={vimMode}
             onCheckedChange={(v) => void setVimMode(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Terminal line autocomplete"
+          description="Grey inline suggestions from history and common commands; Tab to accept. Requires Terax shell integration (zsh/bash)."
+        >
+          <Switch
+            checked={terminalAutocompleteEnabled}
+            onCheckedChange={(v) => void setTerminalAutocompleteEnabled(v)}
           />
         </SettingRow>
       </div>

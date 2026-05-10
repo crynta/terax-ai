@@ -50,6 +50,8 @@ export type Preferences = {
   lmstudioBaseURL: string;
   vimMode: boolean;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
+  /** Fish-style terminal line autocomplete (history + static commands). */
+  terminalAutocompleteEnabled: boolean;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -65,6 +67,7 @@ const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_VIM_MODE = "vimMode";
 const KEY_SHORTCUTS = "shortcuts";
+const KEY_TERMINAL_AUTOCOMPLETE = "terminalAutocompleteEnabled";
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -79,6 +82,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
   vimMode: false,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
+  terminalAutocompleteEnabled: false,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -129,6 +133,9 @@ export async function loadPreferences(): Promise<Preferences> {
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
+    terminalAutocompleteEnabled:
+      get<boolean>(KEY_TERMINAL_AUTOCOMPLETE) ??
+      DEFAULT_PREFERENCES.terminalAutocompleteEnabled,
   };
 }
 
@@ -190,6 +197,12 @@ export async function resetShortcuts(): Promise<void> {
   await store.save();
 }
 
+export async function setTerminalAutocompleteEnabled(
+  value: boolean,
+): Promise<void> {
+  await writePref(KEY_TERMINAL_AUTOCOMPLETE, value);
+}
+
 export type PrefKey = keyof Preferences;
 
 /** Subscribe to changes from any window (settings → main). */
@@ -209,6 +222,7 @@ export async function onPreferencesChange(
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
     [KEY_VIM_MODE]: "vimMode",
     [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_TERMINAL_AUTOCOMPLETE]: "terminalAutocompleteEnabled",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().

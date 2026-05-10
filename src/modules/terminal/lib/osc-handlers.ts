@@ -17,22 +17,58 @@ export type PromptTracker = {
   dispose: () => void;
 };
 
-export function registerPromptTracker(term: Terminal): PromptTracker {
-  let marker: IMarker | null = null;
+/** OSC 133 A/B markers: A = prompt boundary, B = start of PS1 (before visible prompt). */
+export type ShellIntegrationMarkers = {
+  getPromptMarker: () => IMarker | null;
+  getInputStartMarker: () => IMarker | null;
+  dispose: () => void;
+};
+
+export type ShellIntegrationOptions = {
+  /** Fires after OSC 133 A (new prompt line); use to reset input tracking. */
+  onPromptStart?: () => void;
+};
+
+export function registerShellIntegrationMarkers(
+  term: Terminal,
+  options?: ShellIntegrationOptions,
+): ShellIntegrationMarkers {
+  let promptMarker: IMarker | null = null;
+  let inputStartMarker: IMarker | null = null;
   const d = term.parser.registerOscHandler(133, (data) => {
     if (data.startsWith("A")) {
-      marker?.dispose();
-      marker = term.registerMarker(0);
+      promptMarker?.dispose();
+      promptMarker = term.registerMarker(0);
+      options?.onPromptStart?.();
+    } else if (data.startsWith("B")) {
+      inputStartMarker?.dispose();
+      inputStartMarker = term.registerMarker(0);
     }
     return true;
   });
   return {
-    getMarker: () => (marker && !marker.isDisposed ? marker : null),
+    getPromptMarker: () =>
+      promptMarker && !promptMarker.isDisposed ? promptMarker : null,
+    getInputStartMarker: () =>
+      inputStartMarker && !inputStartMarker.isDisposed
+        ? inputStartMarker
+        : null,
     dispose: () => {
       d.dispose();
-      marker?.dispose();
-      marker = null;
+      promptMarker?.dispose();
+      promptMarker = null;
+      inputStartMarker?.dispose();
+      inputStartMarker = null;
     },
+  };
+}
+
+/** @deprecated Use registerShellIntegrationMarkers — kept for call sites that only need A. */
+export function registerPromptTracker(term: Terminal): PromptTracker {
+  const m = registerShellIntegrationMarkers(term);
+  return {
+    getMarker: () => m.getPromptMarker(),
+    dispose: () => m.dispose(),
   };
 }
 
