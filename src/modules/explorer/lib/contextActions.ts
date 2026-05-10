@@ -10,6 +10,8 @@ export async function copyToClipboard(text: string): Promise<void> {
 
 export function relativePath(rootPath: string, path: string): string {
   if (path === rootPath) return ".";
+  const sep = rootPath.includes("\\") && !rootPath.includes("/") ? "\\" : "/";
+  if (path.startsWith(`${rootPath}${sep}`)) return path.slice(rootPath.length + 1);
   if (path.startsWith(`${rootPath}/`)) return path.slice(rootPath.length + 1);
   return path;
 }

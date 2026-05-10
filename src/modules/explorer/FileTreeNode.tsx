@@ -17,6 +17,8 @@ import {
 } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
+import type { GitStatusMap, GitFileStatus } from "./lib/useGitStatus";
+import { GIT_STATUS_COLOR, getGitStatus } from "./lib/useGitStatus";
 import type { DirEntry, useFileTree } from "./lib/useFileTree";
 
 type Tree = ReturnType<typeof useFileTree>;
@@ -32,6 +34,7 @@ type Props = {
   onAttachToAgent?: (path: string) => void;
   selectedPath: string | null;
   onSelectPath: (path: string) => void;
+  gitStatus?: GitStatusMap;
 };
 
 function FileTreeNodeImpl({
@@ -45,6 +48,7 @@ function FileTreeNodeImpl({
   onAttachToAgent,
   selectedPath,
   onSelectPath,
+  gitStatus,
 }: Props) {
   const path = tree.joinPath(parentPath, entry.name);
   const isDir = entry.kind === "dir";
@@ -66,6 +70,10 @@ function FileTreeNodeImpl({
   }, [isDir, path, tree, onOpenFile, onSelectPath]);
 
   const isSelected = selectedPath === path;
+
+  const fileStatus: GitFileStatus | undefined = gitStatus
+    ? getGitStatus(gitStatus, rootPath, path)
+    : undefined;
 
   const pendingInThisDir =
     isDir && isExpanded && tree.pendingCreate?.parentPath === path
@@ -128,6 +136,13 @@ function FileTreeNodeImpl({
                 <span className="size-4 shrink-0" />
               )}
               <span className="truncate">{entry.name}</span>
+              {fileStatus && (
+                <span
+                  className="ml-auto mr-1 size-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: GIT_STATUS_COLOR[fileStatus] }}
+                  title={fileStatus}
+                />
+              )}
             </button>
           )}
         </ContextMenuTrigger>
@@ -270,6 +285,7 @@ function FileTreeNodeImpl({
             onAttachToAgent={onAttachToAgent}
             selectedPath={selectedPath}
             onSelectPath={onSelectPath}
+            gitStatus={gitStatus}
           />
         ))}
     </>

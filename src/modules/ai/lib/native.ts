@@ -43,6 +43,7 @@ export const native = {
   createFile: (path: string) => invoke<void>("fs_create_file", { path }),
   createDir: (path: string) => invoke<void>("fs_create_dir", { path }),
   readDir: (path: string) => invoke<DirEntry[]>("fs_read_dir", { path }),
+  listDrives: () => invoke<string[]>("list_drives"),
   grep: (params: {
     pattern: string;
     root: string;

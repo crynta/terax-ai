@@ -22,12 +22,13 @@ export type PendingCreate = {
 };
 
 export function joinPath(parent: string, name: string): string {
-  if (parent.endsWith("/")) return `${parent}${name}`;
-  return `${parent}/${name}`;
+  const sep = parent.includes("\\") && !parent.includes("/") ? "\\" : "/";
+  if (parent.endsWith(sep)) return `${parent}${name}`;
+  return `${parent}${sep}${name}`;
 }
 
 export function dirname(path: string): string {
-  const i = path.lastIndexOf("/");
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   if (i <= 0) return "/";
   return path.slice(0, i);
 }

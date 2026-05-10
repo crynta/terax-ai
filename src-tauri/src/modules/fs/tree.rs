@@ -116,3 +116,23 @@ pub fn list_subdirs(path: String) -> Result<Vec<String>, String> {
     dirs.sort_by_key(|a| a.to_lowercase());
     Ok(dirs)
 }
+
+/// Lists available drive letters on Windows, or the root `/` on Unix.
+#[tauri::command]
+pub fn list_drives() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut drives = Vec::new();
+        for letter in b'A'..=b'Z' {
+            let root = format!("{}:\\", letter as char);
+            if std::path::Path::new(&root).is_dir() {
+                drives.push(root);
+            }
+        }
+        Ok(drives)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(vec!["/".to_string()])
+    }
+}

@@ -24,6 +24,7 @@ import {
   Grok02Icon,
   Message01Icon,
   Mic01Icon,
+  SparklesIcon,
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -49,6 +50,7 @@ const PROVIDER_ICON = {
   groq: FlashIcon,
   deepseek: DeepseekIcon,
   lmstudio: ComputerIcon,
+  zai: SparklesIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {

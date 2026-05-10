@@ -181,10 +181,15 @@ export default function App() {
     }
   }, [tabs]);
 
-  const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
+  const { explorerRoot, inheritedCwdForNewTab, setExplorerOverride } = useWorkspaceCwd(
     activeTab,
     tabs,
     home,
+  );
+
+  const handleExplorerRootChange = useCallback(
+    (newRoot: string) => setExplorerOverride(newRoot),
+    [],
   );
 
   useEffect(() => {
@@ -622,6 +627,7 @@ export default function App() {
                     onPathDeleted={handlePathDeleted}
                     onRevealInTerminal={cdInNewTab}
                     onAttachToAgent={handleAttachFileToAgent}
+                    onRequestRootChange={handleExplorerRootChange}
                   />
                 </div>
               </ResizablePanel>
