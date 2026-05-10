@@ -370,6 +370,7 @@ function SessionPicker() {
   const active = sessions.find((s) => s.id === activeId) ?? null;
   if (!active) return null;
 
+  // oxlint-disable-next-line unicorn/no-array-sort
   const sorted = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
   return (
