@@ -1,6 +1,16 @@
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useTheme } from "@/modules/theme";
 import type { SearchAddon } from "@xterm/addon-search";
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import type { TerminalAutocompleteUiModel } from "./lib/autocomplete/types";
+import { TerminalAutocompleteOverlay } from "./TerminalAutocompleteOverlay";
 import { useTerminalSession, type TeraxOpenInput } from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {
@@ -36,7 +46,27 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
+    const paneBoundsRef = useRef<HTMLDivElement>(null);
     const { resolvedTheme } = useTheme();
+    const terminalAutocompleteEnabled = usePreferencesStore(
+      (s) => s.terminalAutocompleteEnabled,
+    );
+    const [acModel, setAcModel] = useState<TerminalAutocompleteUiModel | null>(
+      null,
+    );
+
+    const getTerminalAutocompleteEnabled = useCallback(
+      () => usePreferencesStore.getState().terminalAutocompleteEnabled,
+      [],
+    );
+
+    useEffect(() => {
+      if (!visible) setAcModel(null);
+    }, [visible]);
+
+    useEffect(() => {
+      if (!terminalAutocompleteEnabled) setAcModel(null);
+    }, [terminalAutocompleteEnabled]);
 
     const session = useTerminalSession({
       container: containerRef,
@@ -47,6 +77,8 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onCwd: (c) => onCwd?.(tabId, c),
       onDetectedLocalUrl: (u) => onDetectedLocalUrl?.(tabId, u),
       onTeraxOpen: (input) => onTeraxOpen?.(tabId, input),
+      getTerminalAutocompleteEnabled,
+      onTerminalAutocompleteModel: setAcModel,
     });
 
     useEffect(() => {
@@ -68,13 +100,22 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
 
     return (
       <div
-        ref={containerRef}
-        className="h-full w-full"
+        ref={paneBoundsRef}
+        className="relative h-full w-full"
         style={{
           visibility: visible ? "visible" : "hidden",
           pointerEvents: visible ? "auto" : "none",
         }}
-      />
+      >
+        <div ref={containerRef} className="h-full w-full" />
+        {visible ? (
+          <TerminalAutocompleteOverlay
+            model={acModel}
+            boundsRef={paneBoundsRef}
+            onPickSuggestion={(i) => session.applyAutocompletePick(i)}
+          />
+        ) : null}
+      </div>
     );
   },
 );
