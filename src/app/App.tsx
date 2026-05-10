@@ -536,11 +536,19 @@ export default function App() {
 
   const searchTarget = useMemo<SearchTarget>(() => {
     if (isTerminalTab && activeSearchAddon)
-      return { kind: "terminal", addon: activeSearchAddon };
+      return {
+        kind: "terminal",
+        addon: activeSearchAddon,
+        focus: () => terminalRefs.current.get(activeId)?.focus(),
+      };
     if (isEditorTab && activeEditorHandle)
-      return { kind: "editor", handle: activeEditorHandle };
+      return {
+        kind: "editor",
+        handle: activeEditorHandle,
+        focus: () => activeEditorHandle.focus(),
+      };
     return null;
-  }, [isTerminalTab, isEditorTab, activeSearchAddon, activeEditorHandle]);
+  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
 
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;

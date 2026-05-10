@@ -36,6 +36,7 @@ export type EditorPaneHandle = {
   findNext: () => void;
   findPrevious: () => void;
   clearQuery: () => void;
+  focus: () => void;
   getSelection: () => string | null;
   getPath: () => string;
   /** Re-read the file from disk. Skips silently if the buffer is dirty. */
@@ -211,6 +212,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           view.dispatch({
             effects: setSearchQuery.of(new SearchQuery({ search: "" })),
           });
+        },
+        focus: () => {
+          cmRef.current?.view?.focus();
         },
         getSelection: () => {
           const view = cmRef.current?.view;
