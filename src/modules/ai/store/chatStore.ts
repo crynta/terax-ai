@@ -212,6 +212,8 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       };
     },
     getPlanMode: () => usePlanStore.getState().active,
+    getLmstudioBaseURL: () => usePreferencesStore.getState().lmstudioBaseURL,
+    getOllamaBaseURL: () => usePreferencesStore.getState().ollamaBaseURL,
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
     },

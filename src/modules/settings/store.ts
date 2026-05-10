@@ -4,6 +4,7 @@ import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
   LMSTUDIO_DEFAULT_BASE_URL,
+  OLLAMA_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
@@ -47,6 +48,7 @@ export type Preferences = {
   autocompleteProvider: AutocompleteProviderId;
   autocompleteModelId: string;
   lmstudioBaseURL: string;
+  ollamaBaseURL: string;
   vimMode: boolean;
 };
 
@@ -61,6 +63,7 @@ const KEY_AUTOCOMPLETE_ENABLED = "autocompleteEnabled";
 const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
+const KEY_OLLAMA_BASE_URL = "ollamaBaseURL";
 const KEY_VIM_MODE = "vimMode";
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -74,6 +77,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autocompleteProvider: "cerebras",
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
+  ollamaBaseURL: OLLAMA_DEFAULT_BASE_URL,
   vimMode: false,
 };
 
@@ -110,6 +114,9 @@ export async function loadPreferences(): Promise<Preferences> {
     lmstudioBaseURL:
       get<string>(KEY_LMSTUDIO_BASE_URL) ??
       DEFAULT_PREFERENCES.lmstudioBaseURL,
+    ollamaBaseURL:
+      get<string>(KEY_OLLAMA_BASE_URL) ??
+      DEFAULT_PREFERENCES.ollamaBaseURL,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
   };
 }
@@ -166,6 +173,11 @@ export async function setLmstudioBaseURL(value: string): Promise<void> {
   await store.save();
 }
 
+export async function setOllamaBaseURL(value: string): Promise<void> {
+  await store.set(KEY_OLLAMA_BASE_URL, value);
+  await store.save();
+}
+
 export async function setVimMode(value: boolean): Promise<void> {
   await store.set(KEY_VIM_MODE, value);
   await store.save();
@@ -188,6 +200,7 @@ export function onPreferencesChange(
     [KEY_AUTOCOMPLETE_PROVIDER]: "autocompleteProvider",
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
+    [KEY_OLLAMA_BASE_URL]: "ollamaBaseURL",
     [KEY_VIM_MODE]: "vimMode",
   };
   return store.onChange<unknown>((key, value) => {

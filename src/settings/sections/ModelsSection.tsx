@@ -29,6 +29,7 @@ import {
   setAutocompleteProvider,
   setDefaultModel,
   setLmstudioBaseURL,
+  setOllamaBaseURL,
 } from "@/modules/settings/store";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
@@ -171,15 +172,19 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
   const provider = usePreferencesStore((s) => s.autocompleteProvider);
   const modelId = usePreferencesStore((s) => s.autocompleteModelId);
   const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
+  const ollamaBaseURL = usePreferencesStore((s) => s.ollamaBaseURL);
 
   const [modelDraft, setModelDraft] = useState(modelId);
-  const [urlDraft, setUrlDraft] = useState(lmstudioBaseURL);
+  const [urlDraft, setUrlDraft] = useState("");
   const [testStatus, setTestStatus] = useState<
     "idle" | "testing" | "ok" | "fail"
   >("idle");
 
   useEffect(() => setModelDraft(modelId), [modelId]);
-  useEffect(() => setUrlDraft(lmstudioBaseURL), [lmstudioBaseURL]);
+  useEffect(() => {
+    if (provider === "lmstudio") setUrlDraft(lmstudioBaseURL);
+    else if (provider === "ollama") setUrlDraft(ollamaBaseURL);
+  }, [provider, lmstudioBaseURL, ollamaBaseURL]);
 
   const onProviderChange = (next: AutocompleteProviderId) => {
     void setAutocompleteProvider(next);
@@ -192,7 +197,7 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
   const providerInfo = getProvider(provider);
   const hasKey = providerNeedsKey(provider) ? !!keys[provider] : true;
 
-  const testLmStudio = async () => {
+  const testLocalServer = async () => {
     setTestStatus("testing");
     try {
       const url = urlDraft.replace(/\/$/, "") + "/models";
@@ -203,6 +208,13 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
     }
   };
 
+  const isLocalProvider = provider === "lmstudio" || provider === "ollama";
+  const localLabel = provider === "ollama" ? "Ollama" : "LM Studio";
+  const localPlaceholder =
+    provider === "ollama"
+      ? "http://localhost:11434/v1"
+      : "http://localhost:1234/v1";
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -210,7 +222,7 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
           <Label>Editor autocomplete</Label>
           <span className="text-[10.5px] leading-relaxed text-muted-foreground">
             Inline ghost-text suggestions in the code editor. Powered by
-            ultra-fast inference (Cerebras / Groq) or a local LM Studio server.
+            ultra-fast inference (Cerebras / Groq) or a local server (LM Studio / Ollama).
           </span>
         </div>
         <Switch
@@ -266,25 +278,30 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
           />
         </div>
 
-        {provider === "lmstudio" ? (
+        {isLocalProvider ? (
           <div className="flex flex-col gap-1.5">
-            <Label>LM Studio base URL</Label>
+            <Label>{localLabel} base URL</Label>
             <div className="flex gap-1.5">
               <Input
                 value={urlDraft}
                 onChange={(e) => setUrlDraft(e.target.value)}
                 onBlur={() => {
                   const v = urlDraft.trim();
-                  if (v && v !== lmstudioBaseURL) void setLmstudioBaseURL(v);
+                  if (!v) return;
+                  if (provider === "ollama" && v !== ollamaBaseURL) {
+                    void setOllamaBaseURL(v);
+                  } else if (provider === "lmstudio" && v !== lmstudioBaseURL) {
+                    void setLmstudioBaseURL(v);
+                  }
                 }}
-                placeholder="http://localhost:1234/v1"
+                placeholder={localPlaceholder}
                 spellCheck={false}
                 className="h-8 flex-1 font-mono text-[11.5px]"
               />
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => void testLmStudio()}
+                onClick={() => void testLocalServer()}
                 className="h-8 px-2.5 text-[11px]"
               >
                 Test
@@ -296,7 +313,7 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
               </span>
             ) : testStatus === "fail" ? (
               <span className="text-[10.5px] text-destructive">
-                Could not reach the server. Is LM Studio running?
+                Could not reach the server. Is {localLabel} running?
               </span>
             ) : testStatus === "testing" ? (
               <span className="text-[10.5px] text-muted-foreground">

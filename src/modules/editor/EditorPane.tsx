@@ -70,7 +70,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       let cancelled = false;
       const refresh = async () => {
         const provider = usePreferencesStore.getState().autocompleteProvider;
-        if (provider === "lmstudio") {
+        if (provider === "lmstudio" || provider === "ollama") {
           apiKeyRef.current = null;
           return;
         }
@@ -135,6 +135,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               modelId: s.autocompleteModelId,
               apiKey: apiKeyRef.current,
               lmstudioBaseURL: s.lmstudioBaseURL,
+              ollamaBaseURL: s.ollamaBaseURL,
             };
           },
           getPath: () => pathRef.current,

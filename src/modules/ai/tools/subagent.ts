@@ -3,6 +3,7 @@ import { z } from "zod";
 import { runSubagent } from "../agents/runSubagent";
 import { SUBAGENTS, type SubagentType } from "../agents/registry";
 import { useChatStore } from "../store/chatStore";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ToolContext } from "./context";
 
 const TYPE_KEYS = Object.keys(SUBAGENTS) as [SubagentType, ...SubagentType[]];
@@ -30,6 +31,7 @@ Auto-executes (no approval) — subagents are read-only by design.`,
       }),
       execute: async ({ type, prompt, description }) => {
         const { apiKeys, selectedModelId } = useChatStore.getState();
+        const prefs = usePreferencesStore.getState();
         try {
           const r = await runSubagent({
             type,
@@ -37,6 +39,8 @@ Auto-executes (no approval) — subagents are read-only by design.`,
             keys: apiKeys,
             modelId: selectedModelId,
             toolContext: ctx,
+            lmstudioBaseURL: prefs.lmstudioBaseURL,
+            ollamaBaseURL: prefs.ollamaBaseURL,
           });
           return {
             type,

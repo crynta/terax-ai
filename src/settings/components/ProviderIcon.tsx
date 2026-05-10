@@ -7,6 +7,8 @@ import {
   GoogleGeminiIcon,
   Grok02Icon,
   CpuIcon,
+  ServerStack01Icon,
+  SparklesIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -18,6 +20,8 @@ const ICON_BY_PROVIDER = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   lmstudio: ComputerIcon,
+  ollama: ServerStack01Icon,
+  zai: SparklesIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 type Props = {
