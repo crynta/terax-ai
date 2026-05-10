@@ -198,20 +198,21 @@ export function TerminalAutocompleteOverlay({
           role="listbox"
         >
           {model.suggestions.map((s, i) => (
-            <li key={`${i}-${s}`} role="option" aria-selected={i === model.selectedIndex}>
-              <button
-                type="button"
-                className={cn(
-                  "flex w-full min-w-0 cursor-pointer px-2 py-0.5 text-left hover:bg-accent/60",
-                  i === model.selectedIndex && "bg-accent/50",
-                )}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onPickSuggestion(i);
-                }}
-              >
-                <span className="truncate">{s}</span>
-              </button>
+            <li
+              key={`${i}-${s}`}
+              role="option"
+              aria-selected={i === model.selectedIndex}
+              tabIndex={-1}
+              className={cn(
+                "flex min-w-0 cursor-pointer select-none px-2 py-0.5 text-left hover:bg-accent/60",
+                i === model.selectedIndex && "bg-accent/50",
+              )}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onPickSuggestion(i);
+              }}
+            >
+              <span className="truncate">{s}</span>
             </li>
           ))}
         </ul>

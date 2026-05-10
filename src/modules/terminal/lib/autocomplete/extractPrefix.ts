@@ -1,15 +1,6 @@
 import type { Terminal } from "@xterm/xterm";
 import type { ShellIntegrationMarkers } from "../osc-handlers";
 
-/** Strip CSI SGR / cursor sequences and OSC strings for heuristics. */
-export function stripAnsi(s: string): string {
-  return s
-    .replace(/\x1b\[[\d;?]*[ -/]*[@-~]/g, "")
-    .replace(/\x1b\][\d;?:]*[^\x07]*\x07/g, "")
-    .replace(/\x1b[\][()#%][\d@]/g, "")
-    .replace(/\x1b./g, "");
-}
-
 /**
  * Absolute buffer line index for the cell under the cursor.
  * xterm's `cursorY` is viewport-relative (0..rows-1); `IMarker.line` is an
@@ -78,22 +69,37 @@ export function isOnPromptLine(
   return getPromptLineDiagnostics(term, markers).ok;
 }
 
-export function createThrottle(ms: number): (fn: () => void) => void {
+export type Throttle = {
+  run: (fn: () => void) => void;
+  cancel: () => void;
+};
+
+/** Leading-edge + trailing debounce; call `cancel` on teardown so `fn` never runs after dispose. */
+export function createThrottle(ms: number): Throttle {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let lastRun = 0;
-  return (fn: () => void) => {
-    const now = performance.now();
-    const elapsed = now - lastRun;
-    if (elapsed >= ms) {
-      lastRun = now;
-      fn();
-      return;
-    }
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
+  const cancel = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
       timer = null;
-      lastRun = performance.now();
-      fn();
-    }, ms - elapsed);
+    }
+  };
+  return {
+    cancel,
+    run(fn: () => void) {
+      const now = performance.now();
+      const elapsed = now - lastRun;
+      if (elapsed >= ms) {
+        lastRun = now;
+        fn();
+        return;
+      }
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        lastRun = performance.now();
+        fn();
+      }, ms - elapsed);
+    },
   };
 }

@@ -162,11 +162,21 @@ export function useTerminalSession({
 
       const acEnabled = () => getAcEnabledRef.current?.() ?? false;
 
+      const publishAcModelImmediate = (m: TerminalAutocompleteUiModel | null) => {
+        lastAcModelRef.current = m;
+        if (acPublishRaf != null) {
+          cancelAnimationFrame(acPublishRaf);
+          acPublishRaf = null;
+        }
+        onAcModelRef.current?.(m);
+      };
+
       const publishAcModel = (m: TerminalAutocompleteUiModel | null) => {
         lastAcModelRef.current = m;
         if (acPublishRaf != null) cancelAnimationFrame(acPublishRaf);
         acPublishRaf = requestAnimationFrame(() => {
           acPublishRaf = null;
+          if (disposed) return;
           onAcModelRef.current?.(lastAcModelRef.current);
         });
       };
@@ -177,11 +187,12 @@ export function useTerminalSession({
           acSelectedIdx = 0;
           acDropdownDismissed = false;
           acSnoozedUntilPrompt = false;
-          publishAcModel(null);
+          publishAcModelImmediate(null);
         },
       });
 
       const recomputeAutocomplete = () => {
+        if (disposed) return;
         if (!acEnabled()) {
           publishAcModel(null);
           return;
@@ -247,7 +258,8 @@ export function useTerminalSession({
         acDropdownDismissed = false;
         publishAcModel(null);
         requestAnimationFrame(() => {
-          if (acEnabled()) recomputeAutocomplete();
+          if (disposed || !acEnabled()) return;
+          recomputeAutocomplete();
         });
       };
 
@@ -258,8 +270,8 @@ export function useTerminalSession({
         registerTeraxOpenHandler(term, (input) => onTeraxOpenRef.current?.(input)),
         shellMarkers.dispose,
         () => {
-          if (acPublishRaf != null) cancelAnimationFrame(acPublishRaf);
-          publishAcModel(null);
+          throttleAcFromPty.cancel();
+          publishAcModelImmediate(null);
         },
       );
 
@@ -347,7 +359,7 @@ export function useTerminalSession({
         {
           onData: (bytes) => {
             term.write(bytes);
-            if (acEnabled()) throttleAcFromPty(recomputeAutocomplete);
+            if (acEnabled()) throttleAcFromPty.run(recomputeAutocomplete);
             // Sniff for dev-server URLs in raw output. Byte-level prefilter
             // (':' '/' '/') skips decode+regex on the overwhelming majority
             // of chunks (ordinary terminal output, log tails, test runs).
@@ -390,7 +402,7 @@ export function useTerminalSession({
         }
         pty.write(data);
         if (getAcEnabledRef.current?.()) {
-          throttleAcFromPty(recomputeAutocomplete);
+          throttleAcFromPty.run(recomputeAutocomplete);
         }
       });
 
