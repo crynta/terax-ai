@@ -13,6 +13,10 @@ export type ShortcutId =
   | "tab.next"
   | "tab.prev"
   | "tab.selectByIndex"
+  | "pane.splitRight"
+  | "pane.splitDown"
+  | "pane.focusNext"
+  | "pane.focusPrev"
   | "search.focus"
   | "ai.toggle"
   | "ai.askSelection"
@@ -20,7 +24,13 @@ export type ShortcutId =
   | "settings.open"
   | "sidebar.toggle";
 
-export type ShortcutGroup = "General" | "Tabs" | "Search" | "AI" | "View";
+export type ShortcutGroup =
+  | "General"
+  | "Tabs"
+  | "Panes"
+  | "Search"
+  | "AI"
+  | "View";
 
 export type KeyBinding = {
   key: string;
@@ -76,9 +86,33 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "tab.close",
-    label: "Close tab",
+    label: "Close tab or pane",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "w" }],
+  },
+  {
+    id: "pane.splitRight",
+    label: "Split pane right",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "d" }],
+  },
+  {
+    id: "pane.splitDown",
+    label: "Split pane down",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "d" }],
+  },
+  {
+    id: "pane.focusNext",
+    label: "Focus next pane",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "]" }],
+  },
+  {
+    id: "pane.focusPrev",
+    label: "Focus previous pane",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
   },
   {
     id: "tab.next",
@@ -127,6 +161,7 @@ export const SHORTCUTS: Shortcut[] = [
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
+  "Panes",
   "View",
   "Search",
   "AI",

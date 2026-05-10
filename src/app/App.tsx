@@ -44,8 +44,16 @@ import {
   type ShortcutHandlers,
 } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
-import { useTabs, useWorkspaceCwd } from "@/modules/tabs";
-import { TerminalStack, type TerminalPaneHandle, type TeraxOpenInput } from "@/modules/terminal";
+import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
+import {
+  disposeSession,
+  hasLeaf,
+  leafIds,
+  respawnSession,
+  TerminalStack,
+  type TerminalPaneHandle,
+  type TeraxOpenInput,
+} from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { homeDir } from "@tauri-apps/api/path";
@@ -71,13 +79,31 @@ export default function App() {
     setActiveId,
     newTab,
     openFileTab,
+    pinTab,
     newPreviewTab,
     openAiDiffTab,
     setAiDiffStatus,
     closeTab,
     updateTab,
     selectByIndex,
+    setLeafCwd,
+    focusPane,
+    focusNextPaneInTab,
+    splitActivePane,
+    closeActivePane,
+    closePaneByLeaf,
   } = useTabs();
+
+  // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
+  // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+
+  const activeTerminalTab = useMemo(() => {
+    const t = tabs.find((x) => x.id === activeId);
+    return t && t.kind === "terminal" ? t : null;
+  }, [tabs, activeId]);
+  const activeLeafId = activeTerminalTab?.activeLeafId ?? null;
 
   const searchAddons = useRef<Map<number, SearchAddon>>(new Map());
   const [activeSearchAddon, setActiveSearchAddon] =
@@ -193,17 +219,21 @@ export default function App() {
   );
 
   useEffect(() => {
-    setActiveSearchAddon(searchAddons.current.get(activeId) ?? null);
+    setActiveSearchAddon(
+      activeLeafId !== null ? (searchAddons.current.get(activeLeafId) ?? null) : null,
+    );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
-    setActiveDetectedUrl(detectedUrls.current.get(activeId) ?? null);
-  }, [activeId]);
+    setActiveDetectedUrl(
+      activeLeafId !== null ? (detectedUrls.current.get(activeLeafId) ?? null) : null,
+    );
+  }, [activeId, activeLeafId]);
 
   const handleDetectedLocalUrl = useCallback(
-    (id: number, url: string) => {
-      detectedUrls.current.set(id, url);
-      if (id === activeId) setActiveDetectedUrl(url);
+    (leafId: number, url: string) => {
+      detectedUrls.current.set(leafId, url);
+      if (leafId === activeLeafId) setActiveDetectedUrl(url);
     },
-    [activeId],
+    [activeLeafId],
   );
 
   // Suppress the chip once a preview tab already targets the detected URL —
@@ -217,24 +247,46 @@ export default function App() {
   }, [isTerminalTab, activeDetectedUrl, tabs]);
 
   const handleSearchReady = useCallback(
-    (id: number, addon: SearchAddon) => {
-      searchAddons.current.set(id, addon);
-      if (id === activeId) setActiveSearchAddon(addon);
+    (leafId: number, addon: SearchAddon) => {
+      searchAddons.current.set(leafId, addon);
+      if (leafId === activeLeafId) setActiveSearchAddon(addon);
     },
-    [activeId],
+    [activeLeafId],
   );
 
   const disposeTab = useCallback(
     (id: number) => {
-      searchAddons.current.delete(id);
-      terminalRefs.current.delete(id);
+      // Terminal-leaf-keyed maps (terminalRefs/searchAddons/detectedUrls)
+      // are pruned by the effect below as the pane tree changes; only the
+      // tab-id-keyed handles need explicit cleanup here.
       editorRefs.current.delete(id);
       previewRefs.current.delete(id);
-      detectedUrls.current.delete(id);
       closeTab(id);
     },
     [closeTab],
   );
+
+  // Drives session disposal off the pane tree, not React lifecycles —
+  // split/unsplit re-mount components but the leaf is still live.
+  const liveLeavesRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    const live = new Set<number>();
+    for (const t of tabs) {
+      if (t.kind === "terminal") {
+        for (const id of leafIds(t.paneTree)) live.add(id);
+      }
+    }
+    for (const id of liveLeavesRef.current) {
+      if (!live.has(id)) disposeSession(id);
+    }
+    liveLeavesRef.current = live;
+    for (const k of [...terminalRefs.current.keys()])
+      if (!live.has(k)) terminalRefs.current.delete(k);
+    for (const k of [...searchAddons.current.keys()])
+      if (!live.has(k)) searchAddons.current.delete(k);
+    for (const k of [...detectedUrls.current.keys()])
+      if (!live.has(k)) detectedUrls.current.delete(k);
+  }, [tabs]);
 
   const handleClose = useCallback(
     (id: number) => {
@@ -264,7 +316,8 @@ export default function App() {
     const t = tabs.find((x) => x.id === activeId);
     if (!t) return null;
     if (t.kind === "terminal") {
-      return terminalRefs.current.get(activeId)?.getSelection() ?? null;
+      const lid = t.activeLeafId;
+      return terminalRefs.current.get(lid)?.getSelection() ?? null;
     }
     if (t.kind === "editor") {
       return editorRefs.current.get(activeId)?.getSelection() ?? null;
@@ -376,7 +429,8 @@ export default function App() {
 
   const sendCd = useCallback(
     (path: string) => {
-      const term = terminalRefs.current.get(activeId);
+      if (activeLeafId === null) return;
+      const term = terminalRefs.current.get(activeLeafId);
       if (!term) return;
       const quoted = path.includes(" ")
         ? `'${path.replace(/'/g, `'\\''`)}'`
@@ -384,14 +438,16 @@ export default function App() {
       term.write(`cd ${quoted}\r`);
       term.focus();
     },
-    [activeId],
+    [activeLeafId],
   );
 
   const cdInNewTab = useCallback(
     (path: string) => {
-      const id = newTab(path);
+      const tabId = newTab(path);
       setTimeout(() => {
-        const t = terminalRefs.current.get(id);
+        const tab = tabsRef.current.find((x) => x.id === tabId);
+        if (!tab || tab.kind !== "terminal") return;
+        const t = terminalRefs.current.get(tab.activeLeafId);
         if (!t) return;
         const quoted = path.includes(" ")
           ? `'${path.replace(/'/g, `'\\''`)}'`
@@ -404,8 +460,10 @@ export default function App() {
   );
 
   const handleOpenFile = useCallback(
-    (path: string) => {
-      openFileTab(path);
+    (path: string, pin?: boolean) => {
+      // Explorer defaults to preview (pin=false); explicit actions like
+      // context-menu "Open" pass pin=true for a persistent tab.
+      openFileTab(path, pin ?? false);
     },
     [openFileTab],
   );
@@ -493,7 +551,7 @@ export default function App() {
     [
       activeId,
       cycleTab,
-      handleClose,
+      handleCloseTabOrPane,
       openNewTab,
       openNewEditorDialog,
       openPreviewTab,
@@ -509,9 +567,9 @@ export default function App() {
   useGlobalShortcuts(shortcutHandlers);
 
   const registerTerminalHandle = useCallback(
-    (id: number, h: TerminalPaneHandle | null) => {
-      if (h) terminalRefs.current.set(id, h);
-      else terminalRefs.current.delete(id);
+    (leafId: number, h: TerminalPaneHandle | null) => {
+      if (h) terminalRefs.current.set(leafId, h);
+      else terminalRefs.current.delete(leafId);
     },
     [],
   );
@@ -539,8 +597,32 @@ export default function App() {
   );
 
   const handleTerminalCwd = useCallback(
-    (id: number, cwd: string) => updateTab(id, { cwd }),
-    [updateTab],
+    (leafId: number, cwd: string) => setLeafCwd(leafId, cwd),
+    [setLeafCwd],
+  );
+
+  const handleFocusLeaf = useCallback(
+    (tabId: number, leafId: number) => focusPane(tabId, leafId),
+    [focusPane],
+  );
+
+  const handleLeafExit = useCallback(
+    (leafId: number, _code: number) => {
+      const all = tabsRef.current;
+      const tab = all.find(
+        (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
+      );
+      if (!tab || tab.kind !== "terminal") return;
+      const isLast =
+        leafIds(tab.paneTree).length === 1 &&
+        all.filter((t) => t.kind === "terminal").length === 1;
+      if (isLast) {
+        void respawnSession(leafId, tab.cwd);
+      } else {
+        closePaneByLeaf(leafId);
+      }
+    },
+    [closePaneByLeaf],
   );
 
   const handleTeraxOpen = useCallback(
@@ -622,12 +704,12 @@ export default function App() {
       getTerminalContext: () => {
         const t = tabs.find((x) => x.id === activeId);
         if (t?.kind !== "terminal") return null;
-        return terminalRefs.current.get(activeId)?.getBuffer(300) ?? null;
+        return terminalRefs.current.get(t.activeLeafId)?.getBuffer(300) ?? null;
       },
       injectIntoActivePty: (text) => {
         const t = tabs.find((x) => x.id === activeId);
         if (t?.kind !== "terminal") return false;
-        const term = terminalRefs.current.get(activeId);
+        const term = terminalRefs.current.get(t.activeLeafId);
         if (!term) return false;
         term.write(text);
         term.focus();
@@ -657,7 +739,13 @@ export default function App() {
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
             onClose={handleClose}
+            onPin={pinTab}
             onToggleSidebar={toggleSidebar}
+            onSplit={splitActivePaneInActiveTab}
+            canSplit={
+              activeTerminalTab !== null &&
+              leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
+            }
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenSettings={() => void openSettingsWindow()}
             searchTarget={searchTarget}
@@ -707,7 +795,9 @@ export default function App() {
                         onSearchReady={handleSearchReady}
                         onCwd={handleTerminalCwd}
                         onDetectedLocalUrl={handleDetectedLocalUrl}
+                        onExit={handleLeafExit}
                         onTeraxOpen={handleTeraxOpen}
+                        onFocusLeaf={handleFocusLeaf}
                       />
                     </div>
                     <div
