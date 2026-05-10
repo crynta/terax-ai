@@ -70,9 +70,11 @@ fn apply_wayland_webkit_workaround() {
     let desktop = std::env::var("XDG_CURRENT_DESKTOP")
         .unwrap_or_default()
         .to_lowercase();
-    let affected = ["hyprland", "niri", "sway", "river", "wayfire"]
-        .iter()
-        .any(|c| desktop.contains(c));
+    let affected = [
+        "hyprland", "niri", "sway", "river", "wayfire", "labwc", "dwl",
+    ]
+    .iter()
+    .any(|c| desktop.contains(c));
     if !affected {
         return;
     }
