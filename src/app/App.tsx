@@ -14,6 +14,7 @@ import {
   SelectionAskAi,
   useChatStore,
 } from "@/modules/ai";
+import { getModel, providerNeedsKey } from "@/modules/ai/config";
 import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
@@ -116,7 +117,17 @@ export default function App() {
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
-  const hasComposer = hasAnyKey(apiKeys);
+
+  // Hydrate the cross-window preference store and mirror the default model
+  // into chatStore so the dropdown reflects what the user picked in Settings.
+  const initPrefs = usePreferencesStore((s) => s.init);
+  const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
+  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
+
+  // Keyless providers (LM Studio, OpenAI Compatible) work without an API key.
+  const hasComposer =
+    hasAnyKey(apiKeys) ||
+    !providerNeedsKey(getModel(prefDefaultModel).provider);
 
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
@@ -135,12 +146,6 @@ export default function App() {
       void unlistenP.then((fn) => fn());
     };
   }, [setApiKeys]);
-
-  // Hydrate the cross-window preference store and mirror the default model
-  // into chatStore so the dropdown reflects what the user picked in Settings.
-  const initPrefs = usePreferencesStore((s) => s.init);
-  const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
-  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   useEffect(() => {
     void initPrefs();
   }, [initPrefs]);

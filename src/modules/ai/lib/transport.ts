@@ -51,6 +51,8 @@ type Deps = {
   getAgentPersona: () => { name: string; instructions: string } | null;
   getLive: () => LiveSnapshot;
   getLmstudioBaseURL?: () => string | undefined;
+  getOpenaiCompatibleBaseURL?: () => string | undefined;
+  getOpenaiCompatibleModelId?: () => string | undefined;
   onStep?: (step: string | null) => void;
   getPlanMode?: () => boolean;
 };
@@ -71,6 +73,8 @@ export function createContextAwareTransport(deps: Deps) {
         toolContext: deps.toolContext,
         onStep: deps.onStep,
         lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
+        openaiCompatibleBaseURL: deps.getOpenaiCompatibleBaseURL?.(),
+        openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
         planMode: deps.getPlanMode?.(),
         projectMemory,
       });
@@ -92,6 +96,8 @@ export function createContextAwareTransport(deps: Deps) {
         toolContext: deps.toolContext,
         onStep: deps.onStep,
         lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
+        openaiCompatibleBaseURL: deps.getOpenaiCompatibleBaseURL?.(),
+        openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
         planMode: deps.getPlanMode?.(),
         projectMemory,
       });
