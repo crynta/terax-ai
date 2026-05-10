@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
+import { MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
@@ -61,7 +62,7 @@ export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
       title="Open AI agent"
     >
       <span>Open AI agent</span>
-      <Kbd className="h-4 min-w-4 px-1">⌘I</Kbd>
+      <Kbd className="h-4 min-w-4 px-1">{MOD_KEY}I</Kbd>
     </motion.button>
   );
 }
@@ -150,7 +151,7 @@ export function AiStatusBarControls() {
         className="text-[11px] text-foreground/85 px-1"
       >
         <Kbd className="h-4 gap-px text-[11px]">
-          ⌘<span className="font-mono">I</span>
+          {MOD_KEY}<span className="font-mono">I</span>
         </Kbd>
         {/* <HugeiconsIcon icon={Close} size={15} strokeWidth={1.75} /> */}
       </Button>

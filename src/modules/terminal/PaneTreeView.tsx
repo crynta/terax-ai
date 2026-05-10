@@ -7,6 +7,7 @@ import {
 import type { SearchAddon } from "@xterm/addon-search";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 import type { PaneNode } from "./lib/panes";
+import type { TeraxOpenInput } from "./lib/useTerminalSession";
 
 type LeafBundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
@@ -14,6 +15,7 @@ type LeafBundle = {
   onCwd: (cwd: string) => void;
   onDetectedUrl: (url: string) => void;
   onExit: (code: number) => void;
+  onTeraxOpen: (input: TeraxOpenInput) => void;
 };
 
 type Props = {
@@ -57,6 +59,7 @@ export function PaneTreeView({
           onCwd={(_id, cwd) => b.onCwd(cwd)}
           onDetectedLocalUrl={(_id, url) => b.onDetectedUrl(url)}
           onExit={(_id, code) => b.onExit(code)}
+          onTeraxOpen={(_id, input) => b.onTeraxOpen(input)}
         />
       </div>
     );

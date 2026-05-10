@@ -6,6 +6,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { SHORTCUTS, SHORTCUT_GROUPS } from "./shortcuts";
 
 type Props = {
@@ -24,7 +25,8 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto pr-2">
+        <ScrollArea className="max-h-[70vh] min-h-0 pr-2">
+          <div className="flex flex-col gap-5">
           {SHORTCUT_GROUPS.map((group) => {
             const items = SHORTCUTS.filter((s) => s.group === group);
             if (items.length === 0) return null;
@@ -53,7 +55,8 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
               </section>
             );
           })}
-        </div>
+          </div>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );

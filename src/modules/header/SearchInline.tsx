@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MOD_KEY } from "@/lib/platform";
 import type { EditorPaneHandle } from "@/modules/editor";
 import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -176,7 +177,7 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
                 size="icon"
                 className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={focus}
-                title="Search (⌘F)"
+                title={`Search (${MOD_KEY}F)`}
               >
                 <HugeiconsIcon
                   icon={Search01Icon}

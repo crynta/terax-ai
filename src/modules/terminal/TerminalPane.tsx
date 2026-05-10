@@ -1,12 +1,7 @@
 import { useTheme } from "@/modules/theme";
 import type { SearchAddon } from "@xterm/addon-search";
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-} from "react";
-import { useTerminalSession } from "./lib/useTerminalSession";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { useTerminalSession, type TeraxOpenInput } from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
@@ -27,6 +22,7 @@ type Props = {
   onExit?: (leafId: number, code: number) => void;
   onCwd?: (leafId: number, cwd: string) => void;
   onDetectedLocalUrl?: (leafId: number, url: string) => void;
+  onTeraxOpen?: (leafId: number, input: TeraxOpenInput) => void;
 };
 
 export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
@@ -40,6 +36,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onExit,
       onCwd,
       onDetectedLocalUrl,
+      onTeraxOpen,
     },
     ref,
   ) {
@@ -56,6 +53,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onExit: (c) => onExit?.(leafId, c),
       onCwd: (c) => onCwd?.(leafId, c),
       onDetectedLocalUrl: (u) => onDetectedLocalUrl?.(leafId, u),
+      onTeraxOpen: (input) => onTeraxOpen?.(leafId, input),
     });
 
     useEffect(() => {

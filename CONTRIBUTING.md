@@ -27,6 +27,28 @@ Build a release bundle at least once if you touched anything in `src-tauri/`:
 pnpm tauri build
 ```
 
+## Branches
+
+Branch off `main`. Use these prefixes (kebab-case):
+
+| Prefix     | Use for                                  |
+| ---------- | ---------------------------------------- |
+| `feat/`    | New feature                              |
+| `fix/`     | Bug fix                                  |
+| `chore/`   | Refactor, tooling, config, dependencies  |
+| `docs/`    | Docs-only changes                        |
+| `perf/`    | Performance work                         |
+
+Examples: `feat/split-panes`, `fix/explorer-focus`, `chore/windows-bundle-config`.
+
+Don't open PRs from your fork's `main` branch — it makes future syncs painful for you. Always work on a feature branch.
+
+## Issues first for non-trivial work
+
+For anything beyond a typo, a small bug fix, or a clear `good-first-issue` — **open an issue first** and wait for a maintainer to ack the approach. A 10-minute conversation saves a 500-line PR that doesn't fit the roadmap.
+
+If an issue already exists for what you want to do, comment "I'll take this" before starting so we don't duplicate work.
+
 ## What we want
 
 - **Bug fixes** — always.
@@ -52,9 +74,40 @@ pnpm tauri build
 
 ## Commits & PRs
 
-- Commit titles short and contextual: `area: what changed`. Look at `git log` for examples.
-- One logical change per PR. Don't bundle unrelated fixes.
-- Describe what and why in the PR body, plus how you tested it. Screenshots / GIFs for UI changes.
+We squash-merge every PR — the **PR title becomes the squash commit**, so it should follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat(terminal): add split panes
+fix(explorer): prevent input from disappearing on create
+chore(deps): bump tauri to 2.x
+docs(readme): clarify Linux install on Arch
+```
+
+Types: `feat`, `fix`, `chore`, `docs`, `perf`, `refactor`, `test`, `build`, `ci`.
+Common scopes: `terminal`, `editor`, `explorer`, `pty`, `ai`, `settings`, `tabs`, `shortcuts`, `agents`, `ui`.
+
+Within a PR, individual commit messages can be whatever — they get squashed.
+
+**One logical change per PR.** A PR that adds a feature, fixes an unrelated bug, and reformats `.gitignore` is three PRs. Split them.
+
+**Open a draft PR early** if you want feedback mid-flight; mark "Ready for review" when done. Fill out the PR template — what changed, why, how you tested. Include screenshots / GIFs for any UI change.
+
+### What gets merged faster
+
+- Clear problem statement
+- Small, focused diff
+- Follows existing patterns (read 2-3 nearby files before writing yours)
+- `pnpm exec tsc --noEmit` clean
+- Manual testing notes ("I tested by doing X, Y, Z")
+
+### What gets bounced back
+
+- Mixed-concern PRs ("split this please")
+- Large architectural PRs without prior discussion
+- New dependencies without justification
+- Breaking changes without migration notes
+- Incidental reformatting unrelated to the change (adds noise to review)
+- AI-generated code that obviously wasn't read by the author
 
 ## Project layout
 

@@ -1,0 +1,36 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, ci]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, frontend]
+    groups:
+      ai-sdk:
+        patterns: ["@ai-sdk/*", "ai"]
+      codemirror:
+        patterns: ["@codemirror/*", "@uiw/codemirror*", "@uiw/react-codemirror", "@replit/codemirror-vim"]
+      tauri:
+        patterns: ["@tauri-apps/*"]
+      xterm:
+        patterns: ["@xterm/*"]
+      radix:
+        patterns: ["@radix-ui/*", "radix-ui"]
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: [dependencies, rust]
+    groups:
+      tauri:
+        patterns: ["tauri", "tauri-*"]

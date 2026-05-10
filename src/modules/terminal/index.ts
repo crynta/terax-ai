@@ -1,6 +1,10 @@
 export { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 export { TerminalStack } from "./TerminalStack";
-export { disposeSession, respawnSession } from "./lib/useTerminalSession";
+export {
+  disposeSession,
+  respawnSession,
+  type TeraxOpenInput,
+} from "./lib/useTerminalSession";
 export {
   hasLeaf,
   isLeaf,

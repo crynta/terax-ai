@@ -1,3 +1,4 @@
+import { detectMonoFontFamily } from "@/lib/fonts";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
@@ -6,10 +7,16 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
+import {
+  registerCwdHandler,
+  registerPromptTracker,
+  registerTeraxOpenHandler,
+  type TeraxOpenInput,
+} from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
-const FONT_FAMILY = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
+export type { TeraxOpenInput };
+
 const FONT_SIZE = 14;
 
 const LOCAL_URL_RE =
@@ -20,6 +27,7 @@ type Callbacks = {
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
   onDetectedLocalUrl?: (url: string) => void;
+  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 // Lives outside React so split/unsplit re-parent the DOM without tearing
@@ -52,7 +60,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   if (existing) return existing;
 
   const term = new Terminal({
-    fontFamily: FONT_FAMILY,
+    fontFamily: detectMonoFontFamily(),
     fontSize: FONT_SIZE,
     lineHeight: 1.05,
     theme: buildTerminalTheme(),
@@ -100,7 +108,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   term.onData((data) => session.pty?.write(data));
 
   session.ready = (async () => {
-    await document.fonts.load(`${FONT_SIZE}px "JetBrains Mono"`);
+    await document.fonts.ready;
     if (session.disposed) return;
 
     const prompt = registerPromptTracker(term);
@@ -109,6 +117,9 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
       registerCwdHandler(term, (cwd) => {
         session.lastCwd = cwd;
         session.callbacks.onCwd?.(cwd);
+      }),
+      registerTeraxOpenHandler(term, (input) => {
+        session.callbacks.onTeraxOpen?.(input);
       }),
     );
 
@@ -318,6 +329,7 @@ type Options = {
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
   onDetectedLocalUrl?: (url: string) => void;
+  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 export function useTerminalSession({
@@ -330,9 +342,22 @@ export function useTerminalSession({
   onExit,
   onCwd,
   onDetectedLocalUrl,
+  onTeraxOpen,
 }: Options) {
-  const cbRef = useRef({ onSearchReady, onExit, onCwd, onDetectedLocalUrl });
-  cbRef.current = { onSearchReady, onExit, onCwd, onDetectedLocalUrl };
+  const cbRef = useRef({
+    onSearchReady,
+    onExit,
+    onCwd,
+    onDetectedLocalUrl,
+    onTeraxOpen,
+  });
+  cbRef.current = {
+    onSearchReady,
+    onExit,
+    onCwd,
+    onDetectedLocalUrl,
+    onTeraxOpen,
+  };
 
   ensureSession(leafId, initialCwd);
 
@@ -347,6 +372,7 @@ export function useTerminalSession({
         onExit: (c) => cbRef.current.onExit?.(c),
         onCwd: (c) => cbRef.current.onCwd?.(c),
         onDetectedLocalUrl: (u) => cbRef.current.onDetectedLocalUrl?.(u),
+        onTeraxOpen: (input) => cbRef.current.onTeraxOpen?.(input),
       });
       if (visible && focused) s.term.focus();
     });

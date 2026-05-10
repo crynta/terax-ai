@@ -123,13 +123,13 @@ export const MODELS = [
   },
   // Google
   {
-    id: "gemini-3.1-pro",
+    id: "gemini-3.1-pro-preview",
     provider: "google",
     label: "Gemini 3.1 Pro",
     hint: "Best",
   },
   {
-    id: "gemini-3-flash",
+    id: "gemini-3-flash-preview",
     provider: "google",
     label: "Gemini 3 Flash",
     hint: "Fast",
@@ -190,8 +190,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "claude-haiku-4-5": 200_000,
   "claude-sonnet-4-6": 200_000,
   "claude-opus-4-7": 200_000,
-  "gemini-3.1-pro": 1_000_000,
-  "gemini-3-flash": 1_000_000,
+  "gemini-3.1-pro-preview": 1_000_000,
+  "gemini-3-flash-preview": 1_000_000,
   "grok-4.20-reasoning": 2_000_000,
   "grok-4.20-non-reasoning": 2_000_000,
   "gpt-oss-120b": 128_000,

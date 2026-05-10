@@ -1,11 +1,4 @@
-/**
- * Single source of truth for keyboard shortcuts. Each entry carries:
- * - `keys`: display tokens for the cheat-sheet dialog.
- * - `match`: predicate over the live KeyboardEvent used by `useGlobalShortcuts`.
- *
- * Keeping both on the same record means the dialog can never lie about a
- * binding the runtime no longer matches (or vice-versa).
- */
+import { CTRL_KEY, MOD_KEY, SHIFT_KEY, TAB_KEY } from "@/lib/platform";
 
 export type ShortcutId =
   | "tab.new"
@@ -47,70 +40,70 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "shortcuts.open",
     label: "Show keyboard shortcuts",
-    keys: ["⌘", "K"],
+    keys: [MOD_KEY, "K"],
     group: "General",
     match: (e) => isMod(e) && e.key.toLowerCase() === "k",
   },
   {
     id: "tab.new",
     label: "New tab",
-    keys: ["⌘", "T"],
+    keys: [MOD_KEY, "T"],
     group: "Tabs",
     match: (e) => isMod(e) && e.key.toLowerCase() === "t",
   },
   {
     id: "tab.newPreview",
     label: "New preview tab",
-    keys: ["⌘", "P"],
+    keys: [MOD_KEY, "P"],
     group: "Tabs",
     match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "p",
   },
   {
     id: "tab.newEditor",
     label: "New editor tab",
-    keys: ["⌘", "E"],
+    keys: [MOD_KEY, "E"],
     group: "Tabs",
     match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "e",
   },
   {
     id: "tab.close",
     label: "Close tab or pane",
-    keys: ["⌘", "W"],
+    keys: [MOD_KEY, "W"],
     group: "Tabs",
     match: (e) => isMod(e) && e.key.toLowerCase() === "w",
   },
   {
     id: "pane.splitRight",
     label: "Split pane right",
-    keys: ["⌘", "D"],
+    keys: [MOD_KEY, "D"],
     group: "Panes",
     match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "d",
   },
   {
     id: "pane.splitDown",
     label: "Split pane down",
-    keys: ["⌘", "⇧", "D"],
+    keys: [MOD_KEY, SHIFT_KEY, "D"],
     group: "Panes",
     match: (e) => isMod(e) && e.shiftKey && e.key.toLowerCase() === "d",
   },
   {
     id: "pane.focusNext",
     label: "Focus next pane",
-    keys: ["⌘", "]"],
+    keys: [MOD_KEY, "]"],
     group: "Panes",
     match: (e) => isMod(e) && !e.shiftKey && e.key === "]",
   },
   {
     id: "pane.focusPrev",
     label: "Focus previous pane",
-    keys: ["⌘", "["],
+    keys: [MOD_KEY, "["],
     group: "Panes",
     match: (e) => isMod(e) && !e.shiftKey && e.key === "[",
   },
   {
     id: "tab.next",
     label: "Next tab",
-    keys: ["⌃", "⇥"],
+    keys: [CTRL_KEY, TAB_KEY],
     group: "Tabs",
     // Ctrl+Tab is conventionally Ctrl-only on every platform (including macOS).
     match: (e) => e.ctrlKey && !e.shiftKey && e.key === "Tab",
@@ -118,42 +111,42 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "tab.prev",
     label: "Previous tab",
-    keys: ["⌃", "⇧", "⇥"],
+    keys: [CTRL_KEY, SHIFT_KEY, TAB_KEY],
     group: "Tabs",
     match: (e) => e.ctrlKey && e.shiftKey && e.key === "Tab",
   },
   {
     id: "tab.selectByIndex",
     label: "Jump to tab 1–9",
-    keys: ["⌘", "1…9"],
+    keys: [MOD_KEY, "1…9"],
     group: "Tabs",
     match: (e) => isMod(e) && /^[1-9]$/.test(e.key),
   },
   {
     id: "search.focus",
     label: "Find in terminal",
-    keys: ["⌘", "F"],
+    keys: [MOD_KEY, "F"],
     group: "Search",
     match: (e) => isMod(e) && e.key.toLowerCase() === "f",
   },
   {
     id: "ai.toggle",
     label: "Toggle AI agent",
-    keys: ["⌘", "I"],
+    keys: [MOD_KEY, "I"],
     group: "AI",
     match: (e) => isMod(e) && e.key.toLowerCase() === "i",
   },
   {
     id: "ai.askSelection",
     label: "Ask AI about selection",
-    keys: ["⌘", "L"],
+    keys: [MOD_KEY, "L"],
     group: "AI",
     match: (e) => isMod(e) && e.key.toLowerCase() === "l",
   },
   {
     id: "sidebar.toggle",
     label: "Toggle file explorer",
-    keys: ["⌘", "B"],
+    keys: [MOD_KEY, "B"],
     group: "View",
     match: (e) => isMod(e) && e.key.toLowerCase() === "b",
   },
