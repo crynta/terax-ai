@@ -7,6 +7,7 @@ import {
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
+import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -48,6 +49,7 @@ export type Preferences = {
   autocompleteModelId: string;
   lmstudioBaseURL: string;
   vimMode: boolean;
+  shortcuts: Record<ShortcutId, KeyBinding[]>;
   /** Fish-style terminal line autocomplete (history + static commands). */
   terminalAutocompleteEnabled: boolean;
 };
@@ -64,6 +66,7 @@ const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_VIM_MODE = "vimMode";
+const KEY_SHORTCUTS = "shortcuts";
 const KEY_TERMINAL_AUTOCOMPLETE = "terminalAutocompleteEnabled";
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -78,6 +81,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
   vimMode: false,
+  shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   terminalAutocompleteEnabled: false,
 };
 
@@ -124,9 +128,11 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_AUTOCOMPLETE_MODEL) ??
       DEFAULT_PREFERENCES.autocompleteModelId,
     lmstudioBaseURL:
-      get<string>(KEY_LMSTUDIO_BASE_URL) ??
-      DEFAULT_PREFERENCES.lmstudioBaseURL,
+      get<string>(KEY_LMSTUDIO_BASE_URL) ?? DEFAULT_PREFERENCES.lmstudioBaseURL,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    shortcuts:
+      get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
+      DEFAULT_PREFERENCES.shortcuts,
     terminalAutocompleteEnabled:
       get<boolean>(KEY_TERMINAL_AUTOCOMPLETE) ??
       DEFAULT_PREFERENCES.terminalAutocompleteEnabled,
@@ -162,7 +168,7 @@ export async function setAutocompleteEnabled(value: boolean): Promise<void> {
 }
 
 export async function setAutocompleteProvider(
-  value: AutocompleteProviderId,
+  value: AutocompleteProviderId
 ): Promise<void> {
   await writePref(KEY_AUTOCOMPLETE_PROVIDER, value);
 }
@@ -177,6 +183,18 @@ export async function setLmstudioBaseURL(value: string): Promise<void> {
 
 export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
+}
+
+export async function setShortcuts(
+  value: Record<ShortcutId, KeyBinding[]> | {}
+): Promise<void> {
+  await store.set(KEY_SHORTCUTS, value);
+  await store.save();
+}
+
+export async function resetShortcuts(): Promise<void> {
+  await store.set(KEY_SHORTCUTS, DEFAULT_PREFERENCES.shortcuts);
+  await store.save();
 }
 
 export async function setTerminalAutocompleteEnabled(
@@ -203,6 +221,7 @@ export async function onPreferencesChange(
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_SHORTCUTS]: "shortcuts",
     [KEY_TERMINAL_AUTOCOMPLETE]: "terminalAutocompleteEnabled",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
