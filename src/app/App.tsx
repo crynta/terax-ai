@@ -465,6 +465,7 @@ export default function App() {
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
+      "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
     }),
     [

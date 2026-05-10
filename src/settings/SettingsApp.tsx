@@ -9,6 +9,7 @@ import {
   InformationCircleIcon,
   Settings01Icon,
   UserMultiple02Icon,
+  KeyboardIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -17,16 +18,24 @@ import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
 import { GeneralSection } from "./sections/GeneralSection";
 import { ModelsSection } from "./sections/ModelsSection";
+import { ShortcutsSection } from "./sections/ShortcutsSection";
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, component: () => JSX.Element }[] =
   [
     { id: "general", label: "General", icon: Settings01Icon, component: GeneralSection },
+    { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon, component: ShortcutsSection },
     { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
     { id: "agents", label: "Agents", icon: UserMultiple02Icon, component: AgentsSection },
     { id: "about", label: "About", icon: InformationCircleIcon, component: AboutSection },
   ];
 
-const VALID_TABS: SettingsTab[] = ["general", "models", "agents", "about"];
+const VALID_TABS: SettingsTab[] = [
+  "general",
+  "shortcuts",
+  "models",
+  "agents",
+  "about",
+];
 
 function readInitialTab(): SettingsTab {
   if (typeof window === "undefined") return "general";
@@ -70,9 +79,8 @@ export function SettingsApp() {
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
       <header
         data-tauri-drag-region
-        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
-          IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
-        }`}
+        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
+          }`}
       >
         <Tabs
           value={active}

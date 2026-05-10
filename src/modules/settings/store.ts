@@ -7,6 +7,7 @@ import {
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
+import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -50,6 +51,7 @@ export type Preferences = {
   vimMode: boolean;
   terminalWebglEnabled: boolean;
   terminalFontSize: number;
+  shortcuts: Record<ShortcutId, KeyBinding[]>;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -69,6 +71,7 @@ const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const TERMINAL_FONT_SIZE_DEFAULT = 14;
 const TERMINAL_FONT_SIZE_MIN = 8;
 const TERMINAL_FONT_SIZE_MAX = 32;
+const KEY_SHORTCUTS = "shortcuts";
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -84,6 +87,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   vimMode: false,
   terminalWebglEnabled: true,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
+  shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -129,8 +133,7 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_AUTOCOMPLETE_MODEL) ??
       DEFAULT_PREFERENCES.autocompleteModelId,
     lmstudioBaseURL:
-      get<string>(KEY_LMSTUDIO_BASE_URL) ??
-      DEFAULT_PREFERENCES.lmstudioBaseURL,
+      get<string>(KEY_LMSTUDIO_BASE_URL) ?? DEFAULT_PREFERENCES.lmstudioBaseURL,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
@@ -138,6 +141,9 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalFontSize:
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
       DEFAULT_PREFERENCES.terminalFontSize
+    shortcuts:
+      get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
+      DEFAULT_PREFERENCES.shortcuts,
   };
 }
 
@@ -170,7 +176,7 @@ export async function setAutocompleteEnabled(value: boolean): Promise<void> {
 }
 
 export async function setAutocompleteProvider(
-  value: AutocompleteProviderId,
+  value: AutocompleteProviderId
 ): Promise<void> {
   await writePref(KEY_AUTOCOMPLETE_PROVIDER, value);
 }
@@ -200,6 +206,15 @@ export async function setTerminalFontSize(value: number): Promise<void> {
       )
     : DEFAULT_PREFERENCES.terminalFontSize;
   await store.set(KEY_TERMINAL_FONT_SIZE, fontSize);
+export async function setShortcuts(
+  value: Record<ShortcutId, KeyBinding[]> | {}
+): Promise<void> {
+  await store.set(KEY_SHORTCUTS, value);
+  await store.save();
+}
+
+export async function resetShortcuts(): Promise<void> {
+  await store.set(KEY_SHORTCUTS, DEFAULT_PREFERENCES.shortcuts);
   await store.save();
 }
 
@@ -223,6 +238,7 @@ export async function onPreferencesChange(
     [KEY_VIM_MODE]: "vimMode",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
+    [KEY_SHORTCUTS]: "shortcuts",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
