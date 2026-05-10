@@ -2,6 +2,7 @@ export const KEYRING_SERVICE = "terax-ai";
 
 export type ProviderId =
   | "openai"
+  | "codex"
   | "anthropic"
   | "google"
   | "xai"
@@ -25,6 +26,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openai-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.openai.com/api-keys",
+  },
+  {
+    id: "codex",
+    label: "Codex",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://developers.openai.com/codex",
   },
   {
     id: "anthropic",
@@ -109,6 +117,36 @@ export const MODELS = [
     provider: "openai",
     label: "GPT-5.3 Codex",
     hint: "Coding",
+  },
+  {
+    id: "gpt-5.5-chatgpt",
+    provider: "codex",
+    label: "GPT-5.5 (ChatGPT)",
+    hint: "Frontier",
+  },
+  {
+    id: "gpt-5.4-chatgpt",
+    provider: "codex",
+    label: "GPT-5.4 (ChatGPT)",
+    hint: "Everyday coding",
+  },
+  {
+    id: "gpt-5.4-mini-chatgpt",
+    provider: "codex",
+    label: "GPT-5.4 mini (ChatGPT)",
+    hint: "Fast",
+  },
+  {
+    id: "gpt-5.3-codex-chatgpt",
+    provider: "codex",
+    label: "GPT-5.3 Codex (ChatGPT)",
+    hint: "Codex account",
+  },
+  {
+    id: "gpt-5.2-chatgpt",
+    provider: "codex",
+    label: "GPT-5.2 (ChatGPT)",
+    hint: "Long-running agents",
   },
   // Anthropic
   {
@@ -208,6 +246,11 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "gpt-5.4-mini": 400_000,
   "gpt-5.5": 1_050_000,
   "gpt-5.3-codex": 400_000,
+  "gpt-5.5-chatgpt": 1_050_000,
+  "gpt-5.4-chatgpt": 400_000,
+  "gpt-5.4-mini-chatgpt": 400_000,
+  "gpt-5.3-codex-chatgpt": 400_000,
+  "gpt-5.2-chatgpt": 400_000,
   "claude-haiku-4-5": 200_000,
   "claude-sonnet-4-6": 200_000,
   "claude-opus-4-7": 200_000,
@@ -228,7 +271,10 @@ export function getModelContextLimit(modelId: string | undefined): number {
 }
 
 /** Providers that do not require an API key (e.g. local servers). */
-export const KEYLESS_PROVIDERS: readonly ProviderId[] = ["lmstudio"] as const;
+export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
+  "codex",
+  "lmstudio",
+] as const;
 
 export function providerNeedsKey(id: ProviderId): boolean {
   return !KEYLESS_PROVIDERS.includes(id);

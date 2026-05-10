@@ -1,7 +1,8 @@
 import type { UIMessage } from "@ai-sdk/react";
 import { DirectChatTransport } from "ai";
-import { TERMINAL_BUFFER_LINES, type ModelId } from "../config";
+import { getModel, TERMINAL_BUFFER_LINES, type ModelId } from "../config";
 import { createTeraxAgent } from "./agent";
+import { createCodexChatTransport } from "./codexTransport";
 import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
 import type { ToolContext } from "../tools/tools";
@@ -62,6 +63,17 @@ export function createContextAwareTransport(deps: Deps) {
       [k: string]: unknown;
     }) {
       const live = deps.getLive();
+      const augmented = injectContext(options.messages, live);
+      if (getModel(deps.getModelId()).provider === "codex") {
+        const codex = createCodexChatTransport({
+          getCwd: () => deps.getLive().cwd ?? deps.getLive().workspaceRoot,
+          getModelId: deps.getModelId,
+        });
+        return codex.sendMessages({
+          ...options,
+          messages: augmented,
+        } as Parameters<typeof codex.sendMessages>[0]);
+      }
       const projectMemory = await readTeraxMd(live.workspaceRoot);
       const agent = await createTeraxAgent({
         keys: deps.getKeys(),
@@ -75,7 +87,6 @@ export function createContextAwareTransport(deps: Deps) {
         projectMemory,
       });
       const base = new DirectChatTransport({ agent });
-      const augmented = injectContext(options.messages, deps.getLive());
       return base.sendMessages({
         ...options,
         messages: augmented,

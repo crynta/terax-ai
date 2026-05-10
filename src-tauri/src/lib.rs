@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell};
+use modules::{codex, fs, net, pty, secrets, shell};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[tauri::command]
@@ -106,6 +106,10 @@ pub fn run() {
             secrets::secrets_delete,
             secrets::secrets_get_all,
             net::http_ping,
+            codex::codex_account_read,
+            codex::codex_chat_once,
+            codex::codex_login_start,
+            codex::codex_logout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

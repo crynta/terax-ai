@@ -11,6 +11,7 @@ export type ProviderKeys = Record<ProviderId, string | null>;
 
 export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   openai: null,
+  codex: null,
   anthropic: null,
   google: null,
   xai: null,
@@ -82,4 +83,10 @@ export async function getAllKeys(): Promise<ProviderKeys> {
 
 export function hasAnyKey(keys: ProviderKeys): boolean {
   return PROVIDERS.some((p) => providerNeedsKey(p.id) && !!keys[p.id]);
+}
+
+export function hasAnyProviderConnection(keys: ProviderKeys): boolean {
+  return PROVIDERS.some((p) =>
+    providerNeedsKey(p.id) ? !!keys[p.id] : true,
+  );
 }

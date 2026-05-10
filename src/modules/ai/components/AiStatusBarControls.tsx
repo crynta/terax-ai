@@ -42,6 +42,7 @@ import { useChatStore } from "../store/chatStore";
 
 const PROVIDER_ICON = {
   openai: ChatGptIcon,
+  codex: ChatGptIcon,
   anthropic: ClaudeIcon,
   google: GoogleGeminiIcon,
   xai: Grok02Icon,

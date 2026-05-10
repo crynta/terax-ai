@@ -20,6 +20,13 @@ import {
   type ModelId,
   type ProviderId,
 } from "@/modules/ai/config";
+import {
+  getCodexAccount,
+  logoutCodex,
+  startCodexLogin,
+  type CodexAccountState,
+  type CodexLoginStart,
+} from "@/modules/ai/lib/codex";
 import { clearKey, getAllKeys, setKey } from "@/modules/ai/lib/keyring";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -31,6 +38,7 @@ import {
   setLmstudioBaseURL,
 } from "@/modules/settings/store";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
@@ -65,7 +73,8 @@ export function ModelsSection() {
   }
 
   const defaultModelInfo = getModel(defaultModel);
-  const configuredCount = PROVIDERS.filter(
+  const keyProviders = PROVIDERS.filter((p) => providerNeedsKey(p.id));
+  const configuredCount = keyProviders.filter(
     (p) => providerNeedsKey(p.id) && !!keys[p.id],
   ).length;
 
@@ -100,9 +109,11 @@ export function ModelsSection() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-[260px]">
-            {PROVIDERS.filter((p) => providerNeedsKey(p.id)).map((p) => {
+            {PROVIDERS.filter((p) =>
+              MODELS.some((m) => m.provider === p.id),
+            ).map((p) => {
               const models = MODELS.filter((m) => m.provider === p.id);
-              const hasKey = !!keys[p.id];
+              const hasKey = providerNeedsKey(p.id) ? !!keys[p.id] : true;
               return (
                 <div key={p.id} className="px-1 pt-1.5">
                   <div className="mb-1 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -145,11 +156,11 @@ export function ModelsSection() {
         <div className="flex items-baseline justify-between">
           <Label>API keys</Label>
           <span className="text-[10.5px] text-muted-foreground">
-            {configuredCount} of {PROVIDERS.filter((p) => providerNeedsKey(p.id)).length} configured
+            {configuredCount} of {keyProviders.length} configured
           </span>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {PROVIDERS.filter((p) => providerNeedsKey(p.id)).map((p) => (
+          {keyProviders.map((p) => (
             <ProviderKeyCard
               key={p.id}
               provider={p}
@@ -161,7 +172,149 @@ export function ModelsSection() {
         </div>
       </div>
 
+      <CodexConnectionCard />
+
       <AutocompleteBlock keys={keys} />
+    </div>
+  );
+}
+
+function CodexConnectionCard() {
+  const [account, setAccount] = useState<CodexAccountState | null>(null);
+  const [login, setLogin] = useState<CodexLoginStart | null>(null);
+  const [status, setStatus] = useState<
+    "loading" | "idle" | "connecting" | "error"
+  >("loading");
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = async (refreshToken = false) => {
+    setStatus("loading");
+    setError(null);
+    try {
+      const next = await getCodexAccount(refreshToken);
+      setAccount(next);
+      setStatus("idle");
+    } catch (e) {
+      setStatus("error");
+      setError(String(e));
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const startLogin = async (deviceCode = false) => {
+    setStatus("connecting");
+    setError(null);
+    try {
+      const next = await startCodexLogin(deviceCode);
+      setLogin(next);
+      const url = next.authUrl ?? next.verificationUrl;
+      if (url) void openUrl(url);
+      setStatus("idle");
+    } catch (e) {
+      setStatus("error");
+      setError(String(e));
+    }
+  };
+
+  const logout = async () => {
+    setStatus("connecting");
+    setError(null);
+    try {
+      await logoutCodex();
+      setLogin(null);
+      await refresh();
+    } catch (e) {
+      setStatus("error");
+      setError(String(e));
+    }
+  };
+
+  const connected = account?.authMode === "chatgpt";
+  const busy = status === "loading" || status === "connecting";
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline justify-between">
+        <Label>Codex account</Label>
+        <span className="text-[10.5px] text-muted-foreground">
+          {connected ? "Connected" : "Not connected"}
+        </span>
+      </div>
+      <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+        <div className="flex items-start gap-2">
+          <ProviderIcon provider="codex" size={16} />
+          <div className="min-w-0 flex-1">
+            <div className="text-[12.5px] font-medium">
+              {connected ? account?.email : "ChatGPT / Codex"}
+            </div>
+            <div className="mt-0.5 text-[10.5px] text-muted-foreground">
+              {connected
+                ? `Plan ${account?.planType ?? "unknown"} · ${account?.authMode}`
+                : "Uses the official Codex app-server login flow."}
+            </div>
+            {login?.userCode ? (
+              <div className="mt-2 rounded-md border border-border/60 bg-background px-2 py-1.5 font-mono text-[12px]">
+                {login.userCode}
+              </div>
+            ) : null}
+            {error ? (
+              <div className="mt-1.5 text-[10.5px] text-destructive">
+                {error}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {connected ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              disabled={busy}
+              onClick={() => void logout()}
+            >
+              Log out
+            </Button>
+          ) : (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={busy}
+                onClick={() => void startLogin(false)}
+              >
+                Connect
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                disabled={busy}
+                onClick={() => void startLogin(true)}
+              >
+                Device code
+              </Button>
+            </>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-[11px]"
+            disabled={busy}
+            onClick={() => void refresh(true)}
+          >
+            Refresh
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
