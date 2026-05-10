@@ -13,6 +13,7 @@ import { openPty, type PtySession } from "./pty-bridge";
 export type { TeraxOpenInput };
 
 const FONT_SIZE = 14;
+const BACKWARD_KILL_WORD = "\x17";
 
 type Options = {
   container: React.RefObject<HTMLDivElement | null>;
@@ -87,6 +88,15 @@ export function useTerminalSession({
         allowProposedApi: true,
       });
       termRef.current = term;
+      term.attachCustomKeyEventHandler((event) => {
+        if (!isCtrlBackspace(event)) return true;
+        const pty = ptyRef.current;
+        if (!pty) return true;
+        event.preventDefault();
+        event.stopPropagation();
+        pty.write(BACKWARD_KILL_WORD);
+        return false;
+      });
 
       const fit = new FitAddon();
       fitRef.current = fit;
@@ -264,6 +274,16 @@ export function useTerminalSession({
   }, []);
 
   return { write, focus, getBuffer, getSelection, applyTheme };
+}
+
+function isCtrlBackspace(event: KeyboardEvent): boolean {
+  return (
+    event.type === "keydown" &&
+    event.key === "Backspace" &&
+    event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey
+  );
 }
 
 function stripTrailingPunct(url: string): string {
