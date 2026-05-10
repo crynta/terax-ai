@@ -20,7 +20,8 @@
         "minHeight": 280,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "visible": false
+        "visible": false,
+        "decorations": false
       }
     ],
     "security": {
@@ -44,10 +45,16 @@
     "linux": {
       "deb": {
         "section": "utils",
-        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
       },
       "rpm": {
-        "depends": ["webkit2gtk4.1", "gtk3"]
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3"
+        ]
       },
       "appimage": {
         "bundleMediaFramework": true
