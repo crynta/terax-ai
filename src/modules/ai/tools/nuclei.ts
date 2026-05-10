@@ -69,7 +69,7 @@ export function buildNucleiTools(ctx: ToolContext) {
         if (!sid) return { error: "no active chat session" };
         const shellId = await getSessionShell(sid, ctx.getCwd());
         try {
-          const r = await native.shellSessionRun(shellId, cmd, 300);
+          const r = await native.shellSessionRun(shellId, cmd, null, 300);
           const findings = r.stdout.trim().split("\n").filter(Boolean).map((l) => {
             try { return JSON.parse(l); } catch { return { raw: l }; }
           });
@@ -129,7 +129,7 @@ export function buildNucleiTools(ctx: ToolContext) {
         if (!sid) return { error: "no active chat session" };
         const shellId = await getSessionShell(sid, ctx.getCwd());
         try {
-          const r = await native.shellSessionRun(shellId, cmd, 300);
+          const r = await native.shellSessionRun(shellId, cmd, null, 300);
           const findings = r.stdout.trim().split("\n").filter(Boolean).map((l) => {
             try { return JSON.parse(l); } catch { return { raw: l }; }
           });
@@ -161,7 +161,7 @@ export function buildNucleiTools(ctx: ToolContext) {
             const p = native.shellSessionOpen(cwd);
             return p;
           })();
-          const r = await native.shellSessionRun(shellId, cmd, 30);
+          const r = await native.shellSessionRun(shellId, cmd, null, 30);
           const templates = r.stdout.trim().split("\n").filter(Boolean).map((l) => {
             try { return JSON.parse(l); } catch { return { name: l }; }
           });

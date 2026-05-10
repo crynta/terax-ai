@@ -173,7 +173,7 @@ export function buildReportingTools(ctx: ToolContext) {
         let screenshots: string[] = [];
         if (include_screenshots) {
           try {
-            const r = await native.shellSessionRun(shellId, "ls /tmp/mr-robot/*.png 2>/dev/null || true", 5);
+            const r = await native.shellSessionRun(shellId, "ls /tmp/mr-robot/*.png 2>/dev/null || true", null, 5);
             screenshots = r.stdout.trim().split("\n").filter(Boolean);
           } catch { /* no screenshots */ }
         }
@@ -221,7 +221,7 @@ export function buildReportingTools(ctx: ToolContext) {
             const pdfSafety = checkShellCommand(pdfCmd);
             if (pdfSafety.ok) {
               try {
-                await native.shellSessionRun(shellId, pdfCmd, 30);
+                await native.shellSessionRun(shellId, pdfCmd, null, 30);
                 files.push(`${reportDir}/report.pdf`);
               } catch {
                 warnings.push("wkhtmltopdf not available, PDF skipped");

@@ -51,7 +51,7 @@ export function buildMitmproxyTools(ctx: ToolContext) {
           return p;
         })();
         try {
-          const r = await native.shellSessionRun(shellId, cmd, 30);
+          const r = await native.shellSessionRun(shellId, cmd, null, 30);
           if (r.exit_code !== 0) return { error: r.stderr || r.stdout };
           try {
             return JSON.parse(r.stdout);

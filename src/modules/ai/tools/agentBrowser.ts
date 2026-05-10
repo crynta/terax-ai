@@ -25,7 +25,7 @@ async function agentBrowserRun(
   const safety = checkShellCommand(cmd);
   if (!safety.ok) return { error: safety.reason };
   const shellId = await getSessionShell(sessionId, cwd);
-  const r = await native.shellSessionRun(shellId, cmd, timeout ?? 30);
+  const r = await native.shellSessionRun(shellId, cmd, null, timeout ?? 30);
   if (r.exit_code !== 0) {
     return { error: r.stderr || r.stdout, exit_code: r.exit_code };
   }

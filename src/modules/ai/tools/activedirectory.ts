@@ -37,7 +37,7 @@ export function buildADTools(ctx: ToolContext) {
         const shellId = await getSessionShell(sid, ctx.getCwd());
         const mkdirCmd = `mkdir -p ${shEscape(outDir)}`;
         try {
-          await native.shellSessionRun(shellId, mkdirCmd, 5);
+          await native.shellSessionRun(shellId, mkdirCmd, null, 5);
         } catch { /* ignore */ }
         const collections = collection?.join(",") ?? "All";
         let cmd: string;
@@ -82,7 +82,7 @@ export function buildADTools(ctx: ToolContext) {
         const safety = checkShellCommand(cmd);
         if (!safety.ok) return { error: safety.reason };
         try {
-          const r = await native.shellSessionRun(shellId, cmd, 120);
+          const r = await native.shellSessionRun(shellId, cmd, null, 120);
           return { stdout: r.stdout, stderr: r.stderr, output_file: outFile, exit_code: r.exit_code };
         } catch (e) {
           return { error: String(e) };
@@ -120,7 +120,7 @@ export function buildADTools(ctx: ToolContext) {
             const sid = ctx.getSessionId();
             if (!sid) return { error: "no active chat session" };
             const shellId = await getSessionShell(sid, ctx.getCwd());
-            const r = await native.shellSessionRun(shellId, cmd, 60);
+            const r = await native.shellSessionRun(shellId, cmd, null, 60);
             return { stdout: r.stdout, stderr: r.stderr, exit_code: r.exit_code };
           } else {
             const handle = await native.shellBgSpawn(cmd, ctx.getCwd());
@@ -173,7 +173,7 @@ export function buildADTools(ctx: ToolContext) {
         const safety = checkShellCommand(cmd);
         if (!safety.ok) return { error: safety.reason };
         try {
-          const r = await native.shellSessionRun(shellId, cmd, 120);
+          const r = await native.shellSessionRun(shellId, cmd, null, 120);
           const stdout = r.stdout;
           const hashes = stdout.split("\n").filter((l) => l.includes("$krb5") || l.includes("Hash")).join("\n");
           return {
