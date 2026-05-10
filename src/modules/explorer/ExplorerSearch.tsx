@@ -28,6 +28,7 @@ type Props = {
   rootPath: string;
   onOpenFile: (path: string) => void;
   open: boolean;
+  onRequestClose: () => void;
   onActiveChange?: (active: boolean) => void;
 };
 
@@ -40,6 +41,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   rootPath,
   onOpenFile,
   open,
+  onRequestClose,
   onActiveChange,
 }: Props,
   ref,
@@ -129,6 +131,19 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                onRequestClose();
+                return;
+              }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                const firstOpenable = results.find((hit) => !hit.is_dir);
+                if (firstOpenable) onOpenFile(firstOpenable.path);
+              }
+            }}
             placeholder="Search files…"
             className="h-7 pr-7 pl-6.5 text-xs"
           />
@@ -157,7 +172,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                 No matches
               </div>
             ) : (
-              results.map((hit) => {
+              results.map((hit, index) => {
                 const url = hit.is_dir ? null : fileIconUrl(hit.name);
                 return (
                   <button
@@ -166,7 +181,9 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                     onClick={() => {
                       if (!hit.is_dir) onOpenFile(hit.path);
                     }}
-                    className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs hover:bg-accent"
+                    className={`flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs ${
+                      index === 0 ? "bg-accent" : "hover:bg-accent"
+                    }`}
                     title={hit.path}
                   >
                     {url ? (

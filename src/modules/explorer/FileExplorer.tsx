@@ -248,6 +248,7 @@ export function FileExplorer({
         rootPath={rootPath}
         onOpenFile={onOpenFile}
         open={isSearchOpen}
+        onRequestClose={() => setIsSearchOpen(false)}
         onActiveChange={setIsSearchActive}
       />
 
