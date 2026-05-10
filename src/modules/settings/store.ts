@@ -48,6 +48,8 @@ export type Preferences = {
   autocompleteModelId: string;
   lmstudioBaseURL: string;
   vimMode: boolean;
+  /** Fish-style terminal line autocomplete (history + static commands). */
+  terminalAutocompleteEnabled: boolean;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -62,6 +64,7 @@ const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_VIM_MODE = "vimMode";
+const KEY_TERMINAL_AUTOCOMPLETE = "terminalAutocompleteEnabled";
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -75,6 +78,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
   vimMode: false,
+  terminalAutocompleteEnabled: false,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -123,6 +127,9 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_LMSTUDIO_BASE_URL) ??
       DEFAULT_PREFERENCES.lmstudioBaseURL,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    terminalAutocompleteEnabled:
+      get<boolean>(KEY_TERMINAL_AUTOCOMPLETE) ??
+      DEFAULT_PREFERENCES.terminalAutocompleteEnabled,
   };
 }
 
@@ -172,6 +179,12 @@ export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
 
+export async function setTerminalAutocompleteEnabled(
+  value: boolean,
+): Promise<void> {
+  await writePref(KEY_TERMINAL_AUTOCOMPLETE, value);
+}
+
 export type PrefKey = keyof Preferences;
 
 /** Subscribe to changes from any window (settings → main). */
@@ -190,6 +203,7 @@ export async function onPreferencesChange(
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_TERMINAL_AUTOCOMPLETE]: "terminalAutocompleteEnabled",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
