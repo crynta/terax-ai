@@ -31,6 +31,8 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "copyright": "Copyright 2026 Crynta",
+    "license": "Apache-2.0",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -60,9 +62,12 @@
       "nsis": {
         "installMode": "currentUser",
         "languages": ["English"],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
       }
     },
+    "publisher": "Crynta",
     "category": "DeveloperTool",
     "shortDescription": "AI-native terminal emulator",
     "longDescription": "Terax — an open-source AI-native terminal emulator with multi-tab, file explorer, code editor, web preview, voice input, and AI agents."
