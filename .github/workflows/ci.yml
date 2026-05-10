@@ -31,7 +31,7 @@ jobs:
         run: pnpm exec tsc --noEmit
 
       - name: Build frontend
-        run: pnpm build
+        run: pnpm exec vite build
 
   rust:
     runs-on: ubuntu-22.04
