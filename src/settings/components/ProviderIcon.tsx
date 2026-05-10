@@ -9,6 +9,7 @@ import {
   CpuIcon,
   ServerStack01Icon,
   SparklesIcon,
+  DeepseekIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -19,6 +20,7 @@ const ICON_BY_PROVIDER = {
   xai: Grok02Icon,
   cerebras: CpuIcon,
   groq: FlashIcon,
+  deepseek: DeepseekIcon,
   lmstudio: ComputerIcon,
   ollama: ServerStack01Icon,
   zai: SparklesIcon,

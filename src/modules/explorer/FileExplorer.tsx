@@ -353,11 +353,19 @@ export function FileExplorer({
               <div className="py-1" ref={listRef}>
                 {pendingAtRoot && (
                   <div
-                    className="flex w-full items-center gap-1.5 px-1.5 py-0.5 text-xs"
+                    className="flex w-full items-center gap-2 px-1.5 py-0.5 text-[13px]"
                     style={{ paddingLeft: 6 }}
                   >
-                    <span className="size-3 shrink-0" />
-                    <span className="size-4 shrink-0" />
+                    <span className="size-3.5 shrink-0" />
+                    <img
+                      src={
+                        pendingAtRoot.kind === "dir"
+                          ? folderIconUrl("", false)
+                          : fileIconUrl("untitled")
+                      }
+                      alt=""
+                      className="size-4 shrink-0 opacity-70"
+                    />
                     <InlineInput
                       initial=""
                       placeholder={

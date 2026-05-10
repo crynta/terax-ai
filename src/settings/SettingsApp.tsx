@@ -12,18 +12,18 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { useEffect, useState } from "react";
+import { JSX, useEffect, useState } from "react";
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
 import { GeneralSection } from "./sections/GeneralSection";
 import { ModelsSection } from "./sections/ModelsSection";
 
-const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon }[] =
+const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, component: () => JSX.Element }[] =
   [
-    { id: "general", label: "General", icon: Settings01Icon },
-    { id: "models", label: "Models", icon: AiScanIcon },
-    { id: "agents", label: "Agents", icon: UserMultiple02Icon },
-    { id: "about", label: "About", icon: InformationCircleIcon },
+    { id: "general", label: "General", icon: Settings01Icon, component: GeneralSection },
+    { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
+    { id: "agents", label: "Agents", icon: UserMultiple02Icon, component: AgentsSection },
+    { id: "about", label: "About", icon: InformationCircleIcon, component: AboutSection },
   ];
 
 const VALID_TABS: SettingsTab[] = ["general", "models", "agents", "about"];
@@ -41,6 +41,7 @@ function readInitialTab(): SettingsTab {
 export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const init = usePreferencesStore((s) => s.init);
+  const ActiveSection = TABS.find(t => t.id === active)?.component;
 
   useEffect(() => {
     void init();
@@ -99,10 +100,7 @@ export function SettingsApp() {
       <ScrollArea className="min-h-0 flex-1">
         <main className="flex min-w-0 flex-col px-8 pt-6 pb-7">
           <div className="mx-auto w-full max-w-160">
-            {active === "general" && <GeneralSection />}
-            {active === "models" && <ModelsSection />}
-            {active === "agents" && <AgentsSection />}
-            {active === "about" && <AboutSection />}
+            {ActiveSection && <ActiveSection />}
           </div>
         </main>
       </ScrollArea>
