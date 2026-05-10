@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 type Props = {
   initial: string;
@@ -23,7 +23,7 @@ export function InlineInput({
   const committedRef = useRef(false);
   const settledRef = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     // Two-tick focus to win against parent click handlers and Radix portal
@@ -38,11 +38,15 @@ export function InlineInput({
       else el.select();
     };
     focus();
-    const raf = requestAnimationFrame(() => {
+    const raf = requestAnimationFrame(() => focus());
+    const timer = setTimeout(() => {
       focus();
       settledRef.current = true;
-    });
-    return () => cancelAnimationFrame(raf);
+    }, 170);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+    };
   }, [initial]);
 
   const commit = () => {

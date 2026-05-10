@@ -20,12 +20,20 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         return Ok(());
     }
 
-    let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
+    let mut builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
         .title("Settings")
         .inner_size(720.0, 520.0)
         .min_inner_size(720.0, 520.0)
         .max_inner_size(720.0, 520.0)
-        .resizable(false);
+        .resizable(false)
+        // Keep settings above the main app window so it doesn't get hidden
+        // when the user clicks back into the editor or terminal (#33).
+        .always_on_top(true);
+
+    // Tie lifecycle to the main window so settings minimizes/closes with it.
+    if let Some(main) = app.get_webview_window("main") {
+        builder = builder.parent(&main).map_err(|e| e.to_string())?;
+    }
 
     #[cfg(target_os = "macos")]
     let builder = builder

@@ -18,6 +18,7 @@ import { openPty, type PtySession } from "./pty-bridge";
 export type { TeraxOpenInput };
 
 const FONT_SIZE = 14;
+const BACKWARD_KILL_WORD = "\x17";
 
 const LOCAL_URL_RE =
   /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d{1,5})?(?:\/[^\s\x1b]*)?/g;
@@ -103,6 +104,16 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     disposed: false,
   };
   sessions.set(leafId, session);
+
+  term.attachCustomKeyEventHandler((event) => {
+    if (!isCtrlBackspace(event)) return true;
+    const pty = session.pty;
+    if (!pty) return true;
+    event.preventDefault();
+    event.stopPropagation();
+    pty.write(BACKWARD_KILL_WORD);
+    return false;
+  });
 
   // Routes through session.pty so respawn doesn't need to rebind.
   term.onData((data) => session.pty?.write(data));
@@ -429,6 +440,16 @@ export function useTerminalSession({
   }, [leafId]);
 
   return { write, focus, getBuffer, getSelection, applyTheme };
+}
+
+function isCtrlBackspace(event: KeyboardEvent): boolean {
+  return (
+    event.type === "keydown" &&
+    event.key === "Backspace" &&
+    event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey
+  );
 }
 
 function stripTrailingPunct(url: string): string {
