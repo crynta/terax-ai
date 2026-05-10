@@ -12,8 +12,6 @@ import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import {
   Cancel01Icon,
   ComputerTerminal02Icon,
-  Folder01Icon,
-  Folder02Icon,
   GitCompareIcon,
   Globe02Icon,
   PencilEdit02Icon,
@@ -96,7 +94,7 @@ export function TabBar({
                     compact ? "max-w-32" : "max-w-56",
                   )}
                 >
-                  <TabIcon tab={t} active={t.id === activeId} />
+                  <TabIcon tab={t} />
                   <span className="truncate">{labelFor(t)}</span>
                   {t.kind === "editor" && t.dirty ? (
                     <span
@@ -168,7 +166,7 @@ export function TabBar({
   );
 }
 
-function TabIcon({ tab, active }: { tab: Tab; active: boolean }) {
+function TabIcon({ tab }: { tab: Tab }) {
   if (tab.kind === "editor") {
     const url = fileIconUrl(tab.title);
     return url ? <img src={url} alt="" className="size-3.5 shrink-0" /> : null;
@@ -178,7 +176,7 @@ function TabIcon({ tab, active }: { tab: Tab; active: boolean }) {
       <HugeiconsIcon
         icon={Globe02Icon}
         size={14}
-        strokeWidth={1.75}
+        strokeWidth={2}
         className="shrink-0"
       />
     );
@@ -188,14 +186,14 @@ function TabIcon({ tab, active }: { tab: Tab; active: boolean }) {
       <HugeiconsIcon
         icon={GitCompareIcon}
         size={14}
-        strokeWidth={1.75}
+        strokeWidth={2}
         className="shrink-0 text-yellow-600 dark:text-yellow-400"
       />
     );
   }
   return (
     <HugeiconsIcon
-      icon={active ? Folder02Icon : Folder01Icon}
+      icon={ComputerTerminal02Icon}
       size={14}
       strokeWidth={2}
       className="shrink-0"
