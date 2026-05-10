@@ -32,6 +32,7 @@ import {
   getModel,
   MODELS,
   PROVIDERS,
+  providerNeedsKey,
   type ModelId,
   type ProviderId,
 } from "../config";
@@ -243,7 +244,7 @@ function ModelDropdown() {
       <DropdownMenuContent align="end" className="min-w-[240px]">
         {PROVIDERS.map((p) => {
           const models = MODELS.filter((m) => m.provider === p.id);
-          const hasKey = !!apiKeys[p.id];
+          const hasKey = providerNeedsKey(p.id) ? !!apiKeys[p.id] : true;
           return (
             <div key={p.id} className="px-1 pt-1.5 first:pt-1">
               <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[9.5px] font-medium tracking-wide text-muted-foreground uppercase">
