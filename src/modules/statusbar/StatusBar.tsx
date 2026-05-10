@@ -4,9 +4,11 @@ import {
   AiStatusBarControls,
 } from "@/modules/ai/components/AiStatusBarControls";
 import { useChatStore } from "@/modules/ai";
+import type { SavedTerminalCommand } from "@/modules/terminal";
 import { Globe02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CwdBreadcrumb } from "./CwdBreadcrumb";
+import { SavedCommandsMenu } from "./SavedCommandsMenu";
 
 type Props = {
   cwd: string | null;
@@ -19,6 +21,10 @@ type Props = {
   /** When set, render a one-click "Open preview" chip pointing at this URL. */
   detectedPreviewUrl?: string | null;
   onOpenPreview?: () => void;
+  savedCommands: SavedTerminalCommand[];
+  onPickSavedCommand: (command: SavedTerminalCommand) => void;
+  onToggleSavedCommandPin: (command: SavedTerminalCommand) => void;
+  onManageSavedCommands: () => void;
 };
 
 export function StatusBar({
@@ -30,6 +36,10 @@ export function StatusBar({
   hasComposer,
   detectedPreviewUrl,
   onOpenPreview,
+  savedCommands,
+  onPickSavedCommand,
+  onToggleSavedCommandPin,
+  onManageSavedCommands,
 }: Props) {
   const panelOpen = useChatStore((s) => s.panelOpen);
   const openPanel = useChatStore((s) => s.openPanel);
@@ -59,6 +69,12 @@ export function StatusBar({
             </span>
           </button>
         ) : null}
+        <SavedCommandsMenu
+          commands={savedCommands}
+          onPick={onPickSavedCommand}
+          onTogglePin={onToggleSavedCommandPin}
+          onManage={onManageSavedCommands}
+        />
         <AgentStatusPill onClick={onOpenMini} />
         {panelOpen && hasComposer ? (
           <AiStatusBarControls />

@@ -50,6 +50,7 @@ import {
   type TerminalPaneHandle,
   type TeraxOpenInput,
 } from "@/modules/terminal";
+import { useSavedTerminalCommandsStore } from "@/modules/terminal/store/savedCommandsStore";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { homeDir } from "@tauri-apps/api/path";
@@ -143,6 +144,12 @@ export default function App() {
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
   const hasComposer = hasAnyKey(apiKeys);
+  const savedTerminalCommands = useSavedTerminalCommandsStore(
+    (s) => s.commands,
+  );
+  const upsertSavedTerminalCommand = useSavedTerminalCommandsStore(
+    (s) => s.upsert,
+  );
 
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
@@ -180,6 +187,7 @@ export default function App() {
     void hydrateSessions();
     void useAgentsStore.getState().hydrate();
     void useSnippetsStore.getState().hydrate();
+    void useSavedTerminalCommandsStore.getState().hydrate();
   }, [hydrateSessions]);
 
   const activeTab = tabs.find((t) => t.id === activeId);
@@ -452,6 +460,67 @@ export default function App() {
       }, 80);
     },
     [newTab],
+  );
+
+  const writeCommandWhenPromptIsReady = useCallback(
+    (getLeafId: () => number | null, text: string) => {
+      let tries = 0;
+      const maxTries = 60;
+
+      const attempt = () => {
+        const leafId = getLeafId();
+        const term = leafId === null ? null : terminalRefs.current.get(leafId);
+        if (!term) {
+          tries += 1;
+          if (tries < maxTries) window.setTimeout(attempt, 50);
+          return;
+        }
+
+        tries += 1;
+        if (!term.isAtPrompt() && tries < maxTries) {
+          window.setTimeout(attempt, 50);
+          return;
+        }
+
+        term.focus();
+        term.write(text);
+      };
+
+      window.setTimeout(attempt, 0);
+    },
+    [],
+  );
+
+  const insertSavedTerminalCommand = useCallback(
+    (command: string) => {
+      const text = command.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+      if (!text) return;
+
+      const active = tabs.find((x) => x.id === activeId);
+      if (active?.kind === "terminal") {
+        const term = terminalRefs.current.get(active.activeLeafId);
+        if (term?.isAtPrompt()) {
+          window.setTimeout(() => {
+            term.focus();
+            term.write(text);
+          }, 20);
+          return;
+        }
+      }
+
+      const tabId = newTab(inheritedCwdForNewTab());
+      writeCommandWhenPromptIsReady(() => {
+        const tab = tabsRef.current.find((x) => x.id === tabId);
+        return tab?.kind === "terminal" ? tab.activeLeafId : null;
+      }, text);
+    },
+    [
+      activeId,
+      inheritedCwdForNewTab,
+      newTab,
+      tabs,
+      writeCommandWhenPromptIsReady,
+    ],
   );
 
   const handleOpenFile = useCallback(
@@ -842,6 +911,17 @@ export default function App() {
             onOpenPreview={() => {
               if (detectedPreviewUrl) openPreviewTab(detectedPreviewUrl);
             }}
+            savedCommands={savedTerminalCommands}
+            onPickSavedCommand={(command) =>
+              insertSavedTerminalCommand(command.command)
+            }
+            onToggleSavedCommandPin={(command) =>
+              upsertSavedTerminalCommand({
+                ...command,
+                pinned: !command.pinned,
+              })
+            }
+            onManageSavedCommands={() => void openSettingsWindow("commands")}
           />
 
           {hasComposer ? (

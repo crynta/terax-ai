@@ -14,24 +14,38 @@ export function registerCwdHandler(
 
 export type PromptTracker = {
   getMarker: () => IMarker | null;
+  isAtPrompt: () => boolean;
+  markInput: (data: string) => void;
   dispose: () => void;
 };
 
 export function registerPromptTracker(term: Terminal): PromptTracker {
   let marker: IMarker | null = null;
+  let state: "unknown" | "prompt" | "busy" = "unknown";
   const d = term.parser.registerOscHandler(133, (data) => {
-    if (data.startsWith("A")) {
+    const code = data[0];
+    if (code === "A") {
       marker?.dispose();
       marker = term.registerMarker(0);
+      state = "unknown";
+    } else if (code === "B") {
+      state = "prompt";
+    } else if (code === "C" || code === "D") {
+      state = "busy";
     }
     return true;
   });
   return {
     getMarker: () => (marker && !marker.isDisposed ? marker : null),
+    isAtPrompt: () => state === "prompt",
+    markInput: (data) => {
+      if (state === "prompt" && /[\r\n]/.test(data)) state = "busy";
+    },
     dispose: () => {
       d.dispose();
       marker?.dispose();
       marker = null;
+      state = "unknown";
     },
   };
 }

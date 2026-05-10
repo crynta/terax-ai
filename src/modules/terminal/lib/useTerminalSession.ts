@@ -11,6 +11,7 @@ import {
   registerCwdHandler,
   registerPromptTracker,
   registerTeraxOpenHandler,
+  type PromptTracker,
   type TeraxOpenInput,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
@@ -37,6 +38,7 @@ type Session = {
   term: Terminal;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
+  prompt: PromptTracker | null;
   pty: PtySession | null;
   cleanups: (() => void)[];
   callbacks: Callbacks;
@@ -90,6 +92,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     term,
     fitAddon,
     searchAddon,
+    prompt: null,
     pty: null,
     cleanups: [],
     callbacks: {},
@@ -122,7 +125,10 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   });
 
   // Routes through session.pty so respawn doesn't need to rebind.
-  term.onData((data) => session.pty?.write(data));
+  term.onData((data) => {
+    session.prompt?.markInput(data);
+    session.pty?.write(data);
+  });
 
   // PTY is opened lazily in attachSession after the first fit, so the shell
   // starts with the real terminal size and never flushes a 80x24-sized
@@ -132,7 +138,11 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     if (session.disposed) return;
 
     const prompt = registerPromptTracker(term);
-    session.cleanups.push(prompt.dispose);
+    session.prompt = prompt;
+    session.cleanups.push(() => {
+      prompt.dispose();
+      session.prompt = null;
+    });
     session.cleanups.push(
       registerCwdHandler(term, (cwd) => {
         session.lastCwd = cwd;
@@ -463,13 +473,17 @@ export function useTerminalSession({
     return sel.length > 0 ? sel : null;
   }, [leafId]);
 
+  const isAtPrompt = useCallback((): boolean => {
+    return sessions.get(leafId)?.prompt?.isAtPrompt() ?? false;
+  }, [leafId]);
+
   const applyTheme = useCallback(() => {
     const s = sessions.get(leafId);
     if (!s) return;
     s.term.options.theme = buildTerminalTheme();
   }, [leafId]);
 
-  return { write, focus, getBuffer, getSelection, applyTheme };
+  return { write, focus, getBuffer, getSelection, isAtPrompt, applyTheme };
 }
 
 function isCtrlBackspace(event: KeyboardEvent): boolean {
