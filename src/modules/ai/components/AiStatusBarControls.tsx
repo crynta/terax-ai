@@ -14,6 +14,7 @@ import {
   Add01Icon,
   ArrowDown01Icon,
   ArrowUpIcon,
+  DeepseekIcon,
   ChatGptIcon,
   ClaudeIcon,
   ComputerIcon,
@@ -45,6 +46,7 @@ const PROVIDER_ICON = {
   xai: Grok02Icon,
   cerebras: CpuIcon,
   groq: FlashIcon,
+  deepseek: DeepseekIcon,
   lmstudio: ComputerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
