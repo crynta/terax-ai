@@ -17,10 +17,13 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 );
 
 // Window starts hidden (per tauri.conf.json) so users never see a transparent
-// shadow-only frame before React paints. Two rAFs ensures first content frame
-// has been committed before we reveal.
-requestAnimationFrame(() => {
-  requestAnimationFrame(() => {
-    void getCurrentWindow().show();
-  });
-});
+// shadow-only frame before React paints. Use setTimeout — rAF is throttled
+// while the window is hidden and would never fire.
+const showWindow = () => {
+  getCurrentWindow()
+    .show()
+    .catch((e) => console.error("window.show failed:", e));
+};
+setTimeout(showWindow, 50);
+// Safety net: if the first show somehow fails to take effect, force again.
+setTimeout(showWindow, 500);
