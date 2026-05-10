@@ -405,7 +405,12 @@ export function FileExplorer({
               </div>
             </ScrollArea>
           </ContextMenuTrigger>
-          <ContextMenuContent className={COMPACT_CONTENT}>
+          <ContextMenuContent 
+            className={COMPACT_CONTENT}
+            onCloseAutoFocus={(e) => {
+              if (tree.renaming || tree.pendingCreate) e.preventDefault();
+            }}
+          >
             {onRevealInTerminal && (
               <ContextMenuItem
                 className={COMPACT_ITEM}
