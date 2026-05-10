@@ -13,13 +13,22 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useComposer, type FileAttachment } from "../lib/composer";
+import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
 import type { Snippet } from "../lib/snippets";
+import { useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { SnippetPickerContent, type PickerItem } from "./SnippetPicker";
+import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 
 type SnippetTrigger = {
+  start: number;
+  end: number;
+  query: string;
+};
+
+type FileTrigger = {
   start: number;
   end: number;
   query: string;
@@ -44,12 +53,32 @@ function detectSnippetTrigger(
   return null;
 }
 
+function detectFileTrigger(
+  value: string,
+  caret: number,
+): FileTrigger | null {
+  for (let i = caret - 1; i >= 0; i--) {
+    const ch = value[i];
+    if (ch === "@") {
+      const prev = i === 0 ? " " : value[i - 1];
+      if (!/\s/.test(prev)) return null;
+      const slice = value.slice(i + 1, caret);
+      return { start: i, end: caret, query: slice };
+    }
+    if (/\s/.test(ch)) return null;
+  }
+  return null;
+}
+
 export function AiInputBar() {
   const c = useComposer();
   const snippets = useSnippetsStore((s) => s.snippets);
+  const workspaceRoot = useChatStore((s) => s.live.getWorkspaceRoot());
 
   const [trigger, setTrigger] = useState<SnippetTrigger | null>(null);
+  const [fileTrigger, setFileTrigger] = useState<FileTrigger | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const workspaceFiles = useWorkspaceFiles(workspaceRoot);
 
   useEffect(() => {
     autoresize(c.textareaRef.current);
@@ -59,9 +88,12 @@ export function AiInputBar() {
     const el = c.textareaRef.current;
     if (!el) {
       setTrigger(null);
+      setFileTrigger(null);
       return;
     }
-    setTrigger(detectSnippetTrigger(c.value, el.selectionStart ?? 0));
+    const caret = el.selectionStart ?? 0;
+    setTrigger(detectSnippetTrigger(c.value, caret));
+    setFileTrigger(detectFileTrigger(c.value, caret));
   };
 
   useEffect(updateTrigger, [c.value, c.textareaRef]);
@@ -86,11 +118,17 @@ export function AiInputBar() {
     return [...cmdItems, ...snipItems];
   }, [trigger, snippets]);
 
-  useEffect(() => {
-    if (activeIndex >= filteredItems.length) setActiveIndex(0);
-  }, [filteredItems.length, activeIndex]);
+  const filteredFiles = useMemo<string[]>(() => {
+    if (!fileTrigger) return [];
+    const q = fileTrigger.query.toLowerCase();
+    return workspaceFiles.filter((f) => f.toLowerCase().includes(q));
+  }, [fileTrigger, workspaceFiles]);
 
-  const pickerOpen = trigger !== null;
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [trigger !== null, fileTrigger !== null]);
+
+  const pickerOpen = trigger !== null || fileTrigger !== null;
 
   const onPickItem = (item: PickerItem) => {
     if (!trigger) return;
@@ -118,7 +156,31 @@ export function AiInputBar() {
     });
   };
 
+  const onPickFile = async (filePath: string) => {
+    if (!fileTrigger || !workspaceRoot) return;
+    const before = c.value.slice(0, fileTrigger.start);
+    const after = c.value.slice(fileTrigger.end);
+    c.setValue(`${before}${after}`);
+    setFileTrigger(null);
+    setActiveIndex(0);
+    const fullPath = workspaceRoot.endsWith("/")
+      ? `${workspaceRoot}${filePath}`
+      : `${workspaceRoot}/${filePath}`;
+    await c.attachFileByPath(fullPath);
+    requestAnimationFrame(() => {
+      const el = c.textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(before.length, before.length);
+    });
+  };
+
   const pickActive = () => {
+    if (fileTrigger) {
+      const file = filteredFiles[activeIndex];
+      if (file) void onPickFile(file);
+      return;
+    }
     const it = filteredItems[activeIndex];
     if (it) onPickItem(it);
   };
@@ -164,10 +226,11 @@ export function AiInputBar() {
                 onSelect={updateTrigger}
                 onKeyDown={(e) => {
                   if (pickerOpen) {
+                    const items = fileTrigger ? filteredFiles : filteredItems;
                     if (e.key === "ArrowDown") {
                       e.preventDefault();
                       setActiveIndex((i) =>
-                        Math.min(i + 1, Math.max(0, filteredItems.length - 1)),
+                        Math.min(i + 1, Math.max(0, items.length - 1)),
                       );
                       return;
                     }
@@ -177,7 +240,7 @@ export function AiInputBar() {
                       return;
                     }
                     if (e.key === "Tab" || e.key === "Enter") {
-                      if (filteredItems.length > 0) {
+                      if (items.length > 0) {
                         e.preventDefault();
                         pickActive();
                         return;
@@ -185,7 +248,14 @@ export function AiInputBar() {
                     }
                     if (e.key === "Escape") {
                       e.preventDefault();
-                      setTrigger(null);
+                      if (fileTrigger) {
+                        const before = c.value.slice(0, fileTrigger.start);
+                        const after = c.value.slice(fileTrigger.end);
+                        c.setValue(`${before}${after}`);
+                        setFileTrigger(null);
+                      } else {
+                        setTrigger(null);
+                      }
                       return;
                     }
                   }
@@ -194,7 +264,7 @@ export function AiInputBar() {
                     c.submit();
                   }
                 }}
-                placeholder="Ask Terax anything   -   # for snippets and commands"
+                placeholder="Ask Terax anything   -   # for snippets and commands, @ for files"
                 rows={1}
                 disabled={c.isBusy}
                 className={cn(
@@ -205,12 +275,40 @@ export function AiInputBar() {
               <AgentSwitcher />
             </div>
           </PopoverAnchor>
-          <SnippetPickerContent
-            items={filteredItems}
-            activeIndex={activeIndex}
-            onPick={onPickItem}
-            onHover={setActiveIndex}
-          />
+          {fileTrigger ? (
+            <div className="max-h-60 overflow-y-auto rounded-md border border-border/60 bg-card p-1 shadow-lg">
+              {filteredFiles.length === 0 ? (
+                <div className="px-3 py-2.5 text-[11px] text-muted-foreground">
+                  No matching files in workspace root
+                </div>
+              ) : (
+                filteredFiles.map((fileName, idx) => (
+                  <button
+                    key={fileName}
+                    type="button"
+                    onClick={() => void onPickFile(fileName)}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs",
+                      idx === activeIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-muted/50",
+                    )}
+                  >
+                    <img src={fileIconUrl(fileName)} alt="" className="size-4 shrink-0" />
+                    <span className="truncate">{fileName}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          ) : (
+            <SnippetPickerContent
+              items={filteredItems}
+              activeIndex={activeIndex}
+              onPick={onPickItem}
+              onHover={setActiveIndex}
+            />
+          )}
         </Popover>
 
         <AnimatePresence initial={false}>
