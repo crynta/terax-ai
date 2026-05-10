@@ -233,7 +233,7 @@ function CurrentSegmentDropdown({
             <DropdownMenuItem
               key={name}
               onSelect={() =>
-                onCd(path === "/" ? `/${name}` : `${path}/${name}`)
+                onCd(path.endsWith("/") ? `${path}${name}` : `${path}/${name}`)
               }
             >
               <HugeiconsIcon

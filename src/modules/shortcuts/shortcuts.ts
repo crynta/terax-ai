@@ -1,10 +1,7 @@
+import { IS_MAC, MOD_PROP } from "@/lib/platform";
+
 /**
- * Single source of truth for keyboard shortcuts. Each entry carries:
- * - `keys`: display tokens for the cheat-sheet dialog.
- * - `match`: predicate over the live KeyboardEvent used by `useGlobalShortcuts`.
- *
- * Keeping both on the same record means the dialog can never lie about a
- * binding the runtime no longer matches (or vice-versa).
+ * Single source of truth for keyboard shortcuts.
  */
 
 export type ShortcutId =
@@ -19,105 +16,104 @@ export type ShortcutId =
   | "ai.toggle"
   | "ai.askSelection"
   | "shortcuts.open"
+  | "settings.open"
   | "sidebar.toggle";
 
 export type ShortcutGroup = "General" | "Tabs" | "Search" | "AI" | "View";
 
+export type KeyBinding = {
+  key: string;
+  ctrl?: boolean;
+  shift?: boolean;
+  alt?: boolean;
+  meta?: boolean;
+};
+
 export type Shortcut = {
   id: ShortcutId;
   label: string;
-  keys: string[];
   group: ShortcutGroup;
-  match: (e: KeyboardEvent) => boolean;
+  defaultBindings: KeyBinding[];
 };
-
-const isMod = (e: KeyboardEvent) => e.metaKey || e.ctrlKey;
 
 export const SHORTCUTS: Shortcut[] = [
   {
+    id: "settings.open",
+    label: "Open settings",
+    group: "General",
+    defaultBindings: [{ [MOD_PROP]: true, key: "," }],
+  },
+  {
     id: "shortcuts.open",
     label: "Show keyboard shortcuts",
-    keys: ["⌘", "K"],
     group: "General",
-    match: (e) => isMod(e) && e.key.toLowerCase() === "k",
+    defaultBindings: [{ [MOD_PROP]: true, key: "k" }],
   },
   {
     id: "tab.new",
     label: "New tab",
-    keys: ["⌘", "T"],
     group: "Tabs",
-    match: (e) => isMod(e) && e.key.toLowerCase() === "t",
+    defaultBindings: [{ [MOD_PROP]: true, key: "t" }],
   },
   {
     id: "tab.newPreview",
     label: "New preview tab",
-    keys: ["⌘", "P"],
     group: "Tabs",
-    match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "p",
+    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
   },
   {
     id: "tab.newEditor",
     label: "New editor tab",
-    keys: ["⌘", "E"],
     group: "Tabs",
-    match: (e) => isMod(e) && !e.shiftKey && e.key.toLowerCase() === "e",
+    defaultBindings: [{ [MOD_PROP]: true, key: "e" }],
   },
   {
     id: "tab.close",
     label: "Close tab",
-    keys: ["⌘", "W"],
     group: "Tabs",
-    match: (e) => isMod(e) && e.key.toLowerCase() === "w",
+    defaultBindings: [{ [MOD_PROP]: true, key: "w" }],
   },
   {
     id: "tab.next",
     label: "Next tab",
-    keys: ["⌃", "⇥"],
     group: "Tabs",
-    // Ctrl+Tab is conventionally Ctrl-only on every platform (including macOS).
-    match: (e) => e.ctrlKey && !e.shiftKey && e.key === "Tab",
+    defaultBindings: [{ ctrl: true, key: "Tab" }],
   },
   {
     id: "tab.prev",
     label: "Previous tab",
-    keys: ["⌃", "⇧", "⇥"],
     group: "Tabs",
-    match: (e) => e.ctrlKey && e.shiftKey && e.key === "Tab",
+    defaultBindings: [{ ctrl: true, shift: true, key: "Tab" }],
   },
   {
     id: "tab.selectByIndex",
     label: "Jump to tab 1–9",
-    keys: ["⌘", "1…9"],
     group: "Tabs",
-    match: (e) => isMod(e) && /^[1-9]$/.test(e.key),
+    defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
   },
   {
     id: "search.focus",
     label: "Find in terminal",
-    keys: ["⌘", "F"],
     group: "Search",
-    match: (e) => isMod(e) && e.key.toLowerCase() === "f",
+    defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
   },
   {
     id: "ai.toggle",
     label: "Toggle AI agent",
-    keys: ["⌘", "I"],
     group: "AI",
-    match: (e) => isMod(e) && e.key.toLowerCase() === "i",
+    defaultBindings: [{ [MOD_PROP]: true, key: "i" }],
   },
   {
     id: "ai.askSelection",
     label: "Ask AI about selection",
-    keys: ["⌘", "L"],
     group: "AI",
-    match: (e) => isMod(e) && e.key.toLowerCase() === "l",
+    defaultBindings: [{ [MOD_PROP]: true, key: "l" }],
   },
   {
     id: "sidebar.toggle",
     label: "Toggle file explorer",
-    keys: ["⌘", "B"],
     group: "View",
-    match: (e) => isMod(e) && e.key.toLowerCase() === "b",
+    defaultBindings: [{ [MOD_PROP]: true, key: "b" }],
   },
 ];
 
@@ -128,3 +124,55 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "Search",
   "AI",
 ];
+
+/**
+ * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
+ */
+export function matchBinding(e: KeyboardEvent, binding: KeyBinding, id?: ShortcutId): boolean {
+  const eventKey = e.key.toLowerCase();
+  const bindingKey = binding.key.toLowerCase();
+
+  // Special case for Jump to Tab 1-9
+  if (id === "tab.selectByIndex") {
+    if (!/^[1-9]$/.test(e.key)) return false;
+  } else if (eventKey !== bindingKey) {
+    return false;
+  }
+
+  return (
+    !!e.ctrlKey === !!binding.ctrl &&
+    !!e.shiftKey === !!binding.shift &&
+    !!e.altKey === !!binding.alt &&
+    !!e.metaKey === !!binding.meta
+  );
+}
+
+/**
+ * Display helpers
+ */
+export function getBindingTokens(binding?: KeyBinding): string[] {
+  if (!binding) return [];
+  const tokens: string[] = [];
+  if (IS_MAC) {
+    if (binding.ctrl) tokens.push("⌃");
+    if (binding.alt) tokens.push("⌥");
+    if (binding.shift) tokens.push("⇧");
+    if (binding.meta) tokens.push("⌘");
+  } else {
+    if (binding.ctrl) tokens.push("Ctrl");
+    if (binding.alt) tokens.push("Alt");
+    if (binding.shift) tokens.push("Shift");
+    if (binding.meta) tokens.push("Win");
+  }
+
+  let keyLabel = binding.key;
+  if (keyLabel === " ") keyLabel = "Space";
+  else if (keyLabel === "ArrowUp") keyLabel = "↑";
+  else if (keyLabel === "ArrowDown") keyLabel = "↓";
+  else if (keyLabel === "ArrowLeft") keyLabel = "←";
+  else if (keyLabel === "ArrowRight") keyLabel = "→";
+  else if (keyLabel.length === 1) keyLabel = keyLabel.toUpperCase();
+
+  tokens.push(keyLabel);
+  return tokens;
+}

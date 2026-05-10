@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { EditorPaneHandle } from "@/modules/editor";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
 import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -10,6 +12,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -41,6 +44,25 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     // In normal mode the field is always present.
     const [openInCompact, setOpenInCompact] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+    const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+
+    const shortcutText = useMemo(() => {
+      const s = SHORTCUTS.find((s) => s.id === "search.focus");
+      if (!s) return "";
+      const bindings = userShortcuts["search.focus"] || s.defaultBindings;
+      if (!bindings || bindings.length === 0) return "";
+      const tokens = getBindingTokens(bindings[0]);
+      return tokens.join("");
+    }, [userShortcuts]);
+
+    const placeholder = useMemo(() => {
+      const base = target?.kind === "editor" ? "Search in file" : "Search";
+      return shortcutText ? `${base} (${shortcutText})` : base;
+    }, [target?.kind, shortcutText]);
+
+    const tooltipTitle = useMemo(() => {
+      return shortcutText ? `Search (${shortcutText})` : "Search";
+    }, [shortcutText]);
 
     const expanded = !compact || openInCompact;
 
@@ -115,9 +137,7 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
               <Input
                 ref={inputRef}
                 value={q}
-                placeholder={
-                  target?.kind === "editor" ? "Search in file" : "Search"
-                }
+                placeholder={placeholder}
                 className="h-7 w-full bg-muted/80 pr-7 pl-7 text-xs placeholder:text-muted-foreground/70 focus-visible:ring-0"
                 onChange={(e) => {
                   const next = e.target.value;
@@ -176,7 +196,7 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
                 size="icon"
                 className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={focus}
-                title="Search (⌘F)"
+                title={tooltipTitle}
               >
                 <HugeiconsIcon
                   icon={Search01Icon}

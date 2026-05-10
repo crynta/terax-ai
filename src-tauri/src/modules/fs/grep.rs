@@ -1,13 +1,15 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::sinks::UTF8;
 use grep_searcher::{BinaryDetection, SearcherBuilder};
-use ignore::WalkBuilder;
+use ignore::{WalkBuilder, WalkState};
 use serde::Serialize;
+
+use super::to_canon;
 
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 200;
@@ -76,66 +78,79 @@ pub fn fs_grep(
         .ignore(true)
         .parents(true)
         .follow_links(false)
-        .build();
+        .build_parallel();
 
-    let hits: Arc<std::sync::Mutex<Vec<GrepHit>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let hits: Arc<Mutex<Vec<GrepHit>>> = Arc::new(Mutex::new(Vec::new()));
     let scanned = Arc::new(AtomicUsize::new(0));
-    let truncated = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let truncated = Arc::new(AtomicBool::new(false));
 
-    for dent in walker.flatten() {
-        if truncated.load(Ordering::Relaxed) {
-            break;
-        }
-        if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
-            continue;
-        }
-        let path = dent.path();
-        let rel = match path.strip_prefix(&root_path) {
-            Ok(r) => r.to_string_lossy().into_owned(),
-            Err(_) => continue,
-        };
-        if let Some(set) = globs.as_ref() {
-            if !set.is_match(&rel) {
-                continue;
+    walker.run(|| {
+        let matcher = matcher.clone();
+        let globs = globs.clone();
+        let hits = hits.clone();
+        let scanned = scanned.clone();
+        let truncated = truncated.clone();
+        let root_path = root_path.clone();
+
+        Box::new(move |dent_res| {
+            if truncated.load(Ordering::Relaxed) {
+                return WalkState::Quit;
             }
-        }
-        if let Ok(meta) = std::fs::metadata(path) {
-            if meta.len() > FILE_SIZE_CAP {
-                continue;
+            let dent = match dent_res {
+                Ok(d) => d,
+                Err(_) => return WalkState::Continue,
+            };
+            if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                return WalkState::Continue;
             }
-        }
-
-        scanned.fetch_add(1, Ordering::Relaxed);
-
-        let abs = path.to_string_lossy().into_owned();
-        let rel_clone = rel.clone();
-        let hits_ref = hits.clone();
-        let truncated_ref = truncated.clone();
-        let mut searcher = SearcherBuilder::new()
-            .binary_detection(BinaryDetection::quit(b'\x00'))
-            .line_number(true)
-            .build();
-
-        let _ = searcher.search_path(
-            &matcher,
-            path,
-            UTF8(|line_num, text| {
-                let line_text = text.trim_end_matches('\n').to_string();
-                let mut guard = hits_ref.lock().unwrap();
-                if guard.len() >= cap {
-                    truncated_ref.store(true, Ordering::Relaxed);
-                    return Ok(false);
+            let path = dent.path();
+            let rel = match path.strip_prefix(&root_path) {
+                Ok(r) => to_canon(r),
+                Err(_) => return WalkState::Continue,
+            };
+            if let Some(set) = globs.as_ref() {
+                if !set.is_match(&rel) {
+                    return WalkState::Continue;
                 }
-                guard.push(GrepHit {
-                    path: abs.clone(),
-                    rel: rel_clone.clone(),
-                    line: line_num,
-                    text: line_text,
-                });
-                Ok(true)
-            }),
-        );
-    }
+            }
+            if let Ok(meta) = std::fs::metadata(path) {
+                if meta.len() > FILE_SIZE_CAP {
+                    return WalkState::Continue;
+                }
+            }
+
+            scanned.fetch_add(1, Ordering::Relaxed);
+
+            let abs = to_canon(path);
+            let rel_clone = rel.clone();
+            let mut searcher = SearcherBuilder::new()
+                .binary_detection(BinaryDetection::quit(b'\x00'))
+                .line_number(true)
+                .build();
+
+            let _ = searcher.search_path(
+                &matcher,
+                path,
+                UTF8(|line_num, text| {
+                    let line_text = text.trim_end_matches('\n').to_string();
+                    let mut guard = hits.lock().unwrap();
+                    if guard.len() >= cap {
+                        truncated.store(true, Ordering::Relaxed);
+                        return Ok(false);
+                    }
+                    guard.push(GrepHit {
+                        path: abs.clone(),
+                        rel: rel_clone.clone(),
+                        line: line_num,
+                        text: line_text,
+                    });
+                    Ok(true)
+                }),
+            );
+
+            WalkState::Continue
+        })
+    });
 
     let final_hits = Arc::try_unwrap(hits)
         .map(|m| m.into_inner().unwrap())
@@ -202,14 +217,14 @@ pub fn fs_glob(
         }
         let path = dent.path();
         let rel = match path.strip_prefix(&root_path) {
-            Ok(r) => r.to_string_lossy().into_owned(),
+            Ok(r) => to_canon(r),
             Err(_) => continue,
         };
         if !set.is_match(&rel) {
             continue;
         }
         hits.push(GlobHit {
-            path: path.to_string_lossy().into_owned(),
+            path: to_canon(path),
             rel,
         });
     }

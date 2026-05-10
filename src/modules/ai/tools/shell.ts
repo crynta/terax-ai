@@ -38,8 +38,14 @@ export function buildShellTools(ctx: ToolContext) {
         const sid = ctx.getSessionId();
         if (!sid) return { error: "no active chat session" };
         try {
-          const shellId = await getSessionShell(sid, ctx.getCwd());
-          const r = await native.shellSessionRun(shellId, command, timeout_secs);
+          const cwd = ctx.getCwd();
+          const shellId = await getSessionShell(sid, cwd);
+          const r = await native.shellSessionRun(
+            shellId,
+            command,
+            cwd,
+            timeout_secs,
+          );
           return {
             command,
             stdout: r.stdout,

@@ -1,4 +1,5 @@
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { MOD_KEY } from "@/lib/platform";
 import { motion } from "motion/react";
 import { useEffect } from "react";
 
@@ -44,7 +45,7 @@ export function SelectionAskAi({ x, y, onAsk, onDismiss }: Props) {
       >
         <span>Ask Terax</span>
         <KbdGroup>
-          <Kbd className="h-4 min-w-4 px-1 text-[10px]">⌘L</Kbd>
+          <Kbd className="h-4 min-w-4 px-1 text-[10px]">{MOD_KEY}L</Kbd>
         </KbdGroup>
       </button>
     </motion.div>
