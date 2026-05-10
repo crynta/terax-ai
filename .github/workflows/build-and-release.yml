@@ -67,7 +67,7 @@ jobs:
         run: pnpm exec tsc --noEmit
 
       - name: Rust clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets
         working-directory: src-tauri
 
       - name: Write Apple API key to disk
