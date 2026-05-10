@@ -56,7 +56,7 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     const userShortcuts = usePreferencesStore((s) => s.shortcuts);
 
     const shortcutText = useMemo(() => {
-      const s = SHORTCUTS.find((s) => s.id === "search.focus");
+      const s = SHORTCUTS.find((sc) => sc.id === "search.focus");
       if (!s) return "";
       const bindings = userShortcuts["search.focus"] || s.defaultBindings;
       if (!bindings || bindings.length === 0) return "";

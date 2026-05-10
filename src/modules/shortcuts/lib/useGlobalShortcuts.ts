@@ -32,13 +32,14 @@ export function useGlobalShortcuts(
         const isMatch = bindings.some((b) => matchBinding(e, b, s.id));
         if (!isMatch) continue;
 
-        if (options?.isDisabled?.(s.id, e)) return;
-        const h = handlers[s.id];
+        if (latest.current.options?.isDisabled?.(s.id, e)) return;
+        const h = latest.current.handlers[s.id];
         if (!h) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         h(e);
         return;
+      }
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () =>
