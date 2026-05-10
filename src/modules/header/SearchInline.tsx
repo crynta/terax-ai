@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { EditorPaneHandle } from "@/modules/editor";
-import { useShortcutLabel } from "@/modules/shortcuts/lib/useShortcutLabel";
+import { useShortcutLabel } from "@/modules/shortcuts";
 import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -44,7 +44,7 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     const inputRef = useRef<HTMLInputElement>(null);
     const placeholder = useShortcutLabel(
       "search.focus",
-      target?.kind === "editor" ? "Search in file" : "Search",
+      target?.kind === "editor" ? "Search in file" : "Search"
     );
     const tooltipTitle = useShortcutLabel("search.focus", "Search");
 
@@ -193,5 +193,5 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
         </AnimatePresence>
       </motion.div>
     );
-  },
+  }
 );

@@ -5,6 +5,7 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import { setShortcuts } from "@/modules/settings/store";
 import {
   getBindingTokens,
+  resolveShortcutBindings,
   SHORTCUTS,
   SHORTCUT_GROUPS,
   type KeyBinding,
@@ -180,8 +181,7 @@ function ShortcutRow({
   onReset: () => void;
   userBindings?: KeyBinding[];
 }) {
-  const bindings =
-    userBindings !== undefined ? userBindings : shortcut.defaultBindings;
+  const bindings = resolveShortcutBindings(shortcut.id, userBindings);
   const isModified = userBindings !== undefined;
   const hasBindings = bindings && bindings.length > 0;
 

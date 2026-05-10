@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
-import { useShortcutLabel } from "@/modules/shortcuts/lib/useShortcutLabel";
+import { useShortcutLabel } from "@/modules/shortcuts";
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
 import {
@@ -53,7 +53,10 @@ export function Header({
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
-  const shortcutLabel = useShortcutLabel("shortcuts.open", "Keyboard shortcuts");
+  const shortcutLabel = useShortcutLabel(
+    "shortcuts.open",
+    "Keyboard shortcuts"
+  );
 
   useEffect(() => {
     const el = rootRef.current;
