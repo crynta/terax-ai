@@ -191,8 +191,9 @@ function OpenAICompatibleBlock() {
     setTestStatus("testing");
     try {
       const url = urlDraft.replace(/\/$/, "") + "/models";
-      const status = await invoke<number>("http_ping", { url });
-      setTestStatus(status >= 200 && status < 400 ? "ok" : "fail");
+      await invoke<number>("http_ping", { url });
+      // Any HTTP response (including 401/403) means the server is reachable.
+      setTestStatus("ok");
     } catch {
       setTestStatus("fail");
     }
