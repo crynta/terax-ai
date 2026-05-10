@@ -7,6 +7,7 @@ import {
   GoogleGeminiIcon,
   Grok02Icon,
   CpuIcon,
+  DeepseekIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -17,6 +18,7 @@ const ICON_BY_PROVIDER = {
   xai: Grok02Icon,
   cerebras: CpuIcon,
   groq: FlashIcon,
+  deepseek: DeepseekIcon,
   lmstudio: ComputerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 

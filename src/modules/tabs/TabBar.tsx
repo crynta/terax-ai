@@ -6,6 +6,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import {
@@ -144,7 +145,7 @@ export function TabBar({
                 strokeWidth={1.75}
               />
               <span className="flex-1">Terminal</span>
-              <span className="text-xs text-muted-foreground">⌘T</span>
+              <span className="text-xs text-muted-foreground">{MOD_KEY}T</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewEditor()}>
               <HugeiconsIcon
@@ -153,12 +154,12 @@ export function TabBar({
                 strokeWidth={1.75}
               />
               <span className="flex-1">Editor</span>
-              <span className="text-xs text-muted-foreground">⌘E</span>
+              <span className="text-xs text-muted-foreground">{MOD_KEY}E</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewPreview()}>
               <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
               <span className="flex-1">Preview</span>
-              <span className="text-xs text-muted-foreground">⌘P</span>
+              <span className="text-xs text-muted-foreground">{MOD_KEY}P</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -207,6 +208,6 @@ function labelFor(t: Tab): string {
   if (t.kind === "preview") return t.title;
   if (t.kind === "ai-diff") return t.title;
   if (!t.cwd) return t.title;
-  const parts = t.cwd.split("/").filter(Boolean);
+  const parts = t.cwd.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "/";
 }

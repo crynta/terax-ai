@@ -50,7 +50,7 @@ export function buildWordlistTools(ctx: ToolContext) {
           const safety = checkShellCommand(cmd);
           if (!safety.ok) continue;
           try {
-            const r = await native.shellSessionRun(shellId, cmd, 5);
+            const r = await native.shellSessionRun(shellId, cmd, null, 5);
             if (r.stdout.trim() === "EXISTS") {
               return { name, path: p, exists: true };
             }
@@ -76,7 +76,7 @@ export function buildWordlistTools(ctx: ToolContext) {
         const safety = checkShellCommand(cmd);
         if (!safety.ok) return { error: safety.reason };
         try {
-          const r = await native.shellSessionRun(shellId, cmd, 15);
+          const r = await native.shellSessionRun(shellId, cmd, null, 15);
           if (r.exit_code !== 0) return { error: "hashid failed: " + (r.stderr || r.stdout) };
           const parsed = JSON.parse(r.stdout);
           return { hash: hash.slice(0, 40), types: parsed };

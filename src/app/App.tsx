@@ -41,7 +41,7 @@ import {
 } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
 import { useTabs, useWorkspaceCwd } from "@/modules/tabs";
-import { TerminalStack, type TerminalPaneHandle } from "@/modules/terminal";
+import { TerminalStack, type TerminalPaneHandle, type TeraxOpenInput } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { homeDir } from "@tauri-apps/api/path";
@@ -98,8 +98,9 @@ export default function App() {
 
   const [home, setHome] = useState<string | null>(null);
   useEffect(() => {
+    // Forward-slash form so explorerRoot stays equal across home → OSC 7.
     homeDir()
-      .then(setHome)
+      .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
 
@@ -375,7 +376,7 @@ export default function App() {
       const quoted = path.includes(" ")
         ? `'${path.replace(/'/g, `'\\''`)}'`
         : path;
-      term.write(`cd ${quoted}\n`);
+      term.write(`cd ${quoted}\r`);
       term.focus();
     },
     [activeId],
@@ -390,7 +391,7 @@ export default function App() {
         const quoted = path.includes(" ")
           ? `'${path.replace(/'/g, `'\\''`)}'`
           : path;
-        t.write(`cd ${quoted}\n`);
+        t.write(`cd ${quoted}\r`);
         t.focus();
       }, 80);
     },
@@ -464,6 +465,7 @@ export default function App() {
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
+      "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
     }),
     [
@@ -514,6 +516,14 @@ export default function App() {
   const handleTerminalCwd = useCallback(
     (id: number, cwd: string) => updateTab(id, { cwd }),
     [updateTab],
+  );
+
+  const handleTeraxOpen = useCallback(
+    (_tabId: number, input: TeraxOpenInput) => {
+      // Always open in a new tab
+      openFileTab(input.file);
+    },
+    [openFileTab],
   );
 
   const handleEditorDirty = useCallback(
@@ -633,6 +643,7 @@ export default function App() {
                         onSearchReady={handleSearchReady}
                         onCwd={handleTerminalCwd}
                         onDetectedLocalUrl={handleDetectedLocalUrl}
+                        onTeraxOpen={handleTeraxOpen}
                       />
                     </div>
                     <div
@@ -757,10 +768,5 @@ export default function App() {
     </ThemeProvider>
   );
 
-  // Mount the composer provider whenever any provider has a key — independent
-  // of panelOpen — so toggling the panel never re-mounts terminals/editors.
-  if (hasComposer) {
-    return <AiComposerProvider>{shell}</AiComposerProvider>;
-  }
-  return shell;
+  return <AiComposerProvider>{shell}</AiComposerProvider>;
 }

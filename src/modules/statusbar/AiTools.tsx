@@ -6,6 +6,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { MOD_KEY } from "@/lib/platform";
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
@@ -67,7 +68,7 @@ export function AiTools({ aiOpen, canSubmit, onOpenAi, onSubmit }: Props) {
           Open AI Agent
           <KbdGroup>
             <Kbd className="h-4.5 min-w-4.5 px-1">
-              ⌘<span className="font-mono">I</span>
+              {MOD_KEY}<span className="font-mono">I</span>
             </Kbd>
           </KbdGroup>
         </motion.button>

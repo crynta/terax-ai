@@ -65,7 +65,7 @@ export function buildKatanaTools(ctx: ToolContext) {
         if (!sid) return { error: "no active chat session" };
         const shellId = await getSessionShell(sid, ctx.getCwd());
         try {
-          const r = await native.shellSessionRun(shellId, cmd, timeout ?? 120);
+          const r = await native.shellSessionRun(shellId, cmd, null, timeout ?? 120);
           const endpoints = r.stdout.trim().split("\n").filter(Boolean).map((l) => {
             try { return JSON.parse(l); } catch { return { url: l }; }
           });

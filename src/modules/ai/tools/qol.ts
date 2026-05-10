@@ -29,7 +29,7 @@ export function buildQolTools(ctx: ToolContext) {
         const safety = checkShellCommand(cmd);
         if (!safety.ok) return { error: safety.reason };
         try {
-          const r = await native.shellSessionRun(shellId, cmd, 10);
+          const r = await native.shellSessionRun(shellId, cmd, null, 10);
           if (r.stdout.trim() === "NO_VPN") {
             return { connected: false, interface: null, ip: null };
           }
