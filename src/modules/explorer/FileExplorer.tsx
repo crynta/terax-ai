@@ -16,14 +16,11 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ExplorerSearch,
-  type ExplorerSearchHandle,
-} from "./ExplorerSearch";
+import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { FileTreeNode } from "./FileTreeNode";
 import { InlineInput } from "./InlineInput";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
-import { folderIconUrl } from "./lib/iconResolver";
+import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
@@ -133,7 +130,7 @@ export function FileExplorer({
       setSelectedPath(path);
       requestAnimationFrame(() => {
         const el = listRef.current?.querySelector<HTMLElement>(
-          `[data-fs-path="${CSS.escape(path)}"]`,
+          `[data-fs-path="${CSS.escape(path)}"]`
         );
         el?.scrollIntoView({ block: "nearest" });
       });

@@ -95,9 +95,8 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "explorer.search",
     label: "Search files",
-    keys: [MOD_KEY, SHIFT_KEY, "F"],
     group: "Search",
-    match: (e) => isMod(e) && e.shiftKey && e.key.toLowerCase() === "f",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "f" }],
   },
   {
     id: "search.focus",
@@ -136,7 +135,11 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
 /**
  * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
  */
-export function matchBinding(e: KeyboardEvent, binding: KeyBinding, id?: ShortcutId): boolean {
+export function matchBinding(
+  e: KeyboardEvent,
+  binding: KeyBinding,
+  id?: ShortcutId
+): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();
 
