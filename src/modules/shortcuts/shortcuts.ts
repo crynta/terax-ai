@@ -1,7 +1,8 @@
 import { IS_MAC, MOD_PROP } from "@/lib/platform";
 
 /**
- * Single source of truth for keyboard shortcuts.
+ * Single source of truth for keyboard shortcuts (registry, matching, display tokens).
+ * React labels: `./lib/shortcutDisplayHooks.ts`. Global dispatcher: `./lib/useGlobalShortcuts.ts`.
  */
 
 export type ShortcutId =
@@ -126,9 +127,24 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
 ];
 
 /**
+ * Effective bindings for an id, fallsback to default if preference not set
+ */
+export function resolveShortcutBindings(
+  id: ShortcutId,
+  fromPrefs: KeyBinding[] | undefined
+): KeyBinding[] {
+  const definition = SHORTCUTS.find((s) => s.id === id);
+  return fromPrefs ?? definition?.defaultBindings ?? [];
+}
+
+/**
  * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
  */
-export function matchBinding(e: KeyboardEvent, binding: KeyBinding, id?: ShortcutId): boolean {
+export function matchBinding(
+  e: KeyboardEvent,
+  binding: KeyBinding,
+  id?: ShortcutId
+): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();
 

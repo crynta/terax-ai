@@ -3,6 +3,7 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   SHORTCUTS,
   matchBinding,
+  resolveShortcutBindings,
   type ShortcutId,
 } from "../shortcuts";
 
@@ -20,15 +21,13 @@ export function useGlobalShortcuts(
   const latest = useRef({ handlers, options });
   latest.current = { handlers, options };
 
-  // Access the shortcuts from the store
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { handlers, options } = latest.current;
       for (const s of SHORTCUTS) {
-        // Use user-defined bindings if they exist, otherwise use default
-        const bindings = userShortcuts[s.id] || s.defaultBindings;
+        const bindings = resolveShortcutBindings(s.id, userShortcuts[s.id]);
 
         const isMatch = bindings.some((b) => matchBinding(e, b, s.id));
         if (!isMatch) continue;

@@ -14,8 +14,10 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
   getBindingTokens,
+  resolveShortcutBindings,
   SHORTCUTS,
   SHORTCUT_GROUPS,
+  type Shortcut,
 } from "./shortcuts";
 
 type Props = {
@@ -24,8 +26,6 @@ type Props = {
 };
 
 export function ShortcutsDialog({ open, onOpenChange }: Props) {
-  const userShortcuts = usePreferencesStore((s) => s.shortcuts);
-
   const onOpenSettings = () => {
     onOpenChange(false);
     void openSettingsWindow("shortcuts");
@@ -63,39 +63,9 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
                     {group}
                   </h3>
                   <ul className="flex flex-col divide-y divide-border/60">
-                    {items.map((s) => {
-                      const bindings = userShortcuts[s.id] || s.defaultBindings;
-                      const tokens = getBindingTokens(bindings[0]);
-
-                      return (
-                        <li
-                          key={s.id}
-                          className="flex items-center justify-between py-2"
-                        >
-                          <span className="text-sm text-foreground/90">
-                            {s.label}
-                          </span>
-                          {tokens.length > 0 ? (
-                            <KbdGroup>
-                              {tokens.map((token, i) => {
-                                let label = token;
-                                if (
-                                  s.id === "tab.selectByIndex" &&
-                                  i === tokens.length - 1
-                                ) {
-                                  label = "1…9";
-                                }
-                                return <Kbd key={i}>{label}</Kbd>;
-                              })}
-                            </KbdGroup>
-                          ) : (
-                            <span className="text-xs text-muted-foreground italic">
-                              Unassigned
-                            </span>
-                          )}
-                        </li>
-                      );
-                    })}
+                    {items.map((s) => (
+                      <ShortcutDialogRow key={s.id} shortcut={s} />
+                    ))}
                   </ul>
                 </section>
               );
@@ -104,5 +74,28 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
         </ScrollArea>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ShortcutDialogRow({ shortcut }: { shortcut: Shortcut }) {
+  const userBindings = usePreferencesStore((s) => s.shortcuts[shortcut.id]);
+  const bindings = resolveShortcutBindings(shortcut.id, userBindings);
+  const tokens = getBindingTokens(bindings[0]);
+
+  return (
+    <li className="flex items-center justify-between py-2">
+      <span className="text-sm text-foreground/90">{shortcut.label}</span>
+      {tokens.length > 0 ? (
+        <KbdGroup>
+          {tokens.map((token, i) => {
+            if (shortcut.id === "tab.selectByIndex" && i === 2)
+              return <Kbd>1…9</Kbd>;
+            return <Kbd key={i}>{token}</Kbd>;
+          })}
+        </KbdGroup>
+      ) : (
+        <span className="text-xs text-muted-foreground italic">Unassigned</span>
+      )}
+    </li>
   );
 }

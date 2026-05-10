@@ -1,8 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
+import { useShortcutLabel } from "@/modules/shortcuts";
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
 import {
@@ -11,7 +10,7 @@ import {
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   SearchInline,
   type SearchInlineHandle,
@@ -54,17 +53,10 @@ export function Header({
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
-  const userShortcuts = usePreferencesStore((s) => s.shortcuts);
-
-  const shortcutLabel = useMemo(() => {
-    const s = SHORTCUTS.find((s) => s.id === "shortcuts.open");
-    if (!s) return "Keyboard shortcuts";
-    const bindings = userShortcuts["shortcuts.open"] || s.defaultBindings;
-    if (!bindings || bindings.length === 0) return "Keyboard shortcuts";
-    const tokens = getBindingTokens(bindings[0]);
-    if (tokens.length === 0) return "Keyboard shortcuts";
-    return `Keyboard shortcuts (${tokens.join("")})`;
-  }, [userShortcuts]);
+  const shortcutLabel = useShortcutLabel(
+    "shortcuts.open",
+    "Keyboard shortcuts"
+  );
 
   useEffect(() => {
     const el = rootRef.current;
