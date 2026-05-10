@@ -84,8 +84,8 @@ The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `pow
 **Run**
 ```bash
 pnpm install
-pnpm tauri dev          # development
-pnpm tauri build        # production bundle
+pnpm dev          # development (runs tauri dev)
+pnpm build        # production bundle (runs tauri build)
 ```
 
 **Checks**
