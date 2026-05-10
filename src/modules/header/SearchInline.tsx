@@ -1,8 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { EditorPaneHandle } from "@/modules/editor";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
+import { useShortcutLabel } from "@/modules/shortcuts/lib/useShortcutLabel";
 import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -12,7 +11,6 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -44,25 +42,11 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     // In normal mode the field is always present.
     const [openInCompact, setOpenInCompact] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
-    const userShortcuts = usePreferencesStore((s) => s.shortcuts);
-
-    const shortcutText = useMemo(() => {
-      const s = SHORTCUTS.find((s) => s.id === "search.focus");
-      if (!s) return "";
-      const bindings = userShortcuts["search.focus"] || s.defaultBindings;
-      if (!bindings || bindings.length === 0) return "";
-      const tokens = getBindingTokens(bindings[0]);
-      return tokens.join("");
-    }, [userShortcuts]);
-
-    const placeholder = useMemo(() => {
-      const base = target?.kind === "editor" ? "Search in file" : "Search";
-      return shortcutText ? `${base} (${shortcutText})` : base;
-    }, [target?.kind, shortcutText]);
-
-    const tooltipTitle = useMemo(() => {
-      return shortcutText ? `Search (${shortcutText})` : "Search";
-    }, [shortcutText]);
+    const placeholder = useShortcutLabel(
+      "search.focus",
+      target?.kind === "editor" ? "Search in file" : "Search",
+    );
+    const tooltipTitle = useShortcutLabel("search.focus", "Search");
 
     const expanded = !compact || openInCompact;
 
