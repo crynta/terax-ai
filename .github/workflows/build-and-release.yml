@@ -1,11 +1,12 @@
-name: Release
+name: Build & Release
 
 on:
   push:
+    branches: ['**']
   workflow_dispatch:
 
 jobs:
-  publish-tauri:
+  build-and-release:
     permissions:
       contents: write
     strategy:
@@ -18,6 +19,8 @@ jobs:
             args: --bundles app
           - platform: macos-14
             args: --bundles app
+          - platform: windows-latest
+            args: --target x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -45,6 +48,10 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Add MSVC target (Windows)
+        if: runner.os == 'Windows'
+        run: rustup target add x86_64-pc-windows-msvc
+
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: ./src-tauri -> target
@@ -52,15 +59,23 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: TypeScript type-check
+        run: pnpm exec tsc --noEmit
+
+      - name: Rust clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
+
+      - name: Build and publish with Tauri
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Terax ${{ github.ref_name }}"
-          releaseBody: "See the assets to download and install. Auto-update is built in."
+          tagName: build-${{ github.sha }}
+          releaseName: "Terax build ${{ github.sha }}"
+          releaseBody: "Auto-build from commit ${{ github.sha }}"
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
