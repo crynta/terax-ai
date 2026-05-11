@@ -36,7 +36,58 @@ export type GrepResponse = {
 export type GlobHit = { path: string; rel: string };
 export type GlobResponse = { hits: GlobHit[]; truncated: boolean };
 
+export type GitRepoInfo = {
+  repoRoot: string;
+  branch: string;
+  upstream: string | null;
+  isDetached: boolean;
+};
+
+export type GitChangedFile = {
+  path: string;
+  originalPath: string | null;
+  indexStatus: string;
+  worktreeStatus: string;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+  statusLabel: string;
+};
+
+export type GitStatusSnapshot = {
+  repoRoot: string;
+  branch: string;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  isDetached: boolean;
+  changedFiles: GitChangedFile[];
+};
+
+export type GitDiffResult = {
+  diffText: string;
+};
+
+export type GitDiffContentResult = {
+  originalContent: string;
+  modifiedContent: string;
+  isBinary: boolean;
+  fallbackPatch: string;
+};
+
+export type GitCommitResult = {
+  commitSha: string;
+  summary: string;
+};
+
+export type GitPushResult = {
+  remote: string | null;
+  branch: string | null;
+  pushed: boolean;
+};
+
 export const native = {
+  appCurrentDir: () => invoke<string>("app_current_dir"),
   readFile: (path: string) => invoke<ReadResult>("fs_read_file", { path }),
   writeFile: (path: string, content: string) =>
     invoke<void>("fs_write_file", { path, content }),
@@ -119,4 +170,20 @@ export const native = {
         exit_code: number | null;
       }[]
     >("shell_bg_list"),
+  gitResolveRepo: (cwd: string) =>
+    invoke<GitRepoInfo | null>("git_resolve_repo", { cwd }),
+  gitStatus: (repoRoot: string) =>
+    invoke<GitStatusSnapshot>("git_status", { repoRoot }),
+  gitDiff: (repoRoot: string, path: string | null, staged: boolean) =>
+    invoke<GitDiffResult>("git_diff", { repoRoot, path, staged }),
+  gitDiffContent: (repoRoot: string, path: string, staged: boolean) =>
+    invoke<GitDiffContentResult>("git_diff_content", { repoRoot, path, staged }),
+  gitStage: (repoRoot: string, paths: string[]) =>
+    invoke<void>("git_stage", { repoRoot, paths }),
+  gitUnstage: (repoRoot: string, paths: string[]) =>
+    invoke<void>("git_unstage", { repoRoot, paths }),
+  gitCommit: (repoRoot: string, message: string) =>
+    invoke<GitCommitResult>("git_commit", { repoRoot, message }),
+  gitPush: (repoRoot: string) =>
+    invoke<GitPushResult>("git_push", { repoRoot }),
 };

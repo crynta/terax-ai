@@ -16,6 +16,7 @@ export type ShortcutId =
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
+  | "pane.source"
   | "search.focus"
   | "ai.toggle"
   | "ai.askSelection"
@@ -106,6 +107,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus previous pane",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
+  },  
+  {
+    id: "pane.source",
+    label: "Toggle source panel",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
   },
   {
     id: "tab.next",
@@ -163,7 +170,11 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
 /**
  * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
  */
-export function matchBinding(e: KeyboardEvent, binding: KeyBinding, id?: ShortcutId): boolean {
+export function matchBinding(
+  e: KeyboardEvent,
+  binding: KeyBinding,
+  id?: ShortcutId,
+): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();
 

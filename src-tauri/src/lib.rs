@@ -1,8 +1,15 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell};
+use modules::{fs, git, net, pty, secrets, shell};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
+
+#[tauri::command]
+async fn app_current_dir() -> Result<String, String> {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
@@ -129,6 +136,14 @@ pub fn run() {
             fs::search::fs_search,
             fs::grep::fs_grep,
             fs::grep::fs_glob,
+            git::git_resolve_repo,
+            git::git_status,
+            git::git_diff,
+            git::git_diff_content,
+            git::git_stage,
+            git::git_unstage,
+            git::git_commit,
+            git::git_push,
             shell::shell_run_command,
             shell::shell_session_open,
             shell::shell_session_run,
@@ -137,6 +152,7 @@ pub fn run() {
             shell::shell_bg_logs,
             shell::shell_bg_kill,
             shell::shell_bg_list,
+            app_current_dir,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,

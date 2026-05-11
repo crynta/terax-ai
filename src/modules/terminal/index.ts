@@ -6,6 +6,7 @@ export {
   type TeraxOpenInput,
 } from "./lib/useTerminalSession";
 export {
+  findLeafCwd,
   hasLeaf,
   isLeaf,
   leafIds,

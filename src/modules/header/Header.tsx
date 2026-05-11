@@ -20,6 +20,7 @@ import {
   KeyboardIcon,
   LayoutTwoColumnIcon,
   LayoutTwoRowIcon,
+  SourceCodeCircleIcon,
   Settings01Icon,
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons";
@@ -47,6 +48,8 @@ type Props = {
   canSplit: boolean;
   onOpenShortcuts: () => void;
   onOpenSettings: () => void;
+  sourceControlOpen: boolean;
+  onToggleSourceControl: () => void;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
 };
@@ -67,6 +70,8 @@ export function Header({
   canSplit,
   onOpenShortcuts,
   onOpenSettings,
+  sourceControlOpen,
+  onToggleSourceControl,
   searchTarget,
   searchRef,
 }: Props) {
@@ -123,6 +128,19 @@ export function Header({
       title="Settings"
     >
       <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
+    </Button>
+  );
+
+  const sourceControlButton = (
+    <Button
+      variant={sourceControlOpen ? "secondary" : "ghost"}
+      size="sm"
+      className="h-7 shrink-0 gap-1.5 rounded-md px-2.5 text-[11px]"
+      onClick={onToggleSourceControl}
+      title="Source Control"
+    >
+      <HugeiconsIcon icon={SourceCodeCircleIcon} size={14} strokeWidth={1.75} />
+      <span>Diff</span>
     </Button>
   );
 
@@ -213,6 +231,8 @@ export function Header({
       </div>
 
       <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
+
+      {sourceControlButton}
 
       {IS_MAC && (
         <>
