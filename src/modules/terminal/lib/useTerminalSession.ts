@@ -54,6 +54,8 @@ type Session = {
   webglLoaded: boolean;
   ready: Promise<void>;
   disposed: boolean;
+  initialCwd: string | undefined;
+  ptyOpening: boolean;
 };
 
 const sessions = new Map<number, Session>();
@@ -105,6 +107,8 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     webglLoaded: false,
     ready: Promise.resolve(),
     disposed: false,
+    initialCwd,
+    ptyOpening: false,
   };
   sessions.set(leafId, session);
 
@@ -121,6 +125,9 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   // Routes through session.pty so respawn doesn't need to rebind.
   term.onData((data) => session.pty?.write(data));
 
+  // PTY is opened lazily in attachSession after the first fit, so the shell
+  // starts with the real terminal size and never flushes a 80x24-sized
+  // prompt into scrollback.
   session.ready = (async () => {
     await document.fonts.ready;
     if (session.disposed) return;
@@ -136,13 +143,6 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
         session.callbacks.onTeraxOpen?.(input);
       }),
     );
-
-    const pty = await openPtyForSession(session, initialCwd);
-    if (session.disposed) {
-      pty.close();
-      return;
-    }
-    session.pty = pty;
   })();
 
   return session;
@@ -218,20 +218,62 @@ function attachSession(
   if (!s || s.disposed) return;
   s.callbacks = callbacks;
 
-  if (!s.term.element) {
+  const firstAttach = !s.term.element;
+  if (firstAttach) {
     s.term.open(container);
-    if (!s.webglLoaded) {
-      try {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => webgl.dispose());
-        s.term.loadAddon(webgl);
-        s.webglLoaded = true;
-      } catch (e) {
-        console.warn("WebGL renderer unavailable:", e);
-      }
-    }
-  } else if (s.term.element.parentNode !== container) {
+  } else if (s.term.element && s.term.element.parentNode !== container) {
     container.appendChild(s.term.element);
+  }
+
+  // Sync fit before WebGL load and PTY open so the renderer measures the
+  // real container and the shell starts at the right cols/rows.
+  s.fitAddon.fit();
+  s.lastW = container.clientWidth;
+  s.lastH = container.clientHeight;
+
+  if (firstAttach && !s.webglLoaded) {
+    try {
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => webgl.dispose());
+      s.term.loadAddon(webgl);
+      s.webglLoaded = true;
+    } catch (e) {
+      console.warn("WebGL renderer unavailable:", e);
+    }
+  }
+
+  if (!s.pty && !s.ptyOpening) {
+    s.ptyOpening = true;
+    s.lastSentCols = s.term.cols;
+    s.lastSentRows = s.term.rows;
+    openPtyForSession(s, s.initialCwd)
+      .then((pty) => {
+        s.ptyOpening = false;
+        if (s.disposed) {
+          pty.close();
+          return;
+        }
+        s.pty = pty;
+        if (
+          s.term.cols !== s.lastSentCols ||
+          s.term.rows !== s.lastSentRows
+        ) {
+          s.lastSentCols = s.term.cols;
+          s.lastSentRows = s.term.rows;
+          pty.resize(s.term.cols, s.term.rows);
+        }
+      })
+      .catch((e) => {
+        s.ptyOpening = false;
+        console.error("openPty failed:", e);
+      });
+  } else if (
+    s.pty &&
+    (s.term.cols !== s.lastSentCols || s.term.rows !== s.lastSentRows)
+  ) {
+    s.lastSentCols = s.term.cols;
+    s.lastSentRows = s.term.rows;
+    s.pty.resize(s.term.cols, s.term.rows);
   }
 
   s.observer?.disconnect();
@@ -265,38 +307,21 @@ function attachSession(
     s.pty.resize(s.term.cols, s.term.rows);
   };
 
-  // rAF so container has post-layout size; also pushes SIGWINCH after a
-  // re-parent (otherwise the shell stays at the previous geometry).
-  requestAnimationFrame(() => {
-    if (s.disposed) return;
-    s.fitAddon.fit();
-    s.lastW = container.clientWidth;
-    s.lastH = container.clientHeight;
-    if (
-      s.pty &&
-      (s.term.cols !== s.lastSentCols || s.term.rows !== s.lastSentRows)
-    ) {
-      s.lastSentCols = s.term.cols;
-      s.lastSentRows = s.term.rows;
-      s.pty.resize(s.term.cols, s.term.rows);
-    }
-
-    s.observer = new ResizeObserver(() => {
-      if (s.fitTimer) clearTimeout(s.fitTimer);
-      s.fitTimer = setTimeout(() => {
-        s.fitTimer = null;
-        const w = container.clientWidth;
-        const h = container.clientHeight;
-        if (w === s.lastW && h === s.lastH) return;
-        s.lastW = w;
-        s.lastH = h;
-        s.fitAddon.fit();
-        if (s.ptyTimer) clearTimeout(s.ptyTimer);
-        s.ptyTimer = setTimeout(flushPtyResize, PTY_RESIZE_DEBOUNCE_MS);
-      }, FIT_DEBOUNCE_MS);
-    });
-    s.observer.observe(container);
+  s.observer = new ResizeObserver(() => {
+    if (s.fitTimer) clearTimeout(s.fitTimer);
+    s.fitTimer = setTimeout(() => {
+      s.fitTimer = null;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (w === s.lastW && h === s.lastH) return;
+      s.lastW = w;
+      s.lastH = h;
+      s.fitAddon.fit();
+      if (s.ptyTimer) clearTimeout(s.ptyTimer);
+      s.ptyTimer = setTimeout(flushPtyResize, PTY_RESIZE_DEBOUNCE_MS);
+    }, FIT_DEBOUNCE_MS);
   });
+  s.observer.observe(container);
 
   // Re-sync App state after re-attach (prior detach cleared callbacks).
   if (s.lastCwd !== null) callbacks.onCwd?.(s.lastCwd);

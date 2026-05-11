@@ -40,7 +40,7 @@ import {
   type ShortcutHandlers,
 } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
-import { useTabs, useWorkspaceCwd } from "@/modules/tabs";
+import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
   disposeSession,
   hasLeaf,
@@ -701,6 +701,11 @@ export default function App() {
             onClose={handleClose}
             onPin={pinTab}
             onToggleSidebar={toggleSidebar}
+            onSplit={splitActivePaneInActiveTab}
+            canSplit={
+              activeTerminalTab !== null &&
+              leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
+            }
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenSettings={() => void openSettingsWindow()}
             searchTarget={searchTarget}
