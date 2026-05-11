@@ -19,6 +19,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "opener:default",
+    "clipboard-manager:allow-read-text",
     "log:default",
     "os:default",
     "store:default",

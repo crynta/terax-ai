@@ -1,6 +1,7 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
 import { IS_MAC } from "@/lib/platform";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -123,15 +124,14 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
       !event.shiftKey &&
       !event.altKey &&
       !event.metaKey &&
-      event.key === "v"
+      (event.key.toLowerCase() === "v" || event.code === "KeyV")
     ) {
       // preventDefault stops xterm from sending raw ^V to the PTY.
       // We then paste manually so the browser paste event doesn't also fire.
       event.preventDefault();
-      navigator.clipboard
-        .readText()
+      readText()
         .then((text) => { if (text) term.paste(text); })
-        .catch(() => {/* clipboard API unavailable — ^V is suppressed */});
+        .catch(() => {/* clipboard unavailable — ^V is suppressed */});
       return false;
     }
 
