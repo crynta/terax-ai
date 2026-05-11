@@ -25,6 +25,10 @@ pub struct DirEntry {
 /// a "show hidden" toggle later.
 #[tauri::command]
 pub fn fs_read_dir(path: String) -> Result<Vec<DirEntry>, String> {
+    if let Some(remote) = super::remote::parse_remote_path(&path) {
+        return super::remote::read_dir(&remote?);
+    }
+
     let root = PathBuf::from(&path);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("fs_read_dir({}) failed: {e}", root.display());

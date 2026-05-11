@@ -30,7 +30,9 @@ export function AboutSection() {
   const available = status.kind === "available";
   const ready = status.kind === "ready";
   const checkLabel =
-    status.kind === "uptodate"
+    status.kind === "disabled"
+      ? "Updates disabled in custom build"
+      : status.kind === "uptodate"
       ? "You're up to date"
       : status.kind === "error"
         ? "Check failed — retry"
@@ -87,7 +89,9 @@ export function AboutSection() {
         </dd>
 
         <dt className="text-muted-foreground">Bundle ID</dt>
-        <dd className="font-mono text-[11.5px]">app.crynta.terax</dd>
+        <dd className="font-mono text-[11.5px]">
+          com.simonfestl.teraxcustom
+        </dd>
 
         <dt className="text-muted-foreground">License</dt>
         <dd>Apache 2.0</dd>
@@ -121,7 +125,7 @@ export function AboutSection() {
           <Button
             size="sm"
             onClick={onUpdateClick}
-            disabled={checking || downloading || ready}
+            disabled={status.kind === "disabled" || checking || downloading || ready}
           >
             {checkLabel}
           </Button>

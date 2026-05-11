@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { dirname } from "@/lib/paths";
 import {
   Cancel01Icon,
   FileAddIcon,
@@ -34,9 +35,14 @@ type SearchHit = {
   is_dir: boolean;
 };
 
+type FileStat = {
+  kind: "file" | "dir" | "symlink";
+};
+
 type Props = {
   rootPath: string | null;
   onOpenFile: (path: string) => void;
+  onChangeRoot?: (path: string | null) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
@@ -51,6 +57,7 @@ function basename(path: string): string {
 export function FileExplorer({
   rootPath,
   onOpenFile,
+  onChangeRoot,
   onPathRenamed,
   onPathDeleted,
   onRevealInTerminal,
@@ -60,9 +67,15 @@ export function FileExplorer({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isRootInputOpen, setIsRootInputOpen] = useState(false);
+  const [rootDraft, setRootDraft] = useState(rootPath ?? "");
   const [searching, setSearching] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isRootInputOpen) setRootDraft(rootPath ?? "");
+  }, [isRootInputOpen, rootPath]);
 
   type FlatItem = { path: string; isDir: boolean };
   const flat = useMemo<FlatItem[]>(() => {
@@ -121,6 +134,30 @@ export function FileExplorer({
     };
   }, [query, rootPath]);
 
+  const commitRootDraft = async () => {
+    const next = rootDraft.trim();
+    if (!next) {
+      onChangeRoot?.(null);
+      setIsRootInputOpen(false);
+      return;
+    }
+
+    try {
+      const stat = await invoke<FileStat>("fs_stat", { path: next });
+      if (stat.kind === "file") {
+        onChangeRoot?.(dirname(next));
+        onOpenFile(next);
+      } else {
+        onChangeRoot?.(next);
+      }
+      setIsRootInputOpen(false);
+    } catch (err) {
+      console.error("fs_stat failed for explorer root:", err);
+      onChangeRoot?.(next);
+      setIsRootInputOpen(false);
+    }
+  };
+
   if (!rootPath) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -133,6 +170,22 @@ export function FileExplorer({
         <div className="text-xs text-muted-foreground">
           No current directory
         </div>
+        {onChangeRoot ? (
+          <div className="flex w-full max-w-[320px] items-center gap-1.5">
+            <Input
+              value={rootDraft}
+              onChange={(e) => setRootDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void commitRootDraft();
+              }}
+              placeholder="ssh://host/path or local path"
+              className="h-8 text-xs"
+            />
+            <Button size="sm" onClick={() => void commitRootDraft()}>
+              Open
+            </Button>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -218,19 +271,52 @@ export function FileExplorer({
       onKeyDown={handleKeyDown}
     >
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
-        <span
-          className="flex-1 flex truncate text-xs font-medium text-foreground/80"
-          title={rootPath}
-        >
-          <img
-            src={folderIconUrl(basename(rootPath), false)}
-            alt=""
-            height={15}
-            width={15}
-            className="mx-1.5"
-          />
-          {basename(rootPath)}
-        </span>
+        {isRootInputOpen ? (
+          <form
+            className="flex min-w-0 flex-1 items-center gap-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void commitRootDraft();
+            }}
+          >
+            <Input
+              value={rootDraft}
+              onChange={(e) => setRootDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setIsRootInputOpen(false);
+                  setRootDraft(rootPath);
+                }
+              }}
+              placeholder="ssh://host/path or local path"
+              className="h-6 min-w-0 text-xs"
+              autoFocus
+            />
+            <Button type="submit" variant="ghost" size="sm" className="h-6 px-2">
+              Open
+            </Button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center truncate text-left text-xs font-medium text-foreground/80 hover:text-foreground"
+            title={rootPath}
+            onClick={() => {
+              setRootDraft(rootPath);
+              setIsRootInputOpen(true);
+            }}
+          >
+            <img
+              src={folderIconUrl(basename(rootPath), false)}
+              alt=""
+              height={15}
+              width={15}
+              className="mx-1.5"
+            />
+            <span className="truncate">{basename(rootPath)}</span>
+          </button>
+        )}
 
         <Button
           variant="ghost"

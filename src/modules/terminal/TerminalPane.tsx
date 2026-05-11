@@ -1,10 +1,15 @@
 import { useTheme } from "@/modules/theme";
 import type { SearchAddon } from "@xterm/addon-search";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { useTerminalSession, type TeraxOpenInput } from "./lib/useTerminalSession";
+import {
+  useTerminalSession,
+  type DetectedSshCommand,
+  type TeraxOpenInput,
+} from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
+  refit: () => void;
   focus: () => void;
   getBuffer: (maxLines?: number) => string | null;
   getSelection: () => string | null;
@@ -18,6 +23,7 @@ type Props = {
   onExit?: (tabId: number, code: number) => void;
   onCwd?: (tabId: number, cwd: string) => void;
   onDetectedLocalUrl?: (tabId: number, url: string) => void;
+  onDetectedSsh?: (tabId: number, detected: DetectedSshCommand) => void;
   onTeraxOpen?: (tabId: number, input: TeraxOpenInput) => void;
 };
 
@@ -31,6 +37,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onExit,
       onCwd,
       onDetectedLocalUrl,
+      onDetectedSsh,
       onTeraxOpen,
     },
     ref,
@@ -46,6 +53,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onExit: (c) => onExit?.(tabId, c),
       onCwd: (c) => onCwd?.(tabId, c),
       onDetectedLocalUrl: (u) => onDetectedLocalUrl?.(tabId, u),
+      onDetectedSsh: (d) => onDetectedSsh?.(tabId, d),
       onTeraxOpen: (input) => onTeraxOpen?.(tabId, input),
     });
 
@@ -59,6 +67,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       ref,
       () => ({
         write: (data: string) => session.write(data),
+        refit: () => session.refit(),
         focus: () => session.focus(),
         getBuffer: (max?: number) => session.getBuffer(max),
         getSelection: () => session.getSelection(),
@@ -69,6 +78,8 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
     return (
       <div
         ref={containerRef}
+        data-terminal-drop-zone
+        data-terminal-tab-id={tabId}
         className="h-full w-full"
         style={{
           visibility: visible ? "visible" : "hidden",

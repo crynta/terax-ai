@@ -54,3 +54,33 @@ function global:prompt {
     $global:LASTEXITCODE = $lec
     "$oscD$oscA$osc7${original}${oscB}"
 }
+
+function global:terax-preview {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    $esc = [char]27
+    $enc = __terax_urlencode $Url
+    Write-Host -NoNewline "$esc]8888;url=$enc;target=preview$esc\"
+}
+
+function global:terax-open {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    terax-preview $Url
+}
+
+function global:terax-open-browser {
+    param([Parameter(Mandatory=$true)][string]$Url)
+    $esc = [char]27
+    $enc = __terax_urlencode $Url
+    Write-Host -NoNewline "$esc]8888;url=$enc;target=browser$esc\"
+}
+
+function global:terax-remote-cwd {
+    param([Parameter(Mandatory=$true)][string]$Cwd)
+    if (-not $Cwd.StartsWith('ssh://')) {
+        Write-Error 'usage: terax-remote-cwd ssh://host/path'
+        return
+    }
+    $esc = [char]27
+    $enc = __terax_urlencode $Cwd
+    Write-Host -NoNewline "$esc]8888;remote-cwd=$enc$esc\"
+}

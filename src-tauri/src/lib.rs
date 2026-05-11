@@ -53,7 +53,6 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -75,8 +74,11 @@ pub fn run() {
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
             fs::file::fs_read_file,
+            fs::file::fs_read_file_bytes,
             fs::file::fs_write_file,
             fs::file::fs_stat,
+            fs::remote::fs_remote_home,
+            fs::remote::fs_upload_local_files_to_remote,
             fs::mutate::fs_create_file,
             fs::mutate::fs_create_dir,
             fs::mutate::fs_rename,

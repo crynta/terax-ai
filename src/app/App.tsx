@@ -4,6 +4,8 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { remoteUriPath } from "@/lib/paths";
+import { useAutoUiScale } from "@/lib/useAutoUiScale";
 import { cn } from "@/lib/utils";
 import {
   AgentRunBridge,
@@ -41,10 +43,18 @@ import {
 } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
 import { useTabs, useWorkspaceCwd } from "@/modules/tabs";
-import { TerminalStack, type TerminalPaneHandle, type TeraxOpenInput } from "@/modules/terminal";
+import {
+  TerminalStack,
+  type DetectedSshCommand,
+  type TerminalPaneHandle,
+  type TeraxOpenInput,
+} from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -58,6 +68,39 @@ function sameOrigin(a: string, b: string): boolean {
   } catch {
     return a === b;
   }
+}
+
+type RemoteUploadResult = {
+  local_path: string;
+  remote_uri: string;
+  remote_path: string;
+  size: number;
+};
+
+function isRemotePath(path: string | null | undefined): path is string {
+  return !!path?.startsWith("ssh://");
+}
+
+function shellQuote(path: string): string {
+  if (path.length === 0) return "''";
+  if (/^[A-Za-z0-9_@%+=:,./~-]+$/.test(path)) return path;
+  return `'${path.replace(/'/g, `'\\''`)}'`;
+}
+
+function hasUnsafeShellControl(path: string): boolean {
+  return /[\u0000-\u001f\u007f]/.test(path);
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+function dragPositionToElement(
+  position: { x: number; y: number } | undefined,
+): Element | null {
+  if (!position) return null;
+  const ratio = window.devicePixelRatio || 1;
+  return document.elementFromPoint(position.x / ratio, position.y / ratio);
 }
 
 export default function App() {
@@ -83,11 +126,22 @@ export default function App() {
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const detectedUrls = useRef<Map<number, string>>(new Map());
+  const detectedSsh = useRef<Map<number, DetectedSshCommand>>(new Map());
+  const activeIdRef = useRef(activeId);
   const [activeDetectedUrl, setActiveDetectedUrl] = useState<string | null>(
     null,
   );
+  const [activeDetectedSsh, setActiveDetectedSsh] =
+    useState<DetectedSshCommand | null>(null);
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+  const refitTerminals = useCallback(() => {
+    terminalRefs.current.forEach((terminal) => terminal.refit());
+  }, []);
+  useAutoUiScale(refitTerminals);
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
@@ -186,11 +240,16 @@ export default function App() {
     tabs,
     home,
   );
+  const [explorerRootOverride, setExplorerRootOverride] = useState<string | null>(
+    null,
+  );
+  const activeExplorerRoot = explorerRootOverride ?? explorerRoot;
 
   useEffect(() => {
     setActiveSearchAddon(searchAddons.current.get(activeId) ?? null);
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
     setActiveDetectedUrl(detectedUrls.current.get(activeId) ?? null);
+    setActiveDetectedSsh(detectedSsh.current.get(activeId) ?? null);
   }, [activeId]);
 
   const handleDetectedLocalUrl = useCallback(
@@ -199,6 +258,34 @@ export default function App() {
       if (id === activeId) setActiveDetectedUrl(url);
     },
     [activeId],
+  );
+
+  const openRemoteRootForSsh = useCallback(
+    async (id: number, detected: DetectedSshCommand) => {
+      let root = detected.uri;
+      try {
+        root = await invoke<string>("fs_remote_home", { uri: detected.uri });
+      } catch (err) {
+        console.warn("Failed to resolve remote SSH home:", err);
+      }
+
+      updateTab(id, { cwd: root });
+      if (activeIdRef.current === id) {
+        setExplorerRootOverride(root);
+        setActiveDetectedSsh(detected);
+      }
+      return root;
+    },
+    [updateTab],
+  );
+
+  const handleDetectedSsh = useCallback(
+    (id: number, detected: DetectedSshCommand) => {
+      detectedSsh.current.set(id, detected);
+      if (id === activeId) setActiveDetectedSsh(detected);
+      void openRemoteRootForSsh(id, detected);
+    },
+    [activeId, openRemoteRootForSsh],
   );
 
   // Suppress the chip once a preview tab already targets the detected URL —
@@ -210,6 +297,12 @@ export default function App() {
     );
     return alreadyOpen ? null : activeDetectedUrl;
   }, [isTerminalTab, activeDetectedUrl, tabs]);
+
+  const detectedRemoteRoot = useMemo(() => {
+    if (!isTerminalTab || !activeDetectedSsh) return null;
+    if (activeExplorerRoot?.startsWith("ssh://")) return null;
+    return activeDetectedSsh.uri;
+  }, [isTerminalTab, activeDetectedSsh, activeExplorerRoot]);
 
   const handleSearchReady = useCallback(
     (id: number, addon: SearchAddon) => {
@@ -226,6 +319,7 @@ export default function App() {
       editorRefs.current.delete(id);
       previewRefs.current.delete(id);
       detectedUrls.current.delete(id);
+      detectedSsh.current.delete(id);
       closeTab(id);
     },
     [closeTab],
@@ -323,6 +417,22 @@ export default function App() {
   const [askPopup, setAskPopup] = useState<{ x: number; y: number } | null>(
     null,
   );
+  const [dropStatus, setDropStatus] = useState<string | null>(null);
+  const dropStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showDropStatus = useCallback((message: string) => {
+    if (dropStatusTimer.current) clearTimeout(dropStatusTimer.current);
+    setDropStatus(message);
+    dropStatusTimer.current = setTimeout(() => {
+      dropStatusTimer.current = null;
+      setDropStatus(null);
+    }, 4_000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (dropStatusTimer.current) clearTimeout(dropStatusTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     const isInsideAi = (t: EventTarget | null) => {
@@ -373,30 +483,105 @@ export default function App() {
     (path: string) => {
       const term = terminalRefs.current.get(activeId);
       if (!term) return;
-      const quoted = path.includes(" ")
-        ? `'${path.replace(/'/g, `'\\''`)}'`
-        : path;
+      const shellPath = remoteUriPath(path) ?? path;
+      if (hasUnsafeShellControl(shellPath)) {
+        showDropStatus("Path contains unsupported control characters.");
+        return;
+      }
+      const quoted = shellQuote(shellPath);
       term.write(`cd ${quoted}\r`);
       term.focus();
     },
-    [activeId],
+    [activeId, showDropStatus],
   );
 
   const cdInNewTab = useCallback(
     (path: string) => {
+      if (hasUnsafeShellControl(path)) {
+        showDropStatus("Path contains unsupported control characters.");
+        return;
+      }
       const id = newTab(path);
       setTimeout(() => {
         const t = terminalRefs.current.get(id);
         if (!t) return;
-        const quoted = path.includes(" ")
-          ? `'${path.replace(/'/g, `'\\''`)}'`
-          : path;
+        const quoted = shellQuote(path);
         t.write(`cd ${quoted}\r`);
         t.focus();
       }, 80);
     },
-    [newTab],
+    [newTab, showDropStatus],
   );
+
+  const handleTerminalFileDrop = useCallback(
+    async (tabId: number, paths: string[]) => {
+      const term = terminalRefs.current.get(tabId);
+      const tab = tabs.find((t) => t.id === tabId);
+      if (!term || tab?.kind !== "terminal" || paths.length === 0) return;
+      if (paths.some(hasUnsafeShellControl)) {
+        showDropStatus("Dropped path contains unsupported control characters.");
+        return;
+      }
+
+      let remoteDir = isRemotePath(tab.cwd) ? tab.cwd : null;
+      if (!remoteDir && isRemotePath(activeExplorerRoot)) {
+        remoteDir = activeExplorerRoot;
+      }
+      if (!remoteDir && tabId === activeIdRef.current && activeDetectedSsh) {
+        remoteDir = await openRemoteRootForSsh(tabId, activeDetectedSsh);
+      }
+
+      if (!remoteDir) {
+        term.write(paths.map(shellQuote).join(" "));
+        term.focus();
+        return;
+      }
+
+      try {
+        showDropStatus("Uploading dropped files...");
+        const uploaded = await invoke<RemoteUploadResult[]>(
+          "fs_upload_local_files_to_remote",
+          { localPaths: paths, remoteDir },
+        );
+        term.write(uploaded.map((file) => shellQuote(file.remote_path)).join(" "));
+        term.focus();
+        setDropStatus(null);
+      } catch (err) {
+        showDropStatus(`Drop upload failed: ${errorMessage(err)}`);
+      }
+    },
+    [
+      activeDetectedSsh,
+      activeExplorerRoot,
+      openRemoteRootForSsh,
+      showDropStatus,
+      tabs,
+    ],
+  );
+
+  const handleTerminalFileDropRef = useRef(handleTerminalFileDrop);
+  useEffect(() => {
+    handleTerminalFileDropRef.current = handleTerminalFileDrop;
+  }, [handleTerminalFileDrop]);
+
+  useEffect(() => {
+    const unlisten = getCurrentWebview().onDragDropEvent((event) => {
+      const payload = event.payload;
+      if (payload.type !== "drop" || payload.paths.length === 0) return;
+      const target = dragPositionToElement(payload.position);
+      const zone = target?.closest("[data-terminal-drop-zone]") as
+        | HTMLElement
+        | null;
+      if (!zone) return;
+      const tabId = Number(zone.dataset.terminalTabId);
+      if (!Number.isFinite(tabId)) return;
+      void handleTerminalFileDropRef.current(tabId, payload.paths);
+    });
+
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   const handleOpenFile = useCallback(
     (path: string) => {
@@ -519,10 +704,23 @@ export default function App() {
 
   const handleTeraxOpen = useCallback(
     (_tabId: number, input: TeraxOpenInput) => {
-      // Always open in a new tab
-      openFileTab(input.file);
+      if (input.kind === "file") {
+        openFileTab(input.file);
+        return;
+      }
+      if (input.kind === "url") {
+        if (input.target === "browser") {
+          void openUrl(input.url).catch(console.error);
+        } else {
+          openPreviewTab(input.url);
+        }
+        return;
+      }
+      if (input.kind === "remote-cwd") {
+        updateTab(_tabId, { cwd: input.cwd });
+      }
     },
-    [openFileTab],
+    [openFileTab, openPreviewTab, updateTab],
   );
 
   const handleEditorDirty = useCallback(
@@ -549,7 +747,7 @@ export default function App() {
         const t = tabs[i];
         if (t.kind === "terminal" && t.cwd) return t.cwd;
       }
-      return explorerRoot ?? home ?? null;
+      return activeExplorerRoot ?? home ?? null;
     };
 
     setLive({
@@ -568,7 +766,7 @@ export default function App() {
         term.focus();
         return true;
       },
-      getWorkspaceRoot: () => explorerRoot ?? home ?? null,
+      getWorkspaceRoot: () => activeExplorerRoot ?? home ?? null,
       getActiveFile: () => {
         const t = tabs.find((x) => x.id === activeId);
         return t?.kind === "editor" ? t.path : null;
@@ -578,7 +776,7 @@ export default function App() {
         return true;
       },
     });
-  }, [setLive, activeId, tabs, explorerRoot, home, openPreviewTab]);
+  }, [setLive, activeId, tabs, activeExplorerRoot, home, openPreviewTab]);
 
   const shell = (
     <ThemeProvider>
@@ -615,8 +813,9 @@ export default function App() {
               >
                 <div className="h-full border-r border-border/60 bg-card">
                   <FileExplorer
-                    rootPath={explorerRoot}
+                    rootPath={activeExplorerRoot}
                     onOpenFile={handleOpenFile}
+                    onChangeRoot={setExplorerRootOverride}
                     onPathRenamed={handlePathRenamed}
                     onPathDeleted={handlePathDeleted}
                     onRevealInTerminal={cdInNewTab}
@@ -642,6 +841,7 @@ export default function App() {
                         onSearchReady={handleSearchReady}
                         onCwd={handleTerminalCwd}
                         onDetectedLocalUrl={handleDetectedLocalUrl}
+                        onDetectedSsh={handleDetectedSsh}
                         onTeraxOpen={handleTeraxOpen}
                       />
                     </div>
@@ -716,6 +916,12 @@ export default function App() {
             </ResizablePanelGroup>
           </main>
 
+          {dropStatus ? (
+            <div className="pointer-events-none absolute right-3 bottom-10 z-40 max-w-96 truncate rounded-md border border-border/70 bg-popover/95 px-3 py-1.5 text-[11px] text-foreground shadow-lg">
+              {dropStatus}
+            </div>
+          ) : null}
+
           <StatusBar
             cwd={activeCwd}
             filePath={activeFilePath}
@@ -726,6 +932,12 @@ export default function App() {
             detectedPreviewUrl={detectedPreviewUrl}
             onOpenPreview={() => {
               if (detectedPreviewUrl) openPreviewTab(detectedPreviewUrl);
+            }}
+            detectedRemoteRoot={detectedRemoteRoot}
+            onOpenRemoteRoot={() => {
+              if (activeDetectedSsh) {
+                void openRemoteRootForSsh(activeId, activeDetectedSsh);
+              }
             }}
           />
 
@@ -757,7 +969,7 @@ export default function App() {
           <NewEditorDialog
             open={newEditorOpen}
             onOpenChange={setNewEditorOpen}
-            rootPath={explorerRoot ?? home}
+            rootPath={activeExplorerRoot ?? home}
             onCreated={(path) => openFileTab(path)}
           />
 

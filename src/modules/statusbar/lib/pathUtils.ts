@@ -12,6 +12,10 @@ function normalize(p: string): string {
 
 export function segmentsFromCwd(cwd: string, home: string | null): Segment[] {
   const normCwd = normalize(cwd);
+  if (normCwd.startsWith("ssh://")) {
+    return remoteSegments(normCwd);
+  }
+
   const normHome = home !== null ? normalize(home) : null;
 
   const usingHome =
@@ -40,6 +44,27 @@ export function segmentsFromCwd(cwd: string, home: string | null): Segment[] {
   const segments: Segment[] = [rootSegment];
 
   let acc = rootSegment.fullPath;
+  for (const part of parts) {
+    acc = acc.endsWith("/") ? acc + part : acc + "/" + part;
+    segments.push({ label: part, fullPath: acc, isHome: false });
+  }
+  return segments;
+}
+
+function remoteSegments(cwd: string): Segment[] {
+  const pathStart = cwd.indexOf("/", "ssh://".length);
+  const authority = pathStart >= 0 ? cwd.slice(0, pathStart) : cwd;
+  const path = pathStart >= 0 ? cwd.slice(pathStart) : "/";
+  const segments: Segment[] = [
+    {
+      label: authority.replace(/^ssh:\/\//, "ssh:"),
+      fullPath: `${authority}/`,
+      isHome: false,
+    },
+  ];
+
+  const parts = path.split("/").filter(Boolean);
+  let acc = `${authority}/`;
   for (const part of parts) {
     acc = acc.endsWith("/") ? acc + part : acc + "/" + part;
     segments.push({ label: part, fullPath: acc, isHome: false });

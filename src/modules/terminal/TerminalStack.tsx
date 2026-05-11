@@ -1,7 +1,7 @@
 import type { Tab } from "@/modules/tabs";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useEffect, useRef } from "react";
-import { type TeraxOpenInput } from "./lib/useTerminalSession";
+import { type DetectedSshCommand, type TeraxOpenInput } from "./lib/useTerminalSession";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 
 type Props = {
@@ -11,6 +11,7 @@ type Props = {
   onSearchReady: (id: number, addon: SearchAddon) => void;
   onCwd: (id: number, cwd: string) => void;
   onDetectedLocalUrl: (id: number, url: string) => void;
+  onDetectedSsh?: (id: number, detected: DetectedSshCommand) => void;
   onTeraxOpen?: (id: number, input: TeraxOpenInput) => void;
 };
 
@@ -21,6 +22,7 @@ export function TerminalStack({
   onSearchReady,
   onCwd,
   onDetectedLocalUrl,
+  onDetectedSsh,
   onTeraxOpen,
 }: Props) {
   const terminals = tabs.filter((t) => t.kind === "terminal");
@@ -29,6 +31,7 @@ export function TerminalStack({
   const searchReadyRef = useRef(onSearchReady);
   const cwdRef = useRef(onCwd);
   const detectedUrlRef = useRef(onDetectedLocalUrl);
+  const detectedSshRef = useRef(onDetectedSsh);
   const teraxOpenRef = useRef(onTeraxOpen);
   useEffect(() => {
     registerRef.current = registerHandle;
@@ -43,6 +46,9 @@ export function TerminalStack({
     detectedUrlRef.current = onDetectedLocalUrl;
   }, [onDetectedLocalUrl]);
   useEffect(() => {
+    detectedSshRef.current = onDetectedSsh;
+  }, [onDetectedSsh]);
+  useEffect(() => {
     teraxOpenRef.current = onTeraxOpen;
   }, [onTeraxOpen]);
 
@@ -51,6 +57,7 @@ export function TerminalStack({
     onSearch: (addon: SearchAddon) => void;
     onCwd: (cwd: string) => void;
     onDetectedUrl: (url: string) => void;
+    onDetectedSsh: (detected: DetectedSshCommand) => void;
     onTeraxOpen: (input: TeraxOpenInput) => void;
   };
   const bundles = useRef(new Map<number, Bundle>());
@@ -62,6 +69,7 @@ export function TerminalStack({
         onSearch: (addon) => searchReadyRef.current(id, addon),
         onCwd: (cwd) => cwdRef.current(id, cwd),
         onDetectedUrl: (url) => detectedUrlRef.current(id, url),
+        onDetectedSsh: (detected) => detectedSshRef.current?.(id, detected),
         onTeraxOpen: (input) => teraxOpenRef.current?.(id, input),
       };
       bundles.current.set(id, b);
@@ -90,6 +98,7 @@ export function TerminalStack({
               onSearchReady={(_id, addon) => b.onSearch(addon)}
               onCwd={(_id, cwd) => b.onCwd(cwd)}
               onDetectedLocalUrl={(_id, url) => b.onDetectedUrl(url)}
+              onDetectedSsh={(_id, detected) => b.onDetectedSsh(detected)}
               onTeraxOpen={(_id, input) => b.onTeraxOpen(input)}
             />
           </div>

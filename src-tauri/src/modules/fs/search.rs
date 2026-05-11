@@ -26,6 +26,10 @@ pub fn fs_search(
     query: String,
     limit: Option<usize>,
 ) -> Result<Vec<SearchHit>, String> {
+    if let Some(remote) = super::remote::parse_remote_path(&root) {
+        return super::remote::search(&remote?, query, limit);
+    }
+
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Ok(Vec::new());

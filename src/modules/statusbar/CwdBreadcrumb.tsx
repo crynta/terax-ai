@@ -22,6 +22,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
+import { basename, dirname } from "@/lib/paths";
 import { segmentsFromCwd } from "./lib/pathUtils";
 
 type Props = {
@@ -30,17 +31,6 @@ type Props = {
   home: string | null;
   onCd: (path: string) => void;
 };
-
-function dirname(path: string): string {
-  const i = path.lastIndexOf("/");
-  if (i <= 0) return "/";
-  return path.slice(0, i);
-}
-
-function basename(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i === -1 ? path : path.slice(i + 1);
-}
 
 export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
   // File mode: dir segments navigate; filename is the terminal leaf.

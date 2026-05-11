@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { joinPath } from "@/lib/paths";
 import {
   Dialog,
   DialogContent,
@@ -19,11 +20,6 @@ type Props = {
   rootPath: string | null;
   onCreated: (path: string) => void;
 };
-
-function joinPath(parent: string, name: string): string {
-  if (parent.endsWith("/")) return `${parent}${name}`;
-  return `${parent}/${name}`;
-}
 
 export function NewEditorDialog({
   open,

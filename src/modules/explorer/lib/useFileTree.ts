@@ -1,3 +1,4 @@
+import { dirname, joinPath } from "@/lib/paths";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
 
@@ -20,17 +21,6 @@ export type PendingCreate = {
   parentPath: string;
   kind: "file" | "dir";
 };
-
-export function joinPath(parent: string, name: string): string {
-  if (parent.endsWith("/")) return `${parent}${name}`;
-  return `${parent}/${name}`;
-}
-
-export function dirname(path: string): string {
-  const i = path.lastIndexOf("/");
-  if (i <= 0) return "/";
-  return path.slice(0, i);
-}
 
 type Options = {
   onPathRenamed?: (from: string, to: string) => void;

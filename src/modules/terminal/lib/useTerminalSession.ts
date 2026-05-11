@@ -7,12 +7,20 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
-import { registerCwdHandler, registerPromptTracker, registerTeraxOpenHandler, type TeraxOpenInput } from "./osc-handlers";
+import {
+  registerClipboardHandler,
+  registerCwdHandler,
+  registerPromptTracker,
+  registerTeraxOpenHandler,
+  type TeraxOpenInput,
+} from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
+import { createSshCommandDetector, type DetectedSshCommand } from "./ssh-detect";
 
-export type { TeraxOpenInput };
+export type { DetectedSshCommand, TeraxOpenInput };
 
 const FONT_SIZE = 14;
+const MAX_AUTO_COPY_SELECTION_CHARS = 512 * 1024;
 
 type Options = {
   container: React.RefObject<HTMLDivElement | null>;
@@ -22,6 +30,7 @@ type Options = {
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
   onDetectedLocalUrl?: (url: string) => void;
+  onDetectedSsh?: (detected: DetectedSshCommand) => void;
   onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
@@ -38,21 +47,24 @@ export function useTerminalSession({
   onExit,
   onCwd,
   onDetectedLocalUrl,
+  onDetectedSsh,
   onTeraxOpen,
 }: Options) {
   const detectedRef = useRef<string | null>(null);
   const onDetectedRef = useRef(onDetectedLocalUrl);
+  const onDetectedSshRef = useRef(onDetectedSsh);
   const onCwdRef = useRef(onCwd);
   const onExitRef = useRef(onExit);
   const onSearchReadyRef = useRef(onSearchReady);
   const onTeraxOpenRef = useRef(onTeraxOpen);
   useEffect(() => {
     onDetectedRef.current = onDetectedLocalUrl;
+    onDetectedSshRef.current = onDetectedSsh;
     onCwdRef.current = onCwd;
     onExitRef.current = onExit;
     onSearchReadyRef.current = onSearchReady;
     onTeraxOpenRef.current = onTeraxOpen;
-  }, [onDetectedLocalUrl, onCwd, onExit, onSearchReady, onTeraxOpen]);
+  }, [onDetectedLocalUrl, onDetectedSsh, onCwd, onExit, onSearchReady, onTeraxOpen]);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const ptyRef = useRef<PtySession | null>(null);
@@ -80,6 +92,9 @@ export function useTerminalSession({
         cursorBlink: true,
         cursorStyle: "bar",
         cursorInactiveStyle: "outline",
+        // Zellij/tmux-style terminal apps expect Option/Alt shortcuts as
+        // Meta (ESC-prefixed) key sequences on macOS, not as composed symbols.
+        macOptionIsMeta: true,
         // 5k lines × 80 cols × ~16 B per cell ≈ 6 MB per tab. 10k doubled
         // that for output almost no one scrolls back to. Keep this knob in
         // mind if/when we add a "scrollback" preference.
@@ -111,6 +126,7 @@ export function useTerminalSession({
 
       const prompt = registerPromptTracker(term);
       cleanups.push(
+        registerClipboardHandler(term),
         registerCwdHandler(term, (cwd) => onCwdRef.current?.(cwd)),
         registerTeraxOpenHandler(term, (input) => onTeraxOpenRef.current?.(input)),
         prompt.dispose,
@@ -156,7 +172,30 @@ export function useTerminalSession({
       }
       ptyRef.current = pty;
 
-      term.onData((data) => pty.write(data));
+      const detectSsh = createSshCommandDetector((detected) =>
+        onDetectedSshRef.current?.(detected),
+      );
+      term.onData((data) => {
+        detectSsh(data);
+        pty.write(data);
+      });
+
+      let selectionCopyTimer: ReturnType<typeof setTimeout> | null = null;
+      const selectionDisposable = term.onSelectionChange(() => {
+        if (selectionCopyTimer) clearTimeout(selectionCopyTimer);
+        selectionCopyTimer = setTimeout(() => {
+          selectionCopyTimer = null;
+          const text = term.getSelection();
+          if (!text || text.length > MAX_AUTO_COPY_SELECTION_CHARS) return;
+          void navigator.clipboard?.writeText(text).catch((err) => {
+            console.warn("Failed to auto-copy terminal selection:", err);
+          });
+        }, 80);
+      });
+      cleanups.push(() => {
+        selectionDisposable.dispose();
+        if (selectionCopyTimer) clearTimeout(selectionCopyTimer);
+      });
 
       // Two-stage debounce:
       //  - FIT runs frequently (~one frame) so xterm visually keeps up with
@@ -234,6 +273,15 @@ export function useTerminalSession({
     ptyRef.current?.write(data);
   }, []);
 
+  const refit = useCallback(() => {
+    const term = termRef.current;
+    const pty = ptyRef.current;
+    fitRef.current?.fit();
+    if (term && pty) {
+      void pty.resize(term.cols, term.rows);
+    }
+  }, []);
+
   const focus = useCallback(() => {
     termRef.current?.focus();
   }, []);
@@ -263,7 +311,7 @@ export function useTerminalSession({
     term.options.theme = buildTerminalTheme();
   }, []);
 
-  return { write, focus, getBuffer, getSelection, applyTheme };
+  return { write, refit, focus, getBuffer, getSelection, applyTheme };
 }
 
 function stripTrailingPunct(url: string): string {

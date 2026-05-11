@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TERAX-Custom E2E Checkliste</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1418;
+        --panel: #151b20;
+        --panel-2: #10161a;
+        --text: #e8eef2;
+        --muted: #97a5ae;
+        --line: #29343b;
+        --accent: #54d6a7;
+        --warn: #f5b85f;
+        --bad: #ff7b7b;
+        --code: #0b1013;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        line-height: 1.45;
+      }
+
+      main {
+        width: min(1100px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 28px 0 48px;
+      }
+
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: 18px;
+        margin-bottom: 20px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 26px;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        margin: 28px 0 10px;
+        font-size: 16px;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      button {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 8px 10px;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      button:hover {
+        border-color: var(--accent);
+      }
+
+      .meta {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 8px 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        margin: 18px 0;
+        font-size: 13px;
+      }
+
+      .meta dt {
+        color: var(--muted);
+      }
+
+      .meta dd {
+        margin: 0;
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+          monospace;
+      }
+
+      section {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px;
+        margin-top: 14px;
+      }
+
+      label {
+        display: grid;
+        grid-template-columns: 20px 1fr;
+        gap: 10px;
+        padding: 9px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      label:first-of-type {
+        border-top: 0;
+      }
+
+      input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        margin-top: 2px;
+        accent-color: var(--accent);
+      }
+
+      .item-title {
+        display: block;
+      }
+
+      .hint {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      code,
+      pre {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo,
+          monospace;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        background: var(--code);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+        overflow: auto;
+        color: #d6e4ff;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status strong {
+        color: var(--accent);
+      }
+
+      .warn {
+        color: var(--warn);
+      }
+
+      .fail {
+        color: var(--bad);
+      }
+
+      @media print {
+        body {
+          background: white;
+          color: black;
+        }
+
+        section,
+        .meta {
+          break-inside: avoid;
+          border-color: #bbb;
+        }
+
+        button,
+        .actions {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>TERAX-Custom E2E Checkliste</h1>
+          <p>
+            Manuelle UI-Checks plus Commands fuer Remote-FS, SSH-Erkennung,
+            zellij/Option-Key und OSC-52 Clipboard.
+          </p>
+        </div>
+        <div class="actions">
+          <button id="reset">Reset</button>
+          <button onclick="window.print()">Drucken / Cmd+P</button>
+        </div>
+      </header>
+
+      <dl class="meta">
+        <dt>Repo</dt>
+        <dd>/Users/simonfestl/terax-ai</dd>
+        <dt>Branch</dt>
+        <dd>local/remote-workflow</dd>
+        <dt>Custom App</dt>
+        <dd>/Applications/TERAX-Custom.app</dd>
+        <dt>Offizielle App</dt>
+        <dd>/Applications/Terax.app</dd>
+        <dt>Test-Remote</dt>
+        <dd>ssh://hetzner-vm/home/simonfestl</dd>
+      </dl>
+
+      <p class="status">
+        Fortschritt: <strong id="done">0</strong>/<span id="total">0</span>
+      </p>
+
+      <section>
+        <h2>1. App Start & Grundzustand</h2>
+        <label>
+          <input type="checkbox" data-id="app-starts" />
+          <span>
+            <span class="item-title">TERAX-Custom starten.</span>
+            <span class="hint">Command: <code>open -a /Applications/TERAX-Custom.app</code></span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="custom-name" />
+          <span>
+            <span class="item-title">Menueleiste zeigt TERAX-Custom, nicht Terax.</span>
+            <span class="hint">Damit ist klar, dass du die Custom-App nutzt.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="sidebar-renders" />
+          <span>
+            <span class="item-title">File Explorer links zeigt lokale Dateien unter <code>/Users/simonfestl</code>.</span>
+            <span class="hint">Ordner wie <code>Applications</code>, <code>Documents</code>, <code>terax-ai</code> sollten sichtbar sein.</span>
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>2. Lokaler Explorer</h2>
+        <label>
+          <input type="checkbox" data-id="local-root-click" />
+          <span>
+            <span class="item-title">Im Explorer oben auf den Root-Namen klicken.</span>
+            <span class="hint">Es sollte ein Eingabefeld fuer Root-Pfade erscheinen.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="local-root-switch" />
+          <span>
+            <span class="item-title"><code>/Users/simonfestl/terax-ai</code> eingeben und oeffnen.</span>
+            <span class="hint">Explorer sollte ins Repo wechseln.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="local-file-open" />
+          <span>
+            <span class="item-title"><code>docs/remote-workflow-plan.md</code> im Explorer oeffnen.</span>
+            <span class="hint">Editor-Tab sollte Dateiinhalt anzeigen.</span>
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>3. Remote Explorer per SSH/SFTP</h2>
+        <label>
+          <input type="checkbox" data-id="remote-root-manual" />
+          <span>
+            <span class="item-title">Explorer-Root auf <code>ssh://hetzner-vm/home/simonfestl</code> setzen.</span>
+            <span class="hint">Die Remote-Dateiliste sollte geladen werden.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="remote-create-file" />
+          <span>
+            <span class="item-title">Remote eine Testdatei erstellen, z.B. <code>terax-ui-test.txt</code>.</span>
+            <span class="hint">Danach Datei oeffnen und Inhalt speichern.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="remote-verify-ssh" />
+          <span>
+            <span class="item-title">Remote-Datei per normalem SSH verifizieren.</span>
+            <span class="hint">Command unten sollte den gespeicherten Inhalt zeigen.</span>
+          </span>
+        </label>
+        <pre>ssh hetzner-vm 'cat /home/simonfestl/terax-ui-test.txt'</pre>
+        <label>
+          <input type="checkbox" data-id="remote-cleanup" />
+          <span>
+            <span class="item-title">Remote-Testdatei wieder loeschen.</span>
+            <span class="hint">Entweder im Explorer oder per Command.</span>
+          </span>
+        </label>
+        <pre>ssh hetzner-vm 'rm -f /home/simonfestl/terax-ui-test.txt'</pre>
+      </section>
+
+      <section>
+        <h2>4. SSH-Erkennung im Terminal</h2>
+        <label>
+          <input type="checkbox" data-id="ssh-command" />
+          <span>
+            <span class="item-title">In TERAX-Custom Terminal ausfuehren: <code>ssh hetzner-vm</code>.</span>
+            <span class="hint">Explorer und Statusbar sollten automatisch auf die Remote-Home wechseln.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="ssh-chip" />
+          <span>
+            <span class="item-title">Falls der Chip <code>Open remote files</code> sichtbar bleibt: anklicken.</span>
+            <span class="hint">Explorer sollte auf die per SFTP aufgeloeste Remote-Home wechseln, nicht nur auf <code>ssh://hetzner-vm/</code>.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="remote-cwd-helper" />
+          <span>
+            <span class="item-title">Optional im SSH ausfuehren: <code>terax-remote-cwd ssh://hetzner-vm/home/simonfestl</code>.</span>
+            <span class="hint">Wenn Helper im Remote-Shell-Env vorhanden ist, sollte der Root genauer gesetzt werden.</span>
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>5. Dateien ins Terminal ziehen</h2>
+        <label>
+          <input type="checkbox" data-id="drop-local-path" />
+          <span>
+            <span class="item-title">Lokalen Screenshot oder Datei ins lokale Terminal ziehen.</span>
+            <span class="hint">Der lokale Pfad sollte shell-quoted am Cursor eingefuegt werden, ohne Enter auszufuehren.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="drop-remote-upload" />
+          <span>
+            <span class="item-title">In SSH/zellij einen macOS Screenshot ins Terminal ziehen.</span>
+            <span class="hint">TERAX-Custom sollte die Datei per SFTP in die Remote-CWD hochladen und den Remote-Pfad einfuegen.</span>
+          </span>
+        </label>
+        <pre>ls -lh ~/Screenshot*
+file ~/Screenshot*</pre>
+        <label>
+          <input type="checkbox" data-id="drop-space-filename" />
+          <span>
+            <span class="item-title">Datei mit Leerzeichen oder Sonderzeichen im Namen droppen.</span>
+            <span class="hint">Der eingefuegte Pfad sollte korrekt shell-quoted sein.</span>
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>6. Auto UI Scaling</h2>
+        <label>
+          <input type="checkbox" data-id="scale-large-window" />
+          <span>
+            <span class="item-title">TERAX-Custom auf einem grossen Monitor maximieren.</span>
+            <span class="hint">Terminal, Explorer, Tabs, Statusbar und AI-Bar sollten gemeinsam moderat groesser werden.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="scale-no-clipping" />
+          <span>
+            <span class="item-title">Fenster wieder kleiner ziehen.</span>
+            <span class="hint">UI sollte auf normale Dichte zurueckgehen und xterm sollte sauber refitten.</span>
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>7. URLs lokal oeffnen</h2>
+        <label>
+          <input type="checkbox" data-id="preview-helper" />
+          <span>
+            <span class="item-title">Im Terminal ausfuehren: <code>terax-preview http://localhost:3000</code>.</span>
+            <span class="hint">Es sollte ein Preview-Tab in TERAX-Custom entstehen.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="browser-helper" />
+          <span>
+            <span class="item-title">Im Terminal ausfuehren: <code>terax-open-browser https://example.com</code>.</span>
+            <span class="hint">Sollte im normalen lokalen Browser oeffnen.</span>
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>8. Binary & PDF Preview</h2>
+        <label>
+          <input type="checkbox" data-id="binary-image-preview" />
+          <span>
+            <span class="item-title">Im Explorer <code>docs/terminal.png</code> oeffnen.</span>
+            <span class="hint">Der Editor sollte eine Bildvorschau anzeigen statt <code>preview not supported</code>.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="binary-pdf-preview" />
+          <span>
+            <span class="item-title">Eine lokale oder remote <code>.pdf</code> Datei oeffnen.</span>
+            <span class="hint">PDF sollte inline als Preview angezeigt werden; grosse PDFs koennen am 50 MB Limit scheitern.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="binary-generic-info" />
+          <span>
+            <span class="item-title">Eine sonstige Binary-Datei oeffnen.</span>
+            <span class="hint">TERAX-Custom sollte eine saubere Binary-Info zeigen, nicht abstuerzen.</span>
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>9. zellij, Option-Key & Clipboard</h2>
+        <label>
+          <input type="checkbox" data-id="zellij-option" />
+          <span>
+            <span class="item-title">In SSH zellij starten und macOS Option/Alt-Keybindings testen.</span>
+            <span class="hint">Option sollte als Meta/ESC bei zellij ankommen.</span>
+          </span>
+        </label>
+        <label>
+          <input type="checkbox" data-id="osc52-local" />
+          <span>
+            <span class="item-title">OSC-52 Clipboard lokal testen.</span>
+            <span class="hint">Nach dem Command sollte <code>terax-e2e-clipboard</code> in macOS Clipboard liegen.</span>
+          </span>
+        </label>
+        <pre>printf '\e]52;c;%s\a' "$(printf 'terax-e2e-clipboard' | base64)"</pre>
+        <label>
+          <input type="checkbox" data-id="osc52-remote" />
+          <span>
+            <span class="item-title">OSC-52 Clipboard aus SSH/zellij testen.</span>
+            <span class="hint">Remote kopierter Text sollte lokal einfuegbar sein.</span>
+          </span>
+        </label>
+      </section>
+
+      <section>
+        <h2>10. Automatisierte Sanity-Commands</h2>
+        <label>
+          <input type="checkbox" data-id="tsc" />
+          <span>
+            <span class="item-title">TypeScript Check ausfuehren.</span>
+          </span>
+        </label>
+        <pre>cd /Users/simonfestl/terax-ai
+./node_modules/.bin/tsc --noEmit</pre>
+        <label>
+          <input type="checkbox" data-id="rust-tests" />
+          <span>
+            <span class="item-title">Rust Remote Unit Tests ausfuehren.</span>
+          </span>
+        </label>
+        <pre>cd /Users/simonfestl/terax-ai/src-tauri
+cargo test remote::tests</pre>
+        <label>
+          <input type="checkbox" data-id="hetzner-smoke" />
+          <span>
+            <span class="item-title">Echten Hetzner SFTP Smoke-Test ausfuehren.</span>
+          </span>
+        </label>
+        <pre>cd /Users/simonfestl/terax-ai/src-tauri
+TERAX_REMOTE_TEST_URI=ssh://hetzner-vm/home/simonfestl/.terax-remote-test cargo test remote_sftp_smoke -- --ignored --nocapture</pre>
+      </section>
+
+      <section>
+        <h2>Notizen</h2>
+        <p>
+          <span class="warn">Wichtig:</span> Wenn SSH-Erkennung nicht erscheint,
+          pruefen ob der Befehl wirklich im TERAX-Custom-Terminal eingegeben
+          wurde und nicht in einer anderen App. Wenn Clipboard nicht klappt,
+          pruefen ob zellij/tmux OSC-52 wirklich emittiert.
+        </p>
+      </section>
+    </main>
+
+    <script>
+      const key = "terax-custom-e2e-checklist";
+      const boxes = [...document.querySelectorAll('input[type="checkbox"]')];
+      const saved = JSON.parse(localStorage.getItem(key) || "{}");
+
+      function update() {
+        const state = {};
+        let done = 0;
+        for (const box of boxes) {
+          state[box.dataset.id] = box.checked;
+          if (box.checked) done += 1;
+        }
+        localStorage.setItem(key, JSON.stringify(state));
+        document.getElementById("done").textContent = String(done);
+        document.getElementById("total").textContent = String(boxes.length);
+      }
+
+      for (const box of boxes) {
+        box.checked = Boolean(saved[box.dataset.id]);
+        box.addEventListener("change", update);
+      }
+      document.getElementById("reset").addEventListener("click", () => {
+        for (const box of boxes) box.checked = false;
+        update();
+      });
+      update();
+    </script>
+  </body>
+</html>

@@ -79,6 +79,45 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
     printf '\e]8888;file=%s\e\\' "$(_terax_urlencode "$file")"
   }
 
+  # terax-preview: open URL in a Terax preview tab via OSC 8888.
+  # Usage: terax-preview <url>
+  terax-preview() {
+    local url="$1"
+    if [[ -z "$url" ]]; then
+      printf "usage: terax-preview <url>\n" >&2
+      return 1
+    fi
+    printf '\e]8888;url=%s;target=preview\e\\' "$(_terax_urlencode "$url")"
+  }
+
+  # terax-open: preview-first URL opener for terminal-first workflows.
+  # Usage: terax-open <url>
+  terax-open() {
+    terax-preview "$@"
+  }
+
+  # terax-open-browser: open URL in the local system browser via OSC 8888.
+  # Usage: terax-open-browser <url>
+  terax-open-browser() {
+    local url="$1"
+    if [[ -z "$url" ]]; then
+      printf "usage: terax-open-browser <url>\n" >&2
+      return 1
+    fi
+    printf '\e]8888;url=%s;target=browser\e\\' "$(_terax_urlencode "$url")"
+  }
+
+  # terax-remote-cwd: mark the current terminal as a remote workspace.
+  # Usage: terax-remote-cwd ssh://host/path
+  terax-remote-cwd() {
+    local cwd="$1"
+    if [[ "$cwd" != ssh://* ]]; then
+      printf "usage: terax-remote-cwd ssh://host/path\n" >&2
+      return 1
+    fi
+    printf '\e]8888;remote-cwd=%s\e\\' "$(_terax_urlencode "$cwd")"
+  }
+
   # Shorthand alias.
   alias tp='terax_open'
 
