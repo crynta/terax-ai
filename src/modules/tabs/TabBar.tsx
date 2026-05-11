@@ -21,8 +21,10 @@ import {
   ComputerTerminal02Icon,
   GitCompareIcon,
   Globe02Icon,
+  LockIcon,
   PencilEdit02Icon,
   PlusSignIcon,
+  SquareUnlock01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef } from "react";
@@ -39,6 +41,8 @@ type Props = {
   onCloseAll: () => void;
   /** Pin (promote) a preview tab to persistent on double-click. */
   onPin: (id: number) => void;
+  onLock: (id: number) => void;
+  onUnlock: (id: number) => void;
   compact?: boolean;
 };
 
@@ -52,6 +56,8 @@ export function TabBar({
   onClose,
   onCloseAll,
   onPin,
+  onLock,
+  onUnlock,
   compact,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -92,6 +98,7 @@ export function TabBar({
           <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
             {tabs.map((t) => {
               const isPreview = t.kind === "editor" && (t as EditorTab).preview;
+              const isLocked = !!t.locked;
               return (
                 <ContextMenu key={t.id}>
                   <ContextMenuTrigger asChild>
@@ -127,7 +134,23 @@ export function TabBar({
                           />
                         ) : null}
                       </span>
-                      {tabs.length > 1 && (
+                      {isLocked ? (
+                        <span
+                          role="button"
+                          aria-label="Unlock tab"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUnlock(t.id);
+                          }}
+                          className="rounded p-0.5 opacity-40 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-70"
+                        >
+                          <HugeiconsIcon
+                            icon={LockIcon}
+                            size={11}
+                            strokeWidth={2}
+                          />
+                        </span>
+                      ) : tabs.length > 1 ? (
                         <span
                           role="button"
                           aria-label="Close tab"
@@ -143,21 +166,36 @@ export function TabBar({
                             strokeWidth={2}
                           />
                         </span>
-                      )}
+                      ) : null}
                     </TabsTrigger>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
                     <ContextMenuItem
                       onSelect={() => onClose(t.id)}
-                      disabled={tabs.length <= 1}
+                      disabled={isLocked || tabs.length <= 1}
                     >
                       <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={1.75} />
                       Close
                     </ContextMenuItem>
                     <ContextMenuSeparator />
-                    <ContextMenuItem onSelect={onCloseAll}>
+                    <ContextMenuItem
+                      onSelect={onCloseAll}
+                      disabled={isLocked}
+                    >
                       Close All
                     </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    {isLocked ? (
+                      <ContextMenuItem onSelect={() => onUnlock(t.id)}>
+                        <HugeiconsIcon icon={SquareUnlock01Icon} size={14} strokeWidth={1.75} />
+                        Unlock Tab
+                      </ContextMenuItem>
+                    ) : (
+                      <ContextMenuItem onSelect={() => onLock(t.id)}>
+                        <HugeiconsIcon icon={LockIcon} size={14} strokeWidth={1.75} />
+                        Lock Tab
+                      </ContextMenuItem>
+                    )}
                   </ContextMenuContent>
                 </ContextMenu>
               );

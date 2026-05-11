@@ -92,6 +92,8 @@ export default function App() {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
+    lockTab,
+    unlockTab,
   } = useTabs();
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
@@ -763,6 +765,8 @@ export default function App() {
             onClose={handleClose}
             onCloseAll={closeAllTabs}
             onPin={pinTab}
+            onLock={lockTab}
+            onUnlock={unlockTab}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={

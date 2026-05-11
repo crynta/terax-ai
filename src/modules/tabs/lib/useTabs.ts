@@ -21,6 +21,7 @@ export type TerminalTab = {
   cwd?: string;
   paneTree: PaneNode;
   activeLeafId: number;
+  locked?: boolean;
 };
 
 export type EditorTab = {
@@ -35,6 +36,7 @@ export type EditorTab = {
    * is replaced by the next single-click rather than accumulating.
    */
   preview: boolean;
+  locked?: boolean;
 };
 
 export type PreviewTab = {
@@ -42,6 +44,7 @@ export type PreviewTab = {
   kind: "preview";
   title: string;
   url: string;
+  locked?: boolean;
 };
 
 export type AiDiffStatus = "pending" | "approved" | "rejected";
@@ -58,6 +61,7 @@ export type AiDiffTab = {
   approvalId: string;
   status: AiDiffStatus;
   isNewFile: boolean;
+  locked?: boolean;
 };
 
 export type Tab = TerminalTab | EditorTab | PreviewTab | AiDiffTab;
@@ -319,6 +323,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
   const closeTab = useCallback((id: number) => {
     setTabs((curr) => {
+      const tab = curr.find((t) => t.id === id);
+      if (tab?.locked) return curr;
       if (curr.length <= 1) return curr;
       const idx = curr.findIndex((t) => t.id === id);
       const next = curr.filter((t) => t.id !== id);
@@ -329,13 +335,15 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     });
   }, []);
 
-  /** Close all tabs except the first one and activate it. */
+  /** Close all tabs except locked ones (and the first if all are locked). */
   const closeAllTabs = useCallback(() => {
     setTabs((curr) => {
-      const keep = curr[0];
-      if (!keep) return curr;
-      setActiveId(keep.id);
-      return [keep];
+      const keep = curr.filter((t) => t.locked);
+      // If nothing is locked, keep only the first tab (original behaviour).
+      const next = keep.length > 0 ? keep : [curr[0]].filter(Boolean);
+      if (!next[0]) return curr;
+      setActiveId(next[0].id);
+      return next;
     });
   }, []);
 
@@ -457,6 +465,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       if (!tab || tab.kind !== "terminal") return curr;
       const newTree = removeLeaf(tab.paneTree, leafId);
       if (newTree === null) {
+        // Removing the last pane would close the tab — block if locked.
+        if (tab.locked) return curr;
         if (curr.length <= 1) return curr;
         const idx = curr.findIndex((x) => x.id === tab.id);
         const next = curr.filter((x) => x.id !== tab.id);
@@ -487,6 +497,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       const target = t.activeLeafId;
       const newTree = removeLeaf(t.paneTree, target);
       if (newTree === null) {
+        // Removing the last pane would close the tab — block if locked.
+        if (t.locked) return curr;
         if (curr.length <= 1) return curr;
         const idx = curr.findIndex((x) => x.id === tabId);
         const next = curr.filter((x) => x.id !== tabId);
@@ -507,6 +519,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       );
     });
     return closedTab;
+  }, []);
+
+  const lockTab = useCallback((id: number) => {
+    setTabs((curr) => curr.map((t) => (t.id === id ? { ...t, locked: true } : t)));
+  }, []);
+
+  const unlockTab = useCallback((id: number) => {
+    setTabs((curr) => curr.map((t) => (t.id === id ? { ...t, locked: false } : t)));
   }, []);
 
   return {
@@ -530,5 +550,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
+    lockTab,
+    unlockTab,
   };
 }

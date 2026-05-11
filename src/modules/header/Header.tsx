@@ -42,6 +42,8 @@ type Props = {
   onCloseAll: () => void;
   /** Promote a preview (transient) tab to persistent. */
   onPin: (id: number) => void;
+  onLock: (id: number) => void;
+  onUnlock: (id: number) => void;
   onToggleSidebar: () => void;
   onSplit: (dir: "row" | "col") => void;
   /** Active tab is a terminal and below the per-tab pane cap. */
@@ -64,6 +66,8 @@ export function Header({
   onClose,
   onCloseAll,
   onPin,
+  onLock,
+  onUnlock,
   onToggleSidebar,
   onSplit,
   canSplit,
@@ -210,6 +214,8 @@ export function Header({
           onClose={onClose}
           onCloseAll={onCloseAll}
           onPin={onPin}
+          onLock={onLock}
+          onUnlock={onUnlock}
           compact={compact}
         />
         <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
