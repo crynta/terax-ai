@@ -1,4 +1,5 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
@@ -17,7 +18,6 @@ import { openPty, type PtySession } from "./pty-bridge";
 
 export type { TeraxOpenInput };
 
-const FONT_SIZE = 14;
 const BACKWARD_KILL_WORD = "\x17";
 
 const LOCAL_URL_RE =
@@ -50,6 +50,7 @@ type Session = {
   lastCwd: string | null;
   lastDetectedUrl: string | null;
   pendingExit: number | null;
+  webglEnabled: boolean;
   webglLoaded: boolean;
   ready: Promise<void>;
   disposed: boolean;
@@ -63,9 +64,13 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   const existing = sessions.get(leafId);
   if (existing) return existing;
 
+  const prefs = usePreferencesStore.getState();
+  const webglEnabled = prefs.terminalWebglEnabled;
+  const fontSize = prefs.terminalFontSize;
+
   const term = new Terminal({
     fontFamily: detectMonoFontFamily(),
-    fontSize: FONT_SIZE,
+    fontSize,
     lineHeight: 1.05,
     theme: buildTerminalTheme(),
     cursorBlink: true,
@@ -103,6 +108,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     lastCwd: null,
     lastDetectedUrl: null,
     pendingExit: null,
+    webglEnabled,
     webglLoaded: false,
     ready: Promise.resolve(),
     disposed: false,
@@ -241,7 +247,7 @@ function attachSession(
   s.lastW = container.clientWidth;
   s.lastH = container.clientHeight;
 
-  if (firstAttach && !s.webglLoaded) {
+  if (firstAttach && !s.webglLoaded && s.webglEnabled) {
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => webgl.dispose());
