@@ -138,11 +138,12 @@ export function TabBar({
                         <span
                           role="button"
                           aria-label="Unlock tab"
+                          title="Tab is locked — click to unlock"
                           onClick={(e) => {
                             e.stopPropagation();
                             onUnlock(t.id);
                           }}
-                          className="rounded p-0.5 opacity-40 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-70"
+                          className="rounded p-0.5 text-amber-500 transition-opacity hover:bg-accent dark:text-amber-400"
                         >
                           <HugeiconsIcon
                             icon={LockIcon}

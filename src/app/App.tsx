@@ -319,6 +319,7 @@ export default function App() {
   const handleClose = useCallback(
     (id: number) => {
       const t = tabs.find((x) => x.id === id);
+      if (t?.locked) return;
       if (t?.kind === "editor" && t.dirty) {
         const ok = window.confirm(
           `"${t.title}" has unsaved changes. Close anyway?`,
