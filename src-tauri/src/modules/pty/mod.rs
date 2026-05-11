@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
+use std::thread;
 
 use portable_pty::PtySize;
 use tauri::ipc::Channel;
@@ -119,6 +120,23 @@ pub fn pty_close(state: tauri::State<PtyState>, id: u32) -> Result<(), String> {
             log::debug!("pty_close: kill id={id} returned {e}");
         }
         log::info!("pty closed id={id}");
+        // Drop the Arc on a detached thread. On Windows `MasterPty`'s Drop
+        // calls `ClosePseudoConsole`, which can block until conhost finishes
+        // draining its output buffer. Doing it here would freeze the Tauri
+        // worker thread that handled this command — and on Windows that
+        // sometimes manifests as the closed pane refusing to disappear from
+        // the React tree because subsequent IPC stalls behind it.
+        thread::Builder::new()
+            .name(format!("terax-pty-drop-{id}"))
+            .spawn(move || {
+                let t0 = std::time::Instant::now();
+                drop(s);
+                log::info!(
+                    "pty session id={id} dropped in {}ms",
+                    t0.elapsed().as_millis()
+                );
+            })
+            .expect("spawn pty drop thread");
     } else {
         log::debug!("pty_close: unknown id={id}");
     }

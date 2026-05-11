@@ -218,6 +218,9 @@ function attachSession(
   s.callbacks = callbacks;
 
   const firstAttach = !s.term.element;
+  console.debug(
+    `[terax:pty] attach leaf=${leafId} firstAttach=${firstAttach}`,
+  );
   if (firstAttach) {
     s.term.open(container);
   } else if (s.term.element && s.term.element.parentNode !== container) {
@@ -337,6 +340,7 @@ function attachSession(
 function detachSession(leafId: number): void {
   const s = sessions.get(leafId);
   if (!s) return;
+  console.debug(`[terax:pty] detach leaf=${leafId}`);
   s.observer?.disconnect();
   s.observer = null;
   if (s.fitTimer) {
@@ -353,6 +357,7 @@ function detachSession(leafId: number): void {
 export function disposeSession(leafId: number): void {
   const s = sessions.get(leafId);
   if (!s) return;
+  console.debug(`[terax:pty] dispose leaf=${leafId} ptyId=${s.pty?.id ?? null}`);
   s.disposed = true;
   s.cleanups.forEach((fn) => fn());
   s.observer?.disconnect();
@@ -361,6 +366,7 @@ export function disposeSession(leafId: number): void {
   s.pty?.close();
   s.term.dispose();
   sessions.delete(leafId);
+  console.debug(`[terax:pty] dispose leaf=${leafId} done`);
 }
 
 type Options = {
