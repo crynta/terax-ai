@@ -5,7 +5,9 @@
       {
         "label": "main",
         "decorations": false,
-        "transparent": true
+        "transparent": true,
+        "visible": false,
+        "shadow": false
       }
     ]
   }

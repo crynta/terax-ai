@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
-import { MOD_KEY } from "@/lib/platform";
+import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
@@ -18,6 +18,7 @@ import {
   ClaudeIcon,
   ComputerIcon,
   CpuIcon,
+  DeepseekIcon,
   FlashIcon,
   GoogleGeminiIcon,
   Grok02Icon,
@@ -31,6 +32,7 @@ import { useRef } from "react";
 import {
   getModel,
   MODELS,
+  providerNeedsKey,
   PROVIDERS,
   type ModelId,
   type ProviderId,
@@ -45,6 +47,7 @@ const PROVIDER_ICON = {
   xai: Grok02Icon,
   cerebras: CpuIcon,
   groq: FlashIcon,
+  deepseek: DeepseekIcon,
   lmstudio: ComputerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
@@ -62,7 +65,7 @@ export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
       title="Open AI agent"
     >
       <span>Open AI agent</span>
-      <Kbd className="h-4 min-w-4 px-1">{MOD_KEY}I</Kbd>
+      <Kbd className="h-4 min-w-4 px-1">{fmtShortcut(MOD_KEY, "I")}</Kbd>
     </motion.button>
   );
 }
@@ -150,8 +153,8 @@ export function AiStatusBarControls() {
         aria-label="Close AI panel"
         className="text-[11px] text-foreground/85 px-1"
       >
-        <Kbd className="h-4 gap-px text-[11px]">
-          {MOD_KEY}<span className="font-mono">I</span>
+        <Kbd className="h-4 gap-px px-2 font-mono text-[11px]">
+          {fmtShortcut(MOD_KEY, "I")}
         </Kbd>
         {/* <HugeiconsIcon icon={Close} size={15} strokeWidth={1.75} /> */}
       </Button>
@@ -243,7 +246,7 @@ function ModelDropdown() {
       <DropdownMenuContent align="end" className="min-w-[240px]">
         {PROVIDERS.map((p) => {
           const models = MODELS.filter((m) => m.provider === p.id);
-          const hasKey = !!apiKeys[p.id];
+          const hasKey = providerNeedsKey(p.id) ? !!apiKeys[p.id] : true;
           return (
             <div key={p.id} className="px-1 pt-1.5 first:pt-1">
               <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[9.5px] font-medium tracking-wide text-muted-foreground uppercase">
