@@ -2,45 +2,18 @@ name: Build & Release
 
 on:
   push:
-    branches: ['**']
+    branches: ["**"]
   workflow_dispatch:
 
-jobs:
-  build:
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest
-            args: --target aarch64-apple-darwin
-            rust-target: aarch64-apple-darwin
-          - platform: macos-latest
-            args: --target x86_64-apple-darwin
-            rust-target: x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            args: ""
-            rust-target: ""
-          - platform: windows-latest
-            args: --target x86_64-pc-windows-msvc
-            rust-target: x86_64-pc-windows-msvc
+concurrency:
+  group: build-and-release-${{ github.ref }}
+  cancel-in-progress: true
 
-    runs-on: ${{ matrix.platform }}
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Linux build dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            librsvg2-dev \
-            libsmbclient-dev \
-            libssl-dev \
-            patchelf
 
       - uses: pnpm/action-setup@v6
         with:
@@ -51,51 +24,42 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust-target }}
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: ./src-tauri -> target
-          key: ${{ matrix.platform }}-${{ matrix.rust-target }}
-
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
       - name: TypeScript type-check
         run: pnpm exec tsc --noEmit
 
-      - name: Rust clippy
-        run: cargo clippy --all-targets -- -D warnings
-        working-directory: src-tauri
+      - name: Build frontend
+        run: pnpm build
 
-      - name: Write Apple API key to disk
-        if: startsWith(matrix.platform, 'macos')
-        shell: bash
-        env:
-          KEY_CONTENT: ${{ secrets.APPLE_API_KEY_PATH }}
+  rust:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
         run: |
-          mkdir -p "$HOME/private_keys"
-          printf '%s' "$KEY_CONTENT" > "$HOME/private_keys/AuthKey.p8"
-          echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey.p8" >> "$GITHUB_ENV"
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libsmbclient-dev \
+            libssl-dev
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          tagName: build-${{ github.sha }}
-          releaseName: "Terax build ${{ github.sha }}"
-          releaseBody: "Auto-build from commit ${{ github.sha }}"
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          components: clippy
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets --locked
+
+      - name: Cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
