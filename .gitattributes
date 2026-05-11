@@ -1,0 +1,2 @@
+*.ts linguist-language=TypeScript
+src/modules/ai/lib/agent.ts diff=text

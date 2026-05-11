@@ -7,6 +7,8 @@ export type ProviderId =
   | "xai"
   | "cerebras"
   | "groq"
+  | "ollama"
+  | "zai"
   | "deepseek"
   | "lmstudio";
 
@@ -74,6 +76,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
+  },
+  {
+    id: "zai",
+    label: "Z.AI",
+    keyringAccount: "zai-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://z.ai",
   },
 ] as const;
 
@@ -189,6 +198,37 @@ export const MODELS = [
     label: "LM Studio (local)",
     hint: "Custom local model",
   },
+  // Z.AI
+  {
+    id: "glm-5.1",
+    provider: "zai",
+    label: "GLM-5.1",
+    hint: "200K · best",
+  },
+  {
+    id: "glm-5v-turbo",
+    provider: "zai",
+    label: "GLM-5V Turbo",
+    hint: "200K · vision",
+  },
+  {
+    id: "glm-4.6v",
+    provider: "zai",
+    label: "GLM-4.6V",
+    hint: "128K · vision",
+  },
+  {
+    id: "glm-4.6v-flashx",
+    provider: "zai",
+    label: "GLM-4.6V FlashX",
+    hint: "128K · fast vision",
+  },
+  {
+    id: "glm-4.5-air",
+    provider: "zai",
+    label: "GLM-4.5 Air",
+    hint: "128K · fast",
+  },
 ] as const satisfies readonly ModelInfo[];
 
 export type ModelId = (typeof MODELS)[number]["id"];
@@ -220,6 +260,11 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-v4-flash": 1_000_000,
   "deepseek-v4-pro": 1_000_000,
   "lmstudio-local": 32_000,
+  "glm-5.1": 200_000,
+  "glm-5v-turbo": 200_000,
+  "glm-4.6v": 128_000,
+  "glm-4.6v-flashx": 128_000,
+  "glm-4.5-air": 128_000,
 };
 
 export function getModelContextLimit(modelId: string | undefined): number {
@@ -253,7 +298,7 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Record<
 };
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
-export const MAX_AGENT_STEPS = 24;
+export const MAX_AGENT_STEPS = 48;
 export const TERMINAL_BUFFER_LINES = 300;
 
 export const SYSTEM_PROMPT = `You are Terax, an AI assistant embedded in a developer terminal emulator.
@@ -310,4 +355,14 @@ APPROVAL:
 - If a read tool returns "Refused" for a sensitive file (.env, .ssh, credentials), do not retry — tell the user it is blocked.
 
 STYLE:
-- Concise. No filler, no apologies, no restating the question. The surface is small.`;
+- Concise. No filler, no apologies, no restating the question. The surface is small.
+
+AUTO-PLAN LOOP:
+- For any coding/implementation task, follow PLAN→CODE→TEST→FIX→DONE.
+  1. PLAN: Call todo_write with the full plan BEFORE writing any code.
+  2. CODE: Implement each step, marking it in_progress then completed.
+  3. TEST: Run tests/lint/typecheck after implementation.
+  4. FIX: If tests fail, fix and re-run.
+  5. DONE: Report results.
+- Always run lint/typecheck after code changes when available.
+- Do NOT stop after writing code — verify it compiles/passes.`;

@@ -7,6 +7,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
+import { IS_WINDOWS } from "@/lib/platform";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Cancel01Icon,
@@ -26,6 +27,7 @@ import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
+import { useGitStatus } from "./lib/useGitStatus";
 
 type SearchHit = {
   path: string;
@@ -41,7 +43,14 @@ type Props = {
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
+  onRequestRootChange?: (newRoot: string) => void;
 };
+
+const SEP_RE = /[/\\]/;
+
+function pathSegments(path: string): string[] {
+  return path.split(SEP_RE).filter(Boolean);
+}
 
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -55,6 +64,7 @@ export function FileExplorer({
   onPathDeleted,
   onRevealInTerminal,
   onAttachToAgent,
+  onRequestRootChange,
 }: Props) {
   const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
   const [query, setQuery] = useState("");
@@ -62,7 +72,15 @@ export function FileExplorer({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [drives, setDrives] = useState<string[]>([]);
   const listRef = useRef<HTMLDivElement>(null);
+
+  const gitStatus = useGitStatus(rootPath);
+
+  useEffect(() => {
+    if (!IS_WINDOWS) return;
+    invoke<string[]>("list_drives").then(setDrives).catch(() => {});
+  }, []);
 
   type FlatItem = { path: string; isDir: boolean };
   const flat = useMemo<FlatItem[]>(() => {
@@ -217,6 +235,56 @@ export function FileExplorer({
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
+      {IS_WINDOWS && drives.length > 1 && onRequestRootChange && (
+        <div className="flex shrink-0 items-center gap-0.5 border-b border-border/40 px-1.5 py-0.5">
+          {drives.map((d) => {
+            const letter = d.replace(":\\", "");
+            const active = rootPath?.toLowerCase().startsWith(letter.toLowerCase());
+            return (
+              <button
+                key={d}
+                type="button"
+                onClick={() => onRequestRootChange(d)}
+                className={`rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                  active
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+                }`}
+                title={d}
+              >
+                {letter}:
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {rootPath && onRequestRootChange && (
+        <div className="flex shrink-0 items-center gap-0.5 overflow-x-auto border-b border-border/40 px-1.5 py-0.5 text-[10px] text-muted-foreground scrollbar-none">
+          {(() => {
+            const segs = pathSegments(rootPath);
+            const sep = rootPath.includes("\\") && !rootPath.includes("/") ? "\\" : "/";
+            return segs.map((seg, i) => {
+              const partial = segs.slice(0, i + 1).join(sep) + (i < segs.length - 1 ? sep : "");
+              const isDrive = IS_WINDOWS && i === 0 && /^[A-Za-z]:$/.test(seg);
+              const display = isDrive ? seg + sep : seg;
+              return (
+                <span key={i} className="flex items-center shrink-0">
+                  {i > 0 && <span className="mx-0.5 text-border">{sep}</span>}
+                  <button
+                    type="button"
+                    onClick={() => onRequestRootChange(partial)}
+                    className={`rounded px-1 py-0 hover:bg-accent/40 hover:text-foreground ${
+                      i === segs.length - 1 ? "font-medium text-foreground/80" : ""
+                    }`}
+                  >
+                    {display}
+                  </button>
+                </span>
+              );
+            });
+          })()}
+        </div>
+      )}
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
         <span
           className="flex-1 flex truncate text-xs font-medium text-foreground/80"
@@ -400,6 +468,7 @@ export function FileExplorer({
                       onAttachToAgent={onAttachToAgent}
                       selectedPath={selectedPath}
                       onSelectPath={setSelectedPath}
+                      gitStatus={gitStatus}
                     />
                   ))}
               </div>

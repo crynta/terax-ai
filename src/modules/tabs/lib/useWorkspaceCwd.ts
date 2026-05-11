@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Tab } from "./useTabs";
 
 type Result = {
   explorerRoot: string | null;
   inheritedCwdForNewTab: () => string | undefined;
+  setExplorerOverride: (path: string | null) => void;
+  explorerOverride: string | null;
 };
 
 export function useWorkspaceCwd(
@@ -12,6 +14,7 @@ export function useWorkspaceCwd(
   home: string | null,
 ): Result {
   const lastTerminalCwd = useRef<string | null>(null);
+  const [explorerOverride, setExplorerOverride] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeTab?.kind === "terminal" && activeTab.cwd) {
@@ -20,20 +23,18 @@ export function useWorkspaceCwd(
   }, [activeTab]);
 
   const explorerRoot = useMemo<string | null>(() => {
+    if (explorerOverride) return explorerOverride;
     if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
     if (lastTerminalCwd.current) return lastTerminalCwd.current;
     const anyTerm = tabs.find((t) => t.kind === "terminal" && t.cwd);
     if (anyTerm?.kind === "terminal" && anyTerm.cwd) return anyTerm.cwd;
     return home;
-  }, [activeTab, tabs, home]);
+  }, [explorerOverride, activeTab, tabs, home]);
 
   const inheritedCwdForNewTab = useCallback((): string | undefined => {
     if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
-    // Editor tabs inherit the last terminal's cwd (or workspace home), not
-    // the file's folder — opening a new terminal from a file shouldn't
-    // hijack the user's working directory context.
     return lastTerminalCwd.current ?? home ?? undefined;
   }, [activeTab, home]);
 
-  return { explorerRoot, inheritedCwdForNewTab };
+  return { explorerRoot, inheritedCwdForNewTab, setExplorerOverride, explorerOverride };
 }
