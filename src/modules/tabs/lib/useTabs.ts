@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   hasLeaf,
   leafIds,
@@ -13,6 +13,29 @@ import {
 
 // Browsers cap WebGL contexts at ~16; one xterm renderer per leaf.
 export const MAX_PANES_PER_TAB = 8;
+
+// ─── Session persistence ────────────────────────────────────────────────────
+
+const SESSION_KEY = "terax:session";
+
+type SavedSession = {
+  tabs: (TerminalTab | EditorTab | PreviewTab)[];
+  activeId: number;
+  nextId: number;
+};
+
+function loadSession(): SavedSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as SavedSession;
+    if (!Array.isArray(d?.tabs) || !d.tabs.length) return null;
+    return d;
+  } catch {
+    return null;
+  }
+}
+
 
 export type TerminalTab = {
   id: number;
@@ -90,6 +113,8 @@ function titleFromUrl(url: string): string {
 
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
+    const s = loadSession();
+    if (s) return s.tabs as Tab[];
     const tabId = 1;
     const leafId = 2;
     return [
@@ -103,8 +128,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       },
     ];
   });
-  const [activeId, setActiveId] = useState(1);
-  const nextIdRef = useRef(3);
+  const [activeId, setActiveId] = useState<number>(() => {
+    const s = loadSession();
+    if (!s) return 1;
+    const exists = s.tabs.some((t) => t.id === s.activeId);
+    return exists ? s.activeId : (s.tabs[0]?.id ?? 1);
+  });
+  const nextIdRef = useRef<number>(loadSession()?.nextId ?? 3);
 
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
@@ -528,6 +558,25 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const unlockTab = useCallback((id: number) => {
     setTabs((curr) => curr.map((t) => (t.id === id ? { ...t, locked: false } : t)));
   }, []);
+
+  // Persist tab state so it survives F5 / accidental reload.
+  useEffect(() => {
+    try {
+      const saveable = tabs
+        .filter((t) => t.kind !== "ai-diff")
+        .map((t) =>
+          t.kind === "editor" ? { ...t, dirty: false, preview: false } : t,
+        );
+      const session: SavedSession = {
+        tabs: saveable as SavedSession["tabs"],
+        activeId,
+        nextId: nextIdRef.current,
+      };
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    } catch {
+      // ignore quota / security errors
+    }
+  }, [tabs, activeId]);
 
   return {
     tabs,
