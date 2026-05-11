@@ -52,10 +52,12 @@ import {
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { AlertCircleIcon, LockIcon } from "@hugeicons/core-free-icons";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -96,6 +98,12 @@ export default function App() {
     lockTab,
     unlockTab,
   } = useTabs();
+
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  // Keep a stable ref so the `onCloseRequested` effect can always call the
+  // latest confirm function without re-subscribing on every render.
+  const confirmRef = useRef(confirm);
+  confirmRef.current = confirm;
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
   // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
@@ -318,18 +326,22 @@ export default function App() {
   }, [tabs]);
 
   const handleClose = useCallback(
-    (id: number) => {
+    async (id: number) => {
       const t = tabs.find((x) => x.id === id);
       if (t?.locked) return;
       if (t?.kind === "editor" && t.dirty) {
-        const ok = window.confirm(
-          `"${t.title}" has unsaved changes. Close anyway?`,
-        );
+        const ok = await confirm({
+          title: "Unsaved Changes",
+          description: `"${t.title}" has unsaved changes. Close anyway?`,
+          confirmLabel: "Close anyway",
+          destructive: true,
+          icon: AlertCircleIcon,
+        });
         if (!ok) return;
       }
       disposeTab(id);
     },
-    [tabs, disposeTab],
+    [tabs, disposeTab, confirm],
   );
 
   const cycleTab = useCallback(
@@ -560,7 +572,7 @@ export default function App() {
       closeActivePane(activeId);
       return;
     }
-    handleClose(activeId);
+    void handleClose(activeId);
   }, [activeId, closeActivePane, handleClose]);
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
@@ -722,9 +734,15 @@ export default function App() {
         const hasLocked = tabsRef.current.some((t) => t.locked);
         if (!hasLocked) return;
         event.preventDefault();
-        const ok = window.confirm(
-          "You have locked tabs. Close the window anyway?",
-        );
+        const ok = await confirmRef.current({
+          title: "Close Window",
+          description:
+            "You have locked tabs open. Close the window anyway?",
+          confirmLabel: "Close anyway",
+          cancelLabel: "Keep open",
+          destructive: true,
+          icon: LockIcon,
+        });
         if (ok) await getCurrentWindow().destroy();
       })
       .then((fn) => {
@@ -968,6 +986,7 @@ export default function App() {
           />
 
           <UpdaterDialog />
+          {confirmDialog}
         </div>
       </TooltipProvider>
     </ThemeProvider>
