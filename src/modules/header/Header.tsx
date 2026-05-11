@@ -1,15 +1,30 @@
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { WindowControls } from "@/components/WindowControls";
-import { IS_MAC, MOD_KEY, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { IS_MAC, KEY_SEP, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  getBindingTokens,
+  SHORTCUTS,
+  type ShortcutId,
+} from "@/modules/shortcuts/shortcuts";
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
 import {
+  GridViewIcon,
   KeyboardIcon,
+  LayoutTwoColumnIcon,
+  LayoutTwoRowIcon,
   Settings01Icon,
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   SearchInline,
   type SearchInlineHandle,
@@ -24,7 +39,12 @@ type Props = {
   onNewPreview: () => void;
   onNewEditor: () => void;
   onClose: (id: number) => void;
+  /** Promote a preview (transient) tab to persistent. */
+  onPin: (id: number) => void;
   onToggleSidebar: () => void;
+  onSplit: (dir: "row" | "col") => void;
+  /** Active tab is a terminal and below the per-tab pane cap. */
+  canSplit: boolean;
   onOpenShortcuts: () => void;
   onOpenSettings: () => void;
   searchTarget: SearchTarget;
@@ -41,7 +61,10 @@ export function Header({
   onNewPreview,
   onNewEditor,
   onClose,
+  onPin,
   onToggleSidebar,
+  onSplit,
+  canSplit,
   onOpenShortcuts,
   onOpenSettings,
   searchTarget,
@@ -49,6 +72,24 @@ export function Header({
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
+  const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+
+  const tokensFor = (id: ShortcutId): string => {
+    const s = SHORTCUTS.find((s) => s.id === id);
+    if (!s) return "";
+    const bindings = userShortcuts[id] || s.defaultBindings;
+    if (!bindings || bindings.length === 0) return "";
+    return getBindingTokens(bindings[0]).join(KEY_SEP);
+  };
+
+  const shortcutLabel = useMemo(() => {
+    const tokens = tokensFor("shortcuts.open");
+    return tokens ? `Keyboard shortcuts (${tokens})` : "Keyboard shortcuts";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userShortcuts]);
+
+  const splitRightTokens = tokensFor("pane.splitRight");
+  const splitDownTokens = tokensFor("pane.splitDown");
 
   useEffect(() => {
     const el = rootRef.current;
@@ -61,27 +102,28 @@ export function Header({
     return () => ro.disconnect();
   }, []);
 
-  const sideButtons = (
-    <>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={onOpenShortcuts}
-        title={`Keyboard shortcuts (${MOD_KEY}K)`}
-      >
-        <HugeiconsIcon icon={KeyboardIcon} size={16} strokeWidth={1.75} />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-        onClick={onOpenSettings}
-        title="Settings"
-      >
-        <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
-      </Button>
-    </>
+  const shortcutsButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+      onClick={onOpenShortcuts}
+      title={shortcutLabel}
+    >
+      <HugeiconsIcon icon={KeyboardIcon} size={16} strokeWidth={1.75} />
+    </Button>
+  );
+
+  const settingsButton = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+      onClick={onOpenSettings}
+      title="Settings"
+    >
+      <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
+    </Button>
   );
 
   return (
@@ -92,22 +134,63 @@ export function Header({
         IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
       }`}
     >
-      <Button
-        onClick={onToggleSidebar}
-        title="Toggle sidebar"
-        variant="ghost"
-        size="icon"
-        className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-      >
-        <HugeiconsIcon icon={SidebarLeftIcon} size={18} strokeWidth={1.75} />
-      </Button>
+      <div className="flex shrink-0 items-center gap-0.5">
+        <Button
+          onClick={onToggleSidebar}
+          title="Toggle sidebar"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <HugeiconsIcon icon={SidebarLeftIcon} size={18} strokeWidth={1.75} />
+        </Button>
 
-      {!IS_MAC && (
-        <>
-          {sideButtons}
-          <span className="mx-1 h-5 w-px shrink-0 bg-border" />
-        </>
-      )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              title="Split terminal"
+              disabled={!canSplit}
+            >
+              <HugeiconsIcon icon={GridViewIcon} size={16} strokeWidth={1.75} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-44">
+            <DropdownMenuItem onSelect={() => onSplit("row")}>
+              <HugeiconsIcon
+                icon={LayoutTwoColumnIcon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Split right</span>
+              {splitRightTokens && (
+                <span className="text-xs text-muted-foreground">
+                  {splitRightTokens}
+                </span>
+              )}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onSplit("col")}>
+              <HugeiconsIcon
+                icon={LayoutTwoRowIcon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Split down</span>
+              {splitDownTokens && (
+                <span className="text-xs text-muted-foreground">
+                  {splitDownTokens}
+                </span>
+              )}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {!IS_MAC && shortcutsButton}
+      </div>
+
+      {!IS_MAC && <span className="mx-1 h-5 w-px shrink-0 bg-border" />}
 
       {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border" />}
 
@@ -123,6 +206,7 @@ export function Header({
           onNewPreview={onNewPreview}
           onNewEditor={onNewEditor}
           onClose={onClose}
+          onPin={onPin}
           compact={compact}
         />
         <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
@@ -130,7 +214,14 @@ export function Header({
 
       <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
 
-      {IS_MAC && sideButtons}
+      {IS_MAC && (
+        <>
+          {shortcutsButton}
+          {settingsButton}
+        </>
+      )}
+
+      {!IS_MAC && settingsButton}
 
       {USE_CUSTOM_WINDOW_CONTROLS && (
         <>

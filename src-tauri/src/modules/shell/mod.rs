@@ -182,6 +182,7 @@ pub async fn shell_session_run(
     state: tauri::State<'_, ShellState>,
     id: u32,
     command: String,
+    cwd: Option<String>,
     timeout_secs: Option<u64>,
 ) -> Result<SessionRunOutput, String> {
     let session = state
@@ -196,10 +197,9 @@ pub async fn shell_session_run(
             .unwrap_or(DEFAULT_TIMEOUT_SECS)
             .clamp(1, MAX_TIMEOUT_SECS),
     );
-    // Run on a worker so we don't block the async runtime.
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let _ = tx.send(session.run(command, dur));
+        let _ = tx.send(session.run(command, cwd, dur));
     });
     rx.recv().map_err(|e| e.to_string())?
 }

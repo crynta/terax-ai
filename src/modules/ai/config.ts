@@ -7,6 +7,7 @@ export type ProviderId =
   | "xai"
   | "cerebras"
   | "groq"
+  | "deepseek"
   | "lmstudio"
   | "openai-compatible";
 
@@ -60,6 +61,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "groq-api-key",
     keyPrefix: "gsk_",
     consoleUrl: "https://console.groq.com/keys",
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    keyringAccount: "deepseek-api-key",
+    keyPrefix: "sk-",
+    consoleUrl: "https://platform.deepseek.com/api_keys",
   },
   {
     id: "lmstudio",
@@ -169,6 +177,19 @@ export const MODELS = [
     label: "GPT-OSS 20B",
     hint: "Groq · ultra-fast",
   },
+  // DeepSeek
+  {
+    id: "deepseek-v4-flash",
+    provider: "deepseek",
+    label: "DeepSeek V4 Flash",
+    hint: "Fast",
+  },
+  {
+    id: "deepseek-v4-pro",
+    provider: "deepseek",
+    label: "DeepSeek V4 Pro",
+    hint: "Best",
+  },
   // LM Studio (local; model id is user-supplied at runtime)
   {
     id: "lmstudio-local",
@@ -211,6 +232,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "grok-4.20-non-reasoning": 2_000_000,
   "gpt-oss-120b": 128_000,
   "openai/gpt-oss-20b": 128_000,
+  "deepseek-v4-flash": 1_000_000,
+  "deepseek-v4-pro": 1_000_000,
   "lmstudio-local": 32_000,
   "openai-compatible-custom": 128_000,
 };

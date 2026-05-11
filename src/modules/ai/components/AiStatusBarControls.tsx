@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
-import { MOD_KEY } from "@/lib/platform";
+import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
@@ -18,6 +18,7 @@ import {
   ClaudeIcon,
   ComputerIcon,
   CpuIcon,
+  DeepseekIcon,
   FlashIcon,
   Globe02Icon,
   GoogleGeminiIcon,
@@ -32,6 +33,7 @@ import { useRef } from "react";
 import {
   getModel,
   MODELS,
+  providerNeedsKey,
   PROVIDERS,
   providerNeedsKey,
   type ModelId,
@@ -47,6 +49,7 @@ const PROVIDER_ICON = {
   xai: Grok02Icon,
   cerebras: CpuIcon,
   groq: FlashIcon,
+  deepseek: DeepseekIcon,
   lmstudio: ComputerIcon,
   "openai-compatible": Globe02Icon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
@@ -65,7 +68,7 @@ export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
       title="Open AI agent"
     >
       <span>Open AI agent</span>
-      <Kbd className="h-4 min-w-4 px-1">{MOD_KEY}I</Kbd>
+      <Kbd className="h-4 min-w-4 px-1">{fmtShortcut(MOD_KEY, "I")}</Kbd>
     </motion.button>
   );
 }
@@ -153,8 +156,8 @@ export function AiStatusBarControls() {
         aria-label="Close AI panel"
         className="text-[11px] text-foreground/85 px-1"
       >
-        <Kbd className="h-4 gap-px text-[11px]">
-          {MOD_KEY}<span className="font-mono">I</span>
+        <Kbd className="h-4 gap-px px-2 font-mono text-[11px]">
+          {fmtShortcut(MOD_KEY, "I")}
         </Kbd>
         {/* <HugeiconsIcon icon={Close} size={15} strokeWidth={1.75} /> */}
       </Button>
