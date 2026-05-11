@@ -46,10 +46,12 @@ mod unix {
     const ZLOGIN: &str = include_str!("scripts/zlogin.zsh");
     const ZSHRC: &str = include_str!("scripts/zshrc.zsh");
     const BASHRC: &str = include_str!("scripts/bashrc.bash");
+    const FISH_INIT: &str = include_str!("scripts/init.fish");
 
     pub enum Shell {
         Zsh,
         Bash,
+        Fish,
         Other,
     }
 
@@ -60,6 +62,7 @@ mod unix {
             let shell = match name.as_str() {
                 "zsh" => Shell::Zsh,
                 "bash" => Shell::Bash,
+                "fish" => Shell::Fish,
                 _ => Shell::Other,
             };
             (shell, path)
@@ -102,6 +105,18 @@ mod unix {
                 // /etc/profile from inside our rcfile to emulate login init.
                 cmd.arg("-i");
             }
+            Shell::Fish => {
+                match prepare_fish_init() {
+                    Ok(init) => {
+                        cmd.arg("--init-command");
+                        cmd.arg(format!("source {}", shell_quote(&init)));
+                    }
+                    Err(e) => {
+                        log::warn!("fish shell integration disabled: {e}");
+                    }
+                }
+                cmd.arg("-i");
+            }
             Shell::Other => {
                 log::info!(
                     "unsupported shell '{}', spawning without integration",
@@ -110,6 +125,11 @@ mod unix {
             }
         }
         Ok(cmd)
+    }
+
+    fn shell_quote(p: &Path) -> String {
+        let s = p.to_string_lossy();
+        format!("'{}'", s.replace('\'', "'\\''"))
     }
 
     fn integration_root() -> Result<PathBuf, String> {
@@ -135,6 +155,14 @@ mod unix {
         let rc = dir.join("bashrc");
         write_if_changed(&rc, BASHRC)?;
         Ok(rc)
+    }
+
+    fn prepare_fish_init() -> Result<PathBuf, String> {
+        let dir = integration_root()?.join("fish");
+        fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+        let init = dir.join("init.fish");
+        write_if_changed(&init, FISH_INIT)?;
+        Ok(init)
     }
 
     fn write_if_changed(path: &Path, content: &str) -> Result<(), String> {

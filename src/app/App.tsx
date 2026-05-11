@@ -42,8 +42,13 @@ import {
   type ShortcutHandlers,
 } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
-import { useTabs, useWorkspaceCwd } from "@/modules/tabs";
+import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
+  disposeSession,
+  findLeafCwd,
+  hasLeaf,
+  leafIds,
+  respawnSession,
   TerminalStack,
   type DetectedSshCommand,
   type TerminalPaneHandle,
@@ -110,13 +115,31 @@ export default function App() {
     setActiveId,
     newTab,
     openFileTab,
+    pinTab,
     newPreviewTab,
     openAiDiffTab,
     setAiDiffStatus,
     closeTab,
     updateTab,
     selectByIndex,
+    setLeafCwd,
+    focusPane,
+    focusNextPaneInTab,
+    splitActivePane,
+    closeActivePane,
+    closePaneByLeaf,
   } = useTabs();
+
+  // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
+  // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+
+  const activeTerminalTab = useMemo(() => {
+    const t = tabs.find((x) => x.id === activeId);
+    return t && t.kind === "terminal" ? t : null;
+  }, [tabs, activeId]);
+  const activeLeafId = activeTerminalTab?.activeLeafId ?? null;
 
   const searchAddons = useRef<Map<number, SearchAddon>>(new Map());
   const [activeSearchAddon, setActiveSearchAddon] =
@@ -127,7 +150,6 @@ export default function App() {
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const detectedUrls = useRef<Map<number, string>>(new Map());
   const detectedSsh = useRef<Map<number, DetectedSshCommand>>(new Map());
-  const activeIdRef = useRef(activeId);
   const [activeDetectedUrl, setActiveDetectedUrl] = useState<string | null>(
     null,
   );
@@ -135,9 +157,6 @@ export default function App() {
     useState<DetectedSshCommand | null>(null);
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
-  useEffect(() => {
-    activeIdRef.current = activeId;
-  }, [activeId]);
   const refitTerminals = useCallback(() => {
     terminalRefs.current.forEach((terminal) => terminal.refit());
   }, []);
@@ -240,52 +259,65 @@ export default function App() {
     tabs,
     home,
   );
-  const [explorerRootOverride, setExplorerRootOverride] = useState<string | null>(
-    null,
-  );
+  const [explorerRootOverride, setExplorerRootOverride] = useState<
+    string | null
+  >(null);
   const activeExplorerRoot = explorerRootOverride ?? explorerRoot;
+  const activeLeafCwd =
+    activeTerminalTab && activeLeafId !== null
+      ? (findLeafCwd(activeTerminalTab.paneTree, activeLeafId) ??
+        activeTerminalTab.cwd ??
+        null)
+      : null;
 
   useEffect(() => {
-    setActiveSearchAddon(searchAddons.current.get(activeId) ?? null);
+    setActiveSearchAddon(
+      activeLeafId !== null ? (searchAddons.current.get(activeLeafId) ?? null) : null,
+    );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
-    setActiveDetectedUrl(detectedUrls.current.get(activeId) ?? null);
-    setActiveDetectedSsh(detectedSsh.current.get(activeId) ?? null);
-  }, [activeId]);
+    setActiveDetectedUrl(
+      activeLeafId !== null ? (detectedUrls.current.get(activeLeafId) ?? null) : null,
+    );
+    setActiveDetectedSsh(
+      activeLeafId !== null ? (detectedSsh.current.get(activeLeafId) ?? null) : null,
+    );
+  }, [activeId, activeLeafId]);
 
   const handleDetectedLocalUrl = useCallback(
-    (id: number, url: string) => {
-      detectedUrls.current.set(id, url);
-      if (id === activeId) setActiveDetectedUrl(url);
+    (leafId: number, url: string) => {
+      detectedUrls.current.set(leafId, url);
+      if (leafId === activeLeafId) setActiveDetectedUrl(url);
     },
-    [activeId],
+    [activeLeafId],
   );
 
   const openRemoteRootForSsh = useCallback(
-    async (id: number, detected: DetectedSshCommand) => {
+    async (leafId: number, detected: DetectedSshCommand) => {
       let root = detected.uri;
       try {
         root = await invoke<string>("fs_remote_home", { uri: detected.uri });
       } catch (err) {
         console.warn("Failed to resolve remote SSH home:", err);
       }
-
-      updateTab(id, { cwd: root });
-      if (activeIdRef.current === id) {
+      setLeafCwd(leafId, root);
+      if (leafId === activeLeafId) {
         setExplorerRootOverride(root);
         setActiveDetectedSsh(detected);
       }
       return root;
     },
-    [updateTab],
+    [activeLeafId, setLeafCwd],
   );
 
   const handleDetectedSsh = useCallback(
-    (id: number, detected: DetectedSshCommand) => {
-      detectedSsh.current.set(id, detected);
-      if (id === activeId) setActiveDetectedSsh(detected);
-      void openRemoteRootForSsh(id, detected);
+    (leafId: number, detected: DetectedSshCommand) => {
+      detectedSsh.current.set(leafId, detected);
+      if (leafId === activeLeafId) setActiveDetectedSsh(detected);
+      void openRemoteRootForSsh(leafId, detected).catch((err) => {
+        console.warn("Failed to open SSH remote root:", err);
+      });
     },
-    [activeId, openRemoteRootForSsh],
+    [activeLeafId, openRemoteRootForSsh],
   );
 
   // Suppress the chip once a preview tab already targets the detected URL —
@@ -300,30 +332,53 @@ export default function App() {
 
   const detectedRemoteRoot = useMemo(() => {
     if (!isTerminalTab || !activeDetectedSsh) return null;
-    if (activeExplorerRoot?.startsWith("ssh://")) return null;
+    if (isRemotePath(activeExplorerRoot)) return null;
     return activeDetectedSsh.uri;
   }, [isTerminalTab, activeDetectedSsh, activeExplorerRoot]);
 
   const handleSearchReady = useCallback(
-    (id: number, addon: SearchAddon) => {
-      searchAddons.current.set(id, addon);
-      if (id === activeId) setActiveSearchAddon(addon);
+    (leafId: number, addon: SearchAddon) => {
+      searchAddons.current.set(leafId, addon);
+      if (leafId === activeLeafId) setActiveSearchAddon(addon);
     },
-    [activeId],
+    [activeLeafId],
   );
 
   const disposeTab = useCallback(
     (id: number) => {
-      searchAddons.current.delete(id);
-      terminalRefs.current.delete(id);
+      // Terminal-leaf-keyed maps (terminalRefs/searchAddons/detectedUrls)
+      // are pruned by the effect below as the pane tree changes; only the
+      // tab-id-keyed handles need explicit cleanup here.
       editorRefs.current.delete(id);
       previewRefs.current.delete(id);
-      detectedUrls.current.delete(id);
-      detectedSsh.current.delete(id);
       closeTab(id);
     },
     [closeTab],
   );
+
+  // Drives session disposal off the pane tree, not React lifecycles —
+  // split/unsplit re-mount components but the leaf is still live.
+  const liveLeavesRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    const live = new Set<number>();
+    for (const t of tabs) {
+      if (t.kind === "terminal") {
+        for (const id of leafIds(t.paneTree)) live.add(id);
+      }
+    }
+    for (const id of liveLeavesRef.current) {
+      if (!live.has(id)) disposeSession(id);
+    }
+    liveLeavesRef.current = live;
+    for (const k of [...terminalRefs.current.keys()])
+      if (!live.has(k)) terminalRefs.current.delete(k);
+    for (const k of [...searchAddons.current.keys()])
+      if (!live.has(k)) searchAddons.current.delete(k);
+    for (const k of [...detectedUrls.current.keys()])
+      if (!live.has(k)) detectedUrls.current.delete(k);
+    for (const k of [...detectedSsh.current.keys()])
+      if (!live.has(k)) detectedSsh.current.delete(k);
+  }, [tabs]);
 
   const handleClose = useCallback(
     (id: number) => {
@@ -353,7 +408,8 @@ export default function App() {
     const t = tabs.find((x) => x.id === activeId);
     if (!t) return null;
     if (t.kind === "terminal") {
-      return terminalRefs.current.get(activeId)?.getSelection() ?? null;
+      const lid = t.activeLeafId;
+      return terminalRefs.current.get(lid)?.getSelection() ?? null;
     }
     if (t.kind === "editor") {
       return editorRefs.current.get(activeId)?.getSelection() ?? null;
@@ -420,18 +476,12 @@ export default function App() {
   const [dropStatus, setDropStatus] = useState<string | null>(null);
   const dropStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showDropStatus = useCallback((message: string) => {
-    if (dropStatusTimer.current) clearTimeout(dropStatusTimer.current);
     setDropStatus(message);
+    if (dropStatusTimer.current) clearTimeout(dropStatusTimer.current);
     dropStatusTimer.current = setTimeout(() => {
       dropStatusTimer.current = null;
       setDropStatus(null);
-    }, 4_000);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (dropStatusTimer.current) clearTimeout(dropStatusTimer.current);
-    };
+    }, 3_000);
   }, []);
 
   useEffect(() => {
@@ -470,6 +520,13 @@ export default function App() {
     };
   }, [captureActiveSelection]);
 
+  useEffect(
+    () => () => {
+      if (dropStatusTimer.current) clearTimeout(dropStatusTimer.current);
+    },
+    [],
+  );
+
   const onAskFromSelection = useCallback(() => {
     askFromSelection();
     setAskPopup(null);
@@ -481,32 +538,35 @@ export default function App() {
 
   const sendCd = useCallback(
     (path: string) => {
-      const term = terminalRefs.current.get(activeId);
+      if (activeLeafId === null) return;
+      const term = terminalRefs.current.get(activeLeafId);
       if (!term) return;
-      const shellPath = remoteUriPath(path) ?? path;
-      if (hasUnsafeShellControl(shellPath)) {
-        showDropStatus("Path contains unsupported control characters.");
+      const target = remoteUriPath(path) ?? path;
+      if (hasUnsafeShellControl(target)) {
+        showDropStatus("Path contains unsupported control characters");
         return;
       }
-      const quoted = shellQuote(shellPath);
+      const quoted = shellQuote(target);
       term.write(`cd ${quoted}\r`);
       term.focus();
     },
-    [activeId, showDropStatus],
+    [activeLeafId, showDropStatus],
   );
 
   const cdInNewTab = useCallback(
     (path: string) => {
       if (hasUnsafeShellControl(path)) {
-        showDropStatus("Path contains unsupported control characters.");
+        showDropStatus("Path contains unsupported control characters");
         return;
       }
-      const id = newTab(path);
+      const tabId = newTab(path);
       setTimeout(() => {
-        const t = terminalRefs.current.get(id);
+        const tab = tabsRef.current.find((x) => x.id === tabId);
+        if (!tab || tab.kind !== "terminal") return;
+        const t = terminalRefs.current.get(tab.activeLeafId);
         if (!t) return;
-        const quoted = shellQuote(path);
-        t.write(`cd ${quoted}\r`);
+        const target = remoteUriPath(path) ?? path;
+        if (!hasUnsafeShellControl(target)) t.write(`cd ${shellQuote(target)}\r`);
         t.focus();
       }, 80);
     },
@@ -514,21 +574,24 @@ export default function App() {
   );
 
   const handleTerminalFileDrop = useCallback(
-    async (tabId: number, paths: string[]) => {
-      const term = terminalRefs.current.get(tabId);
-      const tab = tabs.find((t) => t.id === tabId);
-      if (!term || tab?.kind !== "terminal" || paths.length === 0) return;
+    async (leafId: number, paths: string[]) => {
+      const term = terminalRefs.current.get(leafId);
+      const tab = tabsRef.current.find(
+        (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
+      );
+      if (!term || !tab || tab.kind !== "terminal" || paths.length === 0) return;
       if (paths.some(hasUnsafeShellControl)) {
-        showDropStatus("Dropped path contains unsupported control characters.");
+        showDropStatus("Dropped path contains unsupported control characters");
         return;
       }
 
-      let remoteDir = isRemotePath(tab.cwd) ? tab.cwd : null;
+      const leafCwd = findLeafCwd(tab.paneTree, leafId) ?? tab.cwd ?? null;
+      let remoteDir = isRemotePath(leafCwd) ? leafCwd : null;
       if (!remoteDir && isRemotePath(activeExplorerRoot)) {
         remoteDir = activeExplorerRoot;
       }
-      if (!remoteDir && tabId === activeIdRef.current && activeDetectedSsh) {
-        remoteDir = await openRemoteRootForSsh(tabId, activeDetectedSsh);
+      if (!remoteDir && leafId === activeLeafId && activeDetectedSsh) {
+        remoteDir = await openRemoteRootForSsh(leafId, activeDetectedSsh);
       }
 
       if (!remoteDir) {
@@ -553,9 +616,9 @@ export default function App() {
     [
       activeDetectedSsh,
       activeExplorerRoot,
+      activeLeafId,
       openRemoteRootForSsh,
       showDropStatus,
-      tabs,
     ],
   );
 
@@ -573,9 +636,9 @@ export default function App() {
         | HTMLElement
         | null;
       if (!zone) return;
-      const tabId = Number(zone.dataset.terminalTabId);
-      if (!Number.isFinite(tabId)) return;
-      void handleTerminalFileDropRef.current(tabId, payload.paths);
+      const leafId = Number(zone.dataset.terminalLeafId);
+      if (!Number.isFinite(leafId)) return;
+      void handleTerminalFileDropRef.current(leafId, payload.paths);
     });
 
     return () => {
@@ -584,8 +647,10 @@ export default function App() {
   }, []);
 
   const handleOpenFile = useCallback(
-    (path: string) => {
-      openFileTab(path);
+    (path: string, pin?: boolean) => {
+      // Explorer defaults to preview (pin=false); explicit actions like
+      // context-menu "Open" pass pin=true for a persistent tab.
+      openFileTab(path, pin ?? false);
     },
     [openFileTab],
   );
@@ -637,28 +702,53 @@ export default function App() {
     [newPreviewTab],
   );
 
+  const splitActivePaneInActiveTab = useCallback(
+    (dir: "row" | "col") => {
+      const t = tabsRef.current.find((x) => x.id === activeId);
+      if (!t || t.kind !== "terminal") return;
+      splitActivePane(activeId, dir);
+    },
+    [activeId, splitActivePane],
+  );
+
+  const handleCloseTabOrPane = useCallback(() => {
+    const t = tabsRef.current.find((x) => x.id === activeId);
+    if (t?.kind === "terminal" && leafIds(t.paneTree).length > 1) {
+      closeActivePane(activeId);
+      return;
+    }
+    handleClose(activeId);
+  }, [activeId, closeActivePane, handleClose]);
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "tab.new": openNewTab,
       "tab.newPreview": () => openPreviewTab(""),
       "tab.newEditor": () => setNewEditorOpen(true),
-      "tab.close": () => handleClose(activeId),
+      "tab.close": handleCloseTabOrPane,
       "tab.next": () => cycleTab(1),
       "tab.prev": () => cycleTab(-1),
       "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
+      "pane.splitRight": () => splitActivePaneInActiveTab("row"),
+      "pane.splitDown": () => splitActivePaneInActiveTab("col"),
+      "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
+      "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
+      "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
     }),
     [
       activeId,
       cycleTab,
-      handleClose,
+      handleCloseTabOrPane,
       openNewTab,
       openPreviewTab,
       selectByIndex,
+      splitActivePaneInActiveTab,
+      focusNextPaneInTab,
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
@@ -668,9 +758,9 @@ export default function App() {
   useGlobalShortcuts(shortcutHandlers);
 
   const registerTerminalHandle = useCallback(
-    (id: number, h: TerminalPaneHandle | null) => {
-      if (h) terminalRefs.current.set(id, h);
-      else terminalRefs.current.delete(id);
+    (leafId: number, h: TerminalPaneHandle | null) => {
+      if (h) terminalRefs.current.set(leafId, h);
+      else terminalRefs.current.delete(leafId);
     },
     [],
   );
@@ -698,29 +788,49 @@ export default function App() {
   );
 
   const handleTerminalCwd = useCallback(
-    (id: number, cwd: string) => updateTab(id, { cwd }),
-    [updateTab],
+    (leafId: number, cwd: string) => setLeafCwd(leafId, cwd),
+    [setLeafCwd],
+  );
+
+  const handleFocusLeaf = useCallback(
+    (tabId: number, leafId: number) => focusPane(tabId, leafId),
+    [focusPane],
+  );
+
+  const handleLeafExit = useCallback(
+    (leafId: number, _code: number) => {
+      const all = tabsRef.current;
+      const tab = all.find(
+        (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
+      );
+      if (!tab || tab.kind !== "terminal") return;
+      const isLast =
+        leafIds(tab.paneTree).length === 1 &&
+        all.filter((t) => t.kind === "terminal").length === 1;
+      if (isLast) {
+        void respawnSession(leafId, tab.cwd);
+      } else {
+        closePaneByLeaf(leafId);
+      }
+    },
+    [closePaneByLeaf],
   );
 
   const handleTeraxOpen = useCallback(
-    (_tabId: number, input: TeraxOpenInput) => {
+    (leafId: number, input: TeraxOpenInput) => {
       if (input.kind === "file") {
         openFileTab(input.file);
         return;
       }
       if (input.kind === "url") {
-        if (input.target === "browser") {
-          void openUrl(input.url).catch(console.error);
-        } else {
-          openPreviewTab(input.url);
-        }
+        if (input.target === "browser") void openUrl(input.url);
+        else openPreviewTab(input.url);
         return;
       }
-      if (input.kind === "remote-cwd") {
-        updateTab(_tabId, { cwd: input.cwd });
-      }
+      setLeafCwd(leafId, input.cwd);
+      if (leafId === activeLeafId) setExplorerRootOverride(input.cwd);
     },
-    [openFileTab, openPreviewTab, updateTab],
+    [activeLeafId, openFileTab, openPreviewTab, setLeafCwd],
   );
 
   const handleEditorDirty = useCallback(
@@ -736,13 +846,20 @@ export default function App() {
     return null;
   }, [isTerminalTab, isEditorTab, activeSearchAddon, activeEditorHandle]);
 
-  const activeCwd =
-    activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
+  const activeCwd = activeTab?.kind === "terminal" ? activeLeafCwd : null;
 
   useEffect(() => {
     const findCwd = () => {
       const active = tabs.find((x) => x.id === activeId);
-      if (active?.kind === "terminal" && active.cwd) return active.cwd;
+      if (active?.kind === "terminal") {
+        return (
+          findLeafCwd(active.paneTree, active.activeLeafId) ??
+          active.cwd ??
+          activeExplorerRoot ??
+          home ??
+          null
+        );
+      }
       for (let i = tabs.length - 1; i >= 0; i--) {
         const t = tabs[i];
         if (t.kind === "terminal" && t.cwd) return t.cwd;
@@ -755,12 +872,12 @@ export default function App() {
       getTerminalContext: () => {
         const t = tabs.find((x) => x.id === activeId);
         if (t?.kind !== "terminal") return null;
-        return terminalRefs.current.get(activeId)?.getBuffer(300) ?? null;
+        return terminalRefs.current.get(t.activeLeafId)?.getBuffer(300) ?? null;
       },
       injectIntoActivePty: (text) => {
         const t = tabs.find((x) => x.id === activeId);
         if (t?.kind !== "terminal") return false;
-        const term = terminalRefs.current.get(activeId);
+        const term = terminalRefs.current.get(t.activeLeafId);
         if (!term) return false;
         term.write(text);
         term.focus();
@@ -790,7 +907,13 @@ export default function App() {
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
             onClose={handleClose}
+            onPin={pinTab}
             onToggleSidebar={toggleSidebar}
+            onSplit={splitActivePaneInActiveTab}
+            canSplit={
+              activeTerminalTab !== null &&
+              leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
+            }
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenSettings={() => void openSettingsWindow()}
             searchTarget={searchTarget}
@@ -814,8 +937,8 @@ export default function App() {
                 <div className="h-full border-r border-border/60 bg-card">
                   <FileExplorer
                     rootPath={activeExplorerRoot}
-                    onOpenFile={handleOpenFile}
                     onChangeRoot={setExplorerRootOverride}
+                    onOpenFile={handleOpenFile}
                     onPathRenamed={handlePathRenamed}
                     onPathDeleted={handlePathDeleted}
                     onRevealInTerminal={cdInNewTab}
@@ -842,7 +965,9 @@ export default function App() {
                         onCwd={handleTerminalCwd}
                         onDetectedLocalUrl={handleDetectedLocalUrl}
                         onDetectedSsh={handleDetectedSsh}
+                        onExit={handleLeafExit}
                         onTeraxOpen={handleTeraxOpen}
+                        onFocusLeaf={handleFocusLeaf}
                       />
                     </div>
                     <div
@@ -916,12 +1041,6 @@ export default function App() {
             </ResizablePanelGroup>
           </main>
 
-          {dropStatus ? (
-            <div className="pointer-events-none absolute right-3 bottom-10 z-40 max-w-96 truncate rounded-md border border-border/70 bg-popover/95 px-3 py-1.5 text-[11px] text-foreground shadow-lg">
-              {dropStatus}
-            </div>
-          ) : null}
-
           <StatusBar
             cwd={activeCwd}
             filePath={activeFilePath}
@@ -935,11 +1054,24 @@ export default function App() {
             }}
             detectedRemoteRoot={detectedRemoteRoot}
             onOpenRemoteRoot={() => {
-              if (activeDetectedSsh) {
-                void openRemoteRootForSsh(activeId, activeDetectedSsh);
-              }
+              if (activeLeafId === null || !activeDetectedSsh) return;
+              void openRemoteRootForSsh(activeLeafId, activeDetectedSsh);
             }}
           />
+
+          <AnimatePresence>
+            {dropStatus ? (
+              <motion.div
+                key="drop-status"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                className="pointer-events-none fixed bottom-12 left-1/2 z-50 -translate-x-1/2 rounded-md border border-border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-lg"
+              >
+                {dropStatus}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
 
           {hasComposer ? (
             <AgentRunBridge

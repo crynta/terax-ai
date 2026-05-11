@@ -41,7 +41,7 @@ type FileStat = {
 
 type Props = {
   rootPath: string | null;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, pin?: boolean) => void;
   onChangeRoot?: (path: string | null) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
@@ -146,7 +146,7 @@ export function FileExplorer({
       const stat = await invoke<FileStat>("fs_stat", { path: next });
       if (stat.kind === "file") {
         onChangeRoot?.(dirname(next));
-        onOpenFile(next);
+        onOpenFile(next, true);
       } else {
         onChangeRoot?.(next);
       }
@@ -439,11 +439,19 @@ export function FileExplorer({
               <div className="py-1" ref={listRef}>
                 {pendingAtRoot && (
                   <div
-                    className="flex w-full items-center gap-1.5 px-1.5 py-0.5 text-xs"
+                    className="flex w-full items-center gap-2 px-1.5 py-0.5 text-[13px]"
                     style={{ paddingLeft: 6 }}
                   >
-                    <span className="size-3 shrink-0" />
-                    <span className="size-4 shrink-0" />
+                    <span className="size-3.5 shrink-0" />
+                    <img
+                      src={
+                        pendingAtRoot.kind === "dir"
+                          ? folderIconUrl("", false)
+                          : fileIconUrl("untitled")
+                      }
+                      alt=""
+                      className="size-4 shrink-0 opacity-70"
+                    />
                     <InlineInput
                       initial=""
                       placeholder={

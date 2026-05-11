@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 
 const UPDATER_ENABLED = import.meta.env.VITE_TERAX_UPDATER === "enabled";
 const LAST_CHECK_KEY = "terax-custom:updater:last-check";
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
 export type UpdaterStatus =
   | { kind: "disabled" }
@@ -43,10 +43,10 @@ export function useUpdater({ autoCheck = true }: HookOptions = {}) {
     try {
       const { check } = await import("@tauri-apps/plugin-updater");
       const update = await check();
-      localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
       if (update) {
         setStatus({ kind: "available", update });
       } else {
+        localStorage.setItem(LAST_CHECK_KEY, String(Date.now()));
         setStatus({ kind: "uptodate" });
       }
     } catch (err) {
@@ -66,7 +66,11 @@ export function useUpdater({ autoCheck = true }: HookOptions = {}) {
       await update.downloadAndInstall((event) => {
         if (event.event === "Started") {
           total = event.data.contentLength ?? null;
-          setStatus({ kind: "downloading", downloaded: 0, contentLength: total });
+          setStatus({
+            kind: "downloading",
+            downloaded: 0,
+            contentLength: total,
+          });
         } else if (event.event === "Progress") {
           downloaded += event.data.chunkLength;
           setStatus({ kind: "downloading", downloaded, contentLength: total });

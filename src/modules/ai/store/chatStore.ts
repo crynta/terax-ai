@@ -7,6 +7,7 @@ import { create } from "zustand";
 import {
   DEFAULT_MODEL_ID,
   getModel,
+  providerNeedsKey,
   type ModelId,
   type ProviderId,
 } from "../config";
@@ -246,10 +247,9 @@ export const useChatStore = create<StoreState>((set, get) => ({
   },
 
   apiKeys: { ...EMPTY_PROVIDER_KEYS },
-  setApiKeys: (keys) => set({ apiKeys: keys, agentMeta: IDLE_META }),
+  setApiKeys: (keys) => set({ apiKeys: keys }),
   setApiKey: (provider, key) => {
-    const next = { ...get().apiKeys, [provider]: key };
-    set({ apiKeys: next, agentMeta: IDLE_META });
+    set({ apiKeys: { ...get().apiKeys, [provider]: key } });
   },
 
   selectedModelId: DEFAULT_MODEL_ID,
@@ -455,7 +455,8 @@ export function getActiveProviderKey(): string | null {
 
 export function hasKeyForModel(modelId: ModelId): boolean {
   const { apiKeys } = useChatStore.getState();
-  return !!apiKeys[getModel(modelId).provider];
+  const provider = getModel(modelId).provider;
+  return providerNeedsKey(provider) ? !!apiKeys[provider] : true;
 }
 
 export function getOrCreateChat(sessionId: string): Chat<UIMessage> {
@@ -476,7 +477,7 @@ export async function sendMessage(text: string): Promise<boolean> {
   const state = useChatStore.getState();
   const sessionId = state.activeSessionId;
   if (!sessionId) return false;
-  if (!getActiveProviderKey()) return false;
+  if (providerNeedsKey(getModel(state.selectedModelId).provider) && !getActiveProviderKey()) return false;
   const c = getOrCreateChat(sessionId);
   await c.sendMessage({ text });
   return true;

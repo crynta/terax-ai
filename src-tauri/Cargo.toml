@@ -1,6 +1,6 @@
 [package]
 name = "terax-custom"
-version = "0.6.0"
+version = "0.6.1"
 description = "TERAX-Custom — a local custom build of the Terax AI-native terminal emulator"
 authors = ["crynta"]
 edition = "2021"

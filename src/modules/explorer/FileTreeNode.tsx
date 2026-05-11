@@ -27,7 +27,12 @@ type Props = {
   rootPath: string;
   depth: number;
   tree: Tree;
-  onOpenFile: (path: string) => void;
+  /**
+   * Called whenever a file should be opened.
+   * `pin` signals persistent intent (e.g. context-menu "Open");
+   * omitting it means the caller decides the default (preview).
+   */
+  onOpenFile: (path: string, pin?: boolean) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   selectedPath: string | null;
@@ -135,7 +140,7 @@ function FileTreeNodeImpl({
           {!isDir && (
             <ContextMenuItem
               className={COMPACT_ITEM}
-              onSelect={() => onOpenFile(path)}
+              onSelect={() => onOpenFile(path, true)}
             >
               Open
             </ContextMenuItem>
@@ -214,11 +219,19 @@ function FileTreeNodeImpl({
 
       {pendingInThisDir && (
         <div
-          className="flex w-full items-center gap-1.5 px-1.5 py-0.5 text-xs"
+          className="flex w-full items-center gap-2 px-1.5 py-0.5 text-[13px]"
           style={{ paddingLeft: 6 + (depth + 1) * 12 }}
         >
-          <span className="size-3 shrink-0" />
-          <span className="size-4 shrink-0" />
+          <span className="size-3.5 shrink-0" />
+          <img
+            src={
+              pendingInThisDir.kind === "dir"
+                ? folderIconUrl("", false)
+                : fileIconUrl("untitled")
+            }
+            alt=""
+            className="size-4 shrink-0 opacity-70"
+          />
           <InlineInput
             initial=""
             placeholder={
