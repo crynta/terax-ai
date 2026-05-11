@@ -6,12 +6,14 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: build-and-release-${{ github.ref }}
+  group: build-and-validate-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   frontend:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -35,6 +37,8 @@ jobs:
 
   rust:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
