@@ -63,10 +63,6 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
 
-      - name: Cargo check
-        working-directory: src-tauri
-        run: cargo check --all-targets --locked
-
       - name: Cargo clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets --locked -- -D warnings
