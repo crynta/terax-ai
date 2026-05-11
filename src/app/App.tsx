@@ -726,24 +726,27 @@ export default function App() {
     };
   }, [openCopilotCli]);
 
-  // Intercept OS window close — ask for confirmation when locked tabs exist.
+  // Intercept OS window close — clear session storage, ask if locked tabs exist.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
       .onCloseRequested(async (event) => {
         const hasLocked = tabsRef.current.some((t) => t.locked);
-        if (!hasLocked) return;
-        event.preventDefault();
-        const ok = await confirmRef.current({
-          title: "Close Window",
-          description:
-            "You have locked tabs open. Close the window anyway?",
-          confirmLabel: "Close anyway",
-          cancelLabel: "Keep open",
-          destructive: true,
-          icon: LockIcon,
-        });
-        if (ok) await getCurrentWindow().destroy();
+        if (hasLocked) {
+          event.preventDefault();
+          const ok = await confirmRef.current({
+            title: "Close Window",
+            description: "You have locked tabs open. Close the window anyway?",
+            confirmLabel: "Close anyway",
+            cancelLabel: "Keep open",
+            destructive: true,
+            icon: LockIcon,
+          });
+          if (!ok) return;
+        }
+        // Clear persisted session so storage doesn't accumulate.
+        localStorage.removeItem("terax:session");
+        await getCurrentWindow().destroy();
       })
       .then((fn) => {
         unlisten = fn;
