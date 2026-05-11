@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,8 +12,7 @@ import type { ThemePref } from "@/modules/settings/store";
 import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
-  TERMINAL_FONT_SIZE_MAX,
-  TERMINAL_FONT_SIZE_MIN,
+  TERMINAL_FONT_SIZES,
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
@@ -32,7 +30,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 
@@ -56,15 +54,6 @@ export function GeneralSection() {
     (s) => s.terminalWebglEnabled,
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
-  const [fontSizeDraft, setFontSizeDraft] = useState(() =>
-    String(terminalFontSize),
-  );
-  const [editingFontSize, setEditingFontSize] = useState(false);
-
-  useEffect(() => {
-    if (editingFontSize) return;
-    setFontSizeDraft(String(terminalFontSize));
-  }, [editingFontSize, terminalFontSize]);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -101,38 +90,7 @@ export function GeneralSection() {
     );
   };
 
-  const onFontSizeChange = (value: string) => {
-    setFontSizeDraft(value);
-    const n = Number(value);
-    if (
-      !Number.isFinite(n) ||
-      n < TERMINAL_FONT_SIZE_MIN ||
-      n > TERMINAL_FONT_SIZE_MAX
-    )
-      return;
-    void setTerminalFontSize(Math.round(n)).catch((e) =>
-      console.error("terminal font size preference update failed", e),
-    );
-  };
-
-  const commitFontSize = () => {
-    const n = Number(fontSizeDraft);
-    if (
-      !Number.isFinite(n) ||
-      n < TERMINAL_FONT_SIZE_MIN ||
-      n > TERMINAL_FONT_SIZE_MAX
-    ) {
-      setFontSizeDraft(String(terminalFontSize));
-      setEditingFontSize(false);
-      return;
-    }
-    const clamped = Math.round(n);
-    void setTerminalFontSize(clamped).catch((e) =>
-      console.error("terminal font size preference update failed", e),
-    );
-    setFontSizeDraft(String(clamped));
-    setEditingFontSize(false);
-  };
+  const onPickTerminalFontSize = (size: number) => void setTerminalFontSize(size);
 
   return (
     <div className="flex flex-col gap-6">
@@ -210,7 +168,7 @@ export function GeneralSection() {
         <Label>Terminal</Label>
         <SettingRow
           title="Use WebGL renderer"
-          description="Accelerates rendering using the GPU. Turn off if terminal text flickers, looks corrupted, or shows blank tiles. Applies to new terminal sessions."
+          description="Accelerate rendering with the GPU. Turn off if the terminal text shows corruption or blank tiles."
         >
           <Switch
             checked={terminalWebglEnabled}
@@ -219,25 +177,38 @@ export function GeneralSection() {
         </SettingRow>
         <SettingRow
           title="Font size"
-          description="Terminal text size in pixels. Applies to new terminal sessions."
+          description="Terminal text size."
         >
-          <div className="flex items-center gap-2">
-            <Input
-              type="number"
-              min={TERMINAL_FONT_SIZE_MIN}
-              max={TERMINAL_FONT_SIZE_MAX}
-              step={1}
-              value={fontSizeDraft}
-              onFocus={() => setEditingFontSize(true)}
-              onChange={(e) => onFontSizeChange(e.currentTarget.value)}
-              onBlur={commitFontSize}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitFontSize();
-              }}
-              className="h-8 w-16 rounded-lg px-2 text-center text-[12px]"
-            />
-            <span className="text-[11px] text-muted-foreground">px</span>
-          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 justify-between gap-2 px-2.5 text-[12px]"
+              >
+                <span>{terminalFontSize} px</span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={12}
+                  strokeWidth={2}
+                  className="opacity-70"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[80px]">
+              {TERMINAL_FONT_SIZES.map((size) => (
+                <DropdownMenuItem
+                  key={size}
+                  onSelect={() => onPickTerminalFontSize(size)}
+                  className={cn(
+                    "text-[12px]",
+                    size === terminalFontSize && "bg-accent/50",
+                  )}
+                >
+                  {size} px
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </SettingRow>
       </div>
 

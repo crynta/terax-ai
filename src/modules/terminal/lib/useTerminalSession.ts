@@ -51,7 +51,7 @@ type Session = {
   lastDetectedUrl: string | null;
   pendingExit: number | null;
   webglEnabled: boolean;
-  webglLoaded: boolean;
+  webglAddon: WebglAddon | null;
   ready: Promise<void>;
   disposed: boolean;
   initialCwd: string | undefined;
@@ -109,7 +109,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     lastDetectedUrl: null,
     pendingExit: null,
     webglEnabled,
-    webglLoaded: false,
+    webglAddon: null,
     ready: Promise.resolve(),
     disposed: false,
     initialCwd,
@@ -247,12 +247,15 @@ function attachSession(
   s.lastW = container.clientWidth;
   s.lastH = container.clientHeight;
 
-  if (firstAttach && !s.webglLoaded && s.webglEnabled) {
+  if (firstAttach && !s.webglAddon && s.webglEnabled) {
     try {
       const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
+      webgl.onContextLoss(() => {
+        webgl.dispose();
+        if (s.webglAddon === webgl) s.webglAddon = null;
+      });
       s.term.loadAddon(webgl);
-      s.webglLoaded = true;
+      s.webglAddon = webgl;
     } catch (e) {
       console.warn("WebGL renderer unavailable:", e);
     }
@@ -440,6 +443,39 @@ export function useTerminalSession({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leafId]);
+
+  const fontSize = usePreferencesStore((p) => p.terminalFontSize);
+  useEffect(() => {
+    const s = sessions.get(leafId);
+    if (!s) return;
+    if (s.term.options.fontSize === fontSize) return;
+    s.term.options.fontSize = fontSize;
+    s.fitAddon.fit();
+  }, [leafId, fontSize]);
+
+  const webglPref = usePreferencesStore((p) => p.terminalWebglEnabled);
+  useEffect(() => {
+    const s = sessions.get(leafId);
+    if (!s) return;
+    s.webglEnabled = webglPref;
+    if (!s.term.element) return;
+    if (webglPref && !s.webglAddon) {
+      try {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webgl.dispose();
+          if (s.webglAddon === webgl) s.webglAddon = null;
+        });
+        s.term.loadAddon(webgl);
+        s.webglAddon = webgl;
+      } catch (e) {
+        console.warn("WebGL renderer unavailable:", e);
+      }
+    } else if (!webglPref && s.webglAddon) {
+      s.webglAddon.dispose();
+      s.webglAddon = null;
+    }
+  }, [leafId, webglPref]);
 
   useLayoutEffect(() => {
     if (!visible) return;

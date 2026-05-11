@@ -74,6 +74,10 @@ export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
 export const TERMINAL_FONT_SIZE_MAX = 32;
 
+export const TERMINAL_FONT_SIZES = [
+  10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
+] as const;
+
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
   defaultModelId: DEFAULT_MODEL_ID,
