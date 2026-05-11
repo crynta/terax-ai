@@ -33,7 +33,6 @@ import { useRef } from "react";
 import {
   getModel,
   MODELS,
-  providerNeedsKey,
   PROVIDERS,
   providerNeedsKey,
   type ModelId,
