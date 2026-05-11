@@ -1,4 +1,5 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
+import { IS_MAC } from "@/lib/platform";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
@@ -112,6 +113,25 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   sessions.set(leafId, session);
 
   term.attachCustomKeyEventHandler((event) => {
+    if (event.type !== "keydown") return true;
+
+    // Ctrl+V → paste from clipboard (Windows / Linux).
+    // macOS uses Cmd+V which the webview handles natively via the paste event.
+    if (
+      !IS_MAC &&
+      event.ctrlKey &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      event.key === "v"
+    ) {
+      navigator.clipboard
+        .readText()
+        .then((text) => { if (text) term.paste(text); })
+        .catch(() => {});
+      return false;
+    }
+
     if (!isCtrlBackspace(event)) return true;
     const pty = session.pty;
     if (!pty) return true;
