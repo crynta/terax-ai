@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
+import { isSshPath, parseSshPath } from "./sshPath";
 
 export type DirEntry = {
   name: string;
@@ -48,7 +49,16 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const fetchChildren = useCallback(async (path: string) => {
     setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
     try {
-      const entries = await invoke<DirEntry[]>("fs_read_dir", { path });
+      let entries: DirEntry[];
+      if (isSshPath(path)) {
+        const { name, remotePath } = parseSshPath(path);
+        entries = await invoke<DirEntry[]>("ssh_read_dir", {
+          name,
+          path: remotePath,
+        });
+      } else {
+        entries = await invoke<DirEntry[]>("fs_read_dir", { path });
+      }
       setNodes((s) => ({ ...s, [path]: { status: "loaded", entries } }));
     } catch (e) {
       setNodes((s) => ({
@@ -149,13 +159,27 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         return;
       }
       const path = joinPath(pendingCreate.parentPath, trimmed);
-      const cmd =
-        pendingCreate.kind === "dir" ? "fs_create_dir" : "fs_create_file";
       try {
-        await invoke(cmd, { path });
+        if (isSshPath(path)) {
+          const { name: connName, remotePath } = parseSshPath(path);
+          const fullRemote = remotePath.endsWith("/")
+            ? `${remotePath}${trimmed}`
+            : `${remotePath}/${trimmed}`;
+          const sshCmd =
+            pendingCreate.kind === "dir"
+              ? "ssh_create_dir"
+              : "ssh_create_file";
+          await invoke(sshCmd, { name: connName, path: fullRemote });
+        } else {
+          const cmd =
+            pendingCreate.kind === "dir"
+              ? "fs_create_dir"
+              : "fs_create_file";
+          await invoke(cmd, { path });
+        }
         await fetchChildren(pendingCreate.parentPath);
       } catch (e) {
-        console.error(`${cmd} failed:`, e);
+        console.error("create failed:", e);
       } finally {
         setPendingCreate(null);
       }
@@ -182,7 +206,21 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       }
       const to = joinPath(parent, trimmed);
       try {
-        await invoke("fs_rename", { from: renaming, to });
+        if (isSshPath(renaming)) {
+          const { name: connName, remotePath: fromRemote } =
+            parseSshPath(renaming);
+          const toRemote = fromRemote.slice(
+            0,
+            fromRemote.lastIndexOf("/") + 1,
+          ) + trimmed;
+          await invoke("ssh_rename", {
+            name: connName,
+            from: fromRemote,
+            to: toRemote,
+          });
+        } else {
+          await invoke("fs_rename", { from: renaming, to });
+        }
         options?.onPathRenamed?.(renaming, to);
         await fetchChildren(parent);
       } catch (e) {
@@ -197,7 +235,12 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const deletePath = useCallback(
     async (path: string) => {
       try {
-        await invoke("fs_delete", { path });
+        if (isSshPath(path)) {
+          const { name: connName, remotePath } = parseSshPath(path);
+          await invoke("ssh_delete", { name: connName, path: remotePath });
+        } else {
+          await invoke("fs_delete", { path });
+        }
         options?.onPathDeleted?.(path);
         await fetchChildren(dirname(path));
       } catch (e) {

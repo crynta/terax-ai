@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isSshPath, parseSshPath } from "@/modules/explorer/lib/sshPath";
 
 type ReadResult =
   | { kind: "text"; content: string; size: number }
@@ -46,7 +47,17 @@ export function useDocument({ path, onDirtyChange }: Options) {
     setDoc({ status: "loading" });
     setDirty(false);
 
-    invoke<ReadResult>("fs_read_file", { path })
+    const readPromise = isSshPath(path)
+      ? (() => {
+          const { name, remotePath } = parseSshPath(path);
+          return invoke<ReadResult>("ssh_read_file", {
+            name,
+            path: remotePath,
+          });
+        })()
+      : invoke<ReadResult>("fs_read_file", { path });
+
+    readPromise
       .then((res) => {
         if (cancelled) return;
         if (res.kind === "text") {
@@ -92,7 +103,12 @@ export function useDocument({ path, onDirtyChange }: Options) {
   const save = useCallback(async () => {
     if (!dirty) return;
     const content = bufferRef.current;
-    await invoke("fs_write_file", { path, content });
+    if (isSshPath(path)) {
+      const { name, remotePath } = parseSshPath(path);
+      await invoke("ssh_write_file", { name, path: remotePath, content });
+    } else {
+      await invoke("fs_write_file", { path, content });
+    }
     savedRef.current = content;
     setDirty(false);
   }, [path, dirty]);
