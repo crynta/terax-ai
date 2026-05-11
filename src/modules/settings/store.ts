@@ -49,6 +49,7 @@ export type Preferences = {
   autocompleteModelId: string;
   lmstudioBaseURL: string;
   vimMode: boolean;
+  defaultShell: string;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
 };
 
@@ -64,6 +65,7 @@ const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_VIM_MODE = "vimMode";
+const KEY_DEFAULT_SHELL = "defaultShell";
 const KEY_SHORTCUTS = "shortcuts";
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -78,6 +80,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
   vimMode: false,
+  defaultShell: "",
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
 };
 
@@ -126,6 +129,8 @@ export async function loadPreferences(): Promise<Preferences> {
     lmstudioBaseURL:
       get<string>(KEY_LMSTUDIO_BASE_URL) ?? DEFAULT_PREFERENCES.lmstudioBaseURL,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    defaultShell:
+      get<string>(KEY_DEFAULT_SHELL) ?? DEFAULT_PREFERENCES.defaultShell,
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
@@ -178,6 +183,10 @@ export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
 
+export async function setDefaultShell(value: string): Promise<void> {
+  await writePref(KEY_DEFAULT_SHELL, value);
+}
+
 export async function setShortcuts(
   value: Record<ShortcutId, KeyBinding[]> | {}
 ): Promise<void> {
@@ -208,6 +217,7 @@ export async function onPreferencesChange(
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_DEFAULT_SHELL]: "defaultShell",
     [KEY_SHORTCUTS]: "shortcuts",
   };
   // Same-process writes still fire onChange immediately; cross-window writes

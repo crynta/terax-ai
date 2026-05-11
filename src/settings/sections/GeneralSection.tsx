@@ -13,6 +13,7 @@ import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
   setAutostart,
+  setDefaultShell,
   setEditorTheme,
   setRestoreWindowState,
   setVimMode,
@@ -48,8 +49,24 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const defaultShell = usePreferencesStore((s) => s.defaultShell);
   const [shellIntegration, setShellIntegration] = useState(false);
   const [shellIntegrationBusy, setShellIntegrationBusy] = useState(false);
+  const [availableShells, setAvailableShells] = useState<
+    { name: string; path: string }[]
+  >([]);
+
+  useEffect(() => {
+    let alive = true;
+    void invoke<{ name: string; path: string }[]>("pty_list_shells")
+      .then((shells) => {
+        if (alive) setAvailableShells(shells);
+      })
+      .catch((e) => console.error("pty_list_shells failed", e));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -199,6 +216,65 @@ export function GeneralSection() {
               onCheckedChange={(v) => void setRestoreWindowState(v)}
             />
           </SettingRow>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Terminal</Label>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[12px] text-foreground">Default shell</span>
+            <span className="text-[11px] text-muted-foreground">
+              The shell that opens for new terminal tabs.
+            </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="h-9 justify-between gap-2 px-2.5 text-[12px]"
+                >
+                  <span className="truncate">
+                    {defaultShell
+                      ? availableShells.find((s) => s.path === defaultShell)
+                          ?.name ?? defaultShell
+                      : "Auto-detect"}
+                  </span>
+                  <HugeiconsIcon
+                    icon={ArrowDown01Icon}
+                    size={12}
+                    strokeWidth={2}
+                    className="opacity-70"
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[260px]">
+                <DropdownMenuItem
+                  onSelect={() => void setDefaultShell("")}
+                  className={cn(
+                    "text-[12px]",
+                    defaultShell === "" && "bg-accent/50",
+                  )}
+                >
+                  Auto-detect
+                </DropdownMenuItem>
+                {availableShells.map((s) => (
+                  <DropdownMenuItem
+                    key={s.path}
+                    onSelect={() => void setDefaultShell(s.path)}
+                    className={cn(
+                      "flex flex-col items-start gap-0 text-[12px]",
+                      s.path === defaultShell && "bg-accent/50",
+                    )}
+                  >
+                    <span>{s.name}</span>
+                    <span className="text-[10.5px] text-muted-foreground">
+                      {s.path}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 

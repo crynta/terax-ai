@@ -36,9 +36,10 @@ pub fn pty_open(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    shell: Option<String>,
     on_event: Channel<PtyEvent>,
 ) -> Result<u32, String> {
-    let (session, _) = session::spawn(cols, rows, cwd, on_event).map_err(|e| {
+    let (session, _) = session::spawn(cols, rows, cwd, shell, on_event).map_err(|e| {
         log::error!("pty_open failed: {e}");
         e
     })?;
@@ -46,6 +47,11 @@ pub fn pty_open(
     state.sessions.write().unwrap().insert(id, session);
     log::info!("pty opened id={id} cols={cols} rows={rows}");
     Ok(id)
+}
+
+#[tauri::command]
+pub fn pty_list_shells() -> Vec<shell_init::ShellProfile> {
+    shell_init::list_shells()
 }
 
 #[tauri::command]

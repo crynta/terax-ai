@@ -1,15 +1,36 @@
 use std::path::PathBuf;
 
 use portable_pty::CommandBuilder;
+use serde::Serialize;
 
-pub fn build_command(cwd: Option<String>) -> Result<CommandBuilder, String> {
+#[derive(Serialize, Clone, Debug)]
+pub struct ShellProfile {
+    pub name: String,
+    pub path: String,
+}
+
+pub fn build_command(
+    cwd: Option<String>,
+    shell: Option<String>,
+) -> Result<CommandBuilder, String> {
     #[cfg(unix)]
     {
-        unix::build(cwd)
+        unix::build(cwd, shell)
     }
     #[cfg(windows)]
     {
-        windows::build(cwd)
+        windows::build(cwd, shell)
+    }
+}
+
+pub fn list_shells() -> Vec<ShellProfile> {
+    #[cfg(unix)]
+    {
+        unix::list()
+    }
+    #[cfg(windows)]
+    {
+        windows::list()
     }
 }
 
@@ -69,8 +90,20 @@ mod unix {
         }
     }
 
-    pub fn build(cwd: Option<String>) -> Result<CommandBuilder, String> {
-        let (shell, shell_path) = Shell::detect();
+    pub fn build(cwd: Option<String>, override_path: Option<String>) -> Result<CommandBuilder, String> {
+        let (shell, shell_path) = match override_path {
+            Some(p) if !p.is_empty() => {
+                let name = p.rsplit('/').next().unwrap_or("").to_string();
+                let kind = match name.as_str() {
+                    "zsh" => Shell::Zsh,
+                    "bash" => Shell::Bash,
+                    "fish" => Shell::Fish,
+                    _ => Shell::Other,
+                };
+                (kind, p)
+            }
+            _ => Shell::detect(),
+        };
         let mut cmd = CommandBuilder::new(&shell_path);
         super::apply_common(&mut cmd, cwd);
 
@@ -181,6 +214,46 @@ mod unix {
             format!("rename {} -> {}: {e}", tmp.display(), path.display())
         })
     }
+
+    pub fn list() -> Vec<super::ShellProfile> {
+        use std::collections::BTreeSet;
+        let mut paths: BTreeSet<String> = BTreeSet::new();
+
+        if let Ok(content) = fs::read_to_string("/etc/shells") {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if Path::new(line).is_file() {
+                    paths.insert(line.to_string());
+                }
+            }
+        }
+
+        for fallback in [
+            "/bin/zsh",
+            "/bin/bash",
+            "/bin/sh",
+            "/usr/bin/zsh",
+            "/usr/bin/bash",
+            "/usr/bin/fish",
+            "/opt/homebrew/bin/fish",
+            "/usr/local/bin/fish",
+        ] {
+            if Path::new(fallback).is_file() {
+                paths.insert(fallback.to_string());
+            }
+        }
+
+        paths
+            .into_iter()
+            .map(|path| {
+                let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+                super::ShellProfile { name, path }
+            })
+            .collect()
+    }
 }
 
 #[cfg(windows)]
@@ -193,8 +266,11 @@ mod windows {
 
     const PROFILE_PS1: &str = include_str!("scripts/profile.ps1");
 
-    pub fn build(cwd: Option<String>) -> Result<CommandBuilder, String> {
-        let shell_path = super::windows_shell_path();
+    pub fn build(cwd: Option<String>, override_path: Option<String>) -> Result<CommandBuilder, String> {
+        let shell_path = match override_path {
+            Some(p) if !p.is_empty() => PathBuf::from(p),
+            _ => super::windows_shell_path(),
+        };
         let shell_name = shell_path
             .file_name()
             .and_then(|s| s.to_str())
@@ -256,6 +332,72 @@ mod windows {
             let _ = fs::remove_file(&tmp);
             format!("rename {} -> {}: {e}", tmp.display(), path.display())
         })
+    }
+
+    pub fn list() -> Vec<super::ShellProfile> {
+        let mut found: Vec<super::ShellProfile> = Vec::new();
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        let mut push = |name: &str, path: PathBuf| {
+            if !path.is_file() {
+                return;
+            }
+            let key = path.to_string_lossy().to_ascii_lowercase();
+            if !seen.insert(key) {
+                return;
+            }
+            found.push(super::ShellProfile {
+                name: name.to_string(),
+                path: path.to_string_lossy().into_owned(),
+            });
+        };
+
+        // PowerShell 7 (pwsh)
+        if let Some(p) = super::which_in_path("pwsh.exe") {
+            push("PowerShell 7", p);
+        }
+        if let Some(pf) = std::env::var_os("ProgramFiles").map(PathBuf::from) {
+            push(
+                "PowerShell 7",
+                pf.join("PowerShell").join("7").join("pwsh.exe"),
+            );
+        }
+
+        // Windows PowerShell 5
+        let system_root = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+        push(
+            "Windows PowerShell",
+            system_root
+                .join("System32")
+                .join("WindowsPowerShell")
+                .join("v1.0")
+                .join("powershell.exe"),
+        );
+
+        // Command Prompt
+        push("Command Prompt", system_root.join("System32").join("cmd.exe"));
+
+        // Git Bash
+        let git_bash_candidates = [
+            std::env::var_os("ProgramFiles")
+                .map(PathBuf::from)
+                .map(|p| p.join("Git").join("bin").join("bash.exe")),
+            std::env::var_os("ProgramFiles(x86)")
+                .map(PathBuf::from)
+                .map(|p| p.join("Git").join("bin").join("bash.exe")),
+            dirs::home_dir()
+                .map(|h| h.join("AppData/Local/Programs/Git/bin/bash.exe")),
+        ];
+        for c in git_bash_candidates.into_iter().flatten() {
+            push("Git Bash", c);
+        }
+
+        // WSL
+        push("WSL", system_root.join("System32").join("wsl.exe"));
+
+        found
     }
 }
 

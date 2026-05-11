@@ -1,5 +1,6 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
 import { IS_MAC } from "@/lib/platform";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -177,6 +178,7 @@ function openPtyForSession(
   // Fresh decoder per pty so a partial UTF-8 codepoint from a prior shell
   // doesn't leak into the new one.
   const urlDecoder = new TextDecoder("utf-8", { fatal: false });
+  const shell = usePreferencesStore.getState().defaultShell;
   return openPty(
     s.term.cols,
     s.term.rows,
@@ -202,6 +204,7 @@ function openPtyForSession(
       },
     },
     cwd,
+    shell,
   );
 }
 
