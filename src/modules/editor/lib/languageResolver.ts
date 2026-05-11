@@ -30,6 +30,7 @@ const loaders: Record<string, LanguageLoader> = {
     ),
 
   rs: () => import("@codemirror/lang-rust").then((m) => m.rust()),
+  go: () => import("@codemirror/lang-go").then((m) => m.go()),
   py: () => import("@codemirror/lang-python").then((m) => m.python()),
   json: () => import("@codemirror/lang-json").then((m) => m.json()),
 
