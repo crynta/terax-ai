@@ -99,6 +99,7 @@
   "pnpm": {
     "overrides": {
       "shiki": "^4.0.2"
-    }
+    },
+    "onlyBuiltDependencies": ["esbuild", "msw", "@tauri-apps/cli"]
   }
 }
