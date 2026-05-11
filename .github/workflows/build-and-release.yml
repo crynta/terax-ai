@@ -35,6 +35,9 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
+      - name: Run frontend tests (if present)
+        run: pnpm test --if-present
+
   rust:
     runs-on: ubuntu-22.04
     permissions:
