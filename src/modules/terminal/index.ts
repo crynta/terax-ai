@@ -1,3 +1,15 @@
 export { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 export { TerminalStack } from "./TerminalStack";
-export type { TeraxOpenInput } from "./lib/useTerminalSession";
+export {
+  disposeSession,
+  respawnSession,
+  type TeraxOpenInput,
+} from "./lib/useTerminalSession";
+export {
+  hasLeaf,
+  isLeaf,
+  leafIds,
+  type PaneId,
+  type PaneNode,
+  type SplitDir,
+} from "./lib/panes";

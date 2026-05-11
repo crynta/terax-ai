@@ -6,10 +6,8 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  Cancel01Icon,
   FileAddIcon,
   Folder01Icon,
   FolderAddIcon,
@@ -17,26 +15,19 @@ import {
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { invoke } from "@tauri-apps/api/core";
-import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { FileTreeNode } from "./FileTreeNode";
 import { InlineInput } from "./InlineInput";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
-
-type SearchHit = {
-  path: string;
-  rel: string;
-  name: string;
-  is_dir: boolean;
-};
+import { useGlobalShortcuts } from "@/modules/shortcuts";
 
 type Props = {
   rootPath: string | null;
-  onOpenFile: (path: string) => void;
+  onOpenFile: (path: string, pin?: boolean) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
@@ -57,12 +48,11 @@ export function FileExplorer({
   onAttachToAgent,
 }: Props) {
   const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SearchHit[]>([]);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSearchActive, setIsSearchActive] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<ExplorerSearchHandle>(null);
 
   type FlatItem = { path: string; isDir: boolean };
   const flat = useMemo<FlatItem[]>(() => {
@@ -88,38 +78,16 @@ export function FileExplorer({
     }
   }, [flat, selectedPath]);
 
-  useEffect(() => {
-    if (!rootPath) return;
-    const q = query.trim();
-    if (!q) {
-      setResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    let alive = true;
-    const handle = setTimeout(async () => {
-      try {
-        const hits = await invoke<SearchHit[]>("fs_search", {
-          root: rootPath,
-          query: q,
-          limit: 200,
-        });
-        if (alive) setResults(hits);
-      } catch (e) {
-        if (alive) {
-          console.error("fs_search failed:", e);
-          setResults([]);
-        }
-      } finally {
-        if (alive) setSearching(false);
+  useGlobalShortcuts({
+    "explorer.search": () => {
+      if (searchRef.current?.isFocused()) {
+        setIsSearchOpen(false);
+        return;
       }
-    }, 120);
-    return () => {
-      alive = false;
-      clearTimeout(handle);
-    };
-  }, [query, rootPath]);
+      setIsSearchOpen(true);
+      searchRef.current?.focus();
+    },
+  });
 
   if (!rootPath) {
     return (
@@ -142,7 +110,7 @@ export function FileExplorer({
     tree.pendingCreate?.parentPath === rootPath ? tree.pendingCreate : null;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (tree.renaming || tree.pendingCreate || query.trim()) return;
+    if (tree.renaming || tree.pendingCreate || isSearchOpen) return;
     const target = e.target as HTMLElement;
     if (
       target.tagName === "INPUT" ||
@@ -162,7 +130,7 @@ export function FileExplorer({
       setSelectedPath(path);
       requestAnimationFrame(() => {
         const el = listRef.current?.querySelector<HTMLElement>(
-          `[data-fs-path="${CSS.escape(path)}"]`,
+          `[data-fs-path="${CSS.escape(path)}"]`
         );
         el?.scrollIntoView({ block: "nearest" });
       });
@@ -236,8 +204,9 @@ export function FileExplorer({
           variant="ghost"
           size="icon"
           className="size-6 text-muted-foreground hover:text-foreground"
-          onClick={() => setIsSearchOpen(!isSearchOpen)}
-          title="New file"
+          onClick={() => setIsSearchOpen((v) => !v)}
+          title="Search files"
+          aria-label="Search files"
         >
           <HugeiconsIcon icon={Search01Icon} size={13} strokeWidth={2} />
         </Button>
@@ -271,82 +240,16 @@ export function FileExplorer({
         </Button>
       </div>
 
-      {isSearchOpen && (
-        <motion.div
-          className="relative shrink-0 px-2 py-1.5"
-          initial={{ opacity: 0, transform: "translateY(-15px)" }}
-          animate={{ opacity: 1, transform: "translateY(0px)" }}
-        >
-          <HugeiconsIcon
-            icon={Search01Icon}
-            size={13}
-            strokeWidth={2}
-            className="absolute top-1/2 left-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search files…"
-            className="h-7 pr-7 pl-6.5 text-xs"
-          />
-          {query ? (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              className="absolute top-1/2 right-3.5 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-              aria-label="Clear search"
-            >
-              <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />
-            </button>
-          ) : null}
-        </motion.div>
-      )}
+      <ExplorerSearch
+        ref={searchRef}
+        rootPath={rootPath}
+        onOpenFile={onOpenFile}
+        open={isSearchOpen}
+        onRequestClose={() => setIsSearchOpen(false)}
+        onActiveChange={setIsSearchActive}
+      />
 
-      {query.trim() ? (
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="py-1">
-            {searching && results.length === 0 ? (
-              <div className="px-3 py-2 text-[11px] text-muted-foreground">
-                Searching…
-              </div>
-            ) : results.length === 0 ? (
-              <div className="px-3 py-2 text-[11px] text-muted-foreground">
-                No matches
-              </div>
-            ) : (
-              results.map((hit) => {
-                const url = hit.is_dir ? null : fileIconUrl(hit.name);
-                return (
-                  <button
-                    key={hit.path}
-                    type="button"
-                    onClick={() => {
-                      if (!hit.is_dir) onOpenFile(hit.path);
-                    }}
-                    className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs hover:bg-accent"
-                    title={hit.path}
-                  >
-                    {url ? (
-                      <img src={url} alt="" className="size-3.5 shrink-0" />
-                    ) : (
-                      <HugeiconsIcon
-                        icon={Folder01Icon}
-                        size={13}
-                        strokeWidth={1.75}
-                        className="shrink-0 text-muted-foreground"
-                      />
-                    )}
-                    <span className="truncate">{hit.name}</span>
-                    <span className="ml-auto truncate text-[10px] text-muted-foreground">
-                      {hit.rel}
-                    </span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </ScrollArea>
-      ) : (
+      {!isSearchActive ? (
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <ScrollArea className="min-h-0 flex-1">
@@ -405,7 +308,12 @@ export function FileExplorer({
               </div>
             </ScrollArea>
           </ContextMenuTrigger>
-          <ContextMenuContent className={COMPACT_CONTENT}>
+          <ContextMenuContent 
+            className={COMPACT_CONTENT}
+            onCloseAutoFocus={(e) => {
+              if (tree.renaming || tree.pendingCreate) e.preventDefault();
+            }}
+          >
             {onRevealInTerminal && (
               <ContextMenuItem
                 className={COMPACT_ITEM}
@@ -448,7 +356,7 @@ export function FileExplorer({
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
-      )}
+      ) : null}
     </div>
   );
 }
