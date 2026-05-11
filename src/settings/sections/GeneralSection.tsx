@@ -6,6 +6,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
@@ -167,8 +173,27 @@ export function GeneralSection() {
       <div className="flex flex-col gap-2">
         <Label>Terminal</Label>
         <SettingRow
-          title="Use WebGL renderer"
-          description="Accelerate rendering with the GPU. Turn off if the terminal text shows corruption or blank tiles."
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              Use WebGL renderer
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="cursor-help text-[11px] text-muted-foreground/70 leading-none"
+                      aria-label="More info about WebGL renderer"
+                    >
+                      ⓘ
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[260px] text-[11px]">
+                    xterm's WebGL renderer caches glyphs in a GPU texture atlas. On some macOS setups (especially with Nerd Fonts), the atlas corrupts and terminal text becomes unreadable. Turn this off as a fallback — performance dips slightly, but text renders correctly via the DOM renderer.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </span>
+          }
+          description="Hardware-accelerated rendering. Turn off if text shows corruption or blank tiles."
         >
           <Switch
             checked={terminalWebglEnabled}
@@ -183,7 +208,7 @@ export function GeneralSection() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
-                className="h-8 justify-between gap-2 px-2.5 text-[12px]"
+                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px]"
               >
                 <span>{terminalFontSize} px</span>
                 <HugeiconsIcon
@@ -194,13 +219,16 @@ export function GeneralSection() {
                 />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[80px]">
+            <DropdownMenuContent
+              align="end"
+              className="min-w-[80px] rounded-none border border-border bg-popover p-0 shadow-none ring-0"
+            >
               {TERMINAL_FONT_SIZES.map((size) => (
                 <DropdownMenuItem
                   key={size}
                   onSelect={() => onPickTerminalFontSize(size)}
                   className={cn(
-                    "text-[12px]",
+                    "rounded-none px-3 py-1.5 text-[12px]",
                     size === terminalFontSize && "bg-accent/50",
                   )}
                 >
