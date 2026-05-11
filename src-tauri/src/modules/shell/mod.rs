@@ -21,7 +21,6 @@ const MAX_TIMEOUT_SECS: u64 = 300;
 const MAX_OUTPUT_BYTES: usize = 256 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-
 #[derive(Serialize)]
 pub struct CommandOutput {
     pub stdout: String,
