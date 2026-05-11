@@ -5,7 +5,7 @@
   <p><strong>Open-source lightweight cross-platform AI-native terminal (ADE)</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-0.5.9-blue" alt="version" />
+    <img src="https://img.shields.io/badge/version-0.6.2-blue" alt="version" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
 
