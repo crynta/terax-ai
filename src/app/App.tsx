@@ -787,7 +787,7 @@ export default function App() {
                     {sourceControlOpen ? (
                       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
                         <ResizablePanel id="workspace-main" defaultSize="74%" minSize="35%">
-                          <div className="relative min-h-0 flex-1">
+                          <div className="relative h-full min-h-0">
                             <div
                               className={cn(
                                 "absolute inset-0 px-3 pt-2 pb-2",

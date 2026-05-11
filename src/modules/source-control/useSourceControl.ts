@@ -215,6 +215,7 @@ export function useSourceControl(
       setPanelState("ready");
 
       let nextSelection = selectedRef.current;
+      let shouldOpenDiff = false;
       const exists =
         !!nextSelection &&
         snapshot.changedFiles.some((file) => {
@@ -226,6 +227,11 @@ export function useSourceControl(
         const first = firstEntry(snapshot);
         nextSelection = first ? { path: first.path, mode: first.mode } : null;
         setSelected(nextSelection);
+        shouldOpenDiff = nextSelection !== null;
+      }
+
+      if (shouldOpenDiff && nextSelection) {
+        await loadDiff(repoInfo.repoRoot, nextSelection, snapshot);
       }
     } catch (err) {
       setRepo(null);
