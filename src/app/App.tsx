@@ -150,6 +150,8 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const [sourceControlOpen, setSourceControlOpen] = useState(false);
+  const [sourceControlPinnedContextPath, setSourceControlPinnedContextPath] =
+    useState<string | null>(null);
   const miniOpen = useChatStore((s) => s.mini.open);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
@@ -535,6 +537,19 @@ export default function App() {
           ? activeTab.repoRoot
         : explorerRoot ?? launchCwd ?? home ?? null;
 
+  const closeSourceControl = useCallback(() => {
+    setSourceControlOpen(false);
+    setSourceControlPinnedContextPath(null);
+  }, []);
+
+  const toggleSourceControl = useCallback(() => {
+    setSourceControlOpen((current) => {
+      const next = !current;
+      setSourceControlPinnedContextPath(next ? sourceControlContextPath : null);
+      return next;
+    });
+  }, [sourceControlContextPath]);
+
   const openPreviewTab = useCallback(
     (url: string) => {
       const id = newPreviewTab(url);
@@ -578,7 +593,7 @@ export default function App() {
       "pane.splitDown": () => splitActivePaneInActiveTab("col"),
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
-      "pane.source": () => setSourceControlOpen((v) => !v),
+      "pane.source": toggleSourceControl,
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
@@ -595,6 +610,7 @@ export default function App() {
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
+      toggleSourceControl,
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
@@ -750,7 +766,7 @@ export default function App() {
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenSettings={() => void openSettingsWindow()}
             sourceControlOpen={sourceControlOpen}
-            onToggleSourceControl={() => setSourceControlOpen((v) => !v)}
+            onToggleSourceControl={toggleSourceControl}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
           />
@@ -865,8 +881,8 @@ export default function App() {
                         <ResizablePanel id="source-control" defaultSize="26%" minSize="18%" maxSize="42%">
                           <SourceControlPanel
                             open={sourceControlOpen}
-                            contextPath={sourceControlContextPath}
-                            onClose={() => setSourceControlOpen(false)}
+                            contextPath={sourceControlPinnedContextPath}
+                            onClose={closeSourceControl}
                             onOpenDiff={openGitDiffTab}
                           />
                         </ResizablePanel>

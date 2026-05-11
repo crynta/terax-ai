@@ -114,7 +114,12 @@ export function useSourceControl(
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const panelStateRef = useRef<PanelState>("closed");
   const selectedRef = useRef<DiffSelection | null>(null);
+
+  useEffect(() => {
+    panelStateRef.current = panelState;
+  }, [panelState]);
 
   useEffect(() => {
     selectedRef.current = selected;
@@ -198,7 +203,8 @@ export function useSourceControl(
       setPanelState("no-repo");
       return;
     }
-    setPanelState("loading");
+    const shouldShowLoading = panelStateRef.current !== "ready";
+    if (shouldShowLoading) setPanelState("loading");
     setError(null);
     try {
       const repoInfo = await native.gitResolveRepo(contextPath);

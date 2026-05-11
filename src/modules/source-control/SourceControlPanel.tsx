@@ -17,7 +17,7 @@ import {
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useMemo, useState, type ReactNode } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
 import { useSourceControl, type SourceControlEntry } from "./useSourceControl";
 
 type Props = {
@@ -40,7 +40,7 @@ function basename(path: string): string {
   return parts.length > 0 ? parts[parts.length - 1] : path;
 }
 
-export function SourceControlPanel({
+export const SourceControlPanel = memo(function SourceControlPanel({
   open,
   contextPath,
   onClose,
@@ -196,7 +196,7 @@ export function SourceControlPanel({
       ) : null}
     </aside>
   );
-}
+});
 
 function PanelCenter({
   title,
