@@ -20,6 +20,7 @@ import {
   CpuIcon,
   DeepseekIcon,
   FlashIcon,
+  GithubIcon,
   GoogleGeminiIcon,
   Grok02Icon,
   Message01Icon,
@@ -49,6 +50,7 @@ const PROVIDER_ICON = {
   groq: FlashIcon,
   deepseek: DeepseekIcon,
   lmstudio: ComputerIcon,
+  copilot: GithubIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {

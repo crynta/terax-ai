@@ -8,7 +8,8 @@ export type ProviderId =
   | "cerebras"
   | "groq"
   | "deepseek"
-  | "lmstudio";
+  | "lmstudio"
+  | "copilot";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -74,6 +75,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
+  },
+  {
+    id: "copilot",
+    label: "GitHub Copilot",
+    keyringAccount: "copilot-github-token",
+    keyPrefix: null,
+    consoleUrl: "https://github.com/settings/tokens",
   },
 ] as const;
 
@@ -189,6 +197,43 @@ export const MODELS = [
     label: "LM Studio (local)",
     hint: "Custom local model",
   },
+  // GitHub Copilot (via GitHub Models API)
+  {
+    id: "copilot/gpt-4o",
+    provider: "copilot",
+    label: "GPT-4o",
+    hint: "OpenAI · via Copilot",
+  },
+  {
+    id: "copilot/gpt-4o-mini",
+    provider: "copilot",
+    label: "GPT-4o mini",
+    hint: "Fast · via Copilot",
+  },
+  {
+    id: "copilot/claude-3-7-sonnet",
+    provider: "copilot",
+    label: "Claude 3.7 Sonnet",
+    hint: "Anthropic · via Copilot",
+  },
+  {
+    id: "copilot/claude-3-5-sonnet",
+    provider: "copilot",
+    label: "Claude 3.5 Sonnet",
+    hint: "Anthropic · via Copilot",
+  },
+  {
+    id: "copilot/o3-mini",
+    provider: "copilot",
+    label: "o3-mini",
+    hint: "Reasoning · via Copilot",
+  },
+  {
+    id: "copilot/gemini-2.0-flash-001",
+    provider: "copilot",
+    label: "Gemini 2.0 Flash",
+    hint: "Google · via Copilot",
+  },
 ] as const satisfies readonly ModelInfo[];
 
 export type ModelId = (typeof MODELS)[number]["id"];
@@ -220,6 +265,12 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-v4-flash": 1_000_000,
   "deepseek-v4-pro": 1_000_000,
   "lmstudio-local": 32_000,
+  "copilot/gpt-4o": 128_000,
+  "copilot/gpt-4o-mini": 128_000,
+  "copilot/claude-3-7-sonnet": 200_000,
+  "copilot/claude-3-5-sonnet": 200_000,
+  "copilot/o3-mini": 200_000,
+  "copilot/gemini-2.0-flash-001": 1_000_000,
 };
 
 export function getModelContextLimit(modelId: string | undefined): number {

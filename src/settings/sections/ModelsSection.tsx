@@ -31,14 +31,35 @@ import {
   setLmstudioBaseURL,
 } from "@/modules/settings/store";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import {
+  ArrowDown01Icon,
+  Cancel01Icon,
+  GithubIcon,
+  Tick01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
 
 type KeysMap = Record<ProviderId, string | null>;
+
+type DeviceFlowStart = {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+  interval: number;
+};
+
+type CopilotOAuthState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "pending"; flow: DeviceFlowStart }
+  | { kind: "connected" }
+  | { kind: "error"; message: string };
 
 export function ModelsSection() {
   const [keys, setKeys] = useState<KeysMap | null>(null);
@@ -60,14 +81,25 @@ export function ModelsSection() {
     await emitKeysChanged();
   };
 
+  // Sync copilot key into keys state after OAuth connects
+  const onCopilotConnected = async (token: string) => {
+    await onSave("copilot", token);
+  };
+
+  const onCopilotDisconnect = async () => {
+    await onClear("copilot");
+  };
+
   if (!keys) {
     return <div className="text-[12px] text-muted-foreground">Loading…</div>;
   }
 
   const defaultModelInfo = getModel(defaultModel);
-  const configuredCount = PROVIDERS.filter(
-    (p) => providerNeedsKey(p.id) && !!keys[p.id],
-  ).length;
+  // Providers shown in the generic API key grid — exclude copilot (has dedicated OAuth UI)
+  const keyProviders = PROVIDERS.filter(
+    (p) => providerNeedsKey(p.id) && p.id !== "copilot",
+  );
+  const configuredCount = keyProviders.filter((p) => !!keys[p.id]).length;
 
   return (
     <div className="flex flex-col gap-7">
@@ -141,15 +173,21 @@ export function ModelsSection() {
         </DropdownMenu>
       </div>
 
+      <CopilotOAuthCard
+        connected={!!keys.copilot}
+        onConnected={onCopilotConnected}
+        onDisconnect={onCopilotDisconnect}
+      />
+
       <div className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between">
           <Label>API keys</Label>
           <span className="text-[10.5px] text-muted-foreground">
-            {configuredCount} of {PROVIDERS.filter((p) => providerNeedsKey(p.id)).length} configured
+            {configuredCount} of {keyProviders.length} configured
           </span>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {PROVIDERS.filter((p) => providerNeedsKey(p.id)).map((p) => (
+          {keyProviders.map((p) => (
             <ProviderKeyCard
               key={p.id}
               provider={p}
@@ -162,6 +200,218 @@ export function ModelsSection() {
       </div>
 
       <AutocompleteBlock keys={keys} />
+    </div>
+  );
+}
+
+function CopilotOAuthCard({
+  connected,
+  onConnected,
+  onDisconnect,
+}: {
+  connected: boolean;
+  onConnected: (token: string) => Promise<void>;
+  onDisconnect: () => Promise<void>;
+}) {
+  const [state, setState] = useState<CopilotOAuthState>(
+    connected ? { kind: "connected" } : { kind: "idle" },
+  );
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Sync prop → state when the key is cleared externally
+  useEffect(() => {
+    if (!connected && state.kind === "connected") {
+      setState({ kind: "idle" });
+    }
+  }, [connected, state.kind]);
+
+  const stopPolling = () => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+  };
+
+  useEffect(() => () => stopPolling(), []);
+
+  const startConnect = async () => {
+    setState({ kind: "loading" });
+
+    // Fast path: try to import from `gh auth token` if gh CLI is available
+    try {
+      const ghToken = await invoke<string | null>("copilot_try_gh_token");
+      if (ghToken) {
+        await onConnected(ghToken);
+        setState({ kind: "connected" });
+        return;
+      }
+    } catch {
+      // gh CLI not available — fall through to device flow
+    }
+
+    // Device Flow
+    try {
+      const flow = await invoke<DeviceFlowStart>("copilot_oauth_start");
+      setState({ kind: "pending", flow });
+      // Open verification URL in browser
+      await openUrl(flow.verificationUri);
+      // Start polling
+      const interval = Math.max((flow.interval ?? 5) * 1000, 5000);
+      pollTimer.current = setInterval(async () => {
+        try {
+          const result = await invoke<{ accessToken: string | null; status: string }>(
+            "copilot_oauth_poll",
+            { deviceCode: flow.deviceCode },
+          );
+          if (result.accessToken) {
+            stopPolling();
+            await onConnected(result.accessToken);
+            setState({ kind: "connected" });
+          } else if (
+            result.status === "expired_token" ||
+            result.status === "access_denied"
+          ) {
+            stopPolling();
+            setState({
+              kind: "error",
+              message:
+                result.status === "access_denied"
+                  ? "Authorization denied."
+                  : "Code expired. Please try again.",
+            });
+          }
+          // "authorization_pending" and "slow_down" → keep polling
+        } catch (e) {
+          stopPolling();
+          setState({ kind: "error", message: String(e) });
+        }
+      }, interval);
+    } catch (e) {
+      setState({ kind: "error", message: String(e) });
+    }
+  };
+
+  const disconnect = async () => {
+    stopPolling();
+    await onDisconnect();
+    setState({ kind: "idle" });
+  };
+
+  const cancel = () => {
+    stopPolling();
+    setState({ kind: "idle" });
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>GitHub Copilot</Label>
+      <div className="rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+        {state.kind === "connected" ? (
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <HugeiconsIcon
+                icon={GithubIcon}
+                size={16}
+                strokeWidth={1.75}
+                className="shrink-0"
+              />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[12.5px] font-medium">GitHub Copilot</span>
+                <span className="flex items-center gap-1 text-[10.5px] text-emerald-500">
+                  <HugeiconsIcon icon={Tick01Icon} size={11} strokeWidth={2} />
+                  Connected — models are ready to use
+                </span>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void disconnect()}
+              className="h-7 shrink-0 gap-1.5 px-2 text-[11px]"
+            >
+              <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={1.75} />
+              Disconnect
+            </Button>
+          </div>
+        ) : state.kind === "pending" ? (
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-start gap-2.5">
+              <HugeiconsIcon
+                icon={GithubIcon}
+                size={16}
+                strokeWidth={1.75}
+                className="mt-0.5 shrink-0"
+              />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[12.5px] font-medium">Waiting for authorization…</span>
+                <span className="text-[10.5px] leading-relaxed text-muted-foreground">
+                  A browser window has opened. Enter the code below on GitHub, then
+                  come back — this will connect automatically.
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="rounded-md border border-border bg-muted px-3 py-1.5 font-mono text-[15px] font-semibold tracking-widest">
+                {state.flow.userCode}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2.5 text-[11px]"
+                onClick={() => void openUrl(state.flow.verificationUri)}
+              >
+                Reopen browser
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="ml-auto h-8 px-2.5 text-[11px] text-muted-foreground"
+                onClick={cancel}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <HugeiconsIcon
+                icon={GithubIcon}
+                size={16}
+                strokeWidth={1.75}
+                className="mt-0.5 shrink-0"
+              />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[12.5px] font-medium">Sign in with GitHub</span>
+                <span className="text-[10.5px] leading-relaxed text-muted-foreground">
+                  Connect your GitHub account to use models included in your
+                  Copilot subscription — GPT-4o, Claude, Gemini and more.
+                </span>
+                {state.kind === "error" && (
+                  <span className="mt-0.5 text-[10.5px] text-destructive">
+                    {state.message}
+                  </span>
+                )}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              disabled={state.kind === "loading"}
+              onClick={() => void startConnect()}
+              className="h-8 shrink-0 gap-1.5 px-2.5 text-[11px]"
+            >
+              {state.kind === "loading" ? (
+                "Connecting…"
+              ) : (
+                <>
+                  <HugeiconsIcon icon={GithubIcon} size={12} strokeWidth={1.75} />
+                  Connect
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

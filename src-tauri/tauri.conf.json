@@ -60,7 +60,8 @@
       "nsis": {
         "installMode": "currentUser",
         "languages": ["English"],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerHooks": "nsis/contextmenu.nsh"
       }
     },
     "category": "DeveloperTool",

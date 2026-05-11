@@ -120,6 +120,46 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return tabId;
   }, []);
 
+  const openTerminalCwd = useCallback((cwd: string) => {
+    let targetId: number | null = null;
+    setTabs((curr) => {
+      const only = curr.length === 1 ? curr[0] : null;
+      if (
+        only?.kind === "terminal" &&
+        !only.cwd &&
+        leafIds(only.paneTree).length === 1
+      ) {
+        const leafId = nextIdRef.current++;
+        targetId = only.id;
+        return [
+          {
+            ...only,
+            cwd,
+            paneTree: { kind: "leaf", id: leafId, cwd },
+            activeLeafId: leafId,
+          },
+        ];
+      }
+
+      const tabId = nextIdRef.current++;
+      const leafId = nextIdRef.current++;
+      targetId = tabId;
+      return [
+        ...curr,
+        {
+          id: tabId,
+          kind: "terminal",
+          title: "shell",
+          cwd,
+          paneTree: { kind: "leaf", id: leafId, cwd },
+          activeLeafId: leafId,
+        },
+      ];
+    });
+    if (targetId !== null) setActiveId(targetId);
+    return targetId as number | null;
+  }, []);
+
   /**
    * Opens a file in an editor tab.
    *
@@ -286,6 +326,16 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         id === active ? next[Math.max(0, idx - 1)].id : active,
       );
       return next;
+    });
+  }, []);
+
+  /** Close all tabs except the first one and activate it. */
+  const closeAllTabs = useCallback(() => {
+    setTabs((curr) => {
+      const keep = curr[0];
+      if (!keep) return curr;
+      setActiveId(keep.id);
+      return [keep];
     });
   }, []);
 
@@ -464,12 +514,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     activeId,
     setActiveId,
     newTab,
+    openTerminalCwd,
     openFileTab,
     pinTab,
     newPreviewTab,
     openAiDiffTab,
     setAiDiffStatus,
     closeTab,
+    closeAllTabs,
     updateTab,
     selectByIndex,
     setLeafCwd,

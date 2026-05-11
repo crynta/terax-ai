@@ -52,6 +52,8 @@ import {
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
@@ -74,12 +76,14 @@ export default function App() {
     activeId,
     setActiveId,
     newTab,
+    openTerminalCwd,
     openFileTab,
     pinTab,
     newPreviewTab,
     openAiDiffTab,
     setAiDiffStatus,
     closeTab,
+    closeAllTabs,
     updateTab,
     selectByIndex,
     setLeafCwd,
@@ -129,6 +133,33 @@ export default function App() {
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+
+    const openCwd = (cwd: string | null | undefined) => {
+      if (cwd) openTerminalCwd(cwd.replace(/\\/g, "/"));
+    };
+
+    void invoke<string | null>("launch_cwd")
+      .then((cwd) => {
+        if (alive) openCwd(cwd);
+      })
+      .catch((e) => console.error("launch cwd lookup failed", e));
+
+    void listen<string>("terax:open-cwd", (event) => openCwd(event.payload))
+      .then((fn) => {
+        if (alive) unlisten = fn;
+        else fn();
+      })
+      .catch((e) => console.error("launch cwd listener failed", e));
+
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, [openTerminalCwd]);
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
@@ -648,6 +679,37 @@ export default function App() {
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
 
+  const openCopilotCli = useCallback((command = "copilot") => {
+    const cwd = activeCwd ?? inheritedCwdForNewTab();
+    const tabId = newTab(cwd);
+    setTimeout(() => {
+      const tab = tabsRef.current.find((x) => x.id === tabId);
+      if (!tab || tab.kind !== "terminal") return;
+      const t = terminalRefs.current.get(tab.activeLeafId);
+      if (!t) return;
+      t.write(`${command}\r`);
+      t.focus();
+    }, 120);
+  }, [activeCwd, inheritedCwdForNewTab, newTab]);
+
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    void listen<string>("terax:copilot-command", (event) => {
+      const command = event.payload.trim() || "copilot";
+      openCopilotCli(command);
+    })
+      .then((fn) => {
+        if (alive) unlisten = fn;
+        else fn();
+      })
+      .catch((e) => console.error("copilot command listener failed", e));
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, [openCopilotCli]);
+
   useEffect(() => {
     const findCwd = () => {
       const active = tabs.find((x) => x.id === activeId);
@@ -699,6 +761,7 @@ export default function App() {
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
             onClose={handleClose}
+            onCloseAll={closeAllTabs}
             onPin={pinTab}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
@@ -838,6 +901,8 @@ export default function App() {
             onCd={sendCd}
             onOpenMini={openMini}
             hasComposer={hasComposer}
+            onOpenCopilot={() => openCopilotCli()}
+            onLoginCopilot={() => openCopilotCli("copilot login")}
             detectedPreviewUrl={detectedPreviewUrl}
             onOpenPreview={() => {
               if (detectedPreviewUrl) openPreviewTab(detectedPreviewUrl);

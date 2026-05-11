@@ -26,8 +26,9 @@ import {
   Sun03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 
@@ -47,6 +48,8 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const [shellIntegration, setShellIntegration] = useState(false);
+  const [shellIntegrationBusy, setShellIntegrationBusy] = useState(false);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -65,6 +68,18 @@ export function GeneralSection() {
     };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    void invoke<boolean>("shell_integration_status")
+      .then((enabled) => {
+        if (alive) setShellIntegration(enabled);
+      })
+      .catch((e) => console.error("shell integration status failed", e));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const onToggleAutostart = async (next: boolean) => {
     try {
       if (next) await enable();
@@ -72,6 +87,20 @@ export function GeneralSection() {
       await setAutostart(next);
     } catch (e) {
       console.error("autostart toggle failed", e);
+    }
+  };
+
+  const onToggleShellIntegration = async (next: boolean) => {
+    setShellIntegrationBusy(true);
+    try {
+      await invoke(
+        next ? "shell_integration_register" : "shell_integration_unregister",
+      );
+      setShellIntegration(next);
+    } catch (e) {
+      console.error("shell integration toggle failed", e);
+    } finally {
+      setShellIntegrationBusy(false);
     }
   };
 
@@ -171,6 +200,20 @@ export function GeneralSection() {
             />
           </SettingRow>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Shell integration</Label>
+        <SettingRow
+          title="Open in Terax"
+          description="Add Terax to the folder context menu so it opens directly in that path."
+        >
+          <Switch
+            checked={shellIntegration}
+            disabled={shellIntegrationBusy}
+            onCheckedChange={(v) => void onToggleShellIntegration(v)}
+          />
+        </SettingRow>
       </div>
     </div>
   );

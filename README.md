@@ -50,7 +50,7 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 - Auto-detects local dev servers and opens them in a preview tab
 
 **AI (BYOK)**
-- Providers: OpenAI, Anthropic, Google, Groq, xAI, Cerebras, OpenAI-compatible
+- Providers: OpenAI, Anthropic, Google, Groq, xAI, Cerebras, DeepSeek, OpenAI-compatible
 - Local / offline models via LM Studio
 - Voice input, edit diffs, multi-agent and sub-agents
 - Snippets / skills, customizable system prompt

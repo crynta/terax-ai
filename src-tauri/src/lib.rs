@@ -1,8 +1,42 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell};
+use modules::{copilot, fs, net, pty, secrets, shell, shell_integration};
+use std::path::PathBuf;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
+
+struct LaunchCwd(Option<String>);
+
+#[tauri::command]
+fn launch_cwd(state: tauri::State<LaunchCwd>) -> Option<String> {
+    state.0.clone()
+}
+
+fn launch_cwd_from_args() -> Option<String> {
+    std::env::args_os().skip(1).find_map(|arg| {
+        let raw = arg.to_string_lossy();
+        if raw.starts_with('-') || raw.starts_with("tauri://") {
+            return None;
+        }
+
+        let path = PathBuf::from(&arg);
+        let path = if path.is_file() {
+            path.parent()?.to_path_buf()
+        } else {
+            path
+        };
+        if !path.is_dir() {
+            return None;
+        }
+
+        Some(
+            path.canonicalize()
+                .unwrap_or(path)
+                .to_string_lossy()
+                .to_string(),
+        )
+    })
+}
 
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
@@ -88,7 +122,10 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     apply_wayland_webkit_workaround();
 
+    let initial_launch_cwd = launch_cwd_from_args();
+
     tauri::Builder::default()
+        .manage(LaunchCwd(initial_launch_cwd))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Skip restoring VISIBLE — frontend calls window.show() after first
@@ -137,7 +174,15 @@ pub fn run() {
             shell::shell_bg_logs,
             shell::shell_bg_kill,
             shell::shell_bg_list,
+            copilot::copilot_cli_status,
+            copilot::copilot_oauth_start,
+            copilot::copilot_oauth_poll,
+            copilot::copilot_try_gh_token,
             open_settings_window,
+            launch_cwd,
+            shell_integration::shell_integration_register,
+            shell_integration::shell_integration_unregister,
+            shell_integration::shell_integration_status,
             secrets::secrets_get,
             secrets::secrets_set,
             secrets::secrets_delete,
