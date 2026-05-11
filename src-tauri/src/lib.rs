@@ -89,6 +89,11 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     apply_wayland_webkit_workaround();
 
+    // Clean up orphan ConPTY shells from a prior Terax that died ungracefully.
+    // Run before any new PTY can be opened so we don't kill our own children.
+    #[cfg(windows)]
+    pty::sweep_orphan_shells();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

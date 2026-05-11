@@ -1,7 +1,12 @@
 #[cfg(windows)]
+mod cleanup;
+#[cfg(windows)]
 mod job;
 mod session;
 pub(crate) mod shell_init;
+
+#[cfg(windows)]
+pub use cleanup::sweep_orphan_shells;
 
 use std::collections::HashMap;
 use std::io::Write;
