@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { KEY_SEP } from "@/lib/platform";
 import type { EditorPaneHandle } from "@/modules/editor";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
@@ -25,8 +26,8 @@ const TERM_DECORATIONS = {
 };
 
 export type SearchTarget =
-  | { kind: "terminal"; addon: SearchAddon }
-  | { kind: "editor"; handle: EditorPaneHandle }
+  | { kind: "terminal"; addon: SearchAddon; focus: () => void }
+  | { kind: "editor"; handle: EditorPaneHandle; focus: () => void }
   | null;
 
 export type SearchInlineHandle = { focus: () => void };
@@ -44,6 +45,14 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     // In normal mode the field is always present.
     const [openInCompact, setOpenInCompact] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+    const pendingFocusRef = useRef(false);
+    const setInputRef = useCallback((el: HTMLInputElement | null) => {
+      inputRef.current = el;
+      if (!el || !pendingFocusRef.current) return;
+      pendingFocusRef.current = false;
+      el.focus();
+    }, []);
+
     const userShortcuts = usePreferencesStore((s) => s.shortcuts);
 
     const shortcutText = useMemo(() => {
@@ -52,13 +61,12 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
       const bindings = userShortcuts["search.focus"] || s.defaultBindings;
       if (!bindings || bindings.length === 0) return "";
       const tokens = getBindingTokens(bindings[0]);
-      return tokens.join("");
+      return tokens.join(KEY_SEP);
     }, [userShortcuts]);
 
     const placeholder = useMemo(() => {
-      const base = target?.kind === "editor" ? "Search in file" : "Search";
-      return shortcutText ? `${base} (${shortcutText})` : base;
-    }, [target?.kind, shortcutText]);
+      return shortcutText ? `Search (${shortcutText})` : "Search";
+    }, [shortcutText]);
 
     const tooltipTitle = useMemo(() => {
       return shortcutText ? `Search (${shortcutText})` : "Search";
@@ -67,8 +75,10 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     const expanded = !compact || openInCompact;
 
     const focus = useCallback(() => {
+      pendingFocusRef.current = true;
       if (compact) setOpenInCompact(true);
-      requestAnimationFrame(() => inputRef.current?.focus());
+      else inputRef.current?.focus();
+      if (inputRef.current) pendingFocusRef.current = false;
     }, [compact]);
 
     useImperativeHandle(ref, () => ({ focus }), [focus]);
@@ -77,6 +87,11 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
       if (!target) return;
       if (target.kind === "terminal") target.addon.clearDecorations();
       else target.handle.clearQuery();
+    }, [target]);
+
+    const restoreTargetFocus = useCallback(() => {
+      if (!target) return;
+      target.focus();
     }, [target]);
 
     // Target switched (terminal ↔ editor) or removed → drop highlights.
@@ -135,10 +150,10 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
                 className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground"
               />
               <Input
-                ref={inputRef}
+                ref={setInputRef}
                 value={q}
                 placeholder={placeholder}
-                className="h-7 w-full bg-muted/80 pr-7 pl-7 text-xs placeholder:text-muted-foreground/70 focus-visible:ring-0"
+                className="h-7 w-full bg-muted/80 pr-7 pl-7 text-[13px]! placeholder:text-muted-foreground/70 focus-visible:ring-0"
                 onChange={(e) => {
                   const next = e.target.value;
                   setQ(next);
@@ -157,9 +172,8 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
                     setQ("");
                     if (compact) {
                       setOpenInCompact(false);
-                    } else {
-                      inputRef.current?.blur();
                     }
+                    restoreTargetFocus();
                   }
                 }}
               />

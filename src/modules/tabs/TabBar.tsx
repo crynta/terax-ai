@@ -6,14 +6,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MOD_KEY } from "@/lib/platform";
+import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import {
   Cancel01Icon,
   ComputerTerminal02Icon,
-  Folder01Icon,
-  Folder02Icon,
   GitCompareIcon,
   Globe02Icon,
   PencilEdit02Icon,
@@ -93,16 +91,20 @@ export function TabBar({
                   onDoubleClick={() => isPreview && onPin(t.id)}
                   className={cn(
                     "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
-                    compact ? "px-1.5!" : "ps-2! pe-1!",
+                    compact
+                      ? "px-1.5!"
+                      : tabs.length === 1
+                        ? "px-2!"
+                        : "ps-2! pe-1!",
                   )}
                 >
                   <span
                     className={cn(
                       "flex items-center gap-1.5 truncate",
-                      compact ? "max-w-32" : "max-w-56",
+                      compact ? "max-w-48" : "max-w-80",
                     )}
                   >
-                    <TabIcon tab={t} active={t.id === activeId} />
+                    <TabIcon tab={t} />
                     {/* Preview tabs use italic to signal the transient state,
                         matching the visual convention from VSCode. */}
                     <span className={cn("truncate", isPreview && "italic")}>
@@ -156,7 +158,7 @@ export function TabBar({
                 strokeWidth={1.75}
               />
               <span className="flex-1">Terminal</span>
-              <span className="text-xs text-muted-foreground">{MOD_KEY}T</span>
+              <span className="text-xs text-muted-foreground">{fmtShortcut(MOD_KEY, "T")}</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewEditor()}>
               <HugeiconsIcon
@@ -165,12 +167,12 @@ export function TabBar({
                 strokeWidth={1.75}
               />
               <span className="flex-1">Editor</span>
-              <span className="text-xs text-muted-foreground">{MOD_KEY}E</span>
+              <span className="text-xs text-muted-foreground">{fmtShortcut(MOD_KEY, "E")}</span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewPreview()}>
               <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
               <span className="flex-1">Preview</span>
-              <span className="text-xs text-muted-foreground">{MOD_KEY}P</span>
+              <span className="text-xs text-muted-foreground">{fmtShortcut(MOD_KEY, "P")}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -179,7 +181,7 @@ export function TabBar({
   );
 }
 
-function TabIcon({ tab, active }: { tab: Tab; active: boolean }) {
+function TabIcon({ tab }: { tab: Tab }) {
   if (tab.kind === "editor") {
     const url = fileIconUrl(tab.title);
     return url ? <img src={url} alt="" className="size-3.5 shrink-0" /> : null;
@@ -189,7 +191,7 @@ function TabIcon({ tab, active }: { tab: Tab; active: boolean }) {
       <HugeiconsIcon
         icon={Globe02Icon}
         size={14}
-        strokeWidth={1.75}
+        strokeWidth={2}
         className="shrink-0"
       />
     );
@@ -199,14 +201,14 @@ function TabIcon({ tab, active }: { tab: Tab; active: boolean }) {
       <HugeiconsIcon
         icon={GitCompareIcon}
         size={14}
-        strokeWidth={1.75}
+        strokeWidth={2}
         className="shrink-0 text-yellow-600 dark:text-yellow-400"
       />
     );
   }
   return (
     <HugeiconsIcon
-      icon={active ? Folder02Icon : Folder01Icon}
+      icon={ComputerTerminal02Icon}
       size={14}
       strokeWidth={2}
       className="shrink-0"

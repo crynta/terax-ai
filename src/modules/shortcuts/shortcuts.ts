@@ -12,14 +12,25 @@ export type ShortcutId =
   | "tab.next"
   | "tab.prev"
   | "tab.selectByIndex"
+  | "pane.splitRight"
+  | "pane.splitDown"
+  | "pane.focusNext"
+  | "pane.focusPrev"
   | "search.focus"
+  | "explorer.search"
   | "ai.toggle"
   | "ai.askSelection"
   | "shortcuts.open"
   | "settings.open"
   | "sidebar.toggle";
 
-export type ShortcutGroup = "General" | "Tabs" | "Search" | "AI" | "View";
+export type ShortcutGroup =
+  | "General"
+  | "Tabs"
+  | "Panes"
+  | "Search"
+  | "AI"
+  | "View";
 
 export type KeyBinding = {
   key: string;
@@ -69,9 +80,33 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "tab.close",
-    label: "Close tab",
+    label: "Close tab or pane",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "w" }],
+  },
+  {
+    id: "pane.splitRight",
+    label: "Split pane right",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "d" }],
+  },
+  {
+    id: "pane.splitDown",
+    label: "Split pane down",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "d" }],
+  },
+  {
+    id: "pane.focusNext",
+    label: "Focus next pane",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "]" }],
+  },
+  {
+    id: "pane.focusPrev",
+    label: "Focus previous pane",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
   },
   {
     id: "tab.next",
@@ -90,6 +125,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Jump to tab 1–9",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
+  },
+  {
+    id: "explorer.search",
+    label: "Search files",
+    group: "Search",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "f" }],
   },
   {
     id: "search.focus",
@@ -120,6 +161,7 @@ export const SHORTCUTS: Shortcut[] = [
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
+  "Panes",
   "View",
   "Search",
   "AI",
@@ -128,7 +170,11 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
 /**
  * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
  */
-export function matchBinding(e: KeyboardEvent, binding: KeyBinding, id?: ShortcutId): boolean {
+export function matchBinding(
+  e: KeyboardEvent,
+  binding: KeyBinding,
+  id?: ShortcutId
+): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();
 
