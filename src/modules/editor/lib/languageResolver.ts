@@ -28,6 +28,7 @@ const loaders: Record<string, LanguageLoader> = {
     import("@codemirror/lang-javascript").then((m) =>
       m.javascript({ jsx: true, typescript: true }),
     ),
+  vue: () => import("@codemirror/lang-vue").then((m) => m.vue()),
 
   rs: () => import("@codemirror/lang-rust").then((m) => m.rust()),
   py: () => import("@codemirror/lang-python").then((m) => m.python()),

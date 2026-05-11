@@ -28,6 +28,7 @@
     "@codemirror/lang-php": "^6.0.2",
     "@codemirror/lang-python": "^6.2.1",
     "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/lang-vue": "^0.1.3",
     "@codemirror/language": "^6.12.3",
     "@codemirror/legacy-modes": "^6.5.2",
     "@codemirror/lint": "^6.9.5",
