@@ -110,6 +110,106 @@ pub fn pty_resize(
     result
 }
 
+/// Return the current working directory of the shell running in PTY `id`.
+///
+/// Used by the frontend to capture per-tab CWD on close (and on demand) for the tab-layout
+/// restore flow in #134 — combined with the existing `pty_open(..., cwd)` parameter, this lets
+/// the frontend re-spawn shells at their last-known directory on the next launch.
+///
+/// Platform support:
+/// - **Linux**: reads `/proc/<pid>/cwd` symlink. Returns the resolved absolute path.
+/// - **macOS**: not yet wired (would need `libproc` or equivalent). Returns an error.
+/// - **Windows**: no clean Win32 API for "child process CWD". Returns an error.
+///   The standard approach there is for the shell to emit OSC 7 (`ESC ] 7 ; file://...\7`)
+///   which the terminal can track from the PTY output stream; that's a larger change and
+///   needs an opt-in shell-profile snippet.
+///
+/// On unsupported platforms the frontend should fall back to "open in the default home
+/// directory" instead of failing the restore.
+#[tauri::command]
+pub fn pty_cwd(state: tauri::State<PtyState>, id: u32) -> Result<String, String> {
+    let session = state
+        .sessions
+        .read()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or_else(|| {
+            log::warn!("pty_cwd: unknown id={id}");
+            "no session".to_string()
+        })?;
+    let pid = session.child_pid.ok_or_else(|| {
+        log::warn!("pty_cwd id={id}: child PID unavailable");
+        "child pid unavailable".to_string()
+    })?;
+    read_child_cwd(pid).map_err(|e| {
+        log::debug!("pty_cwd id={id} pid={pid} failed: {e}");
+        e
+    })
+}
+
+/// Platform-specific CWD lookup for an arbitrary child PID. Kept separate from the Tauri
+/// command so it can be unit-tested without spinning up the Tauri runtime: on Linux the test
+/// just probes the current process's own CWD.
+fn read_child_cwd(pid: u32) -> Result<String, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let link = format!("/proc/{pid}/cwd");
+        match std::fs::read_link(&link) {
+            Ok(path) => Ok(path.to_string_lossy().into_owned()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Err(format!("process {pid} not found"))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                Err(format!("no permission to read /proc/{pid}/cwd"))
+            }
+            Err(e) => Err(format!("read_link({link}): {e}")),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        Err("pty_cwd: not yet supported on this platform".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn read_child_cwd_returns_own_cwd_for_self_pid() {
+        let pid = std::process::id();
+        let got = read_child_cwd(pid).expect("self pid must be readable");
+        let expected = std::env::current_dir()
+            .expect("test process must have a current_dir")
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn read_child_cwd_errors_on_unknown_pid() {
+        // Treat /proc absence (e.g. unlikely sandboxed runners) the same as "not found".
+        // 0xFFFFFE = 16777214 is well above any realistic live PID on Linux (`pid_max`
+        // defaults to 4M and is usually capped well below 2^24 on real systems).
+        let err = read_child_cwd(16_777_214).expect_err("synthetic high PID must not exist");
+        assert!(
+            err.contains("not found") || err.contains("read_link"),
+            "unexpected error variant: {err}"
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_os = "linux"))]
+    fn read_child_cwd_reports_unsupported_on_other_platforms() {
+        let err = read_child_cwd(1).expect_err("non-Linux platforms return Err");
+        assert!(err.contains("not yet supported"));
+    }
+}
+
 #[tauri::command]
 pub fn pty_close(state: tauri::State<PtyState>, id: u32) -> Result<(), String> {
     let session = state.sessions.write().unwrap().remove(&id);
