@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 
 *.tsbuildinfo
+
+# Tauri signing keys (private)
+tauri-signing-keys
