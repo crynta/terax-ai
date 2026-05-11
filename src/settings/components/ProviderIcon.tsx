@@ -1,4 +1,3 @@
-import type { ProviderId } from "@/modules/ai/config";
 import {
   ChatGptIcon,
   ClaudeIcon,
@@ -10,6 +9,7 @@ import {
   DeepseekIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { ProviderId } from "@/modules/ai/config";
 
 const ICON_BY_PROVIDER = {
   openai: ChatGptIcon,
@@ -19,6 +19,7 @@ const ICON_BY_PROVIDER = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   deepseek: DeepseekIcon,
+  minimax: FlashIcon,
   lmstudio: ComputerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 

@@ -8,6 +8,7 @@ export type ProviderId =
   | "cerebras"
   | "groq"
   | "deepseek"
+  | "minimax"
   | "lmstudio";
 
 export type ProviderInfo = {
@@ -67,6 +68,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "deepseek-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.deepseek.com/api_keys",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    keyringAccount: "minimax-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://platform.minimax.io/user-center/basic-information",
   },
   {
     id: "lmstudio",
@@ -182,6 +190,31 @@ export const MODELS = [
     label: "DeepSeek V4 Pro",
     hint: "Best",
   },
+  // MiniMax (OpenAI-compatible API)
+  {
+    id: "MiniMax-M2.7",
+    provider: "minimax",
+    label: "MiniMax M2.7",
+    hint: "Best · 200K context",
+  },
+  {
+    id: "MiniMax-M2.7-highspeed",
+    provider: "minimax",
+    label: "MiniMax M2.7 Highspeed",
+    hint: "Fast · 2× speed",
+  },
+  {
+    id: "MiniMax-M2.5",
+    provider: "minimax",
+    label: "MiniMax M2.5",
+    hint: "Balanced",
+  },
+  {
+    id: "MiniMax-M2.5-highspeed",
+    provider: "minimax",
+    label: "MiniMax M2.5 Highspeed",
+    hint: "Fast · 2× speed",
+  },
   // LM Studio (local; model id is user-supplied at runtime)
   {
     id: "lmstudio-local",
@@ -220,6 +253,10 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-v4-flash": 1_000_000,
   "deepseek-v4-pro": 1_000_000,
   "lmstudio-local": 32_000,
+  "MiniMax-M2.7": 204_800,
+  "MiniMax-M2.7-highspeed": 204_800,
+  "MiniMax-M2.5": 204_800,
+  "MiniMax-M2.5-highspeed": 204_800,
 };
 
 export function getModelContextLimit(modelId: string | undefined): number {
@@ -253,6 +290,7 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Record<
 };
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
+export const MINIMAX_DEFAULT_BASE_URL = "https://api.minimax.io/v1";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
 

@@ -17,6 +17,7 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   cerebras: null,
   groq: null,
   deepseek: null,
+  minimax: null,
   lmstudio: null,
 };
 
