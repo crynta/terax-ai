@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   findLeafCwd,
   hasLeaf,
@@ -115,6 +115,11 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   });
   const [activeId, setActiveId] = useState(1);
   const nextIdRef = useRef(3);
+  const tabsRef = useRef(tabs);
+
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
 
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
@@ -303,50 +308,54 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       isBinary: boolean;
       fallbackPatch: string;
     }) => {
-      let targetId: number | null = null;
-      setTabs((curr) => {
-        const existing = curr.find(
-          (t) =>
-            t.kind === "git-diff" &&
-            t.repoRoot === input.repoRoot &&
-            t.path === input.path &&
-            t.mode === input.mode,
+      const curr = tabsRef.current;
+      const existing = curr.find(
+        (t) =>
+          t.kind === "git-diff" &&
+          t.repoRoot === input.repoRoot &&
+          t.path === input.path &&
+          t.mode === input.mode,
+      );
+
+      if (existing) {
+        const nextTabs = curr.map((t) =>
+          t.id === existing.id
+            ? {
+                ...t,
+                title: `${basename(input.path)} (${input.mode})`,
+                originalContent: input.originalContent,
+                modifiedContent: input.modifiedContent,
+                isBinary: input.isBinary,
+                fallbackPatch: input.fallbackPatch,
+              }
+            : t,
         );
-        if (existing) {
-          targetId = existing.id;
-          return curr.map((t) =>
-            t.id === existing.id
-              ? {
-                  ...t,
-                  title: `${basename(input.path)} (${input.mode})`,
-                  originalContent: input.originalContent,
-                  modifiedContent: input.modifiedContent,
-                  isBinary: input.isBinary,
-                  fallbackPatch: input.fallbackPatch,
-                }
-              : t,
-          );
-        }
-        const id = nextIdRef.current++;
-        targetId = id;
-        return [
-          ...curr,
-          {
-            id,
-            kind: "git-diff",
-            title: `${basename(input.path)} (${input.mode})`,
-            path: input.path,
-            repoRoot: input.repoRoot,
-            mode: input.mode,
-            originalContent: input.originalContent,
-            modifiedContent: input.modifiedContent,
-            isBinary: input.isBinary,
-            fallbackPatch: input.fallbackPatch,
-          } satisfies GitDiffTab,
-        ];
-      });
-      if (targetId !== null) setActiveId(targetId);
-      return targetId as number | null;
+        tabsRef.current = nextTabs;
+        setTabs(nextTabs);
+        setActiveId(existing.id);
+        return existing.id;
+      }
+
+      const id = nextIdRef.current++;
+      const nextTabs = [
+        ...curr,
+        {
+          id,
+          kind: "git-diff",
+          title: `${basename(input.path)} (${input.mode})`,
+          path: input.path,
+          repoRoot: input.repoRoot,
+          mode: input.mode,
+          originalContent: input.originalContent,
+          modifiedContent: input.modifiedContent,
+          isBinary: input.isBinary,
+          fallbackPatch: input.fallbackPatch,
+        } satisfies GitDiffTab,
+      ];
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      setActiveId(id);
+      return id;
     },
     [],
   );

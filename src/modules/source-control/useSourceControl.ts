@@ -254,7 +254,12 @@ export function useSourceControl(
         path: entry.path,
         mode: entry.mode,
       } satisfies DiffSelection;
-      if (sameSelection(selected, nextSelection)) return;
+      if (sameSelection(selected, nextSelection)) {
+        setError(null);
+        setActionMessage(null);
+        await loadDiff(repo.repoRoot, nextSelection, status);
+        return;
+      }
       setSelected(nextSelection);
       setError(null);
       setActionMessage(null);
