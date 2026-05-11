@@ -10,11 +10,16 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 
-export function WindowControls() {
+type Props = {
+  /** Render only the close button (used by the settings window). */
+  closeOnly?: boolean;
+};
+
+export function WindowControls({ closeOnly = false }: Props) {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    if (!USE_CUSTOM_WINDOW_CONTROLS) return;
+    if (!USE_CUSTOM_WINDOW_CONTROLS || closeOnly) return;
     const w = getCurrentWindow();
     let unlisten: (() => void) | undefined;
     void w.isMaximized().then(setMaximized);
@@ -26,7 +31,7 @@ export function WindowControls() {
         unlisten = un;
       });
     return () => unlisten?.();
-  }, []);
+  }, [closeOnly]);
 
   if (!USE_CUSTOM_WINDOW_CONTROLS) return null;
 
@@ -34,28 +39,25 @@ export function WindowControls() {
 
   return (
     <div className="flex h-full shrink-0 items-center gap-0.5 pr-1">
-      <CtlButton
-        ariaLabel="Minimize"
-        onClick={() => void w.minimize()}
-      >
-        <HugeiconsIcon icon={MinusSignIcon} size={13} strokeWidth={1.75} />
-      </CtlButton>
-      <CtlButton
-        ariaLabel={maximized ? "Restore" : "Maximize"}
-        onClick={() => void w.toggleMaximize()}
-      >
-        <HugeiconsIcon
-          icon={maximized ? Copy01Icon : SquareIcon}
-          size={13}
-          strokeWidth={1.75}
-        />
-      </CtlButton>
-      <CtlButton
-        ariaLabel="Close"
-        onClick={() => void w.close()}
-        danger
-      >
-        <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={1.75} />
+      {!closeOnly && (
+        <>
+          <CtlButton ariaLabel="Minimize" onClick={() => void w.minimize()}>
+            <HugeiconsIcon icon={MinusSignIcon} size={12} strokeWidth={2} />
+          </CtlButton>
+          <CtlButton
+            ariaLabel={maximized ? "Restore" : "Maximize"}
+            onClick={() => void w.toggleMaximize()}
+          >
+            <HugeiconsIcon
+              icon={maximized ? Copy01Icon : SquareIcon}
+              size={12}
+              strokeWidth={2}
+            />
+          </CtlButton>
+        </>
+      )}
+      <CtlButton ariaLabel="Close" onClick={() => void w.close()} danger>
+        <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} />
       </CtlButton>
     </div>
   );

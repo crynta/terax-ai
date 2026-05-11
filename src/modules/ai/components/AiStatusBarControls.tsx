@@ -14,11 +14,11 @@ import {
   Add01Icon,
   ArrowDown01Icon,
   ArrowUpIcon,
-  DeepseekIcon,
   ChatGptIcon,
   ClaudeIcon,
   ComputerIcon,
   CpuIcon,
+  DeepseekIcon,
   FlashIcon,
   GoogleGeminiIcon,
   Grok02Icon,
@@ -32,8 +32,8 @@ import { useRef } from "react";
 import {
   getModel,
   MODELS,
-  PROVIDERS,
   providerNeedsKey,
+  PROVIDERS,
   type ModelId,
   type ProviderId,
 } from "../config";
@@ -153,7 +153,7 @@ export function AiStatusBarControls() {
         aria-label="Close AI panel"
         className="text-[11px] text-foreground/85 px-1"
       >
-        <Kbd className="h-4 gap-px px-1 font-mono text-[11px]">
+        <Kbd className="h-4 gap-px px-2 font-mono text-[11px]">
           {fmtShortcut(MOD_KEY, "I")}
         </Kbd>
         {/* <HugeiconsIcon icon={Close} size={15} strokeWidth={1.75} /> */}
