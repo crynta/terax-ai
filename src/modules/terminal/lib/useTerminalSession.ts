@@ -125,10 +125,13 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
       !event.metaKey &&
       event.key === "v"
     ) {
+      // preventDefault stops xterm from sending raw ^V to the PTY.
+      // We then paste manually so the browser paste event doesn't also fire.
+      event.preventDefault();
       navigator.clipboard
         .readText()
         .then((text) => { if (text) term.paste(text); })
-        .catch(() => {});
+        .catch(() => {/* clipboard API unavailable — ^V is suppressed */});
       return false;
     }
 
