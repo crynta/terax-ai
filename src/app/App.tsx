@@ -55,6 +55,7 @@ import { UpdaterDialog } from "@/modules/updater";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { homeDir } from "@tauri-apps/api/path";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -712,6 +713,26 @@ export default function App() {
       unlisten?.();
     };
   }, [openCopilotCli]);
+
+  // Intercept OS window close — ask for confirmation when locked tabs exist.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onCloseRequested(async (event) => {
+        const hasLocked = tabsRef.current.some((t) => t.locked);
+        if (!hasLocked) return;
+        event.preventDefault();
+        const ok = window.confirm(
+          "You have locked tabs. Close the window anyway?",
+        );
+        if (ok) await getCurrentWindow().destroy();
+      })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch((e) => console.error("close-requested listener failed", e));
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     const findCwd = () => {
