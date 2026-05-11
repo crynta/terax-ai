@@ -17,6 +17,7 @@ export type ShortcutId =
   | "pane.focusNext"
   | "pane.focusPrev"
   | "search.focus"
+  | "explorer.search"
   | "ai.toggle"
   | "ai.askSelection"
   | "shortcuts.open"
@@ -126,6 +127,12 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
   },
   {
+    id: "explorer.search",
+    label: "Search files",
+    group: "Search",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "f" }],
+  },
+  {
     id: "search.focus",
     label: "Find in terminal",
     group: "Search",
@@ -163,7 +170,11 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
 /**
  * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
  */
-export function matchBinding(e: KeyboardEvent, binding: KeyBinding, id?: ShortcutId): boolean {
+export function matchBinding(
+  e: KeyboardEvent,
+  binding: KeyBinding,
+  id?: ShortcutId
+): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();
 
