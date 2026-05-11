@@ -28,10 +28,12 @@ const loaders: Record<string, LanguageLoader> = {
     import("@codemirror/lang-javascript").then((m) =>
       m.javascript({ jsx: true, typescript: true }),
     ),
+  vue: () => import("@codemirror/lang-vue").then((m) => m.vue()),
 
   rs: () => import("@codemirror/lang-rust").then((m) => m.rust()),
   py: () => import("@codemirror/lang-python").then((m) => m.python()),
   json: () => import("@codemirror/lang-json").then((m) => m.json()),
+  jsonc: () => import("@platformos/lang-jsonc").then((m) => m.jsonc()),
 
   md: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
   markdown: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
@@ -41,6 +43,8 @@ const loaders: Record<string, LanguageLoader> = {
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
 
   php: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
+
+  sql: () => import("@codemirror/lang-sql").then((m) => m.sql()),
 
   // Legacy-modes: loaders return the raw StreamParser; wrapped below.
   sh: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
