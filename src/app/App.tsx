@@ -302,6 +302,33 @@ export default function App() {
     [tabs, disposeTab],
   );
 
+  const handleCloseTabOrPane = useCallback(() => {
+    if (activeTerminalTab) {
+      closeActivePane(activeTerminalTab.id);
+      return;
+    }
+    handleClose(activeId);
+  }, [activeId, activeTerminalTab, closeActivePane, handleClose]);
+
+  const splitActivePaneInActiveTab = useCallback(
+    (dir: "row" | "col") => {
+      if (!activeTerminalTab) return;
+      if (leafIds(activeTerminalTab.paneTree).length >= MAX_PANES_PER_TAB) {
+        return;
+      }
+      splitActivePane(activeTerminalTab.id, dir);
+    },
+    [activeTerminalTab, splitActivePane],
+  );
+
+  const focusPaneInActiveTab = useCallback(
+    (delta: 1 | -1) => {
+      if (!activeTerminalTab) return;
+      focusNextPaneInTab(activeTerminalTab.id, delta);
+    },
+    [activeTerminalTab, focusNextPaneInTab],
+  );
+
   const cycleTab = useCallback(
     (delta: 1 | -1) => {
       if (tabs.length < 2) return;
@@ -537,7 +564,11 @@ export default function App() {
       "tab.new": openNewTab,
       "tab.newPreview": () => openPreviewTab(""),
       "tab.newEditor": openNewEditorDialog,
-      "tab.close": () => handleClose(activeId),
+      "tab.close": handleCloseTabOrPane,
+      "pane.splitRight": () => splitActivePaneInActiveTab("row"),
+      "pane.splitDown": () => splitActivePaneInActiveTab("col"),
+      "pane.focusNext": () => focusPaneInActiveTab(1),
+      "pane.focusPrev": () => focusPaneInActiveTab(-1),
       "tab.next": () => cycleTab(1),
       "tab.prev": () => cycleTab(-1),
       "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
@@ -549,13 +580,14 @@ export default function App() {
       "sidebar.toggle": toggleSidebar,
     }),
     [
-      activeId,
       cycleTab,
+      focusPaneInActiveTab,
       handleCloseTabOrPane,
       openNewTab,
       openNewEditorDialog,
       openPreviewTab,
       selectByIndex,
+      splitActivePaneInActiveTab,
       focusSearch,
       openSettings,
       togglePanelAndFocus,
