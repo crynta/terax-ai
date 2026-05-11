@@ -71,7 +71,7 @@ The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `pow
 ## Configure AI
 
 1. Open **Settings → AI**.
-2. Pick a provider and paste your API key. For local inference, select **LM Studio** or **OpenAI Compatible** and point Terax at your endpoint (vLLM, Ollama, llama.cpp, etc.). The API key is optional for local servers.
+2. Pick a provider and paste your API key. **OpenAI Compatible** lets you point Terax at any OpenAI-compatible HTTPS endpoint (vLLM, Groq-compatible proxies, hosted Ollama, etc.) with a custom base URL, model ID, and optional API key. For purely local inference, use **LM Studio**.
 3. Keys are written to the OS keychain via `keyring` — they never touch disk or `localStorage`.
 
 ## Build from source

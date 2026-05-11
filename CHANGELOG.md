@@ -5,7 +5,7 @@ All notable changes to Terax. Format loosely follows [Keep a Changelog](https://
 ## [0.6.0] — 2026
 
 ### Added
-- **OpenAI Compatible provider** — point the default model at any OpenAI-compatible endpoint (vLLM, Ollama, llama.cpp, Groq-compatible proxies, etc.). Configure base URL, model ID, and an optional API key (stored in the OS keychain) from Settings → Models.
+- **OpenAI Compatible provider** — point the default model at any OpenAI-compatible HTTPS endpoint (vLLM, hosted Ollama, Groq-compatible proxies, etc.). Configure base URL, model ID, and an optional API key (stored in the OS keychain) from Settings → Models.
 
 ## [0.5.9] — 2026
 
