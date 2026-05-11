@@ -42,7 +42,11 @@ import {
   type SearchInlineHandle,
   type SearchTarget,
 } from "@/modules/header";
-import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
+import {
+  opensInPreviewByDefault,
+  PreviewStack,
+  type PreviewPaneHandle,
+} from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
@@ -86,6 +90,7 @@ export default function App() {
     openFileTab,
     pinTab,
     newPreviewTab,
+    openFilePreviewTab,
     openAiDiffTab,
     closeAiDiffTab,
     closeTab,
@@ -538,24 +543,48 @@ export default function App() {
     (path: string, pin?: boolean) => {
       // Explorer defaults to preview (pin=false); explicit actions like
       // context-menu "Open" pass pin=true for a persistent tab.
+      if (opensInPreviewByDefault(path)) {
+        openFilePreviewTab(path, pin ?? false);
+        return;
+      }
       openFileTab(path, pin ?? false);
     },
-    [openFileTab],
+    [openFilePreviewTab, openFileTab],
+  );
+
+  const handlePreviewFile = useCallback(
+    (path: string, pin?: boolean) => {
+      openFilePreviewTab(path, pin ?? false);
+    },
+    [openFilePreviewTab],
   );
 
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
       for (const t of tabs) {
-        if (t.kind !== "editor") continue;
-        if (t.path === from) {
+        if (t.kind === "editor" && t.path === from) {
           const i = to.lastIndexOf("/");
           updateTab(t.id, { path: to, title: i === -1 ? to : to.slice(i + 1) });
-        } else if (t.path.startsWith(`${from}/`)) {
+        } else if (t.kind === "editor" && t.path.startsWith(`${from}/`)) {
           const suffix = t.path.slice(from.length);
           const newPath = `${to}${suffix}`;
           const i = newPath.lastIndexOf("/");
           updateTab(t.id, {
             path: newPath,
+            title: i === -1 ? newPath : newPath.slice(i + 1),
+          });
+        } else if (t.kind === "preview" && t.filePath === from) {
+          const i = to.lastIndexOf("/");
+          updateTab(t.id, {
+            filePath: to,
+            title: i === -1 ? to : to.slice(i + 1),
+          });
+        } else if (t.kind === "preview" && t.filePath?.startsWith(`${from}/`)) {
+          const suffix = t.filePath.slice(from.length);
+          const newPath = `${to}${suffix}`;
+          const i = newPath.lastIndexOf("/");
+          updateTab(t.id, {
+            filePath: newPath,
             title: i === -1 ? newPath : newPath.slice(i + 1),
           });
         }
@@ -579,11 +608,21 @@ export default function App() {
     (path: string) => {
       const dirty: number[] = [];
       for (const t of tabs) {
-        if (t.kind !== "editor") continue;
-        if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
-        if (t.dirty) {
-          dirty.push(t.id);
-        } else {
+        if (t.kind === "editor") {
+          if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
+          if (t.dirty) {
+            dirty.push(t.id);
+          } else {
+            disposeTab(t.id);
+          }
+          continue;
+        }
+
+        if (
+          t.kind === "preview" &&
+          t.filePath &&
+          (t.filePath === path || t.filePath.startsWith(`${path}/`))
+        ) {
           disposeTab(t.id);
         }
       }
@@ -592,7 +631,12 @@ export default function App() {
     [tabs, disposeTab],
   );
 
-  const activeFilePath = activeTab?.kind === "editor" ? activeTab.path : null;
+  const activeFilePath =
+    activeTab?.kind === "editor"
+      ? activeTab.path
+      : activeTab?.kind === "preview"
+        ? (activeTab.filePath ?? null)
+        : null;
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -844,6 +888,7 @@ export default function App() {
                     ref={explorerRef}
                     rootPath={explorerRoot}
                     onOpenFile={handleOpenFile}
+                    onPreviewFile={handlePreviewFile}
                     onPathRenamed={handlePathRenamed}
                     onPathDeleted={handlePathDeleted}
                     onRevealInTerminal={cdInNewTab}
@@ -899,6 +944,7 @@ export default function App() {
                         activeId={activeId}
                         registerHandle={registerPreviewHandle}
                         onUrlChange={handlePreviewUrl}
+                        onOpenFile={handleOpenFile}
                       />
                     </div>
                     <div

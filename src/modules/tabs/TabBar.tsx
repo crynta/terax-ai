@@ -20,7 +20,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef } from "react";
-import type { EditorTab, Tab } from "./lib/useTabs";
+import type { EditorTab, PreviewTab, Tab } from "./lib/useTabs";
 
 type Props = {
   tabs: Tab[];
@@ -85,7 +85,9 @@ export function TabBar({
         >
           <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
             {tabs.map((t) => {
-              const isPreview = t.kind === "editor" && (t as EditorTab).preview;
+              const isPreview =
+                (t.kind === "editor" && (t as EditorTab).preview) ||
+                (t.kind === "preview" && (t as PreviewTab).preview);
               return (
                 <TabsTrigger
                   key={t.id}
@@ -204,9 +206,17 @@ export function TabBar({
 function TabIcon({ tab }: { tab: Tab }) {
   if (tab.kind === "editor") {
     const url = fileIconUrl(tab.title);
-    return url ? <img src={url} alt="" className="size-3.5 shrink-0" /> : null;
+    return url ? (
+      <img src={url} alt="" className="size-3.5 shrink-0" />
+    ) : null;
   }
   if (tab.kind === "preview") {
+    if (tab.filePath) {
+      const url = fileIconUrl(tab.title);
+      return url ? (
+        <img src={url} alt="" className="size-3.5 shrink-0" />
+      ) : null;
+    }
     return (
       <HugeiconsIcon
         icon={Globe02Icon}

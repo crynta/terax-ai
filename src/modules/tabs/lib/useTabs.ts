@@ -45,6 +45,12 @@ export type PreviewTab = {
   kind: "preview";
   title: string;
   url: string;
+  filePath?: string;
+  /**
+   * True while a file preview tab is transient from a single-click in the
+   * explorer. Persistent URL preview tabs do not use this slot.
+   */
+  preview?: boolean;
 };
 
 export type AiDiffStatus = "pending" | "approved" | "rejected";
@@ -71,6 +77,7 @@ export type TabPatch = Partial<{
   path: string;
   dirty: boolean;
   url: string;
+  filePath: string;
 }>;
 
 function basename(path: string): string {
@@ -230,7 +237,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const pinTab = useCallback((id: number) => {
     setTabs((curr) =>
       curr.map((t) =>
-        t.id === id && t.kind === "editor" ? { ...t, preview: false } : t,
+        t.id === id && (t.kind === "editor" || t.kind === "preview")
+          ? { ...t, preview: false }
+          : t,
       ),
     );
   }, []);
@@ -321,6 +330,46 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return id;
   }, []);
 
+  const openFilePreviewTab = useCallback((path: string, pin = true) => {
+    let targetId: number | null = null;
+    setTabs((curr) => {
+      const existing = curr.find(
+        (t): t is PreviewTab => t.kind === "preview" && t.filePath === path,
+      );
+      if (existing) {
+        targetId = existing.id;
+        if (pin && existing.preview) {
+          return curr.map((t) =>
+            t.id === existing.id ? { ...t, preview: false } : t,
+          );
+        }
+        return curr;
+      }
+
+      const tab: PreviewTab = {
+        id: nextIdRef.current++,
+        kind: "preview",
+        title: basename(path),
+        url: "",
+        filePath: path,
+        preview: !pin,
+      };
+      targetId = tab.id;
+
+      if (pin) return [...curr, tab];
+
+      const previewIdx = curr.findIndex(
+        (t) => t.kind === "preview" && t.filePath && t.preview,
+      );
+      if (previewIdx === -1) return [...curr, tab];
+      const next = [...curr];
+      next[previewIdx] = tab;
+      return next;
+    });
+    if (targetId !== null) setActiveId(targetId);
+    return targetId as number | null;
+  }, []);
+
   const closeTab = useCallback((id: number) => {
     let toDispose: number[] = [];
     setTabs((curr) => {
@@ -356,7 +405,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.url !== undefined && {
               url: patch.url,
+              filePath: undefined,
+              preview: false,
               title: patch.title ?? titleFromUrl(patch.url),
+            }),
+            ...(patch.filePath !== undefined && {
+              filePath: patch.filePath,
+              title: patch.title ?? basename(patch.filePath),
             }),
           };
         }
@@ -557,6 +612,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     openFileTab,
     pinTab,
     newPreviewTab,
+    openFilePreviewTab,
     openAiDiffTab,
     setAiDiffStatus,
     closeAiDiffTab,

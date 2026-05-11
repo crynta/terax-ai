@@ -39,6 +39,7 @@ export type FileExplorerHandle = {
 type Props = {
   rootPath: string | null;
   onOpenFile: (path: string, pin?: boolean) => void;
+  onPreviewFile?: (path: string, pin?: boolean) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
@@ -55,6 +56,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     {
       rootPath,
       onOpenFile,
+      onPreviewFile,
       onPathRenamed,
       onPathDeleted,
       onRevealInTerminal,
@@ -346,6 +348,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
                         depth={0}
                         tree={tree}
                         onOpenFile={onOpenFile}
+                        onPreviewFile={onPreviewFile}
                         onRevealInTerminal={onRevealInTerminal}
                         onAttachToAgent={onAttachToAgent}
                         selectedPath={selectedPath}

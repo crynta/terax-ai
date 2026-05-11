@@ -19,6 +19,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "opener:default",
+    "opener:allow-open-path",
     "log:default",
     "os:default",
     "store:default",

@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
@@ -40,6 +41,79 @@ pub struct FileStat {
     pub kind: StatKind,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PreviewKind {
+    Image,
+    Pdf,
+    Audio,
+    Video,
+}
+
+#[derive(Serialize)]
+pub struct PreviewMetadata {
+    pub kind: PreviewKind,
+    pub media_type: &'static str,
+    pub size: u64,
+}
+
+pub fn preview_media_type_for_path(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "svg" => Some("image/svg+xml"),
+        "webp" => Some("image/webp"),
+        "pdf" => Some("application/pdf"),
+        "mp3" => Some("audio/mpeg"),
+        "wav" => Some("audio/wav"),
+        "ogg" | "oga" => Some("audio/ogg"),
+        "flac" => Some("audio/flac"),
+        "m4a" => Some("audio/mp4"),
+        "mp4" => Some("video/mp4"),
+        "webm" => Some("video/webm"),
+        "mov" => Some("video/quicktime"),
+        "mkv" => Some("video/x-matroska"),
+        _ => None,
+    }
+}
+
+pub fn preview_kind_for_media_type(media_type: &str) -> Option<PreviewKind> {
+    if media_type.starts_with("image/") {
+        return Some(PreviewKind::Image);
+    }
+    if media_type == "application/pdf" {
+        return Some(PreviewKind::Pdf);
+    }
+    if media_type.starts_with("audio/") {
+        return Some(PreviewKind::Audio);
+    }
+    if media_type.starts_with("video/") {
+        return Some(PreviewKind::Video);
+    }
+    None
+}
+
+pub fn preview_metadata_for_path(path: &Path) -> Result<PreviewMetadata, String> {
+    let media_type = preview_media_type_for_path(path)
+        .ok_or_else(|| "preview not supported for this file type".to_string())?;
+    let kind = preview_kind_for_media_type(media_type)
+        .ok_or_else(|| "preview not supported for this file type".to_string())?;
+    let meta = std::fs::metadata(path).map_err(|e| {
+        log::debug!("preview metadata stat({}) failed: {e}", path.display());
+        e.to_string()
+    })?;
+    if !meta.is_file() {
+        return Err("path is not a file".to_string());
+    }
+    Ok(PreviewMetadata {
+        kind,
+        media_type,
+        size: meta.len(),
+    })
+}
+
 #[tauri::command]
 pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<ReadResult, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
@@ -73,6 +147,16 @@ pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<Rea
         Ok(content) => Ok(ReadResult::Text { content, size }),
         Err(_) => Ok(ReadResult::Binary { size }),
     }
+}
+
+#[tauri::command]
+pub fn fs_preview_metadata(
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<PreviewMetadata, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
+    preview_metadata_for_path(&p)
 }
 
 /// Atomic write: stage into a sibling temp file, then rename over the target.
@@ -144,4 +228,60 @@ pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat
         mtime,
         kind,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{preview_kind_for_media_type, preview_media_type_for_path, PreviewKind};
+    use std::path::Path;
+
+    #[test]
+    fn preview_media_type_recognizes_supported_renderable_files() {
+        let cases = [
+            ("diagram.PNG", Some("image/png")),
+            ("photo.jpeg", Some("image/jpeg")),
+            ("animation.gif", Some("image/gif")),
+            ("vector.svg", Some("image/svg+xml")),
+            ("screen.webp", Some("image/webp")),
+            ("notes.pdf", Some("application/pdf")),
+            ("voice.mp3", Some("audio/mpeg")),
+            ("song.flac", Some("audio/flac")),
+            ("clip.mp4", Some("video/mp4")),
+            ("screen.webm", Some("video/webm")),
+        ];
+
+        for (path, expected) in cases {
+            assert_eq!(preview_media_type_for_path(Path::new(path)), expected);
+        }
+    }
+
+    #[test]
+    fn preview_media_type_rejects_non_renderable_files() {
+        let cases = ["archive.zip", "program.bin", "README.md", "no-extension"];
+
+        for path in cases {
+            assert_eq!(preview_media_type_for_path(Path::new(path)), None);
+        }
+    }
+
+    #[test]
+    fn preview_kind_follows_media_family() {
+        assert_eq!(
+            preview_kind_for_media_type("image/png"),
+            Some(PreviewKind::Image)
+        );
+        assert_eq!(
+            preview_kind_for_media_type("application/pdf"),
+            Some(PreviewKind::Pdf)
+        );
+        assert_eq!(
+            preview_kind_for_media_type("audio/mpeg"),
+            Some(PreviewKind::Audio)
+        );
+        assert_eq!(
+            preview_kind_for_media_type("video/mp4"),
+            Some(PreviewKind::Video)
+        );
+        assert_eq!(preview_kind_for_media_type("application/zip"), None);
+    }
 }
