@@ -101,6 +101,9 @@ importers:
       '@iconify-json/catppuccin':
         specifier: ^1.2.17
         version: 1.2.17
+      '@platformos/lang-jsonc':
+        specifier: ^0.0.17
+        version: 0.0.17
       '@radix-ui/react-use-controllable-state':
         specifier: ^1.2.2
         version: 1.2.2(@types/react@19.2.14)(react@19.2.5)
@@ -917,6 +920,9 @@ packages:
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
     engines: {node: '>=8.0.0'}
+
+  '@platformos/lang-jsonc@0.0.17':
+    resolution: {integrity: sha512-KsrY4+oP+xoqpLfGMy9leoLvAwF0mMb8tdLp/lnINTOHUZJbfYS9eZH9+SSTciduS+hOfbWAR9vdwsyWYmpo+w==}
 
   '@radix-ui/number@1.1.1':
     resolution: {integrity: sha512-MkKCwxlXTgz6CFoJx3pCwn07GKp36+aZyu/u2Ln2VrA5DcdyCZkASEDBTd8x5whTQQL5CiYf4prXKLcgQdv29g==}
@@ -5170,6 +5176,11 @@ snapshots:
   '@open-draft/until@2.1.0': {}
 
   '@opentelemetry/api@1.9.0': {}
+
+  '@platformos/lang-jsonc@0.0.17':
+    dependencies:
+      '@lezer/highlight': 1.2.3
+      '@lezer/lr': 1.4.10
 
   '@radix-ui/number@1.1.1': {}
 

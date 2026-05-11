@@ -32,6 +32,7 @@ const loaders: Record<string, LanguageLoader> = {
   rs: () => import("@codemirror/lang-rust").then((m) => m.rust()),
   py: () => import("@codemirror/lang-python").then((m) => m.python()),
   json: () => import("@codemirror/lang-json").then((m) => m.json()),
+  jsonc: () => import("@platformos/lang-jsonc").then((m) => m.jsonc()),
 
   md: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
   markdown: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
