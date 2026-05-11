@@ -134,35 +134,6 @@ fn run_blocking(
     })
 }
 
-#[cfg(target_os = "windows")]
-fn detect_shell() -> String {
-    // Check $SHELL first (Git Bash users)
-    if let Ok(shell) = std::env::var("SHELL") {
-        if shell.contains("bash") {
-            return shell;
-        }
-    }
-
-    // Try pwsh (PowerShell 7+)
-    if which::which("pwsh").is_ok() {
-        return which::which("pwsh")
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-    }
-
-    // Try powershell (Windows PowerShell)
-    if which::which("powershell").is_ok() {
-        return which::which("powershell")
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
-    }
-
-    // Fall back to CMD
-    std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
-}
-
 // ──────────────────────────────────────────────────────────────────────────
 // Persistent agent shell state + background process state.
 // ──────────────────────────────────────────────────────────────────────────
