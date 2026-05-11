@@ -752,6 +752,21 @@ export default function App() {
     return () => unlisten?.();
   }, []);
 
+  // Block F5 / Ctrl+R / Cmd+R — reloading destroys all terminal sessions.
+  useEffect(() => {
+    const block = (e: KeyboardEvent) => {
+      if (
+        e.key === "F5" ||
+        ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("keydown", block, { capture: true });
+    return () => window.removeEventListener("keydown", block, { capture: true });
+  }, []);
+
   useEffect(() => {
     const findCwd = () => {
       const active = tabs.find((x) => x.id === activeId);
