@@ -24,11 +24,14 @@ import {
   Grok02Icon,
   Message01Icon,
   Mic01Icon,
+  Search01Icon,
   StopCircleIcon,
+  AiBookIcon,
+  Tick01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import {
   getModel,
   MODELS,
@@ -79,19 +82,6 @@ export function AiStatusBarControls() {
 
   return (
     <div className="flex items-center gap-0.5">
-      {/* <Button
-        onClick={closePanel}
-        title="Close AI panel"
-        size="xs"
-        variant="outline"
-        aria-label="Close AI panel"
-        className="text-[11px] text-foreground/85 pl-1.5"
-      > */}
-      {/* <Kbd className="h-4 gap-px text-[11px]">
-          ⌘<span className="font-mono">I</span>
-        </Kbd> */}
-      {/* Close */}
-      {/* </Button> */}
       <input
         ref={fileInputRef}
         type="file"
@@ -129,7 +119,7 @@ export function AiStatusBarControls() {
           disabled={c.isBusy || c.voice.transcribing || !c.voice.hasKey}
           className={cn(
             c.voice.recording &&
-              "bg-destructive/10 text-destructive hover:bg-destructive/15",
+            "bg-destructive/10 text-destructive hover:bg-destructive/15",
           )}
         >
           {c.voice.recording ? (
@@ -156,7 +146,6 @@ export function AiStatusBarControls() {
         <Kbd className="h-4 gap-px px-2 font-mono text-[11px]">
           {fmtShortcut(MOD_KEY, "I")}
         </Kbd>
-        {/* <HugeiconsIcon icon={Close} size={15} strokeWidth={1.75} /> */}
       </Button>
       <IconBtn
         title={miniOpen ? "Mini-window open" : "Open conversation"}
@@ -200,20 +189,29 @@ function ModelDropdown() {
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
   const current = getModel(selected);
+  const [search, setSearch] = useState("");
+  const [activeProvider, setActiveProvider] = useState<ProviderId | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const currentProviderHasKey = providerNeedsKey(current.provider)
     ? !!apiKeys[current.provider]
     : true;
 
-  const onPick = (id: ModelId, providerId: ProviderId) => {
-    if (providerNeedsKey(providerId) && !apiKeys[providerId]) {
-      void openSettingsWindow("models");
-      return;
-    }
-    setSelected(id);
-  };
+  // Searches based on label, hint and the provider
+  const filteredModels = MODELS.filter((m) => {
+    const q = search.toLowerCase();
+    const matchesSearch = q === "" ||
+      m.label.toLowerCase().includes(q) ||
+      m.hint.toLowerCase().includes(q) ||
+      m.provider.includes(q)
+
+    const matchesProvider = activeProvider === null || m.provider === activeProvider;
+
+    return matchesSearch && matchesProvider;
+  });
 
   return (
-    <DropdownMenu>
+    <DropdownMenu
+    >
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -231,11 +229,6 @@ function ModelDropdown() {
               : `${current.label} — no key configured`
           }
         >
-          {/* <HugeiconsIcon
-            icon={PROVIDER_ICON[current.provider]}
-            size={12}
-            strokeWidth={1.25}
-          /> */}
           {current.label}
           <HugeiconsIcon
             icon={ArrowDown01Icon}
@@ -245,52 +238,153 @@ function ModelDropdown() {
           />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[240px]">
-        {PROVIDERS.map((p) => {
-          const models = MODELS.filter((m) => m.provider === p.id);
-          const hasKey = providerNeedsKey(p.id) ? !!apiKeys[p.id] : true;
-          return (
-            <div key={p.id} className="px-1 pt-1.5 first:pt-1">
-              <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[9.5px] font-medium tracking-wide text-muted-foreground uppercase">
-                <HugeiconsIcon
-                  icon={PROVIDER_ICON[p.id]}
-                  size={15}
-                  strokeWidth={1.25}
-                />
-                <span>{p.label}</span>
-                {!hasKey ? (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      void openSettingsWindow("models");
-                    }}
-                    className="ml-auto rounded-sm px-1 text-[9px] normal-case tracking-normal text-amber-600 underline-offset-2 hover:underline dark:text-amber-400"
-                  >
-                    Set key…
-                  </button>
-                ) : null}
-              </div>
-              {models.map((m) => (
-                <DropdownMenuItem
-                  key={m.id}
-                  disabled={!hasKey}
-                  onSelect={() => onPick(m.id as ModelId, p.id)}
+
+      <DropdownMenuContent
+        align="end"
+        className="w-100 p-0 overflow-hidden rounded-xl border border-border/70 shadow-xl"
+        onFocusCapture={(e) => {
+          if (e.target !== inputRef.current) {
+            inputRef.current?.focus(); // focus issues related to Radix-UI
+          }
+        }}
+      >
+        {/* Search bar */}
+        <div className="flex items-center gap-2.5 border-b border-border/70 px-3 py-2.5">
+          <HugeiconsIcon
+            icon={Search01Icon}
+            size={20}
+            strokeWidth={1.5}
+            className="shrink-0 text-muted-foreground/70"
+          />
+          <input
+            ref={inputRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => e.stopPropagation()} // Radix-UI shifts focus when typing first latter
+            placeholder="Search models..."
+            className="bg-transparent text-sm outline-none"
+          />
+        </div>
+
+        <div className="flex">
+          {/* Provider sidebar */}
+          <div className="flex w-10 overflow-y-auto flex-col border-r border-border/70">
+            <Button
+              variant={'ghost'}
+              onClick={() => setActiveProvider(null)}
+              title="All providers"
+              className={cn(
+                "relative transition-all",
+                activeProvider === null
+                  ? "text-foreground after:absolute after:bottom-1.5 after:right-0 after:top-1.5 after:w-0.75 after:rounded-full after:bg-primary after:content-['']"
+                  : "text-muted-foreground/70",
+              )}
+            >
+              <HugeiconsIcon
+                icon={AiBookIcon}
+                strokeWidth={1.5}
+                className="opacity-70 size-5" // size dont work as its Button Component
+              />
+            </Button>
+
+            {PROVIDERS.map((p) => {
+              const hasKey = providerNeedsKey(p.id) ? !!apiKeys[p.id] : true;
+              const isActive = activeProvider === p.id;
+              return (
+                <Button
+                  variant={'ghost'}
+                  key={p.id}
+                  title={p.label}
+                  onClick={() => setActiveProvider(p.id)}
                   className={cn(
-                    "flex flex-col items-start gap-0 text-xs",
-                    m.id === selected && "bg-accent/40",
+                    "relative transition-all rounded-md",
+                    isActive
+                      ? "text-foreground after:absolute after:bottom-1.5 after:right-0 after:top-1.5 after:w-0.75 after:rounded-full after:bg-primary after:content-['']"
+                      : hasKey
+                        ? "text-muted-foreground/70"
+                        : "text-amber-500/70",
                   )}
                 >
-                  <span className="font-medium">{m.label}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {m.hint}
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </div>
-          );
-        })}
+                  <HugeiconsIcon
+                    icon={PROVIDER_ICON[p.id]}
+                    className="size-5"
+                    strokeWidth={1.5}
+                  />
+                </Button>
+              );
+            })}
+          </div>
+
+          {/* Models list */}
+          <div className="flex-1 overflow-y-auto max-h-95 py-1">
+            {filteredModels.length === 0 ? (
+              <div className="flex items-center justify-center px-4 py-8 text-xs text-muted-foreground/70">
+                No models found
+              </div>
+            ) : (
+              filteredModels.map((m) => {
+                const hasKey = providerNeedsKey(m.provider)
+                  ? !!apiKeys[m.provider]
+                  : true;
+                const isSelected = m.id === selected;
+
+                return (
+                  <DropdownMenuItem
+                    key={m.id}
+                    onSelect={(e) => {
+                      if (!hasKey) {
+                        e.preventDefault();
+                        void openSettingsWindow("models");
+                        return;
+                      }
+                      setSelected(m.id as ModelId);
+                    }}
+                    className={cn(
+                      "mx-1 flex cursor-pointer flex-col items-start gap-0.5 rounded-md px-2.5 py-2",
+                      isSelected
+                        ? "bg-accent/60 text-foreground"
+                        : "text-foreground/70",
+                      !hasKey && "opacity-70",
+                    )}
+                  >
+                    <div className="flex w-full items-center gap-1.5">
+                      <span className="font-medium leading-none">
+                        {m.label}
+                      </span>
+
+                      {isSelected && (
+                        <HugeiconsIcon
+                          icon={Tick01Icon}
+                          className="ml-auto"
+                          size={16}
+                          strokeWidth={1.5}
+                        />
+                      )}
+
+                      {!hasKey && !isSelected && (
+                        <Button
+                          variant={'link'}
+                          size={'sm'}
+                          onClick={(e) => {
+                            e.stopPropagation(); // it consider it as many clicks, resulting in settings window bug
+                            openSettingsWindow("models");
+                          }}
+                          className="ml-auto text-xs p-0 text-amber-500"
+                        >
+                          Set key
+                        </Button>
+                      )}
+                    </div>
+
+                    <span className="text-[10px] leading-relaxed text-muted-foreground">
+                      {m.hint}
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })
+            )}
+          </div>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
