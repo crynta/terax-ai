@@ -44,6 +44,8 @@ const loaders: Record<string, LanguageLoader> = {
 
   php: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
 
+  sql: () => import("@codemirror/lang-sql").then((m) => m.sql()),
+
   // Legacy-modes: loaders return the raw StreamParser; wrapped below.
   sh: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
   bash: () =>
