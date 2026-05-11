@@ -4,6 +4,7 @@
     "windows": [
       {
         "label": "main",
+        "title": "Terax",
         "decorations": false,
         "transparent": true,
         "visible": false,

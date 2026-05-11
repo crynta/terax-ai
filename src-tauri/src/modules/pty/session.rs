@@ -31,11 +31,22 @@ pub enum PtyEvent {
 }
 
 pub struct Session {
-    pub master: Mutex<Box<dyn MasterPty + Send>>,
-    pub writer: Mutex<Box<dyn Write + Send>>,
-    pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    // Field drop order is intentional. Rust drops fields top-to-bottom:
+    //   1. `_job` — on Windows, closing the Job HANDLE fires
+    //      KILL_ON_JOB_CLOSE, terminating the pwsh tree before the master
+    //      pipe drops. Without this, ClosePseudoConsole in `master`'s Drop
+    //      can block waiting for conhost to drain pending output, freezing
+    //      the Tauri worker thread that triggered the close.
+    //   2. `killer` — best-effort kill (redundant on Windows once Job
+    //      closed, but harmless and required on Unix where there is no Job).
+    //   3. `writer` — closes the input side of the master pipe.
+    //   4. `master` — last; ClosePseudoConsole on Windows. By now the child
+    //      is dead and conhost has nothing left to drain.
     #[cfg(windows)]
     _job: Option<super::job::PtyJob>,
+    pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    pub writer: Mutex<Box<dyn Write + Send>>,
+    pub master: Mutex<Box<dyn MasterPty + Send>>,
 }
 
 impl Drop for Session {
@@ -90,11 +101,11 @@ pub fn spawn(
     };
 
     let session = Arc::new(Session {
-        master: Mutex::new(pair.master),
-        writer: Mutex::new(writer),
-        killer: Mutex::new(killer),
         #[cfg(windows)]
         _job: job,
+        killer: Mutex::new(killer),
+        writer: Mutex::new(writer),
+        master: Mutex::new(pair.master),
     });
 
     let pending: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::with_capacity(READ_BUF)));
