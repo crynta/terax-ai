@@ -21,10 +21,10 @@ pub struct DirEntry {
 }
 
 /// Lists immediate children of `path`. Dirs first, then files, each sorted
-/// case-insensitively. Hidden files are filtered. Hidden dirs can be included
-/// through the user preference-backed toggle.
+/// case-insensitively. Dot-prefixed entries (files and dirs) are hidden unless
+/// `show_hidden` is set.
 #[tauri::command]
-pub fn fs_read_dir(path: String, show_hidden_directories: bool) -> Result<Vec<DirEntry>, String> {
+pub fn fs_read_dir(path: String, show_hidden: bool) -> Result<Vec<DirEntry>, String> {
     let root = PathBuf::from(&path);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
@@ -54,8 +54,7 @@ pub fn fs_read_dir(path: String, show_hidden_directories: bool) -> Result<Vec<Di
                 EntryKind::File
             };
 
-            if name.starts_with('.') && !(show_hidden_directories && matches!(kind, EntryKind::Dir))
-            {
+            if name.starts_with('.') && !show_hidden {
                 return None;
             }
 
@@ -95,7 +94,7 @@ pub fn fs_read_dir(path: String, show_hidden_directories: bool) -> Result<Vec<Di
 /// Symlinks to directories are included (matches shell `cd` semantics).
 /// Hidden entries are filtered by dot-prefix only.
 #[tauri::command]
-pub fn list_subdirs(path: String, show_hidden_directories: bool) -> Result<Vec<String>, String> {
+pub fn list_subdirs(path: String, show_hidden: bool) -> Result<Vec<String>, String> {
     let root = PathBuf::from(&path);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("list_subdirs({}) read_dir failed: {e}", root.display());
@@ -112,7 +111,7 @@ pub fn list_subdirs(path: String, show_hidden_directories: bool) -> Result<Vec<S
             _ => false,
         })
         .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| show_hidden_directories || !name.starts_with('.'))
+        .filter(|name| show_hidden || !name.starts_with('.'))
         .collect();
 
     dirs.sort_by_key(|a| a.to_lowercase());

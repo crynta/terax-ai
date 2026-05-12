@@ -39,10 +39,8 @@ type Options = {
 };
 
 export function useFileTree(rootPath: string | null, options?: Options) {
-  const showHiddenDirectories = usePreferencesStore(
-    (s) => s.showHiddenDirectories,
-  );
-  const showHiddenDirectoriesRef = useRef(showHiddenDirectories);
+  const showHidden = usePreferencesStore((s) => s.showHidden);
+  const showHiddenRef = useRef(showHidden);
   const [nodes, setNodes] = useState<TreeState>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(
@@ -51,15 +49,15 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const [renaming, setRenaming] = useState<string | null>(null);
 
   useEffect(() => {
-    showHiddenDirectoriesRef.current = showHiddenDirectories;
-  }, [showHiddenDirectories]);
+    showHiddenRef.current = showHidden;
+  }, [showHidden]);
 
   const fetchChildren = useCallback(async (path: string) => {
     setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
     try {
       const entries = await invoke<DirEntry[]>("fs_read_dir", {
         path,
-        showHiddenDirectories: showHiddenDirectoriesRef.current,
+        showHidden: showHiddenRef.current,
       });
       setNodes((s) => ({ ...s, [path]: { status: "loaded", entries } }));
     } catch (e) {
@@ -96,7 +94,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     // `nodes` is intentionally omitted so ordinary tree edits don't refetch
     // every expanded directory.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHiddenDirectories, rootPath, fetchChildren]);
+  }, [showHidden, rootPath, fetchChildren]);
 
   const toggle = useCallback(
     (path: string) => {

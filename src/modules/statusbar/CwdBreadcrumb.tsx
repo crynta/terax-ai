@@ -178,9 +178,7 @@ function CurrentSegmentDropdown({
   path: string;
   onCd: (p: string) => void;
 }) {
-  const showHiddenDirectories = usePreferencesStore(
-    (s) => s.showHiddenDirectories,
-  );
+  const showHidden = usePreferencesStore((s) => s.showHidden);
   const [open, setOpen] = useState(false);
   const [children, setChildren] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -190,14 +188,14 @@ function CurrentSegmentDropdown({
     try {
       const dirs = await invoke<string[]>("list_subdirs", {
         path,
-        showHiddenDirectories,
+        showHidden,
       });
       setChildren(dirs);
     } catch (e) {
       setError(String(e));
       setChildren([]);
     }
-  }, [path, showHiddenDirectories]);
+  }, [path, showHidden]);
 
   useEffect(() => {
     if (open) load();
