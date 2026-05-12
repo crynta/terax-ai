@@ -1,6 +1,27 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use portable_pty::CommandBuilder;
+
+static STARTUP_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+pub fn capture_startup_cwd() {
+    let _ = STARTUP_CWD.set(detect_startup_cwd());
+}
+
+fn detect_startup_cwd() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    if !cwd.is_dir() || cwd == Path::new("/") {
+        return None;
+    }
+    if dirs::home_dir().as_deref() == Some(&cwd) {
+        return None;
+    }
+    if cwd.to_string_lossy().contains(".app/Contents/") {
+        return None;
+    }
+    Some(cwd)
+}
 
 pub fn build_command(cwd: Option<String>) -> Result<CommandBuilder, String> {
     #[cfg(unix)]
@@ -21,6 +42,7 @@ fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
     let resolved_cwd = cwd
         .map(PathBuf::from)
         .filter(|p| p.is_dir())
+        .or_else(|| STARTUP_CWD.get().and_then(|c| c.clone()))
         .or_else(|| dirs::home_dir().filter(|p| p.is_dir()))
         .or_else(|| std::env::current_dir().ok());
     if let Some(cwd) = resolved_cwd {

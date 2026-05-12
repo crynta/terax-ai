@@ -89,6 +89,8 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     apply_wayland_webkit_workaround();
 
+    pty::shell_init::capture_startup_cwd();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
