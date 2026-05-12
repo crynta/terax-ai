@@ -26,6 +26,7 @@ import type {
   UIMessagePart,
 } from "ai";
 import { memo, useCallback } from "react";
+import { submitAcpApproval } from "../agents-acp";
 import { AiToolApproval } from "./AiToolApproval";
 
 function CommandSnippet({ name }: { name: string }) {
@@ -84,8 +85,14 @@ export function AiChatView({
   const lastMessage = messages[messages.length - 1];
   const showSpinner = isBusy && lastMessage?.role === "user";
 
+  // Both transports — Vercel-AI-SDK direct and ACP-driven external agent —
+  // resolve approvals through this one path. `submitAcpApproval` is a no-op
+  // when the approvalId doesn't belong to a tracked ACP session.
   const onApproval = useCallback(
-    (id: string, approved: boolean) => addToolApprovalResponse({ id, approved }),
+    (id: string, approved: boolean) => {
+      submitAcpApproval(id, approved);
+      return addToolApprovalResponse({ id, approved });
+    },
     [addToolApprovalResponse],
   );
 

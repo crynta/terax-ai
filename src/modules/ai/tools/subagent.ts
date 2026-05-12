@@ -2,6 +2,11 @@ import { tool } from "ai";
 import { z } from "zod";
 import { runSubagent } from "../agents/runSubagent";
 import { SUBAGENTS, type SubagentType } from "../agents/registry";
+import {
+  DEFAULT_MODEL_ID,
+  isAgentBackendModel,
+  type ModelId,
+} from "../config";
 import { useChatStore } from "../store/chatStore";
 import type { ToolContext } from "./context";
 
@@ -30,12 +35,18 @@ Auto-executes (no approval) — subagents are read-only by design.`,
       }),
       execute: async ({ type, prompt, description }) => {
         const { apiKeys, selectedModelId } = useChatStore.getState();
+        // Subagents only run via the Vercel-AI-SDK provider path. If the
+        // user is on an external-agent backend, fall back to the default
+        // model so the subagent still has a working LLM to call.
+        const subagentModelId = isAgentBackendModel(selectedModelId)
+          ? DEFAULT_MODEL_ID
+          : (selectedModelId as ModelId);
         try {
           const r = await runSubagent({
             type,
             prompt,
             keys: apiKeys,
-            modelId: selectedModelId,
+            modelId: subagentModelId,
             toolContext: ctx,
           });
           return {

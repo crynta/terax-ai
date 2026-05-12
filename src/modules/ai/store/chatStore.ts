@@ -5,12 +5,18 @@ import {
 } from "ai";
 import { create } from "zustand";
 import {
+  agentBackendForModel,
   DEFAULT_MODEL_ID,
   getModel,
+  isAgentBackendModel,
   providerNeedsKey,
   type ModelId,
   type ProviderId,
 } from "../config";
+import {
+  createAcpTransport,
+  disposeAcpChatSession,
+} from "../agents-acp";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { BUILTIN_AGENTS } from "../lib/agents";
 import { useAgentsStore } from "./agentsStore";
@@ -93,8 +99,13 @@ type StoreState = {
   setApiKeys: (keys: ProviderKeys) => void;
   setApiKey: (provider: ProviderId, key: string | null) => void;
 
-  selectedModelId: ModelId;
-  setSelectedModelId: (id: ModelId) => void;
+  /**
+   * The active model. Either a regular `ModelId` (Vercel-AI-SDK provider
+   * call path) or a synthetic `agent-*` id from `AGENT_BACKENDS` (ACP
+   * subprocess path). The chat store branches on `isAgentBackendModel`.
+   */
+  selectedModelId: ModelId | string;
+  setSelectedModelId: (id: ModelId | string) => void;
 
   mini: MiniState;
   openMini: () => void;
@@ -191,10 +202,32 @@ function makeChat(sessionId: string): Chat<UIMessage> {
     getSessionId: () => sessionId,
   };
 
-  const transport = createContextAwareTransport({
+  // The Chat is built once per session, but the user can switch between an
+  // ACP-backed external agent and a direct-API model at any time. We solve
+  // that by giving the Chat a delegating transport that picks the underlying
+  // transport on every `sendMessages` call based on the *current* model.
+  // Each underlying transport keeps its own state (the ACP transport
+  // memoizes its subprocess; the direct transport rebuilds the agent each
+  // turn), so flipping back and forth is cheap.
+  const acpTransport = createAcpTransport({
+    getBackendId: () => {
+      const id = useChatStore.getState().selectedModelId;
+      const b = agentBackendForModel(id);
+      // Falls back to claude-code if the user somehow switches to a
+      // synthetic agent-* id we don't know — better than throwing
+      // mid-stream.
+      return b?.id ?? "claude-code";
+    },
+    getCwd: () => {
+      const live = useChatStore.getState().live;
+      return live.getCwd() ?? live.getWorkspaceRoot();
+    },
+  });
+
+  const directTransport = createContextAwareTransport({
     getKeys: () => useChatStore.getState().apiKeys,
     toolContext,
-    getModelId: () => useChatStore.getState().selectedModelId,
+    getModelId: () => useChatStore.getState().selectedModelId as ModelId,
     getCustomInstructions: () =>
       usePreferencesStore.getState().customInstructions,
     getAgentPersona: () => {
@@ -217,6 +250,21 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       useChatStore.getState().patchAgentMeta({ step });
     },
   }) as unknown as ChatTransport<UIMessage>;
+
+  const transport: ChatTransport<UIMessage> = {
+    sendMessages(opts) {
+      const id = useChatStore.getState().selectedModelId;
+      return isAgentBackendModel(id)
+        ? acpTransport.sendMessages(opts)
+        : directTransport.sendMessages(opts);
+    },
+    reconnectToStream(opts) {
+      const id = useChatStore.getState().selectedModelId;
+      return isAgentBackendModel(id)
+        ? acpTransport.reconnectToStream(opts)
+        : directTransport.reconnectToStream(opts);
+    },
+  };
 
   const initialMessages = seedMessages.get(sessionId);
   seedMessages.delete(sessionId);
@@ -378,6 +426,9 @@ export const useChatStore = create<StoreState>((set, get) => ({
     chats.get(id)?.stop();
     chats.delete(id);
     seedMessages.delete(id);
+    // If this session had an ACP-driven backend session, kill the
+    // subprocess and forget the responder map. No-op for direct-API chats.
+    disposeAcpChatSession(id);
     const pend = pendingPersist.get(id);
     if (pend) {
       clearTimeout(pend.timer);
@@ -450,12 +501,21 @@ export function getAgentMeta(): AgentMeta {
 
 export function getActiveProviderKey(): string | null {
   const { selectedModelId, apiKeys } = useChatStore.getState();
-  return apiKeys[getModel(selectedModelId).provider] ?? null;
+  // Agent-backend models authenticate via the spawned CLI's own credential
+  // flow (or via the keychain entry the Rust runtime forwards as an env
+  // var) — there's no Vercel-SDK provider key to return.
+  if (isAgentBackendModel(selectedModelId)) return null;
+  return apiKeys[getModel(selectedModelId as ModelId).provider] ?? null;
 }
 
-export function hasKeyForModel(modelId: ModelId): boolean {
+export function hasKeyForModel(modelId: ModelId | string): boolean {
+  // For agent backends, "has key" really means "is the CLI installed" —
+  // we don't gate `sendMessage` on that here because Rust's
+  // `agent_session_start` will surface a clean error to the UI if the
+  // binary is missing. Defer to the runtime.
+  if (isAgentBackendModel(modelId)) return true;
   const { apiKeys } = useChatStore.getState();
-  const provider = getModel(modelId).provider;
+  const provider = getModel(modelId as ModelId).provider;
   return providerNeedsKey(provider) ? !!apiKeys[provider] : true;
 }
 
@@ -477,7 +537,14 @@ export async function sendMessage(text: string): Promise<boolean> {
   const state = useChatStore.getState();
   const sessionId = state.activeSessionId;
   if (!sessionId) return false;
-  if (providerNeedsKey(getModel(state.selectedModelId).provider) && !getActiveProviderKey()) return false;
+  // Agent backends skip the key check — they authenticate via their own CLI.
+  if (
+    !isAgentBackendModel(state.selectedModelId) &&
+    providerNeedsKey(getModel(state.selectedModelId as ModelId).provider) &&
+    !getActiveProviderKey()
+  ) {
+    return false;
+  }
   const c = getOrCreateChat(sessionId);
   await c.sendMessage({ text });
   return true;

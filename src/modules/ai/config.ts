@@ -241,6 +241,62 @@ export function getModelContextLimit(modelId: string | undefined): number {
   return MODEL_CONTEXT_LIMITS[modelId] ?? 128_000;
 }
 
+/* ------------------------------------------------------------------------- */
+/* External agent backends — parallel to the provider list above.            */
+/*                                                                           */
+/* These spawn an external CLI that already speaks the Agent Client          */
+/* Protocol (Claude Code via `claude-code-acp`, Codex via `codex-acp`,       */
+/* Gemini via `--experimental-acp`, …). The Rust side owns process           */
+/* lifecycle and event streaming; this list is the frontend's view of which  */
+/* backends exist and what to label them as in the model picker.             */
+
+export type AgentBackendId = "claude-code" | "codex" | "gemini";
+
+export type AgentBackendInfo = {
+  id: AgentBackendId;
+  /** Surfaced in the model picker as the "model" entry. */
+  label: string;
+  /** Treated as a synthetic ModelId by the chat store so existing code paths
+   *  keep working unchanged. */
+  modelId: string;
+  hint: string;
+};
+
+export const AGENT_BACKENDS: readonly AgentBackendInfo[] = [
+  {
+    id: "claude-code",
+    label: "Claude Code (ACP)",
+    modelId: "agent-claude-code",
+    hint: "Anthropic · external CLI",
+  },
+  {
+    id: "codex",
+    label: "OpenAI Codex CLI (ACP)",
+    modelId: "agent-codex",
+    hint: "OpenAI · external CLI",
+  },
+  {
+    id: "gemini",
+    label: "Gemini CLI (ACP)",
+    modelId: "agent-gemini",
+    hint: "Google · external CLI",
+  },
+] as const;
+
+/** Synthetic model-id prefix that distinguishes "drive an external agent"
+ *  from "call a model API directly". The chat store branches on this. */
+export const AGENT_BACKEND_MODEL_PREFIX = "agent-";
+
+export function isAgentBackendModel(modelId: string): boolean {
+  return modelId.startsWith(AGENT_BACKEND_MODEL_PREFIX);
+}
+
+export function agentBackendForModel(
+  modelId: string,
+): AgentBackendInfo | undefined {
+  return AGENT_BACKENDS.find((b) => b.modelId === modelId);
+}
+
 /** Providers that do not require an API key (e.g. local servers). */
 export const KEYLESS_PROVIDERS: readonly ProviderId[] = ["lmstudio"] as const;
 

@@ -29,7 +29,12 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
 import { useEffect, useMemo } from "react";
-import { getModel, getModelContextLimit } from "../config";
+import {
+  agentBackendForModel,
+  getModel,
+  getModelContextLimit,
+  type ModelId,
+} from "../config";
 import type { SessionMeta } from "../lib/sessions";
 import { useAgentsStore } from "../store/agentsStore";
 import { getOrCreateChat, useChatStore } from "../store/chatStore";
@@ -286,8 +291,10 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const used = useMemo(() => estimateTokens(messages), [messages]);
   const max = getModelContextLimit(modelId);
   const modelLabel = useMemo(() => {
+    const agent = agentBackendForModel(modelId);
+    if (agent) return agent.label;
     try {
-      return getModel(modelId).label;
+      return getModel(modelId as ModelId).label;
     } catch {
       return modelId;
     }

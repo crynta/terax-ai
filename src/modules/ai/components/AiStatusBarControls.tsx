@@ -24,12 +24,15 @@ import {
   Grok02Icon,
   Message01Icon,
   Mic01Icon,
+  Plug01Icon,
   StopCircleIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
 import { useRef } from "react";
 import {
+  AGENT_BACKENDS,
+  agentBackendForModel,
   getModel,
   MODELS,
   providerNeedsKey,
@@ -38,7 +41,9 @@ import {
   type ProviderId,
 } from "../config";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
+import { useBackendsStore } from "../agents-acp";
 import { useChatStore } from "../store/chatStore";
+import { useEffect } from "react";
 
 const PROVIDER_ICON = {
   openai: ChatGptIcon,
@@ -199,8 +204,26 @@ function ModelDropdown() {
   const selected = useChatStore((s) => s.selectedModelId);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
-  const current = getModel(selected);
-  const currentProviderHasKey = !!apiKeys[current.provider];
+  const backends = useBackendsStore((s) => s.backends);
+  const refreshBackends = useBackendsStore((s) => s.refresh);
+  const backendsHydrated = useBackendsStore((s) => s.hydrated);
+
+  // Hydrate the backend detection list lazily — first time the user opens
+  // this dropdown is the natural moment.
+  useEffect(() => {
+    if (!backendsHydrated) void refreshBackends();
+  }, [backendsHydrated, refreshBackends]);
+
+  const selectedAgent = agentBackendForModel(selected);
+  const current = selectedAgent
+    ? { label: selectedAgent.label, provider: null as ProviderId | null }
+    : { ...getModel(selected as ModelId), provider: getModel(selected as ModelId).provider as ProviderId | null };
+  const currentProviderHasKey =
+    selectedAgent != null
+      ? // Agents auth via their own CLI — surface "warning" only when the
+        // backend isn't installed at all.
+        backends.find((b) => b.id === selectedAgent.id)?.binaryPath != null
+      : current.provider != null && !!apiKeys[current.provider];
 
   const onPick = (id: ModelId, providerId: ProviderId) => {
     if (!apiKeys[providerId]) {
@@ -208,6 +231,14 @@ function ModelDropdown() {
       return;
     }
     setSelected(id);
+  };
+
+  const onPickAgent = (modelId: string, installed: boolean) => {
+    if (!installed) {
+      void openSettingsWindow("external-agents");
+      return;
+    }
+    setSelected(modelId);
   };
 
   return (
@@ -289,6 +320,43 @@ function ModelDropdown() {
             </div>
           );
         })}
+        <div className="px-1 pt-1.5">
+          <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[9.5px] font-medium tracking-wide text-muted-foreground uppercase">
+            <HugeiconsIcon icon={Plug01Icon} size={15} strokeWidth={1.25} />
+            <span>External Agents</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                void openSettingsWindow("external-agents");
+              }}
+              className="ml-auto rounded-sm px-1 text-[9px] normal-case tracking-normal text-muted-foreground underline-offset-2 hover:underline"
+            >
+              Manage…
+            </button>
+          </div>
+          {AGENT_BACKENDS.map((b) => {
+            const status = backends.find((x) => x.id === b.id);
+            const installed = status?.binaryPath != null;
+            return (
+              <DropdownMenuItem
+                key={b.modelId}
+                onSelect={() => onPickAgent(b.modelId, installed)}
+                className={cn(
+                  "flex flex-col items-start gap-0 text-xs",
+                  b.modelId === selected && "bg-accent/40",
+                  !installed && "opacity-70",
+                )}
+              >
+                <span className="font-medium">{b.label}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {installed ? b.hint : `${b.hint} · not installed`}
+                </span>
+              </DropdownMenuItem>
+            );
+          })}
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

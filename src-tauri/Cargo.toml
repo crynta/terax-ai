@@ -38,6 +38,19 @@ tauri-plugin-store = "2"
 tauri-plugin-process = "2"
 reqwest = { version = "0.12", default-features = false }
 
+# External AI agents over the Agent Client Protocol (Claude Code, Codex CLI,
+# Gemini CLI, OpenCode, …). Pre-1.0 — pin tightly and exercise capability
+# negotiation at session init. The `-tokio` sister crate provides `AcpAgent`,
+# the helper that spawns the CLI as a tokio subprocess and wires its stdio
+# to the protocol.
+agent-client-protocol = "0.11"
+agent-client-protocol-tokio = "0.11"
+tokio = { version = "1", features = ["sync", "rt", "macros", "time", "process", "io-util"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+futures = "0.3"
+which = "6"
+uuid = { version = "1", features = ["v4"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [
 	"apple-native",

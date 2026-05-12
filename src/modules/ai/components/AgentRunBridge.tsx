@@ -1,7 +1,8 @@
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import type { ToolUIPart, UIMessagePart } from "ai";
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AiDiffStatus } from "@/modules/tabs";
+import { submitAcpApproval } from "../agents-acp";
 import { native } from "../lib/native";
 import { checkReadable } from "../lib/security";
 import { resolvePath } from "../tools/tools";
@@ -67,14 +68,27 @@ function Bridge({
   const persistMessages = useChatStore((s) => s.persistMessages);
   const setApprovalResponder = useChatStore((s) => s.setApprovalResponder);
 
-  // Expose the approval responder so the diff tab can resolve approvals.
-  // We keep it in a ref-stable closure so identity is stable per render.
+  // Single approval entry point — every Approve/Deny click in the UI flows
+  // through here, regardless of whether the underlying transport is the
+  // Vercel-AI-SDK direct path or an ACP-driven external agent. We always
+  // call `addToolApprovalResponse` so the AI SDK marks the part responded
+  // and `submitAcpApproval` so an ACP session (if any) gets its
+  // `RequestPermissionResponse`. The latter is a no-op when the approvalId
+  // doesn't belong to an ACP session.
+  const onApproval = useCallback(
+    (id: string, approved: boolean) => {
+      submitAcpApproval(id, approved);
+      addToolApprovalResponse({ id, approved });
+    },
+    [addToolApprovalResponse],
+  );
+
+  // Expose this to the diff tab and other surfaces outside the chat hook
+  // tree. Stable via the useCallback above.
   useEffect(() => {
-    setApprovalResponder((id, approved) =>
-      addToolApprovalResponse({ id, approved }),
-    );
+    setApprovalResponder(onApproval);
     return () => setApprovalResponder(null);
-  }, [setApprovalResponder, addToolApprovalResponse]);
+  }, [setApprovalResponder, onApproval]);
 
   useEffect(() => {
     persistMessages(sessionId, messages);

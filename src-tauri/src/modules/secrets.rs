@@ -108,6 +108,32 @@ fn entry(service: &str, account: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(service, account).map_err(|e| e.to_string())
 }
 
+/// Sync helper that the agents module also uses to read keychain entries
+/// when spawning external CLIs. Mirrors `secrets_get` exactly — kept as a
+/// non-`#[tauri::command]` so it's reachable from other Rust modules.
+pub fn read_secret(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| m.get(&key).cloned())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        match e.get_password() {
+            Ok(v) => Ok(Some(v)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn secrets_get(
     app: AppHandle,
@@ -115,22 +141,7 @@ pub async fn secrets_get(
     service: String,
     account: String,
 ) -> Result<Option<String>, String> {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = state; // capture
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| m.get(&key).cloned())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        match e.get_password() {
-            Ok(v) => Ok(Some(v)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(err) => Err(err.to_string()),
-        }
-    }
+    read_secret(&app, &state, &service, &account)
 }
 
 #[tauri::command]
@@ -216,10 +227,7 @@ pub async fn secrets_get_all(
             .map(|a| {
                 keyring::Entry::new(&service, &a)
                     .ok()
-                    .and_then(|e| match e.get_password() {
-                        Ok(v) => Some(v),
-                        Err(_) => None,
-                    })
+                    .and_then(|e| e.get_password().ok())
             })
             .collect())
     }
