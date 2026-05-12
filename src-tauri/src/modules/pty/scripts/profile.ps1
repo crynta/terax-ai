@@ -4,6 +4,12 @@
 if ($global:__TERAX_HOOKS_LOADED) { return }
 $global:__TERAX_HOOKS_LOADED = $true
 
+try {
+    [Console]::InputEncoding  = [System.Text.UTF8Encoding]::new($false)
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $global:OutputEncoding    = [System.Text.UTF8Encoding]::new($false)
+} catch {}
+
 if (Test-Path Function:prompt) {
     Copy-Item Function:prompt Function:__terax_user_prompt -Force -ErrorAction SilentlyContinue
 }

@@ -68,6 +68,16 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 
 The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `powershell.exe` (Windows PowerShell 5.1) → `cmd.exe`.
 
+## Linux notes
+
+- **Blank window / `EGL_BAD_PARAMETER`**: WebKitGTK's hardware (DMA-BUF) renderer fails on some Wayland setups (wlroots compositors, NVIDIA's proprietary driver, minimal sessions). Terax disables it automatically when it detects one of these; if you still get a blank window or an EGL error, escalate in order:
+  1. `WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Terax_*.AppImage` (`=0` forces the hardware path back on)
+  2. `WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Terax_*.AppImage`
+  3. `LIBGL_ALWAYS_SOFTWARE=1 ./Terax_*.AppImage` (software rendering — slow, last resort)
+  4. Install the **`.deb` / `.rpm`** instead — they use your system's GTK/GPU libraries directly and sidestep AppImage bundling conflicts entirely.
+- **AppImage**: needs FUSE. On systems without it, run `./Terax_*.AppImage --appimage-extract-and-run`.
+- **NixOS**: prebuilt binaries can't see the system GPU stack, so the AppImage may fail with an EGL error regardless of the above. Run it through `nix run nixpkgs#appimage-run -- ./Terax_*.AppImage`, use `nixGL`, or build from source.
+
 ## Configure AI
 
 1. Open **Settings → AI**.

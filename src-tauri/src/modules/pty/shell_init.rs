@@ -13,10 +13,31 @@ pub fn build_command(cwd: Option<String>) -> Result<CommandBuilder, String> {
     }
 }
 
+fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
+    let is_utf8 = |v: &str| {
+        let up = v.to_ascii_uppercase();
+        up.contains("UTF-8") || up.contains("UTF8")
+    };
+    let already_utf8 = ["LC_ALL", "LC_CTYPE", "LANG"]
+        .iter()
+        .any(|k| std::env::var(k).ok().as_deref().is_some_and(is_utf8));
+    if already_utf8 {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    let fallback = "en_US.UTF-8";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let fallback = "C.UTF-8";
+    #[cfg(windows)]
+    let fallback = "en_US.UTF-8";
+    cmd.env("LANG", fallback);
+}
+
 fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERAX_TERMINAL", "1");
+    ensure_utf8_locale(cmd);
 
     let resolved_cwd = cwd
         .map(PathBuf::from)
