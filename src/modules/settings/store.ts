@@ -4,6 +4,7 @@ import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
   LMSTUDIO_DEFAULT_BASE_URL,
+  getModel,
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
@@ -109,6 +110,17 @@ async function writePref<T>(key: string, value: T): Promise<void> {
   await emit(PREFS_CHANGED_EVENT, { key, value });
 }
 
+/** Returns the id if it matches a known model, otherwise undefined. */
+function sanitizeModelId(id: unknown): ModelId | undefined {
+  if (typeof id !== "string") return undefined;
+  try {
+    getModel(id as ModelId);
+    return id as ModelId;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function loadPreferences(): Promise<Preferences> {
   // Single IPC roundtrip — fetching keys individually fans out to one
   // `plugin:store|get` per setting and is the dominant boot cost.
@@ -118,7 +130,8 @@ export async function loadPreferences(): Promise<Preferences> {
   return {
     theme: get<ThemePref>(KEY_THEME) ?? DEFAULT_PREFERENCES.theme,
     defaultModelId:
-      get<ModelId>(KEY_DEFAULT_MODEL) ?? DEFAULT_PREFERENCES.defaultModelId,
+      sanitizeModelId(get<ModelId>(KEY_DEFAULT_MODEL)) ??
+      DEFAULT_PREFERENCES.defaultModelId,
     editorTheme:
       get<EditorThemeId>(KEY_EDITOR_THEME) ?? DEFAULT_PREFERENCES.editorTheme,
     customInstructions:
