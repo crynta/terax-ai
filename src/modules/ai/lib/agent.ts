@@ -28,8 +28,12 @@ type AgentDeps = {
   onStep?: (step: string | null) => void;
   /** Override base URL for OpenAI-compatible providers (LM Studio). */
   lmstudioBaseURL?: string;
+  /** Concrete model id loaded in LM Studio (replaces the placeholder). */
+  lmstudioModelId?: string;
   /** Base URL for the generic OpenAI-compatible provider. */
   openaiCompatibleBaseURL?: string;
+  /** Concrete model id for the OpenAI-compatible endpoint. */
+  openaiCompatibleModelId?: string;
   /** True when /plan is active — agent should batch edits for review. */
   planMode?: boolean;
   /** Contents of TERAX.md at workspace root, if present. Appended verbatim. */
@@ -199,10 +203,29 @@ function buildModel(
   modelId: ModelId,
   keys: ProviderKeys,
   lmstudioBaseURL?: string,
+  lmstudioModelId?: string,
   openaiCompatibleBaseURL?: string,
+  openaiCompatibleModelId?: string,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
-  return buildLanguageModel(m.provider, keys, m.id, {
+  // Placeholder models route to a user-configured concrete id at runtime.
+  let resolvedId: string = m.id;
+  if (m.id === "lmstudio-local") {
+    if (!lmstudioModelId?.trim()) {
+      throw new Error(
+        "LM Studio: no model id set. Open Settings → Models and enter the model id loaded in LM Studio.",
+      );
+    }
+    resolvedId = lmstudioModelId.trim();
+  } else if (m.id === "openai-compatible-custom") {
+    if (!openaiCompatibleModelId?.trim()) {
+      throw new Error(
+        "OpenAI-compatible: no model id set. Open Settings → Models.",
+      );
+    }
+    resolvedId = openaiCompatibleModelId.trim();
+  }
+  return buildLanguageModel(m.provider, keys, resolvedId, {
     lmstudioBaseURL,
     openaiCompatibleBaseURL,
   });
@@ -216,7 +239,9 @@ export async function createTeraxAgent({
   toolContext,
   onStep,
   lmstudioBaseURL,
+  lmstudioModelId,
   openaiCompatibleBaseURL,
+  openaiCompatibleModelId,
   planMode,
   projectMemory,
 }: AgentDeps) {
@@ -239,7 +264,9 @@ export async function createTeraxAgent({
     modelId,
     keys,
     lmstudioBaseURL,
+    lmstudioModelId,
     openaiCompatibleBaseURL,
+    openaiCompatibleModelId,
   );
   return new Agent({
     model,
