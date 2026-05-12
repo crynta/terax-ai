@@ -246,6 +246,8 @@ export function FileExplorer({
         open={isSearchOpen}
         onRequestClose={() => setIsSearchOpen(false)}
         onActiveChange={setIsSearchActive}
+        onRevealInTerminal={onRevealInTerminal}
+        onAttachToAgent={onAttachToAgent}
       />
 
       {!isSearchActive ? (
