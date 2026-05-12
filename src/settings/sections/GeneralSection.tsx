@@ -22,6 +22,7 @@ import {
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
+  setShowHiddenDirectories,
   setTerminalFontSize,
   setTerminalWebglEnabled,
   setVimMode,
@@ -56,6 +57,9 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const showHiddenDirectories = usePreferencesStore(
+    (s) => s.showHiddenDirectories,
+  );
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
@@ -166,6 +170,19 @@ export function GeneralSection() {
           <Switch
             checked={vimMode}
             onCheckedChange={(v) => void setVimMode(v)}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Explorer</Label>
+        <SettingRow
+          title="Show hidden folders"
+          description="Include dot-prefixed folders such as .config in the file explorer."
+        >
+          <Switch
+            checked={showHiddenDirectories}
+            onCheckedChange={(v) => void setShowHiddenDirectories(v)}
           />
         </SettingRow>
       </div>

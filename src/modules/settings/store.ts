@@ -55,6 +55,7 @@ export type Preferences = {
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
+  showHiddenDirectories: boolean;
   terminalWebglEnabled: boolean;
   terminalFontSize: number;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
@@ -77,6 +78,7 @@ const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
+const KEY_SHOW_HIDDEN_DIRECTORIES = "showHiddenDirectories";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_SHORTCUTS = "shortcuts";
@@ -106,6 +108,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
+  showHiddenDirectories: false,
   terminalWebglEnabled: true,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
@@ -169,6 +172,9 @@ export async function loadPreferences(): Promise<Preferences> {
     recentModelIds:
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    showHiddenDirectories:
+      get<boolean>(KEY_SHOW_HIDDEN_DIRECTORIES) ??
+      DEFAULT_PREFERENCES.showHiddenDirectories,
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
       DEFAULT_PREFERENCES.terminalWebglEnabled,
@@ -247,6 +253,10 @@ export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
 
+export async function setShowHiddenDirectories(value: boolean): Promise<void> {
+  await writePref(KEY_SHOW_HIDDEN_DIRECTORIES, value);
+}
+
 export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
 }
@@ -296,6 +306,7 @@ export async function onPreferencesChange(
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_SHOW_HIDDEN_DIRECTORIES]: "showHiddenDirectories",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_SHORTCUTS]: "shortcuts",
