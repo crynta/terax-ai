@@ -15,6 +15,7 @@ import {
   PROVIDERS,
   getModel,
   getProvider,
+  providerHasKeySupport,
   providerNeedsKey,
   type AutocompleteProviderId,
   type ModelId,
@@ -29,6 +30,8 @@ import {
   setAutocompleteProvider,
   setDefaultModel,
   setLmstudioBaseURL,
+  setOpenaiCompatibleBaseURL,
+  setOpenaiCompatibleModelId,
 } from "@/modules/settings/store";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
@@ -65,9 +68,8 @@ export function ModelsSection() {
   }
 
   const defaultModelInfo = getModel(defaultModel);
-  const configuredCount = PROVIDERS.filter(
-    (p) => providerNeedsKey(p.id) && !!keys[p.id],
-  ).length;
+  const keyedProviders = PROVIDERS.filter((p) => providerHasKeySupport(p.id));
+  const configuredCount = keyedProviders.filter((p) => !!keys[p.id]).length;
 
   return (
     <div className="flex flex-col gap-7">
@@ -100,15 +102,17 @@ export function ModelsSection() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-[260px]">
-            {PROVIDERS.filter((p) => providerNeedsKey(p.id)).map((p) => {
+            {PROVIDERS.map((p) => {
               const models = MODELS.filter((m) => m.provider === p.id);
-              const hasKey = !!keys[p.id];
+              if (models.length === 0) return null;
+              // Keyless providers are always available; keyed providers require a key.
+              const hasKey = providerNeedsKey(p.id) ? !!keys[p.id] : true;
               return (
                 <div key={p.id} className="px-1 pt-1.5">
                   <div className="mb-1 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                     <ProviderIcon provider={p.id} size={11} />
                     <span>{p.label}</span>
-                    {!hasKey && (
+                    {providerNeedsKey(p.id) && !hasKey && (
                       <span className="ml-auto text-[9.5px] normal-case tracking-normal text-muted-foreground/70">
                         no key
                       </span>
@@ -139,17 +143,21 @@ export function ModelsSection() {
             })}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {defaultModel === "openai-compatible-custom" && (
+          <OpenAICompatibleBlock />
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between">
           <Label>API keys</Label>
           <span className="text-[10.5px] text-muted-foreground">
-            {configuredCount} of {PROVIDERS.filter((p) => providerNeedsKey(p.id)).length} configured
+            {configuredCount} of {keyedProviders.length} configured
           </span>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {PROVIDERS.filter((p) => providerNeedsKey(p.id)).map((p) => (
+          {keyedProviders.map((p) => (
             <ProviderKeyCard
               key={p.id}
               provider={p}
@@ -162,6 +170,88 @@ export function ModelsSection() {
       </div>
 
       <AutocompleteBlock keys={keys} />
+    </div>
+  );
+}
+
+function OpenAICompatibleBlock() {
+  const baseURL = usePreferencesStore((s) => s.openaiCompatibleBaseURL);
+  const modelId = usePreferencesStore((s) => s.openaiCompatibleModelId);
+
+  const [urlDraft, setUrlDraft] = useState(baseURL);
+  const [modelDraft, setModelDraft] = useState(modelId);
+  const [testStatus, setTestStatus] = useState<
+    "idle" | "testing" | "ok" | "fail"
+  >("idle");
+
+  useEffect(() => setUrlDraft(baseURL), [baseURL]);
+  useEffect(() => setModelDraft(modelId), [modelId]);
+
+  const testEndpoint = async () => {
+    setTestStatus("testing");
+    try {
+      const url = urlDraft.replace(/\/$/, "") + "/models";
+      await invoke<number>("http_ping", { url });
+      // Any HTTP response (including 401/403) means the server is reachable.
+      setTestStatus("ok");
+    } catch {
+      setTestStatus("fail");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+      <div className="flex flex-col gap-1.5">
+        <Label>Base URL</Label>
+        <div className="flex gap-1.5">
+          <Input
+            value={urlDraft}
+            onChange={(e) => setUrlDraft(e.target.value)}
+            onBlur={() => {
+              const v = urlDraft.trim();
+              if (v && v !== baseURL) void setOpenaiCompatibleBaseURL(v);
+            }}
+            placeholder="https://api.openai.com/v1"
+            spellCheck={false}
+            className="h-8 flex-1 font-mono text-[11.5px]"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void testEndpoint()}
+            className="h-8 px-2.5 text-[11px]"
+          >
+            Test
+          </Button>
+        </div>
+        {testStatus === "ok" ? (
+          <span className="text-[10.5px] text-emerald-500">
+            Connected — server responded.
+          </span>
+        ) : testStatus === "fail" ? (
+          <span className="text-[10.5px] text-destructive">
+            Could not reach the server. Is it running?
+          </span>
+        ) : testStatus === "testing" ? (
+          <span className="text-[10.5px] text-muted-foreground">
+            Testing…
+          </span>
+        ) : null}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label>Model ID</Label>
+        <Input
+          value={modelDraft}
+          onChange={(e) => setModelDraft(e.target.value)}
+          onBlur={() => {
+            const v = modelDraft.trim();
+            if (v && v !== modelId) void setOpenaiCompatibleModelId(v);
+          }}
+          placeholder="gpt-4o"
+          spellCheck={false}
+          className="h-8 font-mono text-[11.5px]"
+        />
+      </div>
     </div>
   );
 }

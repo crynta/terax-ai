@@ -8,7 +8,8 @@ export type ProviderId =
   | "cerebras"
   | "groq"
   | "deepseek"
-  | "lmstudio";
+  | "lmstudio"
+  | "openai-compatible";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -74,6 +75,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
+  },
+  {
+    id: "openai-compatible",
+    label: "OpenAI Compatible",
+    keyringAccount: "openai-compatible-api-key",
+    keyPrefix: null,
+    consoleUrl: "",
   },
 ] as const;
 
@@ -201,6 +209,13 @@ export const MODELS = [
     label: "LM Studio (local)",
     hint: "Custom local model",
   },
+  // OpenAI Compatible (generic; base URL + model ID are user-supplied)
+  {
+    id: "openai-compatible-custom",
+    provider: "openai-compatible",
+    label: "OpenAI Compatible",
+    hint: "Custom base URL + model",
+  },
 ] as const satisfies readonly ModelInfo[];
 
 export type ModelId = (typeof MODELS)[number]["id"];
@@ -234,6 +249,7 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-v4-flash": 1_000_000,
   "deepseek-v4-pro": 1_000_000,
   "lmstudio-local": 32_000,
+  "openai-compatible-custom": 128_000,
 };
 
 export function getModelContextLimit(modelId: string | undefined): number {
@@ -242,10 +258,18 @@ export function getModelContextLimit(modelId: string | undefined): number {
 }
 
 /** Providers that do not require an API key (e.g. local servers). */
-export const KEYLESS_PROVIDERS: readonly ProviderId[] = ["lmstudio"] as const;
+export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
+  "lmstudio",
+  "openai-compatible",
+] as const;
 
 export function providerNeedsKey(id: ProviderId): boolean {
   return !KEYLESS_PROVIDERS.includes(id);
+}
+
+/** Providers that support optional key storage (non-empty keyringAccount). */
+export function providerHasKeySupport(id: ProviderId): boolean {
+  return getProvider(id).keyringAccount !== "";
 }
 
 /** Providers eligible for the editor's inline autocomplete (latency-critical). */
@@ -267,6 +291,8 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Record<
 };
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
+export const OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "https://api.openai.com/v1";
+export const OPENAI_COMPATIBLE_DEFAULT_MODEL = "gpt-4o";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
 

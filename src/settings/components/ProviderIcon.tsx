@@ -4,6 +4,7 @@ import {
   ClaudeIcon,
   ComputerIcon,
   FlashIcon,
+  Globe02Icon,
   GoogleGeminiIcon,
   Grok02Icon,
   CpuIcon,
@@ -20,6 +21,7 @@ const ICON_BY_PROVIDER = {
   groq: FlashIcon,
   deepseek: DeepseekIcon,
   lmstudio: ComputerIcon,
+  "openai-compatible": Globe02Icon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 type Props = {

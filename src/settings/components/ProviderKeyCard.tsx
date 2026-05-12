@@ -96,13 +96,15 @@ export function ProviderKeyCard({
             Configured
           </Badge>
         ) : null}
-        <button
-          type="button"
-          onClick={() => void openUrl(provider.consoleUrl)}
-          className="ml-auto text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        >
-          Get key
-        </button>
+        {provider.consoleUrl ? (
+          <button
+            type="button"
+            onClick={() => void openUrl(provider.consoleUrl)}
+            className="ml-auto text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          >
+            Get key
+          </button>
+        ) : null}
       </div>
 
       {editing ? (
