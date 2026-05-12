@@ -98,6 +98,7 @@ export default function App() {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
+    reorderTabs,
   } = useTabs();
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
@@ -728,6 +729,7 @@ export default function App() {
             onNewEditor={() => setNewEditorOpen(true)}
             onClose={handleClose}
             onPin={pinTab}
+            onReorder={reorderTabs}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={

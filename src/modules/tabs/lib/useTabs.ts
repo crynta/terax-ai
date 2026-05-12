@@ -429,7 +429,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     });
   }, []);
 
-  const closeActivePane = useCallback((tabId: number): boolean => {
+const closeActivePane = useCallback((tabId: number): boolean => {
     let closedTab = false;
     setTabs((curr) => {
       const t = curr.find((x) => x.id === tabId);
@@ -459,6 +459,10 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return closedTab;
   }, []);
 
+  const reorderTabs = useCallback((newOrder: Tab[]) => {
+    setTabs(newOrder);
+  }, []);
+
   return {
     tabs,
     activeId,
@@ -478,5 +482,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
+    reorderTabs,
   };
 }
