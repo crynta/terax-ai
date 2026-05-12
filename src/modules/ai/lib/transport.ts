@@ -37,6 +37,7 @@ async function readTeraxMd(workspaceRoot: string | null): Promise<string | null>
 type LiveSnapshot = {
   cwd: string | null;
   terminal: string | null;
+  terminalPrivate: boolean;
   workspaceRoot: string | null;
   activeFile: string | null;
 };
@@ -112,7 +113,13 @@ export function createContextAwareTransport(deps: Deps) {
 }
 
 function injectContext(messages: UIMessage[], live: LiveSnapshot): UIMessage[] {
-  if (!live.cwd && !live.terminal && !live.workspaceRoot) return messages;
+  if (
+    !live.cwd &&
+    !live.terminal &&
+    !live.workspaceRoot &&
+    !live.terminalPrivate
+  )
+    return messages;
   const lastUserIdx = lastIndex(messages, (m) => m.role === "user");
   if (lastUserIdx === -1) return messages;
 
@@ -134,7 +141,12 @@ function formatContextBlock(live: LiveSnapshot): string {
     `active_terminal_cwd: ${live.cwd ?? "(unknown)"}`,
   ];
   if (live.activeFile) lines.push(`active_file: ${live.activeFile}`);
-  if (live.terminal) {
+  if (live.terminalPrivate) {
+    lines.push(
+      "active_terminal_mode: private",
+      "recent_terminal_output: (hidden — the user opened this terminal in Privacy mode; its buffer is intentionally withheld from you. Do not ask the user to paste it; if they want you to see it, they'll switch to a regular tab.)",
+    );
+  } else if (live.terminal) {
     const trimmed = capChars(
       lastNLines(live.terminal, TERMINAL_BUFFER_LINES),
       MAX_TERMINAL_CHARS,

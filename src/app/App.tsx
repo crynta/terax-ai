@@ -26,6 +26,7 @@ import {
 } from "@/modules/ai";
 import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
+import { redactSensitive } from "@/modules/ai/lib/redact";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
 import {
@@ -74,6 +75,7 @@ export default function App() {
     activeId,
     setActiveId,
     newTab,
+    newPrivateTab,
     openFileTab,
     pinTab,
     newPreviewTab,
@@ -405,6 +407,10 @@ export default function App() {
     newTab(inheritedCwdForNewTab());
   }, [newTab, inheritedCwdForNewTab]);
 
+  const openNewPrivateTab = useCallback(() => {
+    newPrivateTab(inheritedCwdForNewTab());
+  }, [newPrivateTab, inheritedCwdForNewTab]);
+
   const sendCd = useCallback(
     (path: string) => {
       if (activeLeafId === null) return;
@@ -514,6 +520,7 @@ export default function App() {
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "tab.new": openNewTab,
+      "tab.newPrivate": openNewPrivateTab,
       "tab.newPreview": () => openPreviewTab(""),
       "tab.newEditor": () => setNewEditorOpen(true),
       "tab.close": handleCloseTabOrPane,
@@ -536,6 +543,7 @@ export default function App() {
       cycleTab,
       handleCloseTabOrPane,
       openNewTab,
+      openNewPrivateTab,
       openPreviewTab,
       selectByIndex,
       splitActivePaneInActiveTab,
@@ -647,7 +655,13 @@ export default function App() {
       getTerminalContext: () => {
         const t = tabs.find((x) => x.id === activeId);
         if (t?.kind !== "terminal") return null;
-        return terminalRefs.current.get(t.activeLeafId)?.getBuffer(300) ?? null;
+        if (t.private) return null;
+        const buf = terminalRefs.current.get(t.activeLeafId)?.getBuffer(300);
+        return buf ? redactSensitive(buf) : null;
+      },
+      isActiveTerminalPrivate: () => {
+        const t = tabs.find((x) => x.id === activeId);
+        return t?.kind === "terminal" && t.private === true;
       },
       injectIntoActivePty: (text) => {
         const t = tabs.find((x) => x.id === activeId);
@@ -679,6 +693,7 @@ export default function App() {
             activeId={activeId}
             onSelect={setActiveId}
             onNew={openNewTab}
+            onNewPrivate={openNewPrivateTab}
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
             onClose={handleClose}
@@ -819,6 +834,9 @@ export default function App() {
             onCd={sendCd}
             onOpenMini={openMini}
             hasComposer={hasComposer}
+            privateActive={
+              activeTab?.kind === "terminal" && activeTab.private === true
+            }
           />
 
           {hasComposer ? (

@@ -35,6 +35,7 @@ import type { ToolContext } from "../tools/tools";
 type Live = {
   getCwd: () => string | null;
   getTerminalContext: () => string | null;
+  isActiveTerminalPrivate: () => boolean;
   injectIntoActivePty: (text: string) => boolean;
   getWorkspaceRoot: () => string | null;
   getActiveFile: () => string | null;
@@ -136,6 +137,7 @@ type StoreState = {
 const NOOP_LIVE: Live = {
   getCwd: () => null,
   getTerminalContext: () => null,
+  isActiveTerminalPrivate: () => false,
   injectIntoActivePty: () => false,
   getWorkspaceRoot: () => null,
   getActiveFile: () => null,
@@ -209,6 +211,7 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       return {
         cwd: live.getCwd(),
         terminal: live.getTerminalContext(),
+        terminalPrivate: live.isActiveTerminalPrivate(),
         workspaceRoot: live.getWorkspaceRoot(),
         activeFile: live.getActiveFile(),
       };
