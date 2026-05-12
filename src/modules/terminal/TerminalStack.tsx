@@ -13,7 +13,6 @@ type Props = {
   registerHandle: (leafId: number, handle: TerminalPaneHandle | null) => void;
   onSearchReady: (leafId: number, addon: SearchAddon) => void;
   onCwd: (leafId: number, cwd: string) => void;
-  onDetectedLocalUrl: (leafId: number, url: string) => void;
   onExit: (leafId: number, code: number) => void;
   onTeraxOpen?: (leafId: number, input: TeraxOpenInput) => void;
   onFocusLeaf: (tabId: number, leafId: number) => void;
@@ -23,7 +22,6 @@ type Bundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
   onSearch: (addon: SearchAddon) => void;
   onCwd: (cwd: string) => void;
-  onDetectedUrl: (url: string) => void;
   onExit: (code: number) => void;
   onTeraxOpen: (input: TeraxOpenInput) => void;
 };
@@ -34,7 +32,6 @@ export function TerminalStack({
   registerHandle,
   onSearchReady,
   onCwd,
-  onDetectedLocalUrl,
   onExit,
   onTeraxOpen,
   onFocusLeaf,
@@ -44,7 +41,6 @@ export function TerminalStack({
   const registerRef = useRef(registerHandle);
   const searchReadyRef = useRef(onSearchReady);
   const cwdRef = useRef(onCwd);
-  const detectedUrlRef = useRef(onDetectedLocalUrl);
   const exitRef = useRef(onExit);
   const teraxOpenRef = useRef(onTeraxOpen);
   useEffect(() => {
@@ -56,9 +52,6 @@ export function TerminalStack({
   useEffect(() => {
     cwdRef.current = onCwd;
   }, [onCwd]);
-  useEffect(() => {
-    detectedUrlRef.current = onDetectedLocalUrl;
-  }, [onDetectedLocalUrl]);
   useEffect(() => {
     exitRef.current = onExit;
   }, [onExit]);
@@ -74,7 +67,6 @@ export function TerminalStack({
         setRef: (h) => registerRef.current(leafId, h),
         onSearch: (addon) => searchReadyRef.current(leafId, addon),
         onCwd: (cwd) => cwdRef.current(leafId, cwd),
-        onDetectedUrl: (url) => detectedUrlRef.current(leafId, url),
         onExit: (code) => exitRef.current(leafId, code),
         onTeraxOpen: (input) => teraxOpenRef.current?.(leafId, input),
       };
