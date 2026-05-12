@@ -1,4 +1,4 @@
-import { detectMonoFontFamily } from "@/lib/fonts";
+import { terminalFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -61,10 +61,11 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
 
   const prefs = usePreferencesStore.getState();
   const webglEnabled = prefs.terminalWebglEnabled;
+  const fontFace = prefs.terminalFontFace;
   const fontSize = prefs.terminalFontSize;
 
   const term = new Terminal({
-    fontFamily: detectMonoFontFamily(),
+    fontFamily: terminalFontFamily(fontFace),
     fontSize,
     theme: buildTerminalTheme(),
     cursorBlink: true,
@@ -421,6 +422,16 @@ export function useTerminalSession({
     s.term.options.fontSize = fontSize;
     s.fitAddon.fit();
   }, [leafId, fontSize]);
+
+  const fontFace = usePreferencesStore((p) => p.terminalFontFace);
+  useEffect(() => {
+    const s = sessions.get(leafId);
+    if (!s) return;
+    const fontFamily = terminalFontFamily(fontFace);
+    if (s.term.options.fontFamily === fontFamily) return;
+    s.term.options.fontFamily = fontFamily;
+    s.fitAddon.fit();
+  }, [leafId, fontFace]);
 
   const webglPref = usePreferencesStore((p) => p.terminalWebglEnabled);
   useEffect(() => {

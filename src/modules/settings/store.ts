@@ -8,6 +8,11 @@ import {
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
+import {
+  TERMINAL_FONT_FACE_DEFAULT,
+  TERMINAL_FONT_FACES,
+  type TerminalFontFaceId,
+} from "@/lib/fonts";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 
 export type ThemePref = "system" | "light" | "dark";
@@ -56,6 +61,7 @@ export type Preferences = {
   recentModelIds: string[];
   vimMode: boolean;
   terminalWebglEnabled: boolean;
+  terminalFontFace: TerminalFontFaceId;
   terminalFontSize: number;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
 };
@@ -78,6 +84,7 @@ const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
+const KEY_TERMINAL_FONT_FACE = "terminalFontFace";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_SHORTCUTS = "shortcuts";
 
@@ -107,6 +114,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   recentModelIds: [],
   vimMode: false,
   terminalWebglEnabled: true,
+  terminalFontFace: TERMINAL_FONT_FACE_DEFAULT,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
 };
@@ -131,6 +139,7 @@ export async function loadPreferences(): Promise<Preferences> {
   const entries = await store.entries();
   const map = new Map<string, unknown>(entries);
   const get = <T>(k: string): T | undefined => map.get(k) as T | undefined;
+  const terminalFontFace = get<string>(KEY_TERMINAL_FONT_FACE);
   return {
     theme: get<ThemePref>(KEY_THEME) ?? DEFAULT_PREFERENCES.theme,
     defaultModelId:
@@ -172,6 +181,9 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
       DEFAULT_PREFERENCES.terminalWebglEnabled,
+    terminalFontFace: isTerminalFontFace(terminalFontFace)
+      ? terminalFontFace
+      : DEFAULT_PREFERENCES.terminalFontFace,
     terminalFontSize:
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
       DEFAULT_PREFERENCES.terminalFontSize,
@@ -251,6 +263,15 @@ export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
 }
 
+export async function setTerminalFontFace(
+  value: TerminalFontFaceId,
+): Promise<void> {
+  await writePref(
+    KEY_TERMINAL_FONT_FACE,
+    isTerminalFontFace(value) ? value : TERMINAL_FONT_FACE_DEFAULT,
+  );
+}
+
 export async function setTerminalFontSize(value: number): Promise<void> {
   const clamped = Number.isFinite(value)
     ? Math.min(
@@ -297,6 +318,7 @@ export async function onPreferencesChange(
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
+    [KEY_TERMINAL_FONT_FACE]: "terminalFontFace",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_SHORTCUTS]: "shortcuts",
   };
@@ -329,4 +351,9 @@ export async function emitKeysChanged(): Promise<void> {
 
 export function onKeysChanged(cb: () => void): Promise<UnlistenFn> {
   return listen(KEYS_CHANGED_EVENT, () => cb());
+}
+
+function isTerminalFontFace(value: unknown): value is TerminalFontFaceId {
+  return typeof value === "string" &&
+    (TERMINAL_FONT_FACES as readonly string[]).includes(value);
 }
