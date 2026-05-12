@@ -63,8 +63,7 @@
         "installMode": "currentUser",
         "languages": ["English"],
         "displayLanguageSelector": false,
-        "installerIcon": "icons/icon.ico",
-        "uninstallerIcon": "icons/icon.ico"
+        "installerIcon": "icons/icon.ico"
       }
     },
     "publisher": "Crynta",
