@@ -20,10 +20,12 @@ import {
   CpuIcon,
   DeepseekIcon,
   FlashIcon,
+  GlobeIcon,
   GoogleGeminiIcon,
   Grok02Icon,
   Message01Icon,
   Mic01Icon,
+  PlugIcon,
   Search01Icon,
   StopCircleIcon,
   AiBookIcon,
@@ -51,6 +53,8 @@ const PROVIDER_ICON = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   deepseek: DeepseekIcon,
+  openrouter: GlobeIcon,
+  "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
