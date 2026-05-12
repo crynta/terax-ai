@@ -15,6 +15,7 @@ import {
   type ProviderId,
 } from "../config";
 import type { ProviderKeys } from "./keyring";
+import { proxyFetch } from "./proxyFetch";
 import { buildTools, type ToolContext } from "../tools/tools";
 
 type AgentDeps = {
@@ -170,6 +171,7 @@ export async function buildLanguageModel(
         name: "openai-compatible",
         baseURL: compatURL,
         apiKey: key || undefined,
+        fetch: proxyFetch,
       })(resolvedModelId);
       break;
     }
@@ -177,9 +179,11 @@ export async function buildLanguageModel(
       const { createOpenAICompatible } = await import(
         "@ai-sdk/openai-compatible"
       );
-      built = createOpenAICompatible({ name: "lmstudio", baseURL: lmstudioURL })(
-        resolvedModelId,
-      );
+      built = createOpenAICompatible({
+        name: "lmstudio",
+        baseURL: lmstudioURL,
+        fetch: proxyFetch,
+      })(resolvedModelId);
       break;
     }
     default: {
