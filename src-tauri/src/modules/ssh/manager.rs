@@ -96,11 +96,10 @@ async fn connect_ssh(params: &ConnectParams) -> Result<SshConnection, SshError> 
     if let Some(key_path) = &params.key_file {
         let key = russh::keys::load_secret_key(key_path, None)
             .map_err(|e| SshError::Auth(format!("failed to load key: {e}")))?;
-        let hash_alg: Option<russh::keys::HashAlg> =
-            match handle.best_supported_rsa_hash().await {
-                Ok(Some(Some(h))) => Some(h),
-                _ => None,
-            };
+        let hash_alg: Option<russh::keys::HashAlg> = match handle.best_supported_rsa_hash().await {
+            Ok(Some(Some(h))) => Some(h),
+            _ => None,
+        };
         match handle
             .authenticate_publickey(
                 &params.user,
@@ -115,15 +114,9 @@ async fn connect_ssh(params: &ConnectParams) -> Result<SshConnection, SshError> 
 
     if !auth_ok {
         if let Some(password) = &params.password {
-            match handle
-                .authenticate_password(&params.user, password)
-                .await
-            {
+            match handle.authenticate_password(&params.user, password).await {
                 Ok(r) => {
-                    log::info!(
-                        "password auth result: success={}",
-                        r.success(),
-                    );
+                    log::info!("password auth result: success={}", r.success(),);
                     auth_ok = r.success();
                 }
                 Err(e) => log::warn!("password auth error: {e}"),
