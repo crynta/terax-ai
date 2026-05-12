@@ -70,7 +70,7 @@ The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `pow
 
 ## Linux notes
 
-- **Blank window / `EGL_BAD_PARAMETER`**: WebKitGTK's hardware (DMA-BUF) renderer fails on some Wayland setups (wlroots compositors, NVIDIA's proprietary driver, minimal sessions). Terax disables it automatically when it detects one of these; if you still get a blank window or an EGL error, escalate in order:
+- **Blank window / `EGL_BAD_PARAMETER`**: WebKitGTK's hardware (DMA-BUF) renderer fails on some Wayland setups. Terax disables it automatically when it detects the NVIDIA proprietary driver; on other affected setups (some wlroots compositors, minimal sessions) escalate in order:
   1. `WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Terax_*.AppImage` (`=0` forces the hardware path back on)
   2. `WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Terax_*.AppImage`
   3. `LIBGL_ALWAYS_SOFTWARE=1 ./Terax_*.AppImage` (software rendering — slow, last resort)

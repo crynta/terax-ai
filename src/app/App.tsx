@@ -68,15 +68,6 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
-function sameOrigin(a: string, b: string): boolean {
-  try {
-    const ua = new URL(a);
-    const ub = new URL(b);
-    return ua.host === ub.host && ua.protocol === ub.protocol;
-  } catch {
-    return a === b;
-  }
-}
 
 export default function App() {
   const {
@@ -118,10 +109,6 @@ export default function App() {
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
-  const detectedUrls = useRef<Map<number, string>>(new Map());
-  const [activeDetectedUrl, setActiveDetectedUrl] = useState<string | null>(
-    null,
-  );
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
@@ -229,28 +216,7 @@ export default function App() {
       activeLeafId !== null ? (searchAddons.current.get(activeLeafId) ?? null) : null,
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
-    setActiveDetectedUrl(
-      activeLeafId !== null ? (detectedUrls.current.get(activeLeafId) ?? null) : null,
-    );
   }, [activeId, activeLeafId]);
-
-  const handleDetectedLocalUrl = useCallback(
-    (leafId: number, url: string) => {
-      detectedUrls.current.set(leafId, url);
-      if (leafId === activeLeafId) setActiveDetectedUrl(url);
-    },
-    [activeLeafId],
-  );
-
-  // Suppress the chip once a preview tab already targets the detected URL —
-  // avoids prompting users to re-open a tab they already have.
-  const detectedPreviewUrl = useMemo(() => {
-    if (!isTerminalTab || !activeDetectedUrl) return null;
-    const alreadyOpen = tabs.some(
-      (t) => t.kind === "preview" && sameOrigin(t.url, activeDetectedUrl),
-    );
-    return alreadyOpen ? null : activeDetectedUrl;
-  }, [isTerminalTab, activeDetectedUrl, tabs]);
 
   const handleSearchReady = useCallback(
     (leafId: number, addon: SearchAddon) => {
@@ -262,9 +228,9 @@ export default function App() {
 
   const disposeTab = useCallback(
     (id: number) => {
-      // Terminal-leaf-keyed maps (terminalRefs/searchAddons/detectedUrls)
-      // are pruned by the effect below as the pane tree changes; only the
-      // tab-id-keyed handles need explicit cleanup here.
+      // Terminal-leaf-keyed maps (terminalRefs/searchAddons) are pruned by
+      // the effect below as the pane tree changes; only the tab-id-keyed
+      // handles need explicit cleanup here.
       editorRefs.current.delete(id);
       previewRefs.current.delete(id);
       closeTab(id);
@@ -290,8 +256,6 @@ export default function App() {
       if (!live.has(k)) terminalRefs.current.delete(k);
     for (const k of [...searchAddons.current.keys()])
       if (!live.has(k)) searchAddons.current.delete(k);
-    for (const k of [...detectedUrls.current.keys()])
-      if (!live.has(k)) detectedUrls.current.delete(k);
   }, [tabs]);
 
   const handleClose = useCallback(
@@ -782,7 +746,6 @@ export default function App() {
                         registerHandle={registerTerminalHandle}
                         onSearchReady={handleSearchReady}
                         onCwd={handleTerminalCwd}
-                        onDetectedLocalUrl={handleDetectedLocalUrl}
                         onExit={handleLeafExit}
                         onTeraxOpen={handleTeraxOpen}
                         onFocusLeaf={handleFocusLeaf}
@@ -866,10 +829,6 @@ export default function App() {
             onCd={sendCd}
             onOpenMini={openMini}
             hasComposer={hasComposer}
-            detectedPreviewUrl={detectedPreviewUrl}
-            onOpenPreview={() => {
-              if (detectedPreviewUrl) openPreviewTab(detectedPreviewUrl);
-            }}
           />
 
           {hasComposer ? (

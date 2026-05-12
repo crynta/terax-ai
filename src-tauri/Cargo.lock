@@ -5041,7 +5041,6 @@ dependencies = [
 name = "terax"
 version = "0.6.1"
 dependencies = [
- "base64 0.22.1",
  "dirs 5.0.1",
  "globset",
  "grep-matcher",

@@ -13,7 +13,6 @@ type LeafBundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
   onSearch: (addon: SearchAddon) => void;
   onCwd: (cwd: string) => void;
-  onDetectedUrl: (url: string) => void;
   onExit: (code: number) => void;
   onTeraxOpen: (input: TeraxOpenInput) => void;
 };
@@ -57,7 +56,6 @@ export function PaneTreeView({
           ref={b.setRef}
           onSearchReady={(_id, addon) => b.onSearch(addon)}
           onCwd={(_id, cwd) => b.onCwd(cwd)}
-          onDetectedLocalUrl={(_id, url) => b.onDetectedUrl(url)}
           onExit={(_id, code) => b.onExit(code)}
           onTeraxOpen={(_id, input) => b.onTeraxOpen(input)}
         />
