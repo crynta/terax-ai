@@ -5,6 +5,7 @@ export {
   respawnSession,
   type TeraxOpenInput,
 } from "./lib/useTerminalSession";
+export type { SavedTerminalCommand } from "./lib/savedCommands";
 export {
   hasLeaf,
   isLeaf,
