@@ -21,7 +21,6 @@ type Props = {
   onSearchReady?: (leafId: number, addon: SearchAddon) => void;
   onExit?: (leafId: number, code: number) => void;
   onCwd?: (leafId: number, cwd: string) => void;
-  onDetectedLocalUrl?: (leafId: number, url: string) => void;
   onTeraxOpen?: (leafId: number, input: TeraxOpenInput) => void;
 };
 
@@ -35,7 +34,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onSearchReady,
       onExit,
       onCwd,
-      onDetectedLocalUrl,
       onTeraxOpen,
     },
     ref,
@@ -52,7 +50,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onSearchReady: (a) => onSearchReady?.(leafId, a),
       onExit: (c) => onExit?.(leafId, c),
       onCwd: (c) => onCwd?.(leafId, c),
-      onDetectedLocalUrl: (u) => onDetectedLocalUrl?.(leafId, u),
       onTeraxOpen: (input) => onTeraxOpen?.(leafId, input),
     });
 

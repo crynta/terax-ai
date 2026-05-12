@@ -10,9 +10,8 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 
 use portable_pty::PtySize;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, Response};
 
-pub use session::PtyEvent;
 use session::Session;
 
 pub struct PtyState {
@@ -37,9 +36,10 @@ pub fn pty_open(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
-    on_event: Channel<PtyEvent>,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
 ) -> Result<u32, String> {
-    let (session, _) = session::spawn(cols, rows, cwd, on_event).map_err(|e| {
+    let (session, _) = session::spawn(cols, rows, cwd, on_data, on_exit).map_err(|e| {
         log::error!("pty_open failed: {e}");
         e
     })?;
