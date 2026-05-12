@@ -29,6 +29,8 @@ import {
   setAutocompleteProvider,
   setDefaultModel,
   setLmstudioBaseURL,
+  setOpenaiCompatibleBaseURL,
+  setOpenaiCompatibleModelId,
 } from "@/modules/settings/store";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
@@ -161,7 +163,170 @@ export function ModelsSection() {
         </div>
       </div>
 
+      <OpenAICompatibleBlock
+        compatKey={keys["openai-compatible"]}
+        onSaveKey={async (v) => {
+          await setKey("openai-compatible", v);
+          setKeys((prev) =>
+            prev ? { ...prev, "openai-compatible": v } : prev,
+          );
+          await emitKeysChanged();
+        }}
+        onClearKey={async () => {
+          await clearKey("openai-compatible");
+          setKeys((prev) =>
+            prev ? { ...prev, "openai-compatible": null } : prev,
+          );
+          await emitKeysChanged();
+        }}
+      />
+
       <AutocompleteBlock keys={keys} />
+    </div>
+  );
+}
+
+function OpenAICompatibleBlock({
+  compatKey,
+  onSaveKey,
+  onClearKey,
+}: {
+  compatKey: string | null;
+  onSaveKey: (v: string) => Promise<void>;
+  onClearKey: () => Promise<void>;
+}) {
+  const baseURL = usePreferencesStore((s) => s.openaiCompatibleBaseURL);
+  const modelId = usePreferencesStore((s) => s.openaiCompatibleModelId);
+  const [urlDraft, setUrlDraft] = useState(baseURL);
+  const [modelDraft, setModelDraft] = useState(modelId);
+  const [keyDraft, setKeyDraft] = useState("");
+  const [testStatus, setTestStatus] = useState<
+    "idle" | "testing" | "ok" | "fail"
+  >("idle");
+
+  useEffect(() => setUrlDraft(baseURL), [baseURL]);
+  useEffect(() => setModelDraft(modelId), [modelId]);
+
+  const test = async () => {
+    setTestStatus("testing");
+    try {
+      const url = urlDraft.replace(/\/$/, "") + "/models";
+      const status = await invoke<number>("http_ping", { url });
+      // Treat any HTTP response (including 401) as "reachable".
+      setTestStatus(status > 0 ? "ok" : "fail");
+    } catch {
+      setTestStatus("fail");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-0.5">
+        <Label>OpenAI-compatible endpoint</Label>
+        <span className="text-[10.5px] leading-relaxed text-muted-foreground">
+          Point Terax at any OpenAI-compatible HTTPS endpoint — vLLM, hosted
+          Ollama, Z.AI, Fireworks, etc.
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+        <div className="flex flex-col gap-1.5">
+          <Label>Base URL</Label>
+          <div className="flex gap-1.5">
+            <Input
+              value={urlDraft}
+              onChange={(e) => setUrlDraft(e.target.value)}
+              onBlur={() => {
+                const v = urlDraft.trim();
+                if (v !== baseURL) void setOpenaiCompatibleBaseURL(v);
+              }}
+              placeholder="https://api.example.com/v1"
+              spellCheck={false}
+              className="h-8 flex-1 font-mono text-[11.5px]"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void test()}
+              disabled={!urlDraft.trim()}
+              className="h-8 px-2.5 text-[11px]"
+            >
+              Test
+            </Button>
+          </div>
+          {testStatus === "ok" ? (
+            <span className="text-[10.5px] text-emerald-500">
+              Reachable — server responded.
+            </span>
+          ) : testStatus === "fail" ? (
+            <span className="text-[10.5px] text-destructive">
+              Could not reach the server.
+            </span>
+          ) : testStatus === "testing" ? (
+            <span className="text-[10.5px] text-muted-foreground">
+              Testing…
+            </span>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label>Model ID</Label>
+          <Input
+            value={modelDraft}
+            onChange={(e) => setModelDraft(e.target.value)}
+            onBlur={() => {
+              const v = modelDraft.trim();
+              if (v !== modelId) void setOpenaiCompatibleModelId(v);
+            }}
+            placeholder="e.g. gpt-4o, qwen3-max, glm-4.6"
+            spellCheck={false}
+            className="h-8 font-mono text-[11.5px]"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label>API key (optional)</Label>
+          {compatKey ? (
+            <div className="flex items-center gap-1.5">
+              <code className="flex-1 truncate rounded bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                {`${compatKey.slice(0, 4)}${"•".repeat(8)}${compatKey.slice(-4)}`}
+              </code>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => void onClearKey()}
+                className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive"
+              >
+                Remove
+              </Button>
+            </div>
+          ) : (
+            <div className="flex gap-1.5">
+              <Input
+                type="password"
+                value={keyDraft}
+                onChange={(e) => setKeyDraft(e.target.value)}
+                placeholder="Leave blank if the endpoint requires no auth"
+                spellCheck={false}
+                className="h-8 flex-1 font-mono text-[11.5px]"
+              />
+              <Button
+                size="sm"
+                onClick={async () => {
+                  const v = keyDraft.trim();
+                  if (!v) return;
+                  await onSaveKey(v);
+                  setKeyDraft("");
+                }}
+                disabled={!keyDraft.trim()}
+                className="h-8 px-2.5 text-[11px]"
+              >
+                Save
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
