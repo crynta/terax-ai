@@ -100,6 +100,7 @@ pub fn run() {
     configure_linux_rendering();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_prevent_default::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Skip restoring VISIBLE — frontend calls window.show() after first
