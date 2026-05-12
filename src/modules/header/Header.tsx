@@ -1,5 +1,12 @@
 import { Button } from "@/components/ui/button";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -8,6 +15,10 @@ import {
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, KEY_SEP, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  setSidebarPosition,
+  type SidebarPosition,
+} from "@/modules/settings/store";
 import {
   getBindingTokens,
   SHORTCUTS,
@@ -22,6 +33,7 @@ import {
   LayoutTwoRowIcon,
   Settings01Icon,
   SidebarLeftIcon,
+  SidebarRightIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
@@ -73,6 +85,7 @@ export function Header({
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
 
   const tokensFor = (id: ShortcutId): string => {
     const s = SHORTCUTS.find((s) => s.id === id);
@@ -135,15 +148,40 @@ export function Header({
       }`}
     >
       <div className="flex shrink-0 items-center gap-0.5">
-        <Button
-          onClick={onToggleSidebar}
-          title="Toggle sidebar"
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <HugeiconsIcon icon={SidebarLeftIcon} size={18} strokeWidth={1.75} />
-        </Button>
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <Button
+              onClick={onToggleSidebar}
+              title="Toggle sidebar"
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <HugeiconsIcon
+                icon={
+                  sidebarPosition === "left" ? SidebarLeftIcon : SidebarRightIcon
+                }
+                size={18}
+                strokeWidth={1.75}
+              />
+            </Button>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="min-w-40">
+            <ContextMenuRadioGroup
+              value={sidebarPosition}
+              onValueChange={(v) =>
+                void setSidebarPosition(v as SidebarPosition)
+              }
+            >
+              <ContextMenuRadioItem value="left">
+                Sidebar left
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem value="right">
+                Sidebar right
+              </ContextMenuRadioItem>
+            </ContextMenuRadioGroup>
+          </ContextMenuContent>
+        </ContextMenu>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

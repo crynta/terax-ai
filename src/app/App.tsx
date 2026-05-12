@@ -165,6 +165,8 @@ export default function App() {
   const initPrefs = usePreferencesStore((s) => s.init);
   const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
+  const sidebarFirst = sidebarPosition === "left";
   useEffect(() => {
     void initPrefs();
   }, [initPrefs]);
@@ -679,6 +681,134 @@ export default function App() {
     });
   }, [setLive, activeId, tabs, explorerRoot, home, openPreviewTab]);
 
+  const sidebarPanel = (
+    <ResizablePanel
+      key="sidebar-panel"
+      id="sidebar"
+      panelRef={sidebarRef}
+      defaultSize="225px"
+      minSize="130px"
+      maxSize="450px"
+      collapsible
+      collapsedSize={0}
+    >
+      <div
+        className={cn(
+          "h-full border-border/60 bg-card",
+          sidebarFirst ? "border-r" : "border-l",
+        )}
+      >
+        <FileExplorer
+          rootPath={explorerRoot}
+          onOpenFile={handleOpenFile}
+          onPathRenamed={handlePathRenamed}
+          onPathDeleted={handlePathDeleted}
+          onRevealInTerminal={cdInNewTab}
+          onAttachToAgent={handleAttachFileToAgent}
+        />
+      </div>
+    </ResizablePanel>
+  );
+
+  const workspacePanel = (
+    <ResizablePanel
+      key="workspace-panel"
+      id="workspace"
+      defaultSize="78%"
+      minSize="30%"
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="relative min-h-0 flex-1">
+          <div
+            className={cn(
+              "absolute inset-0 px-3 pt-2 pb-2",
+              !isTerminalTab && "invisible pointer-events-none",
+            )}
+            aria-hidden={!isTerminalTab}
+          >
+            <TerminalStack
+              tabs={tabs}
+              activeId={activeId}
+              registerHandle={registerTerminalHandle}
+              onSearchReady={handleSearchReady}
+              onCwd={handleTerminalCwd}
+              onExit={handleLeafExit}
+              onTeraxOpen={handleTeraxOpen}
+              onFocusLeaf={handleFocusLeaf}
+            />
+          </div>
+          <div
+            className={cn(
+              "absolute inset-0 px-3 pt-2 pb-2",
+              !isEditorTab && "invisible pointer-events-none",
+            )}
+            aria-hidden={!isEditorTab}
+          >
+            <EditorStack
+              tabs={tabs}
+              activeId={activeId}
+              registerHandle={registerEditorHandle}
+              onDirtyChange={handleEditorDirty}
+              onCloseTab={disposeTab}
+            />
+          </div>
+          <div
+            className={cn(
+              "absolute inset-0 px-3 pt-2 pb-2",
+              !isPreviewTab && "invisible pointer-events-none",
+            )}
+            aria-hidden={!isPreviewTab}
+          >
+            <PreviewStack
+              tabs={tabs}
+              activeId={activeId}
+              registerHandle={registerPreviewHandle}
+              onUrlChange={handlePreviewUrl}
+            />
+          </div>
+          <div
+            className={cn(
+              "absolute inset-0 px-3 pt-2 pb-2",
+              !isAiDiffTab && "invisible pointer-events-none",
+            )}
+            aria-hidden={!isAiDiffTab}
+          >
+            <AiDiffStack
+              tabs={tabs}
+              activeId={activeId}
+              onAccept={(id) => respondToApproval(id, true)}
+              onReject={(id) => respondToApproval(id, false)}
+            />
+          </div>
+        </div>
+
+        {keysLoaded ? (
+          <motion.div
+            data-ai-input-bar
+            initial={false}
+            animate={{
+              height: panelOpen ? "auto" : 0,
+              opacity: panelOpen ? 1 : 0,
+            }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+            aria-hidden={!panelOpen}
+          >
+            {hasComposer ? (
+              <AiInputBar />
+            ) : (
+              <AiInputBarConnect
+                onAdd={() => void openSettingsWindow("models")}
+              />
+            )}
+          </motion.div>
+        ) : null}
+      </div>
+    </ResizablePanel>
+  );
+
+  const mainHandle = <ResizableHandle key="main-handle" withHandle />;
+
   const shell = (
     <ThemeProvider>
       <TooltipProvider>
@@ -709,116 +839,19 @@ export default function App() {
               orientation="horizontal"
               className="min-h-0 flex-1"
             >
-              <ResizablePanel
-                id="sidebar"
-                panelRef={sidebarRef}
-                defaultSize="225px"
-                minSize="130px"
-                maxSize="450px"
-                collapsible
-                collapsedSize={0}
-              >
-                <div className="h-full border-r border-border/60 bg-card">
-                  <FileExplorer
-                    rootPath={explorerRoot}
-                    onOpenFile={handleOpenFile}
-                    onPathRenamed={handlePathRenamed}
-                    onPathDeleted={handlePathDeleted}
-                    onRevealInTerminal={cdInNewTab}
-                    onAttachToAgent={handleAttachFileToAgent}
-                  />
-                </div>
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
-                <div className="flex h-full min-h-0 flex-col">
-                  <div className="relative min-h-0 flex-1">
-                    <div
-                      className={cn(
-                        "absolute inset-0 px-3 pt-2 pb-2",
-                        !isTerminalTab && "invisible pointer-events-none",
-                      )}
-                      aria-hidden={!isTerminalTab}
-                    >
-                      <TerminalStack
-                        tabs={tabs}
-                        activeId={activeId}
-                        registerHandle={registerTerminalHandle}
-                        onSearchReady={handleSearchReady}
-                        onCwd={handleTerminalCwd}
-                        onExit={handleLeafExit}
-                        onTeraxOpen={handleTeraxOpen}
-                        onFocusLeaf={handleFocusLeaf}
-                      />
-                    </div>
-                    <div
-                      className={cn(
-                        "absolute inset-0 px-3 pt-2 pb-2",
-                        !isEditorTab && "invisible pointer-events-none",
-                      )}
-                      aria-hidden={!isEditorTab}
-                    >
-                      <EditorStack
-                        tabs={tabs}
-                        activeId={activeId}
-                        registerHandle={registerEditorHandle}
-                        onDirtyChange={handleEditorDirty}
-                        onCloseTab={disposeTab}
-                      />
-                    </div>
-                    <div
-                      className={cn(
-                        "absolute inset-0 px-3 pt-2 pb-2",
-                        !isPreviewTab && "invisible pointer-events-none",
-                      )}
-                      aria-hidden={!isPreviewTab}
-                    >
-                      <PreviewStack
-                        tabs={tabs}
-                        activeId={activeId}
-                        registerHandle={registerPreviewHandle}
-                        onUrlChange={handlePreviewUrl}
-                      />
-                    </div>
-                    <div
-                      className={cn(
-                        "absolute inset-0 px-3 pt-2 pb-2",
-                        !isAiDiffTab && "invisible pointer-events-none",
-                      )}
-                      aria-hidden={!isAiDiffTab}
-                    >
-                      <AiDiffStack
-                        tabs={tabs}
-                        activeId={activeId}
-                        onAccept={(id) => respondToApproval(id, true)}
-                        onReject={(id) => respondToApproval(id, false)}
-                      />
-                    </div>
-                  </div>
-
-                  {keysLoaded ? (
-                    <motion.div
-                      data-ai-input-bar
-                      initial={false}
-                      animate={{
-                        height: panelOpen ? "auto" : 0,
-                        opacity: panelOpen ? 1 : 0,
-                      }}
-                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                      className="overflow-hidden"
-                      aria-hidden={!panelOpen}
-                    >
-                      {hasComposer ? (
-                        <AiInputBar />
-                      ) : (
-                        <AiInputBarConnect
-                          onAdd={() => void openSettingsWindow("models")}
-                        />
-                      )}
-                    </motion.div>
-                  ) : null}
-                </div>
-              </ResizablePanel>
+              {sidebarFirst ? (
+                <>
+                  {sidebarPanel}
+                  {mainHandle}
+                  {workspacePanel}
+                </>
+              ) : (
+                <>
+                  {workspacePanel}
+                  {mainHandle}
+                  {sidebarPanel}
+                </>
+              )}
             </ResizablePanelGroup>
           </main>
 

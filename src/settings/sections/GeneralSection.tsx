@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { ThemePref } from "@/modules/settings/store";
+import type { SidebarPosition, ThemePref } from "@/modules/settings/store";
 import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
@@ -22,6 +22,7 @@ import {
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
+  setSidebarPosition,
   setTerminalFontSize,
   setTerminalWebglEnabled,
   setVimMode,
@@ -32,6 +33,8 @@ import {
   ArrowDown01Icon,
   ComputerIcon,
   Moon02Icon,
+  SidebarLeftIcon,
+  SidebarRightIcon,
   Sun03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -50,6 +53,15 @@ const APPEARANCE: {
   { id: "dark", label: "Dark", icon: Moon02Icon },
 ];
 
+const SIDEBAR_POSITIONS: {
+  id: SidebarPosition;
+  label: string;
+  icon: typeof SidebarLeftIcon;
+}[] = [
+  { id: "left", label: "Left", icon: SidebarLeftIcon },
+  { id: "right", label: "Right", icon: SidebarRightIcon },
+];
+
 export function GeneralSection() {
   const { theme, setTheme } = useTheme();
   const editorTheme = usePreferencesStore((s) => s.editorTheme);
@@ -60,6 +72,7 @@ export function GeneralSection() {
     (s) => s.terminalWebglEnabled,
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -125,6 +138,34 @@ export function GeneralSection() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Sidebar</Label>
+        <SettingRow
+          title="Side bar position"
+          description="Show the file explorer on the left or right side of the window."
+        >
+          <div className="inline-flex items-center gap-0.5 rounded-md border border-border/60 bg-card p-0.5">
+            {SIDEBAR_POSITIONS.map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                aria-pressed={sidebarPosition === o.id}
+                onClick={() => void setSidebarPosition(o.id)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded px-2 py-1 text-[11.5px] transition-colors",
+                  sidebarPosition === o.id
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <HugeiconsIcon icon={o.icon} size={14} strokeWidth={1.75} />
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">
