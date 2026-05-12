@@ -18,6 +18,7 @@
     "core:window:allow-set-focus",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
+    "core:webview:allow-set-webview-zoom",
     "opener:default",
     "log:default",
     "os:default",

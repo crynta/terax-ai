@@ -43,7 +43,7 @@ import {
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { onKeysChanged } from "@/modules/settings/store";
+import { onKeysChanged, setZoomLevel,DEFAULT_ZOOM_LEVEL } from "@/modules/settings/store";
 import {
   ShortcutsDialog,
   useGlobalShortcuts,
@@ -67,7 +67,7 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 export default function App() {
   const {
@@ -109,6 +109,7 @@ export default function App() {
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
+  const zoomLevelRef = useRef(DEFAULT_ZOOM_LEVEL);
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
@@ -179,6 +180,13 @@ export default function App() {
     void useAgentsStore.getState().hydrate();
     void useSnippetsStore.getState().hydrate();
   }, [hydrateSessions]);
+
+  const savedZoomLevel = usePreferencesStore((s) => s.zoomLevel);
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    zoomLevelRef.current = savedZoomLevel;
+    void getCurrentWebview().setZoom(savedZoomLevel);
+  }, [prefsHydrated, savedZoomLevel]);
 
   const activeTab = tabs.find((t) => t.id === activeId);
   const isTerminalTab = activeTab?.kind === "terminal";
@@ -512,6 +520,24 @@ export default function App() {
     handleClose(activeId);
   }, [activeId, closeActivePane, handleClose]);
 
+  const handleZoomIn = useCallback(async () => {
+    zoomLevelRef.current = Math.min(zoomLevelRef.current + 0.1, 10);
+    await getCurrentWebview().setZoom(zoomLevelRef.current);
+    await setZoomLevel(zoomLevelRef.current);
+  }, []);
+
+  const handleZoomOut = useCallback(async () => {
+    zoomLevelRef.current = Math.max(zoomLevelRef.current - 0.1, 0.2);
+    await getCurrentWebview().setZoom(zoomLevelRef.current);
+    await setZoomLevel(zoomLevelRef.current);
+  }, []);
+
+  const handleResetZoom = useCallback(async () => {
+    zoomLevelRef.current = 1.0;
+    await getCurrentWebview().setZoom(1.0);
+    await setZoomLevel(1.0);
+  }, []);
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "tab.new": openNewTab,
@@ -531,6 +557,9 @@ export default function App() {
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
+      "view.zoomIn": handleZoomIn,
+      "view.zoomOut": handleZoomOut,
+      "view.resetZoom": handleResetZoom
     }),
     [
       activeId,
@@ -544,6 +573,9 @@ export default function App() {
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
+      handleZoomIn,
+      handleZoomOut,
+      handleResetZoom
     ],
   );
 
