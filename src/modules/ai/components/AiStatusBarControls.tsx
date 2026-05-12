@@ -210,8 +210,7 @@ function ModelDropdown() {
   });
 
   return (
-    <DropdownMenu
-    >
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
