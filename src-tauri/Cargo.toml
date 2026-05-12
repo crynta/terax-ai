@@ -37,6 +37,11 @@ tauri-plugin-os = "2"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"
 reqwest = { version = "0.12", default-features = false }
+russh = { version = "0.60", default-features = false, features = ["ring", "rsa", "flate2"] }
+russh-sftp = "2.1"
+tokio = { version = "1", features = ["full"] }
+thiserror = "2"
+futures = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [

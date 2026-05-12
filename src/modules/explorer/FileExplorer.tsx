@@ -11,16 +11,22 @@ import {
   FileAddIcon,
   Folder01Icon,
   FolderAddIcon,
+  PlugIcon,
   Refresh01Icon,
   Search01Icon,
+  ServerStack01Icon,
+  Unlink01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { native } from "@/modules/ai/lib/native";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { FileTreeNode } from "./FileTreeNode";
 import { InlineInput } from "./InlineInput";
+import { SshConnectDialog } from "./SshConnectDialog";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
+import { isSshPath } from "./lib/sshPath";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
@@ -32,6 +38,7 @@ type Props = {
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
+  onSshConnect?: (sshRoot: string) => void;
 };
 
 function basename(path: string): string {
@@ -46,11 +53,13 @@ export function FileExplorer({
   onPathDeleted,
   onRevealInTerminal,
   onAttachToAgent,
+  onSshConnect,
 }: Props) {
   const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSearchActive, setIsSearchActive] = useState(false);
+  const [sshDialogOpen, setSshDialogOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<ExplorerSearchHandle>(null);
 
@@ -101,6 +110,20 @@ export function FileExplorer({
         <div className="text-xs text-muted-foreground">
           No current directory
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-2 h-7 text-xs"
+          onClick={() => setSshDialogOpen(true)}
+        >
+          <HugeiconsIcon icon={PlugIcon} size={13} strokeWidth={2} className="mr-1.5" />
+          Connect via SSH
+        </Button>
+        <SshConnectDialog
+          open={sshDialogOpen}
+          onOpenChange={setSshDialogOpen}
+          onConnected={(sshRoot) => onSshConnect?.(sshRoot)}
+        />
       </div>
     );
   }
@@ -238,6 +261,15 @@ export function FileExplorer({
         >
           <HugeiconsIcon icon={Refresh01Icon} size={12} strokeWidth={2} />
         </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          onClick={() => setSshDialogOpen(true)}
+          title="Connect via SSH"
+        >
+          <HugeiconsIcon icon={PlugIcon} size={13} strokeWidth={2} />
+        </Button>
       </div>
 
       <ExplorerSearch
@@ -247,6 +279,34 @@ export function FileExplorer({
         open={isSearchOpen}
         onRequestClose={() => setIsSearchOpen(false)}
         onActiveChange={setIsSearchActive}
+      />
+
+      {isSshPath(rootPath) && (
+        <div className="flex items-center gap-1 border-b border-border/60 px-2 py-1 text-[11px] text-muted-foreground">
+          <HugeiconsIcon icon={ServerStack01Icon} size={12} strokeWidth={2} />
+          <span className="truncate">{rootPath}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto size-5 text-muted-foreground hover:text-destructive"
+            onClick={async () => {
+              const { name } = await import("./lib/sshPath").then((m) =>
+                m.parseSshPath(rootPath),
+              );
+              await native.ssh.disconnect(name);
+              onSshConnect?.("");
+            }}
+            title="Disconnect"
+          >
+            <HugeiconsIcon icon={Unlink01Icon} size={11} strokeWidth={2} />
+          </Button>
+        </div>
+      )}
+
+      <SshConnectDialog
+        open={sshDialogOpen}
+        onOpenChange={setSshDialogOpen}
+        onConnected={(sshRoot) => onSshConnect?.(sshRoot)}
       />
 
       {!isSearchActive ? (

@@ -45,10 +45,7 @@ fn key(service: &str, account: &str) -> String {
 
 #[cfg(target_os = "linux")]
 fn store_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| e.to_string())?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join("secrets.json"))
 }
@@ -87,11 +84,7 @@ fn write_store(app: &AppHandle, map: &HashMap<String, String>) -> Result<(), Str
 }
 
 #[cfg(target_os = "linux")]
-fn with_store<F, R>(
-    app: &AppHandle,
-    state: &SecretsState,
-    f: F,
-) -> Result<R, String>
+fn with_store<F, R>(app: &AppHandle, state: &SecretsState, f: F) -> Result<R, String>
 where
     F: FnOnce(&mut HashMap<String, String>) -> R,
 {

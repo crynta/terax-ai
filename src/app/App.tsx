@@ -141,6 +141,8 @@ export default function App() {
       .catch(() => setHome(null));
   }, []);
 
+  const [sshRoot, setSshRoot] = useState<string | null>(null);
+
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
@@ -756,12 +758,13 @@ export default function App() {
               >
                 <div className="h-full border-r border-border/60 bg-card">
                   <FileExplorer
-                    rootPath={explorerRoot}
+                    rootPath={sshRoot ?? explorerRoot}
                     onOpenFile={handleOpenFile}
                     onPathRenamed={handlePathRenamed}
                     onPathDeleted={handlePathDeleted}
                     onRevealInTerminal={cdInNewTab}
                     onAttachToAgent={handleAttachFileToAgent}
+                    onSshConnect={(path) => setSshRoot(path || null)}
                   />
                 </div>
               </ResizablePanel>

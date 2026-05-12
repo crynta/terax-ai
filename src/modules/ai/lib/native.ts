@@ -36,6 +36,23 @@ export type GrepResponse = {
 export type GlobHit = { path: string; rel: string };
 export type GlobResponse = { hits: GlobHit[]; truncated: boolean };
 
+export type SshHostInfo = {
+  name: string;
+  host: string;
+  port: number;
+  user: string;
+  connected: boolean;
+};
+
+export type SshConnectParams = {
+  name: string;
+  host: string;
+  port?: number;
+  user: string;
+  password?: string;
+  key_file?: string;
+};
+
 export const native = {
   readFile: (path: string) => invoke<ReadResult>("fs_read_file", { path }),
   writeFile: (path: string, content: string) =>
@@ -119,4 +136,31 @@ export const native = {
         exit_code: number | null;
       }[]
     >("shell_bg_list"),
+
+  ssh: {
+    connect: (params: SshConnectParams) =>
+      invoke<SshHostInfo>("ssh_connect", { params }),
+    disconnect: (name: string) =>
+      invoke<void>("ssh_disconnect", { name }),
+    resolveHome: (name: string, user: string) =>
+      invoke<string>("ssh_resolve_home", { name, user }),
+    listConnections: () =>
+      invoke<SshHostInfo[]>("ssh_list_connections"),
+    readDir: (name: string, path: string) =>
+      invoke<DirEntry[]>("ssh_read_dir", { name, path }),
+    readFile: (name: string, path: string) =>
+      invoke<ReadResult>("ssh_read_file", { name, path }),
+    writeFile: (name: string, path: string, content: string) =>
+      invoke<void>("ssh_write_file", { name, path, content }),
+    stat: (name: string, path: string) =>
+      invoke<{ size: number; mtime: number; kind: "file" | "dir" | "symlink" }>("ssh_stat", { name, path }),
+    createFile: (name: string, path: string) =>
+      invoke<void>("ssh_create_file", { name, path }),
+    createDir: (name: string, path: string) =>
+      invoke<void>("ssh_create_dir", { name, path }),
+    rename: (name: string, from: string, to: string) =>
+      invoke<void>("ssh_rename", { name, from, to }),
+    delete: (name: string, path: string) =>
+      invoke<void>("ssh_delete", { name, path }),
+  },
 };
