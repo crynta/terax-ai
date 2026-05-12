@@ -52,6 +52,7 @@ export type Preferences = {
   terminalWebglEnabled: boolean;
   terminalFontSize: number;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
+  zoomLevel: number;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -68,6 +69,7 @@ const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_VIM_MODE = "vimMode";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
+const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_SHORTCUTS = "shortcuts";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
@@ -77,6 +79,8 @@ export const TERMINAL_FONT_SIZE_MAX = 32;
 export const TERMINAL_FONT_SIZES = [
   10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
 ] as const;
+
+export const DEFAULT_ZOOM_LEVEL = 1.0;
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -93,6 +97,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalWebglEnabled: true,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
+  zoomLevel: DEFAULT_ZOOM_LEVEL,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -149,6 +154,7 @@ export async function loadPreferences(): Promise<Preferences> {
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
+    zoomLevel: get<number>("zoomLevel") ?? DEFAULT_PREFERENCES.zoomLevel,
   };
 }
 
@@ -219,6 +225,10 @@ export async function setShortcuts(
   await store.save();
 }
 
+export async function setZoomLevel(value: number): Promise<void> {
+  await writePref(KEY_ZOOM_LEVEL, value);
+}
+
 export async function resetShortcuts(): Promise<void> {
   await store.set(KEY_SHORTCUTS, DEFAULT_PREFERENCES.shortcuts);
   await store.save();
@@ -245,6 +255,7 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_ZOOM_LEVEL]: "zoomLevel",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
