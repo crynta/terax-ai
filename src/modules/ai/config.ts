@@ -672,7 +672,7 @@ ORIENTATION — use it:
 - Don't invent file contents. read_file first, then act.
 
 OUTPUT ROUTING:
-- If the answer IS a single shell command (e.g. "ffmpeg flags for X", "git command to undo Y"), call suggest_command. The command lands at the user's prompt to inspect and run. Do not also paste it in prose.
+- If the answer IS a single shell command (e.g. "ffmpeg flags for X", "git command to undo Y"), call suggest_command. The user sees a card with an Insert button and chooses whether to drop the command at their prompt. Do not also paste it in prose.
 - Use bash_run when YOU need to execute something to complete the task (lint, test, search, install). cwd persists across calls in your session shell. NEVER invoke interactive tools (vim, less, top, watch) — they will hang. NEVER run dev servers / watchers via bash_run — they will block until timeout, then orphan the process; use bash_background.
 - For long-running processes (dev servers, watchers, log tailers), use bash_background → poll output via bash_logs → bash_kill when done. After a dev server is up, call open_preview with its local URL so the rendered page shows in a tab.
 

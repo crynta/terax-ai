@@ -7,29 +7,25 @@ export function buildTerminalTools(ctx: ToolContext) {
   return {
     suggest_command: tool({
       description:
-        "Type a single shell command into the user's active terminal at the prompt — WITHOUT executing it. Use this when the answer to the user's question IS a command (e.g. 'ffmpeg one-liner for X', 'git command to undo Y'). Prefer this over prose. Do NOT include a trailing newline.",
+        "Propose a single shell command. Renders a card in chat with an 'Insert' button — the command is NOT written to any terminal automatically; only the user's click inserts it at the prompt without executing. Use this when the answer IS a command.",
       inputSchema: z.object({
         command: z
           .string()
-          .describe("The shell command. No trailing newline."),
+          .describe("The shell command. Single line, no trailing newline."),
         explanation: z
           .string()
           .optional()
-          .describe(
-            "Optional one-line note shown alongside in the chat log (not in the terminal).",
-          ),
+          .describe("Optional one-line note shown beside the command."),
       }),
       execute: async ({ command, explanation }) => {
         const safety = checkShellCommand(command);
         if (!safety.ok) return { error: safety.reason };
-        const trimmed = command.replace(/\n+$/, "");
-        const ok = ctx.injectIntoActivePty(trimmed);
-        if (!ok)
-          return {
-            error: "no active terminal to inject into",
-            command: trimmed,
-          };
-        return { command: trimmed, explanation, injected: true };
+        // Reject control bytes — the user inserts via click, but the rendered
+        // command must reflect exactly what will land at the prompt.
+        if (/[\n\r\x00\x1b\x07]/.test(command)) {
+          return { error: "command must be a single line without control bytes" };
+        }
+        return { command, explanation };
       },
     }),
 

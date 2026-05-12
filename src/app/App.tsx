@@ -58,7 +58,6 @@ import {
   respawnSession,
   TerminalStack,
   type TerminalPaneHandle,
-  type TeraxOpenInput,
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
@@ -608,14 +607,6 @@ export default function App() {
     [closePaneByLeaf],
   );
 
-  const handleTeraxOpen = useCallback(
-    (_tabId: number, input: TeraxOpenInput) => {
-      // Always open in a new tab
-      openFileTab(input.file);
-    },
-    [openFileTab],
-  );
-
   const handleEditorDirty = useCallback(
     (id: number, dirty: boolean) => updateTab(id, { dirty }),
     [updateTab],
@@ -747,7 +738,6 @@ export default function App() {
                         onSearchReady={handleSearchReady}
                         onCwd={handleTerminalCwd}
                         onExit={handleLeafExit}
-                        onTeraxOpen={handleTeraxOpen}
                         onFocusLeaf={handleFocusLeaf}
                       />
                     </div>

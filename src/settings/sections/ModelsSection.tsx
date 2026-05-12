@@ -235,8 +235,9 @@ function LocalModelsBlock() {
   const test = async () => {
     setTestStatus("testing");
     try {
-      const url = urlDraft.replace(/\/$/, "") + "/models";
-      const status = await invoke<number>("http_ping", { url });
+      const status = await invoke<number>("lm_ping", {
+        baseUrl: urlDraft,
+      });
       setTestStatus(status > 0 ? "ok" : "fail");
     } catch {
       setTestStatus("fail");
@@ -330,8 +331,9 @@ function OpenAICompatibleBlock({
   const test = async () => {
     setTestStatus("testing");
     try {
-      const url = urlDraft.replace(/\/$/, "") + "/models";
-      const status = await invoke<number>("http_ping", { url });
+      const status = await invoke<number>("lm_ping", {
+        baseUrl: urlDraft,
+      });
       setTestStatus(status > 0 ? "ok" : "fail");
     } catch {
       setTestStatus("fail");
