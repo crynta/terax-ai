@@ -195,7 +195,18 @@ export async function respawnSession(
   s.lastSentCols = 0;
   s.lastSentRows = 0;
   s.lastDetectedUrl = null;
-  const pty = await openPtyForSession(s, cwd);
+  s.pendingExit = null;
+  // Hold the flag so attachSession can't open a second PTY while we await.
+  s.ptyOpening = true;
+  let pty: PtySession;
+  try {
+    pty = await openPtyForSession(s, cwd);
+  } catch (e) {
+    s.ptyOpening = false;
+    console.error("respawnSession: openPty failed:", e);
+    return;
+  }
+  s.ptyOpening = false;
   if (s.disposed) {
     pty.close();
     return;

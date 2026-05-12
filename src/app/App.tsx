@@ -4,6 +4,16 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import {
   AgentRunBridge,
@@ -123,6 +133,7 @@ export default function App() {
   }, []);
 
   const [home, setHome] = useState<string | null>(null);
+  const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   useEffect(() => {
     // Forward-slash form so explorerRoot stays equal across home → OSC 7.
     homeDir()
@@ -287,15 +298,24 @@ export default function App() {
     (id: number) => {
       const t = tabs.find((x) => x.id === id);
       if (t?.kind === "editor" && t.dirty) {
-        const ok = window.confirm(
-          `"${t.title}" has unsaved changes. Close anyway?`,
-        );
-        if (!ok) return;
+        setPendingCloseTab(id);
+        return;
       }
       disposeTab(id);
     },
     [tabs, disposeTab],
   );
+
+  const confirmClose = useCallback(() => {
+    if (pendingCloseTab !== null) {
+      disposeTab(pendingCloseTab);
+      setPendingCloseTab(null);
+    }
+  }, [pendingCloseTab, disposeTab]);
+
+  const cancelClose = useCallback(() => {
+    setPendingCloseTab(null);
+  }, []);
 
   const cycleTab = useCallback(
     (delta: 1 | -1) => {
@@ -639,11 +659,19 @@ export default function App() {
 
   const searchTarget = useMemo<SearchTarget>(() => {
     if (isTerminalTab && activeSearchAddon)
-      return { kind: "terminal", addon: activeSearchAddon };
+      return {
+        kind: "terminal",
+        addon: activeSearchAddon,
+        focus: () => terminalRefs.current.get(activeId)?.focus(),
+      };
     if (isEditorTab && activeEditorHandle)
-      return { kind: "editor", handle: activeEditorHandle };
+      return {
+        kind: "editor",
+        handle: activeEditorHandle,
+        focus: () => activeEditorHandle.focus(),
+      };
     return null;
-  }, [isTerminalTab, isEditorTab, activeSearchAddon, activeEditorHandle]);
+  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
 
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
@@ -877,6 +905,32 @@ export default function App() {
           />
 
           <UpdaterDialog />
+
+          <AlertDialog
+            open={pendingCloseTab !== null}
+            onOpenChange={(open) => !open && cancelClose()}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {tabs.find((t) => t.id === pendingCloseTab)?.title
+                    ? `"${
+                        tabs.find((t) => t.id === pendingCloseTab)?.title
+                      }" has unsaved changes. Close anyway?`
+                    : "This file has unsaved changes. Close anyway?"}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={cancelClose}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction onClick={confirmClose}>
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </TooltipProvider>
     </ThemeProvider>
