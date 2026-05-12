@@ -4,6 +4,7 @@ import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
   LMSTUDIO_DEFAULT_BASE_URL,
+  OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
@@ -48,6 +49,10 @@ export type Preferences = {
   autocompleteProvider: AutocompleteProviderId;
   autocompleteModelId: string;
   lmstudioBaseURL: string;
+  openaiCompatibleBaseURL: string;
+  openaiCompatibleModelId: string;
+  favoriteModelIds: string[];
+  recentModelIds: string[];
   vimMode: boolean;
   terminalWebglEnabled: boolean;
   terminalFontSize: number;
@@ -65,6 +70,10 @@ const KEY_AUTOCOMPLETE_ENABLED = "autocompleteEnabled";
 const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
+const KEY_OPENAI_COMPAT_BASE_URL = "openaiCompatibleBaseURL";
+const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
+const KEY_FAVORITE_MODELS = "favoriteModelIds";
+const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
@@ -89,6 +98,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autocompleteProvider: "cerebras",
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
+  openaiCompatibleBaseURL: OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
+  openaiCompatibleModelId: "",
+  favoriteModelIds: [],
+  recentModelIds: [],
   vimMode: false,
   terminalWebglEnabled: true,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
@@ -139,6 +152,17 @@ export async function loadPreferences(): Promise<Preferences> {
       DEFAULT_PREFERENCES.autocompleteModelId,
     lmstudioBaseURL:
       get<string>(KEY_LMSTUDIO_BASE_URL) ?? DEFAULT_PREFERENCES.lmstudioBaseURL,
+    openaiCompatibleBaseURL:
+      get<string>(KEY_OPENAI_COMPAT_BASE_URL) ??
+      DEFAULT_PREFERENCES.openaiCompatibleBaseURL,
+    openaiCompatibleModelId:
+      get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ??
+      DEFAULT_PREFERENCES.openaiCompatibleModelId,
+    favoriteModelIds:
+      get<string[]>(KEY_FAVORITE_MODELS) ??
+      DEFAULT_PREFERENCES.favoriteModelIds,
+    recentModelIds:
+      get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
@@ -194,6 +218,22 @@ export async function setLmstudioBaseURL(value: string): Promise<void> {
   await writePref(KEY_LMSTUDIO_BASE_URL, value);
 }
 
+export async function setOpenaiCompatibleBaseURL(value: string): Promise<void> {
+  await writePref(KEY_OPENAI_COMPAT_BASE_URL, value);
+}
+
+export async function setOpenaiCompatibleModelId(value: string): Promise<void> {
+  await writePref(KEY_OPENAI_COMPAT_MODEL_ID, value);
+}
+
+export async function setFavoriteModelIds(value: string[]): Promise<void> {
+  await writePref(KEY_FAVORITE_MODELS, value);
+}
+
+export async function setRecentModelIds(value: string[]): Promise<void> {
+  await writePref(KEY_RECENT_MODELS, value);
+}
+
 export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
@@ -241,6 +281,10 @@ export async function onPreferencesChange(
     [KEY_AUTOCOMPLETE_PROVIDER]: "autocompleteProvider",
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
+    [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
+    [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
+    [KEY_FAVORITE_MODELS]: "favoriteModelIds",
+    [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
