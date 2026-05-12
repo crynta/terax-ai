@@ -4,10 +4,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
-use serde::Serialize;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, Response};
 
 use super::shell_init;
 
@@ -22,13 +20,6 @@ const MAX_PENDING: usize = 4 * 1024 * 1024;
 // we're forced to discard backlog.
 const OVERFLOW_NOTICE: &[u8] =
     b"\x1bc\x1b[2m[terax: dropped output due to backpressure]\x1b[0m\r\n";
-
-#[derive(Serialize, Clone)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum PtyEvent {
-    Data { data: String },
-    Exit { code: i32 },
-}
 
 pub struct Session {
     // Field drop order is intentional. Rust drops fields top-to-bottom:
@@ -66,7 +57,8 @@ pub fn spawn(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
-    on_event: Channel<PtyEvent>,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
     let _spawn_guard = SPAWN_LOCK.lock().unwrap();
 
@@ -152,7 +144,7 @@ pub fn spawn(
         })
         .expect("spawn pty reader thread");
 
-    let on_event_flush = on_event.clone();
+    let on_data_flush = on_data.clone();
     let pending_f = pending.clone();
     let done_f = done.clone();
     thread::Builder::new()
@@ -169,23 +161,16 @@ pub fn spawn(
                 }
                 std::mem::take(&mut *g)
             };
-            // NOTE on base64: Tauri v2 `Channel<T>` serializes via JSON;
-            // `Vec<u8>` would become a JSON int array (~3× worse than base64).
-            // A raw-bytes path via `InvokeResponseBody::Raw` exists but the
-            // data+exit multiplex through one channel is awkward. Base64's 33%
-            // overhead is trivial on local IPC — revisit if profiling says
-            // otherwise.
-            let event = PtyEvent::Data {
-                data: B64.encode(&chunk),
-            };
-            if let Err(e) = on_event_flush.send(event) {
+            // Raw bytes over the channel — arrives in JS as an ArrayBuffer with
+            // no base64/JSON round-trip.
+            if let Err(e) = on_data_flush.send(Response::new(chunk)) {
                 log::debug!("pty flusher exiting, channel closed: {e}");
                 break;
             }
         })
         .expect("spawn pty flusher thread");
 
-    let on_event_exit = on_event;
+    let on_data_exit = on_data;
     let pending_e = pending;
     let done_e = done;
     thread::Builder::new()
@@ -205,14 +190,12 @@ pub fn spawn(
             }
             let tail = std::mem::take(&mut *pending_e.lock().unwrap());
             if !tail.is_empty() {
-                if let Err(e) = on_event_exit.send(PtyEvent::Data {
-                    data: B64.encode(&tail),
-                }) {
+                if let Err(e) = on_data_exit.send(Response::new(tail)) {
                     log::debug!("pty final-data send failed (channel closed): {e}");
                 }
             }
             done_e.store(true, Ordering::Release);
-            if let Err(e) = on_event_exit.send(PtyEvent::Exit { code }) {
+            if let Err(e) = on_exit.send(code) {
                 log::debug!("pty exit send failed (channel closed): {e}");
             }
         })
