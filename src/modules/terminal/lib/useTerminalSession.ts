@@ -1,4 +1,5 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
@@ -17,7 +18,6 @@ import { openPty, type PtySession } from "./pty-bridge";
 
 export type { TeraxOpenInput };
 
-const FONT_SIZE = 14;
 const BACKWARD_KILL_WORD = "\x17";
 
 const LOCAL_URL_RE =
@@ -50,7 +50,8 @@ type Session = {
   lastCwd: string | null;
   lastDetectedUrl: string | null;
   pendingExit: number | null;
-  webglLoaded: boolean;
+  webglEnabled: boolean;
+  webglAddon: WebglAddon | null;
   ready: Promise<void>;
   disposed: boolean;
   initialCwd: string | undefined;
@@ -63,9 +64,13 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   const existing = sessions.get(leafId);
   if (existing) return existing;
 
+  const prefs = usePreferencesStore.getState();
+  const webglEnabled = prefs.terminalWebglEnabled;
+  const fontSize = prefs.terminalFontSize;
+
   const term = new Terminal({
     fontFamily: detectMonoFontFamily(),
-    fontSize: FONT_SIZE,
+    fontSize,
     lineHeight: 1.05,
     theme: buildTerminalTheme(),
     cursorBlink: true,
@@ -103,7 +108,8 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     lastCwd: null,
     lastDetectedUrl: null,
     pendingExit: null,
-    webglLoaded: false,
+    webglEnabled,
+    webglAddon: null,
     ready: Promise.resolve(),
     disposed: false,
     initialCwd,
@@ -241,12 +247,15 @@ function attachSession(
   s.lastW = container.clientWidth;
   s.lastH = container.clientHeight;
 
-  if (firstAttach && !s.webglLoaded) {
+  if (firstAttach && !s.webglAddon && s.webglEnabled) {
     try {
       const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
+      webgl.onContextLoss(() => {
+        webgl.dispose();
+        if (s.webglAddon === webgl) s.webglAddon = null;
+      });
       s.term.loadAddon(webgl);
-      s.webglLoaded = true;
+      s.webglAddon = webgl;
     } catch (e) {
       console.warn("WebGL renderer unavailable:", e);
     }
@@ -434,6 +443,39 @@ export function useTerminalSession({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leafId]);
+
+  const fontSize = usePreferencesStore((p) => p.terminalFontSize);
+  useEffect(() => {
+    const s = sessions.get(leafId);
+    if (!s) return;
+    if (s.term.options.fontSize === fontSize) return;
+    s.term.options.fontSize = fontSize;
+    s.fitAddon.fit();
+  }, [leafId, fontSize]);
+
+  const webglPref = usePreferencesStore((p) => p.terminalWebglEnabled);
+  useEffect(() => {
+    const s = sessions.get(leafId);
+    if (!s) return;
+    s.webglEnabled = webglPref;
+    if (!s.term.element) return;
+    if (webglPref && !s.webglAddon) {
+      try {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webgl.dispose();
+          if (s.webglAddon === webgl) s.webglAddon = null;
+        });
+        s.term.loadAddon(webgl);
+        s.webglAddon = webgl;
+      } catch (e) {
+        console.warn("WebGL renderer unavailable:", e);
+      }
+    } else if (!webglPref && s.webglAddon) {
+      s.webglAddon.dispose();
+      s.webglAddon = null;
+    }
+  }, [leafId, webglPref]);
 
   useLayoutEffect(() => {
     if (!visible) return;

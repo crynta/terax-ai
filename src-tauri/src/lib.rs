@@ -59,35 +59,77 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     Ok(())
 }
 
-// WebKitGTK 2.46+ DMA-BUF renderer crashes with EGL_BAD_PARAMETER on
-// wlroots compositors (#105). GNOME/KDE work fine, so don't blanket-disable.
+// WebKitGTK's DMA-BUF (hardware) renderer fails to create an EGL display on
+// wlroots compositors (#105), NVIDIA's proprietary driver, and minimal sessions
+// (#126). It's fine and faster on Mesa-backed GNOME/KDE/COSMIC, so only fall
+// back to the safe path where trouble is likely. Override:
+//   WEBKIT_DISABLE_DMABUF_RENDERER=1  force safe path   =0  force hardware path
 #[cfg(target_os = "linux")]
-fn apply_wayland_webkit_workaround() {
+fn configure_linux_rendering() {
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some() {
         return;
     }
-    if std::env::var("XDG_SESSION_TYPE").as_deref() != Ok("wayland") {
+
+    let wayland = std::env::var("XDG_SESSION_TYPE")
+        .map(|v| v.eq_ignore_ascii_case("wayland"))
+        .unwrap_or(false)
+        || std::env::var_os("WAYLAND_DISPLAY").is_some();
+    if !wayland {
         return;
+    }
+
+    match wayland_dmabuf_fallback_reason() {
+        Some(reason) => {
+            eprintln!(
+                "terax: Wayland session, {reason}; disabling WebKitGTK DMA-BUF renderer \
+                 (override: WEBKIT_DISABLE_DMABUF_RENDERER=0)"
+            );
+            unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+        }
+        None => eprintln!(
+            "terax: Wayland session on a known-good compositor; keeping WebKitGTK DMA-BUF renderer \
+             (set WEBKIT_DISABLE_DMABUF_RENDERER=1 if the window stays blank)"
+        ),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn wayland_dmabuf_fallback_reason() -> Option<&'static str> {
+    if has_nvidia_gpu() {
+        return Some("NVIDIA proprietary driver detected");
     }
     let desktop = std::env::var("XDG_CURRENT_DESKTOP")
+        .or_else(|_| std::env::var("XDG_SESSION_DESKTOP"))
         .unwrap_or_default()
         .to_lowercase();
-    let affected = [
-        "hyprland", "niri", "sway", "river", "wayfire", "labwc", "dwl",
-    ]
-    .iter()
-    .any(|c| desktop.contains(c));
-    if !affected {
-        return;
+    const KNOWN_GOOD: [&str; 6] = ["gnome", "kde", "plasma", "cosmic", "unity", "pantheon"];
+    if !desktop.is_empty() && KNOWN_GOOD.iter().any(|d| desktop.contains(d)) {
+        return None;
     }
-    log::info!("wlroots compositor detected ({desktop}); disabling DMA-BUF renderer");
-    unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
+    if desktop.is_empty() {
+        Some("compositor not advertised (XDG_CURRENT_DESKTOP unset)")
+    } else {
+        Some("wlroots / unrecognised compositor")
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn has_nvidia_gpu() -> bool {
+    std::path::Path::new("/dev/nvidia0").exists()
+        || matches!(
+            std::env::var("__GLX_VENDOR_LIBRARY_NAME").as_deref(),
+            Ok("nvidia")
+        )
+        || matches!(
+            std::env::var("__NV_PRIME_RENDER_OFFLOAD").as_deref(),
+            Ok("1")
+        )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "linux")]
-    apply_wayland_webkit_workaround();
+    configure_linux_rendering();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
