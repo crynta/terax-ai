@@ -200,10 +200,12 @@ function ModelDropdown() {
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
   const current = getModel(selected);
-  const currentProviderHasKey = !!apiKeys[current.provider];
+  const currentProviderHasKey = providerNeedsKey(current.provider)
+    ? !!apiKeys[current.provider]
+    : true;
 
   const onPick = (id: ModelId, providerId: ProviderId) => {
-    if (!apiKeys[providerId]) {
+    if (providerNeedsKey(providerId) && !apiKeys[providerId]) {
       void openSettingsWindow("models");
       return;
     }
