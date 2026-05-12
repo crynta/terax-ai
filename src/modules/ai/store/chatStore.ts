@@ -28,6 +28,7 @@ import {
   saveSessionsList,
   type SessionMeta,
 } from "../lib/sessions";
+import { pushRecentModel } from "../lib/modelPrefs";
 import { createContextAwareTransport } from "../lib/transport";
 import type { ToolContext } from "../tools/tools";
 
@@ -256,7 +257,10 @@ export const useChatStore = create<StoreState>((set, get) => ({
   },
 
   selectedModelId: DEFAULT_MODEL_ID,
-  setSelectedModelId: (id) => set({ selectedModelId: id }),
+  setSelectedModelId: (id) => {
+    set({ selectedModelId: id });
+    void pushRecentModel(id);
+  },
 
   mini: { open: false },
   openMini: () => set({ mini: { open: true } }),
