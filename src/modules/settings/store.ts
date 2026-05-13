@@ -7,6 +7,7 @@ import {
   OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
   type ModelId,
+  type OpenCodeMode,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 
@@ -54,6 +55,8 @@ export type Preferences = {
   openaiCompatibleModelId: string;
   favoriteModelIds: string[];
   recentModelIds: string[];
+  opencodeModelId: string;
+  opencodeMode: OpenCodeMode;
   vimMode: boolean;
   showHidden: boolean;
   terminalWebglEnabled: boolean;
@@ -78,6 +81,8 @@ const KEY_OPENAI_COMPAT_BASE_URL = "openaiCompatibleBaseURL";
 const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
+const KEY_OPENCODE_MODEL_ID = "opencodeModelId";
+const KEY_OPENCODE_MODE = "opencodeMode";
 const KEY_VIM_MODE = "vimMode";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
@@ -110,6 +115,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   openaiCompatibleModelId: "",
   favoriteModelIds: [],
   recentModelIds: [],
+  opencodeModelId: "deepseek-v4-flash",
+  opencodeMode: "go" as OpenCodeMode,
   vimMode: false,
   showHidden: false,
   terminalWebglEnabled: true,
@@ -175,6 +182,11 @@ export async function loadPreferences(): Promise<Preferences> {
       DEFAULT_PREFERENCES.favoriteModelIds,
     recentModelIds:
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds,
+    opencodeModelId:
+      get<string>(KEY_OPENCODE_MODEL_ID) ??
+      DEFAULT_PREFERENCES.opencodeModelId,
+    opencodeMode:
+      get<OpenCodeMode>(KEY_OPENCODE_MODE) ?? DEFAULT_PREFERENCES.opencodeMode,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
     showHidden:
       get<boolean>(KEY_SHOW_HIDDEN) ??
@@ -257,6 +269,14 @@ export async function setRecentModelIds(value: string[]): Promise<void> {
   await writePref(KEY_RECENT_MODELS, value);
 }
 
+export async function setOpencodeModelId(value: string): Promise<void> {
+  await writePref(KEY_OPENCODE_MODEL_ID, value);
+}
+
+export async function setOpencodeMode(value: OpenCodeMode): Promise<void> {
+  await writePref(KEY_OPENCODE_MODE, value);
+}
+
 export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
@@ -317,6 +337,8 @@ export async function onPreferencesChange(
     [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
+    [KEY_OPENCODE_MODEL_ID]: "opencodeModelId",
+    [KEY_OPENCODE_MODE]: "opencodeMode",
     [KEY_VIM_MODE]: "vimMode",
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",

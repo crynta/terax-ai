@@ -13,6 +13,7 @@ import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
   Add01Icon,
   AiBookIcon,
+  AiMagicIcon,
   ArrowDown01Icon,
   ArrowUpIcon,
   BrainIcon,
@@ -65,6 +66,7 @@ const PROVIDER_ICON = {
   deepseek: DeepseekIcon,
   openrouter: GlobeIcon,
   "openai-compatible": PlugIcon,
+  opencode: AiMagicIcon,
   lmstudio: ComputerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 

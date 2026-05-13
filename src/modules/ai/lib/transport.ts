@@ -1,5 +1,5 @@
 import type { UIMessage } from "@ai-sdk/react";
-import { type ModelId } from "../config";
+import { type ModelId, type OpenCodeMode } from "../config";
 import { runAgentStream, type AgentUsage } from "./agent";
 import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
@@ -50,6 +50,8 @@ type Deps = {
   getLmstudioModelId?: () => string | undefined;
   getOpenaiCompatibleBaseURL?: () => string | undefined;
   getOpenaiCompatibleModelId?: () => string | undefined;
+  getOpencodeModelId?: () => string;
+  getOpencodeMode?: () => OpenCodeMode;
   onStep?: (step: string | null) => void;
   onUsage?: (delta: AgentUsage) => void;
   getPlanMode?: () => boolean;
@@ -78,6 +80,8 @@ export function createContextAwareTransport(deps: Deps) {
       lmstudioModelId: deps.getLmstudioModelId?.(),
       openaiCompatibleBaseURL: deps.getOpenaiCompatibleBaseURL?.(),
       openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
+      opencodeModelId: deps.getOpencodeModelId?.(),
+      opencodeMode: deps.getOpencodeMode?.(),
       planMode: deps.getPlanMode?.(),
       projectMemory,
       envBlock,

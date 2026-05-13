@@ -10,6 +10,7 @@ export type ProviderId =
   | "deepseek"
   | "openrouter"
   | "openai-compatible"
+  | "opencode"
   | "lmstudio";
 
 export type ProviderInfo = {
@@ -88,6 +89,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyOptional: true,
   },
   {
+    id: "opencode",
+    label: "OpenCode",
+    keyringAccount: "opencode-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://opencode.ai/settings/api-keys",
+  },
+  {
     id: "lmstudio",
     label: "LM Studio",
     keyringAccount: "",
@@ -113,6 +121,15 @@ export type ModelCapabilities = {
 
 export type ModelTag = "vision" | "reasoning" | "tools" | "coding";
 
+export type OpenCodeMode = "zen" | "go";
+
+export const OPENCODE_ZEN_BASE_URL = "https://opencode.ai/zen/v1";
+export const OPENCODE_GO_BASE_URL = "https://opencode.ai/zen/go/v1";
+
+export function getOpenCodeBaseURL(mode: OpenCodeMode): string {
+  return mode === "zen" ? OPENCODE_ZEN_BASE_URL : OPENCODE_GO_BASE_URL;
+}
+
 export type ModelInfo = {
   id: string;
   provider: ProviderId;
@@ -123,6 +140,7 @@ export type ModelInfo = {
   description: string;
   capabilities: ModelCapabilities;
   tags?: readonly ModelTag[];
+  opencodeMode?: OpenCodeMode;
 };
 
 export const MODELS = [
@@ -513,6 +531,16 @@ export const MODELS = [
   },
 
   // ── LM Studio (local; model id is user-supplied at runtime) ───────────────
+
+  // ── OpenCode ───────────────────────────────────────────────────────────────
+  {
+    id: "opencode-custom",
+    provider: "opencode",
+    label: "OpenCode",
+    hint: "Configurable",
+    description: "Any model served via the OpenCode API.",
+    capabilities: { intelligence: 3, speed: 3, cost: 4 },
+  },
   {
     id: "lmstudio-local",
     provider: "lmstudio",
@@ -523,12 +551,25 @@ export const MODELS = [
   },
 ] as const satisfies readonly ModelInfo[];
 
-export type ModelId = (typeof MODELS)[number]["id"];
+export type ModelId = string;
 
 export function getModel(id: ModelId): ModelInfo {
   const m = MODELS.find((x) => x.id === id);
   if (!m) throw new Error(`Unknown model: ${id}`);
   return m;
+}
+
+export function stripOpenCodePrefix(id: string): string {
+  return id.replace(/^opencode-(zen|go):/, "");
+}
+
+export function isOpenCodeModel(id: ModelId): boolean {
+  return id.startsWith("opencode-zen:") || id.startsWith("opencode-go:");
+}
+
+/** Returns models for all providers. */
+export function getAllModels(): readonly ModelInfo[] {
+  return MODELS;
 }
 
 export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";

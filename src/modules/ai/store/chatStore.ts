@@ -243,6 +243,10 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       usePreferencesStore.getState().openaiCompatibleBaseURL,
     getOpenaiCompatibleModelId: () =>
       usePreferencesStore.getState().openaiCompatibleModelId,
+    getOpencodeModelId: () =>
+      usePreferencesStore.getState().opencodeModelId,
+    getOpencodeMode: () =>
+      usePreferencesStore.getState().opencodeMode,
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
     },
