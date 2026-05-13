@@ -89,6 +89,7 @@ export default function App() {
     closeActivePane,
     closePaneByLeaf,
     reorderTabs,
+    rename,
   } = useTabs();
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
@@ -702,6 +703,7 @@ export default function App() {
             onClose={handleClose}
             onPin={pinTab}
             onReorder={reorderTabs}
+            onRename={rename}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={

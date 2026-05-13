@@ -48,6 +48,7 @@ type Props = {
   onOpenShortcuts: () => void;
   onOpenSettings: () => void;
   onReorder: (tabs: Tab[]) => void;
+  onRename: (tabId: number, newName:string) => void;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
 };
@@ -69,6 +70,7 @@ export function Header({
   onOpenShortcuts,
   onOpenSettings,
   onReorder,
+  onRename,
   searchTarget,
   searchRef,
 }: Props) {
@@ -210,6 +212,7 @@ export function Header({
           onClose={onClose}
           onPin={onPin}
           onReorder={onReorder}
+          onRename={onRename}
           compact={compact}
         />
         <div data-tauri-drag-region className="h-full min-w-2 flex-1" />

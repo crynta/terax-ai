@@ -463,6 +463,14 @@ const closeActivePane = useCallback((tabId: number): boolean => {
     setTabs(newOrder);
   }, []);
 
+  const rename = (tabId: number, newTitle: string) => {
+    setTabs((curr) =>
+      curr.map((t) =>
+        t.id === tabId ? { ...t, title: newTitle } : t,
+      ),
+    );
+  }
+
   return {
     tabs,
     activeId,
@@ -483,5 +491,6 @@ const closeActivePane = useCallback((tabId: number): boolean => {
     closeActivePane,
     closePaneByLeaf,
     reorderTabs,
+    rename,
   };
 }

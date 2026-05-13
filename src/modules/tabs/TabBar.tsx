@@ -17,9 +17,17 @@ import {
   PencilEdit02Icon,
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuGroup,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Reorder } from "motion/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EditorTab, Tab } from "./lib/useTabs";
 
 type Props = {
@@ -31,6 +39,7 @@ type Props = {
   onNewEditor: () => void;
   onClose: (id: number) => void;
   onPin: (id: number) => void;
+  onRename: (id: number, newTitle: string) => void;
   onReorder: (tabs: Tab[]) => void;
   compact?: boolean;
 };
@@ -44,10 +53,12 @@ export function TabBar({
   onNewEditor,
   onClose,
   onPin,
+  onRename,
   onReorder,
   compact,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [editingTabId, setEditingTabId] = useState<number | null>(null);
 
   // Horizontal wheel scroll without holding shift.
   useEffect(() => {
@@ -89,66 +100,109 @@ export function TabBar({
               {tabs.map((t) => {
                 const isPreview = t.kind === "editor" && (t as EditorTab).preview;
                 return (
-                  <Reorder.Item
-                    key={t.id}
-                    value={t}
-                    id={String(t.id)}
-                  >
-                    <TabsTrigger
-                      value={String(t.id)}
-                      className={cn(
-                        "group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md text-xs transition-colors",
-                        "hover:text-foreground/80",
-                        t.id === activeId
-                          ? "bg-accent text-foreground"
-                          : "text-muted-foreground",
-                        compact
-                          ? "px-1.5!"
-                          : tabs.length === 1
-                            ? "px-2!"
-                            : "ps-2! pe-1!",
-                      )}
-                      data-tab-id={t.id}
-                      onDoubleClick={() => isPreview && onPin(t.id)}
+                    <Reorder.Item
+                      key={t.id}
+                      value={t}
+                      id={String(t.id)}
                     >
-                      <span
-                        className={cn(
-                          "flex items-center gap-1.5 truncate",
-                          compact ? "max-w-48" : "max-w-80",
-                        )}
-                      >
-                        <TabIcon tab={t} />
-                        {/* Preview tabs use italic to signal the transient state,
-                        matching the visual convention from VSCode. */}
-                        <span className={cn("truncate", isPreview && "italic")}>
-                          {labelFor(t)}
-                        </span>
-                        {t.kind === "editor" && t.dirty ? (
-                          <span
-                            aria-label="Unsaved changes"
-                            className="size-1.5 shrink-0 rounded-full bg-foreground/70"
-                          />
-                        ) : null}
-                      </span>
-                      {tabs.length > 1 && (
-                        <span
-                          role="button"
-                          aria-label="Close tab"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onClose(t.id);
-                          }}
-                          className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
-                        >
-                          <HugeiconsIcon
-                            icon={Cancel01Icon}
-                            size={11}
-                            strokeWidth={2}
-                          />
-                        </span>
-                      )}
-                    </TabsTrigger>
-                  </Reorder.Item>
+                      <ContextMenu>
+                        <ContextMenuTrigger>
+                          <TabsTrigger
+                            value={String(t.id)}
+                            className={cn(
+                              "group flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md text-xs transition-colors",
+                        "hover:text-foreground/80",
+                              t.id === activeId
+                                ? "bg-accent text-foreground"
+                          : "text-muted-foreground",
+                              compact
+                                ? "px-1.5!"
+                                : tabs.length === 1
+                                  ? "px-2!"
+                                  : "ps-2! pe-1!",
+                            )}
+                            data-tab-id={t.id}
+                      onDoubleClick={() => isPreview && onPin(t.id)}
+                          >
+                            <span
+                              className={cn(
+                                "flex items-center gap-1.5 truncate",
+                                compact ? "max-w-48" : "max-w-80",
+                              )}
+                            >
+                              <TabIcon tab={t} />
+                              {/* Preview tabs use italic to signal the transient state, 
+                              matching the visual convention from VSCode. */}
+                              {editingTabId === t.id ? (
+                                <input
+                                  autoFocus
+                                  className="h-5 w-full px-1 text-xs bg-transparent focus:border-none focus-within:outline-none "
+                                  defaultValue={t.title}
+                                  onBlur={(e) => {
+                                    onRename(t.id, e.target.value);
+                                    setEditingTabId(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      onRename(t.id, (e.target as HTMLInputElement).value);
+                                      setEditingTabId(null);
+                                    }
+                                    if (e.key === "Escape") {
+                                      setEditingTabId(null);
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <span className={cn("truncate", isPreview && "italic")}>
+                                  {t.title}
+                                </span>
+                              )}
+                              {t.kind === "editor" && t.dirty ? (
+                                <span
+                                  aria-label="Unsaved changes"
+                                  className="size-1.5 shrink-0 rounded-full bg-foreground/70"
+                                />
+                              ) : null}
+                            </span>
+                            {tabs.length > 1 && (
+                              <span
+                                role="button"
+                                aria-label="Close tab"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onClose(t.id);
+                                }}
+                                className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
+                              >
+                                <HugeiconsIcon
+                                  icon={Cancel01Icon}
+                                  size={11}
+                                  strokeWidth={2}
+                                />
+                              </span>
+                            )}
+                          </TabsTrigger>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                          <ContextMenuGroup>
+                            <ContextMenuItem onClick={() => onPin(t.id)}>
+                              <span>Pin</span>
+                            </ContextMenuItem>
+                            {t.kind !== "editor" && (
+                              <ContextMenuItem onClick={() => setEditingTabId(t.id)}>
+                                <span>Rename</span>
+                              </ContextMenuItem>
+                            )}
+                          </ContextMenuGroup>
+                          <ContextMenuSeparator />
+                          <ContextMenuGroup>
+                            <ContextMenuItem variant="destructive" onClick={() => onClose(t.id)}>
+                              <span>Close</span>
+                            </ContextMenuItem>
+                          </ContextMenuGroup>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                    </Reorder.Item>
                 );
               })}
             </Reorder.Group>
@@ -229,13 +283,4 @@ function TabIcon({ tab }: { tab: Tab }) {
       className="shrink-0"
     />
   );
-}
-
-function labelFor(t: Tab): string {
-  if (t.kind === "editor") return t.title;
-  if (t.kind === "preview") return t.title;
-  if (t.kind === "ai-diff") return t.title;
-  if (!t.cwd) return t.title;
-  const parts = t.cwd.split(/[\\/]/).filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : "/";
 }
