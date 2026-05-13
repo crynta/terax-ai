@@ -1,6 +1,6 @@
 import type { Tab } from "@/modules/tabs";
 import type { SearchAddon } from "@xterm/addon-search";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { PaneTreeView } from "./PaneTreeView";
 import type { TerminalPaneHandle } from "./TerminalPane";
 import { leafIds } from "./lib/panes";
@@ -32,7 +32,10 @@ export function TerminalStack({
   onExit,
   onFocusLeaf,
 }: Props) {
-  const terminals = tabs.filter((t) => t.kind === "terminal");
+  const terminals = useMemo(
+    () => tabs.filter((t) => t.kind === "terminal"),
+    [tabs],
+  );
 
   const registerRef = useRef(registerHandle);
   const searchReadyRef = useRef(onSearchReady);

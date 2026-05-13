@@ -7,7 +7,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
   registerCwdHandler,
   registerPromptTracker,
@@ -129,6 +129,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     session.cleanups.push(prompt.dispose);
     session.cleanups.push(
       registerCwdHandler(term, (cwd) => {
+        if (session.lastCwd === cwd) return;
         session.lastCwd = cwd;
         session.callbacks.onCwd?.(cwd);
       }),
@@ -478,7 +479,10 @@ export function useTerminalSession({
     s.term.options.theme = buildTerminalTheme();
   }, [leafId]);
 
-  return { write, focus, getBuffer, getSelection, applyTheme };
+  return useMemo(
+    () => ({ write, focus, getBuffer, getSelection, applyTheme }),
+    [write, focus, getBuffer, getSelection, applyTheme],
+  );
 }
 
 function isCtrlBackspace(event: KeyboardEvent): boolean {
