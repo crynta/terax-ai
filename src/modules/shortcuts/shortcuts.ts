@@ -27,7 +27,9 @@ export type ShortcutId =
   | "ai.askSelection"
   | "shortcuts.open"
   | "settings.open"
-  | "sidebar.toggle";
+  | "sidebar.toggle"
+  | "editor.undo"
+  | "editor.redo";
 
 export type ShortcutGroup =
   | "General"
@@ -35,7 +37,8 @@ export type ShortcutGroup =
   | "Panes"
   | "Search"
   | "AI"
-  | "View";
+  | "View"
+  | "Editor";
 
 export type KeyBinding = {
   key: string;
@@ -200,6 +203,23 @@ export const SHORTCUTS: Shortcut[] = [
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, key: "0" }],
   },
+  // Editor entries are display-only: CodeMirror's historyKeymap binds these
+  // keys natively. We register them here so the shortcuts dialog can surface
+  // them — they don't have App-level handlers, so `useGlobalShortcuts` falls
+  // through without `preventDefault`, leaving CodeMirror to handle the event.
+  // Also excluded from the customization UI in ShortcutsSection.
+  {
+    id: "editor.undo",
+    label: "Undo",
+    group: "Editor",
+    defaultBindings: [{ [MOD_PROP]: true, key: "z" }],
+  },
+  {
+    id: "editor.redo",
+    label: "Redo",
+    group: "Editor",
+    defaultBindings: [{ [MOD_PROP]: true, key: "y" }],
+  },
 ];
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
@@ -209,6 +229,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "View",
   "Search",
   "AI",
+  "Editor",
 ];
 
 /**

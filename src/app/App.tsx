@@ -50,6 +50,7 @@ import {
   ShortcutsDialog,
   useGlobalShortcuts,
   type ShortcutHandlers,
+  type ShortcutId,
 } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
@@ -648,6 +649,8 @@ export default function App() {
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
+      "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
+      "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
     }),
     [
       activeId,
@@ -669,7 +672,22 @@ export default function App() {
     ],
   );
 
-  useGlobalShortcuts(shortcutHandlers);
+  // Editor undo/redo handlers must not fire while a non-editor tab is active,
+  // otherwise Ctrl+Z would steal SIGTSTP from the terminal and Ctrl+Y would
+  // steal Yank. Returning true here makes useGlobalShortcuts skip the handler
+  // and never call preventDefault, leaving the keypress to the focused
+  // surface.
+  const shortcutsDisabled = useCallback(
+    (id: ShortcutId, _e: KeyboardEvent) => {
+      if (id === "editor.undo" || id === "editor.redo") {
+        return activeTab?.kind !== "editor";
+      }
+      return false;
+    },
+    [activeTab],
+  );
+
+  useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {
