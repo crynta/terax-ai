@@ -355,17 +355,25 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [tabs],
   );
 
-  /** Update a leaf's cwd; mirror to the tab's `cwd` when the leaf is active. */
+  /** Update a leaf's cwd; mirror to the tab's `cwd` when the leaf is active.
+   * Bails out without setTabs when nothing actually changed — shell integration
+   * re-emits OSC 7 on every prompt, including empty Enters, so this fires at
+   * keystroke rate. Always-setTabs there cascades a paneTree re-render across
+   * every open tab. */
   const setLeafCwd = useCallback((leafId: number, cwd: string) => {
-    setTabs((curr) =>
-      curr.map((t) => {
-        if (t.kind !== "terminal") return t;
-        if (!hasLeaf(t.paneTree, leafId)) return t;
+    setTabs((curr) => {
+      let changed = false;
+      const next = curr.map((t) => {
+        if (t.kind !== "terminal" || !hasLeaf(t.paneTree, leafId)) return t;
         const paneTree = setLeafCwdInTree(t.paneTree, leafId, cwd);
         const isActive = t.activeLeafId === leafId;
-        return { ...t, paneTree, ...(isActive && { cwd }) };
-      }),
-    );
+        const cwdChanged = isActive && t.cwd !== cwd;
+        if (paneTree === t.paneTree && !cwdChanged) return t;
+        changed = true;
+        return { ...t, paneTree, ...(cwdChanged && { cwd }) };
+      });
+      return changed ? next : curr;
+    });
   }, []);
 
   const focusPane = useCallback((tabId: number, leafId: number) => {
