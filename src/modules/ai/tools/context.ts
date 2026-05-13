@@ -5,6 +5,7 @@ export type ToolContext = {
   getWorkspaceRoot: () => string | null;
   /** Last N lines of the active terminal buffer (or null if not a terminal tab). */
   getTerminalContext: () => string | null;
+  isActiveTerminalPrivate: () => boolean;
   /**
    * Type a string into the active terminal at the prompt — without executing.
    * Returns false if there is no active terminal tab to inject into.
@@ -12,12 +13,7 @@ export type ToolContext = {
   injectIntoActivePty: (text: string) => boolean;
   /** Open a new preview tab (in-app iframe) at the given URL. */
   openPreview: (url: string) => boolean;
-  /**
-   * Set of absolute paths the model has read this session via `read_file`.
-   * `edit`/`multi_edit` enforce read-before-edit by checking membership.
-   * Mutated as a side effect of successful read_file calls.
-   */
-  readCache: Set<string>;
+  readCache: Map<string, { size: number; hash: number }>;
   /** Active chat session id — used by tools that persist per-session state (todos). */
   getSessionId: () => string | null;
 };

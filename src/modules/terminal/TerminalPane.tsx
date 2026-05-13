@@ -1,7 +1,7 @@
 import { useTheme } from "@/modules/theme";
 import type { SearchAddon } from "@xterm/addon-search";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { useTerminalSession, type TeraxOpenInput } from "./lib/useTerminalSession";
+import { useTerminalSession } from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
@@ -11,27 +11,28 @@ export type TerminalPaneHandle = {
 };
 
 type Props = {
-  tabId: number;
+  /** Stable identifier for this leaf (passed back through callbacks). */
+  leafId: number;
+  /** Tab containing this pane is on screen. */
   visible: boolean;
+  /** This leaf is the active pane within its tab — receives auto-focus. */
+  focused?: boolean;
   initialCwd?: string;
-  onSearchReady?: (tabId: number, addon: SearchAddon) => void;
-  onExit?: (tabId: number, code: number) => void;
-  onCwd?: (tabId: number, cwd: string) => void;
-  onDetectedLocalUrl?: (tabId: number, url: string) => void;
-  onTeraxOpen?: (tabId: number, input: TeraxOpenInput) => void;
+  onSearchReady?: (leafId: number, addon: SearchAddon) => void;
+  onExit?: (leafId: number, code: number) => void;
+  onCwd?: (leafId: number, cwd: string) => void;
 };
 
 export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
   function TerminalPane(
     {
-      tabId,
+      leafId,
       visible,
+      focused = true,
       initialCwd,
       onSearchReady,
       onExit,
       onCwd,
-      onDetectedLocalUrl,
-      onTeraxOpen,
     },
     ref,
   ) {
@@ -39,14 +40,14 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
     const { resolvedTheme } = useTheme();
 
     const session = useTerminalSession({
+      leafId,
       container: containerRef,
       visible,
+      focused,
       initialCwd,
-      onSearchReady: (a) => onSearchReady?.(tabId, a),
-      onExit: (c) => onExit?.(tabId, c),
-      onCwd: (c) => onCwd?.(tabId, c),
-      onDetectedLocalUrl: (u) => onDetectedLocalUrl?.(tabId, u),
-      onTeraxOpen: (input) => onTeraxOpen?.(tabId, input),
+      onSearchReady: (a) => onSearchReady?.(leafId, a),
+      onExit: (c) => onExit?.(leafId, c),
+      onCwd: (c) => onCwd?.(leafId, c),
     });
 
     useEffect(() => {

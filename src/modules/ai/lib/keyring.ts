@@ -4,6 +4,7 @@ import {
   KEYRING_SERVICE,
   PROVIDERS,
   providerNeedsKey,
+  providerSupportsKey,
   type ProviderId,
 } from "../config";
 
@@ -18,11 +19,13 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   cerebras: null,
   groq: null,
   deepseek: null,
+  openrouter: null,
+  "openai-compatible": null,
   lmstudio: null,
 };
 
 export async function getKey(provider: ProviderId): Promise<string | null> {
-  if (!providerNeedsKey(provider)) return null;
+  if (!providerSupportsKey(provider)) return null;
   try {
     const v = await invoke<string | null>("secrets_get", {
       service: KEYRING_SERVICE,
@@ -35,7 +38,7 @@ export async function getKey(provider: ProviderId): Promise<string | null> {
 }
 
 export async function setKey(provider: ProviderId, key: string): Promise<void> {
-  if (!providerNeedsKey(provider)) {
+  if (!providerSupportsKey(provider)) {
     throw new Error(`${provider} does not use an API key`);
   }
   const trimmed = key.trim();
@@ -48,7 +51,7 @@ export async function setKey(provider: ProviderId, key: string): Promise<void> {
 }
 
 export async function clearKey(provider: ProviderId): Promise<void> {
-  if (!providerNeedsKey(provider)) return;
+  if (!providerSupportsKey(provider)) return;
   try {
     await invoke("secrets_delete", {
       service: KEYRING_SERVICE,
@@ -61,7 +64,7 @@ export async function clearKey(provider: ProviderId): Promise<void> {
 
 export async function getAllKeys(): Promise<ProviderKeys> {
   const out = { ...EMPTY_PROVIDER_KEYS };
-  const need = PROVIDERS.filter((p) => providerNeedsKey(p.id));
+  const need = PROVIDERS.filter((p) => providerSupportsKey(p.id));
   try {
     const results = await invoke<(string | null)[]>("secrets_get_all", {
       service: KEYRING_SERVICE,
@@ -82,7 +85,7 @@ export async function getAllKeys(): Promise<ProviderKeys> {
 }
 
 export function hasAnyKey(keys: ProviderKeys): boolean {
-  return PROVIDERS.some((p) => providerNeedsKey(p.id) && !!keys[p.id]);
+  return PROVIDERS.some((p) => providerSupportsKey(p.id) && !!keys[p.id]);
 }
 
 export function hasAnyProviderConnection(keys: ProviderKeys): boolean {

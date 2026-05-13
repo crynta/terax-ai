@@ -11,7 +11,6 @@ import {
 import { cn } from "@/lib/utils";
 import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { math } from "@streamdown/math";
 import type { UIMessage } from "ai";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
 import {
@@ -319,7 +318,6 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
-const streamdownPlugins = { math };
 const streamdownComponents = { code: MarkdownCode };
 
 export const MessageResponse = memo(
@@ -329,7 +327,6 @@ export const MessageResponse = memo(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className,
       )}
-      plugins={streamdownPlugins}
       components={streamdownComponents}
       {...props}
     />

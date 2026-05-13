@@ -13,10 +13,31 @@ pub fn build_command(cwd: Option<String>) -> Result<CommandBuilder, String> {
     }
 }
 
+fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
+    let is_utf8 = |v: &str| {
+        let up = v.to_ascii_uppercase();
+        up.contains("UTF-8") || up.contains("UTF8")
+    };
+    let already_utf8 = ["LC_ALL", "LC_CTYPE", "LANG"]
+        .iter()
+        .any(|k| std::env::var(k).ok().as_deref().is_some_and(is_utf8));
+    if already_utf8 {
+        return;
+    }
+    #[cfg(target_os = "macos")]
+    let fallback = "en_US.UTF-8";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let fallback = "C.UTF-8";
+    #[cfg(windows)]
+    let fallback = "en_US.UTF-8";
+    cmd.env("LANG", fallback);
+}
+
 fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERAX_TERMINAL", "1");
+    ensure_utf8_locale(cmd);
 
     let resolved_cwd = cwd
         .map(PathBuf::from)
@@ -46,10 +67,12 @@ mod unix {
     const ZLOGIN: &str = include_str!("scripts/zlogin.zsh");
     const ZSHRC: &str = include_str!("scripts/zshrc.zsh");
     const BASHRC: &str = include_str!("scripts/bashrc.bash");
+    const FISH_INIT: &str = include_str!("scripts/init.fish");
 
     pub enum Shell {
         Zsh,
         Bash,
+        Fish,
         Other,
     }
 
@@ -60,6 +83,7 @@ mod unix {
             let shell = match name.as_str() {
                 "zsh" => Shell::Zsh,
                 "bash" => Shell::Bash,
+                "fish" => Shell::Fish,
                 _ => Shell::Other,
             };
             (shell, path)
@@ -102,6 +126,18 @@ mod unix {
                 // /etc/profile from inside our rcfile to emulate login init.
                 cmd.arg("-i");
             }
+            Shell::Fish => {
+                match prepare_fish_init() {
+                    Ok(init) => {
+                        cmd.arg("--init-command");
+                        cmd.arg(format!("source {}", shell_quote(&init)));
+                    }
+                    Err(e) => {
+                        log::warn!("fish shell integration disabled: {e}");
+                    }
+                }
+                cmd.arg("-i");
+            }
             Shell::Other => {
                 log::info!(
                     "unsupported shell '{}', spawning without integration",
@@ -110,6 +146,11 @@ mod unix {
             }
         }
         Ok(cmd)
+    }
+
+    fn shell_quote(p: &Path) -> String {
+        let s = p.to_string_lossy();
+        format!("'{}'", s.replace('\'', "'\\''"))
     }
 
     fn integration_root() -> Result<PathBuf, String> {
@@ -135,6 +176,14 @@ mod unix {
         let rc = dir.join("bashrc");
         write_if_changed(&rc, BASHRC)?;
         Ok(rc)
+    }
+
+    fn prepare_fish_init() -> Result<PathBuf, String> {
+        let dir = integration_root()?.join("fish");
+        fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+        let init = dir.join("init.fish");
+        write_if_changed(&init, FISH_INIT)?;
+        Ok(init)
     }
 
     fn write_if_changed(path: &Path, content: &str) -> Result<(), String> {

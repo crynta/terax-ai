@@ -5,7 +5,7 @@
   <p><strong>Open-source lightweight cross-platform AI-native terminal (ADE)</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-0.5.9-blue" alt="version" />
+    <img src="https://img.shields.io/badge/version-0.6.3-blue" alt="version" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
 
@@ -67,6 +67,11 @@ Terax is a fast, lightweight AI terminal (ADE) built on Tauri 2 + Rust and React
 - **SmartScreen warning**: Windows will show "Windows protected your PC" on first launch because we (temporarily) don't have a code-signing certificate yet. Click **More info** → **Run anyway**. This is normal for unsigned open-source apps.
 
 The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `powershell.exe` (Windows PowerShell 5.1) → `cmd.exe`.
+
+## Linux notes
+
+- **Arch / AUR**: install via `yay -S terax-bin` (or `paru`, etc.). Tracks the latest release.
+- **AppImage**: needs FUSE. Without it: `./Terax_*.AppImage --appimage-extract-and-run`. On Wayland with rendering glitches, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`; otherwise use the `.deb` / `.rpm` which link against the system's GTK stack.
 
 ## Configure AI
 

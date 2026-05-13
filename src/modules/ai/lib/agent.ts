@@ -1,37 +1,26 @@
 import {
-  Experimental_Agent as Agent,
-  DirectChatTransport,
+  convertToModelMessages,
   stepCountIs,
+  streamText,
   type LanguageModel,
+  type ModelMessage,
+  type UIMessage,
 } from "ai";
 import {
   DEFAULT_MODEL_ID,
   getModel,
+  getModelContextLimit,
   LMSTUDIO_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
   providerNeedsKey,
-  SYSTEM_PROMPT,
+  selectSystemPrompt,
   type ModelId,
   type ProviderId,
 } from "../config";
 import type { ProviderKeys } from "./keyring";
+import { proxyFetch } from "./proxyFetch";
 import { buildTools, type ToolContext } from "../tools/tools";
-
-type AgentDeps = {
-  keys: ProviderKeys;
-  modelId?: ModelId;
-  customInstructions?: string;
-  /** Persona / role for this conversation (system prompt addendum). */
-  agentPersona?: { name: string; instructions: string } | null;
-  toolContext: ToolContext;
-  onStep?: (step: string | null) => void;
-  /** Override base URL for OpenAI-compatible providers (LM Studio). */
-  lmstudioBaseURL?: string;
-  /** True when /plan is active — agent should batch edits for review. */
-  planMode?: boolean;
-  /** Contents of TERAX.md at workspace root, if present. Appended verbatim. */
-  projectMemory?: string | null;
-};
+import { compactModelMessages } from "./compact";
 
 const TOOL_LABELS: Record<string, (input: Record<string, unknown>) => string> = {
   read_file: (i) => `Reading ${shortPath(i.path)}`,
@@ -66,15 +55,11 @@ function ellipsize(s: string, max: number): string {
 }
 
 export type BuildModelOptions = {
-  /** Override the model id (used by autocomplete with custom LM Studio model). */
   modelIdOverride?: string;
-  /** Override LM Studio base URL. Defaults to `LMSTUDIO_DEFAULT_BASE_URL`. */
   lmstudioBaseURL?: string;
+  openaiCompatibleBaseURL?: string;
 };
 
-// Memoize built models. Provider clients are not free to construct — they
-// register middleware and parse keys — and we'd otherwise rebuild one per
-// `sendMessages` call. Keyed on the full identity that affects the result.
 const modelCache = new Map<string, LanguageModel>();
 
 export async function buildLanguageModel(
@@ -89,8 +74,9 @@ export async function buildLanguageModel(
     );
   }
   const key = keys[provider] ?? "";
-  const baseURL = options.lmstudioBaseURL ?? LMSTUDIO_DEFAULT_BASE_URL;
-  const cacheKey = `${provider}\u0000${key}\u0000${resolvedModelId}\u0000${baseURL}`;
+  const lmstudioURL = options.lmstudioBaseURL ?? LMSTUDIO_DEFAULT_BASE_URL;
+  const compatURL = options.openaiCompatibleBaseURL ?? "";
+  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL}`;
   const hit = modelCache.get(cacheKey);
   if (hit) return hit;
 
@@ -103,7 +89,7 @@ export async function buildLanguageModel(
     }
     case "codex": {
       throw new Error(
-        "Codex account is connected through Settings, but Codex chat transport is not wired into the Terax AI panel yet.",
+        "Codex models use the dedicated Codex transport instead of AI SDK language models.",
       );
     }
     case "anthropic": {
@@ -142,13 +128,47 @@ export async function buildLanguageModel(
       built = createGroq({ apiKey: key })(resolvedModelId);
       break;
     }
+    case "openrouter": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "openrouter",
+        baseURL: "https://openrouter.ai/api/v1",
+        apiKey: key,
+        headers: {
+          "HTTP-Referer": "https://terax.ai",
+          "X-Title": "Terax",
+        },
+      })(resolvedModelId);
+      break;
+    }
+    case "openai-compatible": {
+      if (!compatURL) {
+        throw new Error(
+          "OpenAI-compatible provider has no base URL. Set it in Settings → Models.",
+        );
+      }
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "openai-compatible",
+        baseURL: compatURL,
+        apiKey: key || undefined,
+        fetch: proxyFetch,
+      })(resolvedModelId);
+      break;
+    }
     case "lmstudio": {
       const { createOpenAICompatible } = await import(
         "@ai-sdk/openai-compatible"
       );
-      built = createOpenAICompatible({ name: "lmstudio", baseURL })(
-        resolvedModelId,
-      );
+      built = createOpenAICompatible({
+        name: "lmstudio",
+        baseURL: lmstudioURL,
+        fetch: proxyFetch,
+      })(resolvedModelId);
       break;
     }
     default: {
@@ -164,65 +184,178 @@ function buildModel(
   modelId: ModelId,
   keys: ProviderKeys,
   lmstudioBaseURL?: string,
+  lmstudioModelId?: string,
+  openaiCompatibleBaseURL?: string,
+  openaiCompatibleModelId?: string,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
-  return buildLanguageModel(m.provider, keys, m.id, { lmstudioBaseURL });
+  let resolvedId: string = m.id;
+  if (m.id === "lmstudio-local") {
+    if (!lmstudioModelId?.trim()) {
+      throw new Error(
+        "LM Studio: no model id set. Open Settings → Models and enter the model id loaded in LM Studio.",
+      );
+    }
+    resolvedId = lmstudioModelId.trim();
+  } else if (m.id === "openai-compatible-custom") {
+    if (!openaiCompatibleModelId?.trim()) {
+      throw new Error(
+        "OpenAI-compatible: no model id set. Open Settings → Models.",
+      );
+    }
+    resolvedId = openaiCompatibleModelId.trim();
+  }
+  return buildLanguageModel(m.provider, keys, resolvedId, {
+    lmstudioBaseURL,
+    openaiCompatibleBaseURL,
+  });
 }
 
-export async function createTeraxAgent({
-  keys,
-  modelId = DEFAULT_MODEL_ID,
-  customInstructions,
-  agentPersona,
-  toolContext,
-  onStep,
-  lmstudioBaseURL,
-  planMode,
-  projectMemory,
-}: AgentDeps) {
-  const trimmedCustom = customInstructions?.trim();
-  const personaBlock = agentPersona?.instructions.trim()
-    ? `\n\n## ACTIVE AGENT — ${agentPersona.name}\n${agentPersona.instructions.trim()}`
+const PLAN_MODE_PROMPT = `## PLAN MODE — ACTIVE
+Mutating tools (write_file, edit, multi_edit, create_directory) will queue their changes for the user to review as a single diff. Do NOT execute bash_run or bash_background while plan mode is active — restrict yourself to reads (read_file, grep, glob, list_directory) and the queued mutations. After queueing the full set of edits, stop and return a brief summary; do not continue acting until the user has accepted/rejected.`;
+
+function buildStableSystem(
+  modelId: ModelId,
+  persona: { name: string; instructions: string } | null,
+  customInstructions: string | undefined,
+  projectMemory: string | null,
+): string {
+  const base = selectSystemPrompt(getModel(modelId).id);
+  const personaBlock = persona?.instructions.trim()
+    ? `\n\n## ACTIVE AGENT — ${persona.name}\n${persona.instructions.trim()}`
     : "";
-  const customBlock = trimmedCustom
-    ? `\n\n## USER CUSTOM INSTRUCTIONS — follow unless they conflict with safety rules above\n${trimmedCustom}`
+  const customBlock = customInstructions?.trim()
+    ? `\n\n## USER CUSTOM INSTRUCTIONS — follow unless they conflict with safety rules above\n${customInstructions.trim()}`
     : "";
   const memoryBlock =
     projectMemory && projectMemory.trim().length > 0
       ? `\n\n## PROJECT — TERAX.md\n${projectMemory.trim()}`
       : "";
-  const planBlock = planMode
-    ? `\n\n## PLAN MODE — ACTIVE\nMutating tools (write_file, edit, multi_edit, create_directory) will queue their changes for the user to review as a single diff. Do NOT execute bash_run or bash_background while plan mode is active — restrict yourself to reads (read_file, grep, glob, list_directory) and the queued mutations. After queueing the full set of edits, stop and return a brief summary; do not continue acting until the user has accepted/rejected.`
-    : "";
-  const instructions = `${SYSTEM_PROMPT}${memoryBlock}${personaBlock}${customBlock}${planBlock}`;
-  const model = await buildModel(modelId, keys, lmstudioBaseURL);
-  return new Agent({
+  return `${base}${memoryBlock}${personaBlock}${customBlock}`;
+}
+
+// OpenAI / Gemini / DeepSeek apply prefix caching automatically; only
+// Anthropic needs explicit breakpoints. Mark the stable system prefix and
+// the rotating conversation tail.
+function applyCacheBreakpoints(
+  messages: ModelMessage[],
+  provider: ProviderId,
+): ModelMessage[] {
+  if (provider !== "anthropic" || messages.length === 0) return messages;
+  const marker = { anthropic: { cacheControl: { type: "ephemeral" as const } } };
+  const withMarker = (m: ModelMessage): ModelMessage => ({
+    ...m,
+    providerOptions: { ...(m.providerOptions ?? {}), ...marker },
+  });
+  const out = messages.slice();
+  out[0] = withMarker(out[0]);
+  const lastIdx = out.length - 1;
+  if (lastIdx > 0) out[lastIdx] = withMarker(out[lastIdx]);
+  return out;
+}
+
+export type AgentUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+};
+
+const EMPTY_USAGE: AgentUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cachedInputTokens: 0,
+};
+
+export type RunAgentOptions = {
+  keys: ProviderKeys;
+  modelId?: ModelId;
+  customInstructions?: string;
+  agentPersona?: { name: string; instructions: string } | null;
+  toolContext: ToolContext;
+  onStep?: (step: string | null) => void;
+  onUsage?: (delta: AgentUsage) => void;
+  lmstudioBaseURL?: string;
+  lmstudioModelId?: string;
+  openaiCompatibleBaseURL?: string;
+  openaiCompatibleModelId?: string;
+  planMode?: boolean;
+  projectMemory?: string | null;
+  envBlock?: string | null;
+  uiMessages: UIMessage[];
+  abortSignal?: AbortSignal;
+};
+
+export async function runAgentStream(opts: RunAgentOptions) {
+  const modelId = opts.modelId ?? DEFAULT_MODEL_ID;
+  const model = await buildModel(
+    modelId,
+    opts.keys,
+    opts.lmstudioBaseURL,
+    opts.lmstudioModelId,
+    opts.openaiCompatibleBaseURL,
+    opts.openaiCompatibleModelId,
+  );
+  const provider = getModel(modelId).provider;
+
+  const stableSystem = buildStableSystem(
+    modelId,
+    opts.agentPersona ?? null,
+    opts.customInstructions,
+    opts.projectMemory ?? null,
+  );
+
+  const history = await convertToModelMessages(opts.uiMessages);
+  const compactedHistory = compactModelMessages(
+    history,
+    getModelContextLimit(getModel(modelId).id),
+  );
+
+  const messages: ModelMessage[] = [
+    { role: "system", content: stableSystem },
+  ];
+  if (opts.envBlock?.trim()) {
+    messages.push({ role: "system", content: opts.envBlock });
+  }
+  if (opts.planMode) {
+    messages.push({ role: "system", content: PLAN_MODE_PROMPT });
+  }
+  messages.push(...compactedHistory);
+
+  const finalMessages = applyCacheBreakpoints(messages, provider);
+
+  return streamText({
     model,
-    instructions,
-    tools: buildTools(toolContext),
+    messages: finalMessages,
+    tools: buildTools(opts.toolContext),
     stopWhen: stepCountIs(MAX_AGENT_STEPS),
+    abortSignal: opts.abortSignal,
     onStepFinish: (step) => {
-      if (!onStep) return;
-      const last = step.toolCalls?.[step.toolCalls.length - 1];
-      if (last) {
-        const label = TOOL_LABELS[last.toolName];
-        onStep(
-          label
-            ? label((last.input ?? {}) as Record<string, unknown>)
-            : `Calling ${last.toolName}`,
-        );
-      } else if (step.text) {
-        onStep("Writing");
+      if (opts.onStep) {
+        const last = step.toolCalls?.[step.toolCalls.length - 1];
+        if (last) {
+          const label = TOOL_LABELS[last.toolName];
+          opts.onStep(
+            label
+              ? label((last.input ?? {}) as Record<string, unknown>)
+              : `Calling ${last.toolName}`,
+          );
+        } else if (step.text) {
+          opts.onStep("Writing");
+        }
+      }
+      if (opts.onUsage && step.usage) {
+        const u = step.usage;
+        opts.onUsage({
+          inputTokens: u.inputTokens ?? 0,
+          outputTokens: u.outputTokens ?? 0,
+          cachedInputTokens: u.inputTokenDetails?.cacheReadTokens ?? 0,
+        });
       }
     },
     onFinish: () => {
-      onStep?.(null);
+      opts.onStep?.(null);
     },
   });
 }
 
-export type TeraxAgent = Awaited<ReturnType<typeof createTeraxAgent>>;
-
-export function createTeraxTransport(agent: TeraxAgent) {
-  return new DirectChatTransport({ agent });
-}
+export { EMPTY_USAGE };
