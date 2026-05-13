@@ -178,9 +178,7 @@ export function flushPersist(id?: string): void {
 }
 
 function makeChat(sessionId: string): Chat<UIMessage> {
-  // Per-session read cache: paths the model has called `read_file` on.
-  // `edit`/`multi_edit` enforce read-before-edit by checking membership.
-  const readCache = new Set<string>();
+  const readCache = new Map<string, { size: number; hash: number }>();
   const toolContext: ToolContext = {
     getCwd: () => useChatStore.getState().live.getCwd(),
     getWorkspaceRoot: () =>
