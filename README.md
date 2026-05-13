@@ -5,7 +5,7 @@
   <p><strong>Open-source lightweight cross-platform AI-native terminal (ADE)</strong></p>
 
   <p>
-    <img src="https://img.shields.io/badge/version-0.5.9-blue" alt="version" />
+    <img src="https://img.shields.io/badge/version-0.6.3-blue" alt="version" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
 
@@ -70,13 +70,8 @@ The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `pow
 
 ## Linux notes
 
-- **Blank window / `EGL_BAD_PARAMETER`**: WebKitGTK's hardware (DMA-BUF) renderer fails on some Wayland setups. Terax disables it automatically when it detects the NVIDIA proprietary driver; on other affected setups (some wlroots compositors, minimal sessions) escalate in order:
-  1. `WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Terax_*.AppImage` (`=0` forces the hardware path back on)
-  2. `WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Terax_*.AppImage`
-  3. `LIBGL_ALWAYS_SOFTWARE=1 ./Terax_*.AppImage` (software rendering — slow, last resort)
-  4. Install the **`.deb` / `.rpm`** instead — they use your system's GTK/GPU libraries directly and sidestep AppImage bundling conflicts entirely.
-- **AppImage**: needs FUSE. On systems without it, run `./Terax_*.AppImage --appimage-extract-and-run`.
-- **NixOS**: prebuilt binaries can't see the system GPU stack, so the AppImage may fail with an EGL error regardless of the above. Run it through `nix run nixpkgs#appimage-run -- ./Terax_*.AppImage`, use `nixGL`, or build from source.
+- **Arch / AUR**: install via `yay -S terax-bin` (or `paru`, etc.). Tracks the latest release.
+- **AppImage**: needs FUSE. Without it: `./Terax_*.AppImage --appimage-extract-and-run`. On Wayland with rendering glitches, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`; otherwise use the `.deb` / `.rpm` which link against the system's GTK stack.
 
 ## Configure AI
 

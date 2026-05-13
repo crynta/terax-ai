@@ -42,11 +42,10 @@ export const native = {
     invoke<void>("fs_write_file", { path, content }),
   createFile: (path: string) => invoke<void>("fs_create_file", { path }),
   createDir: (path: string) => invoke<void>("fs_create_dir", { path }),
+  // AI tooling never sees dot-prefixed entries regardless of the user's
+  // explorer preference — keeps .git / .env / .ssh out of agent context.
   readDir: (path: string) =>
-    invoke<DirEntry[]>("fs_read_dir", {
-      path,
-      showHiddenDirectories: false,
-    }),
+    invoke<DirEntry[]>("fs_read_dir", { path, showHidden: false }),
   grep: (params: {
     pattern: string;
     root: string;

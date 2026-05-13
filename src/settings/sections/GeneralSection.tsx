@@ -22,7 +22,7 @@ import {
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
-  setShowHiddenDirectories,
+  setShowHidden,
   setTerminalFontSize,
   setTerminalWebglEnabled,
   setVimMode,
@@ -57,9 +57,7 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
-  const showHiddenDirectories = usePreferencesStore(
-    (s) => s.showHiddenDirectories,
-  );
+  const showHidden = usePreferencesStore((s) => s.showHidden);
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
@@ -177,12 +175,12 @@ export function GeneralSection() {
       <div className="flex flex-col gap-2">
         <Label>Explorer</Label>
         <SettingRow
-          title="Show hidden folders"
-          description="Include dot-prefixed folders such as .config in the file explorer."
+          title="Show hidden files"
+          description="Include dot-prefixed files and folders (.env, .gitignore, .config) in the file explorer and search."
         >
           <Switch
-            checked={showHiddenDirectories}
-            onCheckedChange={(v) => void setShowHiddenDirectories(v)}
+            checked={showHidden}
+            onCheckedChange={(v) => void setShowHidden(v)}
           />
         </SettingRow>
       </div>

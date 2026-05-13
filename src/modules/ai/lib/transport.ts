@@ -1,7 +1,6 @@
 import type { UIMessage } from "@ai-sdk/react";
-import { DirectChatTransport } from "ai";
-import { TERMINAL_BUFFER_LINES, type ModelId } from "../config";
-import { createTeraxAgent } from "./agent";
+import { type ModelId } from "../config";
+import { runAgentStream, type AgentUsage } from "./agent";
 import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
 import type { ToolContext } from "../tools/tools";
@@ -14,7 +13,6 @@ async function readTeraxMd(workspaceRoot: string | null): Promise<string | null>
   if (!workspaceRoot) return null;
   const path = `${workspaceRoot.replace(/\/$/, "")}/TERAX.md`;
   const cached = projectMemoryCache.get(workspaceRoot);
-  // Cache for 30s — cheap re-read after that to pick up edits.
   if (cached && Date.now() - cached.mtime < 30_000) return cached.content;
   try {
     const r = await native.readFile(path);
@@ -36,13 +34,10 @@ async function readTeraxMd(workspaceRoot: string | null): Promise<string | null>
 
 type LiveSnapshot = {
   cwd: string | null;
-  terminal: string | null;
   terminalPrivate: boolean;
   workspaceRoot: string | null;
   activeFile: string | null;
 };
-
-const MAX_TERMINAL_CHARS = 12_000;
 
 type Deps = {
   getKeys: () => ProviderKeys;
@@ -56,124 +51,60 @@ type Deps = {
   getOpenaiCompatibleBaseURL?: () => string | undefined;
   getOpenaiCompatibleModelId?: () => string | undefined;
   onStep?: (step: string | null) => void;
+  onUsage?: (delta: AgentUsage) => void;
   getPlanMode?: () => boolean;
 };
 
+type SendOptions = {
+  messages: UIMessage[];
+  abortSignal?: AbortSignal;
+  [k: string]: unknown;
+};
+
 export function createContextAwareTransport(deps: Deps) {
+  const run = async (options: SendOptions) => {
+    const live = deps.getLive();
+    const projectMemory = await readTeraxMd(live.workspaceRoot);
+    const envBlock = formatEnvBlock(live);
+    const result = await runAgentStream({
+      keys: deps.getKeys(),
+      modelId: deps.getModelId(),
+      customInstructions: deps.getCustomInstructions(),
+      agentPersona: deps.getAgentPersona(),
+      toolContext: deps.toolContext,
+      onStep: deps.onStep,
+      onUsage: deps.onUsage,
+      lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
+      lmstudioModelId: deps.getLmstudioModelId?.(),
+      openaiCompatibleBaseURL: deps.getOpenaiCompatibleBaseURL?.(),
+      openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
+      planMode: deps.getPlanMode?.(),
+      projectMemory,
+      envBlock,
+      uiMessages: options.messages,
+      abortSignal: options.abortSignal,
+    });
+    return result.toUIMessageStream({
+      originalMessages: options.messages,
+    });
+  };
+
   return {
-    async sendMessages(options: {
-      messages: UIMessage[];
-      [k: string]: unknown;
-    }) {
-      const live = deps.getLive();
-      const projectMemory = await readTeraxMd(live.workspaceRoot);
-      const agent = await createTeraxAgent({
-        keys: deps.getKeys(),
-        modelId: deps.getModelId(),
-        customInstructions: deps.getCustomInstructions(),
-        agentPersona: deps.getAgentPersona(),
-        toolContext: deps.toolContext,
-        onStep: deps.onStep,
-        lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
-        lmstudioModelId: deps.getLmstudioModelId?.(),
-        openaiCompatibleBaseURL: deps.getOpenaiCompatibleBaseURL?.(),
-        openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
-        planMode: deps.getPlanMode?.(),
-        projectMemory,
-      });
-      const base = new DirectChatTransport({ agent });
-      const augmented = injectContext(options.messages, deps.getLive());
-      return base.sendMessages({
-        ...options,
-        messages: augmented,
-      } as Parameters<typeof base.sendMessages>[0]);
-    },
-    async reconnectToStream(options: unknown) {
-      const live = deps.getLive();
-      const projectMemory = await readTeraxMd(live.workspaceRoot);
-      const agent = await createTeraxAgent({
-        keys: deps.getKeys(),
-        modelId: deps.getModelId(),
-        customInstructions: deps.getCustomInstructions(),
-        agentPersona: deps.getAgentPersona(),
-        toolContext: deps.toolContext,
-        onStep: deps.onStep,
-        lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
-        lmstudioModelId: deps.getLmstudioModelId?.(),
-        openaiCompatibleBaseURL: deps.getOpenaiCompatibleBaseURL?.(),
-        openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
-        planMode: deps.getPlanMode?.(),
-        projectMemory,
-      });
-      const base = new DirectChatTransport({ agent });
-      type ReconnectArg = Parameters<typeof base.reconnectToStream>[0];
-      return base.reconnectToStream(options as ReconnectArg);
+    sendMessages: run,
+    async reconnectToStream(): Promise<null> {
+      return null;
     },
   };
 }
 
-function injectContext(messages: UIMessage[], live: LiveSnapshot): UIMessage[] {
-  if (
-    !live.cwd &&
-    !live.terminal &&
-    !live.workspaceRoot &&
-    !live.terminalPrivate
-  )
-    return messages;
-  const lastUserIdx = lastIndex(messages, (m) => m.role === "user");
-  if (lastUserIdx === -1) return messages;
-
-  const block = formatContextBlock(live);
-  return messages.map((m, i) => {
-    if (i !== lastUserIdx) return m;
-    const contextPart = { type: "text" as const, text: block };
-    return {
-      ...m,
-      parts: [contextPart, ...m.parts] as UIMessage["parts"],
-    };
-  });
-}
-
-function formatContextBlock(live: LiveSnapshot): string {
-  const lines = [
-    '<terminal-context note="auto-injected, read-only">',
-    `workspace_root: ${live.workspaceRoot ?? "(unknown)"}`,
-    `active_terminal_cwd: ${live.cwd ?? "(unknown)"}`,
-  ];
+function formatEnvBlock(live: LiveSnapshot): string | null {
+  const lines: string[] = [];
+  if (live.workspaceRoot) lines.push(`workspace_root: ${live.workspaceRoot}`);
+  if (live.cwd) lines.push(`active_terminal_cwd: ${live.cwd}`);
   if (live.activeFile) lines.push(`active_file: ${live.activeFile}`);
-  if (live.terminalPrivate) {
-    lines.push(
-      "active_terminal_mode: private",
-      "recent_terminal_output: (hidden — the user opened this terminal in Privacy mode; its buffer is intentionally withheld from you. Do not ask the user to paste it; if they want you to see it, they'll switch to a regular tab.)",
-    );
-  } else if (live.terminal) {
-    const trimmed = capChars(
-      lastNLines(live.terminal, TERMINAL_BUFFER_LINES),
-      MAX_TERMINAL_CHARS,
-    );
-    lines.push("recent_terminal_output:");
-    lines.push("```");
-    lines.push(trimmed);
-    lines.push("```");
-  }
-  lines.push("</terminal-context>");
-  lines.push("");
-  return lines.join("\n");
-}
-
-function lastNLines(s: string, n: number): string {
-  const all = s.split("\n");
-  return all.length <= n ? s : all.slice(all.length - n).join("\n");
-}
-
-function capChars(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return `…[truncated ${s.length - max} chars]…\n${s.slice(s.length - max)}`;
-}
-
-function lastIndex<T>(arr: T[], pred: (x: T) => boolean): number {
-  for (let i = arr.length - 1; i >= 0; i--) if (pred(arr[i])) return i;
-  return -1;
+  if (live.terminalPrivate) lines.push("active_terminal_mode: private");
+  if (lines.length === 0) return null;
+  return `<env>\n${lines.join("\n")}\n</env>`;
 }
 
 export const CONTEXT_BLOCK_RE =

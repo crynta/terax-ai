@@ -29,7 +29,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
 import { useEffect, useMemo } from "react";
-import { getModel, getModelContextLimit } from "../config";
+import { estimateCost, getModel, getModelContextLimit } from "../config";
 import type { SessionMeta } from "../lib/sessions";
 import { useAgentsStore } from "../store/agentsStore";
 import { getOrCreateChat, useChatStore } from "../store/chatStore";
@@ -283,7 +283,10 @@ function formatTokens(n: number): string {
 
 function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const modelId = useChatStore((s) => s.selectedModelId);
-  const used = useMemo(() => estimateTokens(messages), [messages]);
+  const tokens = useChatStore((s) => s.agentMeta.tokens);
+  const estimated = useMemo(() => estimateTokens(messages), [messages]);
+  const reported = tokens.inputTokens + tokens.outputTokens;
+  const used = reported > 0 ? tokens.inputTokens : estimated;
   const max = getModelContextLimit(modelId);
   const modelLabel = useMemo(() => {
     try {
@@ -292,6 +295,11 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
       return modelId;
     }
   }, [modelId]);
+  const cost = estimateCost(modelId, tokens);
+  const cacheRate =
+    tokens.inputTokens > 0
+      ? Math.round((tokens.cachedInputTokens / tokens.inputTokens) * 100)
+      : 0;
 
   return (
     <Context usedTokens={used} maxTokens={max} modelId={modelId}>
@@ -304,11 +312,35 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
             <span className="font-mono text-foreground">{modelLabel}</span>
           </div>
           <div className="mt-1 flex items-center justify-between text-muted-foreground">
-            <span>Estimated used</span>
+            <span>{reported > 0 ? "Input" : "Estimated input"}</span>
             <span className="font-mono text-foreground">
               {formatTokens(used)}
             </span>
           </div>
+          {reported > 0 && (
+            <>
+              <div className="flex items-center justify-between text-muted-foreground">
+                <span>Output</span>
+                <span className="font-mono text-foreground">
+                  {formatTokens(tokens.outputTokens)}
+                </span>
+              </div>
+              {tokens.cachedInputTokens > 0 && (
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Cache hit</span>
+                  <span className="font-mono text-foreground">{cacheRate}%</span>
+                </div>
+              )}
+              {cost != null && (
+                <div className="flex items-center justify-between text-muted-foreground">
+                  <span>Session cost</span>
+                  <span className="font-mono text-foreground">
+                    ${cost.toFixed(cost < 0.01 ? 4 : cost < 1 ? 3 : 2)}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
           <div className="flex items-center justify-between text-muted-foreground">
             <span>Window</span>
             <span className="font-mono text-foreground">
@@ -318,7 +350,9 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
         </ContextContentBody>
         <ContextContentFooter>
           <span className="text-[10px] italic text-muted-foreground">
-            Token count is approximate (chars / 4).
+            {reported > 0
+              ? "Reported by provider; cost is an estimate."
+              : "Token count is approximate (chars / 4)."}
           </span>
         </ContextContentFooter>
       </ContextContent>
