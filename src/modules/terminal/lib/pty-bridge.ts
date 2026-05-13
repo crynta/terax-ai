@@ -1,4 +1,5 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 
 export type PtyHandlers = {
   onData: (bytes: Uint8Array) => void;
@@ -29,6 +30,7 @@ export async function openPty(
     cols,
     rows,
     cwd: cwd ?? null,
+    workspace: currentWorkspaceEnv(),
     onData,
     onExit,
   });

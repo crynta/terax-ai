@@ -7,6 +7,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 import { motion } from "motion/react";
 import {
   forwardRef,
@@ -82,6 +83,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
           root: rootPath,
           query: q,
           limit: 200,
+          workspace: currentWorkspaceEnv(),
         });
         if (alive) setResults(hits);
       } catch (e) {
