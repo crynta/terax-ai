@@ -174,10 +174,12 @@ export async function buildLanguageModel(
         "@ai-sdk/openai-compatible"
       );
       const baseURL = options.opencodeBaseURL ?? getOpenCodeBaseURL("go");
+      const { nativeFetch } = await import("./nativeFetch");
       built = createOpenAICompatible({
         name: "opencode",
         baseURL,
         apiKey: key,
+        fetch: nativeFetch,
       })(resolvedModelId);
       break;
     }

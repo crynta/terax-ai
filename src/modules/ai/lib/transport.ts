@@ -1,5 +1,5 @@
 import type { UIMessage } from "@ai-sdk/react";
-import { type ModelId } from "../config";
+import { type ModelId, type OpenCodeMode } from "../config";
 import { runAgentStream, type AgentUsage } from "./agent";
 import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
@@ -51,7 +51,7 @@ type Deps = {
   getOpenaiCompatibleBaseURL?: () => string | undefined;
   getOpenaiCompatibleModelId?: () => string | undefined;
   getOpencodeModelId?: () => string;
-  getOpencodeMode?: () => string;
+  getOpencodeMode?: () => OpenCodeMode;
   onStep?: (step: string | null) => void;
   onUsage?: (delta: AgentUsage) => void;
   getPlanMode?: () => boolean;

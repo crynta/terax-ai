@@ -13,9 +13,6 @@ dist-ssr
 *.local
 
 # Local dev environment (Nix + direnv)
-flake.nix
-flake.lock
-.envrc
 shell.nix
 .direnv/
 
