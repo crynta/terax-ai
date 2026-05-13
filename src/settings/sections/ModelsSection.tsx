@@ -171,49 +171,54 @@ function DefaultModelBlock({
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
-          className="max-h-[28rem] min-w-[280px] overflow-y-auto"
+          side="bottom"
+          sideOffset={6}
+          avoidCollisions={false}
+          className="min-w-[280px] p-1"
         >
-          {PROVIDERS.map((p) => {
-            const models = MODELS.filter((x) => x.provider === p.id);
-            if (models.length === 0) return null;
-            const hasKey = providerNeedsKey(p.id) ? !!keys[p.id] : true;
-            return (
-              <div key={p.id} className="px-1 pt-1.5 first:pt-1">
-                <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                  <ProviderIcon provider={p.id} size={11} />
-                  <span>{p.label}</span>
-                  {!hasKey ? (
-                    <span className="ml-auto text-[9.5px] normal-case tracking-normal text-muted-foreground/70">
-                      no key
-                    </span>
-                  ) : null}
-                </div>
-                {models.map((mod) => {
-                  const available = isAvailable(mod.id, p.id);
-                  return (
-                    <DropdownMenuItem
-                      key={mod.id}
-                      disabled={!available}
-                      onSelect={() =>
-                        available && void setDefaultModel(mod.id as ModelId)
-                      }
-                      className={cn(
-                        "flex items-start gap-2 text-[12px]",
-                        mod.id === defaultModel && "bg-accent/50",
-                      )}
-                    >
-                      <span className="flex flex-1 flex-col">
-                        <span>{mod.label}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {mod.description}
-                        </span>
+          <div className="max-h-[240px] overflow-y-auto overscroll-contain pr-1">
+            {PROVIDERS.map((p) => {
+              const models = MODELS.filter((x) => x.provider === p.id);
+              if (models.length === 0) return null;
+              const hasKey = providerNeedsKey(p.id) ? !!keys[p.id] : true;
+              return (
+                <div key={p.id} className="px-1 pt-1.5 first:pt-1">
+                  <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                    <ProviderIcon provider={p.id} size={11} />
+                    <span>{p.label}</span>
+                    {!hasKey ? (
+                      <span className="ml-auto text-[9.5px] normal-case tracking-normal text-muted-foreground/70">
+                        no key
                       </span>
-                    </DropdownMenuItem>
-                  );
-                })}
-              </div>
-            );
-          })}
+                    ) : null}
+                  </div>
+                  {models.map((mod) => {
+                    const available = isAvailable(mod.id, p.id);
+                    return (
+                      <DropdownMenuItem
+                        key={mod.id}
+                        disabled={!available}
+                        onSelect={() =>
+                          available && void setDefaultModel(mod.id as ModelId)
+                        }
+                        className={cn(
+                          "flex items-start gap-2 text-[12px]",
+                          mod.id === defaultModel && "bg-accent/50",
+                        )}
+                      >
+                        <span className="flex flex-1 flex-col">
+                          <span>{mod.label}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {mod.description}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
