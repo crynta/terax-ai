@@ -6,7 +6,6 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   FileAddIcon,
   Folder01Icon,
@@ -252,11 +251,13 @@ export function FileExplorer({
       {!isSearchActive ? (
         <ContextMenu>
           <ContextMenuTrigger asChild>
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="py-1" ref={listRef}>
+            <div
+              className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden"
+            >
+              <div className="min-w-0 py-1" ref={listRef}>
                 {pendingAtRoot && (
                   <div
-                    className="flex w-full items-center gap-2 px-1.5 py-0.5 text-[13px]"
+                    className="flex w-full min-w-0 items-center gap-2 px-1.5 py-0.5 text-[13px]"
                     style={{ paddingLeft: 6 }}
                   >
                     <span className="size-3.5 shrink-0" />
@@ -306,7 +307,7 @@ export function FileExplorer({
                     />
                   ))}
               </div>
-            </ScrollArea>
+            </div>
           </ContextMenuTrigger>
           <ContextMenuContent 
             className={COMPACT_CONTENT}
