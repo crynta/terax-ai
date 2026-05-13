@@ -6,8 +6,10 @@ pub(crate) mod shell_init;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::thread;
+
+use parking_lot::RwLock;
 
 use portable_pty::PtySize;
 use tauri::ipc::{Channel, Response};
@@ -44,7 +46,7 @@ pub fn pty_open(
         e
     })?;
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
-    state.sessions.write().unwrap().insert(id, session);
+    state.sessions.write().insert(id, session);
     log::info!("pty opened id={id} cols={cols} rows={rows}");
     Ok(id)
 }
@@ -54,7 +56,6 @@ pub fn pty_write(state: tauri::State<PtyState>, id: u32, data: String) -> Result
     let session = state
         .sessions
         .read()
-        .unwrap()
         .get(&id)
         .cloned()
         .ok_or_else(|| {
@@ -66,7 +67,6 @@ pub fn pty_write(state: tauri::State<PtyState>, id: u32, data: String) -> Result
     let result = session
         .writer
         .lock()
-        .unwrap()
         .write_all(data.as_bytes())
         .map_err(|e| {
             // EPIPE is expected if the child already exited.
@@ -86,7 +86,6 @@ pub fn pty_resize(
     let session = state
         .sessions
         .read()
-        .unwrap()
         .get(&id)
         .cloned()
         .ok_or_else(|| {
@@ -96,7 +95,6 @@ pub fn pty_resize(
     let result = session
         .master
         .lock()
-        .unwrap()
         .resize(PtySize {
             rows,
             cols,
@@ -112,9 +110,9 @@ pub fn pty_resize(
 
 #[tauri::command]
 pub fn pty_close(state: tauri::State<PtyState>, id: u32) -> Result<(), String> {
-    let session = state.sessions.write().unwrap().remove(&id);
+    let session = state.sessions.write().remove(&id);
     if let Some(s) = session {
-        if let Err(e) = s.killer.lock().unwrap().kill() {
+        if let Err(e) = s.killer.lock().kill() {
             // Non-fatal: the child may already have exited on its own (e.g. the
             // user ran `exit`). Log so this isn't invisible during debugging.
             log::debug!("pty_close: kill id={id} returned {e}");

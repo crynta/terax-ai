@@ -1,9 +1,10 @@
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use parking_lot::Mutex;
 use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
 use tauri::ipc::{Channel, Response};
 
@@ -48,9 +49,7 @@ impl Drop for Session {
         // frontend disconnected, window crashed, dev HMR), the reader/flusher
         // threads would otherwise stay alive forever holding the child. Kill
         // the child here so the reader hits EOF and the threads unwind.
-        if let Ok(mut k) = self.killer.lock() {
-            let _ = k.kill();
-        }
+        let _ = self.killer.lock().kill();
     }
 }
 static SPAWN_LOCK: Mutex<()> = Mutex::new(());
@@ -62,7 +61,7 @@ pub fn spawn(
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
-    let _spawn_guard = SPAWN_LOCK.lock().unwrap();
+    let _spawn_guard = SPAWN_LOCK.lock();
 
     let pty_system = native_pty_system();
     let size = PtySize {
@@ -120,7 +119,7 @@ pub fn spawn(
                             logged_first = true;
                             log::info!("pty first byte after {}ms", spawn_at.elapsed().as_millis());
                         }
-                        let mut g = pending_r.lock().unwrap();
+                        let mut g = pending_r.lock();
                         if g.len() + n > MAX_PENDING {
                             // Discard the whole backlog rather than slicing
                             // through escape sequences. Emit a hard reset so
@@ -157,7 +156,7 @@ pub fn spawn(
             loop {
                 thread::sleep(POLL_INTERVAL);
                 let chunk = {
-                    let mut g = pending_f.lock().unwrap();
+                    let mut g = pending_f.lock();
                     if g.is_empty() {
                         idle = true;
                         if done_f.load(Ordering::Acquire) {
@@ -203,7 +202,7 @@ pub fn spawn(
             if let Err(e) = reader_thread.join() {
                 log::error!("pty reader thread panicked: {e:?}");
             }
-            let tail = std::mem::take(&mut *pending_e.lock().unwrap());
+            let tail = std::mem::take(&mut *pending_e.lock());
             if !tail.is_empty() {
                 if let Err(e) = on_data_exit.send(Response::new(tail)) {
                     log::debug!("pty final-data send failed (channel closed): {e}");
