@@ -153,9 +153,21 @@ const NOOP_LIVE: Live = {
   openPreview: () => false,
 };
 
-// Per-session Chat instances. Transport reads the keys map lazily, so a key
-// change does not require rebuilding chats.
+const CHATS_LRU_CAP = 8;
 const chats = new Map<string, Chat<UIMessage>>();
+
+function touchChat(id: string, c: Chat<UIMessage>) {
+  if (chats.has(id)) chats.delete(id);
+  chats.set(id, c);
+  while (chats.size > CHATS_LRU_CAP) {
+    const oldest = chats.keys().next().value;
+    if (!oldest || oldest === id) break;
+    if (useChatStore.getState().activeSessionId === oldest) break;
+    flushPersistEntry(oldest);
+    void chats.get(oldest)?.stop();
+    chats.delete(oldest);
+  }
+}
 // Initial messages for a session, populated at hydration time and consumed
 // when the matching Chat is constructed.
 const seedMessages = new Map<string, UIMessage[]>();
@@ -492,9 +504,12 @@ export function hasKeyForModel(modelId: ModelId): boolean {
 
 export function getOrCreateChat(sessionId: string): Chat<UIMessage> {
   const existing = chats.get(sessionId);
-  if (existing) return existing;
+  if (existing) {
+    touchChat(sessionId, existing);
+    return existing;
+  }
   const c = makeChat(sessionId);
-  chats.set(sessionId, c);
+  touchChat(sessionId, c);
   return c;
 }
 
