@@ -5,42 +5,98 @@ import { checkReadable, checkWritable } from "../lib/security";
 import { newQueuedEditId, usePlanStore } from "../store/planStore";
 import { resolvePath, type ToolContext } from "./context";
 
-const AI_READ_CAP = 200 * 1024;
+const READ_BYTE_CAP = 25 * 1024;
+const READ_LINE_CAP = 2000;
+
+function djb2(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return h >>> 0;
+}
 
 export function buildFsTools(ctx: ToolContext) {
   return {
     read_file: tool({
       description:
-        "Read a UTF-8 text file. Returns content for text files; refuses binary, oversized, or sensitive files (.env, keys, credentials). Files larger than 200KB are truncated — re-call with a different path or use run_command for `sed -n` slicing if you need the rest.",
+        "Read a UTF-8 text file. Defaults to the first 2000 lines (capped at 25KB). Pass `offset`/`limit` for line-based windowing of large files. Refuses binary, oversized, or sensitive files (.env, keys, credentials). If you call this on the same path twice in a session without edits in between, the second call returns `unchanged: true` instead of re-emitting the content — re-read the prior tool result.",
       inputSchema: z.object({
         path: z
           .string()
           .describe("Absolute path, or relative to the active terminal cwd."),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("0-based start line. Default 0."),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(10000)
+          .optional()
+          .describe("Max lines to return. Default 2000."),
       }),
-      execute: async ({ path }) => {
+      execute: async ({ path, offset, limit }) => {
         const abs = resolvePath(path, ctx.getCwd());
         const safety = checkReadable(abs);
         if (!safety.ok) return { error: safety.reason, path: abs };
         try {
           const r = await native.readFile(abs);
-          if (r.kind === "text") {
-            ctx.readCache.add(abs);
-            if (r.content.length > AI_READ_CAP) {
-              return {
-                path: abs,
-                content: r.content.slice(0, AI_READ_CAP),
-                size: r.size,
-                truncated: true,
-                truncatedAt: AI_READ_CAP,
-              };
-            }
-            return { path: abs, content: r.content, size: r.size };
-          }
           if (r.kind === "binary")
             return { error: "binary file refused", path: abs, size: r.size };
+          if (r.kind === "toolarge")
+            return {
+              error: `file too large (${r.size} bytes, limit ${r.limit})`,
+              path: abs,
+            };
+
+          const hash = djb2(r.content);
+          const isFullRead = offset === undefined && limit === undefined;
+          const prior = ctx.readCache.get(abs);
+          if (isFullRead && prior && prior.size === r.size && prior.hash === hash) {
+            return { path: abs, unchanged: true, size: r.size };
+          }
+          ctx.readCache.set(abs, { size: r.size, hash });
+
+          if (isFullRead) {
+            const lines = r.content.split("\n");
+            const sliceEnd = Math.min(lines.length, READ_LINE_CAP);
+            let content = lines.slice(0, sliceEnd).join("\n");
+            let truncated = sliceEnd < lines.length;
+            if (content.length > READ_BYTE_CAP) {
+              content = content.slice(0, READ_BYTE_CAP);
+              truncated = true;
+            }
+            return {
+              path: abs,
+              content,
+              size: r.size,
+              total_lines: lines.length,
+              ...(truncated
+                ? { truncated: true, hint: "call read_file with offset to continue" }
+                : {}),
+            };
+          }
+
+          const lines = r.content.split("\n");
+          const start = offset ?? 0;
+          const requested = limit ?? READ_LINE_CAP;
+          const end = Math.min(lines.length, start + requested);
+          let content = lines.slice(start, end).join("\n");
+          let truncated = end < lines.length;
+          if (content.length > READ_BYTE_CAP) {
+            content = content.slice(0, READ_BYTE_CAP);
+            truncated = true;
+          }
           return {
-            error: `file too large (${r.size} bytes, limit ${r.limit})`,
             path: abs,
+            content,
+            size: r.size,
+            total_lines: lines.length,
+            start_line: start,
+            end_line: end,
+            ...(truncated ? { truncated: true } : {}),
           };
         } catch (e) {
           return { error: String(e), path: abs };
@@ -111,7 +167,7 @@ export function buildFsTools(ctx: ToolContext) {
 
         try {
           await native.writeFile(abs, content);
-          ctx.readCache.add(abs);
+          ctx.readCache.set(abs, { size: content.length, hash: djb2(content) });
           return { path: abs, bytesWritten: content.length, ok: true };
         } catch (e) {
           return { error: String(e), path: abs };
