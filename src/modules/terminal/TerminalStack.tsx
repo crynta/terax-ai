@@ -3,7 +3,7 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { useEffect, useRef } from "react";
 import { PaneTreeView } from "./PaneTreeView";
 import type { TerminalPaneHandle } from "./TerminalPane";
-import { leafIds } from "./lib/panes";
+import { leafIds, type SplitDir } from "./lib/panes";
 
 type Props = {
   tabs: Tab[];
@@ -14,6 +14,8 @@ type Props = {
   onCwd: (leafId: number, cwd: string) => void;
   onExit: (leafId: number, code: number) => void;
   onFocusLeaf: (tabId: number, leafId: number) => void;
+  onSplitPane: (leafId: number, dir: SplitDir, before: boolean) => void;
+  onClosePane: (leafId: number) => void;
 };
 
 type Bundle = {
@@ -31,6 +33,8 @@ export function TerminalStack({
   onCwd,
   onExit,
   onFocusLeaf,
+  onSplitPane,
+  onClosePane,
 }: Props) {
   const terminals = tabs.filter((t) => t.kind === "terminal");
 
@@ -85,6 +89,8 @@ export function TerminalStack({
               tabVisible={tabVisible}
               activeLeafId={t.activeLeafId}
               onFocusLeaf={(leafId) => onFocusLeaf(t.id, leafId)}
+              onSplitPane={onSplitPane}
+              onClosePane={onClosePane}
               getBundle={getBundle}
             />
           </div>
