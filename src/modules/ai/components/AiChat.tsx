@@ -197,12 +197,14 @@ const RenderedPart = memo(function RenderedPart({
   }
 
   if (part.type === "reasoning") {
+    const reasoningPart = part as unknown as {
+      state?: "streaming" | "done";
+      text: string;
+    };
     return (
-      <Reasoning>
+      <Reasoning isStreaming={reasoningPart.state === "streaming"}>
         <ReasoningTrigger />
-        <ReasoningContent>
-          {(part as unknown as { text: string }).text}
-        </ReasoningContent>
+        <ReasoningContent>{reasoningPart.text}</ReasoningContent>
       </Reasoning>
     );
   }

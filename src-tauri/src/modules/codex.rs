@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
+    collections::HashSet,
     io::{BufRead, BufReader, Write},
     process::{Command, Stdio},
     sync::mpsc,
@@ -31,7 +32,11 @@ pub struct CodexLoginStart {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum CodexStreamEvent {
     AgentMessageStart { item_id: String },
     AgentMessageDelta { item_id: String, delta: String },
@@ -545,11 +550,28 @@ fn run_codex_turn_stream(
         )?;
         wait_for_response(&rx, 4)?;
 
+        let mut reasoning_items_with_deltas = HashSet::new();
         loop {
             let message = rx
                 .recv_timeout(Duration::from_secs(180))
                 .map_err(|_| "Timed out waiting for Codex response".to_string())??;
-            if let Some(event) = codex_stream_event(&message) {
+            let event = codex_stream_event(&message);
+            if let Some((item_id, text)) = reasoning_completed_text(&message) {
+                if reasoning_items_with_deltas.insert(item_id.clone())
+                    && on_event
+                        .send(CodexStreamEvent::ReasoningDelta {
+                            item_id,
+                            delta: text,
+                        })
+                        .is_err()
+                {
+                    break Ok(());
+                }
+            }
+            if let Some(event) = event {
+                if let CodexStreamEvent::ReasoningDelta { item_id, .. } = &event {
+                    reasoning_items_with_deltas.insert(item_id.clone());
+                }
                 if on_event.send(event).is_err() {
                     break Ok(());
                 }
@@ -724,6 +746,48 @@ fn item_lifecycle_event(value: &Value, started: bool) -> Option<CodexStreamEvent
     }
 }
 
+fn reasoning_completed_text(value: &Value) -> Option<(String, String)> {
+    if value.get("method").and_then(Value::as_str) != Some("item/completed") {
+        return None;
+    }
+    let item = value.get("params")?.get("item")?;
+    if item.get("type").and_then(Value::as_str) != Some("reasoning") {
+        return None;
+    }
+    let item_id = item.get("id").and_then(Value::as_str)?.to_string();
+    let summary = collect_text_array(item.get("summary"));
+    let content = collect_text_array(item.get("content"));
+    let text = if summary.is_empty() {
+        content.join("\n")
+    } else {
+        summary.join("\n")
+    };
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some((item_id, text))
+    }
+}
+
+fn collect_text_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    item.as_str().map(ToString::to_string).or_else(|| {
+                        item.get("text")
+                            .and_then(Value::as_str)
+                            .map(ToString::to_string)
+                    })
+                })
+                .filter(|text| !text.trim().is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn is_turn_completed(value: &Value) -> bool {
     value.get("method").and_then(Value::as_str) == Some("turn/completed")
 }
@@ -877,6 +941,52 @@ mod tests {
             Some(CodexStreamEvent::ReasoningEnd {
                 item_id: "reasoning-123".to_string(),
             })
+        );
+    }
+
+    #[test]
+    fn extracts_reasoning_summary_from_completed_item() {
+        let value = json!({
+            "method": "item/completed",
+            "params": {
+                "item": {
+                    "type": "reasoning",
+                    "id": "reasoning-123",
+                    "summary": ["checked state", "verified protocol"],
+                    "content": []
+                }
+            }
+        });
+
+        assert_eq!(
+            reasoning_completed_text(&value),
+            Some((
+                "reasoning-123".to_string(),
+                "checked state\nverified protocol".to_string(),
+            ))
+        );
+    }
+
+    #[test]
+    fn extracts_reasoning_content_from_completed_item_when_summary_is_empty() {
+        let value = json!({
+            "method": "item/completed",
+            "params": {
+                "item": {
+                    "type": "reasoning",
+                    "id": "reasoning-123",
+                    "summary": [],
+                    "content": ["inspected ui state"]
+                }
+            }
+        });
+
+        assert_eq!(
+            reasoning_completed_text(&value),
+            Some((
+                "reasoning-123".to_string(),
+                "inspected ui state".to_string(),
+            ))
         );
     }
 
