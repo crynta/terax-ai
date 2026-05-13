@@ -29,8 +29,6 @@ import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import type { ComponentProps, ReactNode } from "react";
 import { isValidElement, memo, useState } from "react";
 
-import type { BundledLanguage } from "shiki";
-import { CodeBlockContent } from "./code-block";
 
 export type ToolPart = ToolUIPart | DynamicToolUIPart;
 
@@ -696,11 +694,14 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-function CodeBlockMini({ code, language }: { code: string; language: string }) {
+function CodeBlockMini({ code }: { code: string; language: string }) {
+  // Tool input/output is debug-grade detail — JSON arrives pre-formatted and
+  // file content is shown in the editor diff tab. Highlighting here is not
+  // worth the parser hop.
   return (
-    <div className="overflow-hidden rounded bg-muted/40 [&_pre]:!bg-transparent [&_pre]:!p-2 [&_pre]:text-[11px] [&>div]:max-h-60">
-      <CodeBlockContent code={code} language={language as BundledLanguage} />
-    </div>
+    <pre className="max-h-60 overflow-auto rounded bg-muted/40 p-2 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap">
+      {code}
+    </pre>
   );
 }
 

@@ -1,7 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/inter";
+@import "./fonts.css";
+@import "./code-highlight.css";
 
 @source "../../node_modules/streamdown/dist/index.js";
 

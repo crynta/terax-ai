@@ -83,6 +83,10 @@ export function AiChatView({
   const isBusy = status === "submitted" || status === "streaming";
   const lastMessage = messages[messages.length - 1];
   const showSpinner = isBusy && lastMessage?.role === "user";
+  const streamingMessageId =
+    status === "streaming" && lastMessage?.role === "assistant"
+      ? lastMessage.id
+      : null;
 
   const onApproval = useCallback(
     (id: string, approved: boolean) => addToolApprovalResponse({ id, approved }),
@@ -106,7 +110,12 @@ export function AiChatView({
     <Conversation>
       <ConversationContent className="gap-5 p-3">
         {messages.map((m) => (
-          <RenderedMessage key={m.id} message={m} onApproval={onApproval} />
+          <RenderedMessage
+            key={m.id}
+            message={m}
+            onApproval={onApproval}
+            streaming={m.id === streamingMessageId}
+          />
         ))}
         {showSpinner && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -138,10 +147,21 @@ export function AiChatView({
 const RenderedMessage = memo(function RenderedMessage({
   message,
   onApproval,
+  streaming,
 }: {
   message: UIMessage;
   onApproval: (id: string, approved: boolean) => void;
+  streaming: boolean;
 }) {
+  // Index of the trailing text part — only that one is "live" mid-stream.
+  // Earlier text parts (separated by tool calls) are already finalized.
+  let lastTextIdx = -1;
+  for (let i = message.parts.length - 1; i >= 0; i -= 1) {
+    if (message.parts[i]?.type === "text") {
+      lastTextIdx = i;
+      break;
+    }
+  }
   if (message.role === "user") {
     const rawText = message.parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
@@ -173,6 +193,7 @@ const RenderedMessage = memo(function RenderedMessage({
               key={`${message.id}-${i}`}
               part={part as AnyPart}
               onApproval={onApproval}
+              streaming={streaming && i === lastTextIdx}
             />
           ))}
         </div>
@@ -184,13 +205,15 @@ const RenderedMessage = memo(function RenderedMessage({
 const RenderedPart = memo(function RenderedPart({
   part,
   onApproval,
+  streaming,
 }: {
   part: AnyPart;
   onApproval: (id: string, approved: boolean) => void;
+  streaming: boolean;
 }) {
   if (part.type === "text") {
     return (
-      <MessageResponse>
+      <MessageResponse streaming={streaming}>
         {(part as unknown as { text: string }).text}
       </MessageResponse>
     );
