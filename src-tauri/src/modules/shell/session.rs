@@ -125,7 +125,7 @@ fn wrap_with_sentinel(command: &str, workspace: &WorkspaceEnv) -> String {
     }
     #[cfg(unix)]
     {
-        return wrap_posix_with_sentinel(command);
+        wrap_posix_with_sentinel(command)
     }
     #[cfg(windows)]
     {

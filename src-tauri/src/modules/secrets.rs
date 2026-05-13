@@ -209,10 +209,7 @@ pub async fn secrets_get_all(
             .map(|a| {
                 keyring::Entry::new(&service, &a)
                     .ok()
-                    .and_then(|e| match e.get_password() {
-                        Ok(v) => Some(v),
-                        Err(_) => None,
-                    })
+                    .and_then(|e| e.get_password().ok())
             })
             .collect())
     }

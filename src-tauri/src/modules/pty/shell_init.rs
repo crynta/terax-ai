@@ -4,8 +4,10 @@ use portable_pty::CommandBuilder;
 
 use crate::modules::workspace::WorkspaceEnv;
 
+#[cfg(windows)]
 const BASHRC_SCRIPT: &str = include_str!("scripts/bashrc.bash");
 
+#[cfg(windows)]
 fn bashrc_script() -> &'static str {
     BASHRC_SCRIPT
 }

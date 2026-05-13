@@ -275,8 +275,8 @@ pub fn shell_bg_list(state: tauri::State<ShellState>) -> Result<Vec<BackgroundPr
 
 pub(crate) fn build_oneshot_command(
     command: &str,
-    workspace: &WorkspaceEnv,
-    cwd: Option<&str>,
+    #[cfg_attr(not(windows), allow(unused_variables))] workspace: &WorkspaceEnv,
+    #[cfg_attr(not(windows), allow(unused_variables))] cwd: Option<&str>,
 ) -> Command {
     #[cfg(windows)]
     if let WorkspaceEnv::Wsl { distro } = workspace {
