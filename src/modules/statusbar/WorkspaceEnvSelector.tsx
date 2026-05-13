@@ -12,6 +12,7 @@ import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { IS_WINDOWS } from "@/lib/platform";
 import { useEffect } from "react";
 
 type Props = {
@@ -19,6 +20,8 @@ type Props = {
 };
 
 export function WorkspaceEnvSelector({ onSelect }: Props) {
+  if (!IS_WINDOWS) return null;
+
   const env = useWorkspaceEnvStore((s) => s.env);
   const distros = useWorkspaceEnvStore((s) => s.distros);
   const loading = useWorkspaceEnvStore((s) => s.loading);

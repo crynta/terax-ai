@@ -114,12 +114,13 @@ pub fn wsl_list_distros() -> Result<Vec<WslDistro>, String> {
             }
             let default = line.starts_with('*');
             let line = line.trim_start_matches('*').trim();
-            let mut parts = line.split_whitespace();
-            let name = match parts.next() {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            let state = parts.next().unwrap_or_default();
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 3 {
+                continue;
+            }
+            let state_idx = parts.len() - 2;
+            let name = parts[..state_idx].join(" ");
+            let state = parts[state_idx];
             distros.push(WslDistro {
                 name,
                 default,
