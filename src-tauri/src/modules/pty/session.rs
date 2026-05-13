@@ -8,6 +8,7 @@ use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
 use tauri::ipc::{Channel, Response};
 
 use super::shell_init;
+use crate::modules::workspace::WorkspaceEnv;
 
 const FLUSH_INTERVAL: Duration = Duration::from_millis(4);
 const READ_BUF: usize = 16 * 1024;
@@ -57,6 +58,7 @@ pub fn spawn(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    workspace: WorkspaceEnv,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
@@ -71,7 +73,7 @@ pub fn spawn(
     };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = shell_init::build_command(cwd)?;
+    let cmd = shell_init::build_command(cwd, workspace)?;
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 

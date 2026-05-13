@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 /// Creates a new empty file. Fails if the file already exists.
 #[tauri::command]
-pub fn fs_create_file(path: String) -> Result<(), String> {
-    let p = PathBuf::from(&path);
+pub fn fs_create_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
     }
@@ -17,8 +18,9 @@ pub fn fs_create_file(path: String) -> Result<(), String> {
 /// Parents are created as needed — matches the common "new folder" UX
 /// where typing "a/b/c" creates the full chain.
 #[tauri::command]
-pub fn fs_create_dir(path: String) -> Result<(), String> {
-    let p = PathBuf::from(&path);
+pub fn fs_create_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
     }
@@ -30,9 +32,10 @@ pub fn fs_create_dir(path: String) -> Result<(), String> {
 
 /// Renames (or moves) a path. Refuses to overwrite an existing target.
 #[tauri::command]
-pub fn fs_rename(from: String, to: String) -> Result<(), String> {
-    let from_p = PathBuf::from(&from);
-    let to_p = PathBuf::from(&to);
+pub fn fs_rename(from: String, to: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let from_p = resolve_path(&from, &workspace);
+    let to_p = resolve_path(&to, &workspace);
     if !from_p.exists() {
         return Err(format!("not found: {}", from_p.display()));
     }
@@ -52,8 +55,9 @@ pub fn fs_rename(from: String, to: String) -> Result<(), String> {
 /// Deletes a file or directory (recursively for dirs). Callers are
 /// responsible for confirming destructive operations with the user.
 #[tauri::command]
-pub fn fs_delete(path: String) -> Result<(), String> {
-    let p = PathBuf::from(&path);
+pub fn fs_delete(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
     let meta = std::fs::symlink_metadata(&p).map_err(|e| {
         log::debug!("fs_delete stat({}) failed: {e}", p.display());
         e.to_string()

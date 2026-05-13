@@ -22,6 +22,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { segmentsFromCwd } from "./lib/pathUtils";
 
@@ -189,6 +190,7 @@ function CurrentSegmentDropdown({
       const dirs = await invoke<string[]>("list_subdirs", {
         path,
         showHidden,
+        workspace: currentWorkspaceEnv(),
       });
       setChildren(dirs);
     } catch (e) {

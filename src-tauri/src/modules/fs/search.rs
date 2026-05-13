@@ -1,9 +1,8 @@
-use std::path::PathBuf;
-
 use ignore::WalkBuilder;
 use serde::Serialize;
 
 use super::to_canon;
+use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 #[derive(Serialize)]
 pub struct SearchHit {
@@ -48,6 +47,7 @@ pub fn fs_search(
     root: String,
     query: String,
     limit: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
     show_hidden: Option<bool>,
 ) -> Result<SearchResult, String> {
     let q = query.trim().to_lowercase();
@@ -59,7 +59,8 @@ pub fn fs_search(
     }
     let cap = limit.unwrap_or(200).min(1000);
     let show_hidden = show_hidden.unwrap_or(false);
-    let root_path = PathBuf::from(&root);
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
@@ -116,7 +117,7 @@ pub fn fs_search(
             .unwrap_or_default();
         let is_dir = dent.file_type().map(|t| t.is_dir()).unwrap_or(false);
         out.push(SearchHit {
-            path: to_canon(path),
+            path: display_path(path, &root_path, &root, &workspace),
             rel,
             name,
             is_dir,
@@ -134,4 +135,25 @@ pub fn fs_search(
         hits: out,
         truncated,
     })
+}
+
+fn display_path(
+    path: &std::path::Path,
+    root_path: &std::path::Path,
+    root_display: &str,
+    workspace: &WorkspaceEnv,
+) -> String {
+    if workspace.is_wsl() {
+        if let Ok(rel) = path.strip_prefix(root_path) {
+            let rel = to_canon(rel);
+            return if rel.is_empty() {
+                root_display.to_string()
+            } else if root_display.ends_with('/') {
+                format!("{root_display}{rel}")
+            } else {
+                format!("{root_display}/{rel}")
+            };
+        }
+    }
+    to_canon(path)
 }

@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -10,6 +9,7 @@ use ignore::{WalkBuilder, WalkState};
 use serde::Serialize;
 
 use super::to_canon;
+use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 200;
@@ -50,11 +50,13 @@ pub fn fs_grep(
     glob: Option<Vec<String>>,
     case_insensitive: Option<bool>,
     max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
 ) -> Result<GrepResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
-    let root_path = PathBuf::from(&root);
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
@@ -91,6 +93,8 @@ pub fn fs_grep(
         let scanned = scanned.clone();
         let truncated = truncated.clone();
         let root_path = root_path.clone();
+        let root_display = root.clone();
+        let workspace = workspace.clone();
 
         Box::new(move |dent_res| {
             if truncated.load(Ordering::Relaxed) {
@@ -121,7 +125,7 @@ pub fn fs_grep(
 
             scanned.fetch_add(1, Ordering::Relaxed);
 
-            let abs = to_canon(path);
+            let abs = display_path(path, &root_path, &root_display, &workspace);
             let rel_clone = rel.clone();
             let mut searcher = SearcherBuilder::new()
                 .binary_detection(BinaryDetection::quit(b'\x00'))
@@ -180,11 +184,13 @@ pub fn fs_glob(
     pattern: String,
     root: String,
     max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
 ) -> Result<GlobResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
-    let root_path = PathBuf::from(&root);
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
@@ -224,10 +230,31 @@ pub fn fs_glob(
             continue;
         }
         hits.push(GlobHit {
-            path: to_canon(path),
+            path: display_path(path, &root_path, &root, &workspace),
             rel,
         });
     }
 
     Ok(GlobResponse { hits, truncated })
+}
+
+fn display_path(
+    path: &std::path::Path,
+    root_path: &std::path::Path,
+    root_display: &str,
+    workspace: &WorkspaceEnv,
+) -> String {
+    if workspace.is_wsl() {
+        if let Ok(rel) = path.strip_prefix(root_path) {
+            let rel = to_canon(rel);
+            return if rel.is_empty() {
+                root_display.to_string()
+            } else if root_display.ends_with('/') {
+                format!("{root_display}{rel}")
+            } else {
+                format!("{root_display}/{rel}")
+            };
+        }
+    }
+    to_canon(path)
 }

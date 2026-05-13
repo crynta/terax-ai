@@ -488,6 +488,22 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return closedTab;
   }, []);
 
+  const resetWorkspace = useCallback((cwd?: string) => {
+    const tabId = nextIdRef.current++;
+    const leafId = nextIdRef.current++;
+    setTabs([
+      {
+        id: tabId,
+        kind: "terminal",
+        title: "shell",
+        cwd,
+        paneTree: { kind: "leaf", id: leafId, cwd },
+        activeLeafId: leafId,
+      },
+    ]);
+    setActiveId(tabId);
+  }, []);
+
   return {
     tabs,
     activeId,
@@ -508,5 +524,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
+    resetWorkspace,
   };
 }
