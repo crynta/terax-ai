@@ -1,5 +1,5 @@
 import type { UIMessage } from "@ai-sdk/react";
-import { TERMINAL_BUFFER_LINES, type ModelId } from "../config";
+import { type ModelId } from "../config";
 import { runAgentStream, type AgentUsage } from "./agent";
 import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
@@ -34,13 +34,10 @@ async function readTeraxMd(workspaceRoot: string | null): Promise<string | null>
 
 type LiveSnapshot = {
   cwd: string | null;
-  terminal: string | null;
   terminalPrivate: boolean;
   workspaceRoot: string | null;
   activeFile: string | null;
 };
-
-const MAX_TERMINAL_CHARS = 4_000;
 
 type Deps = {
   getKeys: () => ProviderKeys;
@@ -105,33 +102,9 @@ function formatEnvBlock(live: LiveSnapshot): string | null {
   if (live.workspaceRoot) lines.push(`workspace_root: ${live.workspaceRoot}`);
   if (live.cwd) lines.push(`active_terminal_cwd: ${live.cwd}`);
   if (live.activeFile) lines.push(`active_file: ${live.activeFile}`);
-  if (live.terminalPrivate) {
-    lines.push("active_terminal_mode: private");
-    lines.push(
-      "recent_terminal_output: (hidden — user enabled Privacy mode; do not ask for the buffer)",
-    );
-  } else if (live.terminal) {
-    const trimmed = capChars(
-      lastNLines(live.terminal, TERMINAL_BUFFER_LINES),
-      MAX_TERMINAL_CHARS,
-    );
-    lines.push("recent_terminal_output:");
-    lines.push("```");
-    lines.push(trimmed);
-    lines.push("```");
-  }
+  if (live.terminalPrivate) lines.push("active_terminal_mode: private");
   if (lines.length === 0) return null;
   return `<env>\n${lines.join("\n")}\n</env>`;
-}
-
-function lastNLines(s: string, n: number): string {
-  const all = s.split("\n");
-  return all.length <= n ? s : all.slice(all.length - n).join("\n");
-}
-
-function capChars(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return `…[truncated ${s.length - max} chars]…\n${s.slice(s.length - max)}`;
 }
 
 export const CONTEXT_BLOCK_RE =

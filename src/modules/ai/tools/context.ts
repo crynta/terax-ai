@@ -5,6 +5,7 @@ export type ToolContext = {
   getWorkspaceRoot: () => string | null;
   /** Last N lines of the active terminal buffer (or null if not a terminal tab). */
   getTerminalContext: () => string | null;
+  isActiveTerminalPrivate: () => boolean;
   /**
    * Type a string into the active terminal at the prompt — without executing.
    * Returns false if there is no active terminal tab to inject into.

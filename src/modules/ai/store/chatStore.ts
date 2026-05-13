@@ -187,6 +187,8 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       useChatStore.getState().live.getWorkspaceRoot(),
     getTerminalContext: () =>
       useChatStore.getState().live.getTerminalContext(),
+    isActiveTerminalPrivate: () =>
+      useChatStore.getState().live.isActiveTerminalPrivate(),
     injectIntoActivePty: (text) =>
       useChatStore.getState().live.injectIntoActivePty(text),
     openPreview: (url) => useChatStore.getState().live.openPreview(url),
@@ -210,7 +212,6 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       const live = useChatStore.getState().live;
       return {
         cwd: live.getCwd(),
-        terminal: live.getTerminalContext(),
         terminalPrivate: live.isActiveTerminalPrivate(),
         workspaceRoot: live.getWorkspaceRoot(),
         activeFile: live.getActiveFile(),
