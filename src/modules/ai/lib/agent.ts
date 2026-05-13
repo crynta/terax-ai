@@ -118,6 +118,14 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "minimax": {
+      const { createAnthropic } = await import("@ai-sdk/anthropic");
+      built = createAnthropic({
+        apiKey: key,
+        baseURL: "https://api.minimax.io/anthropic/v1",
+      })(resolvedModelId);
+      break;
+    }
     case "groq": {
       const { createGroq } = await import("@ai-sdk/groq");
       built = createGroq({ apiKey: key })(resolvedModelId);
