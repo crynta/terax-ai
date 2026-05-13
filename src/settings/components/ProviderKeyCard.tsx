@@ -67,21 +67,10 @@ export function ProviderKeyCard({
     }
   };
 
-  const cancel = () => {
-    setValue("");
-    setReveal(false);
-    setError(null);
-    setEditing(!currentKey);
-  };
-
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5",
-      )}
-    >
+    <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
       <div className="flex items-center gap-2">
-        <ProviderIcon provider={provider.id} size={16} />
+        <ProviderIcon provider={provider.id} size={15} />
         <span className="text-[12.5px] font-medium">{provider.label}</span>
         {currentKey ? (
           <Badge
@@ -101,77 +90,77 @@ export function ProviderKeyCard({
           onClick={() => void openUrl(provider.consoleUrl)}
           className="ml-auto text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
-          Get key
+          Get key ↗
         </button>
       </div>
 
       {editing ? (
         <div className="flex flex-col gap-1.5">
-          <div className="relative">
-            <Input
-              type={reveal ? "text" : "password"}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={
-                provider.keyPrefix ? `${provider.keyPrefix}…` : "Paste API key"
-              }
-              value={value}
-              disabled={saving}
-              onChange={(e) => {
-                setValue(e.target.value);
-                if (error) setError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void submit();
+          <div className="flex gap-1.5">
+            <div className="relative flex-1">
+              <Input
+                type={reveal ? "text" : "password"}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={
+                  provider.keyPrefix
+                    ? `${provider.keyPrefix}…`
+                    : "Paste API key"
                 }
-              }}
-              className="h-8 pr-8 font-mono text-[11.5px]"
-            />
-            <button
-              type="button"
-              onClick={() => setReveal((v) => !v)}
-              tabIndex={-1}
-              className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label={reveal ? "Hide key" : "Show key"}
-            >
-              <HugeiconsIcon
-                icon={reveal ? ViewOffSlashIcon : ViewIcon}
-                size={12}
-                strokeWidth={1.75}
-              />
-            </button>
-          </div>
-          {error ? (
-            <p className="text-[10.5px] text-destructive">{error}</p>
-          ) : null}
-          <div className="flex justify-end gap-1.5">
-            {currentKey ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={cancel}
+                value={value}
                 disabled={saving}
-                className="h-7 px-2 text-[11px]"
+                onChange={(e) => {
+                  setValue(e.target.value);
+                  if (error) setError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void submit();
+                  } else if (e.key === "Escape" && currentKey) {
+                    setValue("");
+                    setReveal(false);
+                    setError(null);
+                    setEditing(false);
+                  }
+                }}
+                className="h-8 pr-7 font-mono text-[11.5px]"
+              />
+              <button
+                type="button"
+                onClick={() => setReveal((v) => !v)}
+                tabIndex={-1}
+                className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
+                aria-label={reveal ? "Hide key" : "Show key"}
               >
-                Cancel
-              </Button>
-            ) : null}
+                <HugeiconsIcon
+                  icon={reveal ? ViewOffSlashIcon : ViewIcon}
+                  size={12}
+                  strokeWidth={1.75}
+                />
+              </button>
+            </div>
             <Button
               size="sm"
               onClick={() => void submit()}
-              disabled={saving}
-              className="h-7 gap-1 px-2.5 text-[11px]"
+              disabled={saving || !value.trim()}
+              className="h-8 gap-1 px-3 text-[11px]"
             >
               {saving ? <Spinner className="size-3" /> : null}
               Save
             </Button>
           </div>
+          {error ? (
+            <p className="text-[10.5px] text-destructive">{error}</p>
+          ) : null}
         </div>
       ) : (
-        <div className="flex items-center gap-2">
-          <code className="flex-1 truncate rounded bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-1.5">
+          <code
+            className={cn(
+              "flex-1 truncate rounded bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground",
+            )}
+          >
             {maskKey(currentKey ?? "")}
           </code>
           <Button

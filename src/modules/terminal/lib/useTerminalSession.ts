@@ -11,24 +11,15 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import {
   registerCwdHandler,
   registerPromptTracker,
-  registerTeraxOpenHandler,
-  type TeraxOpenInput,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
-export type { TeraxOpenInput };
-
 const BACKWARD_KILL_WORD = "\x17";
-
-const LOCAL_URL_RE =
-  /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d{1,5})?(?:\/[^\s\x1b]*)?/g;
 
 type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
-  onDetectedLocalUrl?: (url: string) => void;
-  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 // Lives outside React so split/unsplit re-parent the DOM without tearing
@@ -48,7 +39,6 @@ type Session = {
   lastW: number;
   lastH: number;
   lastCwd: string | null;
-  lastDetectedUrl: string | null;
   pendingExit: number | null;
   webglEnabled: boolean;
   webglAddon: WebglAddon | null;
@@ -71,7 +61,6 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   const term = new Terminal({
     fontFamily: detectMonoFontFamily(),
     fontSize,
-    lineHeight: 1.05,
     theme: buildTerminalTheme(),
     cursorBlink: true,
     cursorStyle: "bar",
@@ -106,7 +95,6 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     lastW: 0,
     lastH: 0,
     lastCwd: null,
-    lastDetectedUrl: null,
     pendingExit: null,
     webglEnabled,
     webglAddon: null,
@@ -144,9 +132,6 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
         session.lastCwd = cwd;
         session.callbacks.onCwd?.(cwd);
       }),
-      registerTeraxOpenHandler(term, (input) => {
-        session.callbacks.onTeraxOpen?.(input);
-      }),
     );
   })();
 
@@ -157,27 +142,14 @@ function openPtyForSession(
   s: Session,
   cwd: string | undefined,
 ): Promise<PtySession> {
-  // Fresh decoder per pty so a partial UTF-8 codepoint from a prior shell
-  // doesn't leak into the new one.
-  const urlDecoder = new TextDecoder("utf-8", { fatal: false });
   return openPty(
     s.term.cols,
     s.term.rows,
     {
-      onData: (bytes) => {
-        s.term.write(bytes);
-        if (containsSchemeSeparator(bytes)) {
-          const text = urlDecoder.decode(bytes, { stream: true });
-          const matches = text.match(LOCAL_URL_RE);
-          if (matches && matches.length > 0) {
-            const url = stripTrailingPunct(matches[matches.length - 1]);
-            if (url && url !== s.lastDetectedUrl) {
-              s.lastDetectedUrl = url;
-              s.callbacks.onDetectedLocalUrl?.(url);
-            }
-          }
-        }
-      },
+      // Hot path — keep this callback to a single statement. URL detection
+      // runs out-of-band against the xterm buffer (see ensureSession's
+      // scan interval), so no UTF-8 decode or regex happens per chunk.
+      onData: (bytes) => s.term.write(bytes),
       onExit: (code) => {
         s.term.options.disableStdin = true;
         if (s.callbacks.onExit) s.callbacks.onExit(code);
@@ -200,7 +172,6 @@ export async function respawnSession(
   s.term.options.disableStdin = false;
   s.lastSentCols = 0;
   s.lastSentRows = 0;
-  s.lastDetectedUrl = null;
   s.pendingExit = null;
   // Hold the flag so attachSession can't open a second PTY while we await.
   s.ptyOpening = true;
@@ -273,10 +244,7 @@ function attachSession(
           return;
         }
         s.pty = pty;
-        if (
-          s.term.cols !== s.lastSentCols ||
-          s.term.rows !== s.lastSentRows
-        ) {
+        if (s.term.cols !== s.lastSentCols || s.term.rows !== s.lastSentRows) {
           s.lastSentCols = s.term.cols;
           s.lastSentRows = s.term.rows;
           pty.resize(s.term.cols, s.term.rows);
@@ -344,8 +312,6 @@ function attachSession(
 
   // Re-sync App state after re-attach (prior detach cleared callbacks).
   if (s.lastCwd !== null) callbacks.onCwd?.(s.lastCwd);
-  if (s.lastDetectedUrl !== null)
-    callbacks.onDetectedLocalUrl?.(s.lastDetectedUrl);
   callbacks.onSearchReady?.(s.searchAddon);
   if (s.pendingExit !== null) {
     const code = s.pendingExit;
@@ -392,8 +358,6 @@ type Options = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
-  onDetectedLocalUrl?: (url: string) => void;
-  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 export function useTerminalSession({
@@ -405,22 +369,16 @@ export function useTerminalSession({
   onSearchReady,
   onExit,
   onCwd,
-  onDetectedLocalUrl,
-  onTeraxOpen,
 }: Options) {
   const cbRef = useRef({
     onSearchReady,
     onExit,
     onCwd,
-    onDetectedLocalUrl,
-    onTeraxOpen,
   });
   cbRef.current = {
     onSearchReady,
     onExit,
     onCwd,
-    onDetectedLocalUrl,
-    onTeraxOpen,
   };
 
   useEffect(() => {
@@ -432,8 +390,6 @@ export function useTerminalSession({
         onSearchReady: (a) => cbRef.current.onSearchReady?.(a),
         onExit: (c) => cbRef.current.onExit?.(c),
         onCwd: (c) => cbRef.current.onCwd?.(c),
-        onDetectedLocalUrl: (u) => cbRef.current.onDetectedLocalUrl?.(u),
-        onTeraxOpen: (input) => cbRef.current.onTeraxOpen?.(input),
       });
       if (visible && focused) s.term.focus();
     });
@@ -535,16 +491,3 @@ function isCtrlBackspace(event: KeyboardEvent): boolean {
   );
 }
 
-function stripTrailingPunct(url: string): string {
-  return url.replace(/[.,);\]]+$/, "");
-}
-
-function containsSchemeSeparator(bytes: Uint8Array): boolean {
-  const n = bytes.length;
-  for (let i = 0; i < n - 2; i++) {
-    if (bytes[i] === 0x3a && bytes[i + 1] === 0x2f && bytes[i + 2] === 0x2f) {
-      return true;
-    }
-  }
-  return false;
-}
