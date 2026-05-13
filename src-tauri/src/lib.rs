@@ -59,46 +59,8 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     Ok(())
 }
 
-// WebKitGTK's DMA-BUF (hardware) renderer + NVIDIA's proprietary driver under
-// Wayland fail to create an EGL display and abort on launch. Everywhere else
-// the hardware path is fine and noticeably faster, so leave it alone. Override:
-//   WEBKIT_DISABLE_DMABUF_RENDERER=1  force safe path   =0  force hardware path
-#[cfg(target_os = "linux")]
-fn configure_linux_rendering() {
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some() {
-        return;
-    }
-    let wayland = std::env::var("XDG_SESSION_TYPE")
-        .map(|v| v.eq_ignore_ascii_case("wayland"))
-        .unwrap_or(false)
-        || std::env::var_os("WAYLAND_DISPLAY").is_some();
-    if wayland && has_nvidia_gpu() {
-        eprintln!(
-            "terax: Wayland + NVIDIA proprietary driver; disabling WebKitGTK DMA-BUF renderer \
-             (override: WEBKIT_DISABLE_DMABUF_RENDERER=0)"
-        );
-        unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn has_nvidia_gpu() -> bool {
-    std::path::Path::new("/dev/nvidia0").exists()
-        || matches!(
-            std::env::var("__GLX_VENDOR_LIBRARY_NAME").as_deref(),
-            Ok("nvidia")
-        )
-        || matches!(
-            std::env::var("__NV_PRIME_RENDER_OFFLOAD").as_deref(),
-            Ok("1")
-        )
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "linux")]
-    configure_linux_rendering();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
