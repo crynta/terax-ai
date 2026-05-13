@@ -68,7 +68,7 @@ export function FileExplorer({
         if (isDir && tree.expanded.has(p)) walk(p);
       }
     };
-    walk(rootPath);
+    walk(tree.rootPath ?? "");
     return out;
   }, [rootPath, tree.nodes, tree.expanded, tree.joinPath]);
 

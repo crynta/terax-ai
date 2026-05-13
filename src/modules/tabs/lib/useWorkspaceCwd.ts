@@ -20,11 +20,19 @@ export function useWorkspaceCwd(
   }, [activeTab]);
 
   const explorerRoot = useMemo<string | null>(() => {
-    if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
-    if (lastTerminalCwd.current) return lastTerminalCwd.current;
-    const anyTerm = tabs.find((t) => t.kind === "terminal" && t.cwd);
-    if (anyTerm?.kind === "terminal" && anyTerm.cwd) return anyTerm.cwd;
-    return home;
+    const raw =
+      (activeTab?.kind === "terminal" && activeTab.cwd
+        ? activeTab.cwd
+        : null) ??
+      lastTerminalCwd.current ??
+      (() => {
+        const anyTerm = tabs.find((t) => t.kind === "terminal" && t.cwd);
+        return anyTerm?.kind === "terminal" ? anyTerm.cwd : null;
+      })() ??
+      home;
+    if (!raw) return null;
+    // Normalise trailing slashes so useFileTree's rootPath stays stable.
+    return raw === "/" ? "/" : raw.replace(/\/+$/, "") || "/";
   }, [activeTab, tabs, home]);
 
   const inheritedCwdForNewTab = useCallback((): string | undefined => {
