@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{codex, fs, net, pty, secrets, shell};
+use modules::{codex, fs, net, pty, secrets, shell, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
@@ -109,6 +109,9 @@ pub fn run() {
             shell::shell_bg_logs,
             shell::shell_bg_kill,
             shell::shell_bg_list,
+            workspace::wsl_list_distros,
+            workspace::wsl_default_distro,
+            workspace::wsl_home,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,

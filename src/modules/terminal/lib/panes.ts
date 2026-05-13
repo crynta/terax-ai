@@ -36,8 +36,17 @@ export function setLeafCwd(
   id: PaneId,
   cwd: string,
 ): PaneNode {
-  if (isLeaf(n)) return n.id === id ? { ...n, cwd } : n;
-  return { ...n, children: n.children.map((c) => setLeafCwd(c, id, cwd)) };
+  if (isLeaf(n)) {
+    if (n.id !== id || n.cwd === cwd) return n;
+    return { ...n, cwd };
+  }
+  let changed = false;
+  const next = n.children.map((c) => {
+    const u = setLeafCwd(c, id, cwd);
+    if (u !== c) changed = true;
+    return u;
+  });
+  return changed ? { ...n, children: next } : n;
 }
 
 /**
