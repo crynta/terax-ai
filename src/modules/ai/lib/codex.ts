@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 export type CodexAccountState = {
   authMode: string | null;
@@ -40,5 +40,33 @@ export function codexChatOnce(options: {
     prompt: options.prompt,
     cwd: options.cwd ?? null,
     model: options.model ?? null,
+  });
+}
+
+export type CodexStreamEvent =
+  | { kind: "agentMessageStart"; itemId: string }
+  | { kind: "agentMessageDelta"; itemId: string; delta: string }
+  | { kind: "agentMessageEnd"; itemId: string }
+  | { kind: "reasoningStart"; itemId: string }
+  | { kind: "reasoningDelta"; itemId: string; delta: string }
+  | { kind: "reasoningEnd"; itemId: string }
+  | { kind: "end" }
+  | { kind: "error"; message: string };
+
+export function codexChatStream(
+  options: {
+    prompt: string;
+    cwd?: string | null;
+    model?: string | null;
+  },
+  onEvent: (event: CodexStreamEvent) => void,
+) {
+  const channel = new Channel<CodexStreamEvent>();
+  channel.onmessage = onEvent;
+  return invoke<void>("codex_chat_stream", {
+    prompt: options.prompt,
+    cwd: options.cwd ?? null,
+    model: options.model ?? null,
+    onEvent: channel,
   });
 }

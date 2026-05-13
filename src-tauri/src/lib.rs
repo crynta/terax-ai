@@ -116,6 +116,7 @@ pub fn run() {
             secrets::secrets_get_all,
             codex::codex_account_read,
             codex::codex_chat_once,
+            codex::codex_chat_stream,
             codex::codex_login_start,
             codex::codex_logout,
             net::lm_ping,

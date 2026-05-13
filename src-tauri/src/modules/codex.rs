@@ -6,6 +6,7 @@ use std::{
     sync::mpsc,
     time::Duration,
 };
+use tauri::ipc::Channel;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -27,6 +28,19 @@ pub struct CodexLoginStart {
     pub auth_url: Option<String>,
     pub verification_url: Option<String>,
     pub user_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum CodexStreamEvent {
+    AgentMessageStart { item_id: String },
+    AgentMessageDelta { item_id: String, delta: String },
+    AgentMessageEnd { item_id: String },
+    ReasoningStart { item_id: String },
+    ReasoningDelta { item_id: String, delta: String },
+    ReasoningEnd { item_id: String },
+    End,
+    Error { message: String },
 }
 
 #[tauri::command]
@@ -80,6 +94,20 @@ pub async fn codex_chat_once(
     .map_err(|e| e.to_string())?
 }
 
+#[tauri::command]
+pub async fn codex_chat_stream(
+    prompt: String,
+    cwd: Option<String>,
+    model: Option<String>,
+    on_event: Channel<CodexStreamEvent>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        run_codex_turn_stream(&prompt, cwd.as_deref(), model.as_deref(), on_event)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn call_codex_app_server(method: &str, params: Value) -> Result<Value, String> {
     let mut child = Command::new("codex")
         .args(["app-server", "--listen", "stdio://"])
@@ -89,14 +117,22 @@ fn call_codex_app_server(method: &str, params: Value) -> Result<Value, String> {
         .spawn()
         .map_err(|e| format!("Failed to start `codex app-server`: {e}"))?;
 
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to capture codex app-server stdout".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "Failed to capture codex app-server stderr".to_string())?;
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Failed to capture codex app-server stdout".to_string());
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("Failed to capture codex app-server stderr".to_string());
+        }
+    };
 
     let (tx, rx) = mpsc::channel::<Result<Value, String>>();
     std::thread::spawn(move || {
@@ -365,6 +401,186 @@ fn run_codex_turn(prompt: &str, cwd: Option<&str>, model: Option<&str>) -> Resul
     })
 }
 
+fn run_codex_turn_stream(
+    prompt: &str,
+    cwd: Option<&str>,
+    model: Option<&str>,
+    on_event: Channel<CodexStreamEvent>,
+) -> Result<(), String> {
+    let mut child = Command::new("codex")
+        .args(["app-server", "--listen", "stdio://"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start `codex app-server`: {e}"))?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "Failed to capture codex app-server stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "Failed to capture codex app-server stderr".to_string())?;
+
+    let (tx, rx) = mpsc::channel::<Result<Value, String>>();
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let line = match line {
+                Ok(line) => line,
+                Err(e) => {
+                    let _ = tx.send(Err(format!("Failed reading codex app-server: {e}")));
+                    return;
+                }
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<Value>(&line) {
+                Ok(value) => {
+                    let _ = tx.send(Ok(value));
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(format!("Invalid codex app-server JSON: {e}")));
+                    return;
+                }
+            }
+        }
+    });
+
+    let (err_tx, err_rx) = mpsc::channel::<String>();
+    std::thread::spawn(move || {
+        let mut out = String::new();
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if !out.is_empty() {
+                out.push('\n');
+            }
+            out.push_str(&line);
+        }
+        let _ = err_tx.send(out);
+    });
+
+    let result = (|| -> Result<(), String> {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Failed to open codex app-server stdin".to_string())?;
+
+        write_json_line(
+            &mut stdin,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "clientInfo": {
+                        "name": "terax",
+                        "title": "Terax",
+                        "version": env!("CARGO_PKG_VERSION")
+                    },
+                    "capabilities": { "experimentalApi": true }
+                }
+            }),
+        )?;
+        wait_for_response(&rx, 1)?;
+
+        write_json_line(
+            &mut stdin,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "account/read",
+                "params": { "refreshToken": true }
+            }),
+        )?;
+        let account = parse_account_read(wait_for_response(&rx, 2)?)?;
+        if account.auth_mode.as_deref() != Some("chatgpt") {
+            return Err(
+                "Codex ChatGPT account is not connected. Open Settings -> Models -> Codex account."
+                    .to_string(),
+            );
+        }
+
+        let actual_model = model.map(to_codex_model_id).unwrap_or("gpt-5.3-codex");
+        write_json_line(
+            &mut stdin,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "thread/start",
+                "params": {
+                    "cwd": cwd,
+                    "ephemeral": true,
+                    "model": actual_model,
+                    "modelProvider": "openai",
+                    "approvalPolicy": "never",
+                    "sandbox": "read-only",
+                    "threadSource": "user",
+                    "sessionStartSource": "startup"
+                }
+            }),
+        )?;
+        let thread_id = parse_thread_start(wait_for_response(&rx, 3)?)?;
+
+        write_json_line(
+            &mut stdin,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "turn/start",
+                "params": {
+                    "threadId": thread_id,
+                    "cwd": cwd,
+                    "model": actual_model,
+                    "approvalPolicy": "never",
+                    "effort": "medium",
+                    "summary": "concise",
+                    "input": [
+                        { "type": "text", "text": prompt }
+                    ]
+                }
+            }),
+        )?;
+        wait_for_response(&rx, 4)?;
+
+        loop {
+            let message = rx
+                .recv_timeout(Duration::from_secs(180))
+                .map_err(|_| "Timed out waiting for Codex response".to_string())??;
+            if let Some(event) = codex_stream_event(&message) {
+                if on_event.send(event).is_err() {
+                    break Ok(());
+                }
+                continue;
+            }
+            if is_turn_completed(&message) {
+                let _ = on_event.send(CodexStreamEvent::End);
+                break Ok(());
+            }
+            if let Some(error) = error_notification(&message) {
+                let _ = on_event.send(CodexStreamEvent::Error {
+                    message: error.clone(),
+                });
+                break Err(error);
+            }
+        }
+    })();
+
+    let _ = child.kill();
+    let _ = child.wait();
+
+    result.map_err(|e| {
+        let stderr = err_rx.try_recv().unwrap_or_default();
+        if stderr.trim().is_empty() {
+            e
+        } else {
+            format!("{e}: {}", stderr.trim())
+        }
+    })
+}
+
 fn wait_for_response(rx: &mpsc::Receiver<Result<Value, String>>, id: i64) -> Result<Value, String> {
     loop {
         let message = rx
@@ -464,6 +680,50 @@ fn agent_message_delta(value: &Value) -> Option<&str> {
         .and_then(Value::as_str)
 }
 
+fn codex_stream_event(value: &Value) -> Option<CodexStreamEvent> {
+    let method = value.get("method").and_then(Value::as_str)?;
+    match method {
+        "item/started" => item_lifecycle_event(value, true),
+        "item/completed" => item_lifecycle_event(value, false),
+        "item/agentMessage/delta" => {
+            let params = value.get("params")?;
+            Some(CodexStreamEvent::AgentMessageDelta {
+                item_id: params
+                    .get("itemId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("codex-text")
+                    .to_string(),
+                delta: params.get("delta").and_then(Value::as_str)?.to_string(),
+            })
+        }
+        "item/reasoning/textDelta" | "item/reasoning/summaryTextDelta" => {
+            let params = value.get("params")?;
+            Some(CodexStreamEvent::ReasoningDelta {
+                item_id: params
+                    .get("itemId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("codex-reasoning")
+                    .to_string(),
+                delta: params.get("delta").and_then(Value::as_str)?.to_string(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn item_lifecycle_event(value: &Value, started: bool) -> Option<CodexStreamEvent> {
+    let item = value.get("params")?.get("item")?;
+    let item_type = item.get("type").and_then(Value::as_str)?;
+    let item_id = item.get("id").and_then(Value::as_str)?.to_string();
+    match (item_type, started) {
+        ("agentMessage", true) => Some(CodexStreamEvent::AgentMessageStart { item_id }),
+        ("agentMessage", false) => Some(CodexStreamEvent::AgentMessageEnd { item_id }),
+        ("reasoning", true) => Some(CodexStreamEvent::ReasoningStart { item_id }),
+        ("reasoning", false) => Some(CodexStreamEvent::ReasoningEnd { item_id }),
+        _ => None,
+    }
+}
+
 fn is_turn_completed(value: &Value) -> bool {
     value.get("method").and_then(Value::as_str) == Some("turn/completed")
 }
@@ -550,6 +810,90 @@ mod tests {
         });
 
         assert_eq!(agent_message_delta(&value), Some("hello"));
+    }
+
+    #[test]
+    fn maps_agent_message_delta_to_stream_event() {
+        let value = json!({
+            "method": "item/agentMessage/delta",
+            "params": {
+                "delta": "hello",
+                "itemId": "item-123"
+            }
+        });
+
+        assert_eq!(
+            codex_stream_event(&value),
+            Some(CodexStreamEvent::AgentMessageDelta {
+                item_id: "item-123".to_string(),
+                delta: "hello".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn maps_reasoning_summary_delta_to_stream_event() {
+        let value = json!({
+            "method": "item/reasoning/summaryTextDelta",
+            "params": {
+                "delta": "checking",
+                "itemId": "reasoning-123",
+                "summaryIndex": 0
+            }
+        });
+
+        assert_eq!(
+            codex_stream_event(&value),
+            Some(CodexStreamEvent::ReasoningDelta {
+                item_id: "reasoning-123".to_string(),
+                delta: "checking".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn maps_reasoning_lifecycle_to_stream_events() {
+        let started = json!({
+            "method": "item/started",
+            "params": {
+                "item": { "type": "reasoning", "id": "reasoning-123" }
+            }
+        });
+        let completed = json!({
+            "method": "item/completed",
+            "params": {
+                "item": { "type": "reasoning", "id": "reasoning-123" }
+            }
+        });
+
+        assert_eq!(
+            codex_stream_event(&started),
+            Some(CodexStreamEvent::ReasoningStart {
+                item_id: "reasoning-123".to_string(),
+            })
+        );
+        assert_eq!(
+            codex_stream_event(&completed),
+            Some(CodexStreamEvent::ReasoningEnd {
+                item_id: "reasoning-123".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn serializes_stream_event_fields_as_camel_case() {
+        let value = serde_json::to_value(CodexStreamEvent::AgentMessageStart {
+            item_id: "item-123".to_string(),
+        })
+        .expect("stream event json");
+
+        assert_eq!(
+            value,
+            json!({
+                "kind": "agentMessageStart",
+                "itemId": "item-123"
+            })
+        );
     }
 
     #[test]
