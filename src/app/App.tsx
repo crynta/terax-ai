@@ -954,5 +954,15 @@ export default function App() {
     </ThemeProvider>
   );
 
-  return <AiComposerProvider>{shell}</AiComposerProvider>;
+  return (
+    <AiComposerProvider>
+      {tabs.length > 0 ? (
+        shell
+      ) : (
+        <ThemeProvider>
+          <div className="h-screen bg-background" />
+        </ThemeProvider>
+      )}
+    </AiComposerProvider>
+  );
 }
