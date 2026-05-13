@@ -10,11 +10,7 @@ import {
   type PaneNode,
   type SplitDir,
 } from "@/modules/terminal/lib/panes";
-import {
-  loadPersistedWorkspace,
-  savePersistedWorkspace,
-  type PersistedTerminalTab,
-} from "./persistedWorkspace";
+import { loadPersistedWorkspace, savePersistedWorkspace } from "./persistedWorkspace";
 
 // Browsers cap WebGL contexts at ~16; one xterm renderer per leaf.
 export const MAX_PANES_PER_TAB = 8;
@@ -113,9 +109,7 @@ function createInitialTerminalState(initial?: Partial<TerminalTab>) {
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [activeId, setActiveId] = useState(0);
-  const [hydrated, setHydrated] = useState(false);
   const nextIdRef = useRef(1);
-  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,7 +119,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       setTabs(restored.tabs);
       setActiveId(restored.activeId ?? restored.tabs[0]?.id ?? 0);
       nextIdRef.current = restored.nextId;
-      setHydrated(true);
     });
     return () => {
       cancelled = true;
@@ -133,41 +126,29 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   }, [initial]);
 
   useEffect(() => {
-    if (!hydrated) return;
-    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
-    persistTimerRef.current = setTimeout(() => {
-      const terminalTabs = tabs.filter(
-        (tab): tab is PersistedTerminalTab & TerminalTab =>
-          tab.kind === "terminal" && tab.private !== true,
-      );
-      if (terminalTabs.length === 0) {
-        void savePersistedWorkspace(null);
-        return;
-      }
-      const restoredActiveId = terminalTabs.some((tab) => tab.id === activeId)
-        ? activeId
-        : terminalTabs[0].id;
-      void savePersistedWorkspace({
-        version: 1,
-        activeId: restoredActiveId,
-        nextId: nextIdRef.current,
-        tabs: terminalTabs.map((tab) => ({
-          id: tab.id,
-          kind: "terminal",
-          title: tab.title,
-          ...(tab.cwd ? { cwd: tab.cwd } : {}),
-          paneTree: tab.paneTree,
-          activeLeafId: tab.activeLeafId,
-        })),
-      });
-    }, 250);
-    return () => {
-      if (persistTimerRef.current) {
-        clearTimeout(persistTimerRef.current);
-        persistTimerRef.current = null;
-      }
-    };
-  }, [tabs, activeId, hydrated]);
+    if (tabs.length === 0) return;
+    const terminalTabs = tabs.filter(
+      (tab): tab is TerminalTab => tab.kind === "terminal" && tab.private !== true,
+    );
+    void savePersistedWorkspace(
+      terminalTabs.length
+        ? {
+            version: 1,
+            activeId: terminalTabs.some((tab) => tab.id === activeId)
+              ? activeId
+              : terminalTabs[0].id,
+            tabs: terminalTabs.map(({ id, title, cwd, paneTree, activeLeafId }) => ({
+              id,
+              kind: "terminal" as const,
+              title,
+              ...(cwd ? { cwd } : {}),
+              paneTree,
+              activeLeafId,
+            })),
+          }
+        : null,
+    );
+  }, [tabs, activeId]);
 
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
@@ -546,7 +527,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   }, []);
 
   return {
-    hydrated,
     tabs,
     activeId,
     setActiveId,
