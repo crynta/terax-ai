@@ -71,6 +71,7 @@ import type { PanelImperativeHandle } from "react-resizable-panels";
 
 export default function App() {
   const {
+    hydrated: tabsHydrated,
     tabs,
     activeId,
     setActiveId,
@@ -903,5 +904,11 @@ export default function App() {
     </ThemeProvider>
   );
 
-  return <AiComposerProvider>{shell}</AiComposerProvider>;
+  const loading = (
+    <ThemeProvider>
+      <div className="h-screen bg-background" />
+    </ThemeProvider>
+  );
+
+  return <AiComposerProvider>{tabsHydrated ? shell : loading}</AiComposerProvider>;
 }

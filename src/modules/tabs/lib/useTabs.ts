@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   hasLeaf,
   leafIds,
@@ -10,6 +10,11 @@ import {
   type PaneNode,
   type SplitDir,
 } from "@/modules/terminal/lib/panes";
+import {
+  loadPersistedWorkspace,
+  savePersistedWorkspace,
+  type PersistedTerminalTab,
+} from "./persistedWorkspace";
 
 // Browsers cap WebGL contexts at ~16; one xterm renderer per leaf.
 export const MAX_PANES_PER_TAB = 8;
@@ -86,11 +91,11 @@ function titleFromUrl(url: string): string {
   }
 }
 
-export function useTabs(initial?: Partial<TerminalTab>) {
-  const [tabs, setTabs] = useState<Tab[]>(() => {
-    const tabId = 1;
-    const leafId = 2;
-    return [
+function createInitialTerminalState(initial?: Partial<TerminalTab>) {
+  const tabId = 1;
+  const leafId = 2;
+  return {
+    tabs: [
       {
         id: tabId,
         kind: "terminal",
@@ -98,11 +103,71 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         cwd: initial?.cwd,
         paneTree: { kind: "leaf", id: leafId, cwd: initial?.cwd },
         activeLeafId: leafId,
-      },
-    ];
-  });
-  const [activeId, setActiveId] = useState(1);
-  const nextIdRef = useRef(3);
+      } satisfies TerminalTab,
+    ] as Tab[],
+    activeId: tabId,
+    nextId: 3,
+  };
+}
+
+export function useTabs(initial?: Partial<TerminalTab>) {
+  const [tabs, setTabs] = useState<Tab[]>([]);
+  const [activeId, setActiveId] = useState(0);
+  const [hydrated, setHydrated] = useState(false);
+  const nextIdRef = useRef(1);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadPersistedWorkspace().then((saved) => {
+      if (cancelled) return;
+      const restored = saved ?? createInitialTerminalState(initial);
+      setTabs(restored.tabs);
+      setActiveId(restored.activeId ?? restored.tabs[0]?.id ?? 0);
+      nextIdRef.current = restored.nextId;
+      setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initial]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      const terminalTabs = tabs.filter(
+        (tab): tab is PersistedTerminalTab & TerminalTab =>
+          tab.kind === "terminal" && tab.private !== true,
+      );
+      if (terminalTabs.length === 0) {
+        void savePersistedWorkspace(null);
+        return;
+      }
+      const restoredActiveId = terminalTabs.some((tab) => tab.id === activeId)
+        ? activeId
+        : terminalTabs[0].id;
+      void savePersistedWorkspace({
+        version: 1,
+        activeId: restoredActiveId,
+        nextId: nextIdRef.current,
+        tabs: terminalTabs.map((tab) => ({
+          id: tab.id,
+          kind: "terminal",
+          title: tab.title,
+          ...(tab.cwd ? { cwd: tab.cwd } : {}),
+          paneTree: tab.paneTree,
+          activeLeafId: tab.activeLeafId,
+        })),
+      });
+    }, 250);
+    return () => {
+      if (persistTimerRef.current) {
+        clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+    };
+  }, [tabs, activeId, hydrated]);
 
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
@@ -481,6 +546,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   }, []);
 
   return {
+    hydrated,
     tabs,
     activeId,
     setActiveId,
