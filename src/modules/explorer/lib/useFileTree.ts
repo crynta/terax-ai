@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { affectedDirsForPath, dirname, joinPath } from "./pathUtils";
+import { useFileTreeWatcher } from "./useFileTreeWatcher";
 
 export type DirEntry = {
   name: string;
@@ -29,11 +29,6 @@ type Options = {
   onPathDeleted?: (path: string) => void;
 };
 
-type FsChangedPayload = {
-  root: string;
-  paths: string[];
-};
-
 export function useFileTree(rawRootPath: string | null, options?: Options) {
   // Normalize: strip trailing slash (except for root "/") to prevent
   // watcher restart + root mismatch when terminal CWD has trailing slash.
@@ -46,10 +41,6 @@ export function useFileTree(rawRootPath: string | null, options?: Options) {
   const showHiddenRef = useRef(showHidden);
   const [nodes, setNodes] = useState<TreeState>({});
   const nodesRef = useRef<TreeState>({});
-  const pendingWatcherPathsRef = useRef<Set<string>>(new Set());
-  const watcherFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(
     null,
@@ -86,10 +77,8 @@ export function useFileTree(rawRootPath: string | null, options?: Options) {
     }
   }, []);
 
-  const flushWatcherRefresh = useCallback(() => {
+  const handleWatcherInvalidate = useCallback((paths: string[]) => {
     if (!rootPath) return;
-    const paths = [...pendingWatcherPathsRef.current];
-    pendingWatcherPathsRef.current.clear();
     if (paths.length === 0) return;
 
     const affectedDirs = new Set<string>();
@@ -107,6 +96,8 @@ export function useFileTree(rawRootPath: string | null, options?: Options) {
       void fetchChildren(dir);
     }
   }, [fetchChildren, rootPath]);
+
+  useFileTreeWatcher(rootPath, { onInvalidate: handleWatcherInvalidate });
 
   // Root change → reset state and fetch.
   useEffect(() => {
@@ -135,66 +126,6 @@ export function useFileTree(rawRootPath: string | null, options?: Options) {
     // every expanded directory.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHidden, rootPath, fetchChildren]);
-
-  useEffect(() => {
-    if (!rootPath) return;
-
-    let disposed = false;
-    let unlisten: (() => void) | null = null;
-
-    const setup = async () => {
-      try {
-        const unlistenFn = await listen<FsChangedPayload>("fs://changed", (event) => {
-          if (event.payload.root !== rootPath) return;
-
-          for (const path of event.payload.paths) {
-            pendingWatcherPathsRef.current.add(path);
-          }
-
-          if (watcherFlushTimerRef.current) {
-            clearTimeout(watcherFlushTimerRef.current);
-          }
-          watcherFlushTimerRef.current = setTimeout(() => {
-            watcherFlushTimerRef.current = null;
-            flushWatcherRefresh();
-          }, 100);
-        });
-
-        if (disposed) {
-          unlistenFn();
-          return;
-        }
-
-        unlisten = unlistenFn;
-
-        try {
-          await invoke("fs_watch_start", { path: rootPath });
-          if (disposed) {
-            await invoke("fs_watch_stop", { path: rootPath });
-          }
-        } catch (e) {
-          console.error("fs_watch_start failed:", e);
-        }
-      } catch (e) {
-        console.error("fs://changed listen failed:", e);
-      }
-    };
-
-    void setup();
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-      if (watcherFlushTimerRef.current) {
-        clearTimeout(watcherFlushTimerRef.current);
-        watcherFlushTimerRef.current = null;
-      }
-      pendingWatcherPathsRef.current.clear();
-      void invoke("fs_watch_stop", { path: rootPath }).catch((e) => {
-        console.error("fs_watch_stop failed:", e);
-      });
-    };
-  }, [rootPath, flushWatcherRefresh]);
 
   const toggle = useCallback(
     (path: string) => {
