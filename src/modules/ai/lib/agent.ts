@@ -13,7 +13,7 @@ import {
   LMSTUDIO_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
   providerNeedsKey,
-  SYSTEM_PROMPT,
+  selectSystemPrompt,
   type ModelId,
   type ProviderId,
 } from "../config";
@@ -210,10 +210,12 @@ const PLAN_MODE_PROMPT = `## PLAN MODE — ACTIVE
 Mutating tools (write_file, edit, multi_edit, create_directory) will queue their changes for the user to review as a single diff. Do NOT execute bash_run or bash_background while plan mode is active — restrict yourself to reads (read_file, grep, glob, list_directory) and the queued mutations. After queueing the full set of edits, stop and return a brief summary; do not continue acting until the user has accepted/rejected.`;
 
 function buildStableSystem(
+  modelId: ModelId,
   persona: { name: string; instructions: string } | null,
   customInstructions: string | undefined,
   projectMemory: string | null,
 ): string {
+  const base = selectSystemPrompt(getModel(modelId).id);
   const personaBlock = persona?.instructions.trim()
     ? `\n\n## ACTIVE AGENT — ${persona.name}\n${persona.instructions.trim()}`
     : "";
@@ -224,7 +226,7 @@ function buildStableSystem(
     projectMemory && projectMemory.trim().length > 0
       ? `\n\n## PROJECT — TERAX.md\n${projectMemory.trim()}`
       : "";
-  return `${SYSTEM_PROMPT}${memoryBlock}${personaBlock}${customBlock}`;
+  return `${base}${memoryBlock}${personaBlock}${customBlock}`;
 }
 
 // OpenAI / Gemini / DeepSeek apply prefix caching automatically; only
@@ -291,6 +293,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
   const provider = getModel(modelId).provider;
 
   const stableSystem = buildStableSystem(
+    modelId,
     opts.agentPersona ?? null,
     opts.customInstructions,
     opts.projectMemory ?? null,
