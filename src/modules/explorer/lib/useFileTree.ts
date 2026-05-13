@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { affectedDirsForPath, dirname, joinPath } from "./pathUtils";
 
 export type DirEntry = {
   name: string;
@@ -22,37 +23,6 @@ export type PendingCreate = {
   parentPath: string;
   kind: "file" | "dir";
 };
-
-export function joinPath(parent: string, name: string): string {
-  if (parent.endsWith("/")) return `${parent}${name}`;
-  return `${parent}/${name}`;
-}
-
-export function dirname(path: string): string {
-  const i = path.lastIndexOf("/");
-  if (i <= 0) return "/";
-  return path.slice(0, i);
-}
-
-export function affectedDirsForPath(path: string, rootPath: string): string[] {
-  if (rootPath !== "/" && path !== rootPath && !path.startsWith(joinPath(rootPath, ""))) return [];
-  if (rootPath === "/" && !path.startsWith("/")) return [];
-
-  const dirs = new Set<string>();
-  let current = path;
-
-  dirs.add(dirname(current));
-
-  while (current && current !== rootPath && current !== "/") {
-    dirs.add(current);
-    const parent = dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-
-  dirs.add(rootPath);
-  return [...dirs];
-}
 
 type Options = {
   onPathRenamed?: (from: string, to: string) => void;
@@ -124,11 +94,12 @@ export function useFileTree(rawRootPath: string | null, options?: Options) {
 
     const affectedDirs = new Set<string>();
     for (const path of paths) {
-      for (const dir of affectedDirsForPath(path, rootPath)) {
-        const node = nodesRef.current[dir];
-        if (dir === rootPath || node?.status === "loaded") {
-          affectedDirs.add(dir);
-        }
+      for (const dir of affectedDirsForPath(
+        path,
+        rootPath,
+        (dir) => nodesRef.current[dir]?.status === "loaded",
+      )) {
+        affectedDirs.add(dir);
       }
     }
 
