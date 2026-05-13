@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import type { Tab } from "@/modules/tabs";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useEffect, useRef } from "react";
@@ -79,7 +80,13 @@ export function TerminalStack({
       {terminals.map((t) => {
         const tabVisible = t.id === activeId;
         return (
-          <div key={t.id} className="absolute inset-0">
+          <div
+            key={t.id}
+            className={cn(
+              "absolute inset-0",
+              !tabVisible && "invisible pointer-events-none",
+            )}
+          >
             <PaneTreeView
               node={t.paneTree}
               tabVisible={tabVisible}
