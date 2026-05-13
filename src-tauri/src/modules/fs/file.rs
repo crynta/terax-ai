@@ -1,8 +1,9 @@
 use std::io::Write;
-use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+
+use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
@@ -40,8 +41,9 @@ pub struct FileStat {
 }
 
 #[tauri::command]
-pub fn fs_read_file(path: String) -> Result<ReadResult, String> {
-    let p = PathBuf::from(&path);
+pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<ReadResult, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| {
         log::debug!("fs_read_file stat({}) failed: {e}", p.display());
         e.to_string()
@@ -76,8 +78,13 @@ pub fn fs_read_file(path: String) -> Result<ReadResult, String> {
 /// Atomic write: stage into a sibling temp file, then rename over the target.
 /// Prevents partial writes from leaving a half-saved file on crash/power loss.
 #[tauri::command]
-pub fn fs_write_file(path: String, content: String) -> Result<(), String> {
-    let target = PathBuf::from(&path);
+pub fn fs_write_file(
+    path: String,
+    content: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let target = resolve_path(&path, &workspace);
     let parent = target
         .parent()
         .ok_or_else(|| "path has no parent".to_string())?;
@@ -115,8 +122,9 @@ pub fn fs_write_file(path: String, content: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn fs_stat(path: String) -> Result<FileStat, String> {
-    let p = PathBuf::from(&path);
+pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
     let kind = if meta.is_dir() {
         StatKind::Dir

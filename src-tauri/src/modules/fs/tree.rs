@@ -1,7 +1,8 @@
-use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+
+use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -24,8 +25,13 @@ pub struct DirEntry {
 /// case-insensitively. Dot-prefixed entries (files and dirs) are hidden unless
 /// `show_hidden` is set.
 #[tauri::command]
-pub fn fs_read_dir(path: String, show_hidden: bool) -> Result<Vec<DirEntry>, String> {
-    let root = PathBuf::from(&path);
+pub fn fs_read_dir(
+    path: String,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<Vec<DirEntry>, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
         e.to_string()
@@ -94,8 +100,13 @@ pub fn fs_read_dir(path: String, show_hidden: bool) -> Result<Vec<DirEntry>, Str
 /// Symlinks to directories are included (matches shell `cd` semantics).
 /// Hidden entries are filtered by dot-prefix only.
 #[tauri::command]
-pub fn list_subdirs(path: String, show_hidden: bool) -> Result<Vec<String>, String> {
-    let root = PathBuf::from(&path);
+pub fn list_subdirs(
+    path: String,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<Vec<String>, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("list_subdirs({}) read_dir failed: {e}", root.display());
         e.to_string()

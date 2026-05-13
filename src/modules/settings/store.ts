@@ -58,6 +58,7 @@ export type Preferences = {
   showHidden: boolean;
   terminalWebglEnabled: boolean;
   terminalFontSize: number;
+  lastWslDistro: string | null;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
 };
 
@@ -82,6 +83,7 @@ const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
+const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_SHORTCUTS = "shortcuts";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
@@ -112,6 +114,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   showHidden: false,
   terminalWebglEnabled: true,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
+  lastWslDistro: null,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
 };
 
@@ -183,6 +186,9 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalFontSize:
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
       DEFAULT_PREFERENCES.terminalFontSize,
+    lastWslDistro:
+      get<string | null>(KEY_LAST_WSL_DISTRO) ??
+      DEFAULT_PREFERENCES.lastWslDistro,
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
@@ -273,6 +279,10 @@ export async function setTerminalFontSize(value: number): Promise<void> {
   await writePref(KEY_TERMINAL_FONT_SIZE, clamped);
 }
 
+export async function setLastWslDistro(value: string | null): Promise<void> {
+  await writePref(KEY_LAST_WSL_DISTRO, value);
+}
+
 export async function setShortcuts(
   value: Record<ShortcutId, KeyBinding[]> | {}
 ): Promise<void> {
@@ -311,6 +321,7 @@ export async function onPreferencesChange(
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
+    [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_SHORTCUTS]: "shortcuts",
   };
   // Same-process writes still fire onChange immediately; cross-window writes

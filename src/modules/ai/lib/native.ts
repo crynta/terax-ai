@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 
 export type ReadResult =
   | { kind: "text"; content: string; size: number }
@@ -37,15 +38,29 @@ export type GlobHit = { path: string; rel: string };
 export type GlobResponse = { hits: GlobHit[]; truncated: boolean };
 
 export const native = {
-  readFile: (path: string) => invoke<ReadResult>("fs_read_file", { path }),
+  readFile: (path: string) =>
+    invoke<ReadResult>("fs_read_file", {
+      path,
+      workspace: currentWorkspaceEnv(),
+    }),
   writeFile: (path: string, content: string) =>
-    invoke<void>("fs_write_file", { path, content }),
-  createFile: (path: string) => invoke<void>("fs_create_file", { path }),
-  createDir: (path: string) => invoke<void>("fs_create_dir", { path }),
+    invoke<void>("fs_write_file", {
+      path,
+      content,
+      workspace: currentWorkspaceEnv(),
+    }),
+  createFile: (path: string) =>
+    invoke<void>("fs_create_file", { path, workspace: currentWorkspaceEnv() }),
+  createDir: (path: string) =>
+    invoke<void>("fs_create_dir", { path, workspace: currentWorkspaceEnv() }),
   // AI tooling never sees dot-prefixed entries regardless of the user's
   // explorer preference — keeps .git / .env / .ssh out of agent context.
   readDir: (path: string) =>
-    invoke<DirEntry[]>("fs_read_dir", { path, showHidden: false }),
+    invoke<DirEntry[]>("fs_read_dir", {
+      path,
+      showHidden: false,
+      workspace: currentWorkspaceEnv(),
+    }),
   grep: (params: {
     pattern: string;
     root: string;
@@ -59,12 +74,14 @@ export const native = {
       glob: params.glob ?? null,
       caseInsensitive: params.caseInsensitive ?? null,
       maxResults: params.maxResults ?? null,
+      workspace: currentWorkspaceEnv(),
     }),
   glob: (params: { pattern: string; root: string; maxResults?: number }) =>
     invoke<GlobResponse>("fs_glob", {
       pattern: params.pattern,
       root: params.root,
       maxResults: params.maxResults ?? null,
+      workspace: currentWorkspaceEnv(),
     }),
   runCommand: (
     command: string,
@@ -75,10 +92,14 @@ export const native = {
       command,
       cwd: cwd ?? null,
       timeoutSecs: timeoutSecs ?? null,
+      workspace: currentWorkspaceEnv(),
     }),
 
   shellSessionOpen: (cwd?: string | null) =>
-    invoke<number>("shell_session_open", { cwd: cwd ?? null }),
+    invoke<number>("shell_session_open", {
+      cwd: cwd ?? null,
+      workspace: currentWorkspaceEnv(),
+    }),
   shellSessionRun: (
     id: number,
     command: string,
@@ -97,11 +118,16 @@ export const native = {
       command,
       cwd: cwd ?? null,
       timeoutSecs: timeoutSecs ?? null,
+      workspace: currentWorkspaceEnv(),
     }),
   shellSessionClose: (id: number) =>
     invoke<void>("shell_session_close", { id }),
   shellBgSpawn: (command: string, cwd?: string | null) =>
-    invoke<number>("shell_bg_spawn", { command, cwd: cwd ?? null }),
+    invoke<number>("shell_bg_spawn", {
+      command,
+      cwd: cwd ?? null,
+      workspace: currentWorkspaceEnv(),
+    }),
   shellBgLogs: (handle: number, sinceOffset?: number) =>
     invoke<{
       bytes: string;

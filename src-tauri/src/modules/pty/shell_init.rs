@@ -2,14 +2,28 @@ use std::path::PathBuf;
 
 use portable_pty::CommandBuilder;
 
-pub fn build_command(cwd: Option<String>) -> Result<CommandBuilder, String> {
+use crate::modules::workspace::WorkspaceEnv;
+
+#[cfg(windows)]
+const BASHRC_SCRIPT: &str = include_str!("scripts/bashrc.bash");
+
+#[cfg(windows)]
+fn bashrc_script() -> &'static str {
+    BASHRC_SCRIPT
+}
+
+pub fn build_command(
+    cwd: Option<String>,
+    workspace: WorkspaceEnv,
+) -> Result<CommandBuilder, String> {
     #[cfg(unix)]
     {
+        let _ = workspace;
         unix::build(cwd)
     }
     #[cfg(windows)]
     {
-        windows::build(cwd)
+        windows::build(cwd, workspace)
     }
 }
 
@@ -210,11 +224,15 @@ mod windows {
     use std::fs;
     use std::path::{Path, PathBuf};
 
+    use crate::modules::workspace::WorkspaceEnv;
     use portable_pty::CommandBuilder;
 
     const PROFILE_PS1: &str = include_str!("scripts/profile.ps1");
 
-    pub fn build(cwd: Option<String>) -> Result<CommandBuilder, String> {
+    pub fn build(cwd: Option<String>, workspace: WorkspaceEnv) -> Result<CommandBuilder, String> {
+        if let WorkspaceEnv::Wsl { distro } = workspace {
+            return build_wsl(cwd, distro);
+        }
         let shell_path = super::windows_shell_path();
         let shell_name = shell_path
             .file_name()
@@ -246,6 +264,47 @@ mod windows {
 
         log::info!("spawning Windows shell: {}", shell_path.display());
         Ok(cmd)
+    }
+
+    fn build_wsl(cwd: Option<String>, distro: String) -> Result<CommandBuilder, String> {
+        let mut cmd = CommandBuilder::new("wsl.exe");
+        cmd.arg("-d");
+        cmd.arg(&distro);
+        cmd.arg("--cd");
+        cmd.arg(cwd.as_deref().filter(|s| !s.is_empty()).unwrap_or("~"));
+        cmd.arg("--exec");
+        cmd.arg("bash");
+        match prepare_wsl_bash_rcfile(&distro) {
+            Ok(rc) => {
+                cmd.arg("--rcfile");
+                cmd.arg(rc);
+            }
+            Err(e) => {
+                log::warn!("WSL bash shell integration disabled for {distro}: {e}");
+            }
+        }
+        cmd.arg("-i");
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+        cmd.env("TERAX_TERMINAL", "1");
+        super::ensure_utf8_locale(&mut cmd);
+        log::info!("spawning WSL shell: {distro}");
+        Ok(cmd)
+    }
+
+    fn prepare_wsl_bash_rcfile(distro: &str) -> Result<String, String> {
+        let home = crate::modules::workspace::wsl_home(distro.to_string())?;
+        let linux_dir = format!(
+            "{}/.cache/terax/shell-integration/bash",
+            home.trim_end_matches('/')
+        );
+        let linux_rc = format!("{linux_dir}/bashrc");
+        let unc_dir = crate::modules::workspace::wsl_path_to_unc(distro, &linux_dir);
+        fs::create_dir_all(&unc_dir).map_err(|e| format!("create {}: {e}", unc_dir.display()))?;
+        let unc_file = crate::modules::workspace::wsl_path_to_unc(distro, &linux_rc);
+        let content = super::bashrc_script().replace("\r\n", "\n");
+        write_if_changed(&unc_file, &content)?;
+        Ok(linux_rc)
     }
 
     fn integration_root() -> Result<PathBuf, String> {

@@ -222,20 +222,19 @@ html[data-chrome="borderless"] #settings-root {
   display: none !important;
 }
 
-/* Linux/Windows ship a chunky native Chromium scrollbar that breaks the
- * frosted-glass aesthetic. Hide it globally — visible scroll affordances are
- * provided per-region via shadcn <ScrollArea>. macOS native overlay scrollbar
- * stays untouched. */
-html[data-chrome="borderless"] {
+/* Kill native scrollbars everywhere by default — Linux/Windows ship chunky
+ * Chromium bars that break the chrome, and macOS WKWebView flashes its overlay
+ * scrollbar briefly during layout transitions (AI panel open, pane split,
+ * window resize) which looks like a glitch. Visible scroll affordances are
+ * provided per-region via shadcn <ScrollArea>. */
+html,
+html *,
+html *::before,
+html *::after {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-html[data-chrome="borderless"] *,
-html[data-chrome="borderless"] *::before,
-html[data-chrome="borderless"] *::after {
-  scrollbar-width: none;
-}
-html[data-chrome="borderless"] *::-webkit-scrollbar {
+html *::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
