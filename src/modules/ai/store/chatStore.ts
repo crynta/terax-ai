@@ -16,6 +16,7 @@ import { BUILTIN_AGENTS } from "../lib/agents";
 import { useAgentsStore } from "./agentsStore";
 import { usePlanStore } from "./planStore";
 import { useTodosStore } from "./todoStore";
+import type { AgentUsage } from "../lib/agent";
 import { EMPTY_PROVIDER_KEYS, type ProviderKeys } from "../lib/keyring";
 import {
   deleteSessionData,
@@ -54,6 +55,13 @@ export type AgentMeta = {
   step: string | null;
   approvalsPending: number;
   error: string | null;
+  tokens: AgentUsage;
+};
+
+const ZERO_USAGE: AgentUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cachedInputTokens: 0,
 };
 
 const IDLE_META: AgentMeta = {
@@ -61,6 +69,7 @@ const IDLE_META: AgentMeta = {
   step: null,
   approvalsPending: 0,
   error: null,
+  tokens: ZERO_USAGE,
 };
 
 export type MiniState = {
@@ -224,6 +233,16 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       usePreferencesStore.getState().openaiCompatibleModelId,
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
+    },
+    onUsage: (delta) => {
+      const cur = useChatStore.getState().agentMeta.tokens;
+      useChatStore.getState().patchAgentMeta({
+        tokens: {
+          inputTokens: cur.inputTokens + delta.inputTokens,
+          outputTokens: cur.outputTokens + delta.outputTokens,
+          cachedInputTokens: cur.cachedInputTokens + delta.cachedInputTokens,
+        },
+      });
     },
   }) as unknown as ChatTransport<UIMessage>;
 

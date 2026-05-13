@@ -586,6 +586,49 @@ export function getModelContextLimit(modelId: string | undefined): number {
   return MODEL_CONTEXT_LIMITS[modelId] ?? 128_000;
 }
 
+export type ModelPricing = {
+  input: number;
+  output: number;
+  cacheRead?: number;
+};
+
+export const MODEL_PRICING: Record<string, ModelPricing> = {
+  "gpt-5.5": { input: 5, output: 15, cacheRead: 0.5 },
+  "gpt-5.4-mini": { input: 0.4, output: 1.6, cacheRead: 0.04 },
+  "gpt-5.4-nano": { input: 0.1, output: 0.4, cacheRead: 0.01 },
+  "gpt-5.3-codex": { input: 1.5, output: 6, cacheRead: 0.15 },
+  "gpt-4.1-mini": { input: 0.4, output: 1.6, cacheRead: 0.1 },
+  "claude-opus-4-7": { input: 15, output: 75, cacheRead: 1.5 },
+  "claude-opus-4-6": { input: 15, output: 75, cacheRead: 1.5 },
+  "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3 },
+  "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1 },
+  "gemini-3.1-pro-preview": { input: 1.25, output: 10, cacheRead: 0.31 },
+  "gemini-3-flash-preview": { input: 0.3, output: 2.5, cacheRead: 0.075 },
+  "gemini-2.5-pro": { input: 1.25, output: 10, cacheRead: 0.31 },
+  "gemini-2.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.075 },
+  "grok-4.20-reasoning": { input: 3, output: 15 },
+  "grok-4.20-non-reasoning": { input: 1, output: 5 },
+  "grok-4-fast-reasoning": { input: 0.2, output: 0.5 },
+  "deepseek-v4-pro": { input: 0.28, output: 1.1, cacheRead: 0.028 },
+  "deepseek-v4-flash": { input: 0.07, output: 0.27, cacheRead: 0.007 },
+  "deepseek-reasoner": { input: 0.55, output: 2.19, cacheRead: 0.14 },
+};
+
+export function estimateCost(
+  modelId: string | undefined,
+  usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number },
+): number | null {
+  if (!modelId) return null;
+  const p = MODEL_PRICING[modelId];
+  if (!p) return null;
+  const fresh = Math.max(0, usage.inputTokens - usage.cachedInputTokens);
+  const cached = usage.cachedInputTokens;
+  return (
+    (fresh * p.input + cached * (p.cacheRead ?? p.input) + usage.outputTokens * p.output) /
+    1_000_000
+  );
+}
+
 /** Providers that do not require an API key (local servers, key-optional). */
 export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
   "lmstudio",
