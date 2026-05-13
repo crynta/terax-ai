@@ -24,7 +24,14 @@ import {
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import {
   SearchInline,
   type SearchInlineHandle,
@@ -76,18 +83,18 @@ export function Header({
   const [compact, setCompact] = useState(false);
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
 
-  const tokensFor = (id: ShortcutId): string => {
-    const s = SHORTCUTS.find((s) => s.id === id);
-    if (!s) return "";
-    const bindings = userShortcuts[id] || s.defaultBindings;
+  const tokensFor = useCallback((id: ShortcutId): string => {
+    const shortcut = SHORTCUTS.find((s) => s.id === id);
+    if (!shortcut) return "";
+    const bindings = userShortcuts[id] || shortcut.defaultBindings;
     if (!bindings || bindings.length === 0) return "";
     return getBindingTokens(bindings[0]).join(KEY_SEP);
-  };
+  }, [userShortcuts]);
 
   const shortcutLabel = useMemo(() => {
     const tokens = tokensFor("shortcuts.open");
     return tokens ? `Keyboard shortcuts (${tokens})` : "Keyboard shortcuts";
-  }, [userShortcuts]);
+  }, [tokensFor]);
 
   const splitRightTokens = tokensFor("pane.splitRight");
   const splitDownTokens = tokensFor("pane.splitDown");
