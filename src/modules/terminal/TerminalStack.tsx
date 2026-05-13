@@ -79,7 +79,15 @@ export function TerminalStack({
       {terminals.map((t) => {
         const tabVisible = t.id === activeId;
         return (
-          <div key={t.id} className="absolute inset-0">
+          <div
+            key={t.id}
+            className="absolute inset-0"
+            style={{
+              visibility: tabVisible ? "visible" : "hidden",
+              pointerEvents: tabVisible ? "auto" : "none",
+            }}
+            aria-hidden={!tabVisible}
+          >
             <PaneTreeView
               node={t.paneTree}
               tabVisible={tabVisible}
