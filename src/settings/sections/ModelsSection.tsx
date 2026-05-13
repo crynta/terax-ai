@@ -17,6 +17,7 @@ import {
   providerNeedsKey,
   providerSupportsKey,
   type ModelId,
+  type OpenCodeMode,
   type ProviderId,
 } from "@/modules/ai/config";
 import { clearKey, getAllKeys, setKey } from "@/modules/ai/lib/keyring";
@@ -31,6 +32,8 @@ import {
   setLmstudioModelId,
   setOpenaiCompatibleBaseURL,
   setOpenaiCompatibleModelId,
+  setOpencodeModelId,
+  setOpencodeMode,
 } from "@/modules/settings/store";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -123,6 +126,69 @@ export function ModelsSection() {
       />
 
       <AutocompleteBlock keys={keys} />
+      <OpenCodeBlock />
+    </div>
+  );
+}
+
+function OpenCodeBlock() {
+  const modelId = usePreferencesStore((s) => s.opencodeModelId);
+  const mode = usePreferencesStore((s) => s.opencodeMode);
+  const [modelDraft, setModelDraft] = useState(modelId);
+  const [modeDraft, setModeDraft] = useState(mode);
+
+  useEffect(() => setModelDraft(modelId), [modelId]);
+  useEffect(() => setModeDraft(mode), [mode]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-0.5">
+        <Label>OpenCode</Label>
+        <span className="text-[10.5px] leading-relaxed text-muted-foreground">
+          Configure which model to use with OpenCode and the API tier (Zen or GO).
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+        <div className="flex flex-col gap-1.5">
+          <Label>Model ID</Label>
+          <Input
+            value={modelDraft}
+            onChange={(e) => setModelDraft(e.target.value)}
+            onBlur={() => {
+              const v = modelDraft.trim();
+              if (v) void setOpencodeModelId(v);
+            }}
+            placeholder="deepseek-v4-flash"
+            spellCheck={false}
+            className="h-8 font-mono text-[11.5px]"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label>Mode</Label>
+          <div className="flex gap-1">
+            {(["go", "zen"] as OpenCodeMode[]).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setModeDraft(id);
+                  void setOpencodeMode(id);
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11.5px] transition-colors",
+                  id === modeDraft
+                    ? "border-foreground/40 bg-accent/60"
+                    : "border-border/60 bg-transparent hover:bg-accent/30",
+                )}
+              >
+                {id === "go" ? "GO" : "Zen"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

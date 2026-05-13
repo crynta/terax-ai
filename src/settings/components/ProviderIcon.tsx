@@ -1,5 +1,6 @@
 import type { ProviderId } from "@/modules/ai/config";
 import {
+  AiMagicIcon,
   ChatGptIcon,
   ClaudeIcon,
   ComputerIcon,
@@ -21,6 +22,7 @@ const ICON_BY_PROVIDER = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   deepseek: DeepseekIcon,
+  opencode: AiMagicIcon,
   openrouter: GlobeIcon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,

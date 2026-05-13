@@ -50,6 +50,8 @@ type Deps = {
   getLmstudioModelId?: () => string | undefined;
   getOpenaiCompatibleBaseURL?: () => string | undefined;
   getOpenaiCompatibleModelId?: () => string | undefined;
+  getOpencodeModelId?: () => string;
+  getOpencodeMode?: () => string;
   onStep?: (step: string | null) => void;
   onUsage?: (delta: AgentUsage) => void;
   getPlanMode?: () => boolean;
@@ -78,6 +80,8 @@ export function createContextAwareTransport(deps: Deps) {
       lmstudioModelId: deps.getLmstudioModelId?.(),
       openaiCompatibleBaseURL: deps.getOpenaiCompatibleBaseURL?.(),
       openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
+      opencodeModelId: deps.getOpencodeModelId?.(),
+      opencodeMode: deps.getOpencodeMode?.(),
       planMode: deps.getPlanMode?.(),
       projectMemory,
       envBlock,

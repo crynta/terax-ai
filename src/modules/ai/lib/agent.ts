@@ -10,11 +10,13 @@ import {
   DEFAULT_MODEL_ID,
   getModel,
   getModelContextLimit,
+  getOpenCodeBaseURL,
   LMSTUDIO_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
   providerNeedsKey,
   selectSystemPrompt,
   type ModelId,
+  type OpenCodeMode,
   type ProviderId,
 } from "../config";
 import type { ProviderKeys } from "./keyring";
@@ -58,6 +60,7 @@ export type BuildModelOptions = {
   modelIdOverride?: string;
   lmstudioBaseURL?: string;
   openaiCompatibleBaseURL?: string;
+  opencodeBaseURL?: string;
 };
 
 const modelCache = new Map<string, LanguageModel>();
@@ -166,6 +169,18 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "opencode": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      const baseURL = options.opencodeBaseURL ?? getOpenCodeBaseURL("go");
+      built = createOpenAICompatible({
+        name: "opencode",
+        baseURL,
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);
@@ -182,6 +197,8 @@ function buildModel(
   lmstudioModelId?: string,
   openaiCompatibleBaseURL?: string,
   openaiCompatibleModelId?: string,
+  opencodeModelId?: string,
+  opencodeMode?: OpenCodeMode,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
   let resolvedId: string = m.id;
@@ -199,10 +216,18 @@ function buildModel(
       );
     }
     resolvedId = openaiCompatibleModelId.trim();
+  } else if (m.id === "opencode-custom") {
+    if (!opencodeModelId?.trim()) {
+      throw new Error(
+        "OpenCode: no model id set. Open Settings → Models.",
+      );
+    }
+    resolvedId = opencodeModelId.trim();
   }
   return buildLanguageModel(m.provider, keys, resolvedId, {
     lmstudioBaseURL,
     openaiCompatibleBaseURL,
+    opencodeBaseURL: m.id === "opencode-custom" ? getOpenCodeBaseURL(opencodeMode ?? "go") : undefined,
   });
 }
 
@@ -273,6 +298,8 @@ export type RunAgentOptions = {
   lmstudioModelId?: string;
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
+  opencodeModelId?: string;
+  opencodeMode?: OpenCodeMode;
   planMode?: boolean;
   projectMemory?: string | null;
   envBlock?: string | null;
@@ -289,6 +316,8 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.lmstudioModelId,
     opts.openaiCompatibleBaseURL,
     opts.openaiCompatibleModelId,
+    opts.opencodeModelId,
+    opts.opencodeMode,
   );
   const provider = getModel(modelId).provider;
 

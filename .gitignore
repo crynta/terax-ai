@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Local dev environment (Nix + direnv)
+flake.nix
+flake.lock
+.envrc
+shell.nix
+.direnv/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
