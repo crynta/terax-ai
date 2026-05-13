@@ -10,6 +10,7 @@ export {
   setKey,
   clearKey,
   hasAnyKey,
+  hasAnyProviderConnection,
   type ProviderKeys,
 } from "./lib/keyring";
 export {

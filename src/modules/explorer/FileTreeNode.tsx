@@ -136,7 +136,7 @@ function FileTreeNodeImpl({
             </button>
           )}
         </ContextMenuTrigger>
-        <ContextMenuContent 
+        <ContextMenuContent
           className={COMPACT_CONTENT}
           onCloseAutoFocus={(e) => {
             if (tree.renaming || tree.pendingCreate) e.preventDefault();

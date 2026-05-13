@@ -20,7 +20,7 @@ import {
   AiInputBar,
   AiMiniWindow,
   getAllKeys,
-  hasAnyKey,
+  hasAnyProviderConnection,
   SelectionAskAi,
   useChatStore,
 } from "@/modules/ai";
@@ -191,7 +191,7 @@ export default function App() {
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
-  const hasComposer = hasAnyKey(apiKeys);
+  const hasComposer = hasAnyProviderConnection(apiKeys);
 
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {

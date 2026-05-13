@@ -87,6 +87,11 @@ export async function buildLanguageModel(
       built = createOpenAI({ apiKey: key })(resolvedModelId);
       break;
     }
+    case "codex": {
+      throw new Error(
+        "Codex models use the dedicated Codex transport instead of AI SDK language models.",
+      );
+    }
     case "anthropic": {
       const { createAnthropic } = await import("@ai-sdk/anthropic");
       built = createAnthropic({ apiKey: key })(resolvedModelId);

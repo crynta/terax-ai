@@ -1,6 +1,7 @@
 import type { UIMessage } from "@ai-sdk/react";
-import { type ModelId } from "../config";
+import { getModel, type ModelId } from "../config";
 import { runAgentStream, type AgentUsage } from "./agent";
+import { createCodexChatTransport } from "./codexTransport";
 import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
 import type { ToolContext } from "../tools/tools";
@@ -64,6 +65,15 @@ type SendOptions = {
 export function createContextAwareTransport(deps: Deps) {
   const run = async (options: SendOptions) => {
     const live = deps.getLive();
+    if (getModel(deps.getModelId()).provider === "codex") {
+      const codex = createCodexChatTransport({
+        getCwd: () => deps.getLive().cwd ?? deps.getLive().workspaceRoot,
+        getModelId: deps.getModelId,
+      });
+      return codex.sendMessages(
+        options as Parameters<typeof codex.sendMessages>[0],
+      );
+    }
     const projectMemory = await readTeraxMd(live.workspaceRoot);
     const envBlock = formatEnvBlock(live);
     const result = await runAgentStream({

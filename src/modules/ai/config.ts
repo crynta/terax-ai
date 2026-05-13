@@ -2,6 +2,7 @@ export const KEYRING_SERVICE = "terax-ai";
 
 export type ProviderId =
   | "openai"
+  | "codex"
   | "anthropic"
   | "google"
   | "xai"
@@ -29,6 +30,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openai-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.openai.com/api-keys",
+  },
+  {
+    id: "codex",
+    label: "Codex",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://developers.openai.com/codex",
   },
   {
     id: "anthropic",
@@ -171,6 +179,53 @@ export const MODELS = [
     description: "Ultra-cheap workhorse for bulk tasks.",
     capabilities: { intelligence: 3, speed: 4, cost: 5 },
     tags: ["vision", "tools"],
+  },
+
+  // ── Codex / ChatGPT account ──────────────────────────────────────────────
+  {
+    id: "gpt-5.5-chatgpt",
+    provider: "codex",
+    label: "GPT-5.5 (ChatGPT)",
+    hint: "Frontier",
+    description: "ChatGPT account model through Codex.",
+    capabilities: { intelligence: 5, speed: 3, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "gpt-5.4-chatgpt",
+    provider: "codex",
+    label: "GPT-5.4 (ChatGPT)",
+    hint: "Everyday",
+    description: "Balanced ChatGPT account model.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "gpt-5.4-mini-chatgpt",
+    provider: "codex",
+    label: "GPT-5.4 mini (ChatGPT)",
+    hint: "Fast",
+    description: "Fast ChatGPT account model.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools"],
+  },
+  {
+    id: "gpt-5.3-codex-chatgpt",
+    provider: "codex",
+    label: "GPT-5.3 Codex (ChatGPT)",
+    hint: "Coding",
+    description: "Codex-tuned model through ChatGPT login.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "gpt-5.2-chatgpt",
+    provider: "codex",
+    label: "GPT-5.2 (ChatGPT)",
+    hint: "Agents",
+    description: "Long-running agent model through ChatGPT login.",
+    capabilities: { intelligence: 4, speed: 3, cost: 5 },
+    tags: ["tools", "coding"],
   },
 
   // ── Anthropic ─────────────────────────────────────────────────────────────
@@ -541,6 +596,11 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "gpt-5.4-mini": 400_000,
   "gpt-5.4-nano": 400_000,
   "gpt-5.3-codex": 400_000,
+  "gpt-5.5-chatgpt": 1_050_000,
+  "gpt-5.4-chatgpt": 400_000,
+  "gpt-5.4-mini-chatgpt": 400_000,
+  "gpt-5.3-codex-chatgpt": 400_000,
+  "gpt-5.2-chatgpt": 400_000,
   "gpt-4.1-mini": 128_000,
   "claude-opus-4-7": 200_000,
   "claude-sonnet-4-6": 200_000,
@@ -631,6 +691,7 @@ export function estimateCost(
 
 /** Providers that do not require an API key (local servers, key-optional). */
 export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
+  "codex",
   "lmstudio",
   "openai-compatible",
 ] as const;
@@ -663,6 +724,7 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   deepseek: "deepseek-v4-flash",
   openrouter: "openai/gpt-5.4-mini",
   "openai-compatible": "",
+  codex: "gpt-5.4-mini-chatgpt",
 };
 
 /** Curated list of fast models suitable for inline completion (speed ≥ 4). */

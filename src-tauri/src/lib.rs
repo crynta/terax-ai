@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell, workspace};
+use modules::{codex, fs, net, pty, secrets, shell, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
@@ -117,6 +117,11 @@ pub fn run() {
             secrets::secrets_set,
             secrets::secrets_delete,
             secrets::secrets_get_all,
+            codex::codex_account_read,
+            codex::codex_chat_once,
+            codex::codex_chat_stream,
+            codex::codex_login_start,
+            codex::codex_logout,
             net::lm_ping,
             net::ai_http_request,
             net::ai_http_stream,
