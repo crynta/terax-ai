@@ -100,13 +100,8 @@ pnpm tauri build        # production bundle
 
 ## Homebrew tap
 
-Terax can be shipped through a custom Homebrew cask tap for macOS installs.
-
-**For maintainers**
-- Create a tap repository named `homebrew-tap` (or another `homebrew-*` repo) under your GitHub org/user.
-- Add a repository variable `HOMEBREW_TAP_REPOSITORY` with the target repo, e.g. `crynta/homebrew-tap`.
-- Add a repository secret `HOMEBREW_TAP_GITHUB_TOKEN` with permission to push to that tap repo.
-- When a GitHub release is **published**, [`.github/workflows/homebrew-tap.yml`](.github/workflows/homebrew-tap.yml) downloads the macOS `.dmg` assets, computes SHA-256 values, and updates `Casks/terax.rb` in the tap.
+Published macOS releases can sync a `terax` cask into a separate Homebrew tap.
+Set `HOMEBREW_TAP_GITHUB_TOKEN` and, if needed, `HOMEBREW_TAP_REPOSITORY` to enable [`.github/workflows/homebrew-tap.yml`](.github/workflows/homebrew-tap.yml).
 
 **For users**
 ```bash

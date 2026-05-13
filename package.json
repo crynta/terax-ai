@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "homebrew:sync": "node scripts/sync-homebrew-tap.mjs"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile as execFileCb } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -10,9 +10,8 @@ const execFile = promisify(execFileCb);
 async function main() {
   const sourceRepository =
     process.env.SOURCE_REPOSITORY ?? process.env.GITHUB_REPOSITORY;
-  const releaseTag = process.env.RELEASE_TAG ?? process.argv[2];
-  const tapRepository = process.env.HOMEBREW_TAP_REPOSITORY ?? "";
-  const tapPath = process.env.HOMEBREW_TAP_PATH ?? "";
+  const releaseTag = process.env.RELEASE_TAG;
+  const tapRepository = process.env.HOMEBREW_TAP_REPOSITORY;
   const githubToken =
     process.env.HOMEBREW_TAP_GITHUB_TOKEN ?? process.env.GITHUB_TOKEN ?? "";
 
@@ -22,9 +21,12 @@ async function main() {
   if (!releaseTag) {
     throw new Error("RELEASE_TAG is required.");
   }
-  if (!tapRepository && !tapPath) {
+  if (!tapRepository) {
+    throw new Error("HOMEBREW_TAP_REPOSITORY is required.");
+  }
+  if (!githubToken) {
     throw new Error(
-      "Set HOMEBREW_TAP_REPOSITORY or HOMEBREW_TAP_PATH before running sync.",
+      "HOMEBREW_TAP_GITHUB_TOKEN or GITHUB_TOKEN is required to push to a tap repository.",
     );
   }
 
@@ -34,49 +36,20 @@ async function main() {
   );
   const version = String(release.tag_name).replace(/^v/, "");
   const assets = Array.isArray(release.assets) ? release.assets : [];
-  const armAsset = findMacAsset(assets, "arm");
-  const intelAsset = findMacAsset(assets, "intel");
-
-  const [armSha, intelSha] = await Promise.all([
-    downloadSha256(armAsset.browser_download_url, githubToken),
-    downloadSha256(intelAsset.browser_download_url, githubToken),
+  const [arm, intel] = await Promise.all([
+    loadMacArtifact(assets, "arm", githubToken),
+    loadMacArtifact(assets, "intel", githubToken),
   ]);
 
-  const cask = renderCask({
-    version,
-    sourceRepository,
-    arm: {
-      sha256: armSha,
-      url: armAsset.browser_download_url,
-    },
-    intel: {
-      sha256: intelSha,
-      url: intelAsset.browser_download_url,
-    },
-  });
-
-  if (tapPath) {
-    await writeCaskFile(tapPath, cask);
-    console.log(
-      `Wrote Homebrew cask to ${path.join(tapPath, "Casks", "terax.rb")}`,
-    );
-    return;
-  }
-
-  if (!githubToken) {
-    throw new Error(
-      "HOMEBREW_TAP_GITHUB_TOKEN or GITHUB_TOKEN is required to push to a tap repository.",
-    );
-  }
-
   const tempRoot = await mkdtemp(path.join(tmpdir(), "terax-homebrew-tap-"));
-  const cloneUrl =
-    process.env.HOMEBREW_TAP_REMOTE_URL ??
-    `https://x-access-token:${githubToken}@github.com/${tapRepository}.git`;
+  const cloneUrl = `https://x-access-token:${githubToken}@github.com/${tapRepository}.git`;
 
   try {
     await execFile("git", ["clone", cloneUrl, tempRoot]);
-    await writeCaskFile(tempRoot, cask);
+    await writeCaskFile(
+      tempRoot,
+      renderCask({ version, sourceRepository, arm, intel }),
+    );
     await execFile("git", ["config", "user.name", "github-actions[bot]"], {
       cwd: tempRoot,
     });
@@ -111,7 +84,7 @@ async function main() {
   }
 }
 
-function findMacAsset(assets, arch) {
+async function loadMacArtifact(assets, arch, token) {
   const dmgAssets = assets.filter((asset) => /\.dmg$/i.test(asset.name ?? ""));
   const patterns =
     arch === "arm"
@@ -127,7 +100,10 @@ function findMacAsset(assets, arch) {
         .join(", ")}`,
     );
   }
-  return match;
+  return {
+    url: match.browser_download_url,
+    sha256: await downloadSha256(match.browser_download_url, token),
+  };
 }
 
 async function downloadSha256(url, token) {
@@ -197,14 +173,6 @@ async function writeCaskFile(root, cask) {
   const caskDir = path.join(root, "Casks");
   const caskPath = path.join(caskDir, "terax.rb");
   await mkdir(caskDir, { recursive: true });
-
-  let existing = null;
-  try {
-    existing = await readFile(caskPath, "utf8");
-  } catch {
-    existing = null;
-  }
-  if (existing === cask) return;
   await writeFile(caskPath, cask, "utf8");
 }
 

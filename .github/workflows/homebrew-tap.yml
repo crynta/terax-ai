@@ -3,16 +3,6 @@ name: Homebrew Tap
 on:
   release:
     types: [published]
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Release tag to publish (for example v0.6.1)
-        required: true
-        type: string
-      tap_repository:
-        description: Target tap repository (for example crynta/homebrew-tap)
-        required: false
-        type: string
 
 permissions:
   contents: read
@@ -32,7 +22,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          HOMEBREW_TAP_REPOSITORY: ${{ inputs.tap_repository || vars.HOMEBREW_TAP_REPOSITORY || format('{0}/homebrew-tap', github.repository_owner) }}
-          RELEASE_TAG: ${{ inputs.release_tag || github.event.release.tag_name }}
+          HOMEBREW_TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY || format('{0}/homebrew-tap', github.repository_owner) }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
           SOURCE_REPOSITORY: ${{ github.repository }}
         run: node scripts/sync-homebrew-tap.mjs
