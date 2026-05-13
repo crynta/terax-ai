@@ -1,8 +1,10 @@
 import {
-  Experimental_Agent as Agent,
-  DirectChatTransport,
+  convertToModelMessages,
   stepCountIs,
+  streamText,
   type LanguageModel,
+  type ModelMessage,
+  type UIMessage,
 } from "ai";
 import {
   DEFAULT_MODEL_ID,
@@ -17,28 +19,6 @@ import {
 import type { ProviderKeys } from "./keyring";
 import { proxyFetch } from "./proxyFetch";
 import { buildTools, type ToolContext } from "../tools/tools";
-
-type AgentDeps = {
-  keys: ProviderKeys;
-  modelId?: ModelId;
-  customInstructions?: string;
-  /** Persona / role for this conversation (system prompt addendum). */
-  agentPersona?: { name: string; instructions: string } | null;
-  toolContext: ToolContext;
-  onStep?: (step: string | null) => void;
-  /** Override base URL for OpenAI-compatible providers (LM Studio). */
-  lmstudioBaseURL?: string;
-  /** Concrete model id loaded in LM Studio (replaces the placeholder). */
-  lmstudioModelId?: string;
-  /** Base URL for the generic OpenAI-compatible provider. */
-  openaiCompatibleBaseURL?: string;
-  /** Concrete model id for the OpenAI-compatible endpoint. */
-  openaiCompatibleModelId?: string;
-  /** True when /plan is active — agent should batch edits for review. */
-  planMode?: boolean;
-  /** Contents of TERAX.md at workspace root, if present. Appended verbatim. */
-  projectMemory?: string | null;
-};
 
 const TOOL_LABELS: Record<string, (input: Record<string, unknown>) => string> = {
   read_file: (i) => `Reading ${shortPath(i.path)}`,
@@ -73,17 +53,11 @@ function ellipsize(s: string, max: number): string {
 }
 
 export type BuildModelOptions = {
-  /** Override the model id (used by autocomplete with custom LM Studio model). */
   modelIdOverride?: string;
-  /** Override LM Studio base URL. Defaults to `LMSTUDIO_DEFAULT_BASE_URL`. */
   lmstudioBaseURL?: string;
-  /** Base URL for the generic OpenAI-compatible provider (user-supplied). */
   openaiCompatibleBaseURL?: string;
 };
 
-// Memoize built models. Provider clients are not free to construct — they
-// register middleware and parse keys — and we'd otherwise rebuild one per
-// `sendMessages` call. Keyed on the full identity that affects the result.
 const modelCache = new Map<string, LanguageModel>();
 
 export async function buildLanguageModel(
@@ -208,7 +182,6 @@ function buildModel(
   openaiCompatibleModelId?: string,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
-  // Placeholder models route to a user-configured concrete id at runtime.
   let resolvedId: string = m.id;
   if (m.id === "lmstudio-local") {
     if (!lmstudioModelId?.trim()) {
@@ -231,70 +204,144 @@ function buildModel(
   });
 }
 
-export async function createTeraxAgent({
-  keys,
-  modelId = DEFAULT_MODEL_ID,
-  customInstructions,
-  agentPersona,
-  toolContext,
-  onStep,
-  lmstudioBaseURL,
-  lmstudioModelId,
-  openaiCompatibleBaseURL,
-  openaiCompatibleModelId,
-  planMode,
-  projectMemory,
-}: AgentDeps) {
-  const trimmedCustom = customInstructions?.trim();
-  const personaBlock = agentPersona?.instructions.trim()
-    ? `\n\n## ACTIVE AGENT — ${agentPersona.name}\n${agentPersona.instructions.trim()}`
+const PLAN_MODE_PROMPT = `## PLAN MODE — ACTIVE
+Mutating tools (write_file, edit, multi_edit, create_directory) will queue their changes for the user to review as a single diff. Do NOT execute bash_run or bash_background while plan mode is active — restrict yourself to reads (read_file, grep, glob, list_directory) and the queued mutations. After queueing the full set of edits, stop and return a brief summary; do not continue acting until the user has accepted/rejected.`;
+
+function buildStableSystem(
+  persona: { name: string; instructions: string } | null,
+  customInstructions: string | undefined,
+  projectMemory: string | null,
+): string {
+  const personaBlock = persona?.instructions.trim()
+    ? `\n\n## ACTIVE AGENT — ${persona.name}\n${persona.instructions.trim()}`
     : "";
-  const customBlock = trimmedCustom
-    ? `\n\n## USER CUSTOM INSTRUCTIONS — follow unless they conflict with safety rules above\n${trimmedCustom}`
+  const customBlock = customInstructions?.trim()
+    ? `\n\n## USER CUSTOM INSTRUCTIONS — follow unless they conflict with safety rules above\n${customInstructions.trim()}`
     : "";
   const memoryBlock =
     projectMemory && projectMemory.trim().length > 0
       ? `\n\n## PROJECT — TERAX.md\n${projectMemory.trim()}`
       : "";
-  const planBlock = planMode
-    ? `\n\n## PLAN MODE — ACTIVE\nMutating tools (write_file, edit, multi_edit, create_directory) will queue their changes for the user to review as a single diff. Do NOT execute bash_run or bash_background while plan mode is active — restrict yourself to reads (read_file, grep, glob, list_directory) and the queued mutations. After queueing the full set of edits, stop and return a brief summary; do not continue acting until the user has accepted/rejected.`
-    : "";
-  const instructions = `${SYSTEM_PROMPT}${memoryBlock}${personaBlock}${customBlock}${planBlock}`;
+  return `${SYSTEM_PROMPT}${memoryBlock}${personaBlock}${customBlock}`;
+}
+
+// OpenAI / Gemini / DeepSeek apply prefix caching automatically; only
+// Anthropic needs explicit breakpoints. Mark the stable system prefix and
+// the rotating conversation tail.
+function applyCacheBreakpoints(
+  messages: ModelMessage[],
+  provider: ProviderId,
+): ModelMessage[] {
+  if (provider !== "anthropic" || messages.length === 0) return messages;
+  const marker = { anthropic: { cacheControl: { type: "ephemeral" as const } } };
+  const withMarker = (m: ModelMessage): ModelMessage => ({
+    ...m,
+    providerOptions: { ...(m.providerOptions ?? {}), ...marker },
+  });
+  const out = messages.slice();
+  out[0] = withMarker(out[0]);
+  const lastIdx = out.length - 1;
+  if (lastIdx > 0) out[lastIdx] = withMarker(out[lastIdx]);
+  return out;
+}
+
+export type AgentUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+};
+
+const EMPTY_USAGE: AgentUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cachedInputTokens: 0,
+};
+
+export type RunAgentOptions = {
+  keys: ProviderKeys;
+  modelId?: ModelId;
+  customInstructions?: string;
+  agentPersona?: { name: string; instructions: string } | null;
+  toolContext: ToolContext;
+  onStep?: (step: string | null) => void;
+  onUsage?: (delta: AgentUsage) => void;
+  lmstudioBaseURL?: string;
+  lmstudioModelId?: string;
+  openaiCompatibleBaseURL?: string;
+  openaiCompatibleModelId?: string;
+  planMode?: boolean;
+  projectMemory?: string | null;
+  envBlock?: string | null;
+  uiMessages: UIMessage[];
+  abortSignal?: AbortSignal;
+};
+
+export async function runAgentStream(opts: RunAgentOptions) {
+  const modelId = opts.modelId ?? DEFAULT_MODEL_ID;
   const model = await buildModel(
     modelId,
-    keys,
-    lmstudioBaseURL,
-    lmstudioModelId,
-    openaiCompatibleBaseURL,
-    openaiCompatibleModelId,
+    opts.keys,
+    opts.lmstudioBaseURL,
+    opts.lmstudioModelId,
+    opts.openaiCompatibleBaseURL,
+    opts.openaiCompatibleModelId,
   );
-  return new Agent({
+  const provider = getModel(modelId).provider;
+
+  const stableSystem = buildStableSystem(
+    opts.agentPersona ?? null,
+    opts.customInstructions,
+    opts.projectMemory ?? null,
+  );
+
+  const history = await convertToModelMessages(opts.uiMessages);
+
+  const messages: ModelMessage[] = [
+    { role: "system", content: stableSystem },
+  ];
+  if (opts.envBlock?.trim()) {
+    messages.push({ role: "system", content: opts.envBlock });
+  }
+  if (opts.planMode) {
+    messages.push({ role: "system", content: PLAN_MODE_PROMPT });
+  }
+  messages.push(...history);
+
+  const finalMessages = applyCacheBreakpoints(messages, provider);
+
+  return streamText({
     model,
-    instructions,
-    tools: buildTools(toolContext),
+    messages: finalMessages,
+    tools: buildTools(opts.toolContext),
     stopWhen: stepCountIs(MAX_AGENT_STEPS),
+    abortSignal: opts.abortSignal,
     onStepFinish: (step) => {
-      if (!onStep) return;
-      const last = step.toolCalls?.[step.toolCalls.length - 1];
-      if (last) {
-        const label = TOOL_LABELS[last.toolName];
-        onStep(
-          label
-            ? label((last.input ?? {}) as Record<string, unknown>)
-            : `Calling ${last.toolName}`,
-        );
-      } else if (step.text) {
-        onStep("Writing");
+      if (opts.onStep) {
+        const last = step.toolCalls?.[step.toolCalls.length - 1];
+        if (last) {
+          const label = TOOL_LABELS[last.toolName];
+          opts.onStep(
+            label
+              ? label((last.input ?? {}) as Record<string, unknown>)
+              : `Calling ${last.toolName}`,
+          );
+        } else if (step.text) {
+          opts.onStep("Writing");
+        }
+      }
+      if (opts.onUsage && step.usage) {
+        const u = step.usage;
+        opts.onUsage({
+          inputTokens: u.inputTokens ?? 0,
+          outputTokens: u.outputTokens ?? 0,
+          cachedInputTokens: u.inputTokenDetails?.cacheReadTokens ?? 0,
+        });
       }
     },
     onFinish: () => {
-      onStep?.(null);
+      opts.onStep?.(null);
     },
   });
 }
 
-export type TeraxAgent = Awaited<ReturnType<typeof createTeraxAgent>>;
-
-export function createTeraxTransport(agent: TeraxAgent) {
-  return new DirectChatTransport({ agent });
-}
+export { EMPTY_USAGE };
