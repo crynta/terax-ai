@@ -90,9 +90,11 @@ export function AiMiniWindow() {
       transition={{ type: "spring", stiffness: 320, damping: 32 }}
       data-ai-mini-window
       className={cn(
-        "no-scrollbar-deep fixed right-4 bottom-24 z-40 flex h-[42rem] w-[34rem] flex-col overflow-hidden",
-        "rounded-2xl border border-border/40 bg-card/90 shadow-2xl ring-1 ring-black/5 backdrop-blur-2xl dark:ring-white/5",
-        "text-[12px]",
+        "no-scrollbar-deep fixed right-4 bottom-24 z-40 flex flex-col overflow-hidden",
+        "h-[min(42rem,calc(100vh-7rem))] w-[min(34rem,calc(100vw-2rem))]",
+        "rounded-2xl border border-border/60 bg-card text-[12px]",
+        "shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_24px_48px_-12px_rgba(0,0,0,0.45),0_8px_16px_-8px_rgba(0,0,0,0.3)]",
+        "ring-1 ring-black/5 dark:ring-white/5",
       )}
     >
       <div
