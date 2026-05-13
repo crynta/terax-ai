@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import { PaneTreeView } from "./PaneTreeView";
 import type { TerminalPaneHandle } from "./TerminalPane";
 import { leafIds } from "./lib/panes";
-import { type TeraxOpenInput } from "./lib/useTerminalSession";
 
 type Props = {
   tabs: Tab[];
@@ -14,7 +13,6 @@ type Props = {
   onSearchReady: (leafId: number, addon: SearchAddon) => void;
   onCwd: (leafId: number, cwd: string) => void;
   onExit: (leafId: number, code: number) => void;
-  onTeraxOpen?: (leafId: number, input: TeraxOpenInput) => void;
   onFocusLeaf: (tabId: number, leafId: number) => void;
 };
 
@@ -23,7 +21,6 @@ type Bundle = {
   onSearch: (addon: SearchAddon) => void;
   onCwd: (cwd: string) => void;
   onExit: (code: number) => void;
-  onTeraxOpen: (input: TeraxOpenInput) => void;
 };
 
 export function TerminalStack({
@@ -33,7 +30,6 @@ export function TerminalStack({
   onSearchReady,
   onCwd,
   onExit,
-  onTeraxOpen,
   onFocusLeaf,
 }: Props) {
   const terminals = tabs.filter((t) => t.kind === "terminal");
@@ -42,7 +38,6 @@ export function TerminalStack({
   const searchReadyRef = useRef(onSearchReady);
   const cwdRef = useRef(onCwd);
   const exitRef = useRef(onExit);
-  const teraxOpenRef = useRef(onTeraxOpen);
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -55,9 +50,6 @@ export function TerminalStack({
   useEffect(() => {
     exitRef.current = onExit;
   }, [onExit]);
-  useEffect(() => {
-    teraxOpenRef.current = onTeraxOpen;
-  }, [onTeraxOpen]);
 
   const bundles = useRef(new Map<number, Bundle>());
   const getBundle = (leafId: number): Bundle => {
@@ -68,7 +60,6 @@ export function TerminalStack({
         onSearch: (addon) => searchReadyRef.current(leafId, addon),
         onCwd: (cwd) => cwdRef.current(leafId, cwd),
         onExit: (code) => exitRef.current(leafId, code),
-        onTeraxOpen: (input) => teraxOpenRef.current?.(leafId, input),
       };
       bundles.current.set(leafId, b);
     }

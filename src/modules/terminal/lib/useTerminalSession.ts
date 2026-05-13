@@ -11,12 +11,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import {
   registerCwdHandler,
   registerPromptTracker,
-  registerTeraxOpenHandler,
-  type TeraxOpenInput,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
-
-export type { TeraxOpenInput };
 
 const BACKWARD_KILL_WORD = "\x17";
 
@@ -24,7 +20,6 @@ type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
-  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 // Lives outside React so split/unsplit re-parent the DOM without tearing
@@ -136,9 +131,6 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
       registerCwdHandler(term, (cwd) => {
         session.lastCwd = cwd;
         session.callbacks.onCwd?.(cwd);
-      }),
-      registerTeraxOpenHandler(term, (input) => {
-        session.callbacks.onTeraxOpen?.(input);
       }),
     );
   })();
@@ -366,7 +358,6 @@ type Options = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
-  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 export function useTerminalSession({
@@ -378,19 +369,16 @@ export function useTerminalSession({
   onSearchReady,
   onExit,
   onCwd,
-  onTeraxOpen,
 }: Options) {
   const cbRef = useRef({
     onSearchReady,
     onExit,
     onCwd,
-    onTeraxOpen,
   });
   cbRef.current = {
     onSearchReady,
     onExit,
     onCwd,
-    onTeraxOpen,
   };
 
   useEffect(() => {
@@ -402,7 +390,6 @@ export function useTerminalSession({
         onSearchReady: (a) => cbRef.current.onSearchReady?.(a),
         onExit: (c) => cbRef.current.onExit?.(c),
         onCwd: (c) => cbRef.current.onCwd?.(c),
-        onTeraxOpen: (input) => cbRef.current.onTeraxOpen?.(input),
       });
       if (visible && focused) s.term.focus();
     });

@@ -16,6 +16,7 @@ import { BUILTIN_AGENTS } from "../lib/agents";
 import { useAgentsStore } from "./agentsStore";
 import { usePlanStore } from "./planStore";
 import { useTodosStore } from "./todoStore";
+import type { AgentUsage } from "../lib/agent";
 import { EMPTY_PROVIDER_KEYS, type ProviderKeys } from "../lib/keyring";
 import {
   deleteSessionData,
@@ -35,6 +36,7 @@ import type { ToolContext } from "../tools/tools";
 type Live = {
   getCwd: () => string | null;
   getTerminalContext: () => string | null;
+  isActiveTerminalPrivate: () => boolean;
   injectIntoActivePty: (text: string) => boolean;
   getWorkspaceRoot: () => string | null;
   getActiveFile: () => string | null;
@@ -53,6 +55,13 @@ export type AgentMeta = {
   step: string | null;
   approvalsPending: number;
   error: string | null;
+  tokens: AgentUsage;
+};
+
+const ZERO_USAGE: AgentUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cachedInputTokens: 0,
 };
 
 const IDLE_META: AgentMeta = {
@@ -60,6 +69,7 @@ const IDLE_META: AgentMeta = {
   step: null,
   approvalsPending: 0,
   error: null,
+  tokens: ZERO_USAGE,
 };
 
 export type MiniState = {
@@ -136,15 +146,28 @@ type StoreState = {
 const NOOP_LIVE: Live = {
   getCwd: () => null,
   getTerminalContext: () => null,
+  isActiveTerminalPrivate: () => false,
   injectIntoActivePty: () => false,
   getWorkspaceRoot: () => null,
   getActiveFile: () => null,
   openPreview: () => false,
 };
 
-// Per-session Chat instances. Transport reads the keys map lazily, so a key
-// change does not require rebuilding chats.
+const CHATS_LRU_CAP = 8;
 const chats = new Map<string, Chat<UIMessage>>();
+
+function touchChat(id: string, c: Chat<UIMessage>) {
+  if (chats.has(id)) chats.delete(id);
+  chats.set(id, c);
+  while (chats.size > CHATS_LRU_CAP) {
+    const oldest = chats.keys().next().value;
+    if (!oldest || oldest === id) break;
+    if (useChatStore.getState().activeSessionId === oldest) break;
+    flushPersistEntry(oldest);
+    void chats.get(oldest)?.stop();
+    chats.delete(oldest);
+  }
+}
 // Initial messages for a session, populated at hydration time and consumed
 // when the matching Chat is constructed.
 const seedMessages = new Map<string, UIMessage[]>();
@@ -176,15 +199,15 @@ export function flushPersist(id?: string): void {
 }
 
 function makeChat(sessionId: string): Chat<UIMessage> {
-  // Per-session read cache: paths the model has called `read_file` on.
-  // `edit`/`multi_edit` enforce read-before-edit by checking membership.
-  const readCache = new Set<string>();
+  const readCache = new Map<string, { size: number; hash: number }>();
   const toolContext: ToolContext = {
     getCwd: () => useChatStore.getState().live.getCwd(),
     getWorkspaceRoot: () =>
       useChatStore.getState().live.getWorkspaceRoot(),
     getTerminalContext: () =>
       useChatStore.getState().live.getTerminalContext(),
+    isActiveTerminalPrivate: () =>
+      useChatStore.getState().live.isActiveTerminalPrivate(),
     injectIntoActivePty: (text) =>
       useChatStore.getState().live.injectIntoActivePty(text),
     openPreview: (url) => useChatStore.getState().live.openPreview(url),
@@ -208,7 +231,7 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       const live = useChatStore.getState().live;
       return {
         cwd: live.getCwd(),
-        terminal: live.getTerminalContext(),
+        terminalPrivate: live.isActiveTerminalPrivate(),
         workspaceRoot: live.getWorkspaceRoot(),
         activeFile: live.getActiveFile(),
       };
@@ -222,6 +245,16 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       usePreferencesStore.getState().openaiCompatibleModelId,
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
+    },
+    onUsage: (delta) => {
+      const cur = useChatStore.getState().agentMeta.tokens;
+      useChatStore.getState().patchAgentMeta({
+        tokens: {
+          inputTokens: cur.inputTokens + delta.inputTokens,
+          outputTokens: cur.outputTokens + delta.outputTokens,
+          cachedInputTokens: cur.cachedInputTokens + delta.cachedInputTokens,
+        },
+      });
     },
   }) as unknown as ChatTransport<UIMessage>;
 
@@ -471,9 +504,12 @@ export function hasKeyForModel(modelId: ModelId): boolean {
 
 export function getOrCreateChat(sessionId: string): Chat<UIMessage> {
   const existing = chats.get(sessionId);
-  if (existing) return existing;
+  if (existing) {
+    touchChat(sessionId, existing);
+    return existing;
+  }
   const c = makeChat(sessionId);
-  chats.set(sessionId, c);
+  touchChat(sessionId, c);
   return c;
 }
 

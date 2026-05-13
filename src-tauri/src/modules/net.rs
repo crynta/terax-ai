@@ -9,17 +9,45 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 
 #[tauri::command]
-pub async fn http_ping(url: String) -> Result<u16, String> {
+pub async fn lm_ping(base_url: String) -> Result<u16, String> {
+    let trimmed = base_url.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err("empty base url".into());
+    }
+    let probe = format!("{trimmed}/models");
+    let parsed = reqwest::Url::parse(&probe).map_err(|e| e.to_string())?;
+
+    match parsed.scheme() {
+        "http" | "https" => {}
+        s => return Err(format!("scheme not allowed: {s}")),
+    }
+
+    let host = parsed.host_str().ok_or_else(|| "missing host".to_string())?;
+    if is_blocked_host(host) {
+        return Err(format!("host not allowed: {host}"));
+    }
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| e.to_string())?;
     client
-        .get(&url)
+        .get(parsed)
         .send()
         .await
         .map(|r| r.status().as_u16())
         .map_err(|e| e.to_string())
+}
+
+fn is_blocked_host(host: &str) -> bool {
+    matches!(
+        host,
+        "169.254.169.254"
+            | "fd00:ec2::254"
+            | "metadata.google.internal"
+            | "metadata.azure.com"
+    )
 }
 
 // AI HTTP proxy — bypasses webview CORS / Mixed-Content / PNA so local-network

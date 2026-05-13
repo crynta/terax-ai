@@ -155,7 +155,7 @@ pub fn run() {
             secrets::secrets_set,
             secrets::secrets_delete,
             secrets::secrets_get_all,
-            net::http_ping,
+            net::lm_ping,
             net::ai_http_request,
             net::ai_http_stream,
         ])

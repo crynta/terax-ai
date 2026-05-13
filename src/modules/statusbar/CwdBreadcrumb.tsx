@@ -23,6 +23,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { segmentsFromCwd } from "./lib/pathUtils";
 
 type Props = {
@@ -178,6 +179,7 @@ function CurrentSegmentDropdown({
   path: string;
   onCd: (p: string) => void;
 }) {
+  const showHidden = usePreferencesStore((s) => s.showHidden);
   const [open, setOpen] = useState(false);
   const [children, setChildren] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -187,6 +189,7 @@ function CurrentSegmentDropdown({
     try {
       const dirs = await invoke<string[]>("list_subdirs", {
         path,
+        showHidden,
         workspace: currentWorkspaceEnv(),
       });
       setChildren(dirs);
@@ -194,7 +197,7 @@ function CurrentSegmentDropdown({
       setError(String(e));
       setChildren([]);
     }
-  }, [path]);
+  }, [path, showHidden]);
 
   useEffect(() => {
     if (open) load();

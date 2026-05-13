@@ -22,10 +22,14 @@ pub struct DirEntry {
 }
 
 /// Lists immediate children of `path`. Dirs first, then files, each sorted
-/// case-insensitively. Hidden (dot-prefix) entries are filtered — UI may add
-/// a "show hidden" toggle later.
+/// case-insensitively. Dot-prefixed entries (files and dirs) are hidden unless
+/// `show_hidden` is set.
 #[tauri::command]
-pub fn fs_read_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<Vec<DirEntry>, String> {
+pub fn fs_read_dir(
+    path: String,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<Vec<DirEntry>, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
@@ -37,9 +41,6 @@ pub fn fs_read_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<Vec<
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
-            if name.starts_with('.') {
-                return None;
-            }
 
             // `metadata()` follows symlinks → it returns the target's stat in
             // one syscall (file_type + size + mtime all derived from it). We
@@ -58,6 +59,10 @@ pub fn fs_read_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<Vec<
             } else {
                 EntryKind::File
             };
+
+            if name.starts_with('.') && !show_hidden {
+                return None;
+            }
 
             let size = meta.len();
             let mtime = meta
@@ -95,7 +100,11 @@ pub fn fs_read_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<Vec<
 /// Symlinks to directories are included (matches shell `cd` semantics).
 /// Hidden entries are filtered by dot-prefix only.
 #[tauri::command]
-pub fn list_subdirs(path: String, workspace: Option<WorkspaceEnv>) -> Result<Vec<String>, String> {
+pub fn list_subdirs(
+    path: String,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<Vec<String>, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
@@ -113,7 +122,7 @@ pub fn list_subdirs(path: String, workspace: Option<WorkspaceEnv>) -> Result<Vec
             _ => false,
         })
         .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| !name.starts_with('.'))
+        .filter(|name| show_hidden || !name.starts_with('.'))
         .collect();
 
     dirs.sort_by_key(|a| a.to_lowercase());

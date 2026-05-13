@@ -9,10 +9,17 @@ type EditResult =
   | { ok: true; replacements: number; bytesWritten: number; path: string }
   | { error: string; path: string };
 
+function djb2(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return h >>> 0;
+}
+
 async function applyEdits(
   abs: string,
   edits: { old_string: string; new_string: string; replace_all?: boolean }[],
   kind: "edit" | "multi_edit",
+  readCache: Map<string, { size: number; hash: number }>,
 ): Promise<EditResult> {
   const r = await native.readFile(abs);
   if (r.kind === "binary")
@@ -98,6 +105,7 @@ async function applyEdits(
 
   try {
     await native.writeFile(abs, content);
+    readCache.set(abs, { size: content.length, hash: djb2(content) });
     return {
       ok: true,
       replacements: totalReplacements,
@@ -134,7 +142,12 @@ export function buildEditTools(ctx: ToolContext) {
             path: abs,
           };
         }
-        return applyEdits(abs, [{ old_string, new_string, replace_all }], "edit");
+        return applyEdits(
+          abs,
+          [{ old_string, new_string, replace_all }],
+          "edit",
+          ctx.readCache,
+        );
       },
     }),
 
@@ -165,7 +178,7 @@ export function buildEditTools(ctx: ToolContext) {
             path: abs,
           };
         }
-        return applyEdits(abs, edits, "multi_edit");
+        return applyEdits(abs, edits, "multi_edit", ctx.readCache);
       },
     }),
   } as const;
