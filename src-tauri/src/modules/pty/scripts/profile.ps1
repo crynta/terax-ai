@@ -32,6 +32,28 @@ function global:__terax_urlencode {
     $sb.ToString()
 }
 
+function global:terax_open {
+    param([string]$File)
+
+    if ([string]::IsNullOrWhiteSpace($File)) {
+        Write-Error 'usage: terax_open <file>'
+        return
+    }
+
+    # Resolve relative paths and ensure it exists.
+    $Path = Resolve-Path $File -ErrorAction SilentlyContinue
+    if ($null -eq $Path -or !(Test-Path $Path.Path -PathType Leaf)) {
+        Write-Error "terax_open: not a file: $File"
+        return
+    }
+
+    $esc = [char]27
+    $pathEnc = __terax_urlencode ($Path.Path -replace '\\','/')
+    Write-Host -NoNewline "$esc]8888;file=$pathEnc$esc\"
+}
+
+Set-Alias -Name tp -Value terax_open -Scope Global -Force
+
 function global:prompt {
     $lec = $LASTEXITCODE
     if ($null -eq $lec) { $lec = if ($?) { 0 } else { 1 } }
