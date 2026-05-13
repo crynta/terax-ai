@@ -28,6 +28,7 @@ export function AboutSection() {
   const checking = status.kind === "checking";
   const downloading = status.kind === "downloading";
   const available = status.kind === "available";
+  const manualAvailable = status.kind === "manual-available";
   const ready = status.kind === "ready";
   const checkLabel =
     status.kind === "uptodate"
@@ -42,7 +43,9 @@ export function AboutSection() {
               ? "Restart to install"
               : available
                 ? `Install v${status.update.version}`
-                : "Check for updates";
+                : manualAvailable
+                  ? `Update to v${status.info.version}`
+                  : "Check for updates";
   const onUpdateClick = () => {
     if (available) void install();
     else void check({ manual: true });
