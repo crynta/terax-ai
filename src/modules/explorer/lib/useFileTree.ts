@@ -1,7 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { affectedDirsForPath, dirname, joinPath } from "./pathUtils";
+import {
+  affectedDirsForPath,
+  dirname,
+  joinPath,
+  togglePathExpansion,
+} from "./pathUtils";
 import { useFileTreeWatcher } from "./useFileTreeWatcher";
 
 export type DirEntry = {
@@ -42,6 +47,7 @@ export function useFileTree(rawRootPath: string | null, options?: Options) {
   const [nodes, setNodes] = useState<TreeState>({});
   const nodesRef = useRef<TreeState>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const expandedRef = useRef<Set<string>>(new Set());
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(
     null,
   );
@@ -54,6 +60,10 @@ export function useFileTree(rawRootPath: string | null, options?: Options) {
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
+
+  useEffect(() => {
+    expandedRef.current = expanded;
+  }, [expanded]);
 
   const fetchChildren = useCallback(async (path: string) => {
     setNodes((s) =>
@@ -129,15 +139,10 @@ export function useFileTree(rawRootPath: string | null, options?: Options) {
 
   const toggle = useCallback(
     (path: string) => {
-      let isCollapsing = false;
+      const isCollapsing = expandedRef.current.has(path);
       setExpanded((curr) => {
-        const next = new Set(curr);
-        if (next.has(path)) {
-          next.delete(path);
-          isCollapsing = true;
-        } else {
-          next.add(path);
-        }
+        const { next } = togglePathExpansion(curr, path);
+        expandedRef.current = next;
         return next;
       });
       if (isCollapsing) {

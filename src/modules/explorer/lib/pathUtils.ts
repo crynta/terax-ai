@@ -35,3 +35,19 @@ export function affectedDirsForPath(
   dirs.add(rootPath);
   return [...dirs];
 }
+
+export function togglePathExpansion(
+  expanded: ReadonlySet<string>,
+  path: string,
+): { next: Set<string>; isCollapsing: boolean } {
+  const next = new Set(expanded);
+  const isCollapsing = next.has(path);
+
+  if (isCollapsing) {
+    next.delete(path);
+  } else {
+    next.add(path);
+  }
+
+  return { next, isCollapsing };
+}
