@@ -9,6 +9,7 @@ import {
 import {
   DEFAULT_MODEL_ID,
   getModel,
+  getModelContextLimit,
   LMSTUDIO_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
   providerNeedsKey,
@@ -19,6 +20,7 @@ import {
 import type { ProviderKeys } from "./keyring";
 import { proxyFetch } from "./proxyFetch";
 import { buildTools, type ToolContext } from "../tools/tools";
+import { compactModelMessages } from "./compact";
 
 const TOOL_LABELS: Record<string, (input: Record<string, unknown>) => string> = {
   read_file: (i) => `Reading ${shortPath(i.path)}`,
@@ -295,6 +297,10 @@ export async function runAgentStream(opts: RunAgentOptions) {
   );
 
   const history = await convertToModelMessages(opts.uiMessages);
+  const compactedHistory = compactModelMessages(
+    history,
+    getModelContextLimit(getModel(modelId).id),
+  );
 
   const messages: ModelMessage[] = [
     { role: "system", content: stableSystem },
@@ -305,7 +311,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
   if (opts.planMode) {
     messages.push({ role: "system", content: PLAN_MODE_PROMPT });
   }
-  messages.push(...history);
+  messages.push(...compactedHistory);
 
   const finalMessages = applyCacheBreakpoints(messages, provider);
 
