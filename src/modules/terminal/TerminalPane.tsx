@@ -5,6 +5,7 @@ import { useTerminalSession } from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
+  paste: (data: string) => void;
   focus: () => void;
   getBuffer: (maxLines?: number) => string | null;
   getSelection: () => string | null;
@@ -60,6 +61,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       ref,
       () => ({
         write: (data: string) => session.write(data),
+        paste: (data: string) => session.paste(data),
         focus: () => session.focus(),
         getBuffer: (max?: number) => session.getBuffer(max),
         getSelection: () => session.getSelection(),

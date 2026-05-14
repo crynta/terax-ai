@@ -459,6 +459,11 @@ export function useTerminalSession({
     [leafId],
   );
 
+  const paste = useCallback(
+    (data: string) => sessions.get(leafId)?.term.paste(data),
+    [leafId],
+  );
+
   const focus = useCallback(() => {
     sessions.get(leafId)?.term.focus();
   }, [leafId]);
@@ -492,8 +497,8 @@ export function useTerminalSession({
   }, [leafId]);
 
   return useMemo(
-    () => ({ write, focus, getBuffer, getSelection, applyTheme }),
-    [write, focus, getBuffer, getSelection, applyTheme],
+    () => ({ write, paste, focus, getBuffer, getSelection, applyTheme }),
+    [write, paste, focus, getBuffer, getSelection, applyTheme],
   );
 }
 
