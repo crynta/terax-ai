@@ -286,9 +286,11 @@ function formatTokens(n: number): string {
 function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const modelId = useChatStore((s) => s.selectedModelId);
   const tokens = useChatStore((s) => s.agentMeta.tokens);
+  const lastInput = useChatStore((s) => s.agentMeta.lastInputTokens);
+  const lastCached = useChatStore((s) => s.agentMeta.lastCachedTokens);
   const estimated = useMemo(() => estimateTokens(messages), [messages]);
+  const used = lastInput > 0 ? lastInput : estimated;
   const reported = tokens.inputTokens + tokens.outputTokens;
-  const used = reported > 0 ? tokens.inputTokens : estimated;
   const max = getModelContextLimit(modelId);
   const modelLabel = useMemo(() => {
     try {
@@ -314,15 +316,29 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
             <span className="font-mono text-foreground">{modelLabel}</span>
           </div>
           <div className="mt-1 flex items-center justify-between text-muted-foreground">
-            <span>{reported > 0 ? "Input" : "Estimated input"}</span>
+            <span>{lastInput > 0 ? "Last request" : "Estimated context"}</span>
             <span className="font-mono text-foreground">
               {formatTokens(used)}
             </span>
           </div>
+          {lastCached > 0 && (
+            <div className="flex items-center justify-between text-muted-foreground">
+              <span>Of which cached</span>
+              <span className="font-mono text-foreground">
+                {formatTokens(lastCached)}
+              </span>
+            </div>
+          )}
           {reported > 0 && (
             <>
+              <div className="mt-1.5 flex items-center justify-between text-muted-foreground">
+                <span>Session input</span>
+                <span className="font-mono text-foreground">
+                  {formatTokens(tokens.inputTokens)}
+                </span>
+              </div>
               <div className="flex items-center justify-between text-muted-foreground">
-                <span>Output</span>
+                <span>Session output</span>
                 <span className="font-mono text-foreground">
                   {formatTokens(tokens.outputTokens)}
                 </span>
@@ -352,8 +368,8 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
         </ContextContentBody>
         <ContextContentFooter>
           <span className="text-[10px] italic text-muted-foreground">
-            {reported > 0
-              ? "Reported by provider; cost is an estimate."
+            {lastInput > 0
+              ? "Last request reflects current context size; session totals are cumulative."
               : "Token count is approximate (chars / 4)."}
           </span>
         </ContextContentFooter>

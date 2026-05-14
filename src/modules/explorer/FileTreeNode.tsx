@@ -95,7 +95,7 @@ function FileTreeNodeImpl({
         <ContextMenuTrigger asChild>
           {isRenaming ? (
             <div
-              className="flex w-full items-center gap-2 px-1.5 py-1 text-[13px]"
+              className="flex w-full min-w-0 items-center gap-2 px-1.5 py-1 text-[13px]"
               style={{ paddingLeft: 6 + depth * 12 }}
             >
               <span className="size-3.5 shrink-0" />
@@ -119,7 +119,7 @@ function FileTreeNodeImpl({
               onClick={handleClick}
               onDoubleClick={() => !isDir && tree.beginRename(path)}
               className={cn(
-                "group flex w-full items-center gap-2 rounded-sm px-1.5 py-0.5 text-left text-[13px] text-foreground/85 transition-colors hover:bg-accent/70 cursor-pointer",
+                "group flex w-full min-w-0 items-center gap-2 rounded-sm px-1.5 py-0.5 text-left text-[13px] text-foreground/85 transition-colors hover:bg-accent/70 cursor-pointer",
                 isSelected && "bg-accent text-foreground",
               )}
               style={{ paddingLeft: 6 + depth * 12 }}
@@ -142,7 +142,7 @@ function FileTreeNodeImpl({
               ) : (
                 <span className="size-4 shrink-0" />
               )}
-              <span className="truncate">{entry.name}</span>
+              <span className="min-w-0 flex-1 truncate">{entry.name}</span>
             </button>
           )}
         </ContextMenuTrigger>
@@ -234,7 +234,7 @@ function FileTreeNodeImpl({
 
       {pendingInThisDir && (
         <div
-          className="flex w-full items-center gap-2 px-1.5 py-0.5 text-[13px]"
+          className="flex w-full min-w-0 items-center gap-2 px-1.5 py-0.5 text-[13px]"
           style={{ paddingLeft: 6 + (depth + 1) * 12 }}
         >
           <span className="size-3.5 shrink-0" />
