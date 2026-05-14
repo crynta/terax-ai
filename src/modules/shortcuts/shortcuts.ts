@@ -17,6 +17,7 @@ export type ShortcutId =
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
+  | "pane.source"
   | "search.focus"
   | "explorer.search"
   | "ai.toggle"
@@ -114,6 +115,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus previous pane",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
+  },  
+  {
+    id: "pane.source",
+    label: "Toggle source panel",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
   },
   {
     id: "tab.next",

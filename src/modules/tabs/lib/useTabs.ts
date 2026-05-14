@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  findLeafCwd,
   hasLeaf,
   leafIds,
   nextLeafId,
@@ -62,7 +63,20 @@ export type AiDiffTab = {
   isNewFile: boolean;
 };
 
-export type Tab = TerminalTab | EditorTab | PreviewTab | AiDiffTab;
+export type GitDiffTab = {
+  id: number;
+  kind: "git-diff";
+  title: string;
+  path: string;
+  repoRoot: string;
+  mode: "-" | "+";
+  originalContent: string;
+  modifiedContent: string;
+  isBinary: boolean;
+  fallbackPatch: string;
+};
+
+export type Tab = TerminalTab | EditorTab | PreviewTab | AiDiffTab | GitDiffTab;
 
 export type TabPatch = Partial<{
   title: string;
@@ -103,6 +117,11 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   });
   const [activeId, setActiveId] = useState(1);
   const nextIdRef = useRef(3);
+  const tabsRef = useRef(tabs);
+
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
 
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
@@ -184,7 +203,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       } else {
         // Preview open: persistent tab for this path takes priority.
         const persistent = curr.find(
-          (t) => t.kind === "editor" && t.path === path && !(t as EditorTab).preview,
+          (t) =>
+            t.kind === "editor" && t.path === path && !(t as EditorTab).preview,
         );
         if (persistent) {
           targetId = persistent.id;
@@ -192,7 +212,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         }
         // Reuse the slot if it already shows the same path.
         const existingPreview = curr.find(
-          (t) => t.kind === "editor" && t.path === path && (t as EditorTab).preview,
+          (t) =>
+            t.kind === "editor" && t.path === path && (t as EditorTab).preview,
         );
         if (existingPreview) {
           targetId = existingPreview.id;
@@ -320,6 +341,68 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return id;
   }, []);
 
+  const openGitDiffTab = useCallback(
+    (input: {
+      path: string;
+      repoRoot: string;
+      mode: "-" | "+";
+      originalContent: string;
+      modifiedContent: string;
+      isBinary: boolean;
+      fallbackPatch: string;
+    }) => {
+      const curr = tabsRef.current;
+      const existing = curr.find(
+        (t) =>
+          t.kind === "git-diff" &&
+          t.repoRoot === input.repoRoot &&
+          t.path === input.path &&
+          t.mode === input.mode,
+      );
+
+      if (existing) {
+        const nextTabs = curr.map((t) =>
+          t.id === existing.id
+            ? {
+                ...t,
+                title: `${basename(input.path)} (${input.mode})`,
+                originalContent: input.originalContent,
+                modifiedContent: input.modifiedContent,
+                isBinary: input.isBinary,
+                fallbackPatch: input.fallbackPatch,
+              }
+            : t,
+        );
+        tabsRef.current = nextTabs;
+        setTabs(nextTabs);
+        setActiveId(existing.id);
+        return existing.id;
+      }
+
+      const id = nextIdRef.current++;
+      const nextTabs = [
+        ...curr,
+        {
+          id,
+          kind: "git-diff",
+          title: `${basename(input.path)} (${input.mode})`,
+          path: input.path,
+          repoRoot: input.repoRoot,
+          mode: input.mode,
+          originalContent: input.originalContent,
+          modifiedContent: input.modifiedContent,
+          isBinary: input.isBinary,
+          fallbackPatch: input.fallbackPatch,
+        } satisfies GitDiffTab,
+      ];
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      setActiveId(id);
+      return id;
+    },
+    [],
+  );
+
   const closeTab = useCallback((id: number) => {
     setTabs((curr) => {
       if (curr.length <= 1) return curr;
@@ -404,24 +487,27 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         if (t.id !== tabId || t.kind !== "terminal") return t;
         if (!hasLeaf(t.paneTree, leafId)) return t;
         if (t.activeLeafId === leafId) return t;
-        return { ...t, activeLeafId: leafId };
+        const cwd = findLeafCwd(t.paneTree, leafId);
+        return {
+          ...t,
+          activeLeafId: leafId,
+          ...(cwd !== undefined && { cwd }),
+        };
       }),
     );
   }, []);
 
-  const focusNextPaneInTab = useCallback(
-    (tabId: number, delta: 1 | -1) => {
-      setTabs((curr) =>
-        curr.map((t) => {
-          if (t.id !== tabId || t.kind !== "terminal") return t;
-          const next = nextLeafId(t.paneTree, t.activeLeafId, delta);
-          if (next === t.activeLeafId) return t;
-          return { ...t, activeLeafId: next };
-        }),
-      );
-    },
-    [],
-  );
+  const focusNextPaneInTab = useCallback((tabId: number, delta: 1 | -1) => {
+    setTabs((curr) =>
+      curr.map((t) => {
+        if (t.id !== tabId || t.kind !== "terminal") return t;
+        const next = nextLeafId(t.paneTree, t.activeLeafId, delta);
+        if (next === t.activeLeafId) return t;
+        const cwd = findLeafCwd(t.paneTree, next);
+        return { ...t, activeLeafId: next, ...(cwd !== undefined && { cwd }) };
+      }),
+    );
+  }, []);
 
   /** Split the active leaf of `tabId` along `dir`. Returns the new leaf id. */
   const splitActivePane = useCallback(
@@ -499,8 +585,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       }
       const remaining = leafIds(newTree);
       const sib = siblingLeafOf(t.paneTree, target);
-      const newActive =
-        sib && remaining.includes(sib) ? sib : remaining[0];
+      const newActive = sib && remaining.includes(sib) ? sib : remaining[0];
       return curr.map((x) =>
         x.id === tabId
           ? { ...x, paneTree: newTree, activeLeafId: newActive }
@@ -536,6 +621,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     pinTab,
     newPreviewTab,
     openAiDiffTab,
+    openGitDiffTab,
     setAiDiffStatus,
     closeAiDiffTab,
     closeTab,

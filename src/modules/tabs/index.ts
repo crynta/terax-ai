@@ -7,6 +7,7 @@ export {
   type EditorTab,
   type PreviewTab,
   type AiDiffTab,
+  type GitDiffTab,
   type AiDiffStatus,
   type TabPatch,
 } from "./lib/useTabs";

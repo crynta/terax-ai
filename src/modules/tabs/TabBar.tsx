@@ -236,6 +236,16 @@ function TabIcon({ tab }: { tab: Tab }) {
       />
     );
   }
+  if (tab.kind === "git-diff") {
+    return (
+      <HugeiconsIcon
+        icon={GitCompareIcon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0 text-emerald-600 dark:text-emerald-400"
+      />
+    );
+  }
   return (
     <HugeiconsIcon
       icon={ComputerTerminal02Icon}
@@ -250,6 +260,7 @@ function labelFor(t: Tab): string {
   if (t.kind === "editor") return t.title;
   if (t.kind === "preview") return t.title;
   if (t.kind === "ai-diff") return t.title;
+  if (t.kind === "git-diff") return t.title;
   if (!t.cwd) return t.title;
   const parts = t.cwd.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "/";
