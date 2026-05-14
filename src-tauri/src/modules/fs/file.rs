@@ -1,8 +1,9 @@
 use std::io::Write;
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
+use crate::modules::fs::to_canon;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
@@ -38,6 +39,11 @@ pub struct FileStat {
     pub size: u64,
     pub mtime: u64,
     pub kind: StatKind,
+}
+
+#[derive(Serialize)]
+pub struct TempImage {
+    pub path: String,
 }
 
 #[tauri::command]
@@ -122,6 +128,71 @@ pub fn fs_write_file(
 }
 
 #[tauri::command]
+pub fn fs_write_clipboard_image(
+    bytes: Vec<u8>,
+    mime: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<TempImage, String> {
+    if bytes.is_empty() {
+        return Err("clipboard image is empty".to_string());
+    }
+
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let ext = image_extension(&mime)?;
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let name = format!("clipboard-{millis}.{ext}");
+
+    let (native_dir, terminal_path) = if workspace.is_wsl() {
+        let dir = "/tmp/terax-clipboard-images";
+        (
+            resolve_path(dir, &workspace),
+            format!("{dir}/{name}"),
+        )
+    } else {
+        let dir = std::env::temp_dir().join("terax-clipboard-images");
+        (dir.clone(), to_canon(dir.join(&name)))
+    };
+
+    std::fs::create_dir_all(&native_dir).map_err(|e| {
+        log::debug!(
+            "fs_write_clipboard_image create_dir_all({}) failed: {e}",
+            native_dir.display()
+        );
+        e.to_string()
+    })?;
+
+    let native_path = native_dir.join(&name);
+    let tmp = native_dir.join(format!(".{name}.tmp"));
+
+    {
+        let mut f = std::fs::File::create(&tmp).map_err(|e| {
+            log::debug!("fs_write_clipboard_image create({}) failed: {e}", tmp.display());
+            e.to_string()
+        })?;
+        f.write_all(&bytes).map_err(|e| {
+            log::debug!("fs_write_clipboard_image write({}) failed: {e}", tmp.display());
+            e.to_string()
+        })?;
+        f.sync_all().map_err(|e| e.to_string())?;
+    }
+
+    std::fs::rename(&tmp, &native_path).map_err(|e| {
+        log::warn!(
+            "fs_write_clipboard_image rename({} -> {}) failed: {e}",
+            tmp.display(),
+            native_path.display()
+        );
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })?;
+
+    Ok(TempImage { path: terminal_path })
+}
+
+#[tauri::command]
 pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let p = resolve_path(&path, &workspace);
@@ -144,4 +215,14 @@ pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat
         mtime,
         kind,
     })
+}
+
+fn image_extension(mime: &str) -> Result<&'static str, String> {
+    match mime {
+        "image/png" => Ok("png"),
+        "image/jpeg" => Ok("jpg"),
+        "image/gif" => Ok("gif"),
+        "image/webp" => Ok("webp"),
+        _ => Err(format!("unsupported clipboard image type: {mime}")),
+    }
 }
