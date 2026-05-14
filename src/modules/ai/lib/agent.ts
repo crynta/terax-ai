@@ -242,6 +242,72 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "siliconflow": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "siliconflow",
+        baseURL: "https://api.siliconflow.cn/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "hyperbolic": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "hyperbolic",
+        baseURL: "https://api.hyperbolic.xyz/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "deepinfra": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "deepinfra",
+        baseURL: "https://api.deepinfra.com/v1/openai",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "novita": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "novita",
+        baseURL: "https://api.novita.ai/v3/openai",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "ai21": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "ai21",
+        baseURL: "https://api.ai21.com/studio/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "huggingface": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "huggingface",
+        baseURL: "https://api-inference.huggingface.co/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);

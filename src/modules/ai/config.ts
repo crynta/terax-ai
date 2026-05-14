@@ -15,6 +15,12 @@ export type ProviderId =
   | "perplexity"
   | "cohere"
   | "moonshot"
+  | "siliconflow"
+  | "hyperbolic"
+  | "deepinfra"
+  | "novita"
+  | "ai21"
+  | "huggingface"
   | "ollama"
   | "openai-compatible"
   | "lmstudio";
@@ -127,6 +133,48 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "moonshot-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.moonshot.cn/console/api-keys",
+  },
+  {
+    id: "siliconflow",
+    label: "SiliconFlow",
+    keyringAccount: "siliconflow-api-key",
+    keyPrefix: "sk-",
+    consoleUrl: "https://cloud.siliconflow.cn/account/ak",
+  },
+  {
+    id: "hyperbolic",
+    label: "Hyperbolic",
+    keyringAccount: "hyperbolic-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://app.hyperbolic.xyz/settings",
+  },
+  {
+    id: "deepinfra",
+    label: "DeepInfra",
+    keyringAccount: "deepinfra-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://deepinfra.com/dash/api_keys",
+  },
+  {
+    id: "novita",
+    label: "Novita AI",
+    keyringAccount: "novita-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://novita.ai/api-key",
+  },
+  {
+    id: "ai21",
+    label: "AI21 Labs",
+    keyringAccount: "ai21-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://studio.ai21.com/account/api-key",
+  },
+  {
+    id: "huggingface",
+    label: "Hugging Face",
+    keyringAccount: "huggingface-api-key",
+    keyPrefix: "hf_",
+    consoleUrl: "https://huggingface.co/settings/tokens",
   },
   {
     id: "ollama",
@@ -505,6 +553,144 @@ export const MODELS = [
     hint: "Best",
     description: "Moonshot's agentic flagship.",
     capabilities: { intelligence: 5, speed: 3, cost: 4 },
+     tags: ["tools", "coding"],
+  },
+
+  // ── SiliconFlow ─────────────────────────────────────────────────────────
+  {
+    id: "siliconflow/deepseek-v3",
+    provider: "siliconflow",
+    label: "DeepSeek V3",
+    hint: "SiliconFlow",
+    description: "DeepSeek V3 on fast SiliconFlow inference.",
+    capabilities: { intelligence: 5, speed: 4, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "siliconflow/qwen3-235b",
+    provider: "siliconflow",
+    label: "Qwen3 235B",
+    hint: "SiliconFlow",
+    description: "Alibaba's MoE model on SiliconFlow.",
+    capabilities: { intelligence: 5, speed: 4, cost: 5 },
+    tags: ["reasoning", "tools"],
+  },
+  {
+    id: "siliconflow/llama4-maverick",
+    provider: "siliconflow",
+    label: "Llama 4 Maverick",
+    hint: "SiliconFlow",
+    description: "Meta's flagship MoE on SiliconFlow.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["vision", "tools"],
+  },
+
+  // ── Hyperbolic ──────────────────────────────────────────────────────────
+  {
+    id: "meta-llama/Meta-Llama-3.1-405B-Instruct",
+    provider: "hyperbolic",
+    label: "Llama 3.1 405B",
+    hint: "Hyperbolic",
+    description: "Largest Llama on discounted GPU.",
+    capabilities: { intelligence: 4, speed: 3, cost: 5 },
+    tags: ["tools"],
+  },
+  {
+    id: "deepseek-ai/DeepSeek-R1",
+    provider: "hyperbolic",
+    label: "DeepSeek R1",
+    hint: "Hyperbolic",
+    description: "Chain-of-thought reasoning on Hyperbolic.",
+    capabilities: { intelligence: 5, speed: 3, cost: 5 },
+    tags: ["reasoning", "coding"],
+  },
+
+  // ── DeepInfra ───────────────────────────────────────────────────────────
+  {
+    id: "meta-llama/Meta-Llama-3.1-70B-Instruct",
+    provider: "deepinfra",
+    label: "Llama 3.1 70B",
+    hint: "DeepInfra",
+    description: "Stable Llama on DeepInfra.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools"],
+  },
+  {
+    id: "Qwen/Qwen2.5-72B-Instruct",
+    provider: "deepinfra",
+    label: "Qwen 2.5 72B",
+    hint: "DeepInfra",
+    description: "Multilingual Qwen on DeepInfra.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "deepinfra/deepseek-v3",
+    provider: "deepinfra",
+    label: "DeepSeek V3",
+    hint: "DeepInfra",
+    description: "Open-weight flagship on DeepInfra.",
+    capabilities: { intelligence: 5, speed: 4, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+
+  // ── Novita AI ───────────────────────────────────────────────────────────
+  {
+    id: "deepseek/deepseek-r1-0528",
+    provider: "novita",
+    label: "DeepSeek R1",
+    hint: "Novita",
+    description: "Reasoning model on Novita GPU network.",
+    capabilities: { intelligence: 5, speed: 3, cost: 5 },
+    tags: ["reasoning", "coding"],
+  },
+  {
+    id: "qwen/qwen3-30b-a3b",
+    provider: "novita",
+    label: "Qwen3 30B MoE",
+    hint: "Novita",
+    description: "Efficient MoE on Novita.",
+    capabilities: { intelligence: 4, speed: 5, cost: 5 },
+    tags: ["tools"],
+  },
+
+  // ── AI21 Labs ───────────────────────────────────────────────────────────
+  {
+    id: "jamba-1.5-large",
+    provider: "ai21",
+    label: "Jamba 1.5 Large",
+    hint: "Best",
+    description: "Hybrid SSM-Transformer, 256K context.",
+    capabilities: { intelligence: 4, speed: 3, cost: 3 },
+    tags: ["tools"],
+  },
+  {
+    id: "jamba-1.5-mini",
+    provider: "ai21",
+    label: "Jamba 1.5 Mini",
+    hint: "Fast",
+    description: "Lightweight hybrid for fast responses.",
+    capabilities: { intelligence: 3, speed: 5, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── Hugging Face ────────────────────────────────────────────────────────
+  {
+    id: "meta-llama/Llama-3.3-70B-Instruct",
+    provider: "huggingface",
+    label: "Llama 3.3 70B",
+    hint: "HuggingFace",
+    description: "Open model via HF Inference API.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["tools"],
+  },
+  {
+    id: "huggingface/qwen2.5-72b",
+    provider: "huggingface",
+    label: "Qwen 2.5 72B",
+    hint: "HuggingFace",
+    description: "Multilingual Qwen via HF Inference.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
     tags: ["tools", "coding"],
   },
 
@@ -781,6 +967,20 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "command-r7b-12-2024": 128_000,
   "moonshot-v1-auto": 128_000,
   "kimi-k2.5": 256_000,
+  "siliconflow/deepseek-v3": 128_000,
+  "siliconflow/qwen3-235b": 128_000,
+  "siliconflow/llama4-maverick": 1_000_000,
+  "meta-llama/Meta-Llama-3.1-405B-Instruct": 128_000,
+  "deepseek-ai/DeepSeek-R1": 128_000,
+  "meta-llama/Meta-Llama-3.1-70B-Instruct": 128_000,
+  "Qwen/Qwen2.5-72B-Instruct": 128_000,
+  "deepinfra/deepseek-v3": 128_000,
+  "deepseek/deepseek-r1-0528": 128_000,
+  "qwen/qwen3-30b-a3b": 128_000,
+  "jamba-1.5-large": 256_000,
+  "jamba-1.5-mini": 256_000,
+  "meta-llama/Llama-3.3-70B-Instruct": 128_000,
+  "huggingface/qwen2.5-72b": 128_000,
   "ollama-local": 32_000,
   "gpt-oss-120b": 128_000,
   "llama3.3-70b": 128_000,
@@ -895,6 +1095,12 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   perplexity: "sonar",
   cohere: "command-r7b-12-2024",
   moonshot: "moonshot-v1-auto",
+  siliconflow: "siliconflow/deepseek-v3",
+  hyperbolic: "deepseek-ai/DeepSeek-R1",
+  deepinfra: "deepinfra/deepseek-v3",
+  novita: "qwen/qwen3-30b-a3b",
+  ai21: "jamba-1.5-mini",
+  huggingface: "huggingface/qwen2.5-72b",
   ollama: "qwen2.5-coder-7b-instruct",
   "openai-compatible": "",
 };

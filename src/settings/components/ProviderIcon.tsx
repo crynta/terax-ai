@@ -16,6 +16,11 @@ import {
   DatabaseIcon,
   Moon02Icon,
   ServerStack01Icon,
+  SparklesIcon,
+  Hexagon01Icon,
+  NeuralNetworkIcon,
+  CampfireIcon,
+  Package01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -34,6 +39,12 @@ const ICON_BY_PROVIDER = {
   perplexity: Search01Icon,
   cohere: DatabaseIcon,
   moonshot: Moon02Icon,
+  siliconflow: SparklesIcon,
+  hyperbolic: Hexagon01Icon,
+  deepinfra: NeuralNetworkIcon,
+  novita: CampfireIcon,
+  ai21: GlobeIcon,
+  huggingface: Package01Icon,
   ollama: ServerStack01Icon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
