@@ -153,7 +153,7 @@ pub fn spawn(
         .spawn(move || loop {
             thread::sleep(FLUSH_INTERVAL);
             let chunk = {
-                let mut g = pending_f.lock().unwrap();
+                let mut g = pending_f.lock();
                 if g.is_empty() {
                     if done_f.load(Ordering::Acquire) {
                         break;
