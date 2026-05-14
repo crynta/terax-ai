@@ -166,6 +166,82 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "mistral": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "mistral",
+        baseURL: "https://api.mistral.ai/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "together": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "together",
+        baseURL: "https://api.together.xyz/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "fireworks": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "fireworks",
+        baseURL: "https://api.fireworks.ai/inference/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "perplexity": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "perplexity",
+        baseURL: "https://api.perplexity.ai",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "cohere": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "cohere",
+        baseURL: "https://api.cohere.com/v2",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "moonshot": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "moonshot",
+        baseURL: "https://api.moonshot.cn/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "ollama": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "ollama",
+        baseURL: "http://localhost:11434/v1",
+      })(resolvedModelId);
+      break;
+    }
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);

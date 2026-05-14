@@ -10,6 +10,12 @@ import {
   DeepseekIcon,
   GlobeIcon,
   PlugIcon,
+  Rocket01Icon,
+  FireworksIcon,
+  Search01Icon,
+  DatabaseIcon,
+  Moon02Icon,
+  ServerStack01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -21,7 +27,14 @@ const ICON_BY_PROVIDER = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   deepseek: DeepseekIcon,
+  mistral: GlobeIcon,
   openrouter: GlobeIcon,
+  together: Rocket01Icon,
+  fireworks: FireworksIcon,
+  perplexity: Search01Icon,
+  cohere: DatabaseIcon,
+  moonshot: Moon02Icon,
+  ollama: ServerStack01Icon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
