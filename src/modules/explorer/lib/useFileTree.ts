@@ -2,6 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  affectedDirsForPath,
+  dirname,
+  joinPath,
+  togglePathExpansion,
+} from "./pathUtils";
+import { useFileTreeWatcher } from "./useFileTreeWatcher";
 
 export type DirEntry = {
   name: string;
@@ -23,27 +30,25 @@ export type PendingCreate = {
   kind: "file" | "dir";
 };
 
-export function joinPath(parent: string, name: string): string {
-  if (parent.endsWith("/")) return `${parent}${name}`;
-  return `${parent}/${name}`;
-}
-
-export function dirname(path: string): string {
-  const i = path.lastIndexOf("/");
-  if (i <= 0) return "/";
-  return path.slice(0, i);
-}
-
 type Options = {
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
 };
 
-export function useFileTree(rootPath: string | null, options?: Options) {
+export function useFileTree(rawRootPath: string | null, options?: Options) {
+  // Normalize: strip trailing slash (except for root "/") to prevent
+  // watcher restart + root mismatch when terminal CWD has trailing slash.
+  const rootPath = rawRootPath
+    ? rawRootPath === "/"
+      ? "/"
+      : rawRootPath.replace(/\/+$/, "")
+    : null;
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const showHiddenRef = useRef(showHidden);
   const [nodes, setNodes] = useState<TreeState>({});
+  const nodesRef = useRef<TreeState>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const expandedRef = useRef<Set<string>>(new Set());
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(
     null,
   );
@@ -53,8 +58,20 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     showHiddenRef.current = showHidden;
   }, [showHidden]);
 
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
+    expandedRef.current = expanded;
+  }, [expanded]);
+
   const fetchChildren = useCallback(async (path: string) => {
-    setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
+    setNodes((s) =>
+      s[path]?.status === "loaded"
+        ? s // already loaded — keep showing entries during refresh
+        : { ...s, [path]: { status: "loading" } },
+    );
     try {
       const entries = await invoke<DirEntry[]>("fs_read_dir", {
         path,
@@ -62,6 +79,8 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         workspace: currentWorkspaceEnv(),
       });
       setNodes((s) => ({ ...s, [path]: { status: "loaded", entries } }));
+      // Add this directory to the watcher so changes are detected.
+      void invoke("fs_watch_add", { path }).catch(() => {});
     } catch (e) {
       setNodes((s) => ({
         ...s,
@@ -70,7 +89,29 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     }
   }, []);
 
-  // Root change → reset state.
+  const handleWatcherInvalidate = useCallback((paths: string[]) => {
+    if (!rootPath) return;
+    if (paths.length === 0) return;
+
+    const affectedDirs = new Set<string>();
+    for (const path of paths) {
+      for (const dir of affectedDirsForPath(
+        path,
+        rootPath,
+        (dir) => nodesRef.current[dir]?.status === "loaded",
+      )) {
+        affectedDirs.add(dir);
+      }
+    }
+
+    for (const dir of affectedDirs) {
+      void fetchChildren(dir);
+    }
+  }, [fetchChildren, rootPath]);
+
+  useFileTreeWatcher(rootPath, { onInvalidate: handleWatcherInvalidate });
+
+  // Root change → reset state and fetch.
   useEffect(() => {
     if (!rootPath) {
       setNodes({});
@@ -100,18 +141,23 @@ export function useFileTree(rootPath: string | null, options?: Options) {
 
   const toggle = useCallback(
     (path: string) => {
+      const isCollapsing = expandedRef.current.has(path);
       setExpanded((curr) => {
-        const next = new Set(curr);
-        if (next.has(path)) next.delete(path);
-        else next.add(path);
+        const { next } = togglePathExpansion(curr, path);
+        expandedRef.current = next;
         return next;
       });
-      setNodes((curr) => {
-        if (!curr[path] || curr[path].status === "error") {
-          void fetchChildren(path);
-        }
-        return curr;
-      });
+      if (isCollapsing) {
+        // Remove watcher for collapsed directory
+        void invoke("fs_watch_remove", { path }).catch(() => {});
+      } else {
+        setNodes((curr) => {
+          if (!curr[path] || curr[path].status === "error") {
+            void fetchChildren(path);
+          }
+          return curr;
+        });
+      }
     },
     [fetchChildren],
   );
@@ -251,5 +297,6 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     commitRename,
     deletePath,
     joinPath,
+    rootPath,
   };
 }

@@ -67,6 +67,7 @@ pub fn run() {
         // Skip restoring VISIBLE — frontend calls window.show() after first
         // paint so the user never sees a transparent window-shadow flash on
         // Windows/Linux.
+        .manage(fs::watch::FsWatchState::default())
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
@@ -101,6 +102,10 @@ pub fn run() {
             fs::search::fs_search,
             fs::grep::fs_grep,
             fs::grep::fs_glob,
+            fs::watch::fs_watch_start,
+            fs::watch::fs_watch_stop,
+            fs::watch::fs_watch_add,
+            fs::watch::fs_watch_remove,
             shell::shell_run_command,
             shell::shell_session_open,
             shell::shell_session_run,

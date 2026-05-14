@@ -22,7 +22,9 @@ pub async fn lm_ping(base_url: String) -> Result<u16, String> {
         s => return Err(format!("scheme not allowed: {s}")),
     }
 
-    let host = parsed.host_str().ok_or_else(|| "missing host".to_string())?;
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "missing host".to_string())?;
     if is_blocked_host(host) {
         return Err(format!("host not allowed: {host}"));
     }
@@ -43,10 +45,7 @@ pub async fn lm_ping(base_url: String) -> Result<u16, String> {
 fn is_blocked_host(host: &str) -> bool {
     matches!(
         host,
-        "169.254.169.254"
-            | "fd00:ec2::254"
-            | "metadata.google.internal"
-            | "metadata.azure.com"
+        "169.254.169.254" | "fd00:ec2::254" | "metadata.google.internal" | "metadata.azure.com"
     )
 }
 
