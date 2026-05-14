@@ -71,6 +71,7 @@ The default shell is detected in this order: `pwsh.exe` (PowerShell 7+) → `pow
 ## Linux notes
 
 - **Arch / AUR**: install via `yay -S terax-bin` (or `paru`, etc.). Tracks the latest release.
+- **NixOS / Nix**: use the official flake — `nix profile install github:crynta/terax-ai` (non-NixOS), or import the flake and add `inputs.terax.packages.${pkgs.system}.terax` to `environment.systemPackages` (NixOS). The `nixosModules.terax` output is also available for a simpler setup.
 - **AppImage**: needs FUSE. Without it: `./Terax_*.AppImage --appimage-extract-and-run`. On Wayland with rendering glitches, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`; otherwise use the `.deb` / `.rpm` which link against the system's GTK stack.
 
 ## Configure AI
