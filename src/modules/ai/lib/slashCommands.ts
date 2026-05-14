@@ -1,5 +1,11 @@
-import { CheckListIcon, SparklesIcon } from "@hugeicons/core-free-icons";
+import {
+  CheckListIcon,
+  Exchange01Icon,
+  SparklesIcon,
+  Sun01Icon,
+} from "@hugeicons/core-free-icons";
 import { usePlanStore } from "../store/planStore";
+import { lookupExchangeRate, lookupWeather } from "./webLookup";
 
 /**
  * Outcome of intercepting a slash command from the composer.
@@ -10,6 +16,7 @@ import { usePlanStore } from "../store/planStore";
  */
 export type SlashOutcome =
   | { kind: "handled"; toast?: string }
+  | { kind: "local-run"; execute: () => Promise<string> }
   | { kind: "send-prompt"; prompt: string; commandName?: string }
   | { kind: "none" };
 
@@ -42,6 +49,18 @@ export const SLASH_COMMANDS: Record<string, SlashCommandMeta> = {
     invocation: "/plan",
     label: "Plan mode",
     icon: CheckListIcon,
+  },
+  weather: {
+    name: "weather",
+    invocation: "/weather",
+    label: "Get weather",
+    icon: Sun01Icon,
+  },
+  exchange: {
+    name: "exchange",
+    invocation: "/exchange",
+    label: "Exchange rate",
+    icon: Exchange01Icon,
   },
 };
 
@@ -79,6 +98,27 @@ export function tryRunSlashCommand(input: string): SlashOutcome {
         kind: "send-prompt",
         prompt: INIT_PROMPT,
         commandName: "init",
+      };
+    }
+    case "weather": {
+      const city = tail || "London";
+      const parts = city.split(/\s+/);
+      const units =
+        parts[parts.length - 1] === "imperial" ? "imperial" : "metric";
+      const cityName =
+        units === "imperial" ? parts.slice(0, -1).join(" ") || city : city;
+      return {
+        kind: "local-run",
+        execute: () => lookupWeather(cityName, units),
+      };
+    }
+    case "exchange": {
+      const [from = "USD", to = "EUR", amtStr] = tail.split(/\s+/);
+      const amount = amtStr ? parseFloat(amtStr) : 1;
+      return {
+        kind: "local-run",
+        execute: () =>
+          lookupExchangeRate(from, to, Number.isFinite(amount) ? amount : 1),
       };
     }
     default:

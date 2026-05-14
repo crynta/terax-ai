@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { UIMessage } from "@ai-sdk/react";
 import { useWhisperRecording } from "../hooks/useWhisperRecording";
 import { expandSnippetTokens, type Snippet } from "../lib/snippets";
 import { tryRunSlashCommand, type SlashCommandMeta } from "./slashCommands";
@@ -230,6 +231,40 @@ export function AiComposerProvider({ children }: ProviderProps) {
       if (outcome.kind === "handled") {
         setValue("");
         if (outcome.toast) console.info(outcome.toast);
+        return;
+      }
+      if (outcome.kind === "local-run") {
+        const sid = sessionId;
+        if (!sid) return;
+        const inputText = commandSource;
+        setValue("");
+        setFiles([]);
+        setPickedSnippets([]);
+        setPickedCommands([]);
+        void (async () => {
+          const chat = getOrCreateChat(sid);
+          const userMsg: UIMessage = {
+            id: crypto.randomUUID(),
+            role: "user",
+            parts: [{ type: "text", text: inputText }],
+          };
+          chat.messages = [...chat.messages, userMsg];
+          let resultText: string;
+          try {
+            resultText = await outcome.execute();
+          } catch (e) {
+            resultText = `Error: ${String(e)}`;
+          }
+          const asstMsg: UIMessage = {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            parts: [{ type: "text", text: resultText }],
+          };
+          chat.messages = [...chat.messages, asstMsg];
+          if (!useChatStore.getState().mini.open) {
+            useChatStore.getState().openMini();
+          }
+        })();
         return;
       }
       if (outcome.kind === "send-prompt") {
