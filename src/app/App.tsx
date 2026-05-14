@@ -86,7 +86,7 @@ export default function App() {
     pinTab,
     newPreviewTab,
     openAiDiffTab,
-    setAiDiffStatus,
+    closeAiDiffTab,
     closeTab,
     updateTab,
     selectByIndex,
@@ -893,7 +893,7 @@ export default function App() {
           {hasComposer ? (
             <AgentRunBridge
               openAiDiffTab={openAiDiffTab}
-              setAiDiffStatus={setAiDiffStatus}
+              closeAiDiffTab={closeAiDiffTab}
             />
           ) : null}
 

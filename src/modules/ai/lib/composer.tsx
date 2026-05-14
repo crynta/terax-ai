@@ -299,6 +299,9 @@ export function AiComposerProvider({ children }: ProviderProps) {
     void chat.sendMessage({ role: "user", parts } as Parameters<
       typeof chat.sendMessage
     >[0]);
+    const store = useChatStore.getState();
+    store.patchAgentMeta({ hitStepCap: false, compactionNotice: null });
+    if (!store.mini.open) store.openMini();
     setValue("");
     setFiles([]);
     setPickedSnippets([]);

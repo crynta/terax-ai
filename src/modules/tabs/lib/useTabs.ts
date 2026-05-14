@@ -288,6 +288,28 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [],
   );
 
+  const closeAiDiffTab = useCallback((approvalId: string) => {
+    setTabs((curr) => {
+      const target = curr.find(
+        (t) => t.kind === "ai-diff" && t.approvalId === approvalId,
+      );
+      if (!target || curr.length <= 1) {
+        if (!target) return curr;
+        return curr.map((t) =>
+          t.kind === "ai-diff" && t.approvalId === approvalId
+            ? { ...t, status: "approved" as AiDiffStatus }
+            : t,
+        );
+      }
+      const idx = curr.findIndex((t) => t.id === target.id);
+      const next = curr.filter((t) => t.id !== target.id);
+      setActiveId((active) =>
+        target.id === active ? next[Math.max(0, idx - 1)].id : active,
+      );
+      return next;
+    });
+  }, []);
+
   const newPreviewTab = useCallback((url: string) => {
     const id = nextIdRef.current++;
     setTabs((t) => [
@@ -515,6 +537,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     newPreviewTab,
     openAiDiffTab,
     setAiDiffStatus,
+    closeAiDiffTab,
     closeTab,
     updateTab,
     selectByIndex,

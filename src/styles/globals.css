@@ -240,3 +240,35 @@ html *::-webkit-scrollbar {
   height: 0;
   display: none;
 }
+
+@keyframes terax-collapsible-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes terax-collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+.terax-collapsible-content {
+  overflow: hidden;
+}
+.terax-collapsible-content[data-state="open"] {
+  animation: terax-collapsible-down 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.terax-collapsible-content[data-state="closed"] {
+  animation: terax-collapsible-up 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}

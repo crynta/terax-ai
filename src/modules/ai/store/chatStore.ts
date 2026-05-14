@@ -56,6 +56,10 @@ export type AgentMeta = {
   approvalsPending: number;
   error: string | null;
   tokens: AgentUsage;
+  lastInputTokens: number;
+  lastCachedTokens: number;
+  hitStepCap: boolean;
+  compactionNotice: { droppedCount: number; at: number } | null;
 };
 
 const ZERO_USAGE: AgentUsage = {
@@ -70,6 +74,10 @@ const IDLE_META: AgentMeta = {
   approvalsPending: 0,
   error: null,
   tokens: ZERO_USAGE,
+  lastInputTokens: 0,
+  lastCachedTokens: 0,
+  hitStepCap: false,
+  compactionNotice: null,
 };
 
 export type MiniState = {
@@ -246,6 +254,14 @@ function makeChat(sessionId: string): Chat<UIMessage> {
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
     },
+    onCompact: (info) => {
+      useChatStore.getState().patchAgentMeta({
+        compactionNotice: { droppedCount: info.droppedCount, at: Date.now() },
+      });
+    },
+    onFinishMeta: (info) => {
+      useChatStore.getState().patchAgentMeta({ hitStepCap: info.hitStepCap });
+    },
     onUsage: (delta) => {
       const cur = useChatStore.getState().agentMeta.tokens;
       useChatStore.getState().patchAgentMeta({
@@ -254,6 +270,8 @@ function makeChat(sessionId: string): Chat<UIMessage> {
           outputTokens: cur.outputTokens + delta.outputTokens,
           cachedInputTokens: cur.cachedInputTokens + delta.cachedInputTokens,
         },
+        lastInputTokens: delta.lastInputTokens,
+        lastCachedTokens: delta.lastCachedTokens,
       });
     },
   }) as unknown as ChatTransport<UIMessage>;

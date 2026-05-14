@@ -5,14 +5,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Folder01Icon, Refresh01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { IS_WINDOWS } from "@/lib/platform";
 import {
   LOCAL_WORKSPACE,
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
-import { IS_WINDOWS } from "@/lib/platform";
+import { Refresh01Icon, ServerStack03Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect } from "react";
 
 type Props = {
@@ -42,7 +42,11 @@ export function WorkspaceEnvSelector({ onSelect }: Props) {
           className="flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[11px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=open]:bg-accent data-[state=open]:text-foreground"
           title="Workspace environment"
         >
-          <HugeiconsIcon icon={Folder01Icon} size={13} strokeWidth={1.75} />
+          <HugeiconsIcon
+            icon={ServerStack03Icon}
+            size={13}
+            strokeWidth={1.75}
+          />
           <span className="max-w-28 truncate">{label}</span>
         </button>
       </DropdownMenuTrigger>
