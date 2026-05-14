@@ -7,14 +7,18 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import {
-  registerCwdHandler,
-  registerPromptTracker,
-} from "./osc-handlers";
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
+import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
 const BACKWARD_KILL_WORD = "\x17";
+const SHIFT_ENTER = "\x1b\r";
 
 type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
@@ -106,13 +110,21 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   sessions.set(leafId, session);
 
   term.attachCustomKeyEventHandler((event) => {
-    if (!isCtrlBackspace(event)) return true;
     const pty = session.pty;
     if (!pty) return true;
-    event.preventDefault();
-    event.stopPropagation();
-    pty.write(BACKWARD_KILL_WORD);
-    return false;
+    if (isCtrlBackspace(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      pty.write(BACKWARD_KILL_WORD);
+      return false;
+    }
+    if (isShiftEnter(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      pty.write(SHIFT_ENTER);
+      return false;
+    }
+    return true;
   });
 
   // Routes through session.pty so respawn doesn't need to rebind.
@@ -129,6 +141,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     session.cleanups.push(prompt.dispose);
     session.cleanups.push(
       registerCwdHandler(term, (cwd) => {
+        if (session.lastCwd === cwd) return;
         session.lastCwd = cwd;
         session.callbacks.onCwd?.(cwd);
       }),
@@ -478,7 +491,10 @@ export function useTerminalSession({
     s.term.options.theme = buildTerminalTheme();
   }, [leafId]);
 
-  return { write, focus, getBuffer, getSelection, applyTheme };
+  return useMemo(
+    () => ({ write, focus, getBuffer, getSelection, applyTheme }),
+    [write, focus, getBuffer, getSelection, applyTheme],
+  );
 }
 
 function isCtrlBackspace(event: KeyboardEvent): boolean {
@@ -491,3 +507,13 @@ function isCtrlBackspace(event: KeyboardEvent): boolean {
   );
 }
 
+function isShiftEnter(event: KeyboardEvent): boolean {
+  return (
+    event.type === "keydown" &&
+    event.key === "Enter" &&
+    event.shiftKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey
+  );
+}
