@@ -22,7 +22,7 @@ export default defineConfig(async ({ mode }) => ({
   },
   build: {
     target:
-      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "es2020",
+      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome120" : "es2022",
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       input: {
