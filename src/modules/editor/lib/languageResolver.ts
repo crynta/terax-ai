@@ -33,6 +33,7 @@ const loaders: Record<string, LanguageLoader> = {
   go: () => import("@codemirror/lang-go").then((m) => m.go()),
   py: () => import("@codemirror/lang-python").then((m) => m.python()),
   json: () => import("@codemirror/lang-json").then((m) => m.json()),
+  jsonc: () => import("./jsonc").then((m) => m.jsonc),
 
   md: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
   markdown: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
