@@ -241,6 +241,18 @@ html *::-webkit-scrollbar {
   display: none;
 }
 
+.terax-tab-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+}
+.terax-tab-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 @keyframes terax-collapsible-down {
   from {
     height: 0;
