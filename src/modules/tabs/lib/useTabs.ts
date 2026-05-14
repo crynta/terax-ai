@@ -11,8 +11,8 @@ import {
   type SplitDir,
 } from "@/modules/terminal/lib/panes";
 
-// Browsers cap WebGL contexts at ~16; one xterm renderer per leaf.
-export const MAX_PANES_PER_TAB = 8;
+// Matches the renderer slot pool size — over this we'd evict an active leaf.
+export const MAX_PANES_PER_TAB = 4;
 
 export type TerminalTab = {
   id: number;
