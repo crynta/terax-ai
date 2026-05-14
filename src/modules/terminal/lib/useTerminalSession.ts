@@ -14,6 +14,11 @@ import {
   useMemo,
   useRef,
 } from "react";
+import {
+  firstClipboardImage,
+  saveClipboardImage,
+  terminalPathMention,
+} from "./clipboard-image";
 import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
@@ -221,6 +226,7 @@ function attachSession(
   const firstAttach = !s.term.element;
   if (firstAttach) {
     s.term.open(container);
+    bindImagePaste(s);
   } else if (s.term.element && s.term.element.parentNode !== container) {
     container.appendChild(s.term.element);
   }
@@ -331,6 +337,28 @@ function attachSession(
     s.pendingExit = null;
     callbacks.onExit?.(code);
   }
+}
+
+function bindImagePaste(s: Session): void {
+  const element = s.term.element;
+  if (!element) return;
+
+  const onPaste = (event: ClipboardEvent) => {
+    const file = firstClipboardImage(event);
+    if (!file) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    void saveClipboardImage(file)
+      .then((path) => s.pty?.write(terminalPathMention(path)))
+      .catch((e) => console.error("terminal image paste failed:", e));
+  };
+
+  element.addEventListener("paste", onPaste, { capture: true });
+  s.cleanups.push(() =>
+    element.removeEventListener("paste", onPaste, { capture: true }),
+  );
 }
 
 function detachSession(leafId: number): void {
