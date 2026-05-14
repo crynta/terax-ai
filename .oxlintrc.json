@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "react", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "warn",
+    "suspicious": "warn"
+  },
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "src-tauri/**",
+    ".git/**",
+    ".vite/**"
+  ],
+  "settings": {
+    "react": {
+      "version": "19.1.0"
+    }
+  },
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "no-const-assign": "error",
+    "no-unreachable": "error",
+    "no-unused-vars": "warn",
+    "prefer-const": "warn",
+    "no-underscore-dangle": ["warn", { "allow": ["_values", "_exhaustive"] }]
+  }
+}

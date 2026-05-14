@@ -372,8 +372,10 @@ async function readAttachment(file: File): Promise<FileAttachment | null> {
 function readAsDataURL(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error);
+    reader.addEventListener("load", () =>
+      resolve(String(reader.result ?? "")),
+    );
+    reader.addEventListener("error", () => reject(reader.error));
     reader.readAsDataURL(file);
   });
 }

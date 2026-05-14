@@ -71,7 +71,7 @@ export function AiInputBar() {
     const q = trigger.query;
     const cmdItems: PickerItem[] = Object.values(SLASH_COMMANDS)
       .filter(
-        (c) => !q || c.name.includes(q) || c.label.toLowerCase().includes(q),
+        (cmd) => !q || cmd.name.includes(q) || cmd.label.toLowerCase().includes(q),
       )
       .map((command) => ({ kind: "command", command }));
     const snipItems: PickerItem[] = snippets

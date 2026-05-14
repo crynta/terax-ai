@@ -563,19 +563,15 @@ const folderIcons: FolderIcons = {
   },
 };
 
-const { folderNames } = Object.entries(folderIcons).reduce(
-  ({ folderNames }, [name, icon]) => ({
-    folderNames: {
-      ...folderNames,
-      ...icon.folderNames?.reduce(
-        (a, c) => ({ ...a, [c]: `folder_${name}` }),
-        {},
-      ),
-    },
+const folderNames = Object.entries(folderIcons).reduce<Record<string, string>>(
+  (acc, [name, icon]) => ({
+    ...acc,
+    ...icon.folderNames?.reduce<Record<string, string>>(
+      (a, c) => ({ ...a, [c]: `folder_${name}` }),
+      {},
+    ),
   }),
-  {
-    folderNames: {},
-  },
+  {},
 );
 
 export { folderIcons, folderNames };

@@ -25,16 +25,15 @@ export function useGlobalShortcuts(
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { handlers, options } = latest.current;
+      // handlers and options captured via closure
       for (const s of SHORTCUTS) {
         // Use user-defined bindings if they exist, otherwise use default
         const bindings = userShortcuts[s.id] || s.defaultBindings;
-
         const isMatch = bindings.some((b) => matchBinding(e, b, s.id));
         if (!isMatch) continue;
 
-        if (options?.isDisabled?.(s.id, e)) return;
-        const h = handlers[s.id];
+        if (latest.current.options?.isDisabled?.(s.id, e)) return;
+        const h = latest.current.handlers[s.id];
         if (!h) return;
         e.preventDefault();
         e.stopImmediatePropagation();

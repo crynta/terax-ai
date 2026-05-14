@@ -303,9 +303,9 @@ export default function App() {
       if (!live.has(id)) disposeSession(id);
     }
     liveLeavesRef.current = live;
-    for (const k of [...terminalRefs.current.keys()])
+    for (const k of terminalRefs.current.keys())
       if (!live.has(k)) terminalRefs.current.delete(k);
-    for (const k of [...searchAddons.current.keys()])
+    for (const k of searchAddons.current.keys())
       if (!live.has(k)) searchAddons.current.delete(k);
   }, [tabs]);
 

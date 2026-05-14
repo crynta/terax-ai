@@ -79,6 +79,11 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
               src={url}
               title="Preview"
               className="h-full w-full border-0"
+              sandbox={
+                isLocalUrl(url)
+                  ? "allow-scripts allow-same-origin allow-forms allow-popups"
+                  : "allow-scripts allow-forms allow-popups"
+              }
               allow="clipboard-read; clipboard-write; fullscreen"
             />
           ) : (

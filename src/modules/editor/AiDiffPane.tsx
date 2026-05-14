@@ -117,12 +117,12 @@ export function AiDiffPane({
   // Resolve language by path (same approach as EditorPane).
   useEffect(() => {
     let cancelled = false;
-    resolveLanguage(path).then((ext) => {
+    resolveLanguage(path).then((langExt) => {
       if (cancelled) return;
       const view = cmRef.current?.view;
       if (!view) return;
       view.dispatch({
-        effects: languageCompartment.reconfigure(ext ?? []),
+        effects: languageCompartment.reconfigure(langExt ?? []),
       });
     });
     return () => {
