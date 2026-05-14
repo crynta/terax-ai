@@ -8,7 +8,14 @@ export type ProviderId =
   | "cerebras"
   | "groq"
   | "deepseek"
+  | "mistral"
   | "openrouter"
+  | "together"
+  | "fireworks"
+  | "perplexity"
+  | "cohere"
+  | "moonshot"
+  | "ollama"
   | "openai-compatible"
   | "lmstudio";
 
@@ -73,7 +80,63 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     consoleUrl: "https://platform.deepseek.com/api_keys",
   },
   {
+    id: "mistral",
+    label: "Mistral",
+    keyringAccount: "mistral-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://console.mistral.ai/api-keys",
+  },
+  {
     id: "openrouter",
+    label: "OpenRouter",
+    keyringAccount: "openrouter-api-key",
+    keyPrefix: "sk-or-",
+    consoleUrl: "https://openrouter.ai/keys",
+  },
+  {
+    id: "together",
+    label: "Together AI",
+    keyringAccount: "together-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://api.together.xyz/settings/api-keys",
+  },
+  {
+    id: "fireworks",
+    label: "Fireworks AI",
+    keyringAccount: "fireworks-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://app.fireworks.ai/users/api-keys",
+  },
+  {
+    id: "perplexity",
+    label: "Perplexity",
+    keyringAccount: "perplexity-api-key",
+    keyPrefix: "pplx-",
+    consoleUrl: "https://www.perplexity.ai/settings/api",
+  },
+  {
+    id: "cohere",
+    label: "Cohere",
+    keyringAccount: "cohere-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://dashboard.cohere.com/api-keys",
+  },
+  {
+    id: "moonshot",
+    label: "Moonshot (Kimi)",
+    keyringAccount: "moonshot-api-key",
+    keyPrefix: "sk-",
+    consoleUrl: "https://platform.moonshot.cn/console/api-keys",
+  },
+  {
+    id: "ollama",
+    label: "Ollama",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://ollama.com",
+  },
+  {
+    id: "openai-compatible",
     label: "OpenRouter",
     keyringAccount: "openrouter-api-key",
     keyPrefix: "sk-or-",
@@ -305,6 +368,154 @@ export const MODELS = [
     description: "Chain-of-thought at open-weight prices.",
     capabilities: { intelligence: 5, speed: 2, cost: 4 },
     tags: ["reasoning", "coding"],
+  },
+
+  // ── Mistral ──────────────────────────────────────────────────────────────
+  {
+    id: "mistral-large-latest",
+    provider: "mistral",
+    label: "Mistral Large 3",
+    hint: "Best",
+    description: "EU-hosted flagship for code and agents.",
+    capabilities: { intelligence: 4, speed: 4, cost: 3 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "mistral-nemo",
+    provider: "mistral",
+    label: "Mistral Nemo",
+    hint: "Fast",
+    description: "Lightweight and cost-efficient.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["tools"],
+  },
+  {
+    id: "codestral-latest",
+    provider: "mistral",
+    label: "Codestral",
+    hint: "Coding",
+    description: "Mistral's code-specialized model.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["coding"],
+  },
+
+  // ── Together AI ──────────────────────────────────────────────────────────
+  {
+    id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+    provider: "together",
+    label: "Llama 4 Maverick",
+    hint: "Together",
+    description: "Meta's flagship MoE on Together AI.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["vision", "tools"],
+  },
+  {
+    id: "Qwen/Qwen3-235B-A22B-fp8-tput",
+    provider: "together",
+    label: "Qwen3 235B",
+    hint: "Together",
+    description: "Alibaba's MoE reasoner.",
+    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "deepseek-ai/DeepSeek-V3",
+    provider: "together",
+    label: "DeepSeek V3",
+    hint: "Together",
+    description: "Open-weight DeepSeek on Together.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+
+  // ── Fireworks AI ─────────────────────────────────────────────────────────
+  {
+    id: "accounts/fireworks/models/llama4-maverick-instruct-basic",
+    provider: "fireworks",
+    label: "Llama 4 Maverick",
+    hint: "Fireworks",
+    description: "Fast Llama 4 inference on Fireworks.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["vision", "tools"],
+  },
+  {
+    id: "accounts/fireworks/models/qwen3-235b-a22b",
+    provider: "fireworks",
+    label: "Qwen3 235B",
+    hint: "Fireworks",
+    description: "Qwen MoE on FireAttention engine.",
+    capabilities: { intelligence: 5, speed: 4, cost: 4 },
+    tags: ["reasoning", "tools"],
+  },
+
+  // ── Perplexity ───────────────────────────────────────────────────────────
+  {
+    id: "sonar-pro",
+    provider: "perplexity",
+    label: "Sonar Pro",
+    hint: "Search",
+    description: "Search-grounded reasoning.",
+    capabilities: { intelligence: 4, speed: 4, cost: 3 },
+    tags: ["tools"],
+  },
+  {
+    id: "sonar",
+    provider: "perplexity",
+    label: "Sonar",
+    hint: "Fast",
+    description: "Fast search-augmented answers.",
+    capabilities: { intelligence: 3, speed: 5, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── Cohere ───────────────────────────────────────────────────────────────
+  {
+    id: "command-a-03-2025",
+    provider: "cohere",
+    label: "Command A",
+    hint: "Best",
+    description: "Enterprise RAG and tool use.",
+    capabilities: { intelligence: 4, speed: 4, cost: 3 },
+    tags: ["tools"],
+  },
+  {
+    id: "command-r7b-12-2024",
+    provider: "cohere",
+    label: "Command R7B",
+    hint: "Fast",
+    description: "Lightweight retrieval model.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["tools"],
+  },
+
+  // ── Moonshot (Kimi) ──────────────────────────────────────────────────────
+  {
+    id: "moonshot-v1-auto",
+    provider: "moonshot",
+    label: "Moonshot Auto",
+    hint: "Auto",
+    description: "Auto-routing Moonshot model.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["tools"],
+  },
+  {
+    id: "kimi-k2.5",
+    provider: "moonshot",
+    label: "Kimi K2.5",
+    hint: "Best",
+    description: "Moonshot's agentic flagship.",
+    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+    tags: ["tools", "coding"],
+  },
+
+  // ── Ollama (local; model id is user-supplied at runtime) ─────────────────
+  {
+    id: "ollama-local",
+    provider: "ollama",
+    label: "Ollama",
+    hint: "Local",
+    description: "Local models via Ollama.",
+    capabilities: { intelligence: 3, speed: 3, cost: 5 },
   },
 
   // ── Cerebras (autocomplete-tier) ──────────────────────────────────────────
@@ -556,6 +767,21 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-v4-pro": 1_000_000,
   "deepseek-v4-flash": 1_000_000,
   "deepseek-reasoner": 128_000,
+  "mistral-large-latest": 128_000,
+  "mistral-nemo": 128_000,
+  "codestral-latest": 256_000,
+  "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": 1_000_000,
+  "Qwen/Qwen3-235B-A22B-fp8-tput": 128_000,
+  "deepseek-ai/DeepSeek-V3": 128_000,
+  "accounts/fireworks/models/llama4-maverick-instruct-basic": 256_000,
+  "accounts/fireworks/models/qwen3-235b-a22b": 256_000,
+  "sonar-pro": 200_000,
+  "sonar": 128_000,
+  "command-a-03-2025": 256_000,
+  "command-r7b-12-2024": 128_000,
+  "moonshot-v1-auto": 128_000,
+  "kimi-k2.5": 256_000,
+  "ollama-local": 32_000,
   "gpt-oss-120b": 128_000,
   "llama3.3-70b": 128_000,
   "qwen-3-32b": 32_000,
@@ -631,6 +857,7 @@ export function estimateCost(
 
 /** Providers that do not require an API key (local servers, key-optional). */
 export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
+  "ollama",
   "lmstudio",
   "openai-compatible",
 ] as const;
@@ -662,6 +889,13 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   xai: "grok-4-fast-reasoning",
   deepseek: "deepseek-v4-flash",
   openrouter: "openai/gpt-5.4-mini",
+  mistral: "mistral-nemo",
+  together: "deepseek-ai/DeepSeek-V3",
+  fireworks: "accounts/fireworks/models/llama4-maverick-instruct-basic",
+  perplexity: "sonar",
+  cohere: "command-r7b-12-2024",
+  moonshot: "moonshot-v1-auto",
+  ollama: "qwen2.5-coder-7b-instruct",
   "openai-compatible": "",
 };
 
@@ -673,6 +907,7 @@ export function getAutocompleteEligibleModels(): readonly ModelInfo[] {
 }
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
+export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434/v1";
 export const OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
