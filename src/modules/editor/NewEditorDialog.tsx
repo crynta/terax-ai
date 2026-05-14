@@ -12,6 +12,7 @@ import { File02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 
 type Props = {
   open: boolean;
@@ -68,7 +69,7 @@ export function NewEditorDialog({
       ? trimmed
       : joinPath(rootPath, trimmed);
     try {
-      await invoke("fs_create_file", { path });
+      await invoke("fs_create_file", { path, workspace: currentWorkspaceEnv() });
       onCreated(path);
       onOpenChange(false);
     } catch (e) {

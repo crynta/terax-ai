@@ -3,7 +3,6 @@ export { TerminalStack } from "./TerminalStack";
 export {
   disposeSession,
   respawnSession,
-  type TeraxOpenInput,
 } from "./lib/useTerminalSession";
 export {
   findLeafCwd,

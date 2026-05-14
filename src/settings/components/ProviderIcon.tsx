@@ -8,6 +8,8 @@ import {
   Grok02Icon,
   CpuIcon,
   DeepseekIcon,
+  GlobeIcon,
+  PlugIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -19,6 +21,8 @@ const ICON_BY_PROVIDER = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   deepseek: DeepseekIcon,
+  openrouter: GlobeIcon,
+  "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 

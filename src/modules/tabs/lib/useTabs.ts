@@ -22,6 +22,8 @@ export type TerminalTab = {
   cwd?: string;
   paneTree: PaneNode;
   activeLeafId: number;
+  /** AI agent cannot read buffer / context of this terminal. */
+  private?: boolean;
 };
 
 export type EditorTab = {
@@ -133,6 +135,25 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         cwd,
         paneTree: { kind: "leaf", id: leafId, cwd },
         activeLeafId: leafId,
+      },
+    ]);
+    setActiveId(tabId);
+    return tabId;
+  }, []);
+
+  const newPrivateTab = useCallback((cwd?: string) => {
+    const tabId = nextIdRef.current++;
+    const leafId = nextIdRef.current++;
+    setTabs((t) => [
+      ...t,
+      {
+        id: tabId,
+        kind: "terminal",
+        title: "private",
+        cwd,
+        paneTree: { kind: "leaf", id: leafId, cwd },
+        activeLeafId: leafId,
+        private: true,
       },
     ]);
     setActiveId(tabId);
@@ -288,6 +309,28 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [],
   );
 
+  const closeAiDiffTab = useCallback((approvalId: string) => {
+    setTabs((curr) => {
+      const target = curr.find(
+        (t) => t.kind === "ai-diff" && t.approvalId === approvalId,
+      );
+      if (!target || curr.length <= 1) {
+        if (!target) return curr;
+        return curr.map((t) =>
+          t.kind === "ai-diff" && t.approvalId === approvalId
+            ? { ...t, status: "approved" as AiDiffStatus }
+            : t,
+        );
+      }
+      const idx = curr.findIndex((t) => t.id === target.id);
+      const next = curr.filter((t) => t.id !== target.id);
+      setActiveId((active) =>
+        target.id === active ? next[Math.max(0, idx - 1)].id : active,
+      );
+      return next;
+    });
+  }, []);
+
   const newPreviewTab = useCallback((url: string) => {
     const id = nextIdRef.current++;
     setTabs((t) => [
@@ -417,17 +460,25 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [tabs],
   );
 
-  /** Update a leaf's cwd; mirror to the tab's `cwd` when the leaf is active. */
+  /** Update a leaf's cwd; mirror to the tab's `cwd` when the leaf is active.
+   * Bails out without setTabs when nothing actually changed — shell integration
+   * re-emits OSC 7 on every prompt, including empty Enters, so this fires at
+   * keystroke rate. Always-setTabs there cascades a paneTree re-render across
+   * every open tab. */
   const setLeafCwd = useCallback((leafId: number, cwd: string) => {
-    setTabs((curr) =>
-      curr.map((t) => {
-        if (t.kind !== "terminal") return t;
-        if (!hasLeaf(t.paneTree, leafId)) return t;
+    setTabs((curr) => {
+      let changed = false;
+      const next = curr.map((t) => {
+        if (t.kind !== "terminal" || !hasLeaf(t.paneTree, leafId)) return t;
         const paneTree = setLeafCwdInTree(t.paneTree, leafId, cwd);
         const isActive = t.activeLeafId === leafId;
-        return { ...t, paneTree, ...(isActive && { cwd }) };
-      }),
-    );
+        const cwdChanged = isActive && t.cwd !== cwd;
+        if (paneTree === t.paneTree && !cwdChanged) return t;
+        changed = true;
+        return { ...t, paneTree, ...(cwdChanged && { cwd }) };
+      });
+      return changed ? next : curr;
+    });
   }, []);
 
   const focusPane = useCallback((tabId: number, leafId: number) => {
@@ -544,17 +595,35 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return closedTab;
   }, []);
 
+  const resetWorkspace = useCallback((cwd?: string) => {
+    const tabId = nextIdRef.current++;
+    const leafId = nextIdRef.current++;
+    setTabs([
+      {
+        id: tabId,
+        kind: "terminal",
+        title: "shell",
+        cwd,
+        paneTree: { kind: "leaf", id: leafId, cwd },
+        activeLeafId: leafId,
+      },
+    ]);
+    setActiveId(tabId);
+  }, []);
+
   return {
     tabs,
     activeId,
     setActiveId,
     newTab,
+    newPrivateTab,
     openFileTab,
     pinTab,
     newPreviewTab,
     openAiDiffTab,
     openGitDiffTab,
     setAiDiffStatus,
+    closeAiDiffTab,
     closeTab,
     updateTab,
     selectByIndex,
@@ -564,5 +633,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
+    resetWorkspace,
   };
 }

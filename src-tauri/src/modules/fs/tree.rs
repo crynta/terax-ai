@@ -1,7 +1,8 @@
-use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+
+use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -21,11 +22,16 @@ pub struct DirEntry {
 }
 
 /// Lists immediate children of `path`. Dirs first, then files, each sorted
-/// case-insensitively. Hidden (dot-prefix) entries are filtered — UI may add
-/// a "show hidden" toggle later.
+/// case-insensitively. Dot-prefixed entries (files and dirs) are hidden unless
+/// `show_hidden` is set.
 #[tauri::command]
-pub fn fs_read_dir(path: String) -> Result<Vec<DirEntry>, String> {
-    let root = PathBuf::from(&path);
+pub fn fs_read_dir(
+    path: String,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<Vec<DirEntry>, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
         e.to_string()
@@ -35,9 +41,6 @@ pub fn fs_read_dir(path: String) -> Result<Vec<DirEntry>, String> {
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
-            if name.starts_with('.') {
-                return None;
-            }
 
             // `metadata()` follows symlinks → it returns the target's stat in
             // one syscall (file_type + size + mtime all derived from it). We
@@ -56,6 +59,10 @@ pub fn fs_read_dir(path: String) -> Result<Vec<DirEntry>, String> {
             } else {
                 EntryKind::File
             };
+
+            if name.starts_with('.') && !show_hidden {
+                return None;
+            }
 
             let size = meta.len();
             let mtime = meta
@@ -93,8 +100,13 @@ pub fn fs_read_dir(path: String) -> Result<Vec<DirEntry>, String> {
 /// Symlinks to directories are included (matches shell `cd` semantics).
 /// Hidden entries are filtered by dot-prefix only.
 #[tauri::command]
-pub fn list_subdirs(path: String) -> Result<Vec<String>, String> {
-    let root = PathBuf::from(&path);
+pub fn list_subdirs(
+    path: String,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<Vec<String>, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("list_subdirs({}) read_dir failed: {e}", root.display());
         e.to_string()
@@ -110,7 +122,7 @@ pub fn list_subdirs(path: String) -> Result<Vec<String>, String> {
             _ => false,
         })
         .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| !name.starts_with('.'))
+        .filter(|name| show_hidden || !name.starts_with('.'))
         .collect();
 
     dirs.sort_by_key(|a| a.to_lowercase());

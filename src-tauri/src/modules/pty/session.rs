@@ -4,14 +4,13 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
-use serde::Serialize;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, Response};
 
 use super::shell_init;
+use crate::modules::workspace::WorkspaceEnv;
 
-const FLUSH_INTERVAL: Duration = Duration::from_millis(8);
+const FLUSH_INTERVAL: Duration = Duration::from_millis(4);
 const READ_BUF: usize = 16 * 1024;
 // Cap on buffered-but-not-yet-flushed bytes. On overflow we discard the
 // entire pending buffer and emit an SGR-reset + notice in its place.
@@ -23,19 +22,23 @@ const MAX_PENDING: usize = 4 * 1024 * 1024;
 const OVERFLOW_NOTICE: &[u8] =
     b"\x1bc\x1b[2m[terax: dropped output due to backpressure]\x1b[0m\r\n";
 
-#[derive(Serialize, Clone)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum PtyEvent {
-    Data { data: String },
-    Exit { code: i32 },
-}
-
 pub struct Session {
-    pub master: Mutex<Box<dyn MasterPty + Send>>,
-    pub writer: Mutex<Box<dyn Write + Send>>,
-    pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    // Field drop order is intentional. Rust drops fields top-to-bottom:
+    //   1. `_job` — on Windows, closing the Job HANDLE fires
+    //      KILL_ON_JOB_CLOSE, terminating the pwsh tree before the master
+    //      pipe drops. Without this, ClosePseudoConsole in `master`'s Drop
+    //      can block waiting for conhost to drain pending output, freezing
+    //      the Tauri worker thread that triggered the close.
+    //   2. `killer` — best-effort kill (redundant on Windows once Job
+    //      closed, but harmless and required on Unix where there is no Job).
+    //   3. `writer` — closes the input side of the master pipe.
+    //   4. `master` — last; ClosePseudoConsole on Windows. By now the child
+    //      is dead and conhost has nothing left to drain.
     #[cfg(windows)]
     _job: Option<super::job::PtyJob>,
+    pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    pub writer: Mutex<Box<dyn Write + Send>>,
+    pub master: Mutex<Box<dyn MasterPty + Send>>,
 }
 
 impl Drop for Session {
@@ -55,7 +58,9 @@ pub fn spawn(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
-    on_event: Channel<PtyEvent>,
+    workspace: WorkspaceEnv,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
     let _spawn_guard = SPAWN_LOCK.lock().unwrap();
 
@@ -68,7 +73,7 @@ pub fn spawn(
     };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = shell_init::build_command(cwd)?;
+    let cmd = shell_init::build_command(cwd, workspace)?;
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -89,11 +94,11 @@ pub fn spawn(
     };
 
     let session = Arc::new(Session {
-        master: Mutex::new(pair.master),
-        writer: Mutex::new(writer),
-        killer: Mutex::new(killer),
         #[cfg(windows)]
         _job: job,
+        killer: Mutex::new(killer),
+        writer: Mutex::new(writer),
+        master: Mutex::new(pair.master),
     });
 
     let pending: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::with_capacity(READ_BUF)));
@@ -141,7 +146,7 @@ pub fn spawn(
         })
         .expect("spawn pty reader thread");
 
-    let on_event_flush = on_event.clone();
+    let on_data_flush = on_data.clone();
     let pending_f = pending.clone();
     let done_f = done.clone();
     thread::Builder::new()
@@ -158,23 +163,14 @@ pub fn spawn(
                 }
                 std::mem::take(&mut *g)
             };
-            // NOTE on base64: Tauri v2 `Channel<T>` serializes via JSON;
-            // `Vec<u8>` would become a JSON int array (~3× worse than base64).
-            // A raw-bytes path via `InvokeResponseBody::Raw` exists but the
-            // data+exit multiplex through one channel is awkward. Base64's 33%
-            // overhead is trivial on local IPC — revisit if profiling says
-            // otherwise.
-            let event = PtyEvent::Data {
-                data: B64.encode(&chunk),
-            };
-            if let Err(e) = on_event_flush.send(event) {
+            if let Err(e) = on_data_flush.send(Response::new(chunk)) {
                 log::debug!("pty flusher exiting, channel closed: {e}");
                 break;
             }
         })
         .expect("spawn pty flusher thread");
 
-    let on_event_exit = on_event;
+    let on_data_exit = on_data;
     let pending_e = pending;
     let done_e = done;
     thread::Builder::new()
@@ -194,14 +190,12 @@ pub fn spawn(
             }
             let tail = std::mem::take(&mut *pending_e.lock().unwrap());
             if !tail.is_empty() {
-                if let Err(e) = on_event_exit.send(PtyEvent::Data {
-                    data: B64.encode(&tail),
-                }) {
+                if let Err(e) = on_data_exit.send(Response::new(tail)) {
                     log::debug!("pty final-data send failed (channel closed): {e}");
                 }
             }
             done_e.store(true, Ordering::Release);
-            if let Err(e) = on_event_exit.send(PtyEvent::Exit { code }) {
+            if let Err(e) = on_exit.send(code) {
                 log::debug!("pty exit send failed (channel closed): {e}");
             }
         })

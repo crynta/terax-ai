@@ -4,6 +4,16 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import {
   AgentRunBridge,
@@ -16,6 +26,7 @@ import {
 } from "@/modules/ai";
 import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
+import { redactSensitive } from "@/modules/ai/lib/redact";
 import { native } from "@/modules/ai/lib/native";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
@@ -52,33 +63,21 @@ import {
   respawnSession,
   TerminalStack,
   type TerminalPaneHandle,
-  type TeraxOpenInput,
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import {
+  getWslHome,
+  LOCAL_WORKSPACE,
+  useWorkspaceEnvStore,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
-function sameOrigin(a: string, b: string): boolean {
-  try {
-    const ua = new URL(a);
-    const ub = new URL(b);
-    return ua.host === ub.host && ua.protocol === ub.protocol;
-  } catch {
-    return a === b;
-  }
-}
-
-function dirname(path: string | null): string | null {
-  if (!path) return null;
-  const normalized = path.replace(/\\/g, "/");
-  const idx = normalized.lastIndexOf("/");
-  if (idx <= 0) return normalized;
-  return normalized.slice(0, idx);
-}
 
 export default function App() {
   const {
@@ -86,10 +85,12 @@ export default function App() {
     activeId,
     setActiveId,
     newTab,
+    newPrivateTab,
     openFileTab,
     pinTab,
     newPreviewTab,
     openAiDiffTab,
+    closeAiDiffTab,
     openGitDiffTab,
     setAiDiffStatus,
     closeTab,
@@ -101,6 +102,7 @@ export default function App() {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
+    resetWorkspace,
   } = useTabs();
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
@@ -121,10 +123,6 @@ export default function App() {
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
-  const detectedUrls = useRef<Map<number, string>>(new Map());
-  const [activeDetectedUrl, setActiveDetectedUrl] = useState<string | null>(
-    null,
-  );
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
@@ -136,6 +134,9 @@ export default function App() {
   }, []);
 
   const [home, setHome] = useState<string | null>(null);
+  const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
+  const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
+  const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
   useEffect(() => {
     // Forward-slash form so explorerRoot stays equal across home → OSC 7.
@@ -143,6 +144,47 @@ export default function App() {
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
+
+  const switchWorkspace = useCallback(
+    async (env: WorkspaceEnv) => {
+      if (
+        env.kind === workspaceEnv.kind &&
+        (env.kind === "local" ||
+          (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
+      ) {
+        return;
+      }
+      const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
+      if (dirty) {
+        window.alert("Save or close unsaved editor tabs before switching workspace.");
+        return;
+      }
+
+      let nextHome: string | null = null;
+      try {
+        if (env.kind === "wsl") {
+          nextHome = await getWslHome(env.distro);
+        } else {
+          nextHome = (await homeDir()).replace(/\\/g, "/");
+        }
+      } catch (e) {
+        window.alert(String(e));
+        return;
+      }
+
+      for (const id of liveLeavesRef.current) disposeSession(id);
+      searchAddons.current.clear();
+      terminalRefs.current.clear();
+      editorRefs.current.clear();
+      previewRefs.current.clear();
+      setActiveSearchAddon(null);
+      setActiveEditorHandle(null);
+      setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
+      setHome(nextHome);
+      resetWorkspace(nextHome ?? undefined);
+    },
+    [workspaceEnv, setWorkspaceEnv, resetWorkspace],
+  );
   useEffect(() => {
     native.appCurrentDir().then(setLaunchCwd).catch(() => setLaunchCwd(null));
   }, []);
@@ -239,28 +281,7 @@ export default function App() {
       activeLeafId !== null ? (searchAddons.current.get(activeLeafId) ?? null) : null,
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
-    setActiveDetectedUrl(
-      activeLeafId !== null ? (detectedUrls.current.get(activeLeafId) ?? null) : null,
-    );
   }, [activeId, activeLeafId]);
-
-  const handleDetectedLocalUrl = useCallback(
-    (leafId: number, url: string) => {
-      detectedUrls.current.set(leafId, url);
-      if (leafId === activeLeafId) setActiveDetectedUrl(url);
-    },
-    [activeLeafId],
-  );
-
-  // Suppress the chip once a preview tab already targets the detected URL —
-  // avoids prompting users to re-open a tab they already have.
-  const detectedPreviewUrl = useMemo(() => {
-    if (!isTerminalTab || !activeDetectedUrl) return null;
-    const alreadyOpen = tabs.some(
-      (t) => t.kind === "preview" && sameOrigin(t.url, activeDetectedUrl),
-    );
-    return alreadyOpen ? null : activeDetectedUrl;
-  }, [isTerminalTab, activeDetectedUrl, tabs]);
 
   const handleSearchReady = useCallback(
     (leafId: number, addon: SearchAddon) => {
@@ -272,9 +293,9 @@ export default function App() {
 
   const disposeTab = useCallback(
     (id: number) => {
-      // Terminal-leaf-keyed maps (terminalRefs/searchAddons/detectedUrls)
-      // are pruned by the effect below as the pane tree changes; only the
-      // tab-id-keyed handles need explicit cleanup here.
+      // Terminal-leaf-keyed maps (terminalRefs/searchAddons) are pruned by
+      // the effect below as the pane tree changes; only the tab-id-keyed
+      // handles need explicit cleanup here.
       editorRefs.current.delete(id);
       previewRefs.current.delete(id);
       closeTab(id);
@@ -300,23 +321,30 @@ export default function App() {
       if (!live.has(k)) terminalRefs.current.delete(k);
     for (const k of [...searchAddons.current.keys()])
       if (!live.has(k)) searchAddons.current.delete(k);
-    for (const k of [...detectedUrls.current.keys()])
-      if (!live.has(k)) detectedUrls.current.delete(k);
   }, [tabs]);
 
   const handleClose = useCallback(
     (id: number) => {
       const t = tabs.find((x) => x.id === id);
       if (t?.kind === "editor" && t.dirty) {
-        const ok = window.confirm(
-          `"${t.title}" has unsaved changes. Close anyway?`,
-        );
-        if (!ok) return;
+        setPendingCloseTab(id);
+        return;
       }
       disposeTab(id);
     },
     [tabs, disposeTab],
   );
+
+  const confirmClose = useCallback(() => {
+    if (pendingCloseTab !== null) {
+      disposeTab(pendingCloseTab);
+      setPendingCloseTab(null);
+    }
+  }, [pendingCloseTab, disposeTab]);
+
+  const cancelClose = useCallback(() => {
+    setPendingCloseTab(null);
+  }, []);
 
   const cycleTab = useCallback(
     (delta: 1 | -1) => {
@@ -442,6 +470,10 @@ export default function App() {
   const openNewTab = useCallback(() => {
     newTab(inheritedCwdForNewTab());
   }, [newTab, inheritedCwdForNewTab]);
+
+  const openNewPrivateTab = useCallback(() => {
+    newPrivateTab(inheritedCwdForNewTab());
+  }, [newPrivateTab, inheritedCwdForNewTab]);
 
   const sendCd = useCallback(
     (path: string) => {
@@ -583,6 +615,7 @@ export default function App() {
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "tab.new": openNewTab,
+      "tab.newPrivate": openNewPrivateTab,
       "tab.newPreview": () => openPreviewTab(""),
       "tab.newEditor": () => setNewEditorOpen(true),
       "tab.close": handleCloseTabOrPane,
@@ -606,6 +639,7 @@ export default function App() {
       cycleTab,
       handleCloseTabOrPane,
       openNewTab,
+      openNewPrivateTab,
       openPreviewTab,
       selectByIndex,
       splitActivePaneInActiveTab,
@@ -678,14 +712,6 @@ export default function App() {
     [closePaneByLeaf],
   );
 
-  const handleTeraxOpen = useCallback(
-    (_tabId: number, input: TeraxOpenInput) => {
-      // Always open in a new tab
-      openFileTab(input.file);
-    },
-    [openFileTab],
-  );
-
   const handleEditorDirty = useCallback(
     (id: number, dirty: boolean) => updateTab(id, { dirty }),
     [updateTab],
@@ -693,11 +719,19 @@ export default function App() {
 
   const searchTarget = useMemo<SearchTarget>(() => {
     if (isTerminalTab && activeSearchAddon)
-      return { kind: "terminal", addon: activeSearchAddon };
+      return {
+        kind: "terminal",
+        addon: activeSearchAddon,
+        focus: () => terminalRefs.current.get(activeId)?.focus(),
+      };
     if (isEditorTab && activeEditorHandle)
-      return { kind: "editor", handle: activeEditorHandle };
+      return {
+        kind: "editor",
+        handle: activeEditorHandle,
+        focus: () => activeEditorHandle.focus(),
+      };
     return null;
-  }, [isTerminalTab, isEditorTab, activeSearchAddon, activeEditorHandle]);
+  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
 
   const activeCwd = activeTerminalLeafCwd;
 
@@ -721,7 +755,13 @@ export default function App() {
       getTerminalContext: () => {
         const t = tabs.find((x) => x.id === activeId);
         if (t?.kind !== "terminal") return null;
-        return terminalRefs.current.get(t.activeLeafId)?.getBuffer(300) ?? null;
+        if (t.private) return null;
+        const buf = terminalRefs.current.get(t.activeLeafId)?.getBuffer(300);
+        return buf ? redactSensitive(buf) : null;
+      },
+      isActiveTerminalPrivate: () => {
+        const t = tabs.find((x) => x.id === activeId);
+        return t?.kind === "terminal" && t.private === true;
       },
       injectIntoActivePty: (text) => {
         const t = tabs.find((x) => x.id === activeId);
@@ -753,6 +793,7 @@ export default function App() {
             activeId={activeId}
             onSelect={setActiveId}
             onNew={openNewTab}
+            onNewPrivate={openNewPrivateTab}
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
             onClose={handleClose}
@@ -995,18 +1036,18 @@ export default function App() {
             filePath={activeFilePath}
             home={home}
             onCd={sendCd}
+            onWorkspaceChange={switchWorkspace}
             onOpenMini={openMini}
             hasComposer={hasComposer}
-            detectedPreviewUrl={detectedPreviewUrl}
-            onOpenPreview={() => {
-              if (detectedPreviewUrl) openPreviewTab(detectedPreviewUrl);
-            }}
+            privateActive={
+              activeTab?.kind === "terminal" && activeTab.private === true
+            }
           />
 
           {hasComposer ? (
             <AgentRunBridge
               openAiDiffTab={openAiDiffTab}
-              setAiDiffStatus={setAiDiffStatus}
+              closeAiDiffTab={closeAiDiffTab}
             />
           ) : null}
 
@@ -1036,6 +1077,32 @@ export default function App() {
           />
 
           <UpdaterDialog />
+
+          <AlertDialog
+            open={pendingCloseTab !== null}
+            onOpenChange={(open) => !open && cancelClose()}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {tabs.find((t) => t.id === pendingCloseTab)?.title
+                    ? `"${
+                        tabs.find((t) => t.id === pendingCloseTab)?.title
+                      }" has unsaved changes. Close anyway?`
+                    : "This file has unsaved changes. Close anyway?"}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={cancelClose}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction onClick={confirmClose}>
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </TooltipProvider>
     </ThemeProvider>

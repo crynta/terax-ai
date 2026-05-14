@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, git, net, pty, secrets, shell};
+use modules::{fs, git, net, pty, secrets, shell, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
@@ -66,36 +66,8 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     Ok(())
 }
 
-// WebKitGTK 2.46+ DMA-BUF renderer crashes with EGL_BAD_PARAMETER on
-// wlroots compositors (#105). GNOME/KDE work fine, so don't blanket-disable.
-#[cfg(target_os = "linux")]
-fn apply_wayland_webkit_workaround() {
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some() {
-        return;
-    }
-    if std::env::var("XDG_SESSION_TYPE").as_deref() != Ok("wayland") {
-        return;
-    }
-    let desktop = std::env::var("XDG_CURRENT_DESKTOP")
-        .unwrap_or_default()
-        .to_lowercase();
-    let affected = [
-        "hyprland", "niri", "sway", "river", "wayfire", "labwc", "dwl",
-    ]
-    .iter()
-    .any(|c| desktop.contains(c));
-    if !affected {
-        return;
-    }
-    log::info!("wlroots compositor detected ({desktop}); disabling DMA-BUF renderer");
-    unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "linux")]
-    apply_wayland_webkit_workaround();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -152,13 +124,18 @@ pub fn run() {
             shell::shell_bg_logs,
             shell::shell_bg_kill,
             shell::shell_bg_list,
+            workspace::wsl_list_distros,
+            workspace::wsl_default_distro,
+            workspace::wsl_home,
             app_current_dir,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,
             secrets::secrets_delete,
             secrets::secrets_get_all,
-            net::http_ping,
+            net::lm_ping,
+            net::ai_http_request,
+            net::ai_http_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

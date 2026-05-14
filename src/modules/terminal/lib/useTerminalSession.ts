@@ -1,4 +1,5 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
@@ -6,29 +7,23 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import {
-  registerCwdHandler,
-  registerPromptTracker,
-  registerTeraxOpenHandler,
-  type TeraxOpenInput,
-} from "./osc-handlers";
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
+import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
-export type { TeraxOpenInput };
-
-const FONT_SIZE = 14;
 const BACKWARD_KILL_WORD = "\x17";
-
-const LOCAL_URL_RE =
-  /\bhttps?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d{1,5})?(?:\/[^\s\x1b]*)?/g;
+const SHIFT_ENTER = "\x1b\r";
 
 type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
-  onDetectedLocalUrl?: (url: string) => void;
-  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 // Lives outside React so split/unsplit re-parent the DOM without tearing
@@ -48,9 +43,9 @@ type Session = {
   lastW: number;
   lastH: number;
   lastCwd: string | null;
-  lastDetectedUrl: string | null;
   pendingExit: number | null;
-  webglLoaded: boolean;
+  webglEnabled: boolean;
+  webglAddon: WebglAddon | null;
   ready: Promise<void>;
   disposed: boolean;
   initialCwd: string | undefined;
@@ -63,10 +58,13 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   const existing = sessions.get(leafId);
   if (existing) return existing;
 
+  const prefs = usePreferencesStore.getState();
+  const webglEnabled = prefs.terminalWebglEnabled;
+  const fontSize = prefs.terminalFontSize;
+
   const term = new Terminal({
     fontFamily: detectMonoFontFamily(),
-    fontSize: FONT_SIZE,
-    lineHeight: 1.05,
+    fontSize,
     theme: buildTerminalTheme(),
     cursorBlink: true,
     cursorStyle: "bar",
@@ -101,9 +99,9 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     lastW: 0,
     lastH: 0,
     lastCwd: null,
-    lastDetectedUrl: null,
     pendingExit: null,
-    webglLoaded: false,
+    webglEnabled,
+    webglAddon: null,
     ready: Promise.resolve(),
     disposed: false,
     initialCwd,
@@ -112,13 +110,21 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   sessions.set(leafId, session);
 
   term.attachCustomKeyEventHandler((event) => {
-    if (!isCtrlBackspace(event)) return true;
     const pty = session.pty;
     if (!pty) return true;
-    event.preventDefault();
-    event.stopPropagation();
-    pty.write(BACKWARD_KILL_WORD);
-    return false;
+    if (isCtrlBackspace(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      pty.write(BACKWARD_KILL_WORD);
+      return false;
+    }
+    if (isShiftEnter(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      pty.write(SHIFT_ENTER);
+      return false;
+    }
+    return true;
   });
 
   // Routes through session.pty so respawn doesn't need to rebind.
@@ -135,11 +141,9 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     session.cleanups.push(prompt.dispose);
     session.cleanups.push(
       registerCwdHandler(term, (cwd) => {
+        if (session.lastCwd === cwd) return;
         session.lastCwd = cwd;
         session.callbacks.onCwd?.(cwd);
-      }),
-      registerTeraxOpenHandler(term, (input) => {
-        session.callbacks.onTeraxOpen?.(input);
       }),
     );
   })();
@@ -151,27 +155,14 @@ function openPtyForSession(
   s: Session,
   cwd: string | undefined,
 ): Promise<PtySession> {
-  // Fresh decoder per pty so a partial UTF-8 codepoint from a prior shell
-  // doesn't leak into the new one.
-  const urlDecoder = new TextDecoder("utf-8", { fatal: false });
   return openPty(
     s.term.cols,
     s.term.rows,
     {
-      onData: (bytes) => {
-        s.term.write(bytes);
-        if (containsSchemeSeparator(bytes)) {
-          const text = urlDecoder.decode(bytes, { stream: true });
-          const matches = text.match(LOCAL_URL_RE);
-          if (matches && matches.length > 0) {
-            const url = stripTrailingPunct(matches[matches.length - 1]);
-            if (url && url !== s.lastDetectedUrl) {
-              s.lastDetectedUrl = url;
-              s.callbacks.onDetectedLocalUrl?.(url);
-            }
-          }
-        }
-      },
+      // Hot path — keep this callback to a single statement. URL detection
+      // runs out-of-band against the xterm buffer (see ensureSession's
+      // scan interval), so no UTF-8 decode or regex happens per chunk.
+      onData: (bytes) => s.term.write(bytes),
       onExit: (code) => {
         s.term.options.disableStdin = true;
         if (s.callbacks.onExit) s.callbacks.onExit(code);
@@ -194,8 +185,18 @@ export async function respawnSession(
   s.term.options.disableStdin = false;
   s.lastSentCols = 0;
   s.lastSentRows = 0;
-  s.lastDetectedUrl = null;
-  const pty = await openPtyForSession(s, cwd);
+  s.pendingExit = null;
+  // Hold the flag so attachSession can't open a second PTY while we await.
+  s.ptyOpening = true;
+  let pty: PtySession;
+  try {
+    pty = await openPtyForSession(s, cwd);
+  } catch (e) {
+    s.ptyOpening = false;
+    console.error("respawnSession: openPty failed:", e);
+    return;
+  }
+  s.ptyOpening = false;
   if (s.disposed) {
     pty.close();
     return;
@@ -230,12 +231,15 @@ function attachSession(
   s.lastW = container.clientWidth;
   s.lastH = container.clientHeight;
 
-  if (firstAttach && !s.webglLoaded) {
+  if (firstAttach && !s.webglAddon && s.webglEnabled) {
     try {
       const webgl = new WebglAddon();
-      webgl.onContextLoss(() => webgl.dispose());
+      webgl.onContextLoss(() => {
+        webgl.dispose();
+        if (s.webglAddon === webgl) s.webglAddon = null;
+      });
       s.term.loadAddon(webgl);
-      s.webglLoaded = true;
+      s.webglAddon = webgl;
     } catch (e) {
       console.warn("WebGL renderer unavailable:", e);
     }
@@ -253,10 +257,7 @@ function attachSession(
           return;
         }
         s.pty = pty;
-        if (
-          s.term.cols !== s.lastSentCols ||
-          s.term.rows !== s.lastSentRows
-        ) {
+        if (s.term.cols !== s.lastSentCols || s.term.rows !== s.lastSentRows) {
           s.lastSentCols = s.term.cols;
           s.lastSentRows = s.term.rows;
           pty.resize(s.term.cols, s.term.rows);
@@ -324,8 +325,6 @@ function attachSession(
 
   // Re-sync App state after re-attach (prior detach cleared callbacks).
   if (s.lastCwd !== null) callbacks.onCwd?.(s.lastCwd);
-  if (s.lastDetectedUrl !== null)
-    callbacks.onDetectedLocalUrl?.(s.lastDetectedUrl);
   callbacks.onSearchReady?.(s.searchAddon);
   if (s.pendingExit !== null) {
     const code = s.pendingExit;
@@ -372,8 +371,6 @@ type Options = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
-  onDetectedLocalUrl?: (url: string) => void;
-  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 export function useTerminalSession({
@@ -385,22 +382,16 @@ export function useTerminalSession({
   onSearchReady,
   onExit,
   onCwd,
-  onDetectedLocalUrl,
-  onTeraxOpen,
 }: Options) {
   const cbRef = useRef({
     onSearchReady,
     onExit,
     onCwd,
-    onDetectedLocalUrl,
-    onTeraxOpen,
   });
   cbRef.current = {
     onSearchReady,
     onExit,
     onCwd,
-    onDetectedLocalUrl,
-    onTeraxOpen,
   };
 
   useEffect(() => {
@@ -412,8 +403,6 @@ export function useTerminalSession({
         onSearchReady: (a) => cbRef.current.onSearchReady?.(a),
         onExit: (c) => cbRef.current.onExit?.(c),
         onCwd: (c) => cbRef.current.onCwd?.(c),
-        onDetectedLocalUrl: (u) => cbRef.current.onDetectedLocalUrl?.(u),
-        onTeraxOpen: (input) => cbRef.current.onTeraxOpen?.(input),
       });
       if (visible && focused) s.term.focus();
     });
@@ -423,6 +412,39 @@ export function useTerminalSession({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leafId]);
+
+  const fontSize = usePreferencesStore((p) => p.terminalFontSize);
+  useEffect(() => {
+    const s = sessions.get(leafId);
+    if (!s) return;
+    if (s.term.options.fontSize === fontSize) return;
+    s.term.options.fontSize = fontSize;
+    s.fitAddon.fit();
+  }, [leafId, fontSize]);
+
+  const webglPref = usePreferencesStore((p) => p.terminalWebglEnabled);
+  useEffect(() => {
+    const s = sessions.get(leafId);
+    if (!s) return;
+    s.webglEnabled = webglPref;
+    if (!s.term.element) return;
+    if (webglPref && !s.webglAddon) {
+      try {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webgl.dispose();
+          if (s.webglAddon === webgl) s.webglAddon = null;
+        });
+        s.term.loadAddon(webgl);
+        s.webglAddon = webgl;
+      } catch (e) {
+        console.warn("WebGL renderer unavailable:", e);
+      }
+    } else if (!webglPref && s.webglAddon) {
+      s.webglAddon.dispose();
+      s.webglAddon = null;
+    }
+  }, [leafId, webglPref]);
 
   useLayoutEffect(() => {
     if (!visible) return;
@@ -469,7 +491,10 @@ export function useTerminalSession({
     s.term.options.theme = buildTerminalTheme();
   }, [leafId]);
 
-  return { write, focus, getBuffer, getSelection, applyTheme };
+  return useMemo(
+    () => ({ write, focus, getBuffer, getSelection, applyTheme }),
+    [write, focus, getBuffer, getSelection, applyTheme],
+  );
 }
 
 function isCtrlBackspace(event: KeyboardEvent): boolean {
@@ -482,16 +507,13 @@ function isCtrlBackspace(event: KeyboardEvent): boolean {
   );
 }
 
-function stripTrailingPunct(url: string): string {
-  return url.replace(/[.,);\]]+$/, "");
-}
-
-function containsSchemeSeparator(bytes: Uint8Array): boolean {
-  const n = bytes.length;
-  for (let i = 0; i < n - 2; i++) {
-    if (bytes[i] === 0x3a && bytes[i + 1] === 0x2f && bytes[i + 2] === 0x2f) {
-      return true;
-    }
-  }
-  return false;
+function isShiftEnter(event: KeyboardEvent): boolean {
+  return (
+    event.type === "keydown" &&
+    event.key === "Enter" &&
+    event.shiftKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey
+  );
 }
