@@ -18,6 +18,34 @@ const NERD_FONT_CANDIDATES = [
 
 const FALLBACK_CHAIN = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
 
+export const TERMINAL_FONT_FACES = [
+  "jetbrains-mono",
+  "fira-code",
+  "roboto-mono",
+] as const;
+export type TerminalFontFaceId = (typeof TERMINAL_FONT_FACES)[number];
+
+export const TERMINAL_FONT_FACE_LABELS: Record<TerminalFontFaceId, string> = {
+  "jetbrains-mono": "JetBrains Mono",
+  "fira-code": "Fira Code",
+  "roboto-mono": "Roboto Mono",
+};
+
+const TERMINAL_FONT_FACE_FAMILIES: Record<TerminalFontFaceId, string> = {
+  "jetbrains-mono": '"JetBrains Mono", monospace',
+  "fira-code": '"Fira Code", monospace',
+  "roboto-mono": '"Roboto Mono", monospace',
+};
+
+export const TERMINAL_FONT_FACE_DEFAULT: TerminalFontFaceId = "jetbrains-mono";
+
+export function terminalFontFamily(face: TerminalFontFaceId): string {
+  return (
+    TERMINAL_FONT_FACE_FAMILIES[face] ??
+    TERMINAL_FONT_FACE_FAMILIES[TERMINAL_FONT_FACE_DEFAULT]
+  );
+}
+
 let detected: string | null = null;
 
 export function detectMonoFontFamily(): string {

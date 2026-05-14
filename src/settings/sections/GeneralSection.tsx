@@ -12,6 +12,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  TERMINAL_FONT_FACE_LABELS,
+  TERMINAL_FONT_FACES,
+  type TerminalFontFaceId,
+} from "@/lib/fonts";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
@@ -22,6 +27,7 @@ import {
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
+  setTerminalFontFace,
   setShowHidden,
   setTerminalFontSize,
   setTerminalWebglEnabled,
@@ -61,6 +67,7 @@ export function GeneralSection() {
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
+  const terminalFontFace = usePreferencesStore((s) => s.terminalFontFace);
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
@@ -97,6 +104,9 @@ export function GeneralSection() {
       console.error("terminal WebGL preference update failed", e),
     );
   };
+
+  const onPickTerminalFontFace = (face: TerminalFontFaceId) =>
+    void setTerminalFontFace(face);
 
   const onPickTerminalFontSize = (size: number) => void setTerminalFontSize(size);
 
@@ -216,6 +226,41 @@ export function GeneralSection() {
           />
         </SettingRow>
         <SettingRow
+          title="Font face"
+          description="Terminal font family."
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-9 justify-between gap-2 px-2.5 text-[12px]"
+              >
+                <span>{TERMINAL_FONT_FACE_LABELS[terminalFontFace]}</span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={12}
+                  strokeWidth={2}
+                  className="opacity-70"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[180px]">
+              {TERMINAL_FONT_FACES.map((face) => (
+                <DropdownMenuItem
+                  key={face}
+                  onSelect={() => onPickTerminalFontFace(face)}
+                  className={cn(
+                    "text-[12px]",
+                    face === terminalFontFace && "bg-accent/50",
+                  )}
+                >
+                  {TERMINAL_FONT_FACE_LABELS[face]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SettingRow>
+        <SettingRow
           title="Font size"
           description="Terminal text size."
         >
@@ -223,7 +268,7 @@ export function GeneralSection() {
             <DropdownMenuTrigger asChild>
               <Button
                 variant="outline"
-                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px]"
+                className="h-9 justify-between gap-2 px-2.5 text-[12px]"
               >
                 <span>{terminalFontSize} px</span>
                 <HugeiconsIcon
@@ -236,14 +281,14 @@ export function GeneralSection() {
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="min-w-[80px] rounded-none border border-border bg-popover p-0 shadow-none ring-0"
+              className="min-w-[80px]"
             >
               {TERMINAL_FONT_SIZES.map((size) => (
                 <DropdownMenuItem
                   key={size}
                   onSelect={() => onPickTerminalFontSize(size)}
                   className={cn(
-                    "rounded-none px-3 py-1.5 text-[12px]",
+                    "text-[12px]",
                     size === terminalFontSize && "bg-accent/50",
                   )}
                 >
