@@ -25,11 +25,18 @@ function resolveRoot(
   };
 }
 
+const MAX_LINE_LEN = 160;
+
+function clipLine(s: string): string {
+  if (s.length <= MAX_LINE_LEN) return s;
+  return `${s.slice(0, MAX_LINE_LEN)}…[+${s.length - MAX_LINE_LEN}]`;
+}
+
 export function buildSearchTools(ctx: ToolContext) {
   return {
     grep: tool({
       description:
-        "Search file contents in the workspace using a regular expression. Honors .gitignore. Returns up to `max_results` (default 200) `{path, line, text}` hits, with a `truncated` flag when more existed. Use this for code navigation — do NOT brute-force read_file across the tree.",
+        "Search file contents in the workspace using a regular expression. Honors .gitignore. Returns up to `max_results` (default 30, max 500) `{path, line, text}` hits, with a `truncated` flag when more existed. Long match lines are clipped to 160 chars. Use this for code navigation — do NOT brute-force read_file across the tree. Narrow with `glob` when you can; raise `max_results` only if the first batch truly isn't enough.",
       inputSchema: z.object({
         pattern: z
           .string()
@@ -49,7 +56,7 @@ export function buildSearchTools(ctx: ToolContext) {
             "Optional include-globs over relative paths, e.g. ['**/*.ts', 'src/**/*.tsx'].",
           ),
         case_insensitive: z.boolean().optional(),
-        max_results: z.number().int().min(1).max(2000).optional(),
+        max_results: z.number().int().min(1).max(500).optional(),
       }),
       execute: async ({
         pattern,
@@ -62,13 +69,14 @@ export function buildSearchTools(ctx: ToolContext) {
         if (!r.ok) return { error: r.error };
         const safety = checkReadable(r.path);
         if (!safety.ok) return { error: safety.reason, root: r.path };
+        const cap = Math.min(max_results ?? 30, 500);
         try {
           const res = await native.grep({
             pattern,
             root: r.path,
             glob,
             caseInsensitive: case_insensitive,
-            maxResults: max_results,
+            maxResults: cap,
           });
           return {
             root: r.path,
@@ -76,7 +84,7 @@ export function buildSearchTools(ctx: ToolContext) {
               path: h.path,
               rel: h.rel,
               line: h.line,
-              text: h.text,
+              text: clipLine(h.text),
             })),
             truncated: res.truncated,
             files_scanned: res.files_scanned,

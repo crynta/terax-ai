@@ -7,24 +7,23 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import {
-  registerCwdHandler,
-  registerPromptTracker,
-  registerTeraxOpenHandler,
-  type TeraxOpenInput,
-} from "./osc-handlers";
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
+import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 
-export type { TeraxOpenInput };
-
 const BACKWARD_KILL_WORD = "\x17";
+const SHIFT_ENTER = "\x1b\r";
 
 type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
-  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 // Lives outside React so split/unsplit re-parent the DOM without tearing
@@ -112,13 +111,21 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   sessions.set(leafId, session);
 
   term.attachCustomKeyEventHandler((event) => {
-    if (!isCtrlBackspace(event)) return true;
     const pty = session.pty;
     if (!pty) return true;
-    event.preventDefault();
-    event.stopPropagation();
-    pty.write(BACKWARD_KILL_WORD);
-    return false;
+    if (isCtrlBackspace(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      pty.write(BACKWARD_KILL_WORD);
+      return false;
+    }
+    if (isShiftEnter(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      pty.write(SHIFT_ENTER);
+      return false;
+    }
+    return true;
   });
 
   // Routes through session.pty so respawn doesn't need to rebind.
@@ -135,11 +142,9 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     session.cleanups.push(prompt.dispose);
     session.cleanups.push(
       registerCwdHandler(term, (cwd) => {
+        if (session.lastCwd === cwd) return;
         session.lastCwd = cwd;
         session.callbacks.onCwd?.(cwd);
-      }),
-      registerTeraxOpenHandler(term, (input) => {
-        session.callbacks.onTeraxOpen?.(input);
       }),
     );
   })();
@@ -367,7 +372,6 @@ type Options = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
-  onTeraxOpen?: (input: TeraxOpenInput) => void;
 };
 
 export function useTerminalSession({
@@ -379,19 +383,16 @@ export function useTerminalSession({
   onSearchReady,
   onExit,
   onCwd,
-  onTeraxOpen,
 }: Options) {
   const cbRef = useRef({
     onSearchReady,
     onExit,
     onCwd,
-    onTeraxOpen,
   });
   cbRef.current = {
     onSearchReady,
     onExit,
     onCwd,
-    onTeraxOpen,
   };
 
   useEffect(() => {
@@ -403,7 +404,6 @@ export function useTerminalSession({
         onSearchReady: (a) => cbRef.current.onSearchReady?.(a),
         onExit: (c) => cbRef.current.onExit?.(c),
         onCwd: (c) => cbRef.current.onCwd?.(c),
-        onTeraxOpen: (input) => cbRef.current.onTeraxOpen?.(input),
       });
       if (visible && focused) s.term.focus();
     });
@@ -502,7 +502,10 @@ export function useTerminalSession({
     s.term.options.theme = buildTerminalTheme();
   }, [leafId]);
 
-  return { write, focus, getBuffer, getSelection, applyTheme };
+  return useMemo(
+    () => ({ write, focus, getBuffer, getSelection, applyTheme }),
+    [write, focus, getBuffer, getSelection, applyTheme],
+  );
 }
 
 function isCtrlBackspace(event: KeyboardEvent): boolean {
@@ -515,3 +518,13 @@ function isCtrlBackspace(event: KeyboardEvent): boolean {
   );
 }
 
+function isShiftEnter(event: KeyboardEvent): boolean {
+  return (
+    event.type === "keydown" &&
+    event.key === "Enter" &&
+    event.shiftKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.metaKey
+  );
+}

@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import {
+  ArrowRight01Icon,
   CheckListIcon,
   Edit02Icon,
   EyeIcon,
@@ -22,13 +23,12 @@ import {
   TerminalIcon,
   ToolsIcon,
 } from "@hugeicons/core-free-icons";
+import { useChatStore } from "@/modules/ai/store/chatStore";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { DynamicToolUIPart, ToolUIPart } from "ai";
 import type { ComponentProps, ReactNode } from "react";
 import { isValidElement, memo, useState } from "react";
 
-import type { BundledLanguage } from "shiki";
-import { CodeBlockContent } from "./code-block";
 
 export type ToolPart = ToolUIPart | DynamicToolUIPart;
 
@@ -200,11 +200,7 @@ const ToolImpl = ({
 
       {hasDetails && (
         <CollapsibleContent
-          className={cn(
-            "overflow-hidden",
-            "data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
-            "data-[state=open]:animate-in data-[state=open]:fade-in-0",
-          )}
+          className={cn("terax-collapsible-content")}
         >
           <div className="ml-3 mt-1 space-y-2 border-l border-border/60 pl-3 pb-1">
             {showInputBody ? (
@@ -437,6 +433,14 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
 
   if (toolName === "bash_run") {
     return <BashRunOutput data={o} />;
+  }
+
+  if (toolName === "suggest_command") {
+    const cmd = typeof o.command === "string" ? o.command : null;
+    const explanation =
+      typeof o.explanation === "string" ? o.explanation : null;
+    if (!cmd) return null;
+    return <SuggestCommandCard command={cmd} explanation={explanation} />;
   }
 
   if (toolName === "grep") {
@@ -686,10 +690,61 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-function CodeBlockMini({ code, language }: { code: string; language: string }) {
+function CodeBlockMini({ code }: { code: string; language: string }) {
+  // Tool input/output is debug-grade detail — JSON arrives pre-formatted and
+  // file content is shown in the editor diff tab. Highlighting here is not
+  // worth the parser hop.
   return (
-    <div className="overflow-hidden rounded bg-muted/40 [&_pre]:!bg-transparent [&_pre]:!p-2 [&_pre]:text-[11px] [&>div]:max-h-60">
-      <CodeBlockContent code={code} language={language as BundledLanguage} />
+    <pre className="max-h-60 overflow-auto rounded bg-muted/40 p-2 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap">
+      {code}
+    </pre>
+  );
+}
+
+function SuggestCommandCard({
+  command,
+  explanation,
+}: {
+  command: string;
+  explanation: string | null;
+}) {
+  const [inserted, setInserted] = useState(false);
+  const onInsert = () => {
+    const ok = useChatStore
+      .getState()
+      .live.injectIntoActivePty(command);
+    if (ok) setInserted(true);
+  };
+  return (
+    <div className="space-y-1.5">
+      {explanation ? (
+        <div className="text-[11px] text-muted-foreground">{explanation}</div>
+      ) : null}
+      <div className="flex items-stretch gap-1.5 rounded bg-muted/40 overflow-hidden">
+        <pre className="flex-1 overflow-auto p-2 font-mono text-[11px] leading-relaxed">
+          {command}
+        </pre>
+        <button
+          type="button"
+          onClick={onInsert}
+          disabled={inserted}
+          className={cn(
+            "shrink-0 flex items-center gap-1 px-2.5 text-[11px] font-medium",
+            "border-l border-border/60",
+            "hover:bg-muted/80 active:bg-muted",
+            "disabled:opacity-60 disabled:cursor-default disabled:hover:bg-transparent",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          )}
+          aria-label="Insert into active terminal"
+        >
+          <HugeiconsIcon
+            icon={inserted ? TerminalIcon : ArrowRight01Icon}
+            size={12}
+            strokeWidth={1.75}
+          />
+          <span>{inserted ? "Inserted" : "Insert"}</span>
+        </button>
+      </div>
     </div>
   );
 }

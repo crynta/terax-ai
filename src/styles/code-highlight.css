@@ -1,0 +1,179 @@
+/* Token palette for Lezer `classHighlighter` output (chat code blocks).
+ * Class names follow @lezer/highlight defaults: tok-keyword, tok-string, etc.
+ * Light/dark split through the existing `.dark` variant. */
+
+:root {
+  --tok-keyword: oklch(0.45 0.15 270);
+  --tok-name: oklch(0.32 0.05 250);
+  --tok-type: oklch(0.55 0.13 200);
+  --tok-property: oklch(0.42 0.13 25);
+  --tok-operator: oklch(0.55 0.04 250);
+  --tok-comment: oklch(0.55 0.02 250);
+  --tok-string: oklch(0.48 0.13 150);
+  --tok-number: oklch(0.52 0.14 50);
+  --tok-bool: oklch(0.52 0.15 30);
+  --tok-regexp: oklch(0.5 0.15 0);
+  --tok-meta: oklch(0.5 0.1 290);
+  --tok-tag: oklch(0.45 0.16 25);
+  --tok-attr: oklch(0.5 0.14 70);
+  --tok-punctuation: oklch(0.5 0.02 250);
+  --tok-heading: oklch(0.42 0.13 25);
+  --tok-link: oklch(0.5 0.15 240);
+  --tok-invalid: oklch(0.55 0.22 25);
+}
+
+:is(.dark *) {
+  --tok-keyword: oklch(0.78 0.13 305);
+  --tok-name: oklch(0.92 0.01 250);
+  --tok-type: oklch(0.83 0.11 200);
+  --tok-property: oklch(0.82 0.1 25);
+  --tok-operator: oklch(0.72 0.03 250);
+  --tok-comment: oklch(0.6 0.02 250);
+  --tok-string: oklch(0.82 0.12 145);
+  --tok-number: oklch(0.82 0.13 60);
+  --tok-bool: oklch(0.82 0.14 30);
+  --tok-regexp: oklch(0.8 0.14 10);
+  --tok-meta: oklch(0.78 0.1 290);
+  --tok-tag: oklch(0.78 0.14 25);
+  --tok-attr: oklch(0.83 0.12 70);
+  --tok-punctuation: oklch(0.72 0.02 250);
+  --tok-heading: oklch(0.82 0.1 25);
+  --tok-link: oklch(0.78 0.13 240);
+  --tok-invalid: oklch(0.7 0.22 25);
+}
+
+.tok-keyword,
+.tok-modifier,
+.tok-self,
+.tok-controlKeyword,
+.tok-operatorKeyword {
+  color: var(--tok-keyword);
+}
+
+.tok-atom,
+.tok-bool {
+  color: var(--tok-bool);
+}
+
+.tok-number,
+.tok-integer,
+.tok-float {
+  color: var(--tok-number);
+}
+
+.tok-string,
+.tok-string2,
+.tok-special.tok-string,
+.tok-character {
+  color: var(--tok-string);
+}
+
+.tok-regexp {
+  color: var(--tok-regexp);
+}
+
+.tok-comment,
+.tok-lineComment,
+.tok-blockComment,
+.tok-docComment {
+  color: var(--tok-comment);
+  font-style: italic;
+}
+
+.tok-variableName,
+.tok-name {
+  color: var(--tok-name);
+}
+
+.tok-typeName,
+.tok-className,
+.tok-namespace {
+  color: var(--tok-type);
+}
+
+.tok-propertyName,
+.tok-definition.tok-propertyName {
+  color: var(--tok-property);
+}
+
+.tok-function,
+.tok-function.tok-variableName,
+.tok-function.tok-definition.tok-variableName,
+.tok-macroName {
+  color: var(--tok-name);
+  font-weight: 500;
+}
+
+.tok-definition.tok-variableName,
+.tok-local.tok-variableName {
+  color: var(--tok-name);
+}
+
+.tok-operator,
+.tok-derefOperator,
+.tok-arithmeticOperator,
+.tok-logicOperator,
+.tok-bitwiseOperator,
+.tok-compareOperator,
+.tok-updateOperator {
+  color: var(--tok-operator);
+}
+
+.tok-punctuation,
+.tok-bracket,
+.tok-paren,
+.tok-brace,
+.tok-squareBracket,
+.tok-separator {
+  color: var(--tok-punctuation);
+}
+
+.tok-meta,
+.tok-annotation,
+.tok-processingInstruction,
+.tok-special {
+  color: var(--tok-meta);
+}
+
+.tok-tagName,
+.tok-angleBracket {
+  color: var(--tok-tag);
+}
+
+.tok-attributeName {
+  color: var(--tok-attr);
+}
+
+.tok-attributeValue {
+  color: var(--tok-string);
+}
+
+.tok-heading,
+.tok-heading1,
+.tok-heading2,
+.tok-heading3,
+.tok-heading4,
+.tok-heading5,
+.tok-heading6 {
+  color: var(--tok-heading);
+  font-weight: 600;
+}
+
+.tok-link,
+.tok-url {
+  color: var(--tok-link);
+  text-decoration: underline;
+}
+
+.tok-strong {
+  font-weight: 600;
+}
+
+.tok-emphasis {
+  font-style: italic;
+}
+
+.tok-invalid {
+  color: var(--tok-invalid);
+  text-decoration: underline wavy;
+}

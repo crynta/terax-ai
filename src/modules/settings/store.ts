@@ -60,9 +60,11 @@ export type Preferences = {
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
+  showHidden: boolean;
   terminalWebglEnabled: boolean;
   terminalFontFace: TerminalFontFaceId;
   terminalFontSize: number;
+  lastWslDistro: string | null;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
 };
 
@@ -83,9 +85,12 @@ const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
+const KEY_SHOW_HIDDEN = "showHidden";
+const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_FONT_FACE = "terminalFontFace";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
+const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_SHORTCUTS = "shortcuts";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
@@ -113,9 +118,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
+  showHidden: false,
   terminalWebglEnabled: true,
   terminalFontFace: TERMINAL_FONT_FACE_DEFAULT,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
+  lastWslDistro: null,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
 };
 
@@ -178,6 +185,10 @@ export async function loadPreferences(): Promise<Preferences> {
     recentModelIds:
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    showHidden:
+      get<boolean>(KEY_SHOW_HIDDEN) ??
+      get<boolean>(LEGACY_KEY_SHOW_HIDDEN_DIRS) ??
+      DEFAULT_PREFERENCES.showHidden,
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
       DEFAULT_PREFERENCES.terminalWebglEnabled,
@@ -187,6 +198,9 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalFontSize:
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
       DEFAULT_PREFERENCES.terminalFontSize,
+    lastWslDistro:
+      get<string | null>(KEY_LAST_WSL_DISTRO) ??
+      DEFAULT_PREFERENCES.lastWslDistro,
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
@@ -259,6 +273,10 @@ export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
 
+export async function setShowHidden(value: boolean): Promise<void> {
+  await writePref(KEY_SHOW_HIDDEN, value);
+}
+
 export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
 }
@@ -280,6 +298,10 @@ export async function setTerminalFontSize(value: number): Promise<void> {
       )
     : TERMINAL_FONT_SIZE_DEFAULT;
   await writePref(KEY_TERMINAL_FONT_SIZE, clamped);
+}
+
+export async function setLastWslDistro(value: string | null): Promise<void> {
+  await writePref(KEY_LAST_WSL_DISTRO, value);
 }
 
 export async function setShortcuts(
@@ -317,9 +339,11 @@ export async function onPreferencesChange(
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_FACE]: "terminalFontFace",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
+    [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_SHORTCUTS]: "shortcuts",
   };
   // Same-process writes still fire onChange immediately; cross-window writes

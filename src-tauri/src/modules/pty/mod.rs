@@ -12,6 +12,7 @@ use std::thread;
 use portable_pty::PtySize;
 use tauri::ipc::{Channel, Response};
 
+use crate::modules::workspace::WorkspaceEnv;
 use session::Session;
 
 pub struct PtyState {
@@ -36,13 +37,16 @@ pub fn pty_open(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    workspace: Option<WorkspaceEnv>,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
-    let (session, _) = session::spawn(cols, rows, cwd, on_data, on_exit).map_err(|e| {
-        log::error!("pty_open failed: {e}");
-        e
-    })?;
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let (session, _) =
+        session::spawn(cols, rows, cwd, workspace, on_data, on_exit).map_err(|e| {
+            log::error!("pty_open failed: {e}");
+            e
+        })?;
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
     state.sessions.write().unwrap().insert(id, session);
     log::info!("pty opened id={id} cols={cols} rows={rows}");

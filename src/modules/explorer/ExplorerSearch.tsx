@@ -7,6 +7,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 import { motion } from "motion/react";
 import {
   forwardRef,
@@ -15,6 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { fileIconUrl } from "./lib/iconResolver";
 
 type SearchHit = {
@@ -23,6 +25,14 @@ type SearchHit = {
   name: string;
   is_dir: boolean;
 };
+
+type SearchResult = {
+  hits: SearchHit[];
+  truncated: boolean;
+};
+
+const MIN_QUERY_LEN = 2;
+const DEBOUNCE_MS = 300;
 
 type Props = {
   rootPath: string;
@@ -46,9 +56,11 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
 }: Props,
   ref,
 ) {
+  const showHidden = usePreferencesStore((s) => s.showHidden);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[]>([]);
   const [searching, setSearching] = useState(false);
+  const [truncated, setTruncated] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const active = query.trim().length > 0;
@@ -64,41 +76,49 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
       setQuery("");
       setResults([]);
       setSearching(false);
+      setTruncated(false);
     }
   }, [open]);
 
   useEffect(() => {
     const q = query.trim();
-    if (!q) {
+    if (q.length < MIN_QUERY_LEN) {
       setResults([]);
       setSearching(false);
+      setTruncated(false);
       return;
     }
     setSearching(true);
     let alive = true;
     const handle = setTimeout(async () => {
       try {
-        const hits = await invoke<SearchHit[]>("fs_search", {
+        const res = await invoke<SearchResult>("fs_search", {
           root: rootPath,
           query: q,
           limit: 200,
+          showHidden,
+          workspace: currentWorkspaceEnv(),
         });
-        if (alive) setResults(hits);
+        if (alive) {
+          setResults(res.hits);
+          setTruncated(res.truncated);
+        }
       } catch (e) {
         if (alive) {
           console.error("fs_search failed:", e);
           setResults([]);
+          setTruncated(false);
         }
       } finally {
         if (alive) setSearching(false);
       }
-    }, 120);
+    }, DEBOUNCE_MS);
 
     return () => {
       alive = false;
       clearTimeout(handle);
     };
-  }, [query, rootPath]);
+  }, [query, rootPath, showHidden]);
 
   useImperativeHandle(
     ref,
@@ -204,6 +224,11 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                 );
               })
             )}
+            {truncated && results.length > 0 ? (
+              <div className="px-3 py-1.5 text-[10px] text-muted-foreground">
+                Showing partial results — refine your query.
+              </div>
+            ) : null}
           </div>
         </ScrollArea>
       ) : null}

@@ -1,5 +1,4 @@
 use std::io::Read;
-use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,6 +9,7 @@ use serde::Serialize;
 use shared_child::SharedChild;
 
 use super::ringbuffer::BoundedRingBuffer;
+use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const RING_CAP: usize = 4 * 1024 * 1024;
 
@@ -89,19 +89,23 @@ impl Drop for BackgroundProc {
     }
 }
 
-pub fn spawn(command: String, cwd: Option<String>) -> Result<Arc<BackgroundProc>, String> {
+pub fn spawn(
+    command: String,
+    cwd: Option<String>,
+    workspace: WorkspaceEnv,
+) -> Result<Arc<BackgroundProc>, String> {
     let trimmed = command.trim().to_string();
     if trimmed.is_empty() {
         return Err("empty command".into());
     }
     if let Some(ref dir) = cwd {
-        if !PathBuf::from(dir).is_dir() {
+        if !resolve_path(dir, &workspace).is_dir() {
             return Err(format!("cwd is not a directory: {dir}"));
         }
     }
 
-    let mut cmd = super::build_oneshot_command(&trimmed);
-    if let Some(ref dir) = cwd {
+    let mut cmd = super::build_oneshot_command(&trimmed, &workspace, cwd.as_deref());
+    if let (WorkspaceEnv::Local, Some(ref dir)) = (&workspace, &cwd) {
         cmd.current_dir(dir);
     }
     cmd.stdin(Stdio::null())

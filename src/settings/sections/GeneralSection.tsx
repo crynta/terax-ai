@@ -28,6 +28,7 @@ import {
   setEditorTheme,
   setRestoreWindowState,
   setTerminalFontFace,
+  setShowHidden,
   setTerminalFontSize,
   setTerminalWebglEnabled,
   setVimMode,
@@ -62,6 +63,7 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const showHidden = usePreferencesStore((s) => s.showHidden);
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
@@ -176,6 +178,19 @@ export function GeneralSection() {
           <Switch
             checked={vimMode}
             onCheckedChange={(v) => void setVimMode(v)}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Explorer</Label>
+        <SettingRow
+          title="Show hidden files"
+          description="Include dot-prefixed files and folders (.env, .gitignore, .config) in the file explorer and search."
+        >
+          <Switch
+            checked={showHidden}
+            onCheckedChange={(v) => void setShowHidden(v)}
           />
         </SettingRow>
       </div>

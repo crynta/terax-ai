@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { currentWorkspaceEnv } from "@/modules/workspace";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 
 export type DirEntry = {
   name: string;
@@ -38,6 +40,8 @@ type Options = {
 };
 
 export function useFileTree(rootPath: string | null, options?: Options) {
+  const showHidden = usePreferencesStore((s) => s.showHidden);
+  const showHiddenRef = useRef(showHidden);
   const [nodes, setNodes] = useState<TreeState>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(
@@ -45,10 +49,18 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   );
   const [renaming, setRenaming] = useState<string | null>(null);
 
+  useEffect(() => {
+    showHiddenRef.current = showHidden;
+  }, [showHidden]);
+
   const fetchChildren = useCallback(async (path: string) => {
     setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
     try {
-      const entries = await invoke<DirEntry[]>("fs_read_dir", { path });
+      const entries = await invoke<DirEntry[]>("fs_read_dir", {
+        path,
+        showHidden: showHiddenRef.current,
+        workspace: currentWorkspaceEnv(),
+      });
       setNodes((s) => ({ ...s, [path]: { status: "loaded", entries } }));
     } catch (e) {
       setNodes((s) => ({
@@ -73,6 +85,18 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     setNodes({});
     void fetchChildren(rootPath);
   }, [rootPath, fetchChildren]);
+
+  useEffect(() => {
+    if (!rootPath) return;
+    const loadedPaths = Object.entries(nodes)
+      .filter(([, state]) => state.status === "loaded")
+      .map(([path]) => path);
+    for (const path of loadedPaths) void fetchChildren(path);
+    // Re-list loaded directories when the visibility preference changes.
+    // `nodes` is intentionally omitted so ordinary tree edits don't refetch
+    // every expanded directory.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showHidden, rootPath, fetchChildren]);
 
   const toggle = useCallback(
     (path: string) => {
@@ -152,7 +176,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       const cmd =
         pendingCreate.kind === "dir" ? "fs_create_dir" : "fs_create_file";
       try {
-        await invoke(cmd, { path });
+        await invoke(cmd, { path, workspace: currentWorkspaceEnv() });
         await fetchChildren(pendingCreate.parentPath);
       } catch (e) {
         console.error(`${cmd} failed:`, e);
@@ -182,7 +206,11 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       }
       const to = joinPath(parent, trimmed);
       try {
-        await invoke("fs_rename", { from: renaming, to });
+        await invoke("fs_rename", {
+          from: renaming,
+          to,
+          workspace: currentWorkspaceEnv(),
+        });
         options?.onPathRenamed?.(renaming, to);
         await fetchChildren(parent);
       } catch (e) {
@@ -197,7 +225,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const deletePath = useCallback(
     async (path: string) => {
       try {
-        await invoke("fs_delete", { path });
+        await invoke("fs_delete", { path, workspace: currentWorkspaceEnv() });
         options?.onPathDeleted?.(path);
         await fetchChildren(dirname(path));
       } catch (e) {
