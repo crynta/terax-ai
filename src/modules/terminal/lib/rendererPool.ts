@@ -30,6 +30,7 @@ export type Slot = {
   readonly term: Terminal;
   readonly fitAddon: FitAddon;
   readonly searchAddon: SearchAddon;
+  readonly serializeAddon: SerializeAddon;
   readonly host: HTMLDivElement;
   webglAddon: WebglAddon | null;
   webglCanvases: HTMLCanvasElement[];
@@ -38,6 +39,7 @@ export type Slot = {
   observer: ResizeObserver | null;
   fitTimer: ReturnType<typeof setTimeout> | null;
   ptyTimer: ReturnType<typeof setTimeout> | null;
+  unhideRaf: number | null;
   lastCols: number;
   lastRows: number;
   lastW: number;
@@ -90,8 +92,10 @@ function createSlot(): Slot {
   const term = new Terminal(termOptions());
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
+  const serializeAddon = new SerializeAddon();
   term.loadAddon(fitAddon);
   term.loadAddon(searchAddon);
+  term.loadAddon(serializeAddon);
   term.loadAddon(
     new WebLinksAddon((_e, uri) => openUrl(uri).catch(console.error)),
   );
@@ -107,6 +111,7 @@ function createSlot(): Slot {
     term,
     fitAddon,
     searchAddon,
+    serializeAddon,
     host,
     webglAddon: null,
     webglCanvases: [],
@@ -115,6 +120,7 @@ function createSlot(): Slot {
     observer: null,
     fitTimer: null,
     ptyTimer: null,
+    unhideRaf: null,
     lastCols: term.cols,
     lastRows: term.rows,
     lastW: 0,
@@ -157,7 +163,8 @@ type PickResult = { slot: Slot; previousLeafId: number | null };
 function pickSlotFor(leafId: number): PickResult {
   const free = slots.find((s) => s.currentLeafId === null);
   if (free) return { slot: free, previousLeafId: null };
-  if (slots.length < POOL_MAX_SIZE) return { slot: createSlot(), previousLeafId: null };
+  if (slots.length < POOL_MAX_SIZE)
+    return { slot: createSlot(), previousLeafId: null };
 
   let unfocusedVictim: Slot | null = null;
   let lastResort: Slot | null = null;
@@ -200,7 +207,10 @@ export function acquireSlot(params: AcquireParams): Slot {
   if (pick.previousLeafId !== null) {
     adapter?.evictLeaf(pick.previousLeafId);
   }
-  if (pick.slot.currentLeafId !== null && pick.slot.currentLeafId !== params.leafId) {
+  if (
+    pick.slot.currentLeafId !== null &&
+    pick.slot.currentLeafId !== params.leafId
+  ) {
     detachSlotFromLeaf(pick.slot);
   }
   bindSlot(pick.slot, params);
@@ -211,9 +221,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   slot.currentLeafId = p.leafId;
   slot.lastUsedAt = performance.now();
 
-  // Hide host during the swap so the user never sees the previous leaf's
-  // contents bleed through during clear → write(snapshot) → fit reflow.
-  const prevVisibility = slot.host.style.visibility;
+  cancelPendingUnhide(slot);
   slot.host.style.visibility = "hidden";
 
   if (slot.host.parentNode !== p.container) {
@@ -224,7 +232,11 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   slot.term.clear();
   slot.term.reset();
 
-  if (p.cols > 0 && p.rows > 0 && (slot.term.cols !== p.cols || slot.term.rows !== p.rows)) {
+  if (
+    p.cols > 0 &&
+    p.rows > 0 &&
+    (slot.term.cols !== p.cols || slot.term.rows !== p.rows)
+  ) {
     slot.term.resize(p.cols, p.rows);
   }
 
@@ -238,7 +250,9 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   p.drainRing((bytes) => slot.term.write(bytes));
 
   for (const d of slot.oscDisposers) {
-    try { d(); } catch {}
+    try {
+      d();
+    } catch {}
   }
   slot.oscDisposers = p.registerOsc(slot.term);
 
@@ -253,14 +267,36 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   }
 
   if (p.searchQuery) {
-    try { slot.searchAddon.findNext(p.searchQuery); } catch {}
+    try {
+      slot.searchAddon.findNext(p.searchQuery);
+    } catch {}
   }
 
   applyCursorBlinkOnSlot(slot, adapter?.isLeafFocused(p.leafId) ?? false);
 
-  slot.host.style.visibility = prevVisibility || "";
+  scheduleUnhide(slot);
 
   p.onSearchReady(slot.searchAddon);
+}
+
+function scheduleUnhide(slot: Slot): void {
+  slot.unhideRaf = requestAnimationFrame(() => {
+    slot.unhideRaf = requestAnimationFrame(() => {
+      slot.unhideRaf = null;
+      slot.host.style.visibility = "";
+      const leafId = slot.currentLeafId;
+      if (leafId !== null && adapter?.isLeafFocused(leafId)) {
+        slot.term.focus();
+      }
+    });
+  });
+}
+
+function cancelPendingUnhide(slot: Slot): void {
+  if (slot.unhideRaf !== null) {
+    cancelAnimationFrame(slot.unhideRaf);
+    slot.unhideRaf = null;
+  }
 }
 
 function rewireSlot(slot: Slot, p: AcquireParams): void {
@@ -333,14 +369,11 @@ export function releaseSlot(leafId: number): SerializeOutput | null {
 function serializeSlot(slot: Slot): SerializeOutput {
   let snapshot: string | null = null;
   try {
-    const ser = new SerializeAddon();
-    slot.term.loadAddon(ser);
     const cap = Math.min(
       SNAPSHOT_SCROLLBACK_CAP,
       usePreferencesStore.getState().terminalScrollback,
     );
-    snapshot = ser.serialize({ scrollback: cap });
-    ser.dispose();
+    snapshot = slot.serializeAddon.serialize({ scrollback: cap });
   } catch (e) {
     console.warn("[terax] serialize failed:", e);
   }
@@ -349,7 +382,9 @@ function serializeSlot(slot: Slot): SerializeOutput {
 
 function detachSlotFromLeaf(slot: Slot): void {
   for (const d of slot.oscDisposers) {
-    try { d(); } catch {}
+    try {
+      d();
+    } catch {}
   }
   slot.oscDisposers = [];
 
@@ -359,6 +394,9 @@ function detachSlotFromLeaf(slot: Slot): void {
   if (slot.ptyTimer) clearTimeout(slot.ptyTimer);
   slot.fitTimer = null;
   slot.ptyTimer = null;
+
+  cancelPendingUnhide(slot);
+  slot.host.style.visibility = "";
 
   if (slot.host.parentNode !== getRecycler()) {
     getRecycler().appendChild(slot.host);
@@ -385,7 +423,9 @@ function attachWebgl(slot: Slot): void {
         slot.webglAddon = null;
         slot.webglCanvases = [];
       }
-      try { webgl.dispose(); } catch {}
+      try {
+        webgl.dispose();
+      } catch {}
       // Recovery: WebKit may transiently lose contexts on sleep/wake or GPU
       // reset; without re-attach the slot would silently fall back to DOM
       // forever. Defer past WebKit's reset window before retrying.
@@ -411,31 +451,40 @@ function disposeSlotWebgl(slot: Slot): void {
   const addon = slot.webglAddon;
   for (const canvas of slot.webglCanvases) releaseCanvasContext(canvas);
   slot.webglCanvases = [];
-  try { addon.dispose(); } catch (e) {
+  try {
+    addon.dispose();
+  } catch (e) {
     console.warn("[terax-webgl] dispose failed:", e);
   }
   try {
-    const r = (addon as unknown as { _renderer?: Record<string, unknown> | null })
-      ._renderer;
+    const r = (
+      addon as unknown as { _renderer?: Record<string, unknown> | null }
+    )._renderer;
     if (r) {
       r._canvas = null;
       r._gl = null;
       r._charAtlas = null;
       r._atlas = null;
     }
-    (addon as unknown as { _renderer?: unknown; _renderService?: unknown })
-      ._renderer = null;
-    (addon as unknown as { _renderer?: unknown; _renderService?: unknown })
-      ._renderService = null;
+    (
+      addon as unknown as { _renderer?: unknown; _renderService?: unknown }
+    )._renderer = null;
+    (
+      addon as unknown as { _renderer?: unknown; _renderService?: unknown }
+    )._renderService = null;
   } catch {}
   slot.webglAddon = null;
 }
 
 function releaseCanvasContext(canvas: HTMLCanvasElement): void {
   let gl: WebGL2RenderingContext | WebGLRenderingContext | null = null;
-  try { gl = canvas.getContext("webgl2") as WebGL2RenderingContext | null; } catch {}
+  try {
+    gl = canvas.getContext("webgl2") as WebGL2RenderingContext | null;
+  } catch {}
   if (!gl) {
-    try { gl = canvas.getContext("webgl") as WebGLRenderingContext | null; } catch {}
+    try {
+      gl = canvas.getContext("webgl") as WebGLRenderingContext | null;
+    } catch {}
   }
   if (gl) {
     try {
@@ -514,10 +563,6 @@ function isCtrlBackspace(e: KeyboardEvent): boolean {
 
 function isShiftEnter(e: KeyboardEvent): boolean {
   return (
-    e.key === "Enter" &&
-    e.shiftKey &&
-    !e.altKey &&
-    !e.ctrlKey &&
-    !e.metaKey
+    e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
   );
 }

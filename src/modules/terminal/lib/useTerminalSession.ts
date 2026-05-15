@@ -1,3 +1,4 @@
+import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -99,6 +100,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   sessions.set(leafId, session);
 
   session.ready = (async () => {
+    await ensureMonoFontsLoaded();
     await document.fonts.ready;
   })();
 

@@ -1,5 +1,3 @@
-import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { LazyStore } from "@tauri-apps/plugin-store";
 import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
@@ -9,6 +7,8 @@ import {
   type ModelId,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { LazyStore } from "@tauri-apps/plugin-store";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -96,7 +96,7 @@ export const TERMINAL_FONT_SIZES = [
   10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
 ] as const;
 
-export const TERMINAL_SCROLLBACK_DEFAULT = 1000;
+export const TERMINAL_SCROLLBACK_DEFAULT = 2000;
 export const TERMINAL_SCROLLBACK_MIN = 200;
 export const TERMINAL_SCROLLBACK_MAX = 50_000;
 export const TERMINAL_SCROLLBACK_PRESETS = [
@@ -238,7 +238,7 @@ export async function setAutocompleteEnabled(value: boolean): Promise<void> {
 }
 
 export async function setAutocompleteProvider(
-  value: AutocompleteProviderId
+  value: AutocompleteProviderId,
 ): Promise<void> {
   await writePref(KEY_AUTOCOMPLETE_PROVIDER, value);
 }
@@ -310,7 +310,7 @@ export async function setLastWslDistro(value: string | null): Promise<void> {
 }
 
 export async function setShortcuts(
-  value: Record<ShortcutId, KeyBinding[]> | {}
+  value: Record<ShortcutId, KeyBinding[]> | {},
 ): Promise<void> {
   await store.set(KEY_SHORTCUTS, value);
   await store.save();
