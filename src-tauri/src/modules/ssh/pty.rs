@@ -87,7 +87,9 @@ pub async fn open_ssh_pty_channel(
                             let _ = on_exit.send(-1);
                             break;
                         }
-                        _ => {}
+                        Some(msg) => {
+                            log::debug!("ssh pty: unhandled channel msg {msg:?}");
+                        }
                     }
                 }
             }
