@@ -21,6 +21,7 @@ export const EDITOR_THEMES = [
   "nord",
   "tokyo-night",
   "xcode-dark",
+  "monokai-pro",
   "xcode-light",
 ] as const;
 
@@ -32,6 +33,7 @@ export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
   copilot: "Copilot",
   "github-dark": "GitHub Dark",
   "github-light": "GitHub Light",
+  "monokai-pro": "Monokai Pro",
   nord: "Nord",
   "tokyo-night": "Tokyo Night",
   "xcode-dark": "Xcode Dark",
