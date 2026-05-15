@@ -1,13 +1,17 @@
 import type { SearchTarget } from "@/modules/header";
 import type { ShortcutId } from "@/modules/shortcuts";
-import type { Tab } from "@/modules/tabs";
+import { MAX_PANES_PER_TAB, type Tab } from "@/modules/tabs";
+import { leafIds } from "@/modules/terminal";
 import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
   Cancel01Icon,
   FileEditIcon,
   Globe02Icon,
+  IncognitoIcon,
   KeyboardIcon,
+  LayoutTwoColumnIcon,
+  LayoutTwoRowIcon,
   Search01Icon,
   Settings01Icon,
   SidebarLeftIcon,
@@ -20,6 +24,7 @@ type CommandIcon = typeof TerminalIcon;
 export type CommandPaletteActionGroup =
   | "General"
   | "Tabs"
+  | "Panes"
   | "View"
   | "Search"
   | "AI";
@@ -37,7 +42,7 @@ export type CommandPaletteAction = {
 };
 
 export const COMMAND_PALETTE_ACTION_GROUPS: readonly CommandPaletteActionGroup[] =
-  ["General", "Tabs", "View", "Search", "AI"] as const;
+  ["General", "Tabs", "Panes", "View", "Search", "AI"] as const;
 
 export type CommandPaletteActionContext = {
   tabs: Tab[];
@@ -46,14 +51,21 @@ export type CommandPaletteActionContext = {
   explorerRoot: string | null;
   home: string | null;
   openNewTab: () => void;
+  openNewPrivate: () => void;
   openNewEditor: () => void;
   openNewPreview: () => void;
-  closeActiveTab: () => void;
+  closeActiveTabOrPane: () => void;
   nextTab: () => void;
   previousTab: () => void;
+  splitPaneRight: () => void;
+  splitPaneDown: () => void;
+  focusNextPane: () => void;
+  focusPreviousPane: () => void;
   focusSearch: () => void;
+  focusExplorerSearch: () => void;
   toggleSidebar: () => void;
   toggleAi: () => void;
+  askAiSelection: () => void;
   openSettings: () => void;
   openShortcuts: () => void;
 };
@@ -61,8 +73,26 @@ export type CommandPaletteActionContext = {
 export function createCommandPaletteActions(
   ctx: CommandPaletteActionContext,
 ): CommandPaletteAction[] {
+  const activeTab = ctx.tabs.find((tab) => tab.id === ctx.activeId);
+  const activeTerminalTab =
+    activeTab?.kind === "terminal" ? activeTab : null;
+  const activePaneCount = activeTerminalTab
+    ? leafIds(activeTerminalTab.paneTree).length
+    : 0;
   const onlyOneTab = ctx.tabs.length < 2;
   const noWorkspaceRoot = !ctx.explorerRoot && !ctx.home;
+  const splitPaneDisabledReason = !activeTerminalTab
+    ? "No terminal tab"
+    : activePaneCount >= MAX_PANES_PER_TAB
+      ? "Pane limit"
+      : undefined;
+  const focusPaneDisabledReason = !activeTerminalTab
+    ? "No terminal tab"
+    : activePaneCount < 2
+      ? "Only one pane"
+      : undefined;
+  const closeDisabledReason =
+    onlyOneTab && activePaneCount < 2 ? "Last tab" : undefined;
 
   return [
     {
@@ -95,6 +125,15 @@ export function createCommandPaletteActions(
       run: ctx.openNewTab,
     },
     {
+      id: "tab.newPrivate",
+      label: "New private terminal",
+      group: "Tabs",
+      keywords: ["privacy", "private", "incognito", "hidden from ai"],
+      icon: IncognitoIcon,
+      shortcutId: "tab.newPrivate",
+      run: ctx.openNewPrivate,
+    },
+    {
       id: "tab.newEditor",
       label: "New editor tab",
       group: "Tabs",
@@ -116,13 +155,13 @@ export function createCommandPaletteActions(
     },
     {
       id: "tab.close",
-      label: "Close current tab",
+      label: "Close tab or pane",
       group: "Tabs",
-      keywords: ["close", "remove"],
+      keywords: ["close", "remove", "pane"],
       icon: Cancel01Icon,
       shortcutId: "tab.close",
-      disabledReason: onlyOneTab ? "Last tab" : undefined,
-      run: ctx.closeActiveTab,
+      disabledReason: closeDisabledReason,
+      run: ctx.closeActiveTabOrPane,
     },
     {
       id: "tab.next",
@@ -145,6 +184,46 @@ export function createCommandPaletteActions(
       run: ctx.previousTab,
     },
     {
+      id: "pane.splitRight",
+      label: "Split pane right",
+      group: "Panes",
+      keywords: ["terminal", "pane", "split", "right", "column"],
+      icon: LayoutTwoColumnIcon,
+      shortcutId: "pane.splitRight",
+      disabledReason: splitPaneDisabledReason,
+      run: ctx.splitPaneRight,
+    },
+    {
+      id: "pane.splitDown",
+      label: "Split pane down",
+      group: "Panes",
+      keywords: ["terminal", "pane", "split", "down", "row"],
+      icon: LayoutTwoRowIcon,
+      shortcutId: "pane.splitDown",
+      disabledReason: splitPaneDisabledReason,
+      run: ctx.splitPaneDown,
+    },
+    {
+      id: "pane.focusNext",
+      label: "Focus next pane",
+      group: "Panes",
+      keywords: ["terminal", "pane", "focus", "next"],
+      icon: ArrowRight01Icon,
+      shortcutId: "pane.focusNext",
+      disabledReason: focusPaneDisabledReason,
+      run: ctx.focusNextPane,
+    },
+    {
+      id: "pane.focusPrev",
+      label: "Focus previous pane",
+      group: "Panes",
+      keywords: ["terminal", "pane", "focus", "previous"],
+      icon: ArrowLeft01Icon,
+      shortcutId: "pane.focusPrev",
+      disabledReason: focusPaneDisabledReason,
+      run: ctx.focusPreviousPane,
+    },
+    {
       id: "sidebar.toggle",
       label: "Toggle file explorer",
       group: "View",
@@ -152,6 +231,17 @@ export function createCommandPaletteActions(
       icon: SidebarLeftIcon,
       shortcutId: "sidebar.toggle",
       run: ctx.toggleSidebar,
+    },
+    {
+      id: "explorer.search",
+      label: "Search files",
+      group: "Search",
+      keywords: ["explorer", "workspace", "file search"],
+      icon: Search01Icon,
+      shortcutId: "explorer.search",
+      disabledReason: ctx.explorerRoot ? undefined : "No workspace root",
+      run: ctx.focusExplorerSearch,
+      deferRun: true,
     },
     {
       id: "search.focus",
@@ -172,6 +262,15 @@ export function createCommandPaletteActions(
       icon: SparklesIcon,
       shortcutId: "ai.toggle",
       run: ctx.toggleAi,
+    },
+    {
+      id: "ai.askSelection",
+      label: "Ask AI about selection",
+      group: "AI",
+      keywords: ["selection", "explain", "assistant", "chat"],
+      icon: SparklesIcon,
+      shortcutId: "ai.askSelection",
+      run: ctx.askAiSelection,
     },
   ];
 }

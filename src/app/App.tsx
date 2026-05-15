@@ -39,7 +39,7 @@ import {
   NewEditorDialog,
   type EditorPaneHandle,
 } from "@/modules/editor";
-import { FileExplorer } from "@/modules/explorer";
+import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
   Header,
   type SearchInlineHandle,
@@ -121,6 +121,7 @@ export default function App() {
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
+  const explorerRef = useRef<FileExplorerHandle | null>(null);
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
@@ -325,6 +326,17 @@ export default function App() {
     },
     [tabs, disposeTab],
   );
+
+  const cancelClose = useCallback(() => {
+    setPendingCloseTab(null);
+  }, []);
+
+  const confirmClose = useCallback(() => {
+    if (pendingCloseTab === null) return;
+    const id = pendingCloseTab;
+    setPendingCloseTab(null);
+    disposeTab(id);
+  }, [disposeTab, pendingCloseTab]);
 
   const handleCloseTabOrPane = useCallback(() => {
     if (activeTerminalTab) {
@@ -582,6 +594,14 @@ export default function App() {
     searchInlineRef.current?.focus();
   }, []);
 
+  const focusExplorerSearch = useCallback(() => {
+    const sidebar = sidebarRef.current;
+    if (sidebar && sidebar.getSize().asPercentage <= 0) {
+      sidebar.expand();
+    }
+    window.setTimeout(() => explorerRef.current?.focusSearch(), 0);
+  }, []);
+
   const openSettings = useCallback(() => {
     void openSettingsWindow();
   }, []);
@@ -613,6 +633,7 @@ export default function App() {
       focusPaneInActiveTab,
       handleCloseTabOrPane,
       openNewTab,
+      openNewPrivateTab,
       openNewEditorDialog,
       openPreviewTab,
       selectByIndex,
@@ -716,14 +737,21 @@ export default function App() {
         explorerRoot,
         home,
         openNewTab,
+        openNewPrivate: openNewPrivateTab,
         openNewEditor: openNewEditorDialog,
         openNewPreview: () => openPreviewTab(""),
-        closeActiveTab: () => handleClose(activeId),
+        closeActiveTabOrPane: handleCloseTabOrPane,
         nextTab: () => cycleTab(1),
         previousTab: () => cycleTab(-1),
+        splitPaneRight: () => splitActivePaneInActiveTab("row"),
+        splitPaneDown: () => splitActivePaneInActiveTab("col"),
+        focusNextPane: () => focusPaneInActiveTab(1),
+        focusPreviousPane: () => focusPaneInActiveTab(-1),
         focusSearch,
+        focusExplorerSearch,
         toggleSidebar,
         toggleAi: togglePanelAndFocus,
+        askAiSelection: askFromSelection,
         openSettings,
         openShortcuts: openShortcutsDialog,
       }),
@@ -734,13 +762,18 @@ export default function App() {
       explorerRoot,
       home,
       openNewTab,
+      openNewPrivateTab,
       openNewEditorDialog,
       openPreviewTab,
-      handleClose,
+      handleCloseTabOrPane,
       cycleTab,
+      splitActivePaneInActiveTab,
+      focusPaneInActiveTab,
       focusSearch,
+      focusExplorerSearch,
       toggleSidebar,
       togglePanelAndFocus,
+      askFromSelection,
       openSettings,
       openShortcutsDialog,
     ],
@@ -836,6 +869,7 @@ export default function App() {
               >
                 <div className="h-full border-r border-border/60 bg-card">
                   <FileExplorer
+                    ref={explorerRef}
                     rootPath={explorerRoot}
                     onOpenFile={handleOpenFile}
                     onPathRenamed={handlePathRenamed}
