@@ -20,20 +20,32 @@ export const useSshStore = create<State>((set, get) => ({
   connState: {},
 
   loadProfiles: async () => {
-    const profiles = await sshProfileList();
-    set({ profiles });
+    try {
+      const profiles = await sshProfileList();
+      set({ profiles });
+    } catch (e) {
+      // Non-fatal — store stays at last known state
+      console.warn("ssh: failed to load profiles", e);
+    }
   },
 
   saveProfile: async (profile) => {
     const toSave: SshProfile = { ...profile, id: profile.id ?? crypto.randomUUID() };
     const saved = await sshProfileSave(toSave);
-    await get().loadProfiles();
+    set((s) => {
+      const exists = s.profiles.some((p) => p.id === saved.id);
+      return {
+        profiles: exists
+          ? s.profiles.map((p) => (p.id === saved.id ? saved : p))
+          : [...s.profiles, saved],
+      };
+    });
     return saved;
   },
 
   deleteProfile: async (id) => {
     await sshProfileDelete(id);
-    await get().loadProfiles();
+    set((s) => ({ profiles: s.profiles.filter((p) => p.id !== id) }));
   },
 
   connect: async (profileId) => {
