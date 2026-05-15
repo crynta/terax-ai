@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell, workspace};
+use modules::{fs, net, pty, secrets, shell, ssh, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
@@ -84,6 +84,7 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
+        .manage(ssh::SshState::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -120,6 +121,12 @@ pub fn run() {
             net::lm_ping,
             net::ai_http_request,
             net::ai_http_stream,
+            ssh::ssh_connect,
+            ssh::ssh_disconnect,
+            ssh::ssh_fingerprint_get,
+            ssh::ssh_profile_list,
+            ssh::ssh_profile_save,
+            ssh::ssh_profile_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
