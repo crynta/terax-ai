@@ -78,8 +78,17 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   const [truncated, setTruncated] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isMouseMoving = useRef(false);
 
   const active = query.trim().length > 0;
+
+  useEffect(() => {
+    const onMove = () => {
+      isMouseMoving.current = true;
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
+  }, []);
 
   useEffect(() => {
     onActiveChange?.(active);
@@ -194,9 +203,11 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
               if (results.length > 0) {
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
+                  isMouseMoving.current = false;
                   setSelectedIndex((prev) => (prev + 1) % results.length);
                 } else if (e.key === "ArrowUp") {
                   e.preventDefault();
+                  isMouseMoving.current = false;
                   setSelectedIndex((prev) => (prev - 1 + results.length) % results.length);
                 } else if (e.key === "Enter") {
                   e.preventDefault();
@@ -242,7 +253,9 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                         type="button"
                         data-index={index}
                         onClick={() => handleSelect(hit)}
-                        onMouseEnter={() => setSelectedIndex(index)}
+                        onMouseEnter={() => {
+                          if (isMouseMoving.current) setSelectedIndex(index);
+                        }}
                         className={cn(
                           "flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs transition-colors",
                           isSelected ? "bg-accent text-foreground" : "hover:bg-accent/50 text-foreground/80"
