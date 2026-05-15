@@ -220,3 +220,68 @@ pub fn spawn(
 
     Ok((session, size))
 }
+
+use tokio::sync::mpsc;
+
+pub enum SshPtyCmd {
+    Data(Vec<u8>),
+    Resize { cols: u16, rows: u16 },
+    Close,
+}
+
+/// Thin handle to a tokio task that owns the russh channel.
+pub struct SshPtySession {
+    pub cmd_tx: mpsc::Sender<SshPtyCmd>,
+}
+
+pub enum PtyHandle {
+    Local(Arc<Session>),
+    Ssh(Arc<SshPtySession>),
+}
+
+impl PtyHandle {
+    pub fn write(&self, data: &[u8]) -> Result<(), String> {
+        match self {
+            PtyHandle::Local(s) => s
+                .writer
+                .lock()
+                .unwrap()
+                .write_all(data)
+                .map_err(|e| e.to_string()),
+            PtyHandle::Ssh(s) => s
+                .cmd_tx
+                .try_send(SshPtyCmd::Data(data.to_vec()))
+                .map_err(|e| e.to_string()),
+        }
+    }
+
+    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
+        match self {
+            PtyHandle::Local(s) => s
+                .master
+                .lock()
+                .unwrap()
+                .resize(portable_pty::PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(|e| e.to_string()),
+            PtyHandle::Ssh(s) => s
+                .cmd_tx
+                .try_send(SshPtyCmd::Resize { cols, rows })
+                .map_err(|e| e.to_string()),
+        }
+    }
+
+    pub fn kill(&self) -> Result<(), String> {
+        match self {
+            PtyHandle::Local(s) => s.killer.lock().unwrap().kill().map_err(|e| e.to_string()),
+            PtyHandle::Ssh(s) => {
+                let _ = s.cmd_tx.try_send(SshPtyCmd::Close);
+                Ok(())
+            }
+        }
+    }
+}
