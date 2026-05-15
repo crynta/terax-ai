@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,9 @@ type Props = {
     fallbackPatch: string;
   }) => void;
 };
+
+const SOURCE_CONTROL_TOOLTIP_CLASS =
+  "border border-border/70 bg-zinc-950 text-zinc-100 shadow-lg shadow-black/30 dark:border-border/60 dark:bg-zinc-950 dark:text-zinc-100";
 
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -206,10 +210,11 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   if (!open) return null;
 
   return (
-    <aside
-      ref={rootRef}
-      className="flex h-full min-w-0 flex-col border-l border-border/60 bg-card/80 backdrop-blur"
-    >
+    <TooltipProvider delayDuration={800} skipDelayDuration={300}>
+      <aside
+        ref={rootRef}
+        className="flex h-full min-w-0 flex-col border-l border-border/60 bg-card/80 backdrop-blur"
+      >
       <div
         className={cn(
           "flex items-center justify-between gap-2 border-b border-border/60",
@@ -302,12 +307,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         <div className="flex min-h-0 flex-1 flex-col">
           <ScrollArea className="min-h-0 flex-1">
             <div className={cn("space-y-2.5", scm.compact ? "p-2" : "p-3")}>
-              {scm.allClean ? (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[11px] text-emerald-700 dark:text-emerald-400">
-                  Working tree is clean
-                </div>
-              ) : null}
-
               <ChangeGroup
                 title="Staged Changes"
                 entries={scm.stagedEntries}
@@ -394,7 +393,10 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                     </span>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="text-[10.5px]">
+                <TooltipContent
+                  side="top"
+                  className={cn(SOURCE_CONTROL_TOOLTIP_CLASS, "text-[10.5px]")}
+                >
                   {commitHint}
                 </TooltipContent>
               </Tooltip>
@@ -405,7 +407,13 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                     {pushStatusLabel}
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="max-w-64 text-[10.5px]">
+                <TooltipContent
+                  side="top"
+                  className={cn(
+                    SOURCE_CONTROL_TOOLTIP_CLASS,
+                    "max-w-64 text-[10.5px]",
+                  )}
+                >
                   {pushHint}
                 </TooltipContent>
               </Tooltip>
@@ -442,7 +450,8 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           </div>
         </div>
       ) : null}
-    </aside>
+      </aside>
+    </TooltipProvider>
   );
 });
 
@@ -592,44 +601,57 @@ function ChangeGroup({
                         : "hover:bg-accent/45",
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={() => void onSelect(entry)}
-                      className={cn(
-                        "flex min-w-0 items-center gap-1.5 text-left",
-                        compact ? "py-px" : "py-0.5",
-                      )}
-                    >
-                      <div className="flex size-5 shrink-0 items-center justify-center rounded-md bg-black/20 ring-1 ring-inset ring-white/5">
-                        {iconUrl ? (
-                          <img
-                            src={iconUrl}
-                            alt=""
-                            className="size-3.5 shrink-0"
-                          />
-                        ) : (
-                          <span className="size-3.5 shrink-0" />
-                        )}
-                      </div>
-
-                      <div className="flex min-w-0 flex-1 items-baseline gap-1.5 leading-none">
-                        <span
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => void onSelect(entry)}
                           className={cn(
-                            "truncate text-[11.5px] font-medium leading-tight",
-                            pathLabel
-                              ? "max-w-[55%] shrink-0"
-                              : "min-w-0 flex-1",
+                            "flex min-w-0 items-center gap-1.5 text-left",
+                            compact ? "py-px" : "py-0.5",
                           )}
                         >
-                          {fileName}
-                        </span>
-                        {pathLabel ? (
-                          <span className="min-w-0 flex-1 truncate text-[10px] leading-tight text-muted-foreground">
-                            {pathLabel}
-                          </span>
-                        ) : null}
-                      </div>
-                    </button>
+                          <div className="flex size-5 shrink-0 items-center justify-center rounded-md bg-black/20 ring-1 ring-inset ring-white/5">
+                            {iconUrl ? (
+                              <img
+                                src={iconUrl}
+                                alt=""
+                                className="size-3.5 shrink-0"
+                              />
+                            ) : (
+                              <span className="size-3.5 shrink-0" />
+                            )}
+                          </div>
+
+                          <div className="flex min-w-0 flex-1 items-baseline gap-1.5 leading-none">
+                            <span
+                              className={cn(
+                                "truncate text-[11.5px] font-medium leading-tight",
+                                pathLabel
+                                  ? "max-w-[55%] shrink-0"
+                                  : "min-w-0 flex-1",
+                              )}
+                            >
+                              {fileName}
+                            </span>
+                            {pathLabel ? (
+                              <span className="min-w-0 flex-1 truncate text-[10px] leading-tight text-muted-foreground">
+                                {pathLabel}
+                              </span>
+                            ) : null}
+                          </div>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className={cn(
+                          SOURCE_CONTROL_TOOLTIP_CLASS,
+                          "text-[10.5px]",
+                        )}
+                      >
+                        {`${actionLabel} ${entry.path}`}
+                      </TooltipContent>
+                    </Tooltip>
 
                     <EntryActions
                       entry={entry}
@@ -738,14 +760,16 @@ function IconActionButton({
           variant="ghost"
           className="rounded-md text-muted-foreground"
           aria-label={label}
-          title={label}
           disabled={disabled}
           onClick={onClick}
         >
           {children}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side={side} className="text-[10.5px]">
+      <TooltipContent
+        side={side}
+        className={cn(SOURCE_CONTROL_TOOLTIP_CLASS, "text-[10.5px]")}
+      >
         {label}
       </TooltipContent>
     </Tooltip>
