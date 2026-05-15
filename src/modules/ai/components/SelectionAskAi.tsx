@@ -3,7 +3,7 @@ import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { motion } from "motion/react";
 import { useEffect } from "react";
 
-type Props = {
+export type SelectionAskAiProps = {
   x: number;
   y: number;
   onAsk: () => void;
@@ -13,7 +13,7 @@ type Props = {
 const W = 110;
 const OFFSET = 32;
 
-export function SelectionAskAi({ x, y, onAsk, onDismiss }: Props) {
+export function SelectionAskAi({ x, y, onAsk, onDismiss }: SelectionAskAiProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onDismiss();

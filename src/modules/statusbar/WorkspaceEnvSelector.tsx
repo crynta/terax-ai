@@ -13,7 +13,6 @@ import {
 } from "@/modules/workspace";
 import { Refresh01Icon, ServerStack03Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect } from "react";
 
 type Props = {
   onSelect: (env: WorkspaceEnv) => void;
@@ -28,14 +27,16 @@ export function WorkspaceEnvSelector({ onSelect }: Props) {
   const error = useWorkspaceEnvStore((s) => s.error);
   const refreshDistros = useWorkspaceEnvStore((s) => s.refreshDistros);
 
-  useEffect(() => {
-    void refreshDistros();
-  }, [refreshDistros]);
+  const handleOpenChange = (open: boolean) => {
+    if (open && distros.length === 0 && !loading) {
+      void refreshDistros();
+    }
+  };
 
   const label = env.kind === "wsl" ? `WSL: ${env.distro}` : "Windows";
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
