@@ -18,17 +18,21 @@ import type { ThemePref } from "@/modules/settings/store";
 import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
+  TERMINAL_FONT_FAMILIES,
+  TERMINAL_FONT_FAMILY_LABELS,
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
   setShowHidden,
+  setTerminalFontFamily,
   setTerminalFontSize,
   setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
   type EditorThemeId,
+  type TerminalFontFamilyId,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
 import {
@@ -64,6 +68,7 @@ export function GeneralSection() {
     (s) => s.terminalWebglEnabled,
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
+  const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
@@ -102,6 +107,9 @@ export function GeneralSection() {
   };
 
   const onPickTerminalFontSize = (size: number) => void setTerminalFontSize(size);
+
+  const onPickTerminalFontFamily = (id: TerminalFontFamilyId) =>
+    void setTerminalFontFamily(id);
 
   const onPickScrollback = (lines: number) => void setTerminalScrollback(lines);
 
@@ -253,6 +261,44 @@ export function GeneralSection() {
                   )}
                 >
                   {size} px
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SettingRow>
+        <SettingRow
+          title="Font family"
+          description="Monospace font for the terminal. Nerd Font variants support icons and glyphs."
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px]"
+              >
+                <span>{TERMINAL_FONT_FAMILY_LABELS[terminalFontFamily]}</span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={12}
+                  strokeWidth={2}
+                  className="opacity-70"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="min-w-[180px] rounded-none border border-border bg-popover p-0 shadow-none ring-0"
+            >
+              {TERMINAL_FONT_FAMILIES.map((id) => (
+                <DropdownMenuItem
+                  key={id}
+                  onSelect={() => onPickTerminalFontFamily(id)}
+                  className={cn(
+                    "rounded-none px-3 py-1.5 text-[12px]",
+                    id === terminalFontFamily && "bg-accent/50",
+                  )}
+                >
+                  {TERMINAL_FONT_FAMILY_LABELS[id]}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

@@ -38,6 +38,50 @@ export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
   "xcode-light": "Xcode Light",
 };
 
+export type TerminalFontFamilyId = "auto" | "jetbrains-mono" | "jetbrains-mono-nerd" | "fira-code" | "fira-code-nerd" | "meslo" | "hack" | "caskaydia" | "iosevka" | "sf-mono" | "menlo";
+
+export const TERMINAL_FONT_FAMILIES: TerminalFontFamilyId[] = [
+  "auto",
+  "jetbrains-mono",
+  "jetbrains-mono-nerd",
+  "fira-code",
+  "fira-code-nerd",
+  "meslo",
+  "hack",
+  "caskaydia",
+  "iosevka",
+  "sf-mono",
+  "menlo",
+];
+
+export const TERMINAL_FONT_FAMILY_LABELS: Record<TerminalFontFamilyId, string> = {
+  auto: "Auto (detect)",
+  "jetbrains-mono": "JetBrains Mono",
+  "jetbrains-mono-nerd": "JetBrainsMono Nerd Font",
+  "fira-code": "Fira Code",
+  "fira-code-nerd": "FiraCode Nerd Font",
+  meslo: "MesloLGS NF",
+  hack: "Hack Nerd Font",
+  caskaydia: "CaskaydiaCove Nerd Font",
+  iosevka: "Iosevka Nerd Font",
+  "sf-mono": "SF Mono",
+  menlo: "Menlo",
+};
+
+export const TERMINAL_FONT_FAMILY_CSS: Record<TerminalFontFamilyId, string> = {
+  auto: "",
+  "jetbrains-mono": '"JetBrains Mono"',
+  "jetbrains-mono-nerd": '"JetBrainsMono Nerd Font"',
+  "fira-code": '"Fira Code"',
+  "fira-code-nerd": '"FiraCode Nerd Font"',
+  meslo: '"MesloLGS NF"',
+  hack: '"Hack Nerd Font"',
+  caskaydia: '"CaskaydiaCove Nerd Font"',
+  iosevka: '"Iosevka Nerd Font"',
+  "sf-mono": '"SFMono-Regular"',
+  menlo: "Menlo",
+};
+
 export type Preferences = {
   theme: ThemePref;
   defaultModelId: ModelId;
@@ -59,6 +103,7 @@ export type Preferences = {
   terminalWebglEnabled: boolean;
   terminalFontSize: number;
   terminalScrollback: number;
+  terminalFontFamily: TerminalFontFamilyId;
   lastWslDistro: string | null;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
 };
@@ -85,6 +130,7 @@ const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
+const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_SHORTCUTS = "shortcuts";
 
@@ -124,6 +170,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalWebglEnabled: true,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
+  terminalFontFamily: "auto",
   lastWslDistro: null,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
 };
@@ -200,6 +247,9 @@ export async function loadPreferences(): Promise<Preferences> {
       get<number>(KEY_TERMINAL_SCROLLBACK) ??
         DEFAULT_PREFERENCES.terminalScrollback,
     ),
+    terminalFontFamily:
+      get<TerminalFontFamilyId>(KEY_TERMINAL_FONT_FAMILY) ??
+      DEFAULT_PREFERENCES.terminalFontFamily,
     lastWslDistro:
       get<string | null>(KEY_LAST_WSL_DISTRO) ??
       DEFAULT_PREFERENCES.lastWslDistro,
@@ -305,6 +355,12 @@ export async function setTerminalScrollback(value: number): Promise<void> {
   await writePref(KEY_TERMINAL_SCROLLBACK, clampScrollback(value));
 }
 
+export async function setTerminalFontFamily(
+  value: TerminalFontFamilyId,
+): Promise<void> {
+  await writePref(KEY_TERMINAL_FONT_FAMILY, value);
+}
+
 export async function setLastWslDistro(value: string | null): Promise<void> {
   await writePref(KEY_LAST_WSL_DISTRO, value);
 }
@@ -348,6 +404,7 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+    [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_SHORTCUTS]: "shortcuts",
   };

@@ -1,4 +1,4 @@
-import { detectMonoFontFamily } from "@/lib/fonts";
+import { detectMonoFontFamily, loadFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -76,8 +76,10 @@ function getRecycler(): HTMLDivElement {
 
 function termOptions() {
   const prefs = usePreferencesStore.getState();
+  const family = detectMonoFontFamily(prefs.terminalFontFamily);
+  void loadFontFamily(family);
   return {
-    fontFamily: detectMonoFontFamily(),
+    fontFamily: family,
     fontSize: prefs.terminalFontSize,
     theme: buildTerminalTheme(),
     cursorBlink: false,
@@ -522,6 +524,20 @@ export function applyFontSize(size: number): void {
   for (const slot of slots) {
     if (slot.term.options.fontSize === size) continue;
     slot.term.options.fontSize = size;
+    slot.fitAddon.fit();
+    if (slot.currentLeafId !== null) {
+      slot.lastCols = slot.term.cols;
+      slot.lastRows = slot.term.rows;
+      const bridge = adapter?.resolveLeaf(slot.currentLeafId);
+      bridge?.resizePty(slot.term.cols, slot.term.rows);
+    }
+  }
+}
+
+export function applyFontFamily(family: string): void {
+  for (const slot of slots) {
+    if (slot.term.options.fontFamily === family) continue;
+    slot.term.options.fontFamily = family;
     slot.fitAddon.fit();
     if (slot.currentLeafId !== null) {
       slot.lastCols = slot.term.cols;
