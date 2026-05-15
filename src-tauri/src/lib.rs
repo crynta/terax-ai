@@ -1,8 +1,36 @@
 mod modules;
 
 use modules::{fs, net, pty, secrets, shell, workspace};
-use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use std::sync::Mutex;
+use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
+
+/// First CLI arg, if it points at an existing directory. Populated once in
+/// `run()` from `std::env::args()` and drained by the frontend on first paint
+/// so a second `get_launch_dir` call (HMR, navigation) doesn't keep
+/// reseting the workspace.
+#[derive(Default)]
+struct LaunchDir(Mutex<Option<String>>);
+
+#[tauri::command]
+fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
+    state.0.lock().ok().and_then(|mut g| g.take())
+}
+
+fn parse_launch_dir() -> Option<String> {
+    // Skip argv[0] (exe path). Tauri may also pass its own flags — we accept
+    // only the first arg that resolves to an actual directory.
+    for arg in std::env::args().skip(1) {
+        if arg.starts_with('-') {
+            continue;
+        }
+        let path = std::path::Path::new(&arg);
+        if path.is_dir() {
+            return Some(arg);
+        }
+    }
+    None
+}
 
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
@@ -84,6 +112,7 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
+        .manage(LaunchDir(Mutex::new(parse_launch_dir())))
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -112,6 +141,7 @@ pub fn run() {
             workspace::wsl_list_distros,
             workspace::wsl_default_distro,
             workspace::wsl_home,
+            get_launch_dir,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,

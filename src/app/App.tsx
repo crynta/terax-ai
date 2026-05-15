@@ -68,6 +68,7 @@ import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
@@ -137,6 +138,21 @@ export default function App() {
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
+
+  // Windows shell integration ("Open in Terax") launches `terax.exe <dir>`.
+  // Drain the launch dir once and reset the workspace into a single fresh
+  // terminal at that path, disposing the default PTY that mounted moments
+  // earlier. Drain semantics live in the backend so HMR doesn't re-fire it.
+  useEffect(() => {
+    let cancelled = false;
+    void invoke<string | null>("get_launch_dir").then((dir) => {
+      if (cancelled || !dir) return;
+      resetWorkspace(dir.replace(/\\/g, "/"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [resetWorkspace]);
 
   const switchWorkspace = useCallback(
     async (env: WorkspaceEnv) => {
