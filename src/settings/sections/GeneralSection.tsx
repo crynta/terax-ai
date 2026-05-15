@@ -19,11 +19,13 @@ import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
   TERMINAL_FONT_SIZES,
+  TERMINAL_SCROLLBACK_PRESETS,
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontSize,
+  setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
   type EditorThemeId,
@@ -62,6 +64,7 @@ export function GeneralSection() {
     (s) => s.terminalWebglEnabled,
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
+  const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -99,6 +102,8 @@ export function GeneralSection() {
   };
 
   const onPickTerminalFontSize = (size: number) => void setTerminalFontSize(size);
+
+  const onPickScrollback = (lines: number) => void setTerminalScrollback(lines);
 
   return (
     <div className="flex flex-col gap-6">
@@ -248,6 +253,44 @@ export function GeneralSection() {
                   )}
                 >
                   {size} px
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SettingRow>
+        <SettingRow
+          title="Scrollback"
+          description="Lines of history kept per terminal. Higher uses more RAM (~3 KB / line)."
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px]"
+              >
+                <span>{terminalScrollback.toLocaleString()} lines</span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={12}
+                  strokeWidth={2}
+                  className="opacity-70"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="min-w-[140px] rounded-none border border-border bg-popover p-0 shadow-none ring-0"
+            >
+              {TERMINAL_SCROLLBACK_PRESETS.map((lines) => (
+                <DropdownMenuItem
+                  key={lines}
+                  onSelect={() => onPickScrollback(lines)}
+                  className={cn(
+                    "rounded-none px-3 py-1.5 text-[12px]",
+                    lines === terminalScrollback && "bg-accent/50",
+                  )}
+                >
+                  {lines.toLocaleString()} lines
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

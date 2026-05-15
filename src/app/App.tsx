@@ -18,13 +18,13 @@ import { cn } from "@/lib/utils";
 import {
   AgentRunBridge,
   AiInputBar,
+  AiInputBarConnect,
   AiMiniWindow,
   getAllKeys,
   hasAnyKey,
   SelectionAskAi,
   useChatStore,
 } from "@/modules/ai";
-import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { redactSensitive } from "@/modules/ai/lib/redact";
 import { native } from "@/modules/ai/lib/native";
