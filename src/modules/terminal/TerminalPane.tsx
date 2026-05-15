@@ -1,6 +1,8 @@
 import { useTheme } from "@/modules/theme";
 import type { SearchAddon } from "@xterm/addon-search";
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { readPathDragPayload, TERAX_PATH_MIME } from "@/modules/explorer/lib/dragPayload";
+import { shellQuoteAll } from "./lib/shellQuote";
 import { useTerminalSession } from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {
@@ -37,6 +39,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
+    const [isPathDragOver, setIsPathDragOver] = useState(false);
     const { resolvedTheme } = useTheme();
 
     const session = useTerminalSession({
@@ -71,6 +74,24 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       <div
         ref={containerRef}
         className="h-full w-full"
+        data-path-drag-over={isPathDragOver ? "true" : undefined}
+        onDragOver={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes(TERAX_PATH_MIME)) {
+            return;
+          }
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+          setIsPathDragOver(true);
+        }}
+        onDragLeave={() => setIsPathDragOver(false)}
+        onDrop={(e) => {
+          const paths = readPathDragPayload(e.dataTransfer);
+          if (paths.length === 0) return;
+          e.preventDefault();
+          setIsPathDragOver(false);
+          session.write(shellQuoteAll(paths));
+          session.focus();
+        }}
         style={{
           visibility: visible ? "visible" : "hidden",
           pointerEvents: visible ? "auto" : "none",

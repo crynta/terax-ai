@@ -15,6 +15,7 @@ import {
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
+import { writePathDragPayload } from "./lib/dragPayload";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import type { DirEntry, useFileTree } from "./lib/useFileTree";
@@ -70,6 +71,13 @@ function FileTreeNodeImpl({
     else onOpenFile(path);
   }, [isDir, path, tree, onOpenFile, onSelectPath]);
 
+  const handleDragStart = useCallback(
+    (e: React.DragEvent<HTMLButtonElement>) => {
+      writePathDragPayload(e.dataTransfer, path);
+    },
+    [path],
+  );
+
   const isSelected = selectedPath === path;
 
   const pendingInThisDir =
@@ -106,6 +114,8 @@ function FileTreeNodeImpl({
             <button
               type="button"
               data-fs-path={path}
+              draggable
+              onDragStart={handleDragStart}
               onClick={handleClick}
               onDoubleClick={() => !isDir && tree.beginRename(path)}
               className={cn(

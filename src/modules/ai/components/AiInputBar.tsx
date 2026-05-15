@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { readPathDragPayload, TERAX_PATH_MIME } from "@/modules/explorer/lib/dragPayload";
 import {
   Cancel01Icon,
   CodeIcon,
@@ -92,6 +93,10 @@ export function AiInputBar() {
 
   const pickerOpen = trigger !== null;
 
+  const acceptsDrop = (dataTransfer: DataTransfer) =>
+    Array.from(dataTransfer.types).includes(TERAX_PATH_MIME) ||
+    dataTransfer.files.length > 0;
+
   const onPickItem = (item: PickerItem) => {
     if (!trigger) return;
     const before = c.value.slice(0, trigger.start);
@@ -136,6 +141,21 @@ export function AiInputBar() {
           "flex flex-col gap-1.5 rounded-lg px-1 py-1",
           "transition-colors focus-within:border-border",
         )}
+        onDragOver={(e) => {
+          if (!acceptsDrop(e.dataTransfer)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }}
+        onDrop={(e) => {
+          if (!acceptsDrop(e.dataTransfer)) return;
+          e.preventDefault();
+          const paths = readPathDragPayload(e.dataTransfer);
+          if (paths.length > 0) {
+            for (const path of paths) void c.attachFileByPath(path);
+            return;
+          }
+          void c.addFiles(e.dataTransfer.files);
+        }}
       >
         <ChipsRow
           files={c.files}

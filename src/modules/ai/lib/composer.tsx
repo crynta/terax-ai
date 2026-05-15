@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import {
   createContext,
   useContext,
@@ -11,7 +10,7 @@ import { expandSnippetTokens, type Snippet } from "../lib/snippets";
 import { tryRunSlashCommand, type SlashCommandMeta } from "./slashCommands";
 import { getOrCreateChat, useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { native, type DirEntry } from "./native";
 
 export type FileAttachment = {
   id: string;
@@ -172,38 +171,46 @@ export function AiComposerProvider({ children }: ProviderProps) {
 
   const attachFileByPath = async (path: string) => {
     try {
-      type ReadResult =
-        | { kind: "text"; content: string; size: number }
-        | { kind: "binary"; size: number }
-        | { kind: "toolarge"; size: number; limit: number };
-      const result = await invoke<ReadResult>("fs_read_file", {
-        path,
-        workspace: currentWorkspaceEnv(),
-      });
+      const result = await native.readFile(path);
       if (result.kind !== "text") {
         // Binary/oversize files: skip (could surface a toast in future).
         console.warn("attachFileByPath: skipped non-text file", path, result);
         return;
       }
-      const name = path.split("/").pop() || path;
-      const id = `path-${path}`;
-      setFiles((prev) => {
-        if (prev.some((f) => f.id === id)) return prev;
-        const att: FileAttachment = {
-          id,
-          name,
-          kind: "text",
-          mediaType: "text/plain",
-          text: result.content,
-          size: result.size,
-        };
-        return [...prev, att];
-      });
-      // Open the AI panel & focus the input so the user sees the chip.
-      useChatStore.getState().focusInput();
+      addPathAttachment(path, result.content, result.size);
     } catch (e) {
-      console.error("attachFileByPath failed:", e);
+      try {
+        const entries = await native.readDir(path);
+        const text = formatDirectoryAttachment(path, entries);
+        addPathAttachment(path, text, text.length, "Directory");
+      } catch {
+        console.error("attachFileByPath failed:", e);
+      }
     }
+  };
+
+  const addPathAttachment = (
+    path: string,
+    text: string,
+    size: number,
+    fallbackName?: string,
+  ) => {
+    const name = path.split("/").pop() || fallbackName || path;
+    const id = `path-${path}`;
+    setFiles((prev) => {
+      if (prev.some((f) => f.id === id)) return prev;
+      const att: FileAttachment = {
+        id,
+        name,
+        kind: "text",
+        mediaType: "text/plain",
+        text,
+        size,
+      };
+      return [...prev, att];
+    });
+    // Open the AI panel & focus the input so the user sees the chip.
+    useChatStore.getState().focusInput();
   };
 
   const submit = () => {
@@ -376,4 +383,12 @@ function readAsDataURL(file: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error);
     reader.readAsDataURL(file);
   });
+}
+
+function formatDirectoryAttachment(path: string, entries: DirEntry[]): string {
+  const lines = entries.map((entry) => {
+    const suffix = entry.kind === "dir" ? "/" : "";
+    return `${entry.kind.padEnd(7)} ${entry.name}${suffix}`;
+  });
+  return [`Directory: ${path}`, ...lines].join("\n");
 }
