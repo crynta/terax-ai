@@ -4,6 +4,7 @@ import {
   LMSTUDIO_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_BASE_URL,
   OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
+  ZHIPU_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
@@ -54,6 +55,7 @@ export type Preferences = {
   openaiCompatibleBaseURL: string;
   openaiCompatibleModelId: string;
   ollamaBaseURL: string;
+  zhipuBaseURL: string;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
@@ -80,6 +82,7 @@ const KEY_LMSTUDIO_MODEL_ID = "lmstudioModelId";
 const KEY_OPENAI_COMPAT_BASE_URL = "openaiCompatibleBaseURL";
 const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_OLLAMA_BASE_URL = "ollamaBaseURL";
+const KEY_ZHIPU_BASE_URL = "zhipuBaseURL";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
@@ -121,6 +124,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   openaiCompatibleBaseURL: OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   openaiCompatibleModelId: "",
   ollamaBaseURL: OLLAMA_DEFAULT_BASE_URL,
+  zhipuBaseURL: ZHIPU_DEFAULT_BASE_URL,
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
@@ -186,6 +190,8 @@ export async function loadPreferences(): Promise<Preferences> {
       DEFAULT_PREFERENCES.openaiCompatibleModelId,
     ollamaBaseURL:
       get<string>(KEY_OLLAMA_BASE_URL) ?? DEFAULT_PREFERENCES.ollamaBaseURL,
+    zhipuBaseURL:
+      get<string>(KEY_ZHIPU_BASE_URL) ?? DEFAULT_PREFERENCES.zhipuBaseURL,
     favoriteModelIds:
       get<string[]>(KEY_FAVORITE_MODELS) ??
       DEFAULT_PREFERENCES.favoriteModelIds,
@@ -273,6 +279,10 @@ export async function setOllamaBaseURL(value: string): Promise<void> {
   await writePref(KEY_OLLAMA_BASE_URL, value);
 }
 
+export async function setZhipuBaseURL(value: string): Promise<void> {
+  await writePref(KEY_ZHIPU_BASE_URL, value);
+}
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -352,6 +362,7 @@ export async function onPreferencesChange(
     [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
     [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
     [KEY_OLLAMA_BASE_URL]: "ollamaBaseURL",
+    [KEY_ZHIPU_BASE_URL]: "zhipuBaseURL",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",

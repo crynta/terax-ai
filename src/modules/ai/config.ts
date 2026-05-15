@@ -226,8 +226,8 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     label: "Zhipu AI (GLM)",
     keyringAccount: "zhipu-api-key",
     keyPrefix: null,
-    consoleUrl: "https://open.bigmodel.cn/usercenter/apikeys",
-    modelsUrl: "https://open.bigmodel.cn/api/paas/v4/models",
+    consoleUrl: "https://z.ai/model-api",
+    modelsUrl: "https://api.z.ai/api/paas/v4/models",
   },
   {
     id: "volcengine",
@@ -1334,6 +1334,7 @@ export function getAutocompleteEligibleModels(): readonly ModelInfo[] {
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
 export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434/v1";
+export const ZHIPU_DEFAULT_BASE_URL = "https://api.z.ai/api/paas/v4";
 export const OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;

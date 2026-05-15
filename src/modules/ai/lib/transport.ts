@@ -51,6 +51,7 @@ type Deps = {
   getOpenaiCompatibleBaseURL?: () => string | undefined;
   getOpenaiCompatibleModelId?: () => string | undefined;
   getOllamaBaseURL?: () => string | undefined;
+  getZhipuBaseURL?: () => string | undefined;
   onStep?: (step: string | null) => void;
   onUsage?: (delta: AgentUsageDelta) => void;
   onCompact?: (info: { droppedCount: number }) => void;
@@ -87,6 +88,7 @@ export function createContextAwareTransport(deps: Deps) {
       openaiCompatibleBaseURL: deps.getOpenaiCompatibleBaseURL?.(),
       openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
       ollamaBaseURL: deps.getOllamaBaseURL?.(),
+      zhipuBaseURL: deps.getZhipuBaseURL?.(),
       planMode: deps.getPlanMode?.(),
       projectMemory,
       uiMessages: messagesForRun,

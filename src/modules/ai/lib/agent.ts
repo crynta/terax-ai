@@ -13,6 +13,7 @@ import {
   LMSTUDIO_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
   OLLAMA_DEFAULT_BASE_URL,
+  ZHIPU_DEFAULT_BASE_URL,
   providerNeedsKey,
   selectSystemPrompt,
   type ModelId,
@@ -60,6 +61,7 @@ export type BuildModelOptions = {
   lmstudioBaseURL?: string;
   openaiCompatibleBaseURL?: string;
   ollamaBaseURL?: string;
+  zhipuBaseURL?: string;
 };
 
 const modelCache = new Map<string, LanguageModel>();
@@ -79,7 +81,8 @@ export async function buildLanguageModel(
   const lmstudioURL = options.lmstudioBaseURL ?? LMSTUDIO_DEFAULT_BASE_URL;
   const compatURL = options.openaiCompatibleBaseURL ?? "";
   const ollamaURL = options.ollamaBaseURL ?? OLLAMA_DEFAULT_BASE_URL;
-  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL} ${ollamaURL}`;
+  const zhipuURL = options.zhipuBaseURL ?? ZHIPU_DEFAULT_BASE_URL;
+  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL} ${ollamaURL} ${zhipuURL}`;
   const hit = modelCache.get(cacheKey);
   if (hit) return hit;
 
@@ -340,7 +343,7 @@ export async function buildLanguageModel(
       );
       built = createOpenAICompatible({
         name: "zhipu",
-        baseURL: "https://open.bigmodel.cn/api/paas/v4",
+        baseURL: zhipuURL,
         apiKey: key,
       })(resolvedModelId);
       break;
@@ -395,6 +398,7 @@ function buildModel(
   openaiCompatibleBaseURL?: string,
   openaiCompatibleModelId?: string,
   ollamaBaseURL?: string,
+  zhipuBaseURL?: string,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
   let resolvedId: string = m.id;
@@ -417,6 +421,7 @@ function buildModel(
     lmstudioBaseURL,
     openaiCompatibleBaseURL,
     ollamaBaseURL,
+    zhipuBaseURL,
   });
 }
 
@@ -495,6 +500,7 @@ export type RunAgentOptions = {
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
   ollamaBaseURL?: string;
+  zhipuBaseURL?: string;
   planMode?: boolean;
   projectMemory?: string | null;
   uiMessages: UIMessage[];
@@ -511,6 +517,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.openaiCompatibleBaseURL,
     opts.openaiCompatibleModelId,
     opts.ollamaBaseURL,
+    opts.zhipuBaseURL,
   );
   const provider = getModel(modelId).provider;
 
