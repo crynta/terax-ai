@@ -15,9 +15,7 @@ use russh_sftp::client::SftpSession;
 
 use crate::modules::secrets::SecretsState;
 
-use self::connection::SshState;
 use self::handler::SshHandler;
-use self::profiles::{update_fingerprint, AuthMethod, SshProfile};
 
 fn load_profile(app: &tauri::AppHandle, profile_id: &str) -> Result<SshProfile, String> {
     let profiles = ssh_profile_list(app.clone())?;
