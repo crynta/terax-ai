@@ -50,6 +50,7 @@ type Props = {
   onOpenShortcuts: () => void;
   onOpenSettings: () => void;
   sourceControlOpen: boolean;
+  sourceControlCount: number;
   onToggleSourceControl: () => void;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
@@ -73,6 +74,7 @@ export function Header({
   onOpenShortcuts,
   onOpenSettings,
   sourceControlOpen,
+  sourceControlCount,
   onToggleSourceControl,
   searchTarget,
   searchRef,
@@ -137,11 +139,22 @@ export function Header({
     <Button
       variant={sourceControlOpen ? "secondary" : "ghost"}
       size="sm"
-      className="h-7 shrink-0 gap-1.5 rounded-md px-2.5 text-[11px]"
+      className="relative h-7 shrink-0 gap-1.5 rounded-md px-2.5 text-[11px]"
       onClick={onToggleSourceControl}
       title="Source Control"
     >
-      <HugeiconsIcon icon={SourceCodeCircleIcon} size={14} strokeWidth={1.75} />
+      <span className="relative inline-flex size-3.5 items-center justify-center">
+        <HugeiconsIcon
+          icon={SourceCodeCircleIcon}
+          size={14}
+          strokeWidth={1.75}
+        />
+        {sourceControlCount > 0 ? (
+          <span className="absolute -right-2 -top-2 inline-flex min-w-3.5 items-center justify-center rounded-full bg-primary px-1 py-px text-[8px] font-semibold leading-none text-primary-foreground shadow-sm ring-1 ring-card">
+            {sourceControlCount > 99 ? "99+" : sourceControlCount}
+          </span>
+        ) : null}
+      </span>
       <span>Diff</span>
     </Button>
   );

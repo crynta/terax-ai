@@ -1,5 +1,5 @@
-use std::time::Duration;
 use serde::Serialize;
+use std::time::Duration;
 
 pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 30;
 pub(crate) const MAX_TIMEOUT_SECS: u64 = 120;

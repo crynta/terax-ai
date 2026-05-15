@@ -72,7 +72,11 @@ pub fn diff(repo_root: &str, path: Option<&str>, staged: bool) -> Result<GitDiff
     })
 }
 
-pub fn diff_content(repo_root: &str, path: &str, staged: bool) -> Result<GitDiffContentResult, String> {
+pub fn diff_content(
+    repo_root: &str,
+    path: &str,
+    staged: bool,
+) -> Result<GitDiffContentResult, String> {
     let repo_root = canonical_dir(repo_root)?;
     ensure_git_available()?;
     let path_ref = Path::new(path);
@@ -89,7 +93,8 @@ pub fn diff_content(repo_root: &str, path: &str, staged: bool) -> Result<GitDiff
         read_text_file(&worktree_path)?
     };
     let patch = diff(&display_path(&repo_root), Some(path), staged)?.diff_text;
-    let is_binary = matches!(original, TextSource::Binary) || matches!(modified, TextSource::Binary);
+    let is_binary =
+        matches!(original, TextSource::Binary) || matches!(modified, TextSource::Binary);
 
     Ok(GitDiffContentResult {
         original_content: original.into_text(),
@@ -114,6 +119,40 @@ pub fn unstage(repo_root: &str, paths: &[String]) -> Result<(), String> {
     }
     let output = run_git_os(Some(&repo_root), args, DEFAULT_TIMEOUT_SECS)?;
     ensure_success(&output, "git reset failed")
+}
+
+pub fn discard(repo_root: &str, paths: &[String]) -> Result<(), String> {
+    let repo_root = canonical_dir(repo_root)?;
+    ensure_git_available()?;
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let tracked = status_paths(&repo_root, paths, false)?;
+    if !tracked.is_empty() {
+        let mut args: Vec<&OsStr> = vec![
+            OsStr::new("restore"),
+            OsStr::new("--worktree"),
+            OsStr::new("--"),
+        ];
+        for path in &tracked {
+            args.push(OsStr::new(path));
+        }
+        let output = run_git_os(Some(&repo_root), args, DEFAULT_TIMEOUT_SECS)?;
+        ensure_success(&output, "git restore failed")?;
+    }
+
+    let untracked = status_paths(&repo_root, paths, true)?;
+    if !untracked.is_empty() {
+        let mut args: Vec<&OsStr> = vec![OsStr::new("clean"), OsStr::new("-f"), OsStr::new("--")];
+        for path in &untracked {
+            args.push(OsStr::new(path));
+        }
+        let output = run_git_os(Some(&repo_root), args, DEFAULT_TIMEOUT_SECS)?;
+        ensure_success(&output, "git clean failed")?;
+    }
+
+    Ok(())
 }
 
 pub fn commit(repo_root: &str, message: &str) -> Result<GitCommitResult, String> {
@@ -203,4 +242,26 @@ fn run_git_paths(repo_root: &Path, command: &str, paths: &[String]) -> Result<()
     }
     let output = run_git_os(Some(repo_root), args, DEFAULT_TIMEOUT_SECS)?;
     ensure_success(&output, &format!("git {command} failed"))
+}
+
+fn status_paths(repo_root: &Path, paths: &[String], untracked: bool) -> Result<Vec<String>, String> {
+    let mut filtered = Vec::new();
+    for path in paths {
+        let mut args: Vec<&OsStr> = vec![OsStr::new("ls-files")];
+        if untracked {
+            args.push(OsStr::new("--others"));
+            args.push(OsStr::new("--exclude-standard"));
+        } else {
+            args.push(OsStr::new("--modified"));
+            args.push(OsStr::new("--deleted"));
+        }
+        args.push(OsStr::new("--"));
+        args.push(OsStr::new(path));
+        let output = run_git_os(Some(repo_root), args, DEFAULT_TIMEOUT_SECS)?;
+        ensure_success(&output, "git ls-files failed")?;
+        if !output.stdout.is_empty() {
+            filtered.push(path.clone());
+        }
+    }
+    Ok(filtered)
 }

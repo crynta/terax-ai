@@ -175,7 +175,7 @@ export async function buildLanguageModel(
   return built;
 }
 
-function buildModel(
+export function buildConfiguredLanguageModel(
   modelId: ModelId,
   keys: ProviderKeys,
   lmstudioBaseURL?: string,
@@ -288,7 +288,7 @@ export type RunAgentOptions = {
 
 export async function runAgentStream(opts: RunAgentOptions) {
   const modelId = opts.modelId ?? DEFAULT_MODEL_ID;
-  const model = await buildModel(
+  const model = await buildConfiguredLanguageModel(
     modelId,
     opts.keys,
     opts.lmstudioBaseURL,

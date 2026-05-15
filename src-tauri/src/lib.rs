@@ -114,6 +114,7 @@ pub fn run() {
             git::commands::git_diff_content,
             git::commands::git_stage,
             git::commands::git_unstage,
+            git::commands::git_discard,
             git::commands::git_commit,
             git::commands::git_push,
             shell::shell_run_command,

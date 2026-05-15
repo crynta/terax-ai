@@ -43,6 +43,11 @@ pub async fn git_unstage(repo_root: String, paths: Vec<String>) -> Result<(), St
 }
 
 #[tauri::command]
+pub async fn git_discard(repo_root: String, paths: Vec<String>) -> Result<(), String> {
+    operations::discard(&repo_root, &paths)
+}
+
+#[tauri::command]
 pub async fn git_commit(repo_root: String, message: String) -> Result<GitCommitResult, String> {
     operations::commit(&repo_root, &message)
 }

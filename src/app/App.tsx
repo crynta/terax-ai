@@ -78,6 +78,41 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
+function dirname(path: string | null): string | null {
+  if (!path) return null;
+  const normalized = path.replace(/\\/g, "/");
+  const idx = normalized.lastIndexOf("/");
+  if (idx <= 0) return normalized;
+  return normalized.slice(0, idx);
+}
+
+const SOURCE_CONTROL_DEFAULT_WIDTH = 300;
+const SOURCE_CONTROL_MIN_WIDTH = 240;
+const SOURCE_CONTROL_MAX_WIDTH = 420;
+const SOURCE_CONTROL_MIN_SIZE = `${SOURCE_CONTROL_MIN_WIDTH}px`;
+const SOURCE_CONTROL_MAX_SIZE = `${SOURCE_CONTROL_MAX_WIDTH}px`;
+const SOURCE_CONTROL_COMFORT_WIDTH = 285;
+const SOURCE_CONTROL_MAIN_MIN_SIZE = "72px";
+const SOURCE_CONTROL_WIDTH_STORAGE_KEY = "terax.sourceControl.width";
+
+function clampSourceControlWidth(width: number): number {
+  return Math.min(
+    SOURCE_CONTROL_MAX_WIDTH,
+    Math.max(SOURCE_CONTROL_MIN_WIDTH, Math.round(width)),
+  );
+}
+
+function readSourceControlWidth(): number {
+  try {
+    const stored = window.localStorage.getItem(SOURCE_CONTROL_WIDTH_STORAGE_KEY);
+    const parsed = stored ? Number.parseInt(stored, 10) : NaN;
+    return Number.isFinite(parsed)
+      ? clampSourceControlWidth(parsed)
+      : SOURCE_CONTROL_DEFAULT_WIDTH;
+  } catch {
+    return SOURCE_CONTROL_DEFAULT_WIDTH;
+  }
+}
 
 export default function App() {
   const {
@@ -92,7 +127,6 @@ export default function App() {
     openAiDiffTab,
     closeAiDiffTab,
     openGitDiffTab,
-    setAiDiffStatus,
     closeTab,
     updateTab,
     selectByIndex,
@@ -126,6 +160,7 @@ export default function App() {
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
+  const sourceControlRef = useRef<PanelImperativeHandle | null>(null);
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
     if (!p) return;
@@ -194,6 +229,10 @@ export default function App() {
   const [sourceControlOpen, setSourceControlOpen] = useState(false);
   const [sourceControlPinnedContextPath, setSourceControlPinnedContextPath] =
     useState<string | null>(null);
+  const [sourceControlCount, setSourceControlCount] = useState(0);
+  const [sourceControlWidth, setSourceControlWidth] = useState(
+    readSourceControlWidth,
+  );
   const miniOpen = useChatStore((s) => s.mini.open);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
@@ -569,18 +608,85 @@ export default function App() {
           ? activeTab.repoRoot
         : explorerRoot ?? launchCwd ?? home ?? null;
 
-  const closeSourceControl = useCallback(() => {
-    setSourceControlOpen(false);
-    setSourceControlPinnedContextPath(null);
+  const rememberSourceControlWidth = useCallback((width: number) => {
+    if (!Number.isFinite(width) || width <= 0) return;
+    const next = clampSourceControlWidth(width);
+    setSourceControlWidth(next);
+    try {
+      window.localStorage.setItem(SOURCE_CONTROL_WIDTH_STORAGE_KEY, String(next));
+    } catch {
+      // Ignore storage failures; the panel still works for the current session.
+    }
   }, []);
 
-  const toggleSourceControl = useCallback(() => {
-    setSourceControlOpen((current) => {
-      const next = !current;
-      setSourceControlPinnedContextPath(next ? sourceControlContextPath : null);
-      return next;
-    });
+  useEffect(() => {
+    let alive = true;
+    const refreshSourceControlCount = () => {
+      if (!sourceControlContextPath) {
+        setSourceControlCount(0);
+        return;
+      }
+      void native
+        .gitResolveRepo(sourceControlContextPath)
+        .then((repo) => {
+          if (!alive || !repo) return null;
+          return native.gitStatus(repo.repoRoot);
+        })
+        .then((status) => {
+          if (!alive) return;
+          setSourceControlCount(status?.changedFiles.length ?? 0);
+        })
+        .catch(() => {
+          if (alive) setSourceControlCount(0);
+        });
+    };
+
+    refreshSourceControlCount();
+    window.addEventListener("focus", refreshSourceControlCount);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", refreshSourceControlCount);
+    };
   }, [sourceControlContextPath]);
+
+  const openSourceControl = useCallback(() => {
+    setSourceControlPinnedContextPath(sourceControlContextPath);
+    setSourceControlOpen(true);
+  }, [sourceControlContextPath]);
+
+  const closeSourceControl = useCallback(() => {
+    const panel = sourceControlRef.current;
+    if (panel && !panel.isCollapsed()) {
+      rememberSourceControlWidth(panel.getSize().inPixels);
+      panel.collapse();
+    }
+    setSourceControlOpen(false);
+    setSourceControlPinnedContextPath(null);
+  }, [rememberSourceControlWidth]);
+
+  const toggleSourceControl = useCallback(() => {
+    if (sourceControlOpen) {
+      closeSourceControl();
+      return;
+    }
+    openSourceControl();
+  }, [closeSourceControl, openSourceControl, sourceControlOpen]);
+
+  useEffect(() => {
+    if (!sourceControlOpen) return;
+    const frame = window.requestAnimationFrame(() => {
+      const panel = sourceControlRef.current;
+      if (!panel) return;
+      if (panel.isCollapsed()) panel.expand();
+      const targetSize = `${sourceControlWidth}px`;
+      if (Math.abs(panel.getSize().inPixels - sourceControlWidth) > 2) {
+        panel.resize(targetSize);
+      } else if (panel.getSize().inPixels < SOURCE_CONTROL_COMFORT_WIDTH) {
+        panel.resize(targetSize);
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [sourceControlOpen, sourceControlWidth]);
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -784,6 +890,80 @@ export default function App() {
     });
   }, [setLive, activeId, tabs, explorerRoot, launchCwd, home, openPreviewTab]);
 
+  const workspaceSurface = (
+    <div className="relative h-full min-h-0">
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isTerminalTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isTerminalTab}
+      >
+        <TerminalStack
+          tabs={tabs}
+          activeId={activeId}
+          registerHandle={registerTerminalHandle}
+          onSearchReady={handleSearchReady}
+          onCwd={handleTerminalCwd}
+          onExit={handleLeafExit}
+          onFocusLeaf={handleFocusLeaf}
+        />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isEditorTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isEditorTab}
+      >
+        <EditorStack
+          tabs={tabs}
+          activeId={activeId}
+          registerHandle={registerEditorHandle}
+          onDirtyChange={handleEditorDirty}
+          onCloseTab={disposeTab}
+        />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isPreviewTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isPreviewTab}
+      >
+        <PreviewStack
+          tabs={tabs}
+          activeId={activeId}
+          registerHandle={registerPreviewHandle}
+          onUrlChange={handlePreviewUrl}
+        />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isAiDiffTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isAiDiffTab}
+      >
+        <AiDiffStack
+          tabs={tabs}
+          activeId={activeId}
+          onAccept={(id) => respondToApproval(id, true)}
+          onReject={(id) => respondToApproval(id, false)}
+        />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isGitDiffTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isGitDiffTab}
+      >
+        <GitDiffStack tabs={tabs} activeId={activeId} />
+      </div>
+    </div>
+  );
+
   const shell = (
     <ThemeProvider>
       <TooltipProvider>
@@ -805,9 +985,10 @@ export default function App() {
               leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
             }
             onOpenShortcuts={() => setShortcutsOpen(true)}
-            onOpenSettings={() => void openSettingsWindow()}
-            sourceControlOpen={sourceControlOpen}
-            onToggleSourceControl={toggleSourceControl}
+              onOpenSettings={() => void openSettingsWindow()}
+              sourceControlOpen={sourceControlOpen}
+              sourceControlCount={sourceControlCount}
+              onToggleSourceControl={toggleSourceControl}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
           />
@@ -841,168 +1022,39 @@ export default function App() {
               <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="flex min-h-0 flex-1">
-                    {sourceControlOpen ? (
-                      <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
-                        <ResizablePanel id="workspace-main" defaultSize="74%" minSize="35%">
-                          <div className="relative h-full min-h-0">
-                            <div
-                              className={cn(
-                                "absolute inset-0 px-3 pt-2 pb-2",
-                                !isTerminalTab && "invisible pointer-events-none",
-                              )}
-                              aria-hidden={!isTerminalTab}
-                            >
-                              <TerminalStack
-                                tabs={tabs}
-                                activeId={activeId}
-                                registerHandle={registerTerminalHandle}
-                                onSearchReady={handleSearchReady}
-                                onCwd={handleTerminalCwd}
-                                onDetectedLocalUrl={handleDetectedLocalUrl}
-                                onExit={handleLeafExit}
-                                onTeraxOpen={handleTeraxOpen}
-                                onFocusLeaf={handleFocusLeaf}
-                              />
-                            </div>
-                            <div
-                              className={cn(
-                                "absolute inset-0 px-3 pt-2 pb-2",
-                                !isEditorTab && "invisible pointer-events-none",
-                              )}
-                              aria-hidden={!isEditorTab}
-                            >
-                              <EditorStack
-                                tabs={tabs}
-                                activeId={activeId}
-                                registerHandle={registerEditorHandle}
-                                onDirtyChange={handleEditorDirty}
-                                onCloseTab={disposeTab}
-                              />
-                            </div>
-                            <div
-                              className={cn(
-                                "absolute inset-0 px-3 pt-2 pb-2",
-                                !isPreviewTab && "invisible pointer-events-none",
-                              )}
-                              aria-hidden={!isPreviewTab}
-                            >
-                              <PreviewStack
-                                tabs={tabs}
-                                activeId={activeId}
-                                registerHandle={registerPreviewHandle}
-                                onUrlChange={handlePreviewUrl}
-                              />
-                            </div>
-                            <div
-                              className={cn(
-                                "absolute inset-0 px-3 pt-2 pb-2",
-                                !isAiDiffTab && "invisible pointer-events-none",
-                              )}
-                              aria-hidden={!isAiDiffTab}
-                            >
-                              <AiDiffStack
-                                tabs={tabs}
-                                activeId={activeId}
-                                onAccept={(id) => respondToApproval(id, true)}
-                                onReject={(id) => respondToApproval(id, false)}
-                              />
-                            </div>
-                            <div
-                              className={cn(
-                                "absolute inset-0 px-3 pt-2 pb-2",
-                                !isGitDiffTab && "invisible pointer-events-none",
-                              )}
-                              aria-hidden={!isGitDiffTab}
-                            >
-                              <GitDiffStack tabs={tabs} activeId={activeId} />
-                            </div>
-                          </div>
-                        </ResizablePanel>
-                        <ResizableHandle withHandle />
-                        <ResizablePanel id="source-control" defaultSize="26%" minSize="18%" maxSize="42%">
-                          <SourceControlPanel
-                            open={sourceControlOpen}
-                            contextPath={sourceControlPinnedContextPath}
-                            onClose={closeSourceControl}
-                            onOpenDiff={openGitDiffTab}
-                          />
-                        </ResizablePanel>
-                      </ResizablePanelGroup>
-                    ) : (
-                      <div className="relative min-h-0 flex-1">
-                        <div
-                          className={cn(
-                            "absolute inset-0 px-3 pt-2 pb-2",
-                            !isTerminalTab && "invisible pointer-events-none",
-                          )}
-                          aria-hidden={!isTerminalTab}
-                        >
-                          <TerminalStack
-                            tabs={tabs}
-                            activeId={activeId}
-                            registerHandle={registerTerminalHandle}
-                            onSearchReady={handleSearchReady}
-                            onCwd={handleTerminalCwd}
-                            onDetectedLocalUrl={handleDetectedLocalUrl}
-                            onExit={handleLeafExit}
-                            onTeraxOpen={handleTeraxOpen}
-                            onFocusLeaf={handleFocusLeaf}
-                          />
-                        </div>
-                        <div
-                          className={cn(
-                            "absolute inset-0 px-3 pt-2 pb-2",
-                            !isEditorTab && "invisible pointer-events-none",
-                          )}
-                          aria-hidden={!isEditorTab}
-                        >
-                          <EditorStack
-                            tabs={tabs}
-                            activeId={activeId}
-                            registerHandle={registerEditorHandle}
-                            onDirtyChange={handleEditorDirty}
-                            onCloseTab={disposeTab}
-                          />
-                        </div>
-                        <div
-                          className={cn(
-                            "absolute inset-0 px-3 pt-2 pb-2",
-                            !isPreviewTab && "invisible pointer-events-none",
-                          )}
-                          aria-hidden={!isPreviewTab}
-                        >
-                          <PreviewStack
-                            tabs={tabs}
-                            activeId={activeId}
-                            registerHandle={registerPreviewHandle}
-                            onUrlChange={handlePreviewUrl}
-                          />
-                        </div>
-                        <div
-                          className={cn(
-                            "absolute inset-0 px-3 pt-2 pb-2",
-                            !isAiDiffTab && "invisible pointer-events-none",
-                          )}
-                          aria-hidden={!isAiDiffTab}
-                        >
-                          <AiDiffStack
-                            tabs={tabs}
-                            activeId={activeId}
-                            onAccept={(id) => respondToApproval(id, true)}
-                            onReject={(id) => respondToApproval(id, false)}
-                          />
-                        </div>
-                        <div
-                          className={cn(
-                            "absolute inset-0 px-3 pt-2 pb-2",
-                            !isGitDiffTab && "invisible pointer-events-none",
-                          )}
-                          aria-hidden={!isGitDiffTab}
-                        >
-                          <GitDiffStack tabs={tabs} activeId={activeId} />
-                        </div>
-                      </div>
-                    )}
+                    <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+                      <ResizablePanel
+                        id="workspace-main"
+                        defaultSize="100%"
+                        minSize={SOURCE_CONTROL_MAIN_MIN_SIZE}
+                      >
+                        {workspaceSurface}
+                      </ResizablePanel>
+                      {sourceControlOpen ? <ResizableHandle withHandle /> : null}
+                      <ResizablePanel
+                        id="source-control"
+                        panelRef={sourceControlRef}
+                        defaultSize={`${sourceControlWidth}px`}
+                        minSize={SOURCE_CONTROL_MIN_SIZE}
+                        maxSize={SOURCE_CONTROL_MAX_SIZE}
+                        collapsible
+                        collapsedSize={0}
+                        onResize={() => {
+                          const width = sourceControlRef.current?.getSize().inPixels;
+                          if (sourceControlOpen && width) {
+                            rememberSourceControlWidth(width);
+                          }
+                        }}
+                      >
+                        <SourceControlPanel
+                          open={sourceControlOpen}
+                          contextPath={sourceControlPinnedContextPath}
+                          onClose={closeSourceControl}
+                          onStatusCountChange={setSourceControlCount}
+                          onOpenDiff={openGitDiffTab}
+                        />
+                      </ResizablePanel>
+                    </ResizablePanelGroup>
                   </div>
 
                   {keysLoaded ? (

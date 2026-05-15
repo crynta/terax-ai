@@ -17,7 +17,11 @@ pub fn ensure_git_available() -> Result<(), String> {
 pub fn git_show_text(repo_root: &Path, spec: &str) -> Result<TextSource, String> {
     let output = run_git_os(
         Some(repo_root),
-        [OsStr::new("show"), OsStr::new("--no-textconv"), OsStr::new(spec)],
+        [
+            OsStr::new("show"),
+            OsStr::new("--no-textconv"),
+            OsStr::new(spec),
+        ],
         DEFAULT_TIMEOUT_SECS,
     )?;
     if output.timed_out {
@@ -79,11 +83,7 @@ where
     run_git_os(cwd, args, timeout_secs)
 }
 
-pub fn run_git_os<I, S>(
-    cwd: Option<&Path>,
-    args: I,
-    timeout_secs: u64,
-) -> Result<GitOutput, String>
+pub fn run_git_os<I, S>(cwd: Option<&Path>, args: I, timeout_secs: u64) -> Result<GitOutput, String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,

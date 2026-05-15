@@ -1,6 +1,8 @@
 use crate::modules::git::types::GitChangedFile;
 
-pub fn parse_branch_header(header: &str) -> Result<(String, Option<String>, u32, u32, bool), String> {
+pub fn parse_branch_header(
+    header: &str,
+) -> Result<(String, Option<String>, u32, u32, bool), String> {
     if !header.starts_with("## ") {
         return Err("malformed git status branch header".into());
     }

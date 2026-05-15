@@ -211,6 +211,8 @@ export const native = {
     invoke<void>("git_stage", { repoRoot, paths }),
   gitUnstage: (repoRoot: string, paths: string[]) =>
     invoke<void>("git_unstage", { repoRoot, paths }),
+  gitDiscard: (repoRoot: string, paths: string[]) =>
+    invoke<void>("git_discard", { repoRoot, paths }),
   gitCommit: (repoRoot: string, message: string) =>
     invoke<GitCommitResult>("git_commit", { repoRoot, message }),
   gitPush: (repoRoot: string) =>
