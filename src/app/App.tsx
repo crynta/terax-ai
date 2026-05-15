@@ -35,7 +35,8 @@ import {
   NewEditorDialog,
   type EditorPaneHandle,
 } from "@/modules/editor";
-import { FileExplorer } from "@/modules/explorer";
+import { useZoom } from "@/lib/useZoom";
+import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
   Header,
   type SearchInlineHandle,
@@ -119,12 +120,21 @@ export default function App() {
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
+  const { zoomIn, zoomOut, zoomReset } = useZoom();
+  const explorerRef = useRef<FileExplorerHandle>(null);
+
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
     if (!p) return;
     if (p.getSize().asPercentage <= 0) p.expand();
     else p.collapse();
+  }, []);
+
+  const focusExplorer = useCallback(() => {
+    const p = sidebarRef.current;
+    if (p && p.getSize().asPercentage <= 0) p.expand();
+    explorerRef.current?.focus();
   }, []);
 
   const [home, setHome] = useState<string | null>(null);
@@ -599,6 +609,10 @@ export default function App() {
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
+      "explorer.focus": focusExplorer,
+      "view.zoomIn": zoomIn,
+      "view.zoomOut": zoomOut,
+      "view.zoomReset": zoomReset,
     }),
     [
       activeId,
@@ -613,6 +627,10 @@ export default function App() {
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
+      focusExplorer,
+      zoomIn,
+      zoomOut,
+      zoomReset,
     ],
   );
 
@@ -788,6 +806,7 @@ export default function App() {
               >
                 <div className="h-full border-r border-border/60 bg-card">
                   <FileExplorer
+                    ref={explorerRef}
                     rootPath={explorerRoot}
                     onOpenFile={handleOpenFile}
                     onPathRenamed={handlePathRenamed}
