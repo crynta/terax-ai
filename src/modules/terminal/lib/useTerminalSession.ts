@@ -1,4 +1,4 @@
-import { ensureMonoFontsLoaded } from "@/lib/fonts";
+import { detectMonoFontFamily, ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -7,6 +7,7 @@ import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 import {
   acquireSlot,
+  applyFontFamily,
   applyFontSize,
   applyScrollback,
   applyTheme as applyPoolTheme,
@@ -333,6 +334,11 @@ export function useTerminalSession({
   useEffect(() => {
     applyWebglPreference(webglPref);
   }, [webglPref]);
+
+  const fontFamily = usePreferencesStore((p) => p.terminalFontFamily);
+  useEffect(() => {
+    applyFontFamily(detectMonoFontFamily(fontFamily));
+  }, [fontFamily]);
 
   useEffect(() => {
     const s = sessions.get(leafId);
