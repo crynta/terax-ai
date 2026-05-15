@@ -390,7 +390,7 @@ export function AiInputBarConnect({ onAdd }: { onAdd: () => void }) {
         </span>
         <Button size="xs" onClick={onAdd}>
           <HugeiconsIcon icon={Key01Icon} />
-          Add API key
+          Connect provider
         </Button>
       </div>
     </div>
