@@ -618,10 +618,16 @@ function copySelectionIfPresent(term: Terminal, event: KeyboardEvent): boolean {
   const selection = term.getSelection();
   if (!selection) return false;
   event.preventDefault();
-  void navigator.clipboard.writeText(selection).catch((error) => {
-    console.warn("[terax] terminal copy failed:", error);
-  });
+  void copySelectionToClipboard(selection);
   return true;
+}
+
+async function copySelectionToClipboard(selection: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(selection);
+  } catch (error) {
+    console.warn("[terax] terminal copy failed:", error);
+  }
 }
 
 async function pasteFromClipboard(term: Terminal): Promise<void> {
