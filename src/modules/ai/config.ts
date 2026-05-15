@@ -21,6 +21,12 @@ export type ProviderId =
   | "novita"
   | "ai21"
   | "huggingface"
+  | "sambanova"
+  | "minimax"
+  | "zhipu"
+  | "volcengine"
+  | "yi"
+  | "replicate"
   | "ollama"
   | "openai-compatible"
   | "lmstudio";
@@ -33,6 +39,9 @@ export type ProviderInfo = {
   consoleUrl: string;
   /** Provider accepts (but does not require) an API key. */
   keyOptional?: boolean;
+  /** OpenAI-compatible GET endpoint returning `{ data: { id, object, owned_by }[] }`.
+   *  Set to `null` when the provider has no standard /models endpoint. */
+  modelsUrl: string | null;
 };
 
 export const PROVIDERS: readonly ProviderInfo[] = [
@@ -42,6 +51,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openai-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.openai.com/api-keys",
+    modelsUrl: "https://api.openai.com/v1/models",
   },
   {
     id: "anthropic",
@@ -49,6 +59,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "anthropic-api-key",
     keyPrefix: "sk-ant-",
     consoleUrl: "https://console.anthropic.com/settings/keys",
+    modelsUrl: null,
   },
   {
     id: "google",
@@ -56,6 +67,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "google-api-key",
     keyPrefix: null,
     consoleUrl: "https://aistudio.google.com/apikey",
+    modelsUrl: null,
   },
   {
     id: "xai",
@@ -63,6 +75,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "xai-api-key",
     keyPrefix: "xai-",
     consoleUrl: "https://console.x.ai/",
+    modelsUrl: "https://api.x.ai/v1/models",
   },
   {
     id: "cerebras",
@@ -70,6 +83,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "cerebras-api-key",
     keyPrefix: "csk-",
     consoleUrl: "https://cloud.cerebras.ai/",
+    modelsUrl: "https://api.cerebras.ai/v1/models",
   },
   {
     id: "groq",
@@ -77,6 +91,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "groq-api-key",
     keyPrefix: "gsk_",
     consoleUrl: "https://console.groq.com/keys",
+    modelsUrl: "https://api.groq.com/openai/v1/models",
   },
   {
     id: "deepseek",
@@ -84,6 +99,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "deepseek-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.deepseek.com/api_keys",
+    modelsUrl: "https://api.deepseek.com/v1/models",
   },
   {
     id: "mistral",
@@ -91,6 +107,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "mistral-api-key",
     keyPrefix: null,
     consoleUrl: "https://console.mistral.ai/api-keys",
+    modelsUrl: "https://api.mistral.ai/v1/models",
   },
   {
     id: "openrouter",
@@ -98,6 +115,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openrouter-api-key",
     keyPrefix: "sk-or-",
     consoleUrl: "https://openrouter.ai/keys",
+    modelsUrl: "https://openrouter.ai/api/v1/models",
   },
   {
     id: "together",
@@ -105,6 +123,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "together-api-key",
     keyPrefix: null,
     consoleUrl: "https://api.together.xyz/settings/api-keys",
+    modelsUrl: "https://api.together.xyz/v1/models",
   },
   {
     id: "fireworks",
@@ -112,6 +131,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "fireworks-api-key",
     keyPrefix: null,
     consoleUrl: "https://app.fireworks.ai/users/api-keys",
+    modelsUrl: "https://api.fireworks.ai/inference/v1/models",
   },
   {
     id: "perplexity",
@@ -119,6 +139,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "perplexity-api-key",
     keyPrefix: "pplx-",
     consoleUrl: "https://www.perplexity.ai/settings/api",
+    modelsUrl: null,
   },
   {
     id: "cohere",
@@ -126,6 +147,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "cohere-api-key",
     keyPrefix: null,
     consoleUrl: "https://dashboard.cohere.com/api-keys",
+    modelsUrl: null,
   },
   {
     id: "moonshot",
@@ -133,6 +155,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "moonshot-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.moonshot.cn/console/api-keys",
+    modelsUrl: "https://api.moonshot.cn/v1/models",
   },
   {
     id: "siliconflow",
@@ -140,6 +163,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "siliconflow-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://cloud.siliconflow.cn/account/ak",
+    modelsUrl: "https://api.siliconflow.cn/v1/models",
   },
   {
     id: "hyperbolic",
@@ -147,6 +171,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "hyperbolic-api-key",
     keyPrefix: null,
     consoleUrl: "https://app.hyperbolic.xyz/settings",
+    modelsUrl: "https://api.hyperbolic.xyz/v1/models",
   },
   {
     id: "deepinfra",
@@ -154,6 +179,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "deepinfra-api-key",
     keyPrefix: null,
     consoleUrl: "https://deepinfra.com/dash/api_keys",
+    modelsUrl: "https://api.deepinfra.com/v1/openai/models",
   },
   {
     id: "novita",
@@ -161,6 +187,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "novita-api-key",
     keyPrefix: null,
     consoleUrl: "https://novita.ai/api-key",
+    modelsUrl: "https://api.novita.ai/v3/openai/models",
   },
   {
     id: "ai21",
@@ -168,6 +195,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "ai21-api-key",
     keyPrefix: null,
     consoleUrl: "https://studio.ai21.com/account/api-key",
+    modelsUrl: null,
   },
   {
     id: "huggingface",
@@ -175,6 +203,55 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "huggingface-api-key",
     keyPrefix: "hf_",
     consoleUrl: "https://huggingface.co/settings/tokens",
+    modelsUrl: null,
+  },
+  {
+    id: "sambanova",
+    label: "SambaNova",
+    keyringAccount: "sambanova-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://cloud.sambanova.ai/",
+    modelsUrl: "https://api.sambanova.ai/v1/models",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    keyringAccount: "minimax-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://platform.minimaxi.com/",
+    modelsUrl: "https://api.minimax.io/v1/models",
+  },
+  {
+    id: "zhipu",
+    label: "Zhipu AI (GLM)",
+    keyringAccount: "zhipu-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://open.bigmodel.cn/usercenter/apikeys",
+    modelsUrl: "https://open.bigmodel.cn/api/paas/v4/models",
+  },
+  {
+    id: "volcengine",
+    label: "Volcengine (Doubao)",
+    keyringAccount: "volcengine-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/api-key",
+    modelsUrl: "https://ark.cn-beijing.volces.com/api/v3/models",
+  },
+  {
+    id: "yi",
+    label: "01.AI (Yi)",
+    keyringAccount: "yi-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://platform.01.ai/apikeys",
+    modelsUrl: "https://api.01.ai/v1/models",
+  },
+  {
+    id: "replicate",
+    label: "Replicate",
+    keyringAccount: "replicate-api-key",
+    keyPrefix: "r8_",
+    consoleUrl: "https://replicate.com/account/api-tokens",
+    modelsUrl: null,
   },
   {
     id: "ollama",
@@ -182,6 +259,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://ollama.com",
+    modelsUrl: "http://localhost:11434/v1/models",
   },
   {
     id: "openai-compatible",
@@ -189,6 +267,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openrouter-api-key",
     keyPrefix: "sk-or-",
     consoleUrl: "https://openrouter.ai/keys",
+    modelsUrl: "https://openrouter.ai/api/v1/models",
   },
   {
     id: "openai-compatible",
@@ -197,6 +276,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPrefix: null,
     consoleUrl: "https://platform.openai.com/docs/api-reference",
     keyOptional: true,
+    modelsUrl: null,
   },
   {
     id: "lmstudio",
@@ -204,6 +284,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
+    modelsUrl: "http://localhost:1234/v1/models",
   },
 ] as const;
 
@@ -694,6 +775,126 @@ export const MODELS = [
     tags: ["tools", "coding"],
   },
 
+  // ── SambaNova ────────────────────────────────────────────────────────────
+  {
+    id: "sambanova/deepseek-r1",
+    provider: "sambanova",
+    label: "DeepSeek R1",
+    hint: "SambaNova",
+    description: "Fast reasoning on SambaNova silicon.",
+    capabilities: { intelligence: 5, speed: 5, cost: 5 },
+    tags: ["reasoning", "coding"],
+  },
+  {
+    id: "sambanova/llama4-maverick",
+    provider: "sambanova",
+    label: "Llama 4 Maverick",
+    hint: "SambaNova",
+    description: "Meta's MoE on wafer-scale inference.",
+    capabilities: { intelligence: 4, speed: 5, cost: 5 },
+    tags: ["vision", "tools"],
+  },
+
+  // ── MiniMax ─────────────────────────────────────────────────────────────
+  {
+    id: "MiniMax-M2.7",
+    provider: "minimax",
+    label: "MiniMax M2.7",
+    hint: "Best",
+    description: "MiniMax flagship multimodal model.",
+    capabilities: { intelligence: 5, speed: 3, cost: 3 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "MiniMax-M2.5",
+    provider: "minimax",
+    label: "MiniMax M2.5",
+    hint: "Fast",
+    description: "Fast MiniMax for general tasks.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── Zhipu AI (GLM) ─────────────────────────────────────────────────────
+  {
+    id: "glm-5",
+    provider: "zhipu",
+    label: "GLM 5",
+    hint: "Best",
+    description: "Zhipu's latest flagship model.",
+    capabilities: { intelligence: 5, speed: 3, cost: 3 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "glm-4.7",
+    provider: "zhipu",
+    label: "GLM 4.7",
+    hint: "Coding",
+    description: "Zhipu's code-specialized model.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["tools", "coding"],
+  },
+
+  // ── Volcengine (Doubao) ─────────────────────────────────────────────────
+  {
+    id: "doubao-seed-1.8",
+    provider: "volcengine",
+    label: "Doubao Seed 1.8",
+    hint: "Best",
+    description: "ByteDance's flagship Doubao model.",
+    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "doubao-1.5-pro",
+    provider: "volcengine",
+    label: "Doubao 1.5 Pro",
+    hint: "Balanced",
+    description: "Balanced Doubao for everyday tasks.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── 01.AI (Yi) ─────────────────────────────────────────────────────────
+  {
+    id: "yi-large",
+    provider: "yi",
+    label: "Yi Large",
+    hint: "Best",
+    description: "01.AI's flagship reasoning model.",
+    capabilities: { intelligence: 4, speed: 3, cost: 3 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "yi-large-turbo",
+    provider: "yi",
+    label: "Yi Large Turbo",
+    hint: "Fast",
+    description: "Fast Yi for quick responses.",
+    capabilities: { intelligence: 3, speed: 5, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── Replicate ───────────────────────────────────────────────────────────
+  {
+    id: "replicate/snowflake-arctic-instruct",
+    provider: "replicate",
+    label: "Snowflake Arctic",
+    hint: "Replicate",
+    description: "Open MoE model via Replicate.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["tools"],
+  },
+  {
+    id: "replicate/meta-llama-3.1-405b",
+    provider: "replicate",
+    label: "Llama 3.1 405B",
+    hint: "Replicate",
+    description: "Largest open model on Replicate.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["tools"],
+  },
+
   // ── Ollama (local; model id is user-supplied at runtime) ─────────────────
   {
     id: "ollama-local",
@@ -981,6 +1182,18 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "jamba-1.5-mini": 256_000,
   "meta-llama/Llama-3.3-70B-Instruct": 128_000,
   "huggingface/qwen2.5-72b": 128_000,
+  "sambanova/deepseek-r1": 128_000,
+  "sambanova/llama4-maverick": 1_000_000,
+  "MiniMax-M2.7": 1_000_000,
+  "MiniMax-M2.5": 160_000,
+  "glm-5": 128_000,
+  "glm-4.7": 128_000,
+  "doubao-seed-1.8": 256_000,
+  "doubao-1.5-pro": 256_000,
+  "yi-large": 32_000,
+  "yi-large-turbo": 32_000,
+  "replicate/snowflake-arctic-instruct": 128_000,
+  "replicate/meta-llama-3.1-405b": 128_000,
   "ollama-local": 32_000,
   "gpt-oss-120b": 128_000,
   "llama3.3-70b": 128_000,
@@ -1101,6 +1314,12 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   novita: "qwen/qwen3-30b-a3b",
   ai21: "jamba-1.5-mini",
   huggingface: "huggingface/qwen2.5-72b",
+  sambanova: "sambanova/llama4-maverick",
+  minimax: "MiniMax-M2.5",
+  zhipu: "glm-4.7",
+  volcengine: "doubao-1.5-pro",
+  yi: "yi-large-turbo",
+  replicate: "replicate/snowflake-arctic-instruct",
   ollama: "qwen2.5-coder-7b-instruct",
   "openai-compatible": "",
 };
