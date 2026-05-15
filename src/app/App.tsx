@@ -429,6 +429,10 @@ export default function App() {
     };
     const onUp = (e: MouseEvent) => {
       if (isInsideAi(e.target)) return;
+      if (activeTab?.kind !== "editor") {
+        setAskPopup(null);
+        return;
+      }
       // Defer one tick so xterm/CodeMirror finalize the selection.
       setTimeout(() => {
         const text = captureActiveSelection();
@@ -446,7 +450,7 @@ export default function App() {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("mouseup", onUp);
     };
-  }, [captureActiveSelection]);
+  }, [activeTab?.kind, captureActiveSelection]);
 
   const onAskFromSelection = useCallback(() => {
     askFromSelection();
