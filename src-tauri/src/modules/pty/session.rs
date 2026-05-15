@@ -185,6 +185,14 @@ pub fn spawn(
             };
             // Wait for the reader to hit EOF before taking a final snapshot of
             // `pending`, so the last line of output never races the Exit event.
+            #[cfg(windows)]
+            {
+                let deadline = Instant::now() + Duration::from_millis(50);
+                while Instant::now() < deadline && !reader_thread.is_finished() {
+                    thread::sleep(Duration::from_millis(5));
+                }
+            }
+            #[cfg(not(windows))]
             if let Err(e) = reader_thread.join() {
                 log::error!("pty reader thread panicked: {e:?}");
             }
