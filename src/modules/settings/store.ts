@@ -1,13 +1,14 @@
-import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { LazyStore } from "@tauri-apps/plugin-store";
 import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
   LMSTUDIO_DEFAULT_BASE_URL,
+  OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { LazyStore } from "@tauri-apps/plugin-store";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -48,7 +49,17 @@ export type Preferences = {
   autocompleteProvider: AutocompleteProviderId;
   autocompleteModelId: string;
   lmstudioBaseURL: string;
+  lmstudioModelId: string;
+  openaiCompatibleBaseURL: string;
+  openaiCompatibleModelId: string;
+  favoriteModelIds: string[];
+  recentModelIds: string[];
   vimMode: boolean;
+  showHidden: boolean;
+  terminalWebglEnabled: boolean;
+  terminalFontSize: number;
+  terminalScrollback: number;
+  lastWslDistro: string | null;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
 };
 
@@ -63,8 +74,34 @@ const KEY_AUTOCOMPLETE_ENABLED = "autocompleteEnabled";
 const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
+const KEY_LMSTUDIO_MODEL_ID = "lmstudioModelId";
+const KEY_OPENAI_COMPAT_BASE_URL = "openaiCompatibleBaseURL";
+const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
+const KEY_FAVORITE_MODELS = "favoriteModelIds";
+const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
+const KEY_SHOW_HIDDEN = "showHidden";
+const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
+const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
+const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
+const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
+const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_SHORTCUTS = "shortcuts";
+
+export const TERMINAL_FONT_SIZE_DEFAULT = 14;
+export const TERMINAL_FONT_SIZE_MIN = 8;
+export const TERMINAL_FONT_SIZE_MAX = 32;
+
+export const TERMINAL_FONT_SIZES = [
+  10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
+] as const;
+
+export const TERMINAL_SCROLLBACK_DEFAULT = 2000;
+export const TERMINAL_SCROLLBACK_MIN = 200;
+export const TERMINAL_SCROLLBACK_MAX = 50_000;
+export const TERMINAL_SCROLLBACK_PRESETS = [
+  500, 1000, 2000, 5000, 10_000, 25_000,
+] as const;
 
 export const DEFAULT_PREFERENCES: Preferences = {
   theme: "system",
@@ -75,9 +112,19 @@ export const DEFAULT_PREFERENCES: Preferences = {
   restoreWindowState: true,
   autocompleteEnabled: false,
   autocompleteProvider: "cerebras",
-  autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras,
+  autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras ?? "",
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
+  lmstudioModelId: "",
+  openaiCompatibleBaseURL: OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
+  openaiCompatibleModelId: "",
+  favoriteModelIds: [],
+  recentModelIds: [],
   vimMode: false,
+  showHidden: false,
+  terminalWebglEnabled: true,
+  terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
+  terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
+  lastWslDistro: null,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
 };
 
@@ -125,7 +172,37 @@ export async function loadPreferences(): Promise<Preferences> {
       DEFAULT_PREFERENCES.autocompleteModelId,
     lmstudioBaseURL:
       get<string>(KEY_LMSTUDIO_BASE_URL) ?? DEFAULT_PREFERENCES.lmstudioBaseURL,
+    lmstudioModelId:
+      get<string>(KEY_LMSTUDIO_MODEL_ID) ?? DEFAULT_PREFERENCES.lmstudioModelId,
+    openaiCompatibleBaseURL:
+      get<string>(KEY_OPENAI_COMPAT_BASE_URL) ??
+      DEFAULT_PREFERENCES.openaiCompatibleBaseURL,
+    openaiCompatibleModelId:
+      get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ??
+      DEFAULT_PREFERENCES.openaiCompatibleModelId,
+    favoriteModelIds:
+      get<string[]>(KEY_FAVORITE_MODELS) ??
+      DEFAULT_PREFERENCES.favoriteModelIds,
+    recentModelIds:
+      get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds,
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    showHidden:
+      get<boolean>(KEY_SHOW_HIDDEN) ??
+      get<boolean>(LEGACY_KEY_SHOW_HIDDEN_DIRS) ??
+      DEFAULT_PREFERENCES.showHidden,
+    terminalWebglEnabled:
+      get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
+      DEFAULT_PREFERENCES.terminalWebglEnabled,
+    terminalFontSize:
+      get<number>(KEY_TERMINAL_FONT_SIZE) ??
+      DEFAULT_PREFERENCES.terminalFontSize,
+    terminalScrollback: clampScrollback(
+      get<number>(KEY_TERMINAL_SCROLLBACK) ??
+        DEFAULT_PREFERENCES.terminalScrollback,
+    ),
+    lastWslDistro:
+      get<string | null>(KEY_LAST_WSL_DISTRO) ??
+      DEFAULT_PREFERENCES.lastWslDistro,
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
@@ -161,7 +238,7 @@ export async function setAutocompleteEnabled(value: boolean): Promise<void> {
 }
 
 export async function setAutocompleteProvider(
-  value: AutocompleteProviderId
+  value: AutocompleteProviderId,
 ): Promise<void> {
   await writePref(KEY_AUTOCOMPLETE_PROVIDER, value);
 }
@@ -174,12 +251,66 @@ export async function setLmstudioBaseURL(value: string): Promise<void> {
   await writePref(KEY_LMSTUDIO_BASE_URL, value);
 }
 
+export async function setLmstudioModelId(value: string): Promise<void> {
+  await writePref(KEY_LMSTUDIO_MODEL_ID, value);
+}
+
+export async function setOpenaiCompatibleBaseURL(value: string): Promise<void> {
+  await writePref(KEY_OPENAI_COMPAT_BASE_URL, value);
+}
+
+export async function setOpenaiCompatibleModelId(value: string): Promise<void> {
+  await writePref(KEY_OPENAI_COMPAT_MODEL_ID, value);
+}
+
+export async function setFavoriteModelIds(value: string[]): Promise<void> {
+  await writePref(KEY_FAVORITE_MODELS, value);
+}
+
+export async function setRecentModelIds(value: string[]): Promise<void> {
+  await writePref(KEY_RECENT_MODELS, value);
+}
+
 export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
 
+export async function setShowHidden(value: boolean): Promise<void> {
+  await writePref(KEY_SHOW_HIDDEN, value);
+}
+
+export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
+}
+
+export async function setTerminalFontSize(value: number): Promise<void> {
+  const clamped = Number.isFinite(value)
+    ? Math.min(
+        TERMINAL_FONT_SIZE_MAX,
+        Math.max(TERMINAL_FONT_SIZE_MIN, Math.round(value)),
+      )
+    : TERMINAL_FONT_SIZE_DEFAULT;
+  await writePref(KEY_TERMINAL_FONT_SIZE, clamped);
+}
+
+function clampScrollback(value: number): number {
+  if (!Number.isFinite(value)) return TERMINAL_SCROLLBACK_DEFAULT;
+  return Math.min(
+    TERMINAL_SCROLLBACK_MAX,
+    Math.max(TERMINAL_SCROLLBACK_MIN, Math.round(value)),
+  );
+}
+
+export async function setTerminalScrollback(value: number): Promise<void> {
+  await writePref(KEY_TERMINAL_SCROLLBACK, clampScrollback(value));
+}
+
+export async function setLastWslDistro(value: string | null): Promise<void> {
+  await writePref(KEY_LAST_WSL_DISTRO, value);
+}
+
 export async function setShortcuts(
-  value: Record<ShortcutId, KeyBinding[]> | {}
+  value: Record<ShortcutId, KeyBinding[]> | {},
 ): Promise<void> {
   await store.set(KEY_SHORTCUTS, value);
   await store.save();
@@ -207,7 +338,17 @@ export async function onPreferencesChange(
     [KEY_AUTOCOMPLETE_PROVIDER]: "autocompleteProvider",
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
+    [KEY_LMSTUDIO_MODEL_ID]: "lmstudioModelId",
+    [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
+    [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
+    [KEY_FAVORITE_MODELS]: "favoriteModelIds",
+    [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_SHOW_HIDDEN]: "showHidden",
+    [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
+    [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
+    [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+    [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_SHORTCUTS]: "shortcuts",
   };
   // Same-process writes still fire onChange immediately; cross-window writes

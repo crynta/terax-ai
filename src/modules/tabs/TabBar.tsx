@@ -14,6 +14,7 @@ import {
   ComputerTerminal02Icon,
   GitCompareIcon,
   Globe02Icon,
+  IncognitoIcon,
   PencilEdit02Icon,
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
@@ -26,6 +27,7 @@ type Props = {
   activeId: number;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
   onClose: (id: number) => void;
@@ -39,6 +41,7 @@ export function TabBar({
   activeId,
   onSelect,
   onNew,
+  onNewPrivate,
   onNewPreview,
   onNewEditor,
   onClose,
@@ -158,7 +161,20 @@ export function TabBar({
                 strokeWidth={1.75}
               />
               <span className="flex-1">Terminal</span>
-              <span className="text-xs text-muted-foreground">{fmtShortcut(MOD_KEY, "T")}</span>
+              <span className="text-xs text-muted-foreground">
+                {fmtShortcut(MOD_KEY, "T")}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onNewPrivate()}>
+              <HugeiconsIcon
+                icon={IncognitoIcon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Privacy</span>
+              <span className="text-xs text-muted-foreground">
+                {fmtShortcut(MOD_KEY, "R")}
+              </span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewEditor()}>
               <HugeiconsIcon
@@ -167,12 +183,16 @@ export function TabBar({
                 strokeWidth={1.75}
               />
               <span className="flex-1">Editor</span>
-              <span className="text-xs text-muted-foreground">{fmtShortcut(MOD_KEY, "E")}</span>
+              <span className="text-xs text-muted-foreground">
+                {fmtShortcut(MOD_KEY, "E")}
+              </span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewPreview()}>
               <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
               <span className="flex-1">Preview</span>
-              <span className="text-xs text-muted-foreground">{fmtShortcut(MOD_KEY, "P")}</span>
+              <span className="text-xs text-muted-foreground">
+                {fmtShortcut(MOD_KEY, "P")}
+              </span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -203,6 +223,16 @@ function TabIcon({ tab }: { tab: Tab }) {
         size={14}
         strokeWidth={2}
         className="shrink-0 text-yellow-600 dark:text-yellow-400"
+      />
+    );
+  }
+  if (tab.kind === "terminal" && tab.private) {
+    return (
+      <HugeiconsIcon
+        icon={IncognitoIcon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0 text-amber-600 dark:text-amber-400"
       />
     );
   }

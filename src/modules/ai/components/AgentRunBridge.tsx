@@ -1,7 +1,6 @@
 import { useChat, type UIMessage } from "@ai-sdk/react";
 import type { ToolUIPart, UIMessagePart } from "ai";
 import { useEffect, useMemo, useRef } from "react";
-import type { AiDiffStatus } from "@/modules/tabs";
 import { native } from "../lib/native";
 import { checkReadable } from "../lib/security";
 import { resolvePath } from "../tools/tools";
@@ -25,7 +24,7 @@ import {
  *  - Persists messages of the active session on every change.
  */
 
-type DiffOpenInput = {
+export type DiffOpenInput = {
   path: string;
   originalContent: string;
   proposedContent: string;
@@ -33,16 +32,18 @@ type DiffOpenInput = {
   isNewFile: boolean;
 };
 
-type Props = {
+export type AgentRunBridgeProps = {
   openAiDiffTab: (input: DiffOpenInput) => number | null;
-  setAiDiffStatus: (approvalId: string, status: AiDiffStatus) => void;
+  closeAiDiffTab: (approvalId: string) => void;
 };
 
-export function AgentRunBridge(props: Props) {
+export function AgentRunBridge(props: AgentRunBridgeProps) {
   const sessionId = useChatStore((s) => s.activeSessionId);
   if (!sessionId) return null;
   return <Bridge sessionId={sessionId} {...props} />;
 }
+
+type BridgeProps = { sessionId: string } & AgentRunBridgeProps;
 
 type WriteFileInput = { path?: unknown; content?: unknown };
 
@@ -56,8 +57,8 @@ type AnyPart = UIMessagePart<Record<string, never>, Record<string, never>>;
 function Bridge({
   sessionId,
   openAiDiffTab,
-  setAiDiffStatus,
-}: { sessionId: string } & Props) {
+  closeAiDiffTab,
+}: BridgeProps) {
   const chat = useMemo(() => getOrCreateChat(sessionId), [sessionId]);
   const { status, messages, addToolApprovalResponse } = useChat<UIMessage>({
     chat,
@@ -169,15 +170,13 @@ function Bridge({
         | { kind: "literal"; content: string }
         | { kind: "edits"; edits: EditOp[] };
     };
-    type StatusUpdate = { approvalId: string; status: AiDiffStatus };
-
     if (fileMutationFingerprint === fileMutationFingerprintRef.current) {
       return;
     }
     fileMutationFingerprintRef.current = fileMutationFingerprint;
 
     const pending: Pending[] = [];
-    const statusUpdates: StatusUpdate[] = [];
+    const toClose = new Set<string>();
 
     for (const m of messages) {
       if (m.role !== "assistant") continue;
@@ -190,27 +189,20 @@ function Bridge({
           if (!openedRef.current.has(approvalId)) {
             pending.push({ approvalId, path, derive });
           }
-        } else if (state === "approval-responded") {
-          // Response may carry an `approved` bit; if not present, leave the
-          // tab in pending — the next state transition (output-* below) will
-          // settle it.
-          const approved = (part as { approval?: { approved?: boolean } })
-            .approval?.approved;
-          if (typeof approved === "boolean") {
-            statusUpdates.push({
-              approvalId,
-              status: approved ? "approved" : "rejected",
-            });
-          }
-        } else if (state === "output-available") {
-          statusUpdates.push({ approvalId, status: "approved" });
-        } else if (state === "output-error") {
-          statusUpdates.push({ approvalId, status: "rejected" });
+        } else if (
+          state === "approval-responded" ||
+          state === "output-available" ||
+          state === "output-error"
+        ) {
+          if (openedRef.current.has(approvalId)) toClose.add(approvalId);
         }
       }
     }
 
-    for (const u of statusUpdates) setAiDiffStatus(u.approvalId, u.status);
+    for (const id of toClose) {
+      openedRef.current.delete(id);
+      closeAiDiffTab(id);
+    }
 
     if (pending.length === 0) return;
 
@@ -254,7 +246,7 @@ function Bridge({
     return () => {
       cancelled = true;
     };
-  }, [messages, fileMutationFingerprint, openAiDiffTab, setAiDiffStatus]);
+  }, [messages, fileMutationFingerprint, openAiDiffTab, closeAiDiffTab]);
 
   return null;
 }

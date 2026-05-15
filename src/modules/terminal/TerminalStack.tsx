@@ -1,10 +1,9 @@
 import type { Tab } from "@/modules/tabs";
 import type { SearchAddon } from "@xterm/addon-search";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { PaneTreeView } from "./PaneTreeView";
 import type { TerminalPaneHandle } from "./TerminalPane";
 import { leafIds } from "./lib/panes";
-import { type TeraxOpenInput } from "./lib/useTerminalSession";
 
 type Props = {
   tabs: Tab[];
@@ -13,9 +12,7 @@ type Props = {
   registerHandle: (leafId: number, handle: TerminalPaneHandle | null) => void;
   onSearchReady: (leafId: number, addon: SearchAddon) => void;
   onCwd: (leafId: number, cwd: string) => void;
-  onDetectedLocalUrl: (leafId: number, url: string) => void;
   onExit: (leafId: number, code: number) => void;
-  onTeraxOpen?: (leafId: number, input: TeraxOpenInput) => void;
   onFocusLeaf: (tabId: number, leafId: number) => void;
 };
 
@@ -23,9 +20,7 @@ type Bundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
   onSearch: (addon: SearchAddon) => void;
   onCwd: (cwd: string) => void;
-  onDetectedUrl: (url: string) => void;
   onExit: (code: number) => void;
-  onTeraxOpen: (input: TeraxOpenInput) => void;
 };
 
 export function TerminalStack({
@@ -34,19 +29,18 @@ export function TerminalStack({
   registerHandle,
   onSearchReady,
   onCwd,
-  onDetectedLocalUrl,
   onExit,
-  onTeraxOpen,
   onFocusLeaf,
 }: Props) {
-  const terminals = tabs.filter((t) => t.kind === "terminal");
+  const terminals = useMemo(
+    () => tabs.filter((t) => t.kind === "terminal"),
+    [tabs],
+  );
 
   const registerRef = useRef(registerHandle);
   const searchReadyRef = useRef(onSearchReady);
   const cwdRef = useRef(onCwd);
-  const detectedUrlRef = useRef(onDetectedLocalUrl);
   const exitRef = useRef(onExit);
-  const teraxOpenRef = useRef(onTeraxOpen);
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -57,14 +51,8 @@ export function TerminalStack({
     cwdRef.current = onCwd;
   }, [onCwd]);
   useEffect(() => {
-    detectedUrlRef.current = onDetectedLocalUrl;
-  }, [onDetectedLocalUrl]);
-  useEffect(() => {
     exitRef.current = onExit;
   }, [onExit]);
-  useEffect(() => {
-    teraxOpenRef.current = onTeraxOpen;
-  }, [onTeraxOpen]);
 
   const bundles = useRef(new Map<number, Bundle>());
   const getBundle = (leafId: number): Bundle => {
@@ -74,9 +62,7 @@ export function TerminalStack({
         setRef: (h) => registerRef.current(leafId, h),
         onSearch: (addon) => searchReadyRef.current(leafId, addon),
         onCwd: (cwd) => cwdRef.current(leafId, cwd),
-        onDetectedUrl: (url) => detectedUrlRef.current(leafId, url),
         onExit: (code) => exitRef.current(leafId, code),
-        onTeraxOpen: (input) => teraxOpenRef.current?.(leafId, input),
       };
       bundles.current.set(leafId, b);
     }
@@ -96,7 +82,15 @@ export function TerminalStack({
       {terminals.map((t) => {
         const tabVisible = t.id === activeId;
         return (
-          <div key={t.id} className="absolute inset-0">
+          <div
+            key={t.id}
+            className="absolute inset-0"
+            style={{
+              visibility: tabVisible ? "visible" : "hidden",
+              pointerEvents: tabVisible ? "auto" : "none",
+            }}
+            aria-hidden={!tabVisible}
+          >
             <PaneTreeView
               node={t.paneTree}
               tabVisible={tabVisible}

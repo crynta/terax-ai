@@ -6,15 +6,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
 import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
+  TERMINAL_FONT_SIZES,
+  TERMINAL_SCROLLBACK_PRESETS,
   setAutostart,
   setEditorTheme,
   setRestoreWindowState,
+  setShowHidden,
+  setTerminalFontSize,
+  setTerminalScrollback,
+  setTerminalWebglEnabled,
   setVimMode,
   type EditorThemeId,
 } from "@/modules/settings/store";
@@ -47,6 +59,12 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const showHidden = usePreferencesStore((s) => s.showHidden);
+  const terminalWebglEnabled = usePreferencesStore(
+    (s) => s.terminalWebglEnabled,
+  );
+  const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
+  const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -76,6 +94,16 @@ export function GeneralSection() {
   };
 
   const onPickEditor = (id: EditorThemeId) => void setEditorTheme(id);
+
+  const onToggleTerminalWebgl = (next: boolean) => {
+    void setTerminalWebglEnabled(next).catch((e) =>
+      console.error("terminal WebGL preference update failed", e),
+    );
+  };
+
+  const onPickTerminalFontSize = (size: number) => void setTerminalFontSize(size);
+
+  const onPickScrollback = (lines: number) => void setTerminalScrollback(lines);
 
   return (
     <div className="flex flex-col gap-6">
@@ -146,6 +174,127 @@ export function GeneralSection() {
             checked={vimMode}
             onCheckedChange={(v) => void setVimMode(v)}
           />
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Explorer</Label>
+        <SettingRow
+          title="Show hidden files"
+          description="Include dot-prefixed files and folders (.env, .gitignore, .config) in the file explorer and search."
+        >
+          <Switch
+            checked={showHidden}
+            onCheckedChange={(v) => void setShowHidden(v)}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Terminal</Label>
+        <SettingRow
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              Use WebGL renderer
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="cursor-help text-[11px] text-muted-foreground/70 leading-none"
+                      aria-label="More info about WebGL renderer"
+                    >
+                      ⓘ
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[260px] text-[11px]">
+                    xterm's WebGL renderer caches glyphs in a GPU texture atlas. On some macOS setups (especially with Nerd Fonts), the atlas corrupts and terminal text becomes unreadable. Turn this off as a fallback — performance dips slightly, but text renders correctly via the DOM renderer.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </span>
+          }
+          description="Hardware-accelerated rendering. Turn off if text shows corruption or blank tiles."
+        >
+          <Switch
+            checked={terminalWebglEnabled}
+            onCheckedChange={onToggleTerminalWebgl}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Font size"
+          description="Terminal text size."
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px]"
+              >
+                <span>{terminalFontSize} px</span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={12}
+                  strokeWidth={2}
+                  className="opacity-70"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="min-w-[80px] rounded-none border border-border bg-popover p-0 shadow-none ring-0"
+            >
+              {TERMINAL_FONT_SIZES.map((size) => (
+                <DropdownMenuItem
+                  key={size}
+                  onSelect={() => onPickTerminalFontSize(size)}
+                  className={cn(
+                    "rounded-none px-3 py-1.5 text-[12px]",
+                    size === terminalFontSize && "bg-accent/50",
+                  )}
+                >
+                  {size} px
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SettingRow>
+        <SettingRow
+          title="Scrollback"
+          description="Lines of history kept per terminal. Higher uses more RAM (~3 KB / line)."
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px]"
+              >
+                <span>{terminalScrollback.toLocaleString()} lines</span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={12}
+                  strokeWidth={2}
+                  className="opacity-70"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="min-w-[140px] rounded-none border border-border bg-popover p-0 shadow-none ring-0"
+            >
+              {TERMINAL_SCROLLBACK_PRESETS.map((lines) => (
+                <DropdownMenuItem
+                  key={lines}
+                  onSelect={() => onPickScrollback(lines)}
+                  className={cn(
+                    "rounded-none px-3 py-1.5 text-[12px]",
+                    lines === terminalScrollback && "bg-accent/50",
+                  )}
+                >
+                  {lines.toLocaleString()} lines
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </SettingRow>
       </div>
 

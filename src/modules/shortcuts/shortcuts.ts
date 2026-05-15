@@ -7,6 +7,7 @@ import { IS_MAC, MOD_PROP } from "@/lib/platform";
 export type ShortcutId =
   | "commandPalette.open"
   | "tab.new"
+  | "tab.newPrivate"
   | "tab.newPreview"
   | "tab.newEditor"
   | "tab.close"
@@ -18,6 +19,7 @@ export type ShortcutId =
   | "pane.focusNext"
   | "pane.focusPrev"
   | "search.focus"
+  | "explorer.search"
   | "ai.toggle"
   | "ai.askSelection"
   | "shortcuts.open"
@@ -71,6 +73,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "New tab",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "t" }],
+  },
+  {
+    id: "tab.newPrivate",
+    label: "New private terminal",
+    group: "Tabs",
+    defaultBindings: [{ [MOD_PROP]: true, key: "r" }],
   },
   {
     id: "tab.newPreview",
@@ -133,6 +141,12 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
   },
   {
+    id: "explorer.search",
+    label: "Search files",
+    group: "Search",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "f" }],
+  },
+  {
     id: "search.focus",
     label: "Find in terminal",
     group: "Search",
@@ -170,7 +184,11 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
 /**
  * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
  */
-export function matchBinding(e: KeyboardEvent, binding: KeyBinding, id?: ShortcutId): boolean {
+export function matchBinding(
+  e: KeyboardEvent,
+  binding: KeyBinding,
+  id?: ShortcutId
+): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();
 

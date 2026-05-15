@@ -7,11 +7,12 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
+use std::thread;
 
 use portable_pty::PtySize;
-use tauri::ipc::Channel;
+use tauri::ipc::{Channel, Response};
 
-pub use session::PtyEvent;
+use crate::modules::workspace::WorkspaceEnv;
 use session::Session;
 
 pub struct PtyState {
@@ -36,12 +37,16 @@ pub fn pty_open(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
-    on_event: Channel<PtyEvent>,
+    workspace: Option<WorkspaceEnv>,
+    on_data: Channel<Response>,
+    on_exit: Channel<i32>,
 ) -> Result<u32, String> {
-    let (session, _) = session::spawn(cols, rows, cwd, on_event).map_err(|e| {
-        log::error!("pty_open failed: {e}");
-        e
-    })?;
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let (session, _) =
+        session::spawn(cols, rows, cwd, workspace, on_data, on_exit).map_err(|e| {
+            log::error!("pty_open failed: {e}");
+            e
+        })?;
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
     state.sessions.write().unwrap().insert(id, session);
     log::info!("pty opened id={id} cols={cols} rows={rows}");
@@ -119,6 +124,23 @@ pub fn pty_close(state: tauri::State<PtyState>, id: u32) -> Result<(), String> {
             log::debug!("pty_close: kill id={id} returned {e}");
         }
         log::info!("pty closed id={id}");
+        // Drop the Arc on a detached thread. On Windows `MasterPty`'s Drop
+        // calls `ClosePseudoConsole`, which can block until conhost finishes
+        // draining its output buffer. Doing it here would freeze the Tauri
+        // worker thread that handled this command — and on Windows that
+        // sometimes manifests as the closed pane refusing to disappear from
+        // the React tree because subsequent IPC stalls behind it.
+        thread::Builder::new()
+            .name(format!("terax-pty-drop-{id}"))
+            .spawn(move || {
+                let t0 = std::time::Instant::now();
+                drop(s);
+                log::info!(
+                    "pty session id={id} dropped in {}ms",
+                    t0.elapsed().as_millis()
+                );
+            })
+            .expect("spawn pty drop thread");
     } else {
         log::debug!("pty_close: unknown id={id}");
     }

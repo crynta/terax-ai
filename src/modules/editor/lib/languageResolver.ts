@@ -30,6 +30,7 @@ const loaders: Record<string, LanguageLoader> = {
     ),
 
   rs: () => import("@codemirror/lang-rust").then((m) => m.rust()),
+  go: () => import("@codemirror/lang-go").then((m) => m.go()),
   py: () => import("@codemirror/lang-python").then((m) => m.python()),
   json: () => import("@codemirror/lang-json").then((m) => m.json()),
 
@@ -41,6 +42,21 @@ const loaders: Record<string, LanguageLoader> = {
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
 
   php: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
+
+  // C / C++ family
+  c: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.c),
+  h: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.c),
+  cpp: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.cpp),
+  cc: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.cpp),
+  cxx: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.cpp),
+  hpp: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.cpp),
+  hxx: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.cpp),
+
+  // Java
+  java: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.java),
+
+  // C#
+  cs: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.csharp),
 
   // Legacy-modes: loaders return the raw StreamParser; wrapped below.
   sh: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),

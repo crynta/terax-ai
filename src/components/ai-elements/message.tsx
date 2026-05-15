@@ -11,7 +11,6 @@ import {
 import { cn } from "@/lib/utils";
 import { ArrowLeft01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { math } from "@streamdown/math";
 import type { UIMessage } from "ai";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
 import {
@@ -24,6 +23,7 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+import { ChatStreamingProvider } from "./chat-code";
 import { MarkdownCode } from "./markdown-code";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
@@ -317,25 +317,28 @@ export const MessageBranchPage = ({
   );
 };
 
-export type MessageResponseProps = ComponentProps<typeof Streamdown>;
+export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
+  streaming?: boolean;
+};
 
-const streamdownPlugins = { math };
 const streamdownComponents = { code: MarkdownCode };
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className,
-      )}
-      plugins={streamdownPlugins}
-      components={streamdownComponents}
-      {...props}
-    />
+  ({ className, streaming = false, ...props }: MessageResponseProps) => (
+    <ChatStreamingProvider value={streaming}>
+      <Streamdown
+        className={cn(
+          "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+          className,
+        )}
+        components={streamdownComponents}
+        {...props}
+      />
+    </ChatStreamingProvider>
   ),
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
+    prevProps.streaming === nextProps.streaming &&
     nextProps.isAnimating === prevProps.isAnimating,
 );
 

@@ -1,8 +1,5 @@
 import { invoke, Channel } from "@tauri-apps/api/core";
-
-export type PtyEvent =
-  | { type: "data"; data: string }
-  | { type: "exit"; code: number };
+import { currentWorkspaceEnv } from "@/modules/workspace";
 
 export type PtyHandlers = {
   onData: (bytes: Uint8Array) => void;
@@ -16,42 +13,54 @@ export type PtySession = {
   close: () => Promise<void>;
 };
 
-function decodeBase64(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const arr = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-  return arr;
-}
-
 export async function openPty(
   cols: number,
   rows: number,
   handlers: PtyHandlers,
   cwd?: string,
 ): Promise<PtySession> {
-  const channel = new Channel<PtyEvent>();
-  channel.onmessage = (event) => {
-    switch (event.type) {
-      case "data":
-        handlers.onData(decodeBase64(event.data));
-        break;
-      case "exit":
-        handlers.onExit?.(event.code);
-        break;
-    }
+  // Raw bytes — no base64/JSON round-trip; messages arrive as ArrayBuffer.
+  const onData = new Channel<ArrayBuffer>();
+  const onExit = new Channel<number>();
+
+  let released = false;
+  const noop = () => {};
+  const releaseHandlers = () => {
+    if (released) return;
+    released = true;
+    onData.onmessage = noop;
+    onExit.onmessage = noop;
+  };
+
+  onData.onmessage = (buf) => handlers.onData(new Uint8Array(buf));
+  onExit.onmessage = (code) => {
+    handlers.onExit?.(code);
+    releaseHandlers();
   };
 
   const id = await invoke<number>("pty_open", {
     cols,
     rows,
     cwd: cwd ?? null,
-    onEvent: channel,
+    workspace: currentWorkspaceEnv(),
+    onData,
+    onExit,
   });
+
+  let closed = false;
 
   return {
     id,
     write: (data) => invoke("pty_write", { id, data }),
     resize: (c, r) => invoke("pty_resize", { id, cols: c, rows: r }),
-    close: () => invoke("pty_close", { id }),
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      try {
+        await invoke("pty_close", { id });
+      } finally {
+        releaseHandlers();
+      }
+    },
   };
 }
