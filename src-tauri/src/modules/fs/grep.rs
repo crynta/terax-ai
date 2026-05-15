@@ -44,127 +44,151 @@ fn build_globset(patterns: &[String]) -> Result<Option<GlobSet>, String> {
 }
 
 #[tauri::command]
-pub fn fs_grep(
+pub async fn fs_grep(
     pattern: String,
     root: String,
     glob: Option<Vec<String>>,
     case_insensitive: Option<bool>,
     max_results: Option<usize>,
     workspace: Option<WorkspaceEnv>,
+    ssh_state: tauri::State<'_, crate::modules::ssh::SshState>,
 ) -> Result<GrepResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root_path = resolve_path(&root, &workspace);
-    if !root_path.is_dir() {
-        return Err(format!("not a directory: {root}"));
+    if let WorkspaceEnv::Ssh { profile_id } = &workspace {
+        let conn = ssh_state.get_or_err(profile_id)?;
+        let cap = max_results.unwrap_or(DEFAULT_MAX_RESULTS).clamp(1, HARD_MAX_RESULTS);
+        let lines = crate::modules::ssh::sftp::sftp_grep(&conn, &root, &pattern).await?;
+        let truncated = lines.len() >= cap;
+        let hits = lines
+            .into_iter()
+            .take(cap)
+            .filter_map(|l| {
+                let mut parts = l.splitn(3, ':');
+                let path = parts.next()?.to_string();
+                let line: u64 = parts.next()?.parse().ok()?;
+                let text = parts.next().unwrap_or("").to_string();
+                let rel = path.strip_prefix(&root).unwrap_or(&path).trim_start_matches('/').to_string();
+                Some(GrepHit { path, rel, line, text })
+            })
+            .collect();
+        return Ok(GrepResponse { hits, truncated, files_scanned: 0 });
     }
     let cap = max_results
         .unwrap_or(DEFAULT_MAX_RESULTS)
         .clamp(1, HARD_MAX_RESULTS);
+    let root_path = resolve_path(&root, &workspace);
+    if !root_path.is_dir() {
+        return Err(format!("not a directory: {root}"));
+    }
 
-    let matcher = RegexMatcherBuilder::new()
-        .case_insensitive(case_insensitive.unwrap_or(false))
-        .line_terminator(Some(b'\n'))
-        .build(&pattern)
-        .map_err(|e| format!("bad regex: {e}"))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let matcher = RegexMatcherBuilder::new()
+            .case_insensitive(case_insensitive.unwrap_or(false))
+            .line_terminator(Some(b'\n'))
+            .build(&pattern)
+            .map_err(|e| format!("bad regex: {e}"))?;
 
-    let globs = build_globset(glob.as_deref().unwrap_or(&[]))?;
+        let globs = build_globset(glob.as_deref().unwrap_or(&[]))?;
 
-    let walker = WalkBuilder::new(&root_path)
-        .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .ignore(true)
-        .parents(true)
-        .follow_links(false)
-        .build_parallel();
+        let walker = WalkBuilder::new(&root_path)
+            .hidden(true)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .ignore(true)
+            .parents(true)
+            .follow_links(false)
+            .build_parallel();
 
-    let hits: Arc<Mutex<Vec<GrepHit>>> = Arc::new(Mutex::new(Vec::new()));
-    let scanned = Arc::new(AtomicUsize::new(0));
-    let truncated = Arc::new(AtomicBool::new(false));
+        let hits: Arc<Mutex<Vec<GrepHit>>> = Arc::new(Mutex::new(Vec::new()));
+        let scanned = Arc::new(AtomicUsize::new(0));
+        let truncated = Arc::new(AtomicBool::new(false));
 
-    walker.run(|| {
-        let matcher = matcher.clone();
-        let globs = globs.clone();
-        let hits = hits.clone();
-        let scanned = scanned.clone();
-        let truncated = truncated.clone();
-        let root_path = root_path.clone();
-        let root_display = root.clone();
-        let workspace = workspace.clone();
+        walker.run(|| {
+            let matcher = matcher.clone();
+            let globs = globs.clone();
+            let hits = hits.clone();
+            let scanned = scanned.clone();
+            let truncated = truncated.clone();
+            let root_path = root_path.clone();
+            let root_display = root.clone();
+            let workspace = workspace.clone();
 
-        Box::new(move |dent_res| {
-            if truncated.load(Ordering::Relaxed) {
-                return WalkState::Quit;
-            }
-            let dent = match dent_res {
-                Ok(d) => d,
-                Err(_) => return WalkState::Continue,
-            };
-            if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
-                return WalkState::Continue;
-            }
-            let path = dent.path();
-            let rel = match path.strip_prefix(&root_path) {
-                Ok(r) => to_canon(r),
-                Err(_) => return WalkState::Continue,
-            };
-            if let Some(set) = globs.as_ref() {
-                if !set.is_match(&rel) {
+            Box::new(move |dent_res| {
+                if truncated.load(Ordering::Relaxed) {
+                    return WalkState::Quit;
+                }
+                let dent = match dent_res {
+                    Ok(d) => d,
+                    Err(_) => return WalkState::Continue,
+                };
+                if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
                     return WalkState::Continue;
                 }
-            }
-            if let Ok(meta) = std::fs::metadata(path) {
-                if meta.len() > FILE_SIZE_CAP {
-                    return WalkState::Continue;
-                }
-            }
-
-            scanned.fetch_add(1, Ordering::Relaxed);
-
-            let abs = display_path(path, &root_path, &root_display, &workspace);
-            let rel_clone = rel.clone();
-            let mut searcher = SearcherBuilder::new()
-                .binary_detection(BinaryDetection::quit(b'\x00'))
-                .line_number(true)
-                .build();
-
-            let _ = searcher.search_path(
-                &matcher,
-                path,
-                UTF8(|line_num, text| {
-                    let line_text = text.trim_end_matches('\n').to_string();
-                    let mut guard = hits.lock().unwrap();
-                    if guard.len() >= cap {
-                        truncated.store(true, Ordering::Relaxed);
-                        return Ok(false);
+                let path = dent.path();
+                let rel = match path.strip_prefix(&root_path) {
+                    Ok(r) => to_canon(r),
+                    Err(_) => return WalkState::Continue,
+                };
+                if let Some(set) = globs.as_ref() {
+                    if !set.is_match(&rel) {
+                        return WalkState::Continue;
                     }
-                    guard.push(GrepHit {
-                        path: abs.clone(),
-                        rel: rel_clone.clone(),
-                        line: line_num,
-                        text: line_text,
-                    });
-                    Ok(true)
-                }),
-            );
+                }
+                if let Ok(meta) = std::fs::metadata(path) {
+                    if meta.len() > FILE_SIZE_CAP {
+                        return WalkState::Continue;
+                    }
+                }
 
-            WalkState::Continue
+                scanned.fetch_add(1, Ordering::Relaxed);
+
+                let abs = display_path(path, &root_path, &root_display, &workspace);
+                let rel_clone = rel.clone();
+                let mut searcher = SearcherBuilder::new()
+                    .binary_detection(BinaryDetection::quit(b'\x00'))
+                    .line_number(true)
+                    .build();
+
+                let _ = searcher.search_path(
+                    &matcher,
+                    path,
+                    UTF8(|line_num, text| {
+                        let line_text = text.trim_end_matches('\n').to_string();
+                        let mut guard = hits.lock().unwrap();
+                        if guard.len() >= cap {
+                            truncated.store(true, Ordering::Relaxed);
+                            return Ok(false);
+                        }
+                        guard.push(GrepHit {
+                            path: abs.clone(),
+                            rel: rel_clone.clone(),
+                            line: line_num,
+                            text: line_text,
+                        });
+                        Ok(true)
+                    }),
+                );
+
+                WalkState::Continue
+            })
+        });
+
+        let final_hits = Arc::try_unwrap(hits)
+            .map(|m| m.into_inner().unwrap())
+            .unwrap_or_default();
+
+        Ok(GrepResponse {
+            hits: final_hits,
+            truncated: truncated.load(Ordering::Relaxed),
+            files_scanned: scanned.load(Ordering::Relaxed),
         })
-    });
-
-    let final_hits = Arc::try_unwrap(hits)
-        .map(|m| m.into_inner().unwrap())
-        .unwrap_or_default();
-
-    Ok(GrepResponse {
-        hits: final_hits,
-        truncated: truncated.load(Ordering::Relaxed),
-        files_scanned: scanned.load(Ordering::Relaxed),
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[derive(Serialize)]
@@ -180,62 +204,70 @@ pub struct GlobResponse {
 }
 
 #[tauri::command]
-pub fn fs_glob(
+pub async fn fs_glob(
     pattern: String,
     root: String,
     max_results: Option<usize>,
     workspace: Option<WorkspaceEnv>,
+    _ssh_state: tauri::State<'_, crate::modules::ssh::SshState>,
 ) -> Result<GlobResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root_path = resolve_path(&root, &workspace);
-    if !root_path.is_dir() {
-        return Err(format!("not a directory: {root}"));
+    if let WorkspaceEnv::Ssh { .. } = &workspace {
+        return Ok(GlobResponse { hits: Vec::new(), truncated: false });
     }
     let cap = max_results.unwrap_or(500).clamp(1, HARD_MAX_RESULTS);
-
-    let glob = Glob::new(&pattern).map_err(|e| format!("bad glob: {e}"))?;
-    let mut gb = GlobSetBuilder::new();
-    gb.add(glob);
-    let set = gb.build().map_err(|e| format!("globset build: {e}"))?;
-
-    let walker = WalkBuilder::new(&root_path)
-        .hidden(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .ignore(true)
-        .parents(true)
-        .follow_links(false)
-        .build();
-
-    let mut hits: Vec<GlobHit> = Vec::new();
-    let mut truncated = false;
-    for dent in walker.flatten() {
-        if hits.len() >= cap {
-            truncated = true;
-            break;
+    tauri::async_runtime::spawn_blocking(move || {
+        let root_path = resolve_path(&root, &workspace);
+        if !root_path.is_dir() {
+            return Err(format!("not a directory: {root}"));
         }
-        if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
-            continue;
-        }
-        let path = dent.path();
-        let rel = match path.strip_prefix(&root_path) {
-            Ok(r) => to_canon(r),
-            Err(_) => continue,
-        };
-        if !set.is_match(&rel) {
-            continue;
-        }
-        hits.push(GlobHit {
-            path: display_path(path, &root_path, &root, &workspace),
-            rel,
-        });
-    }
 
-    Ok(GlobResponse { hits, truncated })
+        let glob = Glob::new(&pattern).map_err(|e| format!("bad glob: {e}"))?;
+        let mut gb = GlobSetBuilder::new();
+        gb.add(glob);
+        let set = gb.build().map_err(|e| format!("globset build: {e}"))?;
+
+        let walker = WalkBuilder::new(&root_path)
+            .hidden(true)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .ignore(true)
+            .parents(true)
+            .follow_links(false)
+            .build();
+
+        let mut hits: Vec<GlobHit> = Vec::new();
+        let mut truncated = false;
+        for dent in walker.flatten() {
+            if hits.len() >= cap {
+                truncated = true;
+                break;
+            }
+            if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                continue;
+            }
+            let path = dent.path();
+            let rel = match path.strip_prefix(&root_path) {
+                Ok(r) => to_canon(r),
+                Err(_) => continue,
+            };
+            if !set.is_match(&rel) {
+                continue;
+            }
+            hits.push(GlobHit {
+                path: display_path(path, &root_path, &root, &workspace),
+                rel,
+            });
+        }
+
+        Ok(GlobResponse { hits, truncated })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn display_path(
