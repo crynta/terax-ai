@@ -19,6 +19,10 @@ export type ShortcutId =
   | "pane.focusPrev"
   | "search.focus"
   | "explorer.search"
+  | "explorer.focus"
+  | "view.zoomIn"
+  | "view.zoomOut"
+  | "view.zoomReset"
   | "ai.toggle"
   | "ai.askSelection"
   | "shortcuts.open"
@@ -162,6 +166,30 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle file explorer",
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, key: "b" }],
+  },
+  {
+    id: "explorer.focus",
+    label: "Focus file explorer",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "e" }],
+  },
+  {
+    id: "view.zoomIn",
+    label: "Zoom in",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, key: "=" }],
+  },
+  {
+    id: "view.zoomOut",
+    label: "Zoom out",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, key: "-" }],
+  },
+  {
+    id: "view.zoomReset",
+    label: "Reset zoom",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, key: "0" }],
   },
 ];
 

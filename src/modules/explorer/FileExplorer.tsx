@@ -14,7 +14,14 @@ import {
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { FileTreeNode } from "./FileTreeNode";
 import { InlineInput } from "./InlineInput";
@@ -23,6 +30,10 @@ import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
+
+export type FileExplorerHandle = {
+  focus: () => void;
+};
 
 type Props = {
   rootPath: string | null;
@@ -38,22 +49,33 @@ function basename(path: string): string {
   return parts.length ? parts[parts.length - 1] : path;
 }
 
-export function FileExplorer({
-  rootPath,
-  onOpenFile,
-  onPathRenamed,
-  onPathDeleted,
-  onRevealInTerminal,
-  onAttachToAgent,
-}: Props) {
-  const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isSearchActive, setIsSearchActive] = useState(false);
-  const listRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<ExplorerSearchHandle>(null);
+export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
+  (
+    {
+      rootPath,
+      onOpenFile,
+      onPathRenamed,
+      onPathDeleted,
+      onRevealInTerminal,
+      onAttachToAgent,
+    },
+    ref,
+  ) => {
+    const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
+    const [selectedPath, setSelectedPath] = useState<string | null>(null);
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [isSearchActive, setIsSearchActive] = useState(false);
+    const listRef = useRef<HTMLDivElement>(null);
+    const searchRef = useRef<ExplorerSearchHandle>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
-  type FlatItem = { path: string; isDir: boolean };
+    useImperativeHandle(ref, () => ({
+      focus: () => {
+        containerRef.current?.focus();
+      },
+    }));
+
+    type FlatItem = { path: string; isDir: boolean };
   const flat = useMemo<FlatItem[]>(() => {
     if (!rootPath) return [];
     const out: FlatItem[] = [];
@@ -180,6 +202,7 @@ export function FileExplorer({
 
   return (
     <div
+      ref={containerRef}
       className="flex h-full flex-col outline-none"
       tabIndex={0}
       onKeyDown={handleKeyDown}
@@ -362,4 +385,4 @@ export function FileExplorer({
       ) : null}
     </div>
   );
-}
+});
