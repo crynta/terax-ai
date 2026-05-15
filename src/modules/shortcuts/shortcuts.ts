@@ -48,6 +48,21 @@ export type Shortcut = {
   defaultBindings: KeyBinding[];
 };
 
+function normalizeKey(key: string): string {
+  return key === "ISO_Left_Tab" ? "Tab" : key;
+}
+
+function eventKeyMatches(e: KeyboardEvent, bindingKey: string): boolean {
+  const eventKey = normalizeKey(e.key).toLowerCase();
+  const expectedKey = normalizeKey(bindingKey).toLowerCase();
+  if (expectedKey === "tab" && e.code === "Tab") return true;
+  return eventKey === expectedKey;
+}
+
+function eventShiftKey(e: KeyboardEvent): boolean {
+  return e.shiftKey || e.key === "ISO_Left_Tab";
+}
+
 export const SHORTCUTS: Shortcut[] = [
   {
     id: "settings.open",
@@ -182,19 +197,16 @@ export function matchBinding(
   binding: KeyBinding,
   id?: ShortcutId
 ): boolean {
-  const eventKey = e.key.toLowerCase();
-  const bindingKey = binding.key.toLowerCase();
-
   // Special case for Jump to Tab 1-9
   if (id === "tab.selectByIndex") {
     if (!/^[1-9]$/.test(e.key)) return false;
-  } else if (eventKey !== bindingKey) {
+  } else if (!eventKeyMatches(e, binding.key)) {
     return false;
   }
 
   return (
     !!e.ctrlKey === !!binding.ctrl &&
-    !!e.shiftKey === !!binding.shift &&
+    eventShiftKey(e) === !!binding.shift &&
     !!e.altKey === !!binding.alt &&
     !!e.metaKey === !!binding.meta
   );
