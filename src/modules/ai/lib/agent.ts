@@ -12,6 +12,7 @@ import {
   getModelContextLimit,
   LMSTUDIO_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
+  OLLAMA_DEFAULT_BASE_URL,
   providerNeedsKey,
   selectSystemPrompt,
   type ModelId,
@@ -58,6 +59,7 @@ export type BuildModelOptions = {
   modelIdOverride?: string;
   lmstudioBaseURL?: string;
   openaiCompatibleBaseURL?: string;
+  ollamaBaseURL?: string;
 };
 
 const modelCache = new Map<string, LanguageModel>();
@@ -76,7 +78,8 @@ export async function buildLanguageModel(
   const key = keys[provider] ?? "";
   const lmstudioURL = options.lmstudioBaseURL ?? LMSTUDIO_DEFAULT_BASE_URL;
   const compatURL = options.openaiCompatibleBaseURL ?? "";
-  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL}`;
+  const ollamaURL = options.ollamaBaseURL ?? OLLAMA_DEFAULT_BASE_URL;
+  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL} ${ollamaURL}`;
   const hit = modelCache.get(cacheKey);
   if (hit) return hit;
 
@@ -238,7 +241,8 @@ export async function buildLanguageModel(
       );
       built = createOpenAICompatible({
         name: "ollama",
-        baseURL: "http://localhost:11434/v1",
+        baseURL: ollamaURL,
+        ...(key ? { apiKey: key } : {}),
       })(resolvedModelId);
       break;
     }
@@ -390,6 +394,7 @@ function buildModel(
   lmstudioModelId?: string,
   openaiCompatibleBaseURL?: string,
   openaiCompatibleModelId?: string,
+  ollamaBaseURL?: string,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
   let resolvedId: string = m.id;
@@ -411,6 +416,7 @@ function buildModel(
   return buildLanguageModel(m.provider, keys, resolvedId, {
     lmstudioBaseURL,
     openaiCompatibleBaseURL,
+    ollamaBaseURL,
   });
 }
 
@@ -488,6 +494,7 @@ export type RunAgentOptions = {
   lmstudioModelId?: string;
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
+  ollamaBaseURL?: string;
   planMode?: boolean;
   projectMemory?: string | null;
   uiMessages: UIMessage[];
@@ -503,6 +510,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.lmstudioModelId,
     opts.openaiCompatibleBaseURL,
     opts.openaiCompatibleModelId,
+    opts.ollamaBaseURL,
   );
   const provider = getModel(modelId).provider;
 

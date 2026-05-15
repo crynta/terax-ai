@@ -256,9 +256,10 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "ollama",
     label: "Ollama",
-    keyringAccount: "",
+    keyringAccount: "ollama-api-key",
     keyPrefix: null,
     consoleUrl: "https://ollama.com",
+    keyOptional: true,
     modelsUrl: "http://localhost:11434/v1/models",
   },
   {
