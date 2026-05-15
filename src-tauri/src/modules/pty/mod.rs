@@ -4,7 +4,6 @@ mod session;
 pub(crate) mod shell_init;
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
@@ -32,8 +31,9 @@ impl Default for PtyState {
 }
 
 #[tauri::command]
-pub fn pty_open(
-    state: tauri::State<PtyState>,
+pub async fn pty_open(
+    state: tauri::State<'_, PtyState>,
+    ssh_state: tauri::State<'_, crate::modules::ssh::SshState>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
@@ -42,13 +42,29 @@ pub fn pty_open(
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
-    let (session, _) =
-        session::spawn(cols, rows, cwd, workspace, on_data, on_exit).map_err(|e| {
-            log::error!("pty_open failed: {e}");
-            e
-        })?;
+
+    let handle = match &workspace {
+        WorkspaceEnv::Ssh { profile_id } => {
+            let conn = ssh_state.get_or_err(profile_id)?;
+            crate::modules::ssh::pty::open_ssh_pty_channel(conn, cols, rows, on_data, on_exit)
+                .await?
+        }
+        _ => {
+            let (session, _) = tauri::async_runtime::spawn_blocking(move || {
+                session::spawn(cols, rows, cwd, workspace, on_data, on_exit)
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| {
+                log::error!("pty_open failed: {e}");
+                e
+            })?;
+            PtyHandle::Local(session)
+        }
+    };
+
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
-    state.sessions.write().unwrap().insert(id, PtyHandle::Local(session));
+    state.sessions.write().unwrap().insert(id, handle);
     log::info!("pty opened id={id} cols={cols} rows={rows}");
     Ok(id)
 }
