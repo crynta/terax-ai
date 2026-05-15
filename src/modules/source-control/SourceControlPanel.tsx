@@ -73,6 +73,12 @@ function entryPathLabel(entry: SourceControlEntry): string {
   return dirname(entry.path);
 }
 
+function upstreamBadgeLabel(upstream: string | null | undefined): string {
+  if (!upstream) return "No upstream";
+  const [remote] = upstream.split("/");
+  return remote || upstream;
+}
+
 function statusTone(statusCode: string): string {
   switch (statusCode) {
     case "A":
@@ -166,7 +172,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       : scm.commitMessage.trim().length === 0
         ? "Message required"
         : `Ready: ${stagedCount} ${stagedCount === 1 ? "file" : "files"}`;
-  const pushStatusLabel = scm.status?.upstream ?? "No upstream";
+  const pushStatusLabel = upstreamBadgeLabel(scm.status?.upstream);
   const footerFeedback = scm.error
     ? ({ tone: "error", message: scm.error } as const)
     : scm.actionMessage
@@ -211,10 +217,48 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         )}
       >
         <div className="min-w-0 flex-1">
-          <div className="text-[8.5px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-            Source Control
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[8.5px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+              Source Control
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <IconActionButton
+                label="Refresh source control"
+                disabled={isRefreshing || !!scm.actionBusy}
+                onClick={handleRefresh}
+              >
+                {isRefreshing ? (
+                  <Spinner className="size-3.5" />
+                ) : (
+                  <HugeiconsIcon
+                    icon={Refresh01Icon}
+                    size={14}
+                    strokeWidth={1.9}
+                    className={cn(refreshAnimating && "animate-spin")}
+                  />
+                )}
+              </IconActionButton>
+              {scm.compact ? (
+                <IconActionButton label="Close source control" onClick={onClose}>
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={14}
+                    strokeWidth={1.9}
+                  />
+                </IconActionButton>
+              ) : (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="rounded-lg text-[11px]"
+                  onClick={onClose}
+                >
+                  Close
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="inline-flex h-[18px] max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-background/70 px-1.5 py-0 text-[11.5px] font-semibold leading-none text-foreground">
+          <div className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11.5px] font-semibold leading-none text-foreground">
             <HugeiconsIcon
               icon={GitBranchIcon}
               size={11}
@@ -228,39 +272,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               {headerMeta}
             </div>
           ) : null}
-        </div>
-
-        <div className="flex items-center gap-1">
-          <IconActionButton
-            label="Refresh source control"
-            disabled={isRefreshing || !!scm.actionBusy}
-            onClick={handleRefresh}
-          >
-            {isRefreshing ? (
-              <Spinner className="size-3.5" />
-            ) : (
-              <HugeiconsIcon
-                icon={Refresh01Icon}
-                size={14}
-                strokeWidth={1.9}
-                className={cn(refreshAnimating && "animate-spin")}
-              />
-            )}
-          </IconActionButton>
-          {scm.compact ? (
-            <IconActionButton label="Close source control" onClick={onClose}>
-              <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={1.9} />
-            </IconActionButton>
-          ) : (
-            <Button
-              size="xs"
-              variant="ghost"
-              className="rounded-lg text-[11px]"
-              onClick={onClose}
-            >
-              Close
-            </Button>
-          )}
         </div>
       </div>
 
