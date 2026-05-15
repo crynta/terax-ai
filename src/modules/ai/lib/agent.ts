@@ -20,7 +20,7 @@ import {
 import type { ProviderKeys } from "./keyring";
 import { proxyFetch } from "./proxyFetch";
 import { buildTools, type ToolContext } from "../tools/tools";
-import { compactModelMessages } from "./compact";
+import { compactModelMessagesDetailed } from "./compact";
 
 const TOOL_LABELS: Record<string, (input: Record<string, unknown>) => string> = {
   read_file: (i) => `Reading ${shortPath(i.path)}`,
@@ -255,6 +255,11 @@ export type AgentUsage = {
   cachedInputTokens: number;
 };
 
+export type AgentUsageDelta = AgentUsage & {
+  lastInputTokens: number;
+  lastCachedTokens: number;
+};
+
 const EMPTY_USAGE: AgentUsage = {
   inputTokens: 0,
   outputTokens: 0,
@@ -268,14 +273,15 @@ export type RunAgentOptions = {
   agentPersona?: { name: string; instructions: string } | null;
   toolContext: ToolContext;
   onStep?: (step: string | null) => void;
-  onUsage?: (delta: AgentUsage) => void;
+  onUsage?: (delta: AgentUsageDelta) => void;
+  onCompact?: (info: { droppedCount: number }) => void;
+  onFinishMeta?: (info: { hitStepCap: boolean; finishReason: string }) => void;
   lmstudioBaseURL?: string;
   lmstudioModelId?: string;
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
   planMode?: boolean;
   projectMemory?: string | null;
-  envBlock?: string | null;
   uiMessages: UIMessage[];
   abortSignal?: AbortSignal;
 };
@@ -300,17 +306,18 @@ export async function runAgentStream(opts: RunAgentOptions) {
   );
 
   const history = await convertToModelMessages(opts.uiMessages);
-  const compactedHistory = compactModelMessages(
+  const compact = compactModelMessagesDetailed(
     history,
     getModelContextLimit(getModel(modelId).id),
   );
+  const compactedHistory = compact.messages;
+  if (compact.compacted) {
+    opts.onCompact?.({ droppedCount: compact.droppedCount });
+  }
 
   const messages: ModelMessage[] = [
     { role: "system", content: stableSystem },
   ];
-  if (opts.envBlock?.trim()) {
-    messages.push({ role: "system", content: opts.envBlock });
-  }
   if (opts.planMode) {
     messages.push({ role: "system", content: PLAN_MODE_PROMPT });
   }
@@ -318,6 +325,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
 
   const finalMessages = applyCacheBreakpoints(messages, provider);
 
+  let stepsSeen = 0;
   return streamText({
     model,
     messages: finalMessages,
@@ -325,6 +333,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
     stopWhen: stepCountIs(MAX_AGENT_STEPS),
     abortSignal: opts.abortSignal,
     onStepFinish: (step) => {
+      stepsSeen++;
       if (opts.onStep) {
         const last = step.toolCalls?.[step.toolCalls.length - 1];
         if (last) {
@@ -340,15 +349,25 @@ export async function runAgentStream(opts: RunAgentOptions) {
       }
       if (opts.onUsage && step.usage) {
         const u = step.usage;
+        const stepInput = u.inputTokens ?? 0;
+        const stepCached = u.inputTokenDetails?.cacheReadTokens ?? 0;
         opts.onUsage({
-          inputTokens: u.inputTokens ?? 0,
+          inputTokens: stepInput,
           outputTokens: u.outputTokens ?? 0,
-          cachedInputTokens: u.inputTokenDetails?.cacheReadTokens ?? 0,
+          cachedInputTokens: stepCached,
+          lastInputTokens: stepInput,
+          lastCachedTokens: stepCached,
         });
       }
     },
-    onFinish: () => {
+    onFinish: (result) => {
       opts.onStep?.(null);
+      const finishReason =
+        (result as { finishReason?: string } | undefined)?.finishReason ?? "";
+      opts.onFinishMeta?.({
+        hitStepCap: stepsSeen >= MAX_AGENT_STEPS,
+        finishReason,
+      });
     },
   });
 }

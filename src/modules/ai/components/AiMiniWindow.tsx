@@ -90,9 +90,11 @@ export function AiMiniWindow() {
       transition={{ type: "spring", stiffness: 320, damping: 32 }}
       data-ai-mini-window
       className={cn(
-        "no-scrollbar-deep fixed right-4 bottom-24 z-40 flex h-[42rem] w-[34rem] flex-col overflow-hidden",
-        "rounded-2xl border border-border/40 bg-card/90 shadow-2xl ring-1 ring-black/5 backdrop-blur-2xl dark:ring-white/5",
-        "text-[12px]",
+        "no-scrollbar-deep fixed right-4 bottom-24 z-40 flex flex-col overflow-hidden",
+        "h-[min(42rem,calc(100vh-7rem))] w-[min(34rem,calc(100vw-2rem))]",
+        "rounded-2xl border border-border/60 bg-card text-[12px]",
+        "shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_24px_48px_-12px_rgba(0,0,0,0.45),0_8px_16px_-8px_rgba(0,0,0,0.3)]",
+        "ring-1 ring-black/5 dark:ring-white/5",
       )}
     >
       <div
@@ -284,9 +286,11 @@ function formatTokens(n: number): string {
 function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const modelId = useChatStore((s) => s.selectedModelId);
   const tokens = useChatStore((s) => s.agentMeta.tokens);
+  const lastInput = useChatStore((s) => s.agentMeta.lastInputTokens);
+  const lastCached = useChatStore((s) => s.agentMeta.lastCachedTokens);
   const estimated = useMemo(() => estimateTokens(messages), [messages]);
+  const used = lastInput > 0 ? lastInput : estimated;
   const reported = tokens.inputTokens + tokens.outputTokens;
-  const used = reported > 0 ? tokens.inputTokens : estimated;
   const max = getModelContextLimit(modelId);
   const modelLabel = useMemo(() => {
     try {
@@ -312,15 +316,29 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
             <span className="font-mono text-foreground">{modelLabel}</span>
           </div>
           <div className="mt-1 flex items-center justify-between text-muted-foreground">
-            <span>{reported > 0 ? "Input" : "Estimated input"}</span>
+            <span>{lastInput > 0 ? "Last request" : "Estimated context"}</span>
             <span className="font-mono text-foreground">
               {formatTokens(used)}
             </span>
           </div>
+          {lastCached > 0 && (
+            <div className="flex items-center justify-between text-muted-foreground">
+              <span>Of which cached</span>
+              <span className="font-mono text-foreground">
+                {formatTokens(lastCached)}
+              </span>
+            </div>
+          )}
           {reported > 0 && (
             <>
+              <div className="mt-1.5 flex items-center justify-between text-muted-foreground">
+                <span>Session input</span>
+                <span className="font-mono text-foreground">
+                  {formatTokens(tokens.inputTokens)}
+                </span>
+              </div>
               <div className="flex items-center justify-between text-muted-foreground">
-                <span>Output</span>
+                <span>Session output</span>
                 <span className="font-mono text-foreground">
                   {formatTokens(tokens.outputTokens)}
                 </span>
@@ -350,8 +368,8 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
         </ContextContentBody>
         <ContextContentFooter>
           <span className="text-[10px] italic text-muted-foreground">
-            {reported > 0
-              ? "Reported by provider; cost is an estimate."
+            {lastInput > 0
+              ? "Last request reflects current context size; session totals are cumulative."
               : "Token count is approximate (chars / 4)."}
           </span>
         </ContextContentFooter>

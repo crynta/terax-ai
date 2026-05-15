@@ -1,6 +1,6 @@
 [package]
 name = "terax"
-version = "0.6.3"
+version = "0.6.5"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
 edition = "2021"
@@ -35,7 +35,10 @@ tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = [
+	"rustls-tls",
+	"stream",
+] }
 bytes = "1"
 futures-util = "0.3"
 

@@ -1,5 +1,3 @@
-import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { LazyStore } from "@tauri-apps/plugin-store";
 import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
@@ -9,6 +7,8 @@ import {
   type ModelId,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { LazyStore } from "@tauri-apps/plugin-store";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -58,6 +58,8 @@ export type Preferences = {
   showHidden: boolean;
   terminalWebglEnabled: boolean;
   terminalFontSize: number;
+  terminalScrollback: number;
+  lastWslDistro: string | null;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
 };
 
@@ -82,6 +84,8 @@ const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
+const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
+const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_SHORTCUTS = "shortcuts";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
@@ -90,6 +94,13 @@ export const TERMINAL_FONT_SIZE_MAX = 32;
 
 export const TERMINAL_FONT_SIZES = [
   10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
+] as const;
+
+export const TERMINAL_SCROLLBACK_DEFAULT = 2000;
+export const TERMINAL_SCROLLBACK_MIN = 200;
+export const TERMINAL_SCROLLBACK_MAX = 50_000;
+export const TERMINAL_SCROLLBACK_PRESETS = [
+  500, 1000, 2000, 5000, 10_000, 25_000,
 ] as const;
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -112,6 +123,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   showHidden: false,
   terminalWebglEnabled: true,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
+  terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
+  lastWslDistro: null,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
 };
 
@@ -183,6 +196,13 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalFontSize:
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
       DEFAULT_PREFERENCES.terminalFontSize,
+    terminalScrollback: clampScrollback(
+      get<number>(KEY_TERMINAL_SCROLLBACK) ??
+        DEFAULT_PREFERENCES.terminalScrollback,
+    ),
+    lastWslDistro:
+      get<string | null>(KEY_LAST_WSL_DISTRO) ??
+      DEFAULT_PREFERENCES.lastWslDistro,
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
@@ -218,7 +238,7 @@ export async function setAutocompleteEnabled(value: boolean): Promise<void> {
 }
 
 export async function setAutocompleteProvider(
-  value: AutocompleteProviderId
+  value: AutocompleteProviderId,
 ): Promise<void> {
   await writePref(KEY_AUTOCOMPLETE_PROVIDER, value);
 }
@@ -273,8 +293,24 @@ export async function setTerminalFontSize(value: number): Promise<void> {
   await writePref(KEY_TERMINAL_FONT_SIZE, clamped);
 }
 
+function clampScrollback(value: number): number {
+  if (!Number.isFinite(value)) return TERMINAL_SCROLLBACK_DEFAULT;
+  return Math.min(
+    TERMINAL_SCROLLBACK_MAX,
+    Math.max(TERMINAL_SCROLLBACK_MIN, Math.round(value)),
+  );
+}
+
+export async function setTerminalScrollback(value: number): Promise<void> {
+  await writePref(KEY_TERMINAL_SCROLLBACK, clampScrollback(value));
+}
+
+export async function setLastWslDistro(value: string | null): Promise<void> {
+  await writePref(KEY_LAST_WSL_DISTRO, value);
+}
+
 export async function setShortcuts(
-  value: Record<ShortcutId, KeyBinding[]> | {}
+  value: Record<ShortcutId, KeyBinding[]> | {},
 ): Promise<void> {
   await store.set(KEY_SHORTCUTS, value);
   await store.save();
@@ -311,6 +347,8 @@ export async function onPreferencesChange(
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
+    [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+    [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_SHORTCUTS]: "shortcuts",
   };
   // Same-process writes still fire onChange immediately; cross-window writes

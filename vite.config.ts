@@ -22,7 +22,7 @@ export default defineConfig(async ({ mode }) => ({
   },
   build: {
     target:
-      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "es2020",
+      process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome120" : "es2022",
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       input: {
@@ -54,14 +54,6 @@ export default defineConfig(async ({ mode }) => ({
             return "codemirror";
           if (id.includes("/streamdown/") || id.includes("@streamdown/"))
             return "streamdown";
-          // Only the shiki core/engine in one chunk. Grammars and themes
-          // stay split (one chunk per file) — they load lazily on first use.
-          if (
-            id.includes("/shiki/dist/core") ||
-            id.includes("/shiki/dist/engine") ||
-            id.includes("/shiki/dist/index")
-          )
-            return "shiki";
           if (id.includes("/motion/") || id.includes("framer-motion"))
             return "motion";
           if (

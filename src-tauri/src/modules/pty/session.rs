@@ -8,10 +8,9 @@ use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
 use tauri::ipc::{Channel, Response};
 
 use super::shell_init;
+use crate::modules::workspace::WorkspaceEnv;
 
-const POLL_INTERVAL: Duration = Duration::from_millis(4);
-const BURST_MAX_AGE: Duration = Duration::from_millis(16);
-const BURST_THRESHOLD: usize = 64 * 1024;
+const FLUSH_INTERVAL: Duration = Duration::from_millis(4);
 const READ_BUF: usize = 16 * 1024;
 // Cap on buffered-but-not-yet-flushed bytes. On overflow we discard the
 // entire pending buffer and emit an SGR-reset + notice in its place.
@@ -59,6 +58,7 @@ pub fn spawn(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    workspace: WorkspaceEnv,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
@@ -73,7 +73,7 @@ pub fn spawn(
     };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = shell_init::build_command(cwd)?;
+    let cmd = shell_init::build_command(cwd, workspace)?;
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -151,36 +151,21 @@ pub fn spawn(
     let done_f = done.clone();
     thread::Builder::new()
         .name("terax-pty-flusher".into())
-        .spawn(move || {
-            let mut idle = true;
-            let mut batch_started = Instant::now();
-            loop {
-                thread::sleep(POLL_INTERVAL);
-                let chunk = {
-                    let mut g = pending_f.lock().unwrap();
-                    if g.is_empty() {
-                        idle = true;
-                        if done_f.load(Ordering::Acquire) {
-                            break;
-                        }
-                        continue;
+        .spawn(move || loop {
+            thread::sleep(FLUSH_INTERVAL);
+            let chunk = {
+                let mut g = pending_f.lock().unwrap();
+                if g.is_empty() {
+                    if done_f.load(Ordering::Acquire) {
+                        break;
                     }
-                    if idle {
-                        // First chunk after idle: drain now for snappy
-                        // prompt/keystroke echo latency.
-                        idle = false;
-                    } else if g.len() < BURST_THRESHOLD && batch_started.elapsed() < BURST_MAX_AGE {
-                        // Still in a burst — keep accumulating.
-                        continue;
-                    }
-                    batch_started = Instant::now();
-                    std::mem::take(&mut *g)
-                };
-                // Raw bytes — arrives in JS as ArrayBuffer, no base64/JSON.
-                if let Err(e) = on_data_flush.send(Response::new(chunk)) {
-                    log::debug!("pty flusher exiting, channel closed: {e}");
-                    break;
+                    continue;
                 }
+                std::mem::take(&mut *g)
+            };
+            if let Err(e) = on_data_flush.send(Response::new(chunk)) {
+                log::debug!("pty flusher exiting, channel closed: {e}");
+                break;
             }
         })
         .expect("spawn pty flusher thread");

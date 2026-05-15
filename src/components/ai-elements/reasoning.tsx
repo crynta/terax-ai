@@ -20,8 +20,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { Streamdown } from "streamdown";
-
 import { Shimmer } from "./shimmer";
 
 interface ReasoningContextValue {
@@ -213,7 +211,7 @@ export const ReasoningContent = memo(
       )}
       {...props}
     >
-      <Streamdown>{children}</Streamdown>
+      <div className="whitespace-pre-wrap wrap-break-word">{children}</div>
     </CollapsibleContent>
   ),
 );

@@ -18,13 +18,13 @@ import { cn } from "@/lib/utils";
 import {
   AgentRunBridge,
   AiInputBar,
+  AiInputBarConnect,
   AiMiniWindow,
   getAllKeys,
   hasAnyKey,
   SelectionAskAi,
   useChatStore,
 } from "@/modules/ai";
-import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { redactSensitive } from "@/modules/ai/lib/redact";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
@@ -62,6 +62,12 @@ import {
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import {
+  getWslHome,
+  LOCAL_WORKSPACE,
+  useWorkspaceEnvStore,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
@@ -80,7 +86,7 @@ export default function App() {
     pinTab,
     newPreviewTab,
     openAiDiffTab,
-    setAiDiffStatus,
+    closeAiDiffTab,
     closeTab,
     updateTab,
     selectByIndex,
@@ -90,6 +96,7 @@ export default function App() {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
+    resetWorkspace,
   } = useTabs();
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
@@ -122,12 +129,55 @@ export default function App() {
 
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
+  const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
+  const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   useEffect(() => {
     // Forward-slash form so explorerRoot stays equal across home → OSC 7.
     homeDir()
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
+
+  const switchWorkspace = useCallback(
+    async (env: WorkspaceEnv) => {
+      if (
+        env.kind === workspaceEnv.kind &&
+        (env.kind === "local" ||
+          (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
+      ) {
+        return;
+      }
+      const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
+      if (dirty) {
+        window.alert("Save or close unsaved editor tabs before switching workspace.");
+        return;
+      }
+
+      let nextHome: string | null = null;
+      try {
+        if (env.kind === "wsl") {
+          nextHome = await getWslHome(env.distro);
+        } else {
+          nextHome = (await homeDir()).replace(/\\/g, "/");
+        }
+      } catch (e) {
+        window.alert(String(e));
+        return;
+      }
+
+      for (const id of liveLeavesRef.current) disposeSession(id);
+      searchAddons.current.clear();
+      terminalRefs.current.clear();
+      editorRefs.current.clear();
+      previewRefs.current.clear();
+      setActiveSearchAddon(null);
+      setActiveEditorHandle(null);
+      setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
+      setHome(nextHome);
+      resetWorkspace(nextHome ?? undefined);
+    },
+    [workspaceEnv, setWorkspaceEnv, resetWorkspace],
+  );
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
@@ -832,6 +882,7 @@ export default function App() {
             filePath={activeFilePath}
             home={home}
             onCd={sendCd}
+            onWorkspaceChange={switchWorkspace}
             onOpenMini={openMini}
             hasComposer={hasComposer}
             privateActive={
@@ -842,7 +893,7 @@ export default function App() {
           {hasComposer ? (
             <AgentRunBridge
               openAiDiffTab={openAiDiffTab}
-              setAiDiffStatus={setAiDiffStatus}
+              closeAiDiffTab={closeAiDiffTab}
             />
           ) : null}
 
