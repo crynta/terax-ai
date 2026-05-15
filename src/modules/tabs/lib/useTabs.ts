@@ -10,9 +10,10 @@ import {
   type PaneNode,
   type SplitDir,
 } from "@/modules/terminal/lib/panes";
+import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 
-// Browsers cap WebGL contexts at ~16; one xterm renderer per leaf.
-export const MAX_PANES_PER_TAB = 8;
+// Matches the renderer slot pool size — over this we'd evict an active leaf.
+export const MAX_PANES_PER_TAB = 4;
 
 export type TerminalTab = {
   id: number;
@@ -321,15 +322,21 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   }, []);
 
   const closeTab = useCallback((id: number) => {
+    let toDispose: number[] = [];
     setTabs((curr) => {
       if (curr.length <= 1) return curr;
       const idx = curr.findIndex((t) => t.id === id);
+      const target = curr[idx];
+      if (target && target.kind === "terminal") {
+        toDispose = leafIds(target.paneTree);
+      }
       const next = curr.filter((t) => t.id !== id);
       setActiveId((active) =>
         id === active ? next[Math.max(0, idx - 1)].id : active,
       );
       return next;
     });
+    for (const lid of toDispose) disposeSession(lid);
   }, []);
 
   const updateTab = useCallback((id: number, patch: TabPatch) => {
@@ -451,6 +458,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   );
 
   const closePaneByLeaf = useCallback((leafId: number): void => {
+    let didRemove = false;
     setTabs((curr) => {
       const tab = curr.find(
         (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
@@ -464,6 +472,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         setActiveId((active) =>
           active === tab.id ? next[Math.max(0, idx - 1)].id : active,
         );
+        didRemove = true;
         return next;
       }
       const remaining = leafIds(newTree);
@@ -472,16 +481,19 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         const sib = siblingLeafOf(tab.paneTree, leafId);
         newActive = sib && remaining.includes(sib) ? sib : remaining[0];
       }
+      didRemove = true;
       return curr.map((x) =>
         x.id === tab.id
           ? { ...x, paneTree: newTree, activeLeafId: newActive }
           : x,
       );
     });
+    if (didRemove) disposeSession(leafId);
   }, []);
 
   const closeActivePane = useCallback((tabId: number): boolean => {
     let closedTab = false;
+    let removedLeaf: number | null = null;
     setTabs((curr) => {
       const t = curr.find((x) => x.id === tabId);
       if (!t || t.kind !== "terminal") return curr;
@@ -495,35 +507,45 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           active === tabId ? next[Math.max(0, idx - 1)].id : active,
         );
         closedTab = true;
+        removedLeaf = target;
         return next;
       }
       const remaining = leafIds(newTree);
       const sib = siblingLeafOf(t.paneTree, target);
       const newActive =
         sib && remaining.includes(sib) ? sib : remaining[0];
+      removedLeaf = target;
       return curr.map((x) =>
         x.id === tabId
           ? { ...x, paneTree: newTree, activeLeafId: newActive }
           : x,
       );
     });
+    if (removedLeaf !== null) disposeSession(removedLeaf);
     return closedTab;
   }, []);
 
   const resetWorkspace = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
     const leafId = nextIdRef.current++;
-    setTabs([
-      {
-        id: tabId,
-        kind: "terminal",
-        title: "shell",
-        cwd,
-        paneTree: { kind: "leaf", id: leafId, cwd },
-        activeLeafId: leafId,
-      },
-    ]);
+    let toDispose: number[] = [];
+    setTabs((curr) => {
+      toDispose = curr.flatMap((t) =>
+        t.kind === "terminal" ? leafIds(t.paneTree) : [],
+      );
+      return [
+        {
+          id: tabId,
+          kind: "terminal",
+          title: "shell",
+          cwd,
+          paneTree: { kind: "leaf", id: leafId, cwd },
+          activeLeafId: leafId,
+        },
+      ];
+    });
     setActiveId(tabId);
+    for (const lid of toDispose) disposeSession(lid);
   }, []);
 
   return {

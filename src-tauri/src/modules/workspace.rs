@@ -97,48 +97,66 @@ fn run_wsl(args: &[&str]) -> Result<String, String> {
     Ok(decode_command_output(&out.stdout))
 }
 
+#[cfg(windows)]
+fn list_distros_blocking() -> Result<Vec<WslDistro>, String> {
+    let out = run_wsl(&["--list", "--verbose"])?;
+    let mut distros = Vec::new();
+    for raw in out.lines().skip(1) {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let default = line.starts_with('*');
+        let line = line.trim_start_matches('*').trim();
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let state_idx = parts.len() - 2;
+        let name = parts[..state_idx].join(" ");
+        let state = parts[state_idx];
+        distros.push(WslDistro {
+            name,
+            default,
+            running: state.eq_ignore_ascii_case("Running"),
+        });
+    }
+    Ok(distros)
+}
+
 #[tauri::command]
-pub fn wsl_list_distros() -> Result<Vec<WslDistro>, String> {
+pub async fn wsl_list_distros() -> Result<Vec<WslDistro>, String> {
     #[cfg(not(windows))]
     {
         Ok(Vec::new())
     }
     #[cfg(windows)]
     {
-        let out = run_wsl(&["--list", "--verbose"])?;
-        let mut distros = Vec::new();
-        for raw in out.lines().skip(1) {
-            let line = raw.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let default = line.starts_with('*');
-            let line = line.trim_start_matches('*').trim();
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 3 {
-                continue;
-            }
-            let state_idx = parts.len() - 2;
-            let name = parts[..state_idx].join(" ");
-            let state = parts[state_idx];
-            distros.push(WslDistro {
-                name,
-                default,
-                running: state.eq_ignore_ascii_case("Running"),
-            });
-        }
-        Ok(distros)
+        tauri::async_runtime::spawn_blocking(list_distros_blocking)
+            .await
+            .map_err(|e| e.to_string())?
     }
 }
 
 #[tauri::command]
-pub fn wsl_default_distro() -> Result<Option<String>, String> {
-    let distros = wsl_list_distros()?;
-    Ok(distros
-        .iter()
-        .find(|d| d.default)
-        .map(|d| d.name.clone())
-        .or_else(|| distros.first().map(|d| d.name.clone())))
+pub async fn wsl_default_distro() -> Result<Option<String>, String> {
+    #[cfg(not(windows))]
+    {
+        Ok(None)
+    }
+    #[cfg(windows)]
+    {
+        tauri::async_runtime::spawn_blocking(|| {
+            let distros = list_distros_blocking()?;
+            Ok(distros
+                .iter()
+                .find(|d| d.default)
+                .map(|d| d.name.clone())
+                .or_else(|| distros.first().map(|d| d.name.clone())))
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
 }
 
 #[tauri::command]

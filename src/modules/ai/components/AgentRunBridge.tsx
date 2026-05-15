@@ -24,7 +24,7 @@ import {
  *  - Persists messages of the active session on every change.
  */
 
-type DiffOpenInput = {
+export type DiffOpenInput = {
   path: string;
   originalContent: string;
   proposedContent: string;
@@ -32,18 +32,18 @@ type DiffOpenInput = {
   isNewFile: boolean;
 };
 
-type Props = {
+export type AgentRunBridgeProps = {
   openAiDiffTab: (input: DiffOpenInput) => number | null;
   closeAiDiffTab: (approvalId: string) => void;
 };
 
-export function AgentRunBridge(props: Props) {
+export function AgentRunBridge(props: AgentRunBridgeProps) {
   const sessionId = useChatStore((s) => s.activeSessionId);
   if (!sessionId) return null;
   return <Bridge sessionId={sessionId} {...props} />;
 }
 
-type BridgeProps = { sessionId: string } & Props;
+type BridgeProps = { sessionId: string } & AgentRunBridgeProps;
 
 type WriteFileInput = { path?: unknown; content?: unknown };
 
