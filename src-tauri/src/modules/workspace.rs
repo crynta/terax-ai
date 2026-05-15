@@ -10,6 +10,9 @@ pub enum WorkspaceEnv {
     Wsl {
         distro: String,
     },
+    Ssh {
+        profile_id: String,
+    },
 }
 
 impl WorkspaceEnv {
@@ -19,6 +22,10 @@ impl WorkspaceEnv {
 
     pub fn is_wsl(&self) -> bool {
         matches!(self, Self::Wsl { .. })
+    }
+
+    pub fn is_ssh(&self) -> bool {
+        matches!(self, Self::Ssh { .. })
     }
 }
 
@@ -34,12 +41,16 @@ pub fn resolve_path(path: &str, workspace: &WorkspaceEnv) -> PathBuf {
     match workspace {
         WorkspaceEnv::Local => PathBuf::from(path),
         WorkspaceEnv::Wsl { distro } => wsl_path_to_unc(distro, path),
+        WorkspaceEnv::Ssh { .. } => panic!("resolve_path called with SSH workspace — branch earlier"),
     }
 }
 
 #[cfg(not(windows))]
-pub fn resolve_path(path: &str, _workspace: &WorkspaceEnv) -> PathBuf {
-    PathBuf::from(path)
+pub fn resolve_path(path: &str, workspace: &WorkspaceEnv) -> PathBuf {
+    match workspace {
+        WorkspaceEnv::Local | WorkspaceEnv::Wsl { .. } => PathBuf::from(path),
+        WorkspaceEnv::Ssh { .. } => panic!("resolve_path called with SSH workspace — branch earlier"),
+    }
 }
 
 #[cfg(windows)]

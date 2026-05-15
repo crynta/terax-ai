@@ -4,7 +4,8 @@ import { setLastWslDistro } from "@/modules/settings/store";
 
 export type WorkspaceEnv =
   | { kind: "local" }
-  | { kind: "wsl"; distro: string };
+  | { kind: "wsl"; distro: string }
+  | { kind: "ssh"; profileId: string };
 
 export type WslDistro = {
   name: string;
