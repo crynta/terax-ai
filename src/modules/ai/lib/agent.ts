@@ -308,6 +308,72 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "sambanova": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "sambanova",
+        baseURL: "https://api.sambanova.ai/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "minimax": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "minimax",
+        baseURL: "https://api.minimax.io/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "zhipu": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "zhipu",
+        baseURL: "https://open.bigmodel.cn/api/paas/v4",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "volcengine": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "volcengine",
+        baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "yi": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "yi",
+        baseURL: "https://api.01.ai/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "replicate": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "replicate",
+        baseURL: "https://api.replicate.com/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);

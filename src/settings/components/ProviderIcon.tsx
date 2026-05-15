@@ -21,6 +21,11 @@ import {
   NeuralNetworkIcon,
   CampfireIcon,
   Package01Icon,
+  SquareIcon,
+  StarIcon,
+  DashboardSpeed01Icon,
+  AiBookIcon,
+  BrainIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -45,6 +50,12 @@ const ICON_BY_PROVIDER = {
   novita: CampfireIcon,
   ai21: GlobeIcon,
   huggingface: Package01Icon,
+  sambanova: BrainIcon,
+  minimax: SquareIcon,
+  zhipu: StarIcon,
+  volcengine: DashboardSpeed01Icon,
+  yi: AiBookIcon,
+  replicate: FlashIcon,
   ollama: ServerStack01Icon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
