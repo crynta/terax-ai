@@ -232,6 +232,8 @@ export default function App() {
   }, [hydrateSessions]);
 
   const activeTab = tabs.find((t) => t.id === activeId);
+  const activeTabKindRef = useRef<string | null>(activeTab?.kind ?? null);
+  activeTabKindRef.current = activeTab?.kind ?? null;
   const isTerminalTab = activeTab?.kind === "terminal";
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
@@ -429,7 +431,7 @@ export default function App() {
     };
     const onUp = (e: MouseEvent) => {
       if (isInsideAi(e.target)) return;
-      if (activeTab?.kind !== "editor") {
+      if (activeTabKindRef.current !== "editor") {
         setAskPopup(null);
         return;
       }
@@ -450,7 +452,7 @@ export default function App() {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("mouseup", onUp);
     };
-  }, [activeTab?.kind, captureActiveSelection]);
+  }, [captureActiveSelection]);
 
   const onAskFromSelection = useCallback(() => {
     askFromSelection();

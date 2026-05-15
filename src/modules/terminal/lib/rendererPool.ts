@@ -8,7 +8,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITerminalAddon } from "@xterm/xterm";
 
 export const POOL_MAX_SIZE = 4;
 const FIT_DEBOUNCE_MS = 8;
@@ -106,7 +106,7 @@ function createSlot(): Slot {
   host.setAttribute("data-terax-slot", String(slots.length));
   getRecycler().appendChild(host);
   term.open(host);
-  attachTerminalPasteHandler(term);
+  term.loadAddon(new TerminalPasteAddon());
 
   const slot: Slot = {
     id: slots.length,
@@ -570,15 +570,28 @@ function isShiftEnter(e: KeyboardEvent): boolean {
   );
 }
 
-function attachTerminalPasteHandler(term: Terminal): void {
-  const element = term.element;
-  if (!element) return;
-  element.addEventListener("paste", (event) => {
+class TerminalPasteAddon implements ITerminalAddon {
+  private term: Terminal | null = null;
+  private element: HTMLElement | null = null;
+
+  private readonly onPaste = (event: ClipboardEvent) => {
     const text = event.clipboardData?.getData("text/plain") ?? "";
     if (!text) return;
     event.preventDefault();
-    term.paste(text);
-  });
+    this.term?.paste(text);
+  };
+
+  activate(term: Terminal): void {
+    this.term = term;
+    this.element = term.element ?? null;
+    this.element?.addEventListener("paste", this.onPaste);
+  }
+
+  dispose(): void {
+    this.element?.removeEventListener("paste", this.onPaste);
+    this.element = null;
+    this.term = null;
+  }
 }
 
 function handleClipboardShortcut(term: Terminal, event: KeyboardEvent): boolean {
