@@ -1,0 +1,62 @@
+name: Update Nix sources
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${TAG#v}"
+          gh release download "$TAG" \
+            --pattern "Terax_${VERSION}_amd64.deb" \
+            --pattern "Terax_x64.app.tar.gz" \
+            --pattern "Terax_aarch64.app.tar.gz"
+
+      - name: Compute SRI hashes
+        id: hashes
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${TAG#v}"
+          hash_sri() {
+            openssl dgst -sha256 -binary "$1" | base64 | tr -d '\n'
+          }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "linux=sha256-$(hash_sri "Terax_${VERSION}_amd64.deb")" >> "$GITHUB_OUTPUT"
+          echo "x64-darwin=sha256-$(hash_sri "Terax_x64.app.tar.gz")" >> "$GITHUB_OUTPUT"
+          echo "aarch64-darwin=sha256-$(hash_sri "Terax_aarch64.app.tar.gz")" >> "$GITHUB_OUTPUT"
+
+      - name: Update nix/sources.json
+        run: |
+          cat > nix/sources.json <<- EOF
+          {
+            "version": "${{ steps.hashes.outputs.version }}",
+            "hashes": {
+              "x86_64-linux": "${{ steps.hashes.outputs.linux }}",
+              "x86_64-darwin": "${{ steps.hashes.outputs.x64-darwin }}",
+              "aarch64-darwin": "${{ steps.hashes.outputs.aarch64-darwin }}"
+            }
+          }
+          EOF
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "update nix sources to ${{ steps.hashes.outputs.version }}"
+          title: "nix: update sources to ${{ steps.hashes.outputs.version }}"
+          body: "Automated update of \`nix/sources.json\` for release ${{ github.event.release.tag_name }}."
+          branch: update-nix-sources/${{ steps.hashes.outputs.version }}
+          delete-branch: true
