@@ -14,7 +14,15 @@ import {
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { FileTreeNode } from "./FileTreeNode";
 import { InlineInput } from "./InlineInput";
@@ -33,25 +41,45 @@ type Props = {
   onAttachToAgent?: (path: string) => void;
 };
 
+export type FileExplorerHandle = {
+  focusSearch: () => void;
+};
+
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : path;
 }
 
-export function FileExplorer({
-  rootPath,
-  onOpenFile,
-  onPathRenamed,
-  onPathDeleted,
-  onRevealInTerminal,
-  onAttachToAgent,
-}: Props) {
+export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileExplorer(
+  {
+    rootPath,
+    onOpenFile,
+    onPathRenamed,
+    onPathDeleted,
+    onRevealInTerminal,
+    onAttachToAgent,
+  }: Props,
+  ref,
+) {
   const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSearchActive, setIsSearchActive] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<ExplorerSearchHandle>(null);
+
+  const focusSearch = useCallback(() => {
+    setIsSearchOpen(true);
+    searchRef.current?.focus();
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusSearch,
+    }),
+    [focusSearch],
+  );
 
   type FlatItem = { path: string; isDir: boolean };
   const flat = useMemo<FlatItem[]>(() => {
@@ -83,8 +111,7 @@ export function FileExplorer({
         setIsSearchOpen(false);
         return;
       }
-      setIsSearchOpen(true);
-      searchRef.current?.focus();
+      focusSearch();
     },
   });
 
@@ -360,4 +387,4 @@ export function FileExplorer({
       ) : null}
     </div>
   );
-}
+});

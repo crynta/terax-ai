@@ -30,12 +30,16 @@ import { redactSensitive } from "@/modules/ai/lib/redact";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
 import {
+  CommandPalette,
+  createCommandPaletteActions,
+} from "@/modules/command-palette";
+import {
   AiDiffStack,
   EditorStack,
   NewEditorDialog,
   type EditorPaneHandle,
 } from "@/modules/editor";
-import { FileExplorer } from "@/modules/explorer";
+import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
   Header,
   type SearchInlineHandle,
@@ -117,6 +121,7 @@ export default function App() {
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
+  const explorerRef = useRef<FileExplorerHandle | null>(null);
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
@@ -180,6 +185,7 @@ export default function App() {
   );
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
   const openMini = useChatStore((s) => s.openMini);
@@ -333,16 +339,43 @@ export default function App() {
     [tabs, disposeTab],
   );
 
-  const confirmClose = useCallback(() => {
-    if (pendingCloseTab !== null) {
-      disposeTab(pendingCloseTab);
-      setPendingCloseTab(null);
-    }
-  }, [pendingCloseTab, disposeTab]);
-
   const cancelClose = useCallback(() => {
     setPendingCloseTab(null);
   }, []);
+
+  const confirmClose = useCallback(() => {
+    if (pendingCloseTab === null) return;
+    const id = pendingCloseTab;
+    setPendingCloseTab(null);
+    disposeTab(id);
+  }, [disposeTab, pendingCloseTab]);
+
+  const handleCloseTabOrPane = useCallback(() => {
+    if (activeTerminalTab) {
+      closeActivePane(activeTerminalTab.id);
+      return;
+    }
+    handleClose(activeId);
+  }, [activeId, activeTerminalTab, closeActivePane, handleClose]);
+
+  const splitActivePaneInActiveTab = useCallback(
+    (dir: "row" | "col") => {
+      if (!activeTerminalTab) return;
+      if (leafIds(activeTerminalTab.paneTree).length >= MAX_PANES_PER_TAB) {
+        return;
+      }
+      splitActivePane(activeTerminalTab.id, dir);
+    },
+    [activeTerminalTab, splitActivePane],
+  );
+
+  const focusPaneInActiveTab = useCallback(
+    (delta: 1 | -1) => {
+      if (!activeTerminalTab) return;
+      focusNextPaneInTab(activeTerminalTab.id, delta);
+    },
+    [activeTerminalTab, focusNextPaneInTab],
+  );
 
   const cycleTab = useCallback(
     (delta: 1 | -1) => {
@@ -561,55 +594,64 @@ export default function App() {
     [newPreviewTab],
   );
 
-  const splitActivePaneInActiveTab = useCallback(
-    (dir: "row" | "col") => {
-      const t = tabsRef.current.find((x) => x.id === activeId);
-      if (!t || t.kind !== "terminal") return;
-      splitActivePane(activeId, dir);
-    },
-    [activeId, splitActivePane],
-  );
+  const openNewEditorDialog = useCallback(() => {
+    setNewEditorOpen(true);
+  }, []);
 
-  const handleCloseTabOrPane = useCallback(() => {
-    const t = tabsRef.current.find((x) => x.id === activeId);
-    if (t?.kind === "terminal" && leafIds(t.paneTree).length > 1) {
-      closeActivePane(activeId);
-      return;
+  const openShortcutsDialog = useCallback(() => {
+    setShortcutsOpen(true);
+  }, []);
+
+  const focusSearch = useCallback(() => {
+    searchInlineRef.current?.focus();
+  }, []);
+
+  const focusExplorerSearch = useCallback(() => {
+    const sidebar = sidebarRef.current;
+    if (sidebar && sidebar.getSize().asPercentage <= 0) {
+      sidebar.expand();
     }
-    handleClose(activeId);
-  }, [activeId, closeActivePane, handleClose]);
+    window.setTimeout(() => explorerRef.current?.focusSearch(), 0);
+  }, []);
+
+  const openSettings = useCallback(() => {
+    void openSettingsWindow();
+  }, []);
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
+      "commandPalette.open": () => setCommandPaletteOpen(true),
       "tab.new": openNewTab,
       "tab.newPrivate": openNewPrivateTab,
       "tab.newPreview": () => openPreviewTab(""),
-      "tab.newEditor": () => setNewEditorOpen(true),
+      "tab.newEditor": openNewEditorDialog,
       "tab.close": handleCloseTabOrPane,
+      "pane.splitRight": () => splitActivePaneInActiveTab("row"),
+      "pane.splitDown": () => splitActivePaneInActiveTab("col"),
+      "pane.focusNext": () => focusPaneInActiveTab(1),
+      "pane.focusPrev": () => focusPaneInActiveTab(-1),
       "tab.next": () => cycleTab(1),
       "tab.prev": () => cycleTab(-1),
       "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
-      "pane.splitRight": () => splitActivePaneInActiveTab("row"),
-      "pane.splitDown": () => splitActivePaneInActiveTab("col"),
-      "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
-      "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
-      "search.focus": () => searchInlineRef.current?.focus(),
+      "search.focus": focusSearch,
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
-      "settings.open": () => void openSettingsWindow(),
+      "settings.open": openSettings,
       "sidebar.toggle": toggleSidebar,
     }),
     [
-      activeId,
       cycleTab,
+      focusPaneInActiveTab,
       handleCloseTabOrPane,
       openNewTab,
       openNewPrivateTab,
+      openNewEditorDialog,
       openPreviewTab,
       selectByIndex,
       splitActivePaneInActiveTab,
-      focusNextPaneInTab,
+      focusSearch,
+      openSettings,
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
@@ -697,6 +739,57 @@ export default function App() {
       };
     return null;
   }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
+
+  const commandPaletteActions = useMemo(
+    () =>
+      createCommandPaletteActions({
+        tabs,
+        activeId,
+        searchTarget,
+        explorerRoot,
+        home,
+        openNewTab,
+        openNewPrivate: openNewPrivateTab,
+        openNewEditor: openNewEditorDialog,
+        openNewPreview: () => openPreviewTab(""),
+        closeActiveTabOrPane: handleCloseTabOrPane,
+        nextTab: () => cycleTab(1),
+        previousTab: () => cycleTab(-1),
+        splitPaneRight: () => splitActivePaneInActiveTab("row"),
+        splitPaneDown: () => splitActivePaneInActiveTab("col"),
+        focusNextPane: () => focusPaneInActiveTab(1),
+        focusPreviousPane: () => focusPaneInActiveTab(-1),
+        focusSearch,
+        focusExplorerSearch,
+        toggleSidebar,
+        toggleAi: togglePanelAndFocus,
+        askAiSelection: askFromSelection,
+        openSettings,
+        openShortcuts: openShortcutsDialog,
+      }),
+    [
+      tabs,
+      activeId,
+      searchTarget,
+      explorerRoot,
+      home,
+      openNewTab,
+      openNewPrivateTab,
+      openNewEditorDialog,
+      openPreviewTab,
+      handleCloseTabOrPane,
+      cycleTab,
+      splitActivePaneInActiveTab,
+      focusPaneInActiveTab,
+      focusSearch,
+      focusExplorerSearch,
+      toggleSidebar,
+      togglePanelAndFocus,
+      askFromSelection,
+      openSettings,
+      openShortcutsDialog,
+    ],
+  );
 
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
@@ -788,6 +881,7 @@ export default function App() {
               >
                 <div className="h-full border-r border-border/60 bg-card">
                   <FileExplorer
+                    ref={explorerRef}
                     rootPath={explorerRoot}
                     onOpenFile={handleOpenFile}
                     onPathRenamed={handlePathRenamed}
@@ -925,6 +1019,14 @@ export default function App() {
           <ShortcutsDialog
             open={shortcutsOpen}
             onOpenChange={setShortcutsOpen}
+          />
+
+          <CommandPalette
+            open={commandPaletteOpen}
+            onOpenChange={setCommandPaletteOpen}
+            actions={commandPaletteActions}
+            workspaceRoot={explorerRoot}
+            onOpenFile={handleOpenFile}
           />
 
           <NewEditorDialog
