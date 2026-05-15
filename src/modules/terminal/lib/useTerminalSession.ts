@@ -2,14 +2,20 @@ import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  createDAFilter,
+  drainDAFilter,
+  filterDA,
+  type DAFilter,
+} from "./daFilter";
 import { DormantRing } from "./dormantRing";
 import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 import {
   acquireSlot,
   applyFontSize,
-  applyScrollback,
   applyTheme as applyPoolTheme,
+  applyScrollback,
   applyWebglPreference,
   configureRendererPool,
   focusSlot,
@@ -43,6 +49,8 @@ type Session = {
   searchQuery: string | null;
   dormantRing: DormantRing;
   hasSlot: boolean;
+  daFilter: DAFilter;
+  pendingPtyWrites: string[];
 };
 
 const sessions = new Map<number, Session>();
@@ -96,6 +104,8 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     searchQuery: null,
     dormantRing: new DormantRing(),
     hasSlot: false,
+    daFilter: createDAFilter(),
+    pendingPtyWrites: [],
   };
   sessions.set(leafId, session);
 
@@ -107,12 +117,23 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   return session;
 }
 
+function respondToShell(s: Session, reply: string): void {
+  if (s.pty) {
+    void s.pty.write(reply);
+  } else {
+    s.pendingPtyWrites.push(reply);
+  }
+}
+
 function deliverPtyBytes(leafId: number, bytes: Uint8Array): void {
   const s = sessions.get(leafId);
   if (!s) return;
   const slot = getSlotForLeaf(leafId);
-  if (slot) slot.term.write(bytes);
-  else s.dormantRing.push(bytes);
+  const payload = s.daFilter.active
+    ? filterDA(s.daFilter, bytes, (reply) => respondToShell(s, reply))
+    : bytes;
+  if (slot) slot.term.write(payload);
+  else s.dormantRing.push(payload);
 }
 
 async function openPtyForSession(
@@ -166,6 +187,14 @@ function bindLeafToSlot(leafId: number, s: Session): void {
     },
     onSearchReady: (addon) => s.callbacks.onSearchReady?.(addon),
   });
+  if (s.daFilter.active) {
+    const tail = drainDAFilter(s.daFilter);
+    if (tail) {
+      const slot = getSlotForLeaf(leafId);
+      if (slot) slot.term.write(tail);
+    }
+    s.daFilter.active = false;
+  }
   s.snapshot = null;
   s.hasSlot = true;
   if (s.lastCwd !== null) s.callbacks.onCwd?.(s.lastCwd);
@@ -209,6 +238,10 @@ function attachSession(
           return;
         }
         s.pty = pty;
+        if (s.pendingPtyWrites.length > 0) {
+          for (const w of s.pendingPtyWrites) void pty.write(w);
+          s.pendingPtyWrites.length = 0;
+        }
         if (s.cols > 0 && s.rows > 0) pty.resize(s.cols, s.rows);
       })
       .catch((e) => {
