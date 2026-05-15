@@ -177,11 +177,15 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         ? "Message required"
         : `Ready: ${stagedCount} ${stagedCount === 1 ? "file" : "files"}`;
   const pushStatusLabel = upstreamBadgeLabel(scm.status?.upstream);
-  const footerFeedback = scm.error
-    ? ({ tone: "error", message: scm.error } as const)
-    : scm.actionMessage
-      ? ({ tone: "success", message: scm.actionMessage } as const)
-      : null;
+  const footerFeedback = useMemo(() => {
+    if (scm.error) {
+      return { tone: "error", message: scm.error } as const;
+    }
+    if (scm.actionMessage) {
+      return { tone: "success", message: scm.actionMessage } as const;
+    }
+    return null;
+  }, [scm.actionMessage, scm.error]);
 
   useEffect(() => {
     onStatusCountChange?.(scm.status?.changedFiles.length ?? 0);
@@ -810,19 +814,34 @@ function CommitFeedback({
 
   if (!visibleFeedback) return null;
 
+  const isError = visibleFeedback.tone === "error";
+
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-2 bottom-[calc(100%-0.25rem)] z-20 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg backdrop-blur transition-all duration-200",
+        "pointer-events-none absolute inset-x-3 bottom-[calc(100%-0.35rem)] z-20 flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg shadow-black/15 backdrop-blur transition-all duration-200",
         isVisible
           ? "translate-y-0 opacity-100"
           : "translate-y-1 opacity-0",
-        visibleFeedback.tone === "error"
-          ? "border-destructive/25 bg-destructive/15 text-destructive dark:border-destructive/35 dark:bg-destructive/25"
-          : "border-emerald-500/25 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+        isError
+          ? "border-destructive/30 bg-card/95 text-destructive"
+          : "border-border/70 bg-card/95 text-muted-foreground",
       )}
     >
-      {visibleFeedback.message}
+      <span
+        className={cn(
+          "size-1.5 shrink-0 rounded-full",
+          isError ? "bg-destructive" : "bg-emerald-500",
+        )}
+      />
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          isError ? "text-destructive" : "text-muted-foreground",
+        )}
+      >
+        {visibleFeedback.message}
+      </span>
     </div>
   );
 }
