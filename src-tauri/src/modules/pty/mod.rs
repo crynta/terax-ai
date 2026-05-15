@@ -1,7 +1,7 @@
 mod da_filter;
 #[cfg(windows)]
 mod job;
-mod session;
+pub(crate) mod session;
 pub(crate) mod shell_init;
 
 use std::collections::HashMap;

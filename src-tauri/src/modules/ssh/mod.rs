@@ -1,6 +1,6 @@
 mod connection;
 mod handler;
-mod profiles;
+pub(crate) mod profiles;
 pub(crate) mod pty;
 pub(crate) mod sftp;
 
@@ -11,9 +11,8 @@ use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use russh::client;
+use russh::keys;
 use russh_sftp::client::SftpSession;
-
-use crate::modules::secrets::SecretsState;
 
 use self::handler::SshHandler;
 
@@ -29,7 +28,6 @@ fn load_profile(app: &tauri::AppHandle, profile_id: &str) -> Result<SshProfile, 
 pub async fn ssh_connect(
     app: tauri::AppHandle,
     state: tauri::State<'_, SshState>,
-    secrets: tauri::State<'_, SecretsState>,
     profile_id: String,
 ) -> Result<(), String> {
     if state.get(&profile_id).is_some() {
@@ -60,13 +58,9 @@ pub async fn ssh_connect(
                 .as_deref()
                 .ok_or("key auth requires keyPath")?;
             let key_path = shellexpand::tilde(key_path).into_owned();
-            let passphrase: Option<String> = secrets
-                .get(&format!("ssh:{}", profile.id))
-                .ok()
-                .flatten();
-            let key = russh_keys::load_secret_key(
+            let key = keys::load_secret_key(
                 std::path::Path::new(&key_path),
-                passphrase.as_deref(),
+                None,
             )
             .map_err(|e| e.to_string())?;
             let authed = handle
@@ -80,7 +74,7 @@ pub async fn ssh_connect(
         AuthMethod::Agent => {
             #[cfg(unix)]
             {
-                use russh_keys::agent::client::AgentClient;
+                use keys::agent::client::AgentClient;
                 let agent_sock = std::env::var("SSH_AUTH_SOCK")
                     .map_err(|_| "SSH_AUTH_SOCK not set — is ssh-agent running?")?;
                 let mut agent = AgentClient::connect_uds(&agent_sock)

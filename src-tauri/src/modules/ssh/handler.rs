@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use russh::client;
-use ssh_key::PublicKey;
+use russh::keys::PublicKey;
 
 pub struct SshHandler {
     /// Fingerprint stored in the profile. `None` on first connect (TOFU).
@@ -30,8 +30,7 @@ impl client::Handler for SshHandler {
         &mut self,
         server_public_key: &PublicKey,
     ) -> Result<bool, Self::Error> {
-        use ssh_key::HashAlg;
-        let fingerprint = server_public_key.fingerprint(HashAlg::Sha256).to_string();
+        let fingerprint = server_public_key.fingerprint();
         *self.observed_fingerprint.lock().unwrap() = Some(fingerprint.clone());
 
         if let Some(known) = &self.known_fingerprint {

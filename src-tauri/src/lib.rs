@@ -125,9 +125,9 @@ pub fn run() {
             ssh::ssh_connect,
             ssh::ssh_disconnect,
             ssh::ssh_fingerprint_get,
-            ssh::ssh_profile_list,
-            ssh::ssh_profile_save,
-            ssh::ssh_profile_delete,
+            modules::ssh::profiles::ssh_profile_list,
+            modules::ssh::profiles::ssh_profile_save,
+            modules::ssh::profiles::ssh_profile_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
