@@ -3,6 +3,7 @@ name = "terax"
 version = "0.6.6"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
+license = "Apache-2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
