@@ -40,16 +40,30 @@ async function bodyToBytes(
       new Uint8Array(view.buffer, view.byteOffset, view.byteLength),
     );
   }
-  if (body instanceof Blob) return Array.from(new Uint8Array(await body.arrayBuffer()));
+  if (body instanceof Blob)
+    return Array.from(new Uint8Array(await body.arrayBuffer()));
   // FormData / URLSearchParams / ReadableStream — uncommon for AI SDK calls.
   const text = await new Response(body as BodyInit).text();
   return Array.from(new TextEncoder().encode(text));
 }
 
-/** Fetch API replacement that routes through Tauri so requests bypass the
- *  webview's CORS / Mixed-Content / Private-Network-Access restrictions.
- *  Intended for local model servers (LM Studio, Ollama, vLLM, …). */
-export const proxyFetch: typeof fetch = async (input, init) => {
+export function createProxyFetch(
+  opts: { allowPrivateNetwork?: boolean } = {},
+): typeof fetch {
+  const allowPrivate = opts.allowPrivateNetwork === true;
+  return async (input, init) => proxyFetchImpl(input, init, allowPrivate);
+}
+
+/** Backwards-compatible default — refuses private networks unless the caller
+ *  explicitly opts in via {@link createProxyFetch}. */
+export const proxyFetch: typeof fetch = (input, init) =>
+  proxyFetchImpl(input, init, false);
+
+async function proxyFetchImpl(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  allowPrivateNetwork: boolean,
+): Promise<Response> {
   const url = input instanceof URL ? input.toString() : String(input);
   const method = (init?.method ?? "GET").toUpperCase();
   const headers = headerInitToRecord(init?.headers);
@@ -126,13 +140,14 @@ export const proxyFetch: typeof fetch = async (input, init) => {
       method,
       headers,
       body,
+      allowPrivateNetwork,
       onEvent: channel,
     }).catch((e) => {
       if (resolved) return; // headers already arrived; chunk-side error wins
       reject(e instanceof Error ? e : new Error(String(e)));
     });
   });
-};
+}
 
 function makeAbortError(): DOMException {
   return new DOMException("Request aborted", "AbortError");
