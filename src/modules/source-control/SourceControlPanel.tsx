@@ -307,7 +307,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                   entries={scm.stagedEntries}
                   selected={scm.selected}
                   actionBusy={scm.actionBusy}
-                  empty={scm.stagedEmptyText}
                   compact={scm.compact}
                   defaultOpen
                   actionType="unstage"
@@ -321,7 +320,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 entries={scm.unstagedEntries}
                 selected={scm.selected}
                 actionBusy={scm.actionBusy}
-                empty={scm.unstagedEmptyText}
                 compact={scm.compact}
                 defaultOpen
                 actionType="stage"
@@ -478,7 +476,6 @@ function ChangeGroup({
   entries,
   selected,
   actionBusy,
-  empty,
   compact,
   defaultOpen,
   actionType,
@@ -492,7 +489,6 @@ function ChangeGroup({
   entries: SourceControlEntry[];
   selected: { path: string; mode: "-" | "+" } | null;
   actionBusy: string | null;
-  empty: string;
   compact: boolean;
   defaultOpen?: boolean;
   actionType: "stage" | "unstage";
