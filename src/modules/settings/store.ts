@@ -77,6 +77,7 @@ export type Preferences = {
   lastWslDistro: string | null;
   zoomLevel: number;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
+  settingsAlwaysOnTop: boolean;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -105,10 +106,11 @@ const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_SHORTCUTS = "shortcuts";
+const KEY_SETTINGS_ALWAYS_ON_TOP = "settingsAlwaysOnTop";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
-export const TERMINAL_FONT_SIZE_MIN = 8;
-export const TERMINAL_FONT_SIZE_MAX = 32;
+export const TERMINAL_FONT_SIZE_MIN = 5;
+export const TERMINAL_FONT_SIZE_MAX = 238;
 
 export const TERMINAL_FONT_SIZES = [
   10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
@@ -146,6 +148,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   lastWslDistro: null,
   zoomLevel: 1.0,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
+  settingsAlwaysOnTop: true,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -230,6 +233,9 @@ export async function loadPreferences(): Promise<Preferences> {
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
+    settingsAlwaysOnTop:
+      get<boolean>(KEY_SETTINGS_ALWAYS_ON_TOP) ??
+      DEFAULT_PREFERENCES.settingsAlwaysOnTop,
   };
 }
 
@@ -348,9 +354,74 @@ export async function setShortcuts(
   await store.save();
 }
 
+export async function setSettingsAlwaysOnTop(value: boolean): Promise<void> {
+  await writePref(KEY_SETTINGS_ALWAYS_ON_TOP, value);
+}
+
 export async function resetShortcuts(): Promise<void> {
   await store.set(KEY_SHORTCUTS, DEFAULT_PREFERENCES.shortcuts);
   await store.save();
+}
+
+export async function resetAllPreferences(): Promise<void> {
+  const entries = Object.entries(DEFAULT_PREFERENCES);
+  for (const [key, value] of entries) {
+    // Avoid double-emitting or redundant saves if store.set logic is complex,
+    // but here writePref handles it neatly.
+    const k =
+      key === "theme"
+        ? KEY_THEME
+        : key === "defaultModelId"
+          ? KEY_DEFAULT_MODEL
+          : key === "editorTheme"
+            ? KEY_EDITOR_THEME
+            : key === "customInstructions"
+              ? KEY_CUSTOM_INSTRUCTIONS
+              : key === "autostart"
+                ? KEY_AUTOSTART
+                : key === "restoreWindowState"
+                  ? KEY_RESTORE_WINDOW
+                  : key === "autocompleteEnabled"
+                    ? KEY_AUTOCOMPLETE_ENABLED
+                    : key === "autocompleteProvider"
+                      ? KEY_AUTOCOMPLETE_PROVIDER
+                      : key === "autocompleteModelId"
+                        ? KEY_AUTOCOMPLETE_MODEL
+                        : key === "lmstudioBaseURL"
+                          ? KEY_LMSTUDIO_BASE_URL
+                          : key === "lmstudioModelId"
+                            ? KEY_LMSTUDIO_MODEL_ID
+                            : key === "openaiCompatibleBaseURL"
+                              ? KEY_OPENAI_COMPAT_BASE_URL
+                              : key === "openaiCompatibleModelId"
+                                ? KEY_OPENAI_COMPAT_MODEL_ID
+                                : key === "favoriteModelIds"
+                                  ? KEY_FAVORITE_MODELS
+                                  : key === "recentModelIds"
+                                    ? KEY_RECENT_MODELS
+                                    : key === "vimMode"
+                                      ? KEY_VIM_MODE
+                                      : key === "showHidden"
+                                        ? KEY_SHOW_HIDDEN
+                                        : key === "terminalWebglEnabled"
+                                          ? KEY_TERMINAL_WEBGL_ENABLED
+                                          : key === "terminalFontFamily"
+                                            ? KEY_TERMINAL_FONT_FAMILY
+                                            : key === "terminalFontSize"
+                                              ? KEY_TERMINAL_FONT_SIZE
+                                              : key === "terminalScrollback"
+                                                ? KEY_TERMINAL_SCROLLBACK
+                                                : key === "lastWslDistro"
+                                                  ? KEY_LAST_WSL_DISTRO
+                                                  : key === "zoomLevel"
+                                                    ? KEY_ZOOM_LEVEL
+                                                    : key === "shortcuts"
+                                                      ? KEY_SHORTCUTS
+                                                      : key === "settingsAlwaysOnTop"
+                                                        ? KEY_SETTINGS_ALWAYS_ON_TOP
+                                                        : key;
+    await writePref(k, value);
+  }
 }
 
 export type PrefKey = keyof Preferences;
@@ -384,6 +455,7 @@ export async function onPreferencesChange(
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_SETTINGS_ALWAYS_ON_TOP]: "settingsAlwaysOnTop",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
