@@ -157,6 +157,9 @@ export default function App() {
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
+  const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
+    null,
+  );
   useEffect(() => {
     // Forward-slash form so explorerRoot stays equal across home → OSC 7.
     homeDir()
@@ -561,14 +564,30 @@ export default function App() {
     [tabs, updateTab],
   );
 
+  const confirmDeleteClose = useCallback(() => {
+    if (pendingDeleteTabs !== null) {
+      for (const id of pendingDeleteTabs) disposeTab(id);
+      setPendingDeleteTabs(null);
+    }
+  }, [pendingDeleteTabs, disposeTab]);
+
+  const cancelDeleteClose = useCallback(() => {
+    setPendingDeleteTabs(null);
+  }, []);
+
   const handlePathDeleted = useCallback(
     (path: string) => {
+      const dirty: number[] = [];
       for (const t of tabs) {
         if (t.kind !== "editor") continue;
-        if (t.path === path || t.path.startsWith(`${path}/`)) {
+        if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
+        if (t.dirty) {
+          dirty.push(t.id);
+        } else {
           disposeTab(t.id);
         }
       }
+      if (dirty.length > 0) setPendingDeleteTabs(dirty);
     },
     [tabs, disposeTab],
   );
@@ -991,6 +1010,37 @@ export default function App() {
                   Cancel
                 </AlertDialogCancel>
                 <AlertDialogAction onClick={confirmClose}>
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={pendingDeleteTabs !== null}
+            onOpenChange={(open) => !open && cancelDeleteClose()}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {pendingDeleteTabs?.length === 1
+                    ? (() => {
+                        const title = tabs.find(
+                          (t) => t.id === pendingDeleteTabs[0],
+                        )?.title;
+                        return title
+                          ? `"${title}" has unsaved changes. The file has been deleted. Close anyway?`
+                          : "This file has unsaved changes. The file has been deleted. Close anyway?";
+                      })()
+                    : `${pendingDeleteTabs?.length ?? 0} files have unsaved changes. They have been deleted. Close all anyway?`}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={cancelDeleteClose}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDeleteClose}>
                   Close Anyway
                 </AlertDialogAction>
               </AlertDialogFooter>
