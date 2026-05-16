@@ -258,6 +258,7 @@ function makeChat(sessionId: string): Chat<UIMessage> {
     getOllamaBaseURL: () => usePreferencesStore.getState().ollamaBaseURL,
     getZhipuBaseURL: () => usePreferencesStore.getState().zhipuBaseURL,
     getRemoteModelOverride: () => useChatStore.getState().remoteModelOverride,
+    getOpenaiCompatibleContextWindow: () => usePreferencesStore.getState().openaiCompatibleContextWindow,
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
     },

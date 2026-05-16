@@ -54,6 +54,7 @@ export type Preferences = {
   lmstudioModelId: string;
   openaiCompatibleBaseURL: string;
   openaiCompatibleModelId: string;
+  openaiCompatibleContextWindow: number;
   ollamaBaseURL: string;
   zhipuBaseURL: string;
   favoriteModelIds: string[];
@@ -81,6 +82,7 @@ const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_LMSTUDIO_MODEL_ID = "lmstudioModelId";
 const KEY_OPENAI_COMPAT_BASE_URL = "openaiCompatibleBaseURL";
 const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
+const KEY_OPENAI_COMPAT_CONTEXT_WINDOW = "openaiCompatibleContextWindow";
 const KEY_OLLAMA_BASE_URL = "ollamaBaseURL";
 const KEY_ZHIPU_BASE_URL = "zhipuBaseURL";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
@@ -123,6 +125,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   lmstudioModelId: "",
   openaiCompatibleBaseURL: OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   openaiCompatibleModelId: "",
+  openaiCompatibleContextWindow: 128_000,
   ollamaBaseURL: OLLAMA_DEFAULT_BASE_URL,
   zhipuBaseURL: ZHIPU_DEFAULT_BASE_URL,
   favoriteModelIds: [],
@@ -188,6 +191,9 @@ export async function loadPreferences(): Promise<Preferences> {
     openaiCompatibleModelId:
       get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ??
       DEFAULT_PREFERENCES.openaiCompatibleModelId,
+    openaiCompatibleContextWindow:
+      get<number>(KEY_OPENAI_COMPAT_CONTEXT_WINDOW) ??
+      DEFAULT_PREFERENCES.openaiCompatibleContextWindow,
     ollamaBaseURL:
       get<string>(KEY_OLLAMA_BASE_URL) ?? DEFAULT_PREFERENCES.ollamaBaseURL,
     zhipuBaseURL:
@@ -273,6 +279,10 @@ export async function setOpenaiCompatibleBaseURL(value: string): Promise<void> {
 
 export async function setOpenaiCompatibleModelId(value: string): Promise<void> {
   await writePref(KEY_OPENAI_COMPAT_MODEL_ID, value);
+}
+
+export async function setOpenaiCompatibleContextWindow(value: number): Promise<void> {
+  await writePref(KEY_OPENAI_COMPAT_CONTEXT_WINDOW, value);
 }
 
 export async function setOllamaBaseURL(value: string): Promise<void> {
@@ -361,6 +371,7 @@ export async function onPreferencesChange(
     [KEY_LMSTUDIO_MODEL_ID]: "lmstudioModelId",
     [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
     [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
+    [KEY_OPENAI_COMPAT_CONTEXT_WINDOW]: "openaiCompatibleContextWindow",
     [KEY_OLLAMA_BASE_URL]: "ollamaBaseURL",
     [KEY_ZHIPU_BASE_URL]: "zhipuBaseURL",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",

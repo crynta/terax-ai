@@ -297,6 +297,7 @@ function ModelDropdown() {
         .slice()
         .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
     }
+    pool = pool.filter((m) => hasKeyFor(m.provider));
     if (activeProvider !== null) {
       pool = pool.filter((m) => m.provider === activeProvider);
     }
@@ -405,7 +406,7 @@ function ModelDropdown() {
         </div>
 
         <div className="flex">
-          {/* Provider sidebar — configured first, unconfigured muted, no dividers. */}
+          {/* Provider sidebar — only show configured + keyless providers. */}
           <div className="flex w-11 flex-col gap-0.5 border-r border-border/70 bg-muted/20 py-1.5">
             <ProviderPill
               icon={AiBookIcon}
@@ -413,22 +414,15 @@ function ModelDropdown() {
               active={activeProvider === null}
               onClick={() => setActiveProvider(null)}
             />
-            {[...sortedProviders.configured, ...sortedProviders.unconfigured].map(
-              (p) => (
-                <ProviderPill
-                  key={p.id}
-                  icon={PROVIDER_ICON[p.id]}
-                  title={
-                    hasKeyFor(p.id)
-                      ? p.label
-                      : `${p.label} — not configured`
-                  }
-                  active={activeProvider === p.id}
-                  muted={!hasKeyFor(p.id)}
-                  onClick={() => setActiveProvider(p.id)}
-                />
-              ),
-            )}
+            {sortedProviders.configured.map((p) => (
+              <ProviderPill
+                key={p.id}
+                icon={PROVIDER_ICON[p.id]}
+                title={p.label}
+                active={activeProvider === p.id}
+                onClick={() => setActiveProvider(p.id)}
+              />
+            ))}
           </div>
 
           {/* Models list */}
