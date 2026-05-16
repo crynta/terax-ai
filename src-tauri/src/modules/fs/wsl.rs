@@ -1,6 +1,5 @@
 use super::file::{FileStat, ReadResult, StatKind};
 use super::tree::{DirEntry, EntryKind};
-use crate::modules::fs::to_canon;
 use std::process::Command;
 
 pub fn wsl_read_dir(distro: &str, path: &str, show_hidden: bool) -> Result<Vec<DirEntry>, String> {
@@ -92,6 +91,28 @@ pub fn wsl_write_file(distro: &str, path: &str, content: &str) -> Result<(), Str
     if !status.success() {
         return Err("WSL write failed".into());
     }
+    Ok(())
+}
+
+pub fn wsl_create_dir(distro: &str, path: &str) -> Result<(), String> {
+    let script = format!("mkdir -p {}", sh_quote(path));
+    run_wsl_output(distro, &script)?;
+    Ok(())
+}
+
+pub fn wsl_rename(distro: &str, from: &str, to: &str) -> Result<(), String> {
+    let script = format!("mv -n {} {}", sh_quote(from), sh_quote(to));
+    run_wsl_output(distro, &script)?;
+    Ok(())
+}
+
+pub fn wsl_remove(distro: &str, path: &str, recursive: bool) -> Result<(), String> {
+    let script = if recursive {
+        format!("rm -rf {}", sh_quote(path))
+    } else {
+        format!("rm {}", sh_quote(path))
+    };
+    run_wsl_output(distro, &script)?;
     Ok(())
 }
 

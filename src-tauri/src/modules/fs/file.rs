@@ -51,6 +51,11 @@ pub struct FileStat {
 pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<ReadResult, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_read_file(distro, &path);
+    }
+
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| {
         log::debug!("fs_read_file stat({}) failed: {e}", p.display());
@@ -93,6 +98,11 @@ pub fn fs_write_file(
 ) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_write_file(distro, &path, &content);
+    }
+
     let target = resolve_path(&path, &workspace);
     let parent = target
         .parent()
@@ -134,6 +144,11 @@ pub fn fs_write_file(
 pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_stat(distro, &path);
+    }
+
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
     let kind = if meta.is_dir() {

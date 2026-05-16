@@ -25,12 +25,18 @@ impl WorkspaceEnv {
     }
 
     pub fn is_wsl(&self) -> bool {
-        matches!(self, Self::Wsl { .. })
+        match self {
+            Self::Wsl { .. } => true,
+            _ => false,
+        }
     }
 
     #[allow(dead_code)]
     pub fn is_ssh(&self) -> bool {
-        matches!(self, Self::Ssh { .. })
+        match self {
+            Self::Ssh { .. } => true,
+            _ => false,
+        }
     }
 
     #[allow(dead_code)]

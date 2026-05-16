@@ -12,6 +12,11 @@ fn check_not_ssh(workspace: &WorkspaceEnv) -> Result<(), String> {
 pub fn fs_create_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_write_file(distro, &path, "");
+    }
+
     let p = resolve_path(&path, &workspace);
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
@@ -29,6 +34,11 @@ pub fn fs_create_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<(
 pub fn fs_create_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_create_dir(distro, &path);
+    }
+
     let p = resolve_path(&path, &workspace);
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
@@ -44,6 +54,11 @@ pub fn fs_create_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<()
 pub fn fs_rename(from: String, to: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_rename(distro, &from, &to);
+    }
+
     let from_p = resolve_path(&from, &workspace);
     let to_p = resolve_path(&to, &workspace);
     if !from_p.exists() {
@@ -68,6 +83,12 @@ pub fn fs_rename(from: String, to: String, workspace: Option<WorkspaceEnv>) -> R
 pub fn fs_delete(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        // In WSL, let 'rm -rf' handle both files and dirs
+        return super::wsl::wsl_remove(distro, &path, true);
+    }
+
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::symlink_metadata(&p).map_err(|e| {
         log::debug!("fs_delete stat({}) failed: {e}", p.display());
