@@ -28,6 +28,7 @@ type Props = {
   activeId: number;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onNewDefault?: () => void;
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
@@ -42,6 +43,7 @@ export function TabBar({
   activeId,
   onSelect,
   onNew,
+  onNewDefault,
   onNewPrivate,
   onNewPreview,
   onNewEditor,
@@ -156,12 +158,25 @@ export function TabBar({
               size="icon"
               className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               title="New tab"
+              onPointerDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && onNewDefault) {
+                  e.preventDefault();
+                  onNewDefault();
+                }
+              }}
             >
               <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
-            <DropdownMenuItem onSelect={() => onNew()}>
+            <DropdownMenuItem onSelect={(e) => {
+              const me = e as unknown as MouseEvent;
+              if ((me.ctrlKey || me.metaKey) && onNewDefault) {
+                onNewDefault();
+              } else {
+                onNew();
+              }
+            }}>
               <HugeiconsIcon
                 icon={ComputerTerminal02Icon}
                 size={14}

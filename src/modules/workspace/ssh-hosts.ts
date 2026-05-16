@@ -4,7 +4,7 @@ import type { SshConnection } from "./env";
 const STORE_PATH = "terax-ssh-hosts.json";
 const KEY = "savedHosts";
 
-const store = new LazyStore(STORE_PATH, { autoSave: 200 });
+const store = new LazyStore(STORE_PATH, { autoSave: 200, defaults: {} });
 
 export async function loadSshHosts(): Promise<SshConnection[]> {
   return (await store.get<SshConnection[]>(KEY)) ?? [];

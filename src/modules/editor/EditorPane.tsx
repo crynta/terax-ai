@@ -44,7 +44,7 @@ function isImage(path: string): boolean { return IMAGE_EXTS.has(ext(path)); }
 function isVideo(path: string): boolean { return VIDEO_EXTS.has(ext(path)); }
 function isAudio(path: string): boolean { return AUDIO_EXTS.has(ext(path)); }
 
-function MediaPreview({ path, size }: { path: string; size: number }) {
+function MediaPreview({ path }: { path: string; size: number }) {
   const src = convertFileSrc(path);
 
   if (isImage(path)) {

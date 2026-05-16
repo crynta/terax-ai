@@ -11,7 +11,6 @@ import App from "./app/App";
 import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
 
 const loadMsg = document.getElementById("load-msg");
-const loadingEl = document.getElementById("loading");
 
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";

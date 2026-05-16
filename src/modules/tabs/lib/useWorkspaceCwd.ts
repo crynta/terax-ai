@@ -24,6 +24,7 @@ export function useWorkspaceCwd(
   }, [activeTab]);
 
   const explorerRoot = useMemo<string | null>(() => {
+    if (activeTab?.kind === "terminal" && isSshTab(activeTab)) return null;
     if (activeTab?.kind === "terminal" && activeTab.cwd && !isSshTab(activeTab)) return activeTab.cwd;
     if (lastTerminalCwd.current) return lastTerminalCwd.current;
     const anyTerm = tabs.find((t) => t.kind === "terminal" && t.cwd && !isSshTab(t));

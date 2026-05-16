@@ -289,7 +289,7 @@ function SshSessionPane({
       title: label,
       sessionType: "ssh",
       sessionName: label,
-      workspace: currentSsh(),
+      workspace: { kind: "ssh", ...currentSsh() },
     });
     onDone();
   };

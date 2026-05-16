@@ -285,6 +285,10 @@ export default function App() {
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
   const isAiDiffTab = activeTab?.kind === "ai-diff";
+  const explorerWorkspace =
+    activeTab?.kind === "terminal" && activeTab.workspace
+      ? activeTab.workspace
+      : workspaceEnv;
 
   // When an AI diff is approved (write_file applied to disk), reload any
   // open editor tabs for that path so the user sees the new content. We
@@ -515,6 +519,10 @@ export default function App() {
     },
     [newTabWithSession, inheritedCwdForNewTab],
   );
+
+  const openNewDefaultTab = useCallback(() => {
+    handleCreateSession({});
+  }, [handleCreateSession]);
 
   const openNewPrivateTab = useCallback(() => {
     newPrivateTab(inheritedCwdForNewTab());
@@ -826,6 +834,7 @@ export default function App() {
             activeId={activeId}
             onSelect={setActiveId}
             onNew={openNewTab}
+            onNewDefault={openNewDefaultTab}
             onNewPrivate={openNewPrivateTab}
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
@@ -866,6 +875,7 @@ export default function App() {
                     onPathDeleted={handlePathDeleted}
                     onRevealInTerminal={cdInNewTab}
                     onAttachToAgent={handleAttachFileToAgent}
+                    workspace={explorerWorkspace}
                   />
                 </div>
               </ResizablePanel>

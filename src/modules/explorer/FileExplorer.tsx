@@ -30,6 +30,7 @@ import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
+import type { WorkspaceEnv } from "@/modules/workspace";
 
 export type FileExplorerHandle = {
   focus: () => void;
@@ -43,6 +44,7 @@ type Props = {
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
+  workspace?: WorkspaceEnv;
 };
 
 function basename(path: string): string {
@@ -59,10 +61,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       onPathDeleted,
       onRevealInTerminal,
       onAttachToAgent,
+      workspace,
     },
     ref,
   ) => {
-    const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
+    const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted, workspace });
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
@@ -294,7 +297,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           onAttachToAgent={onAttachToAgent}
         />
   
-        {!isSearchActive ? (
+          {!rootPath && workspace?.kind === "ssh" ? (
+            <div className="flex flex-1 items-center justify-center px-4 text-center text-[11px] text-muted-foreground">
+              Remote filesystem browsing is not available for SSH connections
+            </div>
+          ) : !isSearchActive ? (
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <div
