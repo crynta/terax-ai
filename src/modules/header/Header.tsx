@@ -172,7 +172,7 @@ export function Header({
             </span>
           ) : null}
         </span>
-        <span className="inline-flex items-center leading-none">Diff</span>
+        <span className="pt-[1px] leading-none">Diff</span>
       </button>
       {remoteIndicator.visible ? (
         <button
