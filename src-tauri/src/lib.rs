@@ -5,10 +5,7 @@ use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
-/// First CLI arg, if it points at an existing directory. Populated once in
-/// `run()` from `std::env::args()` and drained by the frontend on first paint
-/// so a second `get_launch_dir` call (HMR, navigation) doesn't keep
-/// reseting the workspace.
+/// Drained on first read so HMR / re-mounts can't replay the launch dir.
 #[derive(Default)]
 struct LaunchDir(Mutex<Option<String>>);
 
@@ -18,7 +15,6 @@ fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
 }
 
 fn parse_launch_dir() -> Option<String> {
-    // Canonicalize so trailing slashes / 8.3 short names don't leak downstream.
     for arg in std::env::args().skip(1) {
         if arg.starts_with('-') {
             continue;

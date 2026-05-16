@@ -35,6 +35,7 @@ import {
   NewEditorDialog,
   type EditorPaneHandle,
 } from "@/modules/editor";
+import { getLaunchDir } from "@/lib/launchDir";
 import { useZoom } from "@/lib/useZoom";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
@@ -69,7 +70,6 @@ import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
-import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
@@ -99,7 +99,7 @@ export default function App() {
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,
-  } = useTabs();
+  } = useTabs(getLaunchDir() ? { cwd: getLaunchDir() } : undefined);
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
   // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
@@ -167,20 +167,6 @@ export default function App() {
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
-
-  // Drain "Open in Terax" launch dir once; reset workspace to that path.
-  useEffect(() => {
-    let cancelled = false;
-    void invoke<string | null>("get_launch_dir")
-      .then((dir) => {
-        if (cancelled || !dir) return;
-        resetWorkspace(dir.replace(/\\/g, "/"));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [resetWorkspace]);
 
   const switchWorkspace = useCallback(
     async (env: WorkspaceEnv) => {

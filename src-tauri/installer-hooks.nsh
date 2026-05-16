@@ -1,7 +1,5 @@
-; Windows shell integration: adds "Open in Terax" to the right-click menu
-; for folders, folder backgrounds, and drives. Writes per-user (HKCU) to
-; match the installer's currentUser scope — no admin elevation needed.
-; %V resolves to the clicked path (or the current folder for Background).
+; "Open in Terax" shell verbs for folders, folder backgrounds, and drives.
+; HKCU matches installer currentUser scope. %V = clicked path.
 ; NoWorkingDirectory keeps Explorer from overriding %V (System32 on Drive).
 
 !macro NSIS_HOOK_POSTINSTALL
