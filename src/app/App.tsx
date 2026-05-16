@@ -512,10 +512,11 @@ export default function App() {
 
   const handleCreateSession = useCallback(
     (opts: import("@/modules/tabs").SessionOptions) => {
-      newTabWithSession({
-        ...opts,
-        cwd: opts.cwd ?? inheritedCwdForNewTab(),
-      });
+      let cwd = opts.cwd;
+      if (cwd === undefined) {
+        cwd = opts.workspace?.kind === "ssh" ? "/" : inheritedCwdForNewTab();
+      }
+      newTabWithSession({ ...opts, cwd });
     },
     [newTabWithSession, inheritedCwdForNewTab],
   );
@@ -975,6 +976,7 @@ export default function App() {
             cwd={activeCwd}
             filePath={activeFilePath}
             home={home}
+            workspace={explorerWorkspace}
             onCd={sendCd}
             onWorkspaceChange={switchWorkspace}
             onOpenMini={openMini}

@@ -297,11 +297,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           onAttachToAgent={onAttachToAgent}
         />
   
-          {!rootPath && workspace?.kind === "ssh" ? (
-            <div className="flex flex-1 items-center justify-center px-4 text-center text-[11px] text-muted-foreground">
-              Remote filesystem browsing is not available for SSH connections
-            </div>
-          ) : !isSearchActive ? (
+          {!isSearchActive ? (
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <div

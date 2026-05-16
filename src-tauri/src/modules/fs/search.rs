@@ -4,6 +4,13 @@ use serde::Serialize;
 use super::to_canon;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
+fn check_not_ssh(workspace: &WorkspaceEnv) -> Result<(), String> {
+    if matches!(workspace, WorkspaceEnv::Ssh { .. }) {
+        return Err("File search on remote SSH hosts is not yet supported via the sidebar.".into());
+    }
+    Ok(())
+}
+
 #[derive(Serialize)]
 pub struct SearchHit {
     /// Absolute path of the matched file.
@@ -60,6 +67,7 @@ pub fn fs_search(
     let cap = limit.unwrap_or(200).min(1000);
     let show_hidden = show_hidden.unwrap_or(false);
     let workspace = WorkspaceEnv::from_option(workspace);
+    check_not_ssh(&workspace)?;
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
@@ -154,12 +162,11 @@ pub fn fs_list_files(
     const DEFAULT_LIMIT: usize = 2_000;
     const HARD_LIMIT: usize = 10_000;
     const DEFAULT_DEPTH: usize = 8;
-    const HARD_DEPTH: usize = 16;
-
-    let cap = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, HARD_LIMIT);
-    let depth = max_depth.unwrap_or(DEFAULT_DEPTH).clamp(1, HARD_DEPTH);
+    let cap = limit.unwrap_or(DEFAULT_LIMIT).min(HARD_LIMIT);
+    let max_depth = max_depth.unwrap_or(DEFAULT_DEPTH);
     let show_hidden = show_hidden.unwrap_or(false);
     let workspace = WorkspaceEnv::from_option(workspace);
+    check_not_ssh(&workspace)?;
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));

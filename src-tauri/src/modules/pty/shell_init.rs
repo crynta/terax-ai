@@ -465,11 +465,12 @@ mod windows {
     }
 
     fn build_wsl(cwd: Option<String>, distro: String) -> Result<CommandBuilder, String> {
+        let wsl_cwd = cwd.map(|c| resolve_wsl_cwd(&distro, c));
         let mut cmd = CommandBuilder::new("wsl.exe");
         cmd.arg("-d");
         cmd.arg(&distro);
         cmd.arg("--cd");
-        cmd.arg(cwd.as_deref().filter(|s| !s.is_empty()).unwrap_or("~"));
+        cmd.arg(wsl_cwd.as_deref().filter(|s| !s.is_empty()).unwrap_or("~"));
         cmd.arg("--exec");
         cmd.arg("bash");
         match prepare_wsl_bash_rcfile(&distro) {
@@ -488,6 +489,39 @@ mod windows {
         super::ensure_utf8_locale(&mut cmd);
         log::info!("spawning WSL shell: {distro}");
         Ok(cmd)
+    }
+
+    /// Convert a Windows path (C:\foo) to a WSL Linux path (/mnt/c/foo) for
+    /// `wsl.exe --cd`.  Uses `wslpath -u` when available; falls back to the
+    /// convention `/mnt/<drive>/<rest>`.
+    fn resolve_wsl_cwd(distro: &str, cwd: String) -> String {
+        let bytes = cwd.as_bytes();
+        let is_windows_path = bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && (bytes[2] == b'\\' || bytes[2] == b'/');
+        if !is_windows_path {
+            return cwd; // already a Linux path or relative
+        }
+        // Try wslpath -u for reliable conversion
+        let args = ["-d", distro, "--exec", "wslpath", "-u", &cwd];
+        if let Ok(out) = std::process::Command::new("wsl.exe")
+            .args(&args)
+            .output()
+        {
+            if out.status.success() {
+                let converted = String::from_utf8_lossy(&out.stdout)
+                    .trim()
+                    .to_string();
+                if !converted.is_empty() {
+                    return converted;
+                }
+            }
+        }
+        // Fallback: C:\path → /mnt/c/path
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        let rest = cwd[3..].replace('\\', "/");
+        format!("/mnt/{}/{}", drive, rest.trim_start_matches('/'))
     }
 
     fn prepare_wsl_bash_rcfile(distro: &str) -> Result<String, String> {

@@ -8,6 +8,7 @@ import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 import {
   acquireSlot,
+  applyFontFamily,
   applyFontSize,
   applyTheme as applyPoolTheme,
   applyScrollback,
@@ -325,8 +326,12 @@ export function useTerminalSession({
     };
   }, [leafId, container, initialCwd]);
 
+  const fontFamily = usePreferencesStore((p) => p.terminalFontFamily);
   const fontSize = usePreferencesStore((p) => p.terminalFontSize);
   const zoomLevel = usePreferencesStore((p) => p.zoomLevel);
+  useEffect(() => {
+    applyFontFamily(fontFamily);
+  }, [fontFamily]);
   useEffect(() => {
     applyFontSize(Math.max(4, Math.round(fontSize * zoomLevel)));
   }, [fontSize, zoomLevel]);

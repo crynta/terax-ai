@@ -25,6 +25,7 @@ type Props = {
   cwd: string | null;
   filePath?: string | null;
   home: string | null;
+  workspace?: WorkspaceEnv;
   onCd: (path: string) => void;
   onWorkspaceChange: (env: WorkspaceEnv) => void;
   onOpenMini: () => void;
@@ -39,6 +40,7 @@ export function StatusBar({
   cwd,
   filePath,
   home,
+  workspace,
   onCd,
   onWorkspaceChange,
   onOpenMini,
@@ -68,7 +70,7 @@ export function StatusBar({
             <span className="max-w-28 truncate">{sessionName}</span>
           </span>
         ) : null}
-        <CwdBreadcrumb cwd={cwd} filePath={filePath} home={home} onCd={onCd} />
+        <CwdBreadcrumb cwd={cwd} filePath={filePath} home={home} workspace={workspace} onCd={onCd} />
         {privateActive ? (
           <Tooltip>
             <TooltipTrigger asChild>

@@ -15,6 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
+import { MONO_FONT_FAMILIES } from "@/lib/fonts";
 import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
@@ -24,6 +25,7 @@ import {
   setEditorTheme,
   setRestoreWindowState,
   setShowHidden,
+  setTerminalFontFamily,
   setTerminalFontSize,
   setTerminalScrollback,
   setTerminalWebglEnabled,
@@ -63,6 +65,7 @@ export function GeneralSection() {
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
+  const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
 
@@ -100,6 +103,8 @@ export function GeneralSection() {
       console.error("terminal WebGL preference update failed", e),
     );
   };
+
+  const onPickTerminalFontFamily = (family: string) => void setTerminalFontFamily(family);
 
   const onPickTerminalFontSize = (size: number) => void setTerminalFontSize(size);
 
@@ -219,6 +224,48 @@ export function GeneralSection() {
             checked={terminalWebglEnabled}
             onCheckedChange={onToggleTerminalWebgl}
           />
+        </SettingRow>
+        <SettingRow
+          title="Font family"
+          description="Terminal font. Default auto-detects a Nerd Font on your system."
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px] min-w-[160px]"
+              >
+                <span className="truncate">
+                  {terminalFontFamily
+                    ? MONO_FONT_FAMILIES.find((f) => f.value === terminalFontFamily)?.label ?? terminalFontFamily
+                    : "Default (auto-detected)"}
+                </span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={12}
+                  strokeWidth={2}
+                  className="opacity-70 shrink-0"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="min-w-[200px] rounded-none border border-border bg-popover p-0 shadow-none ring-0 max-h-[300px] overflow-y-auto"
+            >
+              {MONO_FONT_FAMILIES.map((f) => (
+                <DropdownMenuItem
+                  key={f.value}
+                  onSelect={() => onPickTerminalFontFamily(f.value)}
+                  className={cn(
+                    "rounded-none px-3 py-1.5 text-[12px]",
+                    f.value === terminalFontFamily && "bg-accent/50",
+                  )}
+                >
+                  {f.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </SettingRow>
         <SettingRow
           title="Font size"

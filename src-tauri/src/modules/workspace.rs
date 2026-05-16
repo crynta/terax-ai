@@ -182,8 +182,9 @@ fn resolve_local_path(path: &str, _workspace: &WorkspaceEnv) -> PathBuf {
 
 #[cfg(windows)]
 pub fn wsl_path_to_unc(distro: &str, path: &str) -> PathBuf {
-    let normalized = path.replace('\\', "/");
-    let trimmed = normalized.trim_start_matches('/');
+    // Convert Windows drive paths (C:\foo) to WSL Linux paths (/mnt/c/foo)
+    let linux_path = normalize_to_wsl_linux_path(path);
+    let trimmed = linux_path.trim_start_matches('/');
     let primary = PathBuf::from(format!(
         r"\\wsl.localhost\{}\{}",
         distro,
@@ -193,6 +194,23 @@ pub fn wsl_path_to_unc(distro: &str, path: &str) -> PathBuf {
         return primary;
     }
     PathBuf::from(format!(r"\\wsl$\{}\{}", distro, trimmed.replace('/', r"\")))
+}
+
+#[cfg(windows)]
+fn normalize_to_wsl_linux_path(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let bytes = normalized.as_bytes();
+    // Detect Windows drive letter paths e.g. C:/Users/...
+    if bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && bytes[2] == b'/'
+    {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        format!("/mnt/{}/{}", drive, &normalized[3..])
+    } else {
+        normalized
+    }
 }
 
 #[cfg(windows)]

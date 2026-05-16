@@ -77,7 +77,7 @@ function getRecycler(): HTMLDivElement {
 function termOptions() {
   const prefs = usePreferencesStore.getState();
   return {
-    fontFamily: detectMonoFontFamily(),
+    fontFamily: resolveFontFamily(prefs.terminalFontFamily),
     fontSize: Math.max(4, Math.round(prefs.terminalFontSize * prefs.zoomLevel)),
     theme: buildTerminalTheme(),
     cursorBlink: false,
@@ -528,6 +528,20 @@ export function applyWebglPreference(enabled: boolean): void {
   for (const slot of slots) {
     if (enabled && !slot.webglAddon) attachWebgl(slot);
     else if (!enabled && slot.webglAddon) disposeSlotWebgl(slot);
+  }
+}
+
+function resolveFontFamily(preferred: string): string {
+  if (preferred) {
+    return `"${preferred}", ${detectMonoFontFamily()}`;
+  }
+  return detectMonoFontFamily();
+}
+
+export function applyFontFamily(family: string): void {
+  const resolved = resolveFontFamily(family);
+  for (const slot of slots) {
+    slot.term.options.fontFamily = resolved;
   }
 }
 
