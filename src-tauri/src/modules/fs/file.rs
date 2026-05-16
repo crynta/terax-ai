@@ -122,6 +122,18 @@ pub fn fs_write_file(
 }
 
 #[tauri::command]
+pub fn fs_canonicalize(path: String, workspace: Option<WorkspaceEnv>) -> Result<String, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
+    let canon = std::fs::canonicalize(&p).map_err(|e| e.to_string())?;
+    // Strip the Windows `\\?\` extended-length prefix so the frontend's
+    // path comparator sees the same form regardless of OS.
+    let s = canon.to_string_lossy().to_string();
+    let s = s.strip_prefix(r"\\?\").unwrap_or(&s).to_string();
+    Ok(s.replace('\\', "/"))
+}
+
+#[tauri::command]
 pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let p = resolve_path(&path, &workspace);

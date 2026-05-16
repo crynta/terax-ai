@@ -49,6 +49,11 @@ export const native = {
       content,
       workspace: currentWorkspaceEnv(),
     }),
+  canonicalize: (path: string) =>
+    invoke<string>("fs_canonicalize", {
+      path,
+      workspace: currentWorkspaceEnv(),
+    }),
   createFile: (path: string) =>
     invoke<void>("fs_create_file", { path, workspace: currentWorkspaceEnv() }),
   createDir: (path: string) =>
