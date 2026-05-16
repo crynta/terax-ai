@@ -222,7 +222,7 @@ mod tests {
     fn runaway_csi_flushes_at_hold_max() {
         let mut f = DaFilter::new();
         let mut input = Vec::from(b"\x1b[".as_slice());
-        input.extend(std::iter::repeat(b'0').take(HOLD_MAX));
+        input.extend(std::iter::repeat_n(b'0', HOLD_MAX));
         let (out, replies) = run(&mut f, &input);
         assert_eq!(out.len(), HOLD_MAX + 2);
         assert!(replies.is_empty());
