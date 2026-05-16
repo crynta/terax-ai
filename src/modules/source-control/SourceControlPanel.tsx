@@ -513,7 +513,7 @@ function ChangeGroup({
           <button
             type="button"
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-1.5 text-left text-muted-foreground transition-colors hover:text-foreground",
+              "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-muted-foreground transition-colors hover:text-foreground",
               compact ? "px-1 py-0.5" : "px-1.5 py-0.5",
             )}
           >
@@ -601,7 +601,7 @@ function ChangeGroup({
                           type="button"
                           onClick={() => void onSelect(entry)}
                           className={cn(
-                            "flex min-w-0 items-center gap-1.5 text-left",
+                            "flex min-w-0 cursor-pointer items-center gap-1.5 text-left",
                             compact ? "py-px" : "py-0.5",
                           )}
                         >
@@ -752,7 +752,7 @@ function IconActionButton({
         <Button
           size="icon-xs"
           variant="ghost"
-          className="rounded-md text-muted-foreground"
+          className="cursor-pointer rounded-md text-muted-foreground disabled:cursor-not-allowed"
           aria-label={label}
           disabled={disabled}
           onClick={onClick}

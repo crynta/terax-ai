@@ -156,7 +156,7 @@ export function Header({
     >
       <button
         type="button"
-        className="relative inline-flex items-center gap-1.5 px-2.5 transition-colors hover:bg-accent hover:text-foreground"
+        className="relative inline-flex cursor-pointer items-center gap-1.5 rounded-l-[5px] px-2.5 transition-colors hover:bg-accent/80 hover:text-foreground"
         onClick={onToggleSourceControl}
         title="Source Control"
       >
@@ -172,13 +172,13 @@ export function Header({
             </span>
           ) : null}
         </span>
-        <span>Diff</span>
+        <span className="inline-flex items-center leading-none">Diff</span>
       </button>
       {remoteIndicator.visible ? (
         <button
           type="button"
           className={cn(
-            "relative inline-flex w-7 items-center justify-center border-l border-border/60 transition-colors hover:bg-accent hover:text-foreground",
+            "relative inline-flex w-7 cursor-pointer items-center justify-center rounded-r-[5px] border-l border-border/60 transition-colors hover:bg-accent/80 hover:text-foreground",
             remoteIndicator.disabled &&
               "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-muted-foreground",
           )}
