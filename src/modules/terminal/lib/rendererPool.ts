@@ -131,6 +131,15 @@ function createSlot(): Slot {
   attachWebgl(slot);
 
   term.attachCustomKeyEventHandler((event) => {
+    // During IME composition the browser is assembling a multi-keystroke
+    // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
+    // Raw keydown events — including the Enter that commits a candidate —
+    // must NOT be forwarded to the PTY; xterm will receive the final
+    // composed string through its own compositionend handler instead.
+    // keyCode 229 ("Process") is what Chromium reports for every key
+    // pressed inside an active IME session when isComposing is not yet set.
+    if (event.isComposing || event.keyCode === 229) return false;
+
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
