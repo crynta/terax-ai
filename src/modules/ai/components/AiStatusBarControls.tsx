@@ -62,6 +62,7 @@ import {
   type ModelInfo,
   type ProviderId,
 } from "../config";
+import { fetchProviderModels, type RemoteModel } from "../lib/fetchModels";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { toggleFavoriteModel } from "../lib/modelPrefs";
 import { useChatStore } from "../store/chatStore";
@@ -235,12 +236,17 @@ function ModelDropdown() {
   const selected = useChatStore((s) => s.selectedModelId);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
+  const selectRemote = useChatStore((s) => s.selectRemoteModel);
+  const remoteOverride = useChatStore((s) => s.remoteModelOverride);
   const favoriteIds = usePreferencesStore((s) => s.favoriteModelIds);
   const recentIds = usePreferencesStore((s) => s.recentModelIds);
   const current = getModel(selected);
   const [search, setSearch] = useState("");
   const [activeProvider, setActiveProvider] = useState<ProviderId | null>(null);
   const [tab, setTab] = useState<Tab>("all");
+  const [remoteModels, setRemoteModels] = useState<Map<ProviderId, RemoteModel[]>>(new Map());
+  const [remoteLoading, setRemoteLoading] = useState<Set<ProviderId>>(new Set());
+  const [remoteError, setRemoteError] = useState<Map<ProviderId, string>>(new Map());
   const inputRef = useRef<HTMLInputElement>(null);
   const currentProviderHasKey = providerNeedsKey(current.provider)
     ? !!apiKeys[current.provider]
@@ -248,6 +254,26 @@ function ModelDropdown() {
 
   const hasKeyFor = (id: ProviderId) =>
     providerNeedsKey(id) ? !!apiKeys[id] : true;
+
+  const loadRemoteModels = async (providerId: ProviderId) => {
+    setRemoteLoading((prev) => new Set(prev).add(providerId));
+    setRemoteError((prev) => {
+      const next = new Map(prev);
+      next.delete(providerId);
+      return next;
+    });
+    const result = await fetchProviderModels(providerId, apiKeys[providerId]);
+    setRemoteLoading((prev) => {
+      const next = new Set(prev);
+      next.delete(providerId);
+      return next;
+    });
+    if (result.error) {
+      setRemoteError((prev) => new Map(prev).set(providerId, result.error!));
+    } else {
+      setRemoteModels((prev) => new Map(prev).set(providerId, result.models));
+    }
+  };
 
   const sortedProviders = useMemo(() => {
     const configured: (typeof PROVIDERS)[number][] = [];
@@ -287,6 +313,19 @@ function ModelDropdown() {
     return pool;
   }, [activeProvider, favoriteIds, recentIds, search, tab]);
 
+  const remoteFiltered = useMemo(() => {
+    if (activeProvider === null) return [];
+    const models = remoteModels.get(activeProvider);
+    if (!models) return [];
+    const q = search.trim().toLowerCase();
+    const staticIds = new Set<string>(
+      MODELS.filter((m) => m.provider === activeProvider).map((m) => m.id),
+    );
+    const deduped = models.filter((m) => !staticIds.has(m.id));
+    if (!q) return deduped;
+    return deduped.filter((m) => m.id.toLowerCase().includes(q));
+  }, [activeProvider, remoteModels, search]);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -302,11 +341,11 @@ function ModelDropdown() {
           )}
           title={
             currentProviderHasKey
-              ? `Model: ${current.label}`
+              ? `Model: ${remoteOverride ?? current.label}`
               : `${current.label} — no key configured`
           }
         >
-          {current.label}
+          {remoteOverride ?? current.label}
           <HugeiconsIcon
             icon={ArrowDown01Icon}
             size={11}
@@ -395,12 +434,18 @@ function ModelDropdown() {
           {/* Models list */}
           <div className="flex-1 overflow-y-auto py-1 max-h-[26rem]">
             {activeProvider !== null ? (
-              <ProviderHeader providerId={activeProvider} />
+              <ProviderHeader
+                providerId={activeProvider}
+                remoteModels={remoteModels.get(activeProvider)}
+                remoteLoading={remoteLoading.has(activeProvider)}
+                remoteError={remoteError.get(activeProvider)}
+                onRefresh={() => void loadRemoteModels(activeProvider)}
+              />
             ) : null}
             {activeProvider !== null && !hasKeyFor(activeProvider) ? (
               <ProviderConfigureCTA providerId={activeProvider} />
             ) : null}
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && remoteFiltered.length === 0 ? (
               <div className="flex items-center justify-center px-4 py-10 text-xs text-muted-foreground/70">
                 {tab === "favorites"
                   ? "No favorites yet — star a model to pin it here."
@@ -409,24 +454,51 @@ function ModelDropdown() {
                     : "No models match."}
               </div>
             ) : (
-              filtered.map((m) => (
-                <ModelRow
-                  key={m.id}
-                  model={m}
-                  selected={m.id === selected}
-                  hasKey={hasKeyFor(m.provider)}
-                  favorite={favoriteIds.includes(m.id)}
-                  showProviderIcon={activeProvider === null}
-                  onPick={() => {
-                    if (!hasKeyFor(m.provider)) {
-                      void openSettingsWindow("models");
-                      return;
-                    }
-                    setSelected(m.id as ModelId);
-                  }}
-                  onToggleFavorite={() => void toggleFavoriteModel(m.id)}
-                />
-              ))
+              <>
+                {filtered.map((m) => (
+                  <ModelRow
+                    key={m.id}
+                    model={m}
+                    selected={!remoteOverride && m.id === selected}
+                    hasKey={hasKeyFor(m.provider)}
+                    favorite={favoriteIds.includes(m.id)}
+                    showProviderIcon={activeProvider === null}
+                    onPick={() => {
+                      if (!hasKeyFor(m.provider)) {
+                        void openSettingsWindow("models");
+                        return;
+                      }
+                      setSelected(m.id as ModelId);
+                    }}
+                    onToggleFavorite={() => void toggleFavoriteModel(m.id)}
+                  />
+                ))}
+                {remoteFiltered.length > 0 ? (
+                  <>
+                    <div className="mx-3 my-1 border-t border-border/40" />
+                    <div className="px-3 pb-1 pt-0.5 text-[10px] text-muted-foreground/50">
+                      Remote models ({remoteFiltered.length})
+                    </div>
+                    {remoteFiltered.map((rm) => (
+                      <RemoteModelRow
+                        key={rm.id}
+                        modelId={rm.id}
+                        ownedBy={rm.owned_by}
+                        providerId={activeProvider!}
+                        selected={remoteOverride === rm.id}
+                        onPick={() => {
+                          const carrier = MODELS.find(
+                            (m) => m.provider === activeProvider,
+                          );
+                          if (carrier) {
+                            selectRemote(carrier.id as ModelId, rm.id);
+                          }
+                        }}
+                      />
+                    ))}
+                  </>
+                ) : null}
+              </>
             )}
           </div>
         </div>
@@ -502,9 +574,22 @@ function ProviderPill({
   );
 }
 
-function ProviderHeader({ providerId }: { providerId: ProviderId }) {
+function ProviderHeader({
+  providerId,
+  remoteModels,
+  remoteLoading,
+  remoteError,
+  onRefresh,
+}: {
+  providerId: ProviderId;
+  remoteModels?: RemoteModel[];
+  remoteLoading?: boolean;
+  remoteError?: string;
+  onRefresh: () => void;
+}) {
   const p = PROVIDERS.find((x) => x.id === providerId);
   if (!p) return null;
+  const canFetch = p.modelsUrl !== null;
   return (
     <div className="flex items-center gap-1.5 px-3 pt-1 pb-1.5 text-[11px] font-medium tracking-tight text-muted-foreground/90">
       <HugeiconsIcon
@@ -513,6 +598,29 @@ function ProviderHeader({ providerId }: { providerId: ProviderId }) {
         strokeWidth={1.75}
       />
       <span>{p.label}</span>
+      {canFetch ? (
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={remoteLoading}
+          className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground/70 transition-colors hover:bg-accent/40 hover:text-foreground"
+          title="Fetch available models from API"
+        >
+          {remoteLoading ? (
+            <Spinner className="size-3" />
+          ) : (
+            <HugeiconsIcon icon={ArrowDown01Icon} size={10} strokeWidth={2} />
+          )}
+          {remoteModels
+            ? `${remoteModels.length} models`
+            : "Fetch models"}
+        </button>
+      ) : null}
+      {remoteError ? (
+        <span className="ml-1 truncate text-[10px] text-destructive/70" title={remoteError}>
+          error
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -609,6 +717,58 @@ function ModelRow({
 
       <CapabilityBars caps={model.capabilities} />
 
+      {selected ? (
+        <HugeiconsIcon
+          icon={Tick01Icon}
+          size={13}
+          strokeWidth={2}
+          className="shrink-0 text-foreground"
+        />
+      ) : null}
+    </DropdownMenuItem>
+  );
+}
+
+function RemoteModelRow({
+  modelId,
+  ownedBy,
+  providerId,
+  selected,
+  onPick,
+}: {
+  modelId: string;
+  ownedBy: string;
+  providerId: ProviderId;
+  selected: boolean;
+  onPick: () => void;
+}) {
+  return (
+    <DropdownMenuItem
+      onSelect={(e) => {
+        e.preventDefault();
+        onPick();
+      }}
+      className={cn(
+        "group mx-1 my-0.5 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5",
+        selected ? "bg-accent/60 text-foreground" : "text-foreground/70",
+      )}
+    >
+      <HugeiconsIcon
+        icon={PROVIDER_ICON[providerId]}
+        size={13}
+        strokeWidth={1.5}
+        className="shrink-0 text-muted-foreground/50"
+      />
+      <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span className="shrink-0 text-[11px] font-medium leading-none">
+          {modelId}
+        </span>
+        {ownedBy ? (
+          <span className="truncate text-[10px] leading-none text-muted-foreground/50">
+            {ownedBy}
+          </span>
+        ) : null}
+      </div>
       {selected ? (
         <HugeiconsIcon
           icon={Tick01Icon}

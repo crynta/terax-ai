@@ -1,8 +1,16 @@
 mod modules;
 
 use modules::{fs, net, pty, secrets, shell, workspace};
+use std::path::PathBuf;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
+
+fn settings_data_dir(app: &tauri::AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .expect("no app-data dir")
+        .join("webview-settings")
+}
 
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
@@ -14,10 +22,12 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.set_focus();
         if let Some(t) = tab.as_deref().filter(|s| !s.is_empty()) {
-            // emit() serializes via JSON — no string-escape footgun, unlike
-            // eval() with format!(). Frontend listens via Tauri event API.
             let _ = window.emit("terax:settings-tab", t);
         }
+        if window.is_visible().unwrap_or(false) {
+            return Ok(());
+        }
+        let _ = window.show();
         return Ok(());
     }
 
@@ -28,8 +38,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         .max_inner_size(720.0, 520.0)
         .resizable(false)
         .visible(false)
-        // Keep settings above the main app window so it doesn't get hidden
-        // when the user clicks back into the editor or terminal (#33).
+        .data_directory(settings_data_dir(&app))
         .always_on_top(true);
 
     // Tie lifecycle to the main window so settings minimizes/closes with it.

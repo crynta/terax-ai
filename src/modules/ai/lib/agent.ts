@@ -399,10 +399,13 @@ function buildModel(
   openaiCompatibleModelId?: string,
   ollamaBaseURL?: string,
   zhipuBaseURL?: string,
+  remoteModelOverride?: string | null,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
   let resolvedId: string = m.id;
-  if (m.id === "lmstudio-local") {
+  if (remoteModelOverride) {
+    resolvedId = remoteModelOverride;
+  } else if (m.id === "lmstudio-local") {
     if (!lmstudioModelId?.trim()) {
       throw new Error(
         "LM Studio: no model id set. Open Settings → Models and enter the model id loaded in LM Studio.",
@@ -501,6 +504,7 @@ export type RunAgentOptions = {
   openaiCompatibleModelId?: string;
   ollamaBaseURL?: string;
   zhipuBaseURL?: string;
+  remoteModelOverride?: string | null;
   planMode?: boolean;
   projectMemory?: string | null;
   uiMessages: UIMessage[];
@@ -518,6 +522,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.openaiCompatibleModelId,
     opts.ollamaBaseURL,
     opts.zhipuBaseURL,
+    opts.remoteModelOverride,
   );
   const provider = getModel(modelId).provider;
 
