@@ -423,7 +423,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             >
               <Button
                 size={scm.compact ? "xs" : "sm"}
-                className="w-full"
+                className="w-full cursor-pointer disabled:cursor-not-allowed"
                 disabled={!canCommit}
                 title={commitDisabledReason ?? `Commit (${commitShortcut})`}
                 onClick={() => void scm.commit()}
@@ -433,7 +433,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               <Button
                 size={scm.compact ? "xs" : "sm"}
                 variant="secondary"
-                className="w-full"
+                className="w-full cursor-pointer disabled:cursor-not-allowed"
                 disabled={!scm.canPush || !!scm.actionBusy}
                 title={pushDisabledReason}
                 onClick={() => void scm.push()}
