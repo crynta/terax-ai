@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import {
   hasLeaf,
+  findLeafCwd,
   leafIds,
   nextLeafId,
   removeLeaf,
@@ -411,7 +412,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         if (t.id !== tabId || t.kind !== "terminal") return t;
         if (!hasLeaf(t.paneTree, leafId)) return t;
         if (t.activeLeafId === leafId) return t;
-        return { ...t, activeLeafId: leafId };
+        const cwd = findLeafCwd(t.paneTree, leafId) ?? t.cwd;
+        return { ...t, activeLeafId: leafId, cwd };
       }),
     );
   }, []);
@@ -450,6 +452,33 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             t.cwd,
           );
           return { ...t, paneTree, activeLeafId: leafId };
+        }),
+      );
+      return newLeafId;
+    },
+    [],
+  );
+
+  const splitPaneByLeaf = useCallback(
+    (leafId: number, dir: SplitDir, before: boolean = false): number | null => {
+      let newLeafId: number | null = null;
+      setTabs((curr) =>
+        curr.map((t) => {
+          if (t.kind !== "terminal" || !hasLeaf(t.paneTree, leafId)) return t;
+          if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
+          const splitId = nextIdRef.current++;
+          const lid = nextIdRef.current++;
+          newLeafId = lid;
+          const paneTree = splitLeaf(
+            t.paneTree,
+            leafId,
+            splitId,
+            lid,
+            dir,
+            t.cwd,
+            before,
+          );
+          return { ...t, paneTree, activeLeafId: lid };
         }),
       );
       return newLeafId;
@@ -567,6 +596,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     focusPane,
     focusNextPaneInTab,
     splitActivePane,
+    splitPaneByLeaf,
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,

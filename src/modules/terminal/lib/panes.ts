@@ -63,6 +63,7 @@ export function splitLeaf(
   newLeafId: PaneId,
   dir: SplitDir,
   newCwd?: string,
+  before: boolean = false,
 ): PaneNode {
   if (tree.kind === "split" && tree.dir === dir) {
     const idx = tree.children.findIndex(
@@ -70,12 +71,13 @@ export function splitLeaf(
     );
     if (idx >= 0) {
       const newLeaf: PaneNode = { kind: "leaf", id: newLeafId, cwd: newCwd };
+      const insertIdx = before ? idx : idx + 1;
       return {
         ...tree,
         children: [
-          ...tree.children.slice(0, idx + 1),
+          ...tree.children.slice(0, insertIdx),
           newLeaf,
-          ...tree.children.slice(idx + 1),
+          ...tree.children.slice(insertIdx),
         ],
       };
     }
@@ -87,13 +89,13 @@ export function splitLeaf(
       kind: "split",
       id: newSplitId,
       dir,
-      children: [tree, newLeaf],
+      children: before ? [newLeaf, tree] : [tree, newLeaf],
     };
   }
   return {
     ...tree,
     children: tree.children.map((c) =>
-      splitLeaf(c, targetId, newSplitId, newLeafId, dir, newCwd),
+      splitLeaf(c, targetId, newSplitId, newLeafId, dir, newCwd, before),
     ),
   };
 }

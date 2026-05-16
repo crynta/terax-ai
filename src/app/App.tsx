@@ -95,6 +95,7 @@ export default function App() {
     focusPane,
     focusNextPaneInTab,
     splitActivePane,
+    splitPaneByLeaf,
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,
@@ -870,6 +871,8 @@ export default function App() {
                         onCwd={handleTerminalCwd}
                         onExit={handleLeafExit}
                         onFocusLeaf={handleFocusLeaf}
+                        onSplitPane={splitPaneByLeaf}
+                        onClosePane={closePaneByLeaf}
                       />
                     </div>
                     <div
