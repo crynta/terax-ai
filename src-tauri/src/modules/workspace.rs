@@ -25,6 +25,8 @@ impl WorkspaceEnv {
         matches!(self, Self::Wsl { .. })
     }
 
+    #[allow(dead_code)]
+    #[allow(dead_code)]
     pub fn is_ssh(&self) -> bool {
         matches!(self, Self::Ssh { .. })
     }
@@ -42,7 +44,10 @@ pub fn resolve_path(path: &str, workspace: &WorkspaceEnv) -> PathBuf {
     match workspace {
         WorkspaceEnv::Local => PathBuf::from(path),
         WorkspaceEnv::Wsl { distro } => wsl_path_to_unc(distro, path),
-        WorkspaceEnv::Ssh { .. } => panic!("resolve_path called with SSH workspace — branch earlier"),
+        WorkspaceEnv::Ssh { .. } => {
+            log::error!("resolve_path called with SSH workspace — caller should have branched earlier; returning raw path as fallback");
+            PathBuf::from(path)
+        }
     }
 }
 
@@ -50,7 +55,10 @@ pub fn resolve_path(path: &str, workspace: &WorkspaceEnv) -> PathBuf {
 pub fn resolve_path(path: &str, workspace: &WorkspaceEnv) -> PathBuf {
     match workspace {
         WorkspaceEnv::Local | WorkspaceEnv::Wsl { .. } => PathBuf::from(path),
-        WorkspaceEnv::Ssh { .. } => panic!("resolve_path called with SSH workspace — branch earlier"),
+        WorkspaceEnv::Ssh { .. } => {
+            log::error!("resolve_path called with SSH workspace — caller should have branched earlier; returning raw path as fallback");
+            PathBuf::from(path)
+        }
     }
 }
 

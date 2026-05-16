@@ -1,4 +1,3 @@
-mod da_filter;
 #[cfg(windows)]
 mod job;
 pub(crate) mod session;
@@ -6,10 +5,9 @@ pub(crate) mod shell_init;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::thread;
 
-use portable_pty::PtySize;
 use tauri::ipc::{Channel, Response};
 
 use crate::modules::workspace::WorkspaceEnv;
@@ -32,6 +30,7 @@ impl Default for PtyState {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn pty_open(
     state: tauri::State<'_, PtyState>,
     ssh_state: tauri::State<'_, crate::modules::ssh::SshState>,
