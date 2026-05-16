@@ -13,6 +13,7 @@ type LeafBundle = {
   onSearch: (addon: SearchAddon) => void;
   onCwd: (cwd: string) => void;
   onExit: (code: number) => void;
+  onOpenUrl: (url: string) => void;
 };
 
 type Props = {
@@ -55,6 +56,7 @@ export function PaneTreeView({
           onSearchReady={(_id, addon) => b.onSearch(addon)}
           onCwd={(_id, cwd) => b.onCwd(cwd)}
           onExit={(_id, code) => b.onExit(code)}
+          onOpenUrl={(url) => b.onOpenUrl(url)}
         />
       </div>
     );

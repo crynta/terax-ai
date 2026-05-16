@@ -828,6 +828,7 @@ export default function App() {
                         onCwd={handleTerminalCwd}
                         onExit={handleLeafExit}
                         onFocusLeaf={handleFocusLeaf}
+                        onOpenUrl={(_, url) => openPreviewTab(url)}
                       />
                     </div>
                     <div

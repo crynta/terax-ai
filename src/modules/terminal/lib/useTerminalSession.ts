@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { DormantRing } from "./dormantRing";
 import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
+import { extractLocalhostUrls } from "./url-detector";
 import {
   acquireSlot,
   applyFontSize,
@@ -22,6 +23,7 @@ type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
+  onUrl?: (url: string, isOauth: boolean) => void;
 };
 
 type Session = {
@@ -43,6 +45,7 @@ type Session = {
   searchQuery: string | null;
   dormantRing: DormantRing;
   hasSlot: boolean;
+  seenUrls: Set<string>;
 };
 
 const sessions = new Map<number, Session>();
@@ -96,6 +99,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     searchQuery: null,
     dormantRing: new DormantRing(),
     hasSlot: false,
+    seenUrls: new Set(),
   };
   sessions.set(leafId, session);
 
@@ -126,7 +130,14 @@ async function openPtyForSession(
     startCols,
     startRows,
     {
-      onData: (bytes) => deliverPtyBytes(leafId, bytes),
+      onData: (bytes) => {
+        deliverPtyBytes(leafId, bytes);
+        for (const { url, isOauth } of extractLocalhostUrls(bytes)) {
+          if (s.seenUrls.has(url)) continue;
+          s.seenUrls.add(url);
+          s.callbacks.onUrl?.(url, isOauth);
+        }
+      },
       onExit: (code) => {
         s.shellExited = true;
         s.pty = null;
@@ -238,6 +249,7 @@ export async function respawnSession(
   s.dormantRing = new DormantRing();
   s.shellExited = false;
   s.pendingExit = null;
+  s.seenUrls = new Set();
 
   const slot = getSlotForLeaf(leafId);
   if (slot) {
@@ -284,6 +296,7 @@ type Options = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
+  onUrl?: (url: string, isOauth: boolean) => void;
 };
 
 export function useTerminalSession({
@@ -295,9 +308,10 @@ export function useTerminalSession({
   onSearchReady,
   onExit,
   onCwd,
+  onUrl,
 }: Options) {
-  const cbRef = useRef({ onSearchReady, onExit, onCwd });
-  cbRef.current = { onSearchReady, onExit, onCwd };
+  const cbRef = useRef({ onSearchReady, onExit, onCwd, onUrl });
+  cbRef.current = { onSearchReady, onExit, onCwd, onUrl };
 
   useEffect(() => {
     let cancelled = false;
@@ -310,6 +324,7 @@ export function useTerminalSession({
         onSearchReady: (a) => cbRef.current.onSearchReady?.(a),
         onExit: (c) => cbRef.current.onExit?.(c),
         onCwd: (c) => cbRef.current.onCwd?.(c),
+        onUrl: (u, o) => cbRef.current.onUrl?.(u, o),
       });
       if (s.visibleNow && s.focusedNow) focusSlot(leafId);
     });

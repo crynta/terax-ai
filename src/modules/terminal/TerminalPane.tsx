@@ -1,6 +1,7 @@
 import { useTheme } from "@/modules/theme";
 import type { SearchAddon } from "@xterm/addon-search";
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { LocalUrlBanner } from "../terminal/LocalUrlBanner";
 import { useTerminalSession } from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {
@@ -21,6 +22,7 @@ type Props = {
   onSearchReady?: (leafId: number, addon: SearchAddon) => void;
   onExit?: (leafId: number, code: number) => void;
   onCwd?: (leafId: number, cwd: string) => void;
+  onOpenUrl?: (url: string) => void;
 };
 
 export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
@@ -33,11 +35,13 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onSearchReady,
       onExit,
       onCwd,
+      onOpenUrl,
     },
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
     const { resolvedTheme } = useTheme();
+    const [banner, setBanner] = useState<{ url: string; isOauth: boolean } | null>(null);
 
     const session = useTerminalSession({
       leafId,
@@ -48,6 +52,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       onSearchReady: (a) => onSearchReady?.(leafId, a),
       onExit: (c) => onExit?.(leafId, c),
       onCwd: (c) => onCwd?.(leafId, c),
+      onUrl: (url, isOauth) => setBanner({ url, isOauth }),
     });
 
     useEffect(() => {
@@ -69,13 +74,25 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
 
     return (
       <div
-        ref={containerRef}
-        className="h-full w-full"
+        className="relative h-full w-full"
         style={{
           visibility: visible ? "visible" : "hidden",
           pointerEvents: visible ? "auto" : "none",
         }}
-      />
+      >
+        <div ref={containerRef} className="h-full w-full" />
+        {banner && (
+          <LocalUrlBanner
+            url={banner.url}
+            isOauth={banner.isOauth}
+            onOpen={() => {
+              onOpenUrl?.(banner.url);
+              setBanner(null);
+            }}
+            onDismiss={() => setBanner(null)}
+          />
+        )}
+      </div>
     );
   },
 );
