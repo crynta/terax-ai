@@ -145,6 +145,16 @@ function createSlot(): Slot {
       if (event.type === "keydown") bridge.writeToPty("\x1b\r");
       return false;
     }
+    if (isCtrlShiftC(event)) {
+      event.preventDefault();
+      if (event.type === "keydown") {
+        const sel = slot.term.getSelection();
+        if (sel) {
+          navigator.clipboard.writeText(sel).catch(console.error);
+        }
+      }
+      return false;
+    }
     return true;
   });
 
@@ -297,6 +307,8 @@ function scheduleUnhide(slot: Slot): void {
     slot.unhideRaf = requestAnimationFrame(() => {
       slot.unhideRaf = null;
       slot.host.style.visibility = "";
+      slot.fitAddon.fit();
+      slot.term.refresh(0, slot.term.rows - 1);
       const leafId = slot.currentLeafId;
       if (leafId !== null && adapter?.isLeafFocused(leafId)) {
         slot.term.focus();
@@ -358,6 +370,7 @@ function setupResizeObserver(slot: Slot, p: AcquireParams): void {
       slot.lastW = w;
       slot.lastH = h;
       slot.fitAddon.fit();
+      slot.term.refresh(0, slot.term.rows - 1);
       if (slot.ptyTimer) clearTimeout(slot.ptyTimer);
       slot.ptyTimer = setTimeout(flushPty, PTY_RESIZE_DEBOUNCE_MS);
     }, FIT_DEBOUNCE_MS);
@@ -577,5 +590,15 @@ function isCtrlBackspace(e: KeyboardEvent): boolean {
 function isShiftEnter(e: KeyboardEvent): boolean {
   return (
     e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+  );
+}
+
+function isCtrlShiftC(e: KeyboardEvent): boolean {
+  return (
+    e.ctrlKey &&
+    e.shiftKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    (e.key === "C" || e.key === "c")
   );
 }

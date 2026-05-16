@@ -6,6 +6,10 @@ type Result = {
   inheritedCwdForNewTab: () => string | undefined;
 };
 
+function isSshTab(tab: Tab): boolean {
+  return tab.kind === "terminal" && (tab.sessionType === "ssh" || (tab as any).workspace?.kind === "ssh");
+}
+
 export function useWorkspaceCwd(
   activeTab: Tab | undefined,
   tabs: Tab[],
@@ -14,24 +18,21 @@ export function useWorkspaceCwd(
   const lastTerminalCwd = useRef<string | null>(null);
 
   useEffect(() => {
-    if (activeTab?.kind === "terminal" && activeTab.cwd) {
+    if (activeTab?.kind === "terminal" && activeTab.cwd && !isSshTab(activeTab)) {
       lastTerminalCwd.current = activeTab.cwd;
     }
   }, [activeTab]);
 
   const explorerRoot = useMemo<string | null>(() => {
-    if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
+    if (activeTab?.kind === "terminal" && activeTab.cwd && !isSshTab(activeTab)) return activeTab.cwd;
     if (lastTerminalCwd.current) return lastTerminalCwd.current;
-    const anyTerm = tabs.find((t) => t.kind === "terminal" && t.cwd);
+    const anyTerm = tabs.find((t) => t.kind === "terminal" && t.cwd && !isSshTab(t));
     if (anyTerm?.kind === "terminal" && anyTerm.cwd) return anyTerm.cwd;
     return home;
   }, [activeTab, tabs, home]);
 
   const inheritedCwdForNewTab = useCallback((): string | undefined => {
-    if (activeTab?.kind === "terminal" && activeTab.cwd) return activeTab.cwd;
-    // Editor tabs inherit the last terminal's cwd (or workspace home), not
-    // the file's folder — opening a new terminal from a file shouldn't
-    // hijack the user's working directory context.
+    if (activeTab?.kind === "terminal" && activeTab.cwd && !isSshTab(activeTab)) return activeTab.cwd;
     return lastTerminalCwd.current ?? home ?? undefined;
   }, [activeTab, home]);
 

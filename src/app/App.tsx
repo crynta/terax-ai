@@ -58,6 +58,7 @@ import {
   hasLeaf,
   leafIds,
   respawnSession,
+  SessionDialog,
   TerminalStack,
   type TerminalPaneHandle,
 } from "@/modules/terminal";
@@ -82,6 +83,7 @@ export default function App() {
     activeId,
     setActiveId,
     newTab,
+    newTabWithSession,
     newPrivateTab,
     openFileTab,
     pinTab,
@@ -153,6 +155,11 @@ export default function App() {
     explorer.focus();
   }, []);
 
+  useEffect(() => {
+    const el = document.getElementById("loading");
+    if (el) el.remove();
+  }, []);
+
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
@@ -169,13 +176,13 @@ export default function App() {
 
   const switchWorkspace = useCallback(
     async (env: WorkspaceEnv) => {
-      if (
+      // SSH is a per-tab environment, not a global one
+      if (env.kind === "ssh") return;
+      const same =
         env.kind === workspaceEnv.kind &&
         (env.kind === "local" ||
-          (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
-      ) {
-        return;
-      }
+          (env.kind === "wsl" && "distro" in env && "distro" in workspaceEnv && env.distro === workspaceEnv.distro));
+      if (same) return;
       const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
       if (dirty) {
         window.alert("Save or close unsaved editor tabs before switching workspace.");
@@ -208,6 +215,7 @@ export default function App() {
     [workspaceEnv, setWorkspaceEnv, resetWorkspace],
   );
 
+  const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
@@ -495,8 +503,18 @@ export default function App() {
   }, [askFromSelection]);
 
   const openNewTab = useCallback(() => {
-    newTab(inheritedCwdForNewTab());
-  }, [newTab, inheritedCwdForNewTab]);
+    setSessionDialogOpen(true);
+  }, []);
+
+  const handleCreateSession = useCallback(
+    (opts: import("@/modules/tabs").SessionOptions) => {
+      newTabWithSession({
+        ...opts,
+        cwd: opts.cwd ?? inheritedCwdForNewTab(),
+      });
+    },
+    [newTabWithSession, inheritedCwdForNewTab],
+  );
 
   const openNewPrivateTab = useCallback(() => {
     newPrivateTab(inheritedCwdForNewTab());
@@ -954,6 +972,12 @@ export default function App() {
             privateActive={
               activeTab?.kind === "terminal" && activeTab.private === true
             }
+            sessionType={
+              activeTab?.kind === "terminal" ? activeTab.sessionType : undefined
+            }
+            sessionName={
+              activeTab?.kind === "terminal" ? activeTab.sessionName : undefined
+            }
           />
 
           {hasComposer ? (
@@ -975,6 +999,12 @@ export default function App() {
               />
             ) : null}
           </AnimatePresence>
+
+          <SessionDialog
+            open={sessionDialogOpen}
+            onOpenChange={setSessionDialogOpen}
+            onCreate={handleCreateSession}
+          />
 
           <ShortcutsDialog
             open={shortcutsOpen}

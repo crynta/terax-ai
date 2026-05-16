@@ -10,6 +10,20 @@ import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
+/** Serializable session info for restoring tabs on restart. */
+export type SavedSession = {
+  sessionType?: string;
+  sessionName?: string;
+  cwd?: string;
+  /** For SSH sessions */
+  sshHost?: string;
+  sshUser?: string;
+  sshPort?: number;
+  sshKeyPath?: string;
+  /** For WSL sessions */
+  wslDistro?: string;
+};
+
 export type ThemePref = "system" | "light" | "dark";
 
 export const EDITOR_THEMES = [
@@ -389,4 +403,25 @@ export async function emitKeysChanged(): Promise<void> {
 
 export function onKeysChanged(cb: () => void): Promise<UnlistenFn> {
   return listen(KEYS_CHANGED_EVENT, () => cb());
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Session persistence — save/restore terminal tab configs across restarts.
+// ─────────────────────────────────────────────────────────────────────────
+
+const KEY_SAVED_SESSIONS = "savedSessions";
+
+export async function saveSessions(sessions: SavedSession[]): Promise<void> {
+  await store.set(KEY_SAVED_SESSIONS, sessions);
+  await store.save();
+}
+
+export async function loadSessions(): Promise<SavedSession[]> {
+  const sessions = await store.get<SavedSession[]>(KEY_SAVED_SESSIONS);
+  return sessions ?? [];
+}
+
+export async function clearSessions(): Promise<void> {
+  await store.set(KEY_SAVED_SESSIONS, []);
+  await store.save();
 }

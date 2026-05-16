@@ -1,3 +1,4 @@
+import { useWindowSnapped } from "@/hooks/useWindowSnapped";
 import { USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import {
@@ -17,6 +18,8 @@ type Props = {
 
 export function WindowControls({ closeOnly = false }: Props) {
   const [maximized, setMaximized] = useState(false);
+
+  useWindowSnapped();
 
   useEffect(() => {
     if (!USE_CUSTOM_WINDOW_CONTROLS || closeOnly) return;

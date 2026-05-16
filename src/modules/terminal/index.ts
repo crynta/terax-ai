@@ -1,5 +1,6 @@
 export { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 export { TerminalStack } from "./TerminalStack";
+export { SessionDialog } from "./SessionDialog";
 export {
   disposeSession,
   respawnSession,

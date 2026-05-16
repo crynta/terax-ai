@@ -162,6 +162,19 @@ html[data-chrome="borderless"] #settings-root {
   border: 1px solid var(--border);
   background: var(--background);
 }
+html[data-chrome="borderless"][data-snapped="true"] #root,
+html[data-chrome="borderless"][data-snapped="true"] #settings-root {
+  border-radius: 0;
+}
+
+/* Hide native password reveal button so the custom eye icon isn't doubled. */
+input[data-slot="input"][type="password"]::-ms-reveal,
+input[data-slot="input"][type="password"]::-ms-clear {
+  display: none;
+}
+input[data-slot="input"][type="password"]::-webkit-reveal-button {
+  display: none;
+}
 
 /*
  * xterm.js overrides — kept outside @layer so they win against the addon's

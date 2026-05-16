@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use portable_pty::CommandBuilder;
+use serde::Serialize;
 
 use crate::modules::workspace::WorkspaceEnv;
 
@@ -16,6 +17,10 @@ pub fn build_command(
     cwd: Option<String>,
     workspace: WorkspaceEnv,
 ) -> Result<CommandBuilder, String> {
+    // SSH takes priority regardless of platform
+    if let WorkspaceEnv::Ssh { host, user, port, key_path, password } = &workspace {
+        return build_ssh(cwd, host, user, *port, key_path, password);
+    }
     #[cfg(unix)]
     {
         let _ = workspace;
@@ -25,6 +30,180 @@ pub fn build_command(
     {
         windows::build(cwd, workspace)
     }
+}
+
+fn sshpass_available() -> bool {
+    std::process::Command::new("sshpass")
+        .arg("--version")
+        .output()
+        .is_ok()
+}
+
+fn build_ssh(
+    _cwd: Option<String>,
+    host: &str,
+    user: &Option<String>,
+    port: Option<u16>,
+    key_path: &Option<String>,
+    password: &Option<String>,
+) -> Result<CommandBuilder, String> {
+    let use_sshpass = password.is_some() && sshpass_available();
+
+    let (program, pass_args): (&str, Vec<String>) = if use_sshpass {
+        ("sshpass", vec!["-p".into(), password.as_ref().unwrap().clone(), "ssh".into()])
+    } else {
+        ("ssh", vec![])
+    };
+
+    let mut cmd = CommandBuilder::new(program);
+    for a in pass_args {
+        cmd.arg(&a);
+    }
+    cmd.arg("-t");
+    cmd.arg("-o");
+    cmd.arg("ControlMaster=no");
+    cmd.arg("-o");
+    cmd.arg("LogLevel=QUIET");
+    if let Some(k) = key_path {
+        cmd.arg("-i");
+        cmd.arg(k);
+    }
+    if let Some(p) = port {
+        cmd.arg("-p");
+        cmd.arg(p.to_string());
+    }
+    let mut target = String::new();
+    if let Some(u) = user {
+        target.push_str(u);
+        target.push('@');
+    }
+    target.push_str(host);
+    cmd.arg(&target);
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env("TERAX_TERMINAL", "1");
+    Ok(cmd)
+}
+
+/// Describes a detected shell on the system (used by frontend session dialog).
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize)]
+pub enum DetectedShell {
+    Pwsh,
+    PowerShell,
+    Cmd,
+    GitBash,
+    Bash,
+    Zsh,
+    Fish,
+    WslBash,
+    Ssh,
+    Other(String),
+}
+
+#[allow(dead_code)]
+impl DetectedShell {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Pwsh => "PowerShell 7",
+            Self::PowerShell => "Windows PowerShell 5",
+            Self::Cmd => "Command Prompt",
+            Self::GitBash => "Git Bash",
+            Self::Bash => "Bash",
+            Self::Zsh => "Zsh",
+            Self::Fish => "Fish",
+            Self::WslBash => "WSL Bash",
+            Self::Ssh => "SSH",
+            Self::Other(_) => "Other",
+        }
+    }
+
+    pub fn icon(&self) -> &'static str {
+        match self {
+            Self::Pwsh => "powershell",
+            Self::PowerShell => "powershell",
+            Self::Cmd => "cmd",
+            Self::GitBash => "git-bash",
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+            Self::WslBash => "wsl",
+            Self::Ssh => "ssh",
+            Self::Other(_) => "terminal",
+        }
+    }
+}
+
+/// Detect all available shells on the current system.
+#[tauri::command]
+pub fn list_available_shells() -> Vec<serde_json::Value> {
+    let mut shells = Vec::new();
+
+    #[cfg(windows)]
+    {
+        // Detect pwsh.exe
+        if let Some(_p) = which_in_path("pwsh.exe") {
+            shells.push(serde_json::json!({"kind": "Pwsh", "label": "PowerShell 7", "icon": "powershell", "path": "pwsh.exe"}));
+        }
+        // Detect powershell.exe
+        let system32 = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+            .join("System32");
+        let ps5 = system32.join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+        if ps5.exists() {
+            shells.push(serde_json::json!({"kind": "PowerShell", "label": "Windows PowerShell 5", "icon": "powershell", "path": ps5.to_string_lossy()}));
+        }
+        // Detect cmd.exe
+        let cmd = system32.join("cmd.exe");
+        if cmd.exists() {
+            shells.push(serde_json::json!({"kind": "Cmd", "label": "Command Prompt", "icon": "cmd", "path": cmd.to_string_lossy()}));
+        }
+        // Detect Git Bash
+        if let Some(gb) = detect_git_bash() {
+            shells.push(serde_json::json!({"kind": "GitBash", "label": "Git Bash", "icon": "git-bash", "path": gb.to_string_lossy()}));
+        }
+        // Detect WSL distros (from workspace module)
+        // WSL distros are already available via wsl_list_distros
+    }
+
+    #[cfg(unix)]
+    {
+        // Detect zsh
+        if which_in_path("zsh").is_some() {
+            shells.push(serde_json::json!({"kind": "Zsh", "label": "Zsh", "icon": "zsh", "path": "zsh"}));
+        }
+        // Detect bash
+        if which_in_path("bash").is_some() {
+            shells.push(serde_json::json!({"kind": "Bash", "label": "Bash", "icon": "bash", "path": "bash"}));
+        }
+        // Detect fish
+        if which_in_path("fish").is_some() {
+            shells.push(serde_json::json!({"kind": "Fish", "label": "Fish", "icon": "fish", "path": "fish"}));
+        }
+    }
+
+    shells
+}
+
+#[cfg(windows)]
+fn detect_git_bash() -> Option<PathBuf> {
+    // Git Bash is typically installed in Program Files
+    for pf in ["ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"] {
+        if let Some(dir) = std::env::var_os(pf).map(PathBuf::from) {
+            let candidates = [
+                dir.join("Git").join("bin").join("bash.exe"),
+                dir.join("Git").join("usr").join("bin").join("bash.exe"),
+            ];
+            for c in &candidates {
+                if c.is_file() {
+                    return Some(c.clone());
+                }
+            }
+        }
+    }
+    // Also check PATH
+    which_in_path("bash.exe")
 }
 
 fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
@@ -386,7 +565,6 @@ pub fn windows_shell_path() -> PathBuf {
     system32.join("cmd.exe")
 }
 
-#[cfg(windows)]
 fn which_in_path(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {

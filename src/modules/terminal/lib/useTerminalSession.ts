@@ -1,5 +1,6 @@
 import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { DormantRing } from "./dormantRing";
@@ -43,6 +44,7 @@ type Session = {
   searchQuery: string | null;
   dormantRing: DormantRing;
   hasSlot: boolean;
+  workspace?: WorkspaceEnv;
 };
 
 const sessions = new Map<number, Session>();
@@ -73,7 +75,7 @@ configureRendererPool({
   },
 });
 
-function ensureSession(leafId: number, initialCwd?: string): Session {
+function ensureSession(leafId: number, initialCwd?: string, workspace?: WorkspaceEnv): Session {
   const existing = sessions.get(leafId);
   if (existing) return existing;
 
@@ -96,6 +98,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     searchQuery: null,
     dormantRing: new DormantRing(),
     hasSlot: false,
+    workspace,
   };
   sessions.set(leafId, session);
 
@@ -137,6 +140,7 @@ async function openPtyForSession(
       },
     },
     cwd,
+    s.workspace,
   );
 }
 
@@ -281,6 +285,7 @@ type Options = {
   visible: boolean;
   focused?: boolean;
   initialCwd?: string;
+  workspace?: WorkspaceEnv;
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
@@ -292,6 +297,7 @@ export function useTerminalSession({
   visible,
   focused = true,
   initialCwd,
+  workspace,
   onSearchReady,
   onExit,
   onCwd,
@@ -301,7 +307,7 @@ export function useTerminalSession({
 
   useEffect(() => {
     let cancelled = false;
-    const s = ensureSession(leafId, initialCwd);
+    const s = ensureSession(leafId, initialCwd, workspace);
     s.ready.then(() => {
       if (cancelled || s.disposed) return;
       const node = container.current;

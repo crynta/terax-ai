@@ -15,6 +15,8 @@ import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 // Matches the renderer slot pool size — over this we'd evict an active leaf.
 export const MAX_PANES_PER_TAB = 4;
 
+export type SessionType = "local" | "wsl" | "ssh" | "git-bash" | "powershell" | "cmd";
+
 export type TerminalTab = {
   id: number;
   kind: "terminal";
@@ -24,6 +26,12 @@ export type TerminalTab = {
   activeLeafId: number;
   /** AI agent cannot read buffer / context of this terminal. */
   private?: boolean;
+  /** Session type for environment-aware UI indicators */
+  sessionType?: SessionType;
+  /** Human-readable session name (e.g. "WSL: Ubuntu", "SSH: prod") */
+  sessionName?: string;
+  /** Workspace environment for this terminal */
+  workspace?: { kind: "local" } | { kind: "wsl"; distro: string } | { kind: "ssh"; host: string; user?: string; port?: number; key_path?: string; password?: string };
 };
 
 export type EditorTab = {
@@ -87,6 +95,14 @@ function titleFromUrl(url: string): string {
   }
 }
 
+export type SessionOptions = {
+  title?: string;
+  cwd?: string;
+  sessionType?: SessionType;
+  sessionName?: string;
+  workspace?: { kind: "local" } | { kind: "wsl"; distro: string } | { kind: "ssh"; host: string; user?: string; port?: number; key_path?: string; password?: string };
+};
+
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const tabId = 1;
@@ -99,6 +115,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         cwd: initial?.cwd,
         paneTree: { kind: "leaf", id: leafId, cwd: initial?.cwd },
         activeLeafId: leafId,
+        sessionType: initial?.sessionType,
+        sessionName: initial?.sessionName,
+        workspace: initial?.workspace,
       },
     ];
   });
@@ -116,6 +135,27 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         title: "shell",
         cwd,
         paneTree: { kind: "leaf", id: leafId, cwd },
+        activeLeafId: leafId,
+      },
+    ]);
+    setActiveId(tabId);
+    return tabId;
+  }, []);
+
+  const newTabWithSession = useCallback((opts: SessionOptions) => {
+    const tabId = nextIdRef.current++;
+    const leafId = nextIdRef.current++;
+    setTabs((t) => [
+      ...t,
+      {
+        id: tabId,
+        kind: "terminal",
+        title: opts.title ?? opts.sessionName ?? "shell",
+        cwd: opts.cwd,
+        sessionType: opts.sessionType,
+        sessionName: opts.sessionName,
+        workspace: opts.workspace,
+        paneTree: { kind: "leaf", id: leafId, cwd: opts.cwd },
         activeLeafId: leafId,
       },
     ]);
@@ -553,6 +593,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     activeId,
     setActiveId,
     newTab,
+    newTabWithSession,
     newPrivateTab,
     openFileTab,
     pinTab,

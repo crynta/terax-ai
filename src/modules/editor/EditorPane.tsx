@@ -30,6 +30,49 @@ import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { getKey } from "@/modules/ai/lib/keyring";
 import { onKeysChanged } from "@/modules/settings/store";
+import { convertFileSrc } from "@tauri-apps/api/core";
+
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "avif"]);
+const VIDEO_EXTS = new Set(["mp4", "mkv", "webm", "avi", "mov", "wmv", "m4v"]);
+const AUDIO_EXTS = new Set(["mp3", "ogg", "wav", "flac", "aac", "m4a", "wma", "opus"]);
+
+function ext(path: string): string {
+  return path.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function isImage(path: string): boolean { return IMAGE_EXTS.has(ext(path)); }
+function isVideo(path: string): boolean { return VIDEO_EXTS.has(ext(path)); }
+function isAudio(path: string): boolean { return AUDIO_EXTS.has(ext(path)); }
+
+function MediaPreview({ path, size }: { path: string; size: number }) {
+  const src = convertFileSrc(path);
+
+  if (isImage(path)) {
+    return (
+      <div className="flex h-full items-center justify-center overflow-auto p-4">
+        <img src={src} alt="" className="max-h-full max-w-full object-contain" />
+      </div>
+    );
+  }
+
+  if (isVideo(path)) {
+    return (
+      <div className="flex h-full items-center justify-center overflow-auto p-4">
+        <video src={src} controls className="max-h-full max-w-full" />
+      </div>
+    );
+  }
+
+  if (isAudio(path)) {
+    return (
+      <div className="flex h-full items-center justify-center overflow-auto p-4">
+        <audio src={src} controls className="w-full max-w-md" />
+      </div>
+    );
+  }
+
+  return null;
+}
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -244,6 +287,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       );
     }
     if (doc.status === "binary") {
+      if (isImage(path) || isVideo(path) || isAudio(path)) {
+        return <MediaPreview path={path} size={doc.size} />;
+      }
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
           <div className="text-sm text-foreground">Binary file</div>
