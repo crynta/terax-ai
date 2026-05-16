@@ -5144,7 +5144,7 @@ dependencies = [
 
 [[package]]
 name = "terax"
-version = "0.6.5"
+version = "0.6.6"
 dependencies = [
  "bytes",
  "dirs 5.0.1",
@@ -5155,6 +5155,7 @@ dependencies = [
  "grep-searcher",
  "ignore",
  "keyring",
+ "libc",
  "log",
  "portable-pty",
  "reqwest 0.12.28",
