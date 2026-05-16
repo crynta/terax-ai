@@ -9,7 +9,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 
-export const POOL_MAX_SIZE = 4;
+export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
 const PTY_RESIZE_DEBOUNCE_MS = 256;
 const SNAPSHOT_SCROLLBACK_CAP = 5_000;
@@ -78,7 +78,7 @@ function termOptions() {
   const prefs = usePreferencesStore.getState();
   return {
     fontFamily: detectMonoFontFamily(),
-    fontSize: prefs.terminalFontSize,
+    fontSize: Math.max(4, Math.round(prefs.terminalFontSize * prefs.zoomLevel)),
     theme: buildTerminalTheme(),
     cursorBlink: false,
     cursorStyle: "bar" as const,
@@ -160,25 +160,35 @@ function createSlot(): Slot {
 
 type PickResult = { slot: Slot; previousLeafId: number | null };
 
+function isAltScreen(s: Slot): boolean {
+  try {
+    return s.term.buffer.active.type === "alternate";
+  } catch {
+    return false;
+  }
+}
+
 function pickSlotFor(leafId: number): PickResult {
   const free = slots.find((s) => s.currentLeafId === null);
   if (free) return { slot: free, previousLeafId: null };
   if (slots.length < POOL_MAX_SIZE)
     return { slot: createSlot(), previousLeafId: null };
 
-  let unfocusedVictim: Slot | null = null;
-  let lastResort: Slot | null = null;
+  let best: Slot | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
   for (const s of slots) {
     if (s.currentLeafId === leafId) return { slot: s, previousLeafId: null };
-    if (s.currentLeafId === null) return { slot: s, previousLeafId: null };
-    const focused = adapter?.isLeafFocused(s.currentLeafId) ?? false;
-    if (!focused) {
-      if (!unfocusedVictim || s.lastUsedAt < unfocusedVictim.lastUsedAt)
-        unfocusedVictim = s;
+    const focused =
+      s.currentLeafId !== null &&
+      (adapter?.isLeafFocused(s.currentLeafId) ?? false);
+    const score =
+      (isAltScreen(s) ? 100 : 0) + (focused ? 10 : 0) + s.lastUsedAt / 1e12;
+    if (score < bestScore) {
+      bestScore = score;
+      best = s;
     }
-    if (!lastResort || s.lastUsedAt < lastResort.lastUsedAt) lastResort = s;
   }
-  const chosen = unfocusedVictim ?? lastResort!;
+  const chosen = best!;
   return { slot: chosen, previousLeafId: chosen.currentLeafId };
 }
 
@@ -248,6 +258,9 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     }
   }
   p.drainRing((bytes) => slot.term.write(bytes));
+  try {
+    slot.term.write("\x1b[?25h");
+  } catch {}
 
   for (const d of slot.oscDisposers) {
     try {
