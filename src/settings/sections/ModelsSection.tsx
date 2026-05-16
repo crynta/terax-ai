@@ -238,6 +238,16 @@ function LocalModelsBlock() {
   useEffect(() => setUrlDraft(baseURL), [baseURL]);
   useEffect(() => setModelDraft(modelId), [modelId]);
 
+  const dirty =
+    urlDraft.trim() !== baseURL || modelDraft.trim() !== modelId;
+
+  const save = async () => {
+    const u = urlDraft.trim();
+    const m = modelDraft.trim();
+    if (u && u !== baseURL) await setLmstudioBaseURL(u);
+    if (m !== modelId) await setLmstudioModelId(m);
+  };
+
   const test = async () => {
     setTestStatus("testing");
     try {
@@ -282,6 +292,14 @@ function LocalModelsBlock() {
               className="h-8 px-3 text-[11px]"
             >
               Test
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => void save()}
+              disabled={!dirty}
+              className="h-8 px-3 text-[11px]"
+            >
+              Save
             </Button>
           </div>
         </FieldRow>
@@ -337,6 +355,16 @@ function OpenAICompatibleBlock({
   useEffect(() => setModelDraft(modelId), [modelId]);
   useEffect(() => setCtxDraft(String(contextWindow)), [contextWindow]);
 
+  const dirty =
+    urlDraft.trim() !== baseURL || modelDraft.trim() !== modelId;
+
+  const save = async () => {
+    const u = urlDraft.trim();
+    const m = modelDraft.trim();
+    if (u !== baseURL) await setOpenaiCompatibleBaseURL(u);
+    if (m !== modelId) await setOpenaiCompatibleModelId(m);
+  };
+
   const test = async () => {
     setTestStatus("testing");
     try {
@@ -381,6 +409,14 @@ function OpenAICompatibleBlock({
               className="h-8 px-3 text-[11px]"
             >
               Test
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => void save()}
+              disabled={!dirty}
+              className="h-8 px-3 text-[11px]"
+            >
+              Save
             </Button>
           </div>
         </FieldRow>
