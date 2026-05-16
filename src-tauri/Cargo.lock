@@ -5155,6 +5155,7 @@ dependencies = [
  "grep-searcher",
  "ignore",
  "keyring",
+ "libc",
  "log",
  "portable-pty",
  "reqwest 0.12.28",
