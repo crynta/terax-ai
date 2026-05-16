@@ -25,7 +25,16 @@
 
   <body>
     <div id="root">
-      <div id="terminal"></div>
+      <div id="loading">
+        <style>
+          #loading { position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9999;background:var(--bg,#090b0c); }
+          #loading .sp { width:32px;height:32px;border:3px solid rgba(255,255,255,.08);border-top-color:rgba(255,255,255,.6);border-radius:50%;animation:lspin .7s linear infinite; }
+          @keyframes lspin { to { transform:rotate(360deg); } }
+          #loading .msg { position:absolute;bottom:48px;left:50%;transform:translateX(-50%);font:12px/1.4 system-ui,sans-serif;color:rgba(255,255,255,.25);text-align:center; }
+        </style>
+        <div class="sp"></div>
+        <div class="msg" id="load-msg"></div>
+      </div>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

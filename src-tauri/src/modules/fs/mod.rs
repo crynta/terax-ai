@@ -2,7 +2,9 @@ pub mod file;
 pub mod grep;
 pub mod mutate;
 pub mod search;
+pub mod ssh;
 pub mod tree;
+pub mod wsl;
 
 use std::path::Path;
 

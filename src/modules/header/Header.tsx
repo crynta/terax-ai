@@ -36,6 +36,7 @@ type Props = {
   activeId: number;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onNewDefault?: () => void;
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
@@ -59,6 +60,7 @@ export function Header({
   activeId,
   onSelect,
   onNew,
+  onNewDefault,
   onNewPrivate,
   onNewPreview,
   onNewEditor,
@@ -205,6 +207,7 @@ export function Header({
           activeId={activeId}
           onSelect={onSelect}
           onNew={onNew}
+          onNewDefault={onNewDefault}
           onNewPrivate={onNewPrivate}
           onNewPreview={onNewPreview}
           onNewEditor={onNewEditor}

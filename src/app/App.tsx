@@ -58,6 +58,7 @@ import {
   hasLeaf,
   leafIds,
   respawnSession,
+  SessionDialog,
   TerminalStack,
   type TerminalPaneHandle,
 } from "@/modules/terminal";
@@ -74,7 +75,8 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-
+import { toast } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function App() {
   const {
@@ -82,7 +84,7 @@ export default function App() {
     activeId,
     setActiveId,
     newTab,
-    newPrivateTab,
+    newTabWithSession,
     openFileTab,
     pinTab,
     newPreviewTab,
@@ -153,6 +155,11 @@ export default function App() {
     explorer.focus();
   }, []);
 
+  useEffect(() => {
+    const el = document.getElementById("loading");
+    if (el) el.remove();
+  }, []);
+
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
@@ -169,16 +176,21 @@ export default function App() {
 
   const switchWorkspace = useCallback(
     async (env: WorkspaceEnv) => {
-      if (
+      // SSH is a per-tab environment, not a global one
+      if (env.kind === "ssh") return;
+      const same =
         env.kind === workspaceEnv.kind &&
         (env.kind === "local" ||
-          (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
-      ) {
-        return;
-      }
+          (env.kind === "wsl" &&
+            "distro" in env &&
+            "distro" in workspaceEnv &&
+            env.distro === workspaceEnv.distro));
+      if (same) return;
       const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
       if (dirty) {
-        window.alert("Save or close unsaved editor tabs before switching workspace.");
+        toast.warning(
+          "Save or close unsaved editor tabs before switching workspace.",
+        );
         return;
       }
 
@@ -190,7 +202,7 @@ export default function App() {
           nextHome = (await homeDir()).replace(/\\/g, "/");
         }
       } catch (e) {
-        window.alert(String(e));
+        toast.error(String(e));
         return;
       }
 
@@ -208,6 +220,8 @@ export default function App() {
     [workspaceEnv, setWorkspaceEnv, resetWorkspace],
   );
 
+  const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
+  const [creatingPrivateTerminal, setCreatingPrivateTerminal] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
@@ -277,6 +291,10 @@ export default function App() {
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
   const isAiDiffTab = activeTab?.kind === "ai-diff";
+  const explorerWorkspace =
+    activeTab?.kind === "terminal" && activeTab.workspace
+      ? activeTab.workspace
+      : workspaceEnv;
 
   // When an AI diff is approved (write_file applied to disk), reload any
   // open editor tabs for that path so the user sees the new content. We
@@ -305,7 +323,9 @@ export default function App() {
 
   useEffect(() => {
     setActiveSearchAddon(
-      activeLeafId !== null ? (searchAddons.current.get(activeLeafId) ?? null) : null,
+      activeLeafId !== null
+        ? (searchAddons.current.get(activeLeafId) ?? null)
+        : null,
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
   }, [activeId, activeLeafId]);
@@ -495,12 +515,33 @@ export default function App() {
   }, [askFromSelection]);
 
   const openNewTab = useCallback(() => {
-    newTab(inheritedCwdForNewTab());
-  }, [newTab, inheritedCwdForNewTab]);
+    setSessionDialogOpen(true);
+  }, []);
+
+  const handleCreateSession = useCallback(
+    (opts: import("@/modules/tabs").SessionOptions) => {
+      let cwd = opts.cwd;
+      if (cwd === undefined) {
+        cwd = opts.workspace?.kind === "ssh" ? "/" : inheritedCwdForNewTab();
+      }
+      newTabWithSession({
+        ...opts,
+        cwd,
+        private: opts.private ?? creatingPrivateTerminal,
+      });
+      setCreatingPrivateTerminal(false);
+    },
+    [newTabWithSession, inheritedCwdForNewTab, creatingPrivateTerminal],
+  );
+
+  const openNewDefaultTab = useCallback(() => {
+    handleCreateSession({});
+  }, [handleCreateSession]);
 
   const openNewPrivateTab = useCallback(() => {
-    newPrivateTab(inheritedCwdForNewTab());
-  }, [newPrivateTab, inheritedCwdForNewTab]);
+    setCreatingPrivateTerminal(true);
+    setSessionDialogOpen(true);
+  }, []);
 
   const sendCd = useCallback(
     (path: string) => {
@@ -648,6 +689,7 @@ export default function App() {
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
+      "debug.test": () => toast.success("debugging with sonner worked"),
     }),
     [
       activeId,
@@ -749,7 +791,13 @@ export default function App() {
         focus: () => activeEditorHandle.focus(),
       };
     return null;
-  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
+  }, [
+    isTerminalTab,
+    isEditorTab,
+    activeId,
+    activeSearchAddon,
+    activeEditorHandle,
+  ]);
 
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
@@ -801,6 +849,7 @@ export default function App() {
 
   const shell = (
     <ThemeProvider>
+      <Toaster closeButton position="top-center" richColors />
       <TooltipProvider>
         <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
           <Header
@@ -808,6 +857,7 @@ export default function App() {
             activeId={activeId}
             onSelect={setActiveId}
             onNew={openNewTab}
+            onNewDefault={openNewDefaultTab}
             onNewPrivate={openNewPrivateTab}
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
@@ -848,6 +898,7 @@ export default function App() {
                     onPathDeleted={handlePathDeleted}
                     onRevealInTerminal={cdInNewTab}
                     onAttachToAgent={handleAttachFileToAgent}
+                    workspace={explorerWorkspace}
                   />
                 </div>
               </ResizablePanel>
@@ -947,12 +998,19 @@ export default function App() {
             cwd={activeCwd}
             filePath={activeFilePath}
             home={home}
+            workspace={explorerWorkspace}
             onCd={sendCd}
             onWorkspaceChange={switchWorkspace}
             onOpenMini={openMini}
             hasComposer={hasComposer}
             privateActive={
               activeTab?.kind === "terminal" && activeTab.private === true
+            }
+            sessionType={
+              activeTab?.kind === "terminal" ? activeTab.sessionType : undefined
+            }
+            sessionName={
+              activeTab?.kind === "terminal" ? activeTab.sessionName : undefined
             }
           />
 
@@ -975,6 +1033,16 @@ export default function App() {
               />
             ) : null}
           </AnimatePresence>
+
+          <SessionDialog
+            open={sessionDialogOpen}
+            isPrivate={creatingPrivateTerminal}
+            onOpenChange={(open) => {
+              setSessionDialogOpen(open);
+              if (!open) setCreatingPrivateTerminal(false);
+            }}
+            onCreate={handleCreateSession}
+          />
 
           <ShortcutsDialog
             open={shortcutsOpen}

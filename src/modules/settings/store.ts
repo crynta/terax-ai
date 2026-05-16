@@ -10,6 +10,20 @@ import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
+/** Serializable session info for restoring tabs on restart. */
+export type SavedSession = {
+  sessionType?: string;
+  sessionName?: string;
+  cwd?: string;
+  /** For SSH sessions */
+  sshHost?: string;
+  sshUser?: string;
+  sshPort?: number;
+  sshKeyPath?: string;
+  /** For WSL sessions */
+  wslDistro?: string;
+};
+
 export type ThemePref = "system" | "light" | "dark";
 
 export const EDITOR_THEMES = [
@@ -52,16 +66,19 @@ export type Preferences = {
   lmstudioModelId: string;
   openaiCompatibleBaseURL: string;
   openaiCompatibleModelId: string;
+  aiAcpCommand: string;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
   showHidden: boolean;
   terminalWebglEnabled: boolean;
+  terminalFontFamily: string;
   terminalFontSize: number;
   terminalScrollback: number;
   lastWslDistro: string | null;
   zoomLevel: number;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
+  settingsAlwaysOnTop: boolean;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -78,21 +95,24 @@ const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_LMSTUDIO_MODEL_ID = "lmstudioModelId";
 const KEY_OPENAI_COMPAT_BASE_URL = "openaiCompatibleBaseURL";
 const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
+const KEY_AI_ACP_COMMAND = "aiAcpCommand";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
+const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_SHORTCUTS = "shortcuts";
+const KEY_SETTINGS_ALWAYS_ON_TOP = "settingsAlwaysOnTop";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
-export const TERMINAL_FONT_SIZE_MIN = 8;
-export const TERMINAL_FONT_SIZE_MAX = 32;
+export const TERMINAL_FONT_SIZE_MIN = 5;
+export const TERMINAL_FONT_SIZE_MAX = 238;
 
 export const TERMINAL_FONT_SIZES = [
   10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
@@ -119,16 +139,19 @@ export const DEFAULT_PREFERENCES: Preferences = {
   lmstudioModelId: "",
   openaiCompatibleBaseURL: OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   openaiCompatibleModelId: "",
+  aiAcpCommand: "",
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
   showHidden: false,
   terminalWebglEnabled: true,
+  terminalFontFamily: "",
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
   lastWslDistro: null,
   zoomLevel: 1.0,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
+  settingsAlwaysOnTop: true,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -183,6 +206,8 @@ export async function loadPreferences(): Promise<Preferences> {
     openaiCompatibleModelId:
       get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ??
       DEFAULT_PREFERENCES.openaiCompatibleModelId,
+    aiAcpCommand:
+      get<string>(KEY_AI_ACP_COMMAND) ?? DEFAULT_PREFERENCES.aiAcpCommand,
     favoriteModelIds:
       get<string[]>(KEY_FAVORITE_MODELS) ??
       DEFAULT_PREFERENCES.favoriteModelIds,
@@ -196,6 +221,9 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
       DEFAULT_PREFERENCES.terminalWebglEnabled,
+    terminalFontFamily:
+      get<string>(KEY_TERMINAL_FONT_FAMILY) ??
+      DEFAULT_PREFERENCES.terminalFontFamily,
     terminalFontSize:
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
       DEFAULT_PREFERENCES.terminalFontSize,
@@ -210,6 +238,9 @@ export async function loadPreferences(): Promise<Preferences> {
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
+    settingsAlwaysOnTop:
+      get<boolean>(KEY_SETTINGS_ALWAYS_ON_TOP) ??
+      DEFAULT_PREFERENCES.settingsAlwaysOnTop,
   };
 }
 
@@ -267,6 +298,11 @@ export async function setOpenaiCompatibleModelId(value: string): Promise<void> {
   await writePref(KEY_OPENAI_COMPAT_MODEL_ID, value);
 }
 
+export async function setAiAcpCommand(value: string): Promise<void> {
+  await writePref(KEY_AI_ACP_COMMAND, value);
+}
+
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -285,6 +321,10 @@ export async function setShowHidden(value: boolean): Promise<void> {
 
 export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
+}
+
+export async function setTerminalFontFamily(value: string): Promise<void> {
+  await writePref(KEY_TERMINAL_FONT_FAMILY, value);
 }
 
 export async function setTerminalFontSize(value: number): Promise<void> {
@@ -324,9 +364,74 @@ export async function setShortcuts(
   await store.save();
 }
 
+export async function setSettingsAlwaysOnTop(value: boolean): Promise<void> {
+  await writePref(KEY_SETTINGS_ALWAYS_ON_TOP, value);
+}
+
 export async function resetShortcuts(): Promise<void> {
   await store.set(KEY_SHORTCUTS, DEFAULT_PREFERENCES.shortcuts);
   await store.save();
+}
+
+export async function resetAllPreferences(): Promise<void> {
+  const entries = Object.entries(DEFAULT_PREFERENCES);
+  for (const [key, value] of entries) {
+    // Avoid double-emitting or redundant saves if store.set logic is complex,
+    // but here writePref handles it neatly.
+    const k =
+      key === "theme"
+        ? KEY_THEME
+        : key === "defaultModelId"
+          ? KEY_DEFAULT_MODEL
+          : key === "editorTheme"
+            ? KEY_EDITOR_THEME
+            : key === "customInstructions"
+              ? KEY_CUSTOM_INSTRUCTIONS
+              : key === "autostart"
+                ? KEY_AUTOSTART
+                : key === "restoreWindowState"
+                  ? KEY_RESTORE_WINDOW
+                  : key === "autocompleteEnabled"
+                    ? KEY_AUTOCOMPLETE_ENABLED
+                    : key === "autocompleteProvider"
+                      ? KEY_AUTOCOMPLETE_PROVIDER
+                      : key === "autocompleteModelId"
+                        ? KEY_AUTOCOMPLETE_MODEL
+                        : key === "lmstudioBaseURL"
+                          ? KEY_LMSTUDIO_BASE_URL
+                          : key === "lmstudioModelId"
+                            ? KEY_LMSTUDIO_MODEL_ID
+                            : key === "openaiCompatibleBaseURL"
+                              ? KEY_OPENAI_COMPAT_BASE_URL
+                              : key === "openaiCompatibleModelId"
+                                ? KEY_OPENAI_COMPAT_MODEL_ID
+                                : key === "favoriteModelIds"
+                                  ? KEY_FAVORITE_MODELS
+                                  : key === "recentModelIds"
+                                    ? KEY_RECENT_MODELS
+                                    : key === "vimMode"
+                                      ? KEY_VIM_MODE
+                                      : key === "showHidden"
+                                        ? KEY_SHOW_HIDDEN
+                                        : key === "terminalWebglEnabled"
+                                          ? KEY_TERMINAL_WEBGL_ENABLED
+                                          : key === "terminalFontFamily"
+                                            ? KEY_TERMINAL_FONT_FAMILY
+                                            : key === "terminalFontSize"
+                                              ? KEY_TERMINAL_FONT_SIZE
+                                              : key === "terminalScrollback"
+                                                ? KEY_TERMINAL_SCROLLBACK
+                                                : key === "lastWslDistro"
+                                                  ? KEY_LAST_WSL_DISTRO
+                                                  : key === "zoomLevel"
+                                                    ? KEY_ZOOM_LEVEL
+                                                    : key === "shortcuts"
+                                                      ? KEY_SHORTCUTS
+                                                      : key === "settingsAlwaysOnTop"
+                                                        ? KEY_SETTINGS_ALWAYS_ON_TOP
+                                                        : key;
+    await writePref(k, value);
+  }
 }
 
 export type PrefKey = keyof Preferences;
@@ -354,11 +459,14 @@ export async function onPreferencesChange(
     [KEY_VIM_MODE]: "vimMode",
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
+    [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_SETTINGS_ALWAYS_ON_TOP]: "settingsAlwaysOnTop",
+    [KEY_AI_ACP_COMMAND]: "aiAcpCommand",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
@@ -389,4 +497,25 @@ export async function emitKeysChanged(): Promise<void> {
 
 export function onKeysChanged(cb: () => void): Promise<UnlistenFn> {
   return listen(KEYS_CHANGED_EVENT, () => cb());
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Session persistence — save/restore terminal tab configs across restarts.
+// ─────────────────────────────────────────────────────────────────────────
+
+const KEY_SAVED_SESSIONS = "savedSessions";
+
+export async function saveSessions(sessions: SavedSession[]): Promise<void> {
+  await store.set(KEY_SAVED_SESSIONS, sessions);
+  await store.save();
+}
+
+export async function loadSessions(): Promise<SavedSession[]> {
+  const sessions = await store.get<SavedSession[]>(KEY_SAVED_SESSIONS);
+  return sessions ?? [];
+}
+
+export async function clearSessions(): Promise<void> {
+  await store.set(KEY_SAVED_SESSIONS, []);
+  await store.save();
 }

@@ -19,6 +19,7 @@ pub struct BackgroundProc {
     pub started_at_ms: u64,
     pub child: Arc<SharedChild>,
     pub buffer: Mutex<BoundedRingBuffer>,
+    pub stdin: Mutex<Option<std::process::ChildStdin>>,
     pub exited: AtomicBool,
     pub exit_code: AtomicI32,
     pub exit_unknown: AtomicBool,
@@ -65,6 +66,18 @@ impl BackgroundProc {
         let _ = self.child.kill();
     }
 
+    pub fn write_stdin(&self, data: &[u8]) -> Result<(), String> {
+        use std::io::Write;
+        let mut stdin_lock = self.stdin.lock().unwrap();
+        if let Some(ref mut stdin) = *stdin_lock {
+            stdin.write_all(data).map_err(|e| e.to_string())?;
+            stdin.flush().map_err(|e| e.to_string())?;
+            Ok(())
+        } else {
+            Err("stdin is not piped".to_string())
+        }
+    }
+
     pub fn info(&self, handle: u32) -> BackgroundProcInfo {
         let exited = self.exited.load(Ordering::Acquire);
         let exit_code = if exited && !self.exit_unknown.load(Ordering::Acquire) {
@@ -108,11 +121,12 @@ pub fn spawn(
     if let (WorkspaceEnv::Local, Some(ref dir)) = (&workspace, &cwd) {
         cmd.current_dir(dir);
     }
-    cmd.stdin(Stdio::null())
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let shared = SharedChild::spawn(&mut cmd).map_err(|e| e.to_string())?;
+    let mut shared = SharedChild::spawn(&mut cmd).map_err(|e| e.to_string())?;
+    let stdin_pipe = shared.take_stdin();
     let stdout_pipe = shared.take_stdout().ok_or("no stdout pipe")?;
     let stderr_pipe = shared.take_stderr().ok_or("no stderr pipe")?;
     let child = Arc::new(shared);
@@ -128,6 +142,7 @@ pub fn spawn(
         started_at_ms,
         child,
         buffer: Mutex::new(BoundedRingBuffer::new(RING_CAP)),
+        stdin: Mutex::new(stdin_pipe),
         exited: AtomicBool::new(false),
         exit_code: AtomicI32::new(0),
         exit_unknown: AtomicBool::new(false),

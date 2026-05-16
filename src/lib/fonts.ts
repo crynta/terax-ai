@@ -18,6 +18,29 @@ const NERD_FONT_CANDIDATES = [
 
 const FALLBACK_CHAIN = '"JetBrains Mono", SFMono-Regular, Menlo, monospace';
 
+export const MONO_FONT_FAMILIES = [
+  { value: "", label: "Default (auto-detected)" },
+  { value: "JetBrains Mono", label: "JetBrains Mono" },
+  { value: "Fira Code", label: "Fira Code" },
+  { value: "Fira Code Retina", label: "Fira Code Retina" },
+  { value: "Source Code Pro", label: "Source Code Pro" },
+  { value: "Hack", label: "Hack" },
+  { value: "Iosevka", label: "Iosevka" },
+  { value: "Iosevka Term", label: "Iosevka Term" },
+  { value: "MesloLGS NF", label: "MesloLGS NF" },
+  { value: "Cascadia Code", label: "Cascadia Code" },
+  { value: "Cascadia Mono", label: "Cascadia Mono" },
+  { value: "Inconsolata", label: "Inconsolata" },
+  { value: "Monaspace Neon", label: "Monaspace Neon" },
+  { value: "Monaspace Argon", label: "Monaspace Argon" },
+  { value: "Monaspace Xenon", label: "Monaspace Xenon" },
+  { value: "Monaspace Radon", label: "Monaspace Radon" },
+  { value: "Monaspace Krypton", label: "Monaspace Krypton" },
+  { value: "SFMono-Regular", label: "SF Mono" },
+  { value: "Menlo", label: "Menlo" },
+  { value: "monospace", label: "monospace" },
+];
+
 let detected: string | null = null;
 let monoReady: Promise<void> | null = null;
 

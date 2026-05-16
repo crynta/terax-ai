@@ -17,6 +17,7 @@ import {
   IncognitoIcon,
   PencilEdit02Icon,
   PlusSignIcon,
+  ServerStack03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef } from "react";
@@ -27,6 +28,7 @@ type Props = {
   activeId: number;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onNewDefault?: () => void;
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
@@ -41,6 +43,7 @@ export function TabBar({
   activeId,
   onSelect,
   onNew,
+  onNewDefault,
   onNewPrivate,
   onNewPreview,
   onNewEditor,
@@ -91,6 +94,12 @@ export function TabBar({
                   key={t.id}
                   value={String(t.id)}
                   data-tab-id={t.id}
+                  onMouseDown={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      onClose(t.id);
+                    }
+                  }}
                   onDoubleClick={() => isPreview && onPin(t.id)}
                   className={cn(
                     "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
@@ -149,12 +158,25 @@ export function TabBar({
               size="icon"
               className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               title="New tab"
+              onPointerDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && onNewDefault) {
+                  e.preventDefault();
+                  onNewDefault();
+                }
+              }}
             >
               <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
-            <DropdownMenuItem onSelect={() => onNew()}>
+            <DropdownMenuItem onSelect={(e) => {
+              const me = e as unknown as MouseEvent;
+              if ((me.ctrlKey || me.metaKey) && onNewDefault) {
+                onNewDefault();
+              } else {
+                onNew();
+              }
+            }}>
               <HugeiconsIcon
                 icon={ComputerTerminal02Icon}
                 size={14}
@@ -236,6 +258,26 @@ function TabIcon({ tab }: { tab: Tab }) {
       />
     );
   }
+  if (tab.kind === "terminal" && tab.sessionType === "ssh") {
+    return (
+      <HugeiconsIcon
+        icon={Globe02Icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0 text-blue-600 dark:text-blue-400"
+      />
+    );
+  }
+  if (tab.kind === "terminal" && (tab.sessionType === "wsl" || tab.workspace?.kind === "wsl")) {
+    return (
+      <HugeiconsIcon
+        icon={ServerStack03Icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0 text-emerald-600 dark:text-emerald-400"
+      />
+    );
+  }
   return (
     <HugeiconsIcon
       icon={ComputerTerminal02Icon}
@@ -250,6 +292,10 @@ function labelFor(t: Tab): string {
   if (t.kind === "editor") return t.title;
   if (t.kind === "preview") return t.title;
   if (t.kind === "ai-diff") return t.title;
+  if (t.kind === "terminal") {
+    if (t.sessionName) return t.sessionName;
+    if (!t.cwd) return t.title;
+  }
   if (!t.cwd) return t.title;
   const parts = t.cwd.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "/";

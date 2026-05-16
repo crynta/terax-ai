@@ -27,7 +27,8 @@ export type ShortcutId =
   | "ai.askSelection"
   | "shortcuts.open"
   | "settings.open"
-  | "sidebar.toggle";
+  | "sidebar.toggle"
+  | "debug.test";
 
 export type ShortcutGroup =
   | "General"
@@ -199,6 +200,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Reset zoom",
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, key: "0" }],
+  },
+  {
+    id: "debug.test",
+    label: "Debug Sonner",
+    group: "General",
+    defaultBindings: [{ ctrl: true, shift: true, alt: true, key: "d" }],
   },
 ];
 

@@ -1,4 +1,5 @@
 import { useTheme } from "@/modules/theme";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import type { SearchAddon } from "@xterm/addon-search";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { useTerminalSession } from "./lib/useTerminalSession";
@@ -18,6 +19,7 @@ type Props = {
   /** This leaf is the active pane within its tab — receives auto-focus. */
   focused?: boolean;
   initialCwd?: string;
+  workspace?: WorkspaceEnv;
   onSearchReady?: (leafId: number, addon: SearchAddon) => void;
   onExit?: (leafId: number, code: number) => void;
   onCwd?: (leafId: number, cwd: string) => void;
@@ -30,6 +32,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       visible,
       focused = true,
       initialCwd,
+      workspace,
       onSearchReady,
       onExit,
       onCwd,
@@ -45,6 +48,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       visible,
       focused,
       initialCwd,
+      workspace,
       onSearchReady: (a) => onSearchReady?.(leafId, a),
       onExit: (c) => onExit?.(leafId, c),
       onCwd: (c) => onCwd?.(leafId, c),

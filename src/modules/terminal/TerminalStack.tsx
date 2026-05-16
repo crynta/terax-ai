@@ -97,6 +97,7 @@ export function TerminalStack({
               activeLeafId={t.activeLeafId}
               onFocusLeaf={(leafId) => onFocusLeaf(t.id, leafId)}
               getBundle={getBundle}
+              workspace={"workspace" in t ? t.workspace : undefined}
             />
           </div>
         );

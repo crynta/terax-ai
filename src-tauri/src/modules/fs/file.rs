@@ -5,6 +5,13 @@ use serde::Serialize;
 
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
+fn check_not_ssh(workspace: &WorkspaceEnv) -> Result<(), String> {
+    if matches!(workspace, WorkspaceEnv::Ssh { .. }) {
+        return Err("File operations on remote SSH hosts are not yet supported via the sidebar. Use the terminal to manage files remotely.".into());
+    }
+    Ok(())
+}
+
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 
@@ -43,6 +50,12 @@ pub struct FileStat {
 #[tauri::command]
 pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<ReadResult, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_read_file(distro, &path);
+    }
+
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| {
         log::debug!("fs_read_file stat({}) failed: {e}", p.display());
@@ -84,6 +97,12 @@ pub fn fs_write_file(
     workspace: Option<WorkspaceEnv>,
 ) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_write_file(distro, &path, &content);
+    }
+
     let target = resolve_path(&path, &workspace);
     let parent = target
         .parent()
@@ -124,6 +143,12 @@ pub fn fs_write_file(
 #[tauri::command]
 pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    check_not_ssh(&workspace)?;
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_stat(distro, &path);
+    }
+
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
     let kind = if meta.is_dir() {

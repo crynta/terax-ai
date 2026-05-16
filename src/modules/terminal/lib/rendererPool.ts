@@ -77,7 +77,7 @@ function getRecycler(): HTMLDivElement {
 function termOptions() {
   const prefs = usePreferencesStore.getState();
   return {
-    fontFamily: detectMonoFontFamily(),
+    fontFamily: resolveFontFamily(prefs.terminalFontFamily),
     fontSize: Math.max(4, Math.round(prefs.terminalFontSize * prefs.zoomLevel)),
     theme: buildTerminalTheme(),
     cursorBlink: false,
@@ -143,6 +143,16 @@ function createSlot(): Slot {
     if (isShiftEnter(event)) {
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty("\x1b\r");
+      return false;
+    }
+    if (isCtrlShiftC(event)) {
+      event.preventDefault();
+      if (event.type === "keydown") {
+        const sel = slot.term.getSelection();
+        if (sel) {
+          navigator.clipboard.writeText(sel).catch(console.error);
+        }
+      }
       return false;
     }
     return true;
@@ -297,6 +307,8 @@ function scheduleUnhide(slot: Slot): void {
     slot.unhideRaf = requestAnimationFrame(() => {
       slot.unhideRaf = null;
       slot.host.style.visibility = "";
+      slot.fitAddon.fit();
+      slot.term.refresh(0, slot.term.rows - 1);
       const leafId = slot.currentLeafId;
       if (leafId !== null && adapter?.isLeafFocused(leafId)) {
         slot.term.focus();
@@ -358,6 +370,7 @@ function setupResizeObserver(slot: Slot, p: AcquireParams): void {
       slot.lastW = w;
       slot.lastH = h;
       slot.fitAddon.fit();
+      slot.term.refresh(0, slot.term.rows - 1);
       if (slot.ptyTimer) clearTimeout(slot.ptyTimer);
       slot.ptyTimer = setTimeout(flushPty, PTY_RESIZE_DEBOUNCE_MS);
     }, FIT_DEBOUNCE_MS);
@@ -518,6 +531,20 @@ export function applyWebglPreference(enabled: boolean): void {
   }
 }
 
+function resolveFontFamily(preferred: string): string {
+  if (preferred) {
+    return `"${preferred}", ${detectMonoFontFamily()}`;
+  }
+  return detectMonoFontFamily();
+}
+
+export function applyFontFamily(family: string): void {
+  const resolved = resolveFontFamily(family);
+  for (const slot of slots) {
+    slot.term.options.fontFamily = resolved;
+  }
+}
+
 export function applyFontSize(size: number): void {
   for (const slot of slots) {
     if (slot.term.options.fontSize === size) continue;
@@ -577,5 +604,15 @@ function isCtrlBackspace(e: KeyboardEvent): boolean {
 function isShiftEnter(e: KeyboardEvent): boolean {
   return (
     e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+  );
+}
+
+function isCtrlShiftC(e: KeyboardEvent): boolean {
+  return (
+    e.ctrlKey &&
+    e.shiftKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    (e.key === "C" || e.key === "c")
   );
 }

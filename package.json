@@ -4,7 +4,7 @@
   "version": "0.6.6",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tauri dev",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
@@ -79,6 +79,7 @@
     "react-dom": "^19.1.0",
     "react-resizable-panels": "^4.10.0",
     "shadcn": "^4.3.1",
+    "sonner": "^2.0.7",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.3",

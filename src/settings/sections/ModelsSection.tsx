@@ -43,6 +43,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
+import { ClaudeAcpCard } from "../components/ClaudeAcpCard";
 
 type KeysMap = Record<ProviderId, string | null>;
 
@@ -76,7 +77,9 @@ export function ModelsSection() {
 
   const cloudProviders = PROVIDERS.filter(
     (p) =>
-      providerNeedsKey(p.id) && p.id !== "lmstudio" && p.id !== "openai-compatible",
+      (providerNeedsKey(p.id) || p.id === "claude-acp") &&
+      p.id !== "lmstudio" &&
+      p.id !== "openai-compatible",
   );
   const configuredCount = cloudProviders.filter((p) => !!keys[p.id]).length;
 
@@ -102,15 +105,21 @@ export function ModelsSection() {
           </span>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {cloudProviders.map((p) => (
-            <ProviderKeyCard
-              key={p.id}
-              provider={p}
-              currentKey={keys[p.id]}
-              onSave={(v) => onSave(p.id, v)}
-              onClear={() => onClear(p.id)}
-            />
-          ))}
+          {cloudProviders.flatMap((p) => {
+            const card = (
+              <ProviderKeyCard
+                key={p.id}
+                provider={p}
+                currentKey={keys[p.id]}
+                onSave={(v) => onSave(p.id, v)}
+                onClear={() => onClear(p.id)}
+              />
+            );
+            if (p.id === "anthropic") {
+              return [card, <ClaudeAcpCard key="claude-acp" />];
+            }
+            return [card];
+          })}
         </div>
       </div>
 
@@ -237,8 +246,7 @@ function LocalModelsBlock() {
   useEffect(() => setUrlDraft(baseURL), [baseURL]);
   useEffect(() => setModelDraft(modelId), [modelId]);
 
-  const dirty =
-    urlDraft.trim() !== baseURL || modelDraft.trim() !== modelId;
+  const dirty = urlDraft.trim() !== baseURL || modelDraft.trim() !== modelId;
 
   const save = async () => {
     const u = urlDraft.trim();
@@ -351,8 +359,7 @@ function OpenAICompatibleBlock({
   useEffect(() => setUrlDraft(baseURL), [baseURL]);
   useEffect(() => setModelDraft(modelId), [modelId]);
 
-  const dirty =
-    urlDraft.trim() !== baseURL || modelDraft.trim() !== modelId;
+  const dirty = urlDraft.trim() !== baseURL || modelDraft.trim() !== modelId;
 
   const save = async () => {
     const u = urlDraft.trim();
@@ -561,7 +568,7 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
-              className="max-h-[24rem] min-w-[280px] overflow-y-auto"
+              className="max-h-96 min-w-[280px] overflow-y-auto"
             >
               {PROVIDERS.map((p) => {
                 const list = grouped.get(p.id);

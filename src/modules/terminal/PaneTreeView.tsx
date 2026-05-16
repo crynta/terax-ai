@@ -4,6 +4,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import type { SearchAddon } from "@xterm/addon-search";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 import type { PaneNode } from "./lib/panes";
@@ -21,6 +22,7 @@ type Props = {
   activeLeafId: number;
   onFocusLeaf: (leafId: number) => void;
   getBundle: (leafId: number) => LeafBundle;
+  workspace?: WorkspaceEnv;
 };
 
 export function PaneTreeView({
@@ -29,6 +31,7 @@ export function PaneTreeView({
   activeLeafId,
   onFocusLeaf,
   getBundle,
+  workspace,
 }: Props) {
   if (node.kind === "leaf") {
     const focused = node.id === activeLeafId;
@@ -38,8 +41,6 @@ export function PaneTreeView({
         onMouseDownCapture={() => {
           if (!focused) onFocusLeaf(node.id);
         }}
-        // Catches focus from Tab, programmatic focus, or any path that
-        // skips mousedown — keeps activeLeafId in sync with DOM focus.
         onFocus={() => {
           if (!focused) onFocusLeaf(node.id);
         }}
@@ -51,6 +52,7 @@ export function PaneTreeView({
           visible={tabVisible}
           focused={focused}
           initialCwd={node.cwd}
+          workspace={workspace}
           ref={b.setRef}
           onSearchReady={(_id, addon) => b.onSearch(addon)}
           onCwd={(_id, cwd) => b.onCwd(cwd)}
@@ -74,6 +76,7 @@ export function PaneTreeView({
               activeLeafId={activeLeafId}
               onFocusLeaf={onFocusLeaf}
               getBundle={getBundle}
+              workspace={workspace}
             />
           </ResizablePanel>
         </Fragment>
