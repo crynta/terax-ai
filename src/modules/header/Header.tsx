@@ -26,7 +26,7 @@ import {
   KeyboardIcon,
   LayoutTwoColumnIcon,
   LayoutTwoRowIcon,
-  Refresh01Icon,
+  ReloadIcon,
   SourceCodeCircleIcon,
   Settings01Icon,
   SidebarLeftIcon,
@@ -191,7 +191,7 @@ export function Header({
           ) : (
             <>
               <HugeiconsIcon
-                icon={Refresh01Icon}
+                icon={ReloadIcon}
                 size={13}
                 strokeWidth={1.85}
                 className={cn(

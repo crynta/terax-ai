@@ -599,10 +599,10 @@ function ChangeGroup({
                               <img
                                 src={iconUrl}
                                 alt=""
-                                className="size-3.5 shrink-0"
+                                className="h-[13px] w-[13px] shrink-0"
                               />
                             ) : (
-                              <span className="size-3.5 shrink-0" />
+                              <span className="h-[13px] w-[13px] shrink-0" />
                             )}
                           </div>
 
