@@ -78,7 +78,7 @@ export function AiInputBar() {
   const [trigger, setTrigger] = useState<SnippetTrigger | null>(null);
   const [fileTrigger, setFileTrigger] = useState<FileTrigger | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const workspaceFiles = useWorkspaceFiles(workspaceRoot);
+  const workspaceFiles = useWorkspaceFiles(workspaceRoot, fileTrigger !== null);
 
   const [fileQuery, setFileQuery] = useState("");
   useEffect(() => {
@@ -129,7 +129,7 @@ export function AiInputBar() {
     return [...cmdItems, ...snipItems];
   }, [trigger, snippets]);
 
-  const FILE_PICKER_CAP = 50;
+  const FILE_PICKER_CAP = 30;
   const filteredFiles = useMemo<string[]>(() => {
     if (!fileTrigger) return [];
     const q = fileQuery.toLowerCase();

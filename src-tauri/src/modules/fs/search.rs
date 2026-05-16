@@ -151,8 +151,8 @@ pub fn fs_list_files(
     workspace: Option<WorkspaceEnv>,
     show_hidden: Option<bool>,
 ) -> Result<ListFilesResult, String> {
-    const DEFAULT_LIMIT: usize = 5_000;
-    const HARD_LIMIT: usize = 20_000;
+    const DEFAULT_LIMIT: usize = 2_000;
+    const HARD_LIMIT: usize = 10_000;
     const DEFAULT_DEPTH: usize = 8;
     const HARD_DEPTH: usize = 16;
 
