@@ -56,7 +56,10 @@ pub async fn ssh_connect(
     // so the frontend can show a confirmation dialog. The caller must call
     // ssh_fingerprint_save and retry — only then will authentication proceed.
     if profile.known_fingerprint.is_none() {
-        if let Some(fp) = observed_fp.lock().unwrap().clone() {
+        // Clone out of the Mutex before any await so MutexGuard is not held
+        // across a suspension point (MutexGuard is !Send).
+        let tofu_fp = observed_fp.lock().unwrap().clone();
+        if let Some(fp) = tofu_fp {
             let _ = handle
                 .disconnect(russh::Disconnect::ByApplication, "", "English")
                 .await;
