@@ -75,6 +75,8 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
+import { toast } from "sonner";
+import { Toaster } from "@/components/ui/sonner";
 
 export default function App() {
   const {
@@ -186,7 +188,7 @@ export default function App() {
       if (same) return;
       const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
       if (dirty) {
-        window.alert(
+        toast.warning(
           "Save or close unsaved editor tabs before switching workspace.",
         );
         return;
@@ -200,7 +202,7 @@ export default function App() {
           nextHome = (await homeDir()).replace(/\\/g, "/");
         }
       } catch (e) {
-        window.alert(String(e));
+        toast.error(String(e));
         return;
       }
 
@@ -687,6 +689,7 @@ export default function App() {
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
+      "debug.test": () => toast.success("debugging with sonner worked"),
     }),
     [
       activeId,
@@ -846,6 +849,7 @@ export default function App() {
 
   const shell = (
     <ThemeProvider>
+      <Toaster closeButton position="top-center" richColors />
       <TooltipProvider>
         <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
           <Header

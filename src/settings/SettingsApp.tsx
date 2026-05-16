@@ -13,6 +13,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { JSX, useEffect, useState } from "react";
+import { Toaster } from "@/components/ui/sonner";
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
 import { GeneralSection } from "./sections/GeneralSection";
@@ -106,6 +107,7 @@ export function SettingsApp() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
+      <Toaster closeButton position="top-right" richColors />
       <header
         data-tauri-drag-region
         className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
