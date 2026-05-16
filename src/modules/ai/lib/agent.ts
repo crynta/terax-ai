@@ -17,32 +17,35 @@ import {
   type ModelId,
   type ProviderId,
 } from "../config";
-import type { ProviderKeys } from "./keyring";
-import { proxyFetch } from "./proxyFetch";
 import { buildTools, type ToolContext } from "../tools/tools";
 import { compactModelMessagesDetailed } from "./compact";
+import type { ProviderKeys } from "./keyring";
+import { createProxyFetch } from "./proxyFetch";
 
-const TOOL_LABELS: Record<string, (input: Record<string, unknown>) => string> = {
-  read_file: (i) => `Reading ${shortPath(i.path)}`,
-  list_directory: (i) => `Listing ${shortPath(i.path)}`,
-  grep: (i) => `Grepping ${ellipsize(String(i.pattern ?? ""), 40)}`,
-  glob: (i) => `Globbing ${ellipsize(String(i.pattern ?? ""), 40)}`,
-  edit: (i) => `Editing ${shortPath(i.path)}`,
-  multi_edit: (i) => `Editing ${shortPath(i.path)}`,
-  write_file: (i) => `Writing ${shortPath(i.path)}`,
-  create_directory: (i) => `Creating ${shortPath(i.path)}`,
-  bash_run: (i) => `Running ${ellipsize(String(i.command ?? ""), 60)}`,
-  bash_background: (i) =>
-    `Spawning ${ellipsize(String(i.command ?? ""), 60)}`,
-  bash_logs: () => `Reading logs`,
-  bash_list: () => `Listing background processes`,
-  bash_kill: () => `Stopping background process`,
-  suggest_command: (i) =>
-    `Suggesting ${ellipsize(String(i.command ?? ""), 60)}`,
-  todo_write: (i) =>
-    `Updating plan (${Array.isArray(i.todos) ? i.todos.length : 0} items)`,
-  run_subagent: (i) => `Spawning ${String(i.type ?? "subagent")} subagent`,
-};
+const localProxyFetch = createProxyFetch({ allowPrivateNetwork: true });
+
+const TOOL_LABELS: Record<string, (input: Record<string, unknown>) => string> =
+  {
+    read_file: (i) => `Reading ${shortPath(i.path)}`,
+    list_directory: (i) => `Listing ${shortPath(i.path)}`,
+    grep: (i) => `Grepping ${ellipsize(String(i.pattern ?? ""), 40)}`,
+    glob: (i) => `Globbing ${ellipsize(String(i.pattern ?? ""), 40)}`,
+    edit: (i) => `Editing ${shortPath(i.path)}`,
+    multi_edit: (i) => `Editing ${shortPath(i.path)}`,
+    write_file: (i) => `Writing ${shortPath(i.path)}`,
+    create_directory: (i) => `Creating ${shortPath(i.path)}`,
+    bash_run: (i) => `Running ${ellipsize(String(i.command ?? ""), 60)}`,
+    bash_background: (i) =>
+      `Spawning ${ellipsize(String(i.command ?? ""), 60)}`,
+    bash_logs: () => `Reading logs`,
+    bash_list: () => `Listing background processes`,
+    bash_kill: () => `Stopping background process`,
+    suggest_command: (i) =>
+      `Suggesting ${ellipsize(String(i.command ?? ""), 60)}`,
+    todo_write: (i) =>
+      `Updating plan (${Array.isArray(i.todos) ? i.todos.length : 0} items)`,
+    run_subagent: (i) => `Spawning ${String(i.type ?? "subagent")} subagent`,
+  };
 
 function shortPath(p: unknown): string {
   if (typeof p !== "string") return "";
@@ -108,9 +111,8 @@ export async function buildLanguageModel(
       break;
     }
     case "deepseek": {
-      const { createOpenAICompatible } = await import(
-        "@ai-sdk/openai-compatible"
-      );
+      const { createOpenAICompatible } =
+        await import("@ai-sdk/openai-compatible");
       built = createOpenAICompatible({
         name: "deepseek",
         baseURL: "https://api.deepseek.com",
@@ -124,9 +126,8 @@ export async function buildLanguageModel(
       break;
     }
     case "openrouter": {
-      const { createOpenAICompatible } = await import(
-        "@ai-sdk/openai-compatible"
-      );
+      const { createOpenAICompatible } =
+        await import("@ai-sdk/openai-compatible");
       built = createOpenAICompatible({
         name: "openrouter",
         baseURL: "https://openrouter.ai/api/v1",
@@ -144,25 +145,23 @@ export async function buildLanguageModel(
           "OpenAI-compatible provider has no base URL. Set it in Settings → Models.",
         );
       }
-      const { createOpenAICompatible } = await import(
-        "@ai-sdk/openai-compatible"
-      );
+      const { createOpenAICompatible } =
+        await import("@ai-sdk/openai-compatible");
       built = createOpenAICompatible({
         name: "openai-compatible",
         baseURL: compatURL,
         apiKey: key || undefined,
-        fetch: proxyFetch,
+        fetch: localProxyFetch,
       })(resolvedModelId);
       break;
     }
     case "lmstudio": {
-      const { createOpenAICompatible } = await import(
-        "@ai-sdk/openai-compatible"
-      );
+      const { createOpenAICompatible } =
+        await import("@ai-sdk/openai-compatible");
       built = createOpenAICompatible({
         name: "lmstudio",
         baseURL: lmstudioURL,
-        fetch: proxyFetch,
+        fetch: localProxyFetch,
       })(resolvedModelId);
       break;
     }
@@ -237,7 +236,9 @@ function applyCacheBreakpoints(
   provider: ProviderId,
 ): ModelMessage[] {
   if (provider !== "anthropic" || messages.length === 0) return messages;
-  const marker = { anthropic: { cacheControl: { type: "ephemeral" as const } } };
+  const marker = {
+    anthropic: { cacheControl: { type: "ephemeral" as const } },
+  };
   const withMarker = (m: ModelMessage): ModelMessage => ({
     ...m,
     providerOptions: { ...(m.providerOptions ?? {}), ...marker },
@@ -315,9 +316,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.onCompact?.({ droppedCount: compact.droppedCount });
   }
 
-  const messages: ModelMessage[] = [
-    { role: "system", content: stableSystem },
-  ];
+  const messages: ModelMessage[] = [{ role: "system", content: stableSystem }];
   if (opts.planMode) {
     messages.push({ role: "system", content: PLAN_MODE_PROMPT });
   }
