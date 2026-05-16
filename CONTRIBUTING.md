@@ -6,7 +6,7 @@ Thanks for wanting to help. Issues, PRs, and ideas are all welcome.
 
 ```bash
 pnpm install
-pnpm tauri dev
+pnpm dev
 ```
 
 Prereqs: Rust (stable), Node 20+, pnpm, plus your platform's [Tauri prerequisites](https://tauri.app/start/prerequisites/).
@@ -24,7 +24,7 @@ cd src-tauri && cargo fmt       # Rust format
 Build a release bundle at least once if you touched anything in `src-tauri/`:
 
 ```bash
-pnpm tauri build
+pnpm build
 ```
 
 ## Branches
