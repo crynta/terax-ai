@@ -411,7 +411,6 @@ function OpenAICompatibleBlock({
             spellCheck={false}
             className="h-8 w-28 font-mono text-[11.5px]"
           />
-          <span className="text-[10px] text-muted-foreground">tokens</span>
         </FieldRow>
 
         <FieldRow label="API key">
