@@ -93,7 +93,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const lspPendingDiagnosticsRef = useRef<LspDiagnosticsResponse | null>(null);
     const lspVisibleDiagnosticsCountRef = useRef(0);
     const lspTextRef = useRef<string>("");
-    const lspLanguageIdRef = useRef<string | null>(null);
     const lspDiagVersionRef = useRef(0);
 
     useEffect(() => {
@@ -202,7 +201,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         lspPollRef.current = null;
       }
       lspHandleRef.current = null;
-      lspLanguageIdRef.current = null;
       if (handle !== null) {
         void lspClose(handle, closePath).catch(() => {});
         void lspStop(handle).catch(() => {});
@@ -220,7 +218,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       }
 
       const rootPath = getLspRootPath(pathRef.current);
-      lspLanguageIdRef.current = config.languageId;
       if (announce) {
         setLspStatus(`Starting ${config.command}...`);
       }
@@ -266,13 +263,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       }
       const handle = lspHandleRef.current;
       if (handle === null) return;
-      if (workspaceEnv.kind === "ssh") {
-        const languageId = lspLanguageIdRef.current;
-        if (!languageId) return;
-        await lspClose(handle, pathRef.current);
-        await lspOpen(handle, pathRef.current, languageId, text);
-        return;
-      }
       await lspChange(handle, pathRef.current, text);
     };
 
