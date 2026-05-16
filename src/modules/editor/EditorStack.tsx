@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import type { EditorTab, Tab } from "@/modules/tabs";
 import { useEffect, useRef } from "react";
 import { EditorPane, type EditorPaneHandle } from "./EditorPane";
+import { NotebookPane } from "./NotebookPane";
 
 type Props = {
   tabs: Tab[];
@@ -86,6 +87,7 @@ export function EditorStack({
   return (
     <div className="relative h-full w-full">
       {editors.map((t) => {
+        const isIpynb = /\.ipynb$/i.test(t.path) || /\.ipynb$/i.test(t.title);
         const visible = t.id === activeId;
         return (
           <div
@@ -97,12 +99,21 @@ export function EditorStack({
             aria-hidden={!visible}
           >
             <div className="h-full overflow-hidden rounded-md border border-border/60 bg-background">
-              <EditorPane
-                ref={getRefCallback(t.id)}
-                path={t.path}
-                onDirtyChange={getDirtyCallback(t.id)}
-                onClose={getCloseCallback(t.id)}
-              />
+              {isIpynb ? (
+                <NotebookPane
+                  ref={getRefCallback(t.id)}
+                  path={t.path}
+                  onDirtyChange={getDirtyCallback(t.id)}
+                  onClose={getCloseCallback(t.id)}
+                />
+              ) : (
+                <EditorPane
+                  ref={getRefCallback(t.id)}
+                  path={t.path}
+                  onDirtyChange={getDirtyCallback(t.id)}
+                  onClose={getCloseCallback(t.id)}
+                />
+              )}
             </div>
           </div>
         );
