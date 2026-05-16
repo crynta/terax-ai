@@ -50,6 +50,7 @@ export type Shortcut = {
   label: string;
   group: ShortcutGroup;
   defaultBindings: KeyBinding[];
+  allowRepeat?: boolean;
 };
 
 export const SHORTCUTS: Shortcut[] = [
@@ -169,7 +170,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "explorer.focus",
-    label: "Focus file explorer",
+    label: "Toggle file explorer focus",
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "e" }],
   },
@@ -177,13 +178,21 @@ export const SHORTCUTS: Shortcut[] = [
     id: "view.zoomIn",
     label: "Zoom in",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, key: "=" }],
+    defaultBindings: [
+      { [MOD_PROP]: true, key: "=" },
+      { [MOD_PROP]: true, shift: true, key: "+" },
+    ],
+    allowRepeat: true,
   },
   {
     id: "view.zoomOut",
     label: "Zoom out",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, key: "-" }],
+    defaultBindings: [
+      { [MOD_PROP]: true, key: "-" },
+      { [MOD_PROP]: true, shift: true, key: "_" },
+    ],
+    allowRepeat: true,
   },
   {
     id: "view.zoomReset",

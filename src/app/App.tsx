@@ -122,6 +122,7 @@ export default function App() {
     useState<EditorPaneHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   const explorerRef = useRef<FileExplorerHandle>(null);
+  const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
   const toggleSidebar = useCallback(() => {
@@ -131,10 +132,25 @@ export default function App() {
     else p.collapse();
   }, []);
 
-  const focusExplorer = useCallback(() => {
+  const toggleExplorerFocus = useCallback(() => {
+    const explorer = explorerRef.current;
+    if (!explorer) return;
+    if (explorer.isFocused()) {
+      const target = explorerReturnFocusRef.current;
+      explorerReturnFocusRef.current = null;
+      if (target && document.body.contains(target)) {
+        target.focus();
+      } else {
+        (document.activeElement as HTMLElement | null)?.blur?.();
+      }
+      return;
+    }
+    const active = document.activeElement;
+    explorerReturnFocusRef.current =
+      active instanceof HTMLElement && active !== document.body ? active : null;
     const p = sidebarRef.current;
     if (p && p.getSize().asPercentage <= 0) p.expand();
-    explorerRef.current?.focus();
+    explorer.focus();
   }, []);
 
   const [home, setHome] = useState<string | null>(null);
@@ -609,7 +625,7 @@ export default function App() {
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
-      "explorer.focus": focusExplorer,
+      "explorer.focus": toggleExplorerFocus,
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
@@ -627,7 +643,7 @@ export default function App() {
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
-      focusExplorer,
+      toggleExplorerFocus,
       zoomIn,
       zoomOut,
       zoomReset,

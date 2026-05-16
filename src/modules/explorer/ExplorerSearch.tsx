@@ -78,17 +78,9 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   const [truncated, setTruncated] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const isMouseMoving = useRef(false);
+  const lastKeyboardNavAt = useRef(0);
 
   const active = query.trim().length > 0;
-
-  useEffect(() => {
-    const onMove = () => {
-      isMouseMoving.current = true;
-    };
-    window.addEventListener("mousemove", onMove);
-    return () => window.removeEventListener("mousemove", onMove);
-  }, []);
 
   useEffect(() => {
     onActiveChange?.(active);
@@ -203,12 +195,14 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
               if (results.length > 0) {
                 if (e.key === "ArrowDown") {
                   e.preventDefault();
-                  isMouseMoving.current = false;
+                  lastKeyboardNavAt.current = Date.now();
                   setSelectedIndex((prev) => (prev + 1) % results.length);
                 } else if (e.key === "ArrowUp") {
                   e.preventDefault();
-                  isMouseMoving.current = false;
-                  setSelectedIndex((prev) => (prev - 1 + results.length) % results.length);
+                  lastKeyboardNavAt.current = Date.now();
+                  setSelectedIndex(
+                    (prev) => (prev - 1 + results.length) % results.length,
+                  );
                 } else if (e.key === "Enter") {
                   e.preventDefault();
                   handleSelect(results[selectedIndex]);
@@ -254,7 +248,9 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                         data-index={index}
                         onClick={() => handleSelect(hit)}
                         onMouseEnter={() => {
-                          if (isMouseMoving.current) setSelectedIndex(index);
+                          if (Date.now() - lastKeyboardNavAt.current > 250) {
+                            setSelectedIndex(index);
+                          }
                         }}
                         className={cn(
                           "flex w-full items-center gap-1.5 px-2 py-1 text-left text-xs transition-colors",
