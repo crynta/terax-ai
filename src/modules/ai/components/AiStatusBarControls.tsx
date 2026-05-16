@@ -428,7 +428,7 @@ function ModelDropdown() {
           </div>
 
           {/* Models list */}
-          <div className="flex-1 overflow-y-auto py-1 max-h-[22rem]">
+          <div className="flex-1 overflow-y-auto py-1 max-h-[26rem]">
             {activeProvider !== null ? (
               <ProviderHeader
                 providerId={activeProvider}
