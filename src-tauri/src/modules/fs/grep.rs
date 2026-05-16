@@ -11,6 +11,13 @@ use serde::Serialize;
 use super::to_canon;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
+fn check_not_ssh(workspace: &WorkspaceEnv) -> Result<(), String> {
+    if matches!(workspace, WorkspaceEnv::Ssh { .. }) {
+        return Err("File search on remote SSH hosts is not yet supported via the sidebar.".into());
+    }
+    Ok(())
+}
+
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 200;
 const HARD_MAX_RESULTS: usize = 2000;
