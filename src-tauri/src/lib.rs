@@ -14,20 +14,21 @@ struct LaunchDir(Mutex<Option<String>>);
 
 #[tauri::command]
 fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
-    state.0.lock().ok().and_then(|mut g| g.take())
+    state.0.lock().expect("LaunchDir mutex poisoned").take()
 }
 
 fn parse_launch_dir() -> Option<String> {
-    // Skip argv[0] (exe path). Tauri may also pass its own flags — we accept
-    // only the first arg that resolves to an actual directory.
+    // Canonicalize so trailing slashes / 8.3 short names don't leak downstream.
     for arg in std::env::args().skip(1) {
         if arg.starts_with('-') {
             continue;
         }
-        let path = std::path::Path::new(&arg);
-        if path.is_dir() {
-            return Some(arg);
+        let Ok(canon) = std::fs::canonicalize(&arg) else { continue };
+        if !canon.is_dir() {
+            continue;
         }
+        let s = canon.to_string_lossy();
+        return Some(s.strip_prefix(r"\\?\").unwrap_or(&s).to_string());
     }
     None
 }

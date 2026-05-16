@@ -168,16 +168,15 @@ export default function App() {
       .catch(() => setHome(null));
   }, []);
 
-  // Windows shell integration ("Open in Terax") launches `terax.exe <dir>`.
-  // Drain the launch dir once and reset the workspace into a single fresh
-  // terminal at that path, disposing the default PTY that mounted moments
-  // earlier. Drain semantics live in the backend so HMR doesn't re-fire it.
+  // Drain "Open in Terax" launch dir once; reset workspace to that path.
   useEffect(() => {
     let cancelled = false;
-    void invoke<string | null>("get_launch_dir").then((dir) => {
-      if (cancelled || !dir) return;
-      resetWorkspace(dir.replace(/\\/g, "/"));
-    });
+    void invoke<string | null>("get_launch_dir")
+      .then((dir) => {
+        if (cancelled || !dir) return;
+        resetWorkspace(dir.replace(/\\/g, "/"));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
