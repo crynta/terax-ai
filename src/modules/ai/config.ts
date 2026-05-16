@@ -8,6 +8,7 @@ export type ProviderId =
   | "cerebras"
   | "groq"
   | "deepseek"
+  | "minimax"
   | "openrouter"
   | "openai-compatible"
   | "lmstudio";
@@ -71,6 +72,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "deepseek-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.deepseek.com/api_keys",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    keyringAccount: "minimax-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://platform.minimax.io/",
   },
   {
     id: "openrouter",
@@ -305,6 +313,26 @@ export const MODELS = [
     description: "Chain-of-thought at open-weight prices.",
     capabilities: { intelligence: 5, speed: 2, cost: 4 },
     tags: ["reasoning", "coding"],
+  },
+
+  // ── MiniMax ──────────────────────────────────────────────────────────────
+  {
+    id: "MiniMax-M2.7",
+    provider: "minimax",
+    label: "MiniMax M2.7",
+    hint: "Best",
+    description: "Peak performance. Master the complex.",
+    capabilities: { intelligence: 5, speed: 3, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "MiniMax-M2.7-highspeed",
+    provider: "minimax",
+    label: "MiniMax M2.7 Highspeed",
+    hint: "Fast",
+    description: "Same performance, faster and more agile.",
+    capabilities: { intelligence: 5, speed: 4, cost: 4 },
+    tags: ["tools", "coding"],
   },
 
   // ── Cerebras (autocomplete-tier) ──────────────────────────────────────────
@@ -556,6 +584,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-v4-pro": 1_000_000,
   "deepseek-v4-flash": 1_000_000,
   "deepseek-reasoner": 128_000,
+  "MiniMax-M2.7": 204_800,
+  "MiniMax-M2.7-highspeed": 204_800,
   "gpt-oss-120b": 128_000,
   "llama3.3-70b": 128_000,
   "qwen-3-32b": 32_000,
@@ -612,6 +642,8 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "deepseek-v4-pro": { input: 0.28, output: 1.1, cacheRead: 0.028 },
   "deepseek-v4-flash": { input: 0.07, output: 0.27, cacheRead: 0.007 },
   "deepseek-reasoner": { input: 0.55, output: 2.19, cacheRead: 0.14 },
+  "MiniMax-M2.7": { input: 0.3, output: 1.2, cacheRead: 0.06 },
+  "MiniMax-M2.7-highspeed": { input: 0.6, output: 2.4, cacheRead: 0.06 },
 };
 
 export function estimateCost(
@@ -661,6 +693,7 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   google: "gemini-2.5-flash",
   xai: "grok-4-fast-reasoning",
   deepseek: "deepseek-v4-flash",
+  minimax: "MiniMax-M2.7-highspeed",
   openrouter: "openai/gpt-5.4-mini",
   "openai-compatible": "",
 };

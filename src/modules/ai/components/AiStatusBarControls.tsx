@@ -13,6 +13,7 @@ import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
   Add01Icon,
   AiBookIcon,
+  AiGenerativeIcon,
   ArrowDown01Icon,
   ArrowUpIcon,
   BrainIcon,
@@ -63,6 +64,7 @@ const PROVIDER_ICON = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   deepseek: DeepseekIcon,
+  minimax: AiGenerativeIcon,
   openrouter: GlobeIcon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
