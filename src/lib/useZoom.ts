@@ -1,4 +1,3 @@
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useCallback, useEffect, useRef } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { setZoomLevel } from "@/modules/settings/store";
@@ -6,10 +5,15 @@ import { setZoomLevel } from "@/modules/settings/store";
 const ZOOM_STEP = 0.1;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.0;
+const CSS_VAR = "--app-zoom";
 
 function clampZoom(z: number): number {
   const rounded = Math.round(z * 100) / 100;
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, rounded));
+}
+
+function applyToDom(z: number): void {
+  document.documentElement.style.setProperty(CSS_VAR, String(z));
 }
 
 export function useZoom() {
@@ -21,7 +25,7 @@ export function useZoom() {
     if (!hydrated) return;
     if (lastAppliedRef.current === zoomLevel) return;
     lastAppliedRef.current = zoomLevel;
-    void getCurrentWebview().setZoom(zoomLevel);
+    applyToDom(zoomLevel);
   }, [hydrated, zoomLevel]);
 
   const zoomIn = useCallback(() => {
