@@ -33,7 +33,14 @@ pub fn fs_read_dir(
     let workspace = WorkspaceEnv::from_option(workspace);
 
     // SSH workspace → delegate to remote listing
-    if let WorkspaceEnv::Ssh { host, user, port, key_path, password } = &workspace {
+    if let WorkspaceEnv::Ssh {
+        host,
+        user,
+        port,
+        key_path,
+        password,
+    } = &workspace
+    {
         let conn = SshConnection {
             host: host.clone(),
             user: user.clone(),
@@ -43,6 +50,10 @@ pub fn fs_read_dir(
             label: None,
         };
         return super::ssh::ssh_read_dir(&conn, &path, show_hidden);
+    }
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return super::wsl::wsl_read_dir(distro, &path, show_hidden);
     }
 
     let root = resolve_path(&path, &workspace);
@@ -122,7 +133,14 @@ pub fn list_subdirs(
     let workspace = WorkspaceEnv::from_option(workspace);
 
     // SSH workspace → delegate to remote listing
-    if let WorkspaceEnv::Ssh { host, user, port, key_path, password } = &workspace {
+    if let WorkspaceEnv::Ssh {
+        host,
+        user,
+        port,
+        key_path,
+        password,
+    } = &workspace
+    {
         let conn = SshConnection {
             host: host.clone(),
             user: user.clone(),
@@ -132,6 +150,14 @@ pub fn list_subdirs(
             label: None,
         };
         return super::ssh::ssh_list_subdirs(&conn, &path, show_hidden);
+    }
+
+    if let WorkspaceEnv::Wsl { distro } = &workspace {
+        return Ok(super::wsl::wsl_read_dir(distro, &path, show_hidden)?
+            .into_iter()
+            .filter(|e| matches!(e.kind, super::tree::EntryKind::Dir))
+            .map(|e| e.name)
+            .collect());
     }
 
     let root = resolve_path(&path, &workspace);

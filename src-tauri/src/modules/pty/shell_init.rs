@@ -99,26 +99,14 @@ fn build_ssh(
 
     // Inject shell integration for OSC 7 (CWD tracking)
     let init_script = r#"
-_terax_urlencode() {
-  local LC_ALL=C s="$1" i c
-  for (( i=0; i<${#s}; i++ )); do
-    c="${s:i:1}"
-    case "$c" in
-      [a-zA-Z0-9/._~-]) printf '%s' "$c" ;;
-      *) printf '%%%02X' "'$c" ;;
-    esac
-  done
-}
-_terax_osc7() {
-  printf '\033]7;file://%s%s\033\\' "${HOSTNAME:-$(uname -n)}" "$(_terax_urlencode "$PWD")"
-}
+_terax_osc7() { printf "\033]7;file://%s%s\033\\" "${HOSTNAME:-$(uname -n)}" "$PWD"; }
 if [ -n "$BASH_VERSION" ]; then
   PROMPT_COMMAND="_terax_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 elif [ -n "$ZSH_VERSION" ]; then
-  autoload -Uz add-zsh-hook
-  add-zsh-hook precmd _terax_osc7
+  autoload -Uz add-zsh-hook 2>/dev/null
+  add-zsh-hook precmd _terax_osc7 2>/dev/null
 fi
-exec "${SHELL:-/bin/bash}" -i
+exec ${SHELL:-bash} -i
 "#
     .trim();
 
@@ -569,11 +557,7 @@ mod windows {
     }
 
     fn prepare_wsl_bash_rcfile(distro: &str) -> Result<String, String> {
-        let home = crate::modules::workspace::wsl_home(distro.to_string())?;
-        let linux_dir = format!(
-            "{}/.cache/terax/shell-integration/bash",
-            home.trim_end_matches('/')
-        );
+        let linux_dir = "/tmp/terax-shell-integration".to_string();
         let linux_rc = format!("{linux_dir}/bashrc");
 
         let content = super::bashrc_script().replace("\r\n", "\n");

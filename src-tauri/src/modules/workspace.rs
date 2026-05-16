@@ -36,7 +36,9 @@ impl WorkspaceEnv {
     #[allow(dead_code)]
     pub fn ssh_target(&self) -> Option<String> {
         match self {
-            Self::Ssh { host, user, port, .. } => {
+            Self::Ssh {
+                host, user, port, ..
+            } => {
                 let mut target = String::new();
                 if let Some(u) = user {
                     target.push_str(u);
@@ -115,7 +117,14 @@ fn build_ssh_command(
     let use_sshpass = password.is_some() && sshpass_available();
 
     let (program, pass_args): (&str, Vec<String>) = if use_sshpass {
-        ("sshpass", vec!["-p".into(), password.as_ref().unwrap().clone(), "ssh".into()])
+        (
+            "sshpass",
+            vec![
+                "-p".into(),
+                password.as_ref().unwrap().clone(),
+                "ssh".into(),
+            ],
+        )
     } else {
         ("ssh", vec![])
     };
@@ -132,7 +141,9 @@ fn build_ssh_command(
     }
     cmd.arg("-o").arg("ConnectTimeout=5");
     cmd.arg("-o").arg("StrictHostKeyChecking=no");
-    cmd.arg("-o").arg("BatchMode=yes");
+    if !use_sshpass {
+        cmd.arg("-o").arg("BatchMode=yes");
+    }
 
     let mut target = String::new();
     if let Some(u) = user {
@@ -146,7 +157,13 @@ fn build_ssh_command(
 }
 
 #[tauri::command]
-pub fn ssh_test_connection(host: String, user: Option<String>, port: Option<u16>, key_path: Option<String>, password: Option<String>) -> Result<bool, String> {
+pub fn ssh_test_connection(
+    host: String,
+    user: Option<String>,
+    port: Option<u16>,
+    key_path: Option<String>,
+    password: Option<String>,
+) -> Result<bool, String> {
     let mut cmd = build_ssh_command(&host, &user, &port, &key_path, &password);
     let out = cmd.output().map_err(|e| format!("SSH failed: {e}"))?;
     Ok(out.status.success())
@@ -201,11 +218,7 @@ fn normalize_to_wsl_linux_path(path: &str) -> String {
     let normalized = path.replace('\\', "/");
     let bytes = normalized.as_bytes();
     // Detect Windows drive letter paths e.g. C:/Users/...
-    if bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && bytes[2] == b'/'
-    {
+    if bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/' {
         let drive = (bytes[0] as char).to_ascii_lowercase();
         format!("/mnt/{}/{}", drive, &normalized[3..])
     } else {

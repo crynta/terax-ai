@@ -93,7 +93,7 @@ pub fn fs_search(
             }
             match dent.file_name().to_str() {
                 Some(name) => !PRUNE_DIRS.contains(&name),
-                None => true,
+                _ => true,
             }
         })
         .build();
@@ -187,7 +187,7 @@ pub fn fs_list_files(
             }
             match dent.file_name().to_str() {
                 Some(name) => !PRUNE_DIRS.contains(&name),
-                None => true,
+                _ => true,
             }
         })
         .build();

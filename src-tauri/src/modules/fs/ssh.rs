@@ -154,16 +154,13 @@ fn sshpass_available() -> bool {
 }
 
 fn run_ssh_output(conn: &SshConnection, command: &str) -> Result<String, String> {
-    let use_sshpass = conn.password.as_deref().is_some_and(|p| !p.is_empty()) && sshpass_available();
+    let use_sshpass =
+        conn.password.as_deref().is_some_and(|p| !p.is_empty()) && sshpass_available();
 
     let (program, pass_args): (&str, Vec<String>) = if use_sshpass {
         (
             "sshpass",
-            vec![
-                "-p".into(),
-                conn.password.clone().unwrap(),
-                "ssh".into(),
-            ],
+            vec!["-p".into(), conn.password.clone().unwrap(), "ssh".into()],
         )
     } else {
         ("ssh", vec![])
@@ -175,7 +172,9 @@ fn run_ssh_output(conn: &SshConnection, command: &str) -> Result<String, String>
     }
     cmd.arg("-o").arg("ConnectTimeout=5");
     cmd.arg("-o").arg("StrictHostKeyChecking=no");
-    cmd.arg("-o").arg("BatchMode=yes");
+    if !use_sshpass {
+        cmd.arg("-o").arg("BatchMode=yes");
+    }
     cmd.arg("-o").arg("LogLevel=QUIET");
 
     if let Some(k) = &conn.key_path {
