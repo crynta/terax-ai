@@ -36,7 +36,7 @@ const MAX_SCANNED: usize = 50_000;
 
 /// Directory names pruned unconditionally — they're rarely useful in a
 /// file-explorer search and they dominate scan time when present.
-const PRUNE_DIRS: &[&str] = &[
+const PRUNE_DIRS: &[&str; 10] = &[
     "node_modules",
     ".git",
     "target",
@@ -180,7 +180,7 @@ pub fn fs_list_files(
         .ignore(true)
         .parents(true)
         .follow_links(false)
-        .max_depth(Some(depth))
+        .max_depth(Some(max_depth))
         .filter_entry(|dent| {
             if dent.depth() == 0 {
                 return true;

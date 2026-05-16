@@ -18,7 +18,14 @@ pub fn build_command(
     workspace: WorkspaceEnv,
 ) -> Result<CommandBuilder, String> {
     // SSH takes priority regardless of platform
-    if let WorkspaceEnv::Ssh { host, user, port, key_path, password } = &workspace {
+    if let WorkspaceEnv::Ssh {
+        host,
+        user,
+        port,
+        key_path,
+        password,
+    } = &workspace
+    {
         return build_ssh(cwd, host, user, *port, key_path, password);
     }
     #[cfg(unix)]
@@ -50,7 +57,14 @@ fn build_ssh(
     let use_sshpass = password.is_some() && sshpass_available();
 
     let (program, pass_args): (&str, Vec<String>) = if use_sshpass {
-        ("sshpass", vec!["-p".into(), password.as_ref().unwrap().clone(), "ssh".into()])
+        (
+            "sshpass",
+            vec![
+                "-p".into(),
+                password.as_ref().unwrap().clone(),
+                "ssh".into(),
+            ],
+        )
     } else {
         ("ssh", vec![])
     };
@@ -82,6 +96,36 @@ fn build_ssh(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERAX_TERMINAL", "1");
+
+    // Inject shell integration for OSC 7 (CWD tracking)
+    let init_script = r#"
+_terax_urlencode() {
+  local LC_ALL=C s="$1" i c
+  for (( i=0; i<${#s}; i++ )); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9/._~-]) printf '%s' "$c" ;;
+      *) printf '%%%02X' "'$c" ;;
+    esac
+  done
+}
+_terax_osc7() {
+  printf '\033]7;file://%s%s\033\\' "${HOSTNAME:-$(uname -n)}" "$(_terax_urlencode "$PWD")"
+}
+if [ -n "$BASH_VERSION" ]; then
+  PROMPT_COMMAND="_terax_osc7${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+elif [ -n "$ZSH_VERSION" ]; then
+  autoload -Uz add-zsh-hook
+  add-zsh-hook precmd _terax_osc7
+fi
+exec "${SHELL:-/bin/bash}" -i
+"#
+    .trim();
+
+    cmd.arg("bash");
+    cmd.arg("-c");
+    cmd.arg(init_script);
+
     Ok(cmd)
 }
 
@@ -150,7 +194,10 @@ pub fn list_available_shells() -> Vec<serde_json::Value> {
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
             .join("System32");
-        let ps5 = system32.join("WindowsPowerShell").join("v1.0").join("powershell.exe");
+        let ps5 = system32
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
         if ps5.exists() {
             shells.push(serde_json::json!({"kind": "PowerShell", "label": "Windows PowerShell 5", "icon": "powershell", "path": ps5.to_string_lossy()}));
         }
@@ -171,7 +218,9 @@ pub fn list_available_shells() -> Vec<serde_json::Value> {
     {
         // Detect zsh
         if which_in_path("zsh").is_some() {
-            shells.push(serde_json::json!({"kind": "Zsh", "label": "Zsh", "icon": "zsh", "path": "zsh"}));
+            shells.push(
+                serde_json::json!({"kind": "Zsh", "label": "Zsh", "icon": "zsh", "path": "zsh"}),
+            );
         }
         // Detect bash
         if which_in_path("bash").is_some() {
@@ -505,14 +554,9 @@ mod windows {
         }
         // Try wslpath -u for reliable conversion
         let args = ["-d", distro, "--exec", "wslpath", "-u", &cwd];
-        if let Ok(out) = std::process::Command::new("wsl.exe")
-            .args(&args)
-            .output()
-        {
+        if let Ok(out) = std::process::Command::new("wsl.exe").args(&args).output() {
             if out.status.success() {
-                let converted = String::from_utf8_lossy(&out.stdout)
-                    .trim()
-                    .to_string();
+                let converted = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if !converted.is_empty() {
                     return converted;
                 }
@@ -531,11 +575,41 @@ mod windows {
             home.trim_end_matches('/')
         );
         let linux_rc = format!("{linux_dir}/bashrc");
-        let unc_dir = crate::modules::workspace::wsl_path_to_unc(distro, &linux_dir);
-        fs::create_dir_all(&unc_dir).map_err(|e| format!("create {}: {e}", unc_dir.display()))?;
-        let unc_file = crate::modules::workspace::wsl_path_to_unc(distro, &linux_rc);
+
         let content = super::bashrc_script().replace("\r\n", "\n");
-        write_if_changed(&unc_file, &content)?;
+
+        // Write file inside WSL to avoid UNC access denied (os error 5) on some systems.
+        // We use 'sh -c' to ensure directory creation and file writing happen in one go.
+        let mut child = std::process::Command::new("wsl.exe")
+            .args([
+                "-d",
+                distro,
+                "--exec",
+                "sh",
+                "-c",
+                &format!("mkdir -p '{}' && cat > '{}'", linux_dir, linux_rc),
+            ])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("spawn wsl write: {e}"))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            stdin
+                .write_all(content.as_bytes())
+                .map_err(|e| format!("write to wsl stdin: {e}"))?;
+        }
+
+        let status = child
+            .wait()
+            .map_err(|e| format!("wait for wsl write: {e}"))?;
+        if !status.success() {
+            return Err(format!(
+                "wsl write failed for {distro} (exit code {:?})",
+                status.code()
+            ));
+        }
+
         Ok(linux_rc)
     }
 
