@@ -124,6 +124,7 @@ pub fn run() {
             ssh::ssh_connect,
             ssh::ssh_disconnect,
             ssh::ssh_fingerprint_get,
+            ssh::ssh_home,
             modules::ssh::profiles::ssh_profile_list,
             modules::ssh::profiles::ssh_profile_save,
             modules::ssh::profiles::ssh_profile_delete,

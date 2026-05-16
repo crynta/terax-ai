@@ -45,7 +45,8 @@ pub async fn open_ssh_pty_channel(
 
     tauri::async_runtime::spawn(async move {
         let mut pending: Vec<u8> = Vec::with_capacity(16 * 1024);
-        let mut last_flush = tokio::time::Instant::now();
+        let mut flush_timer = tokio::time::interval(FLUSH_INTERVAL);
+        flush_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
         loop {
             tokio::select! {
@@ -92,14 +93,14 @@ pub async fn open_ssh_pty_channel(
                         }
                     }
                 }
-            }
-
-            if last_flush.elapsed() >= FLUSH_INTERVAL && !pending.is_empty() {
-                let chunk = std::mem::take(&mut pending);
-                if on_data.send(Response::new(chunk)).is_err() {
-                    break;
+                _ = flush_timer.tick() => {
+                    if !pending.is_empty() {
+                        let chunk = std::mem::take(&mut pending);
+                        if on_data.send(Response::new(chunk)).is_err() {
+                            break;
+                        }
+                    }
                 }
-                last_flush = tokio::time::Instant::now();
             }
         }
     });

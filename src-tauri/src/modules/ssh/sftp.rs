@@ -136,7 +136,7 @@ pub async fn sftp_grep(conn: &SshConn, path: &str, pattern: &str) -> Result<Vec<
     Ok(output.lines().map(|l| l.to_string()).collect())
 }
 
-async fn run_remote_command(conn: &SshConn, cmd: &str) -> Result<String, String> {
+pub async fn run_remote_command(conn: &SshConn, cmd: &str) -> Result<String, String> {
     let mut channel = conn.handle.channel_open_session().await.map_err(|e| e.to_string())?;
     channel.exec(true, cmd).await.map_err(|e| e.to_string())?;
     let mut output = Vec::new();
