@@ -7,14 +7,12 @@ import {
 import type { SearchAddon } from "@xterm/addon-search";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 import type { PaneNode } from "./lib/panes";
-import type { TeraxOpenInput } from "./lib/useTerminalSession";
 
 type LeafBundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
   onSearch: (addon: SearchAddon) => void;
   onCwd: (cwd: string) => void;
   onExit: (code: number) => void;
-  onTeraxOpen: (input: TeraxOpenInput) => void;
 };
 
 type Props = {
@@ -57,7 +55,6 @@ export function PaneTreeView({
           onSearchReady={(_id, addon) => b.onSearch(addon)}
           onCwd={(_id, cwd) => b.onCwd(cwd)}
           onExit={(_id, code) => b.onExit(code)}
-          onTeraxOpen={(_id, input) => b.onTeraxOpen(input)}
         />
       </div>
     );

@@ -29,7 +29,8 @@ Auto-executes (no approval) — subagents are read-only by design.`,
           .describe("Short label shown in the chat UI for the spawn card."),
       }),
       execute: async ({ type, prompt, description }) => {
-        const { apiKeys, selectedModelId } = useChatStore.getState();
+        const { apiKeys, selectedModelId, patchAgentMeta } =
+          useChatStore.getState();
         try {
           const r = await runSubagent({
             type,
@@ -37,6 +38,7 @@ Auto-executes (no approval) — subagents are read-only by design.`,
             keys: apiKeys,
             modelId: selectedModelId,
             toolContext: ctx,
+            onStep: (label) => patchAgentMeta({ step: label }),
           });
           return {
             type,

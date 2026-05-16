@@ -32,7 +32,12 @@ export async function requestCompletion(
   signal: AbortSignal,
 ): Promise<string> {
   const modelId =
-    deps.modelId.trim() || DEFAULT_AUTOCOMPLETE_MODEL[deps.provider];
+    deps.modelId.trim() || DEFAULT_AUTOCOMPLETE_MODEL[deps.provider] || "";
+  if (!modelId) {
+    throw new Error(
+      `No autocomplete model id set for ${deps.provider}.`,
+    );
+  }
   const keys = { ...EMPTY_PROVIDER_KEYS, [deps.provider]: deps.apiKey };
   const model = await buildLanguageModel(deps.provider, keys, modelId, {
     lmstudioBaseURL: deps.lmstudioBaseURL || LMSTUDIO_DEFAULT_BASE_URL,
