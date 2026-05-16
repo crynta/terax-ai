@@ -78,7 +78,7 @@ function termOptions() {
   const prefs = usePreferencesStore.getState();
   return {
     fontFamily: detectMonoFontFamily(),
-    fontSize: prefs.terminalFontSize,
+    fontSize: Math.max(4, Math.round(prefs.terminalFontSize * prefs.zoomLevel)),
     theme: buildTerminalTheme(),
     cursorBlink: false,
     cursorStyle: "bar" as const,

@@ -7,6 +7,8 @@ if set -q __TERAX_HOOKS_LOADED
 end
 set -g __TERAX_HOOKS_LOADED 1
 
+set -g __TERAX_HOST (uname -n 2>/dev/null; or echo localhost)
+
 # URL-encode a path keeping `/` intact so it stays valid inside file://.
 function __terax_urlencode_path
     set -l parts (string split '/' -- $argv[1])
@@ -32,8 +34,7 @@ end
 function fish_prompt
     set -l __terax_status $status
     printf '\e]133;D;%d\e\\' $__terax_status
-    set -l host (hostname 2>/dev/null; or echo localhost)
-    printf '\e]7;file://%s%s\e\\' "$host" (__terax_urlencode_path "$PWD")
+    printf '\e]7;file://%s%s\e\\' "$__TERAX_HOST" (__terax_urlencode_path "$PWD")
     printf '\e]133;A\e\\'
     __terax_restore_status $__terax_status
     if functions -q __terax_user_prompt

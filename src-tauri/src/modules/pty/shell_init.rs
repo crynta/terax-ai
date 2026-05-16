@@ -92,7 +92,10 @@ mod unix {
 
     impl Shell {
         pub fn detect() -> (Shell, String) {
-            let path = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+            let path = login_shell()
+                .or_else(|| std::env::var("SHELL").ok())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "/bin/zsh".into());
             let name = path.rsplit('/').next().unwrap_or("").to_string();
             let shell = match name.as_str() {
                 "zsh" => Shell::Zsh,
@@ -101,6 +104,22 @@ mod unix {
                 _ => Shell::Other,
             };
             (shell, path)
+        }
+    }
+
+    fn login_shell() -> Option<String> {
+        use std::ffi::CStr;
+        unsafe {
+            let uid = libc::getuid();
+            let pw = libc::getpwuid(uid);
+            if pw.is_null() {
+                return None;
+            }
+            let shell_ptr = (*pw).pw_shell;
+            if shell_ptr.is_null() {
+                return None;
+            }
+            CStr::from_ptr(shell_ptr).to_str().ok().map(String::from)
         }
     }
 

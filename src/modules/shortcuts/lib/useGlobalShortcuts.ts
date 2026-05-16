@@ -25,18 +25,12 @@ export function useGlobalShortcuts(
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // No shortcut here benefits from key-repeat: close-tab would close
-      // ten tabs in a frame, next-tab would spam WebGL attach/detach. Each
-      // action requires a fresh press.
-      if (e.repeat) return;
       const { handlers, options } = latest.current;
       for (const s of SHORTCUTS) {
-        // Use user-defined bindings if they exist, otherwise use default
+        if (e.repeat && !s.allowRepeat) continue;
         const bindings = userShortcuts[s.id] || s.defaultBindings;
-
         const isMatch = bindings.some((b) => matchBinding(e, b, s.id));
         if (!isMatch) continue;
-
         if (options?.isDisabled?.(s.id, e)) return;
         const h = handlers[s.id];
         if (!h) return;
