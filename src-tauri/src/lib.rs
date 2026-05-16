@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell};
+use modules::{fs, net, pty, secrets, shell, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
@@ -59,46 +59,8 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     Ok(())
 }
 
-// WebKitGTK's DMA-BUF (hardware) renderer + NVIDIA's proprietary driver under
-// Wayland fail to create an EGL display and abort on launch. Everywhere else
-// the hardware path is fine and noticeably faster, so leave it alone. Override:
-//   WEBKIT_DISABLE_DMABUF_RENDERER=1  force safe path   =0  force hardware path
-#[cfg(target_os = "linux")]
-fn configure_linux_rendering() {
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some() {
-        return;
-    }
-    let wayland = std::env::var("XDG_SESSION_TYPE")
-        .map(|v| v.eq_ignore_ascii_case("wayland"))
-        .unwrap_or(false)
-        || std::env::var_os("WAYLAND_DISPLAY").is_some();
-    if wayland && has_nvidia_gpu() {
-        eprintln!(
-            "terax: Wayland + NVIDIA proprietary driver; disabling WebKitGTK DMA-BUF renderer \
-             (override: WEBKIT_DISABLE_DMABUF_RENDERER=0)"
-        );
-        unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1") };
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn has_nvidia_gpu() -> bool {
-    std::path::Path::new("/dev/nvidia0").exists()
-        || matches!(
-            std::env::var("__GLX_VENDOR_LIBRARY_NAME").as_deref(),
-            Ok("nvidia")
-        )
-        || matches!(
-            std::env::var("__NV_PRIME_RENDER_OFFLOAD").as_deref(),
-            Ok("1")
-        )
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "linux")]
-    configure_linux_rendering();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -137,6 +99,7 @@ pub fn run() {
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
             fs::search::fs_search,
+            fs::search::fs_list_files,
             fs::grep::fs_grep,
             fs::grep::fs_glob,
             shell::shell_run_command,
@@ -147,12 +110,17 @@ pub fn run() {
             shell::shell_bg_logs,
             shell::shell_bg_kill,
             shell::shell_bg_list,
+            workspace::wsl_list_distros,
+            workspace::wsl_default_distro,
+            workspace::wsl_home,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,
             secrets::secrets_delete,
             secrets::secrets_get_all,
-            net::http_ping,
+            net::lm_ping,
+            net::ai_http_request,
+            net::ai_http_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

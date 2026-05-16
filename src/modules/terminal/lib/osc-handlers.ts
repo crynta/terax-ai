@@ -36,22 +36,6 @@ export function registerPromptTracker(term: Terminal): PromptTracker {
   };
 }
 
-export type TeraxOpenInput = {
-  file: string;
-};
-
-export function registerTeraxOpenHandler(
-  term: Terminal,
-  onTeraxOpen: (input: TeraxOpenInput) => void,
-): () => void {
-  const d = term.parser.registerOscHandler(8888, (data) => {
-    const input = parseTeraxOpen(data);
-    if (input) onTeraxOpen(input);
-    return true;
-  });
-  return () => d.dispose();
-}
-
 function parseOsc7(data: string): string | null {
   const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
   if (!m) return null;
@@ -62,17 +46,4 @@ function parseOsc7(data: string): string | null {
   // /C:/Users/foo -> C:/Users/foo so it's a valid Windows path.
   if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
   return path;
-}
-
-function parseTeraxOpen(data: string): TeraxOpenInput | null {
-  // Parse format: "file=/path/to/file"
-  const fileMatch = data.match(/file=([^;]+)/);
-
-  if (!fileMatch) return null;
-
-  try {
-    return { file: decodeURIComponent(fileMatch[1]) };
-  } catch {
-    return { file: fileMatch[1] };
-  }
 }

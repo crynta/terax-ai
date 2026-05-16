@@ -54,34 +54,6 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
     add-zsh-hook preexec _terax_preexec
   fi
 
-  # terax_open: open file in editor tab via OSC 8888.
-  # Usage: terax_open <file>
-  terax_open() {
-    local file="$1"
-
-    if [[ -z "$file" ]]; then
-      printf "usage: terax_open <file>\n" >&2
-      return 1
-    fi
-
-    # Resolve relative paths relative to PWD.
-    if [[ "$file" != /* ]]; then
-      file="$PWD/$file"
-    fi
-
-    # Check that the path exists and is a regular file.
-    if [[ ! -f "$file" ]]; then
-      printf "terax_open: not a file: %s\n" "$file" >&2
-      return 1
-    fi
-
-    # Emit OSC 8888 with URL-encoded file path.
-    printf '\e]8888;file=%s\e\\' "$(_terax_urlencode "$file")"
-  }
-
-  # Shorthand alias.
-  alias tp='terax_open'
-
   _terax_precmd
 fi
 :

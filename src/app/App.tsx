@@ -18,14 +18,15 @@ import { cn } from "@/lib/utils";
 import {
   AgentRunBridge,
   AiInputBar,
+  AiInputBarConnect,
   AiMiniWindow,
   getAllKeys,
   hasAnyKey,
   SelectionAskAi,
   useChatStore,
 } from "@/modules/ai";
-import { AiInputBarConnect } from "@/modules/ai/components/AiInputBar";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
+import { redactSensitive } from "@/modules/ai/lib/redact";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
 import {
@@ -34,7 +35,8 @@ import {
   NewEditorDialog,
   type EditorPaneHandle,
 } from "@/modules/editor";
-import { FileExplorer } from "@/modules/explorer";
+import { useZoom } from "@/lib/useZoom";
+import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
   Header,
   type SearchInlineHandle,
@@ -58,10 +60,15 @@ import {
   respawnSession,
   TerminalStack,
   type TerminalPaneHandle,
-  type TeraxOpenInput,
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import {
+  getWslHome,
+  LOCAL_WORKSPACE,
+  useWorkspaceEnvStore,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
@@ -75,11 +82,12 @@ export default function App() {
     activeId,
     setActiveId,
     newTab,
+    newPrivateTab,
     openFileTab,
     pinTab,
     newPreviewTab,
     openAiDiffTab,
-    setAiDiffStatus,
+    closeAiDiffTab,
     closeTab,
     updateTab,
     selectByIndex,
@@ -89,6 +97,7 @@ export default function App() {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
+    resetWorkspace,
   } = useTabs();
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
@@ -111,6 +120,10 @@ export default function App() {
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
+  const { zoomIn, zoomOut, zoomReset } = useZoom();
+  const explorerRef = useRef<FileExplorerHandle>(null);
+  const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
+
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
@@ -119,14 +132,81 @@ export default function App() {
     else p.collapse();
   }, []);
 
+  const toggleExplorerFocus = useCallback(() => {
+    const explorer = explorerRef.current;
+    if (!explorer) return;
+    if (explorer.isFocused()) {
+      const target = explorerReturnFocusRef.current;
+      explorerReturnFocusRef.current = null;
+      if (target && document.body.contains(target)) {
+        target.focus();
+      } else {
+        (document.activeElement as HTMLElement | null)?.blur?.();
+      }
+      return;
+    }
+    const active = document.activeElement;
+    explorerReturnFocusRef.current =
+      active instanceof HTMLElement && active !== document.body ? active : null;
+    const p = sidebarRef.current;
+    if (p && p.getSize().asPercentage <= 0) p.expand();
+    explorer.focus();
+  }, []);
+
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
+  const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
+  const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
+  const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
+    null,
+  );
   useEffect(() => {
     // Forward-slash form so explorerRoot stays equal across home → OSC 7.
     homeDir()
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
+
+  const switchWorkspace = useCallback(
+    async (env: WorkspaceEnv) => {
+      if (
+        env.kind === workspaceEnv.kind &&
+        (env.kind === "local" ||
+          (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
+      ) {
+        return;
+      }
+      const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
+      if (dirty) {
+        window.alert("Save or close unsaved editor tabs before switching workspace.");
+        return;
+      }
+
+      let nextHome: string | null = null;
+      try {
+        if (env.kind === "wsl") {
+          nextHome = await getWslHome(env.distro);
+        } else {
+          nextHome = (await homeDir()).replace(/\\/g, "/");
+        }
+      } catch (e) {
+        window.alert(String(e));
+        return;
+      }
+
+      for (const id of liveLeavesRef.current) disposeSession(id);
+      searchAddons.current.clear();
+      terminalRefs.current.clear();
+      editorRefs.current.clear();
+      previewRefs.current.clear();
+      setActiveSearchAddon(null);
+      setActiveEditorHandle(null);
+      setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
+      setHome(nextHome);
+      resetWorkspace(nextHome ?? undefined);
+    },
+    [workspaceEnv, setWorkspaceEnv, resetWorkspace],
+  );
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
@@ -140,7 +220,19 @@ export default function App() {
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
-  const hasComposer = hasAnyKey(apiKeys);
+  const lmstudioModelId = usePreferencesStore((s) => s.lmstudioModelId);
+  const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
+  const openaiCompatibleModelId = usePreferencesStore(
+    (s) => s.openaiCompatibleModelId,
+  );
+  const openaiCompatibleBaseURL = usePreferencesStore(
+    (s) => s.openaiCompatibleBaseURL,
+  );
+  const hasLocalModel =
+    (lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0) ||
+    (openaiCompatibleBaseURL.trim().length > 0 &&
+      openaiCompatibleModelId.trim().length > 0);
+  const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
 
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
@@ -406,6 +498,10 @@ export default function App() {
     newTab(inheritedCwdForNewTab());
   }, [newTab, inheritedCwdForNewTab]);
 
+  const openNewPrivateTab = useCallback(() => {
+    newPrivateTab(inheritedCwdForNewTab());
+  }, [newPrivateTab, inheritedCwdForNewTab]);
+
   const sendCd = useCallback(
     (path: string) => {
       if (activeLeafId === null) return;
@@ -468,14 +564,30 @@ export default function App() {
     [tabs, updateTab],
   );
 
+  const confirmDeleteClose = useCallback(() => {
+    if (pendingDeleteTabs !== null) {
+      for (const id of pendingDeleteTabs) disposeTab(id);
+      setPendingDeleteTabs(null);
+    }
+  }, [pendingDeleteTabs, disposeTab]);
+
+  const cancelDeleteClose = useCallback(() => {
+    setPendingDeleteTabs(null);
+  }, []);
+
   const handlePathDeleted = useCallback(
     (path: string) => {
+      const dirty: number[] = [];
       for (const t of tabs) {
         if (t.kind !== "editor") continue;
-        if (t.path === path || t.path.startsWith(`${path}/`)) {
+        if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
+        if (t.dirty) {
+          dirty.push(t.id);
+        } else {
           disposeTab(t.id);
         }
       }
+      if (dirty.length > 0) setPendingDeleteTabs(dirty);
     },
     [tabs, disposeTab],
   );
@@ -515,6 +627,7 @@ export default function App() {
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "tab.new": openNewTab,
+      "tab.newPrivate": openNewPrivateTab,
       "tab.newPreview": () => openPreviewTab(""),
       "tab.newEditor": () => setNewEditorOpen(true),
       "tab.close": handleCloseTabOrPane,
@@ -531,12 +644,17 @@ export default function App() {
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
+      "explorer.focus": toggleExplorerFocus,
+      "view.zoomIn": zoomIn,
+      "view.zoomOut": zoomOut,
+      "view.zoomReset": zoomReset,
     }),
     [
       activeId,
       cycleTab,
       handleCloseTabOrPane,
       openNewTab,
+      openNewPrivateTab,
       openPreviewTab,
       selectByIndex,
       splitActivePaneInActiveTab,
@@ -544,6 +662,10 @@ export default function App() {
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
+      toggleExplorerFocus,
+      zoomIn,
+      zoomOut,
+      zoomReset,
     ],
   );
 
@@ -608,14 +730,6 @@ export default function App() {
     [closePaneByLeaf],
   );
 
-  const handleTeraxOpen = useCallback(
-    (_tabId: number, input: TeraxOpenInput) => {
-      // Always open in a new tab
-      openFileTab(input.file);
-    },
-    [openFileTab],
-  );
-
   const handleEditorDirty = useCallback(
     (id: number, dirty: boolean) => updateTab(id, { dirty }),
     [updateTab],
@@ -656,7 +770,13 @@ export default function App() {
       getTerminalContext: () => {
         const t = tabs.find((x) => x.id === activeId);
         if (t?.kind !== "terminal") return null;
-        return terminalRefs.current.get(t.activeLeafId)?.getBuffer(300) ?? null;
+        if (t.private) return null;
+        const buf = terminalRefs.current.get(t.activeLeafId)?.getBuffer(300);
+        return buf ? redactSensitive(buf) : null;
+      },
+      isActiveTerminalPrivate: () => {
+        const t = tabs.find((x) => x.id === activeId);
+        return t?.kind === "terminal" && t.private === true;
       },
       injectIntoActivePty: (text) => {
         const t = tabs.find((x) => x.id === activeId);
@@ -688,6 +808,7 @@ export default function App() {
             activeId={activeId}
             onSelect={setActiveId}
             onNew={openNewTab}
+            onNewPrivate={openNewPrivateTab}
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
             onClose={handleClose}
@@ -704,7 +825,7 @@ export default function App() {
             searchRef={searchInlineRef}
           />
 
-          <main className="flex min-h-0 flex-1 flex-col">
+          <main className="zoom-content flex min-h-0 flex-1 flex-col">
             <ResizablePanelGroup
               orientation="horizontal"
               className="min-h-0 flex-1"
@@ -720,6 +841,7 @@ export default function App() {
               >
                 <div className="h-full border-r border-border/60 bg-card">
                   <FileExplorer
+                    ref={explorerRef}
                     rootPath={explorerRoot}
                     onOpenFile={handleOpenFile}
                     onPathRenamed={handlePathRenamed}
@@ -747,7 +869,6 @@ export default function App() {
                         onSearchReady={handleSearchReady}
                         onCwd={handleTerminalCwd}
                         onExit={handleLeafExit}
-                        onTeraxOpen={handleTeraxOpen}
                         onFocusLeaf={handleFocusLeaf}
                       />
                     </div>
@@ -827,14 +948,18 @@ export default function App() {
             filePath={activeFilePath}
             home={home}
             onCd={sendCd}
+            onWorkspaceChange={switchWorkspace}
             onOpenMini={openMini}
             hasComposer={hasComposer}
+            privateActive={
+              activeTab?.kind === "terminal" && activeTab.private === true
+            }
           />
 
           {hasComposer ? (
             <AgentRunBridge
               openAiDiffTab={openAiDiffTab}
-              setAiDiffStatus={setAiDiffStatus}
+              closeAiDiffTab={closeAiDiffTab}
             />
           ) : null}
 
@@ -885,6 +1010,37 @@ export default function App() {
                   Cancel
                 </AlertDialogCancel>
                 <AlertDialogAction onClick={confirmClose}>
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={pendingDeleteTabs !== null}
+            onOpenChange={(open) => !open && cancelDeleteClose()}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {pendingDeleteTabs?.length === 1
+                    ? (() => {
+                        const title = tabs.find(
+                          (t) => t.id === pendingDeleteTabs[0],
+                        )?.title;
+                        return title
+                          ? `"${title}" has unsaved changes. The file has been deleted. Close anyway?`
+                          : "This file has unsaved changes. The file has been deleted. Close anyway?";
+                      })()
+                    : `${pendingDeleteTabs?.length ?? 0} files have unsaved changes. They have been deleted. Close all anyway?`}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={cancelDeleteClose}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDeleteClose}>
                   Close Anyway
                 </AlertDialogAction>
               </AlertDialogFooter>
