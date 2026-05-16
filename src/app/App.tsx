@@ -740,7 +740,12 @@ export default function App() {
       return {
         kind: "terminal",
         addon: activeSearchAddon,
-        focus: () => terminalRefs.current.get(activeId)?.focus(),
+        // terminalRefs is keyed by leaf ID, not tab ID — use activeLeafId so
+        // Escape (and any other "restore focus" path) actually finds the handle.
+        focus: () =>
+          activeLeafId !== null
+            ? terminalRefs.current.get(activeLeafId)?.focus()
+            : undefined,
       };
     if (isEditorTab && activeEditorHandle)
       return {
@@ -749,7 +754,7 @@ export default function App() {
         focus: () => activeEditorHandle.focus(),
       };
     return null;
-  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
+  }, [isTerminalTab, isEditorTab, activeLeafId, activeSearchAddon, activeEditorHandle]);
 
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
