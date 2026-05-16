@@ -1,4 +1,10 @@
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
+import {
+  getSourceControlRemoteIndicator,
+  type SourceControlSummary,
+} from "@/modules/source-control";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +26,7 @@ import {
   KeyboardIcon,
   LayoutTwoColumnIcon,
   LayoutTwoRowIcon,
+  Refresh01Icon,
   SourceCodeCircleIcon,
   Settings01Icon,
   SidebarLeftIcon,
@@ -50,8 +57,9 @@ type Props = {
   onOpenShortcuts: () => void;
   onOpenSettings: () => void;
   sourceControlOpen: boolean;
-  sourceControlCount: number;
+  sourceControl: SourceControlSummary;
   onToggleSourceControl: () => void;
+  onRunSourceControlRemoteAction: () => void;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
 };
@@ -74,8 +82,9 @@ export function Header({
   onOpenShortcuts,
   onOpenSettings,
   sourceControlOpen,
-  sourceControlCount,
+  sourceControl,
   onToggleSourceControl,
+  onRunSourceControlRemoteAction,
   searchTarget,
   searchRef,
 }: Props) {
@@ -99,6 +108,7 @@ export function Header({
 
   const splitRightTokens = tokensFor("pane.splitRight");
   const splitDownTokens = tokensFor("pane.splitDown");
+  const remoteIndicator = getSourceControlRemoteIndicator(sourceControl);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -136,27 +146,69 @@ export function Header({
   );
 
   const sourceControlButton = (
-    <Button
-      variant={sourceControlOpen ? "secondary" : "ghost"}
-      size="sm"
-      className="relative h-7 shrink-0 gap-1.5 rounded-md px-2.5 text-[11px]"
-      onClick={onToggleSourceControl}
-      title="Source Control"
+    <div
+      className={cn(
+        "relative inline-flex h-7 shrink-0 items-stretch overflow-visible rounded-md border text-[11px]",
+        sourceControlOpen
+          ? "border-border bg-secondary text-secondary-foreground"
+          : "border-border/60 bg-transparent text-muted-foreground",
+      )}
     >
-      <span className="relative inline-flex size-3.5 items-center justify-center">
-        <HugeiconsIcon
-          icon={SourceCodeCircleIcon}
-          size={14}
-          strokeWidth={1.75}
-        />
-        {sourceControlCount > 0 ? (
-          <span className="absolute -right-2 -top-2 inline-flex min-w-3.5 items-center justify-center rounded-full bg-primary px-1 py-px text-[8px] font-semibold leading-none text-primary-foreground shadow-sm ring-1 ring-card">
-            {sourceControlCount > 99 ? "99+" : sourceControlCount}
-          </span>
-        ) : null}
-      </span>
-      <span>Diff</span>
-    </Button>
+      <button
+        type="button"
+        className="relative inline-flex items-center gap-1.5 px-2.5 transition-colors hover:bg-accent hover:text-foreground"
+        onClick={onToggleSourceControl}
+        title="Source Control"
+      >
+        <span className="relative inline-flex size-3.5 items-center justify-center">
+          <HugeiconsIcon
+            icon={SourceCodeCircleIcon}
+            size={14}
+            strokeWidth={1.75}
+          />
+          {sourceControl.changedCount > 0 ? (
+            <span className="absolute -right-2 -top-2 inline-flex min-w-3.5 items-center justify-center rounded-full bg-primary px-1 py-px text-[8px] font-semibold leading-none text-primary-foreground shadow-sm ring-1 ring-card">
+              {sourceControl.changedCount > 99 ? "99+" : sourceControl.changedCount}
+            </span>
+          ) : null}
+        </span>
+        <span>Diff</span>
+      </button>
+      {remoteIndicator.visible ? (
+        <button
+          type="button"
+          className={cn(
+            "relative inline-flex w-7 items-center justify-center border-l border-border/60 transition-colors hover:bg-accent hover:text-foreground",
+            remoteIndicator.disabled &&
+              "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-muted-foreground",
+          )}
+          disabled={remoteIndicator.disabled}
+          onClick={onRunSourceControlRemoteAction}
+          title={remoteIndicator.title}
+        >
+          {sourceControl.busyAction ? (
+            <Spinner className="size-3" />
+          ) : (
+            <>
+              <HugeiconsIcon
+                icon={Refresh01Icon}
+                size={13}
+                strokeWidth={1.85}
+                className={cn(
+                  (sourceControl.ahead > 0 || sourceControl.behind > 0) &&
+                    "text-foreground",
+                )}
+              />
+              {remoteIndicator.label !== "Sync" ? (
+                <span className="absolute -right-1 -top-1 inline-flex min-w-3.5 items-center justify-center rounded-full bg-muted px-1 py-px text-[8px] font-semibold leading-none text-foreground ring-1 ring-card">
+                  {remoteIndicator.label.replace(" ", "")}
+                </span>
+              ) : null}
+            </>
+          )}
+        </button>
+      ) : null}
+    </div>
   );
 
   return (

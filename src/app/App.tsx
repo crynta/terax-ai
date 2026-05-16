@@ -53,7 +53,10 @@ import {
   useGlobalShortcuts,
   type ShortcutHandlers,
 } from "@/modules/shortcuts";
-import { SourceControlPanel } from "@/modules/source-control";
+import {
+  SourceControlPanel,
+  useSourceControl,
+} from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
@@ -258,7 +261,6 @@ export default function App() {
   const [sourceControlOpen, setSourceControlOpen] = useState(false);
   const [sourceControlPinnedContextPath, setSourceControlPinnedContextPath] =
     useState<string | null>(null);
-  const [sourceControlCount, setSourceControlCount] = useState(0);
   const [sourceControlWidth, setSourceControlWidth] = useState(
     readSourceControlWidth,
   );
@@ -664,6 +666,9 @@ export default function App() {
         : activeTab?.kind === "git-diff"
           ? activeTab.repoRoot
         : explorerRoot ?? launchCwd ?? home ?? null;
+  const sourceControlTrackedContextPath =
+    sourceControlPinnedContextPath ?? sourceControlContextPath;
+  const sourceControl = useSourceControl(sourceControlTrackedContextPath);
 
   const rememberSourceControlWidth = useCallback((width: number) => {
     if (!Number.isFinite(width) || width <= 0) return;
@@ -675,36 +680,6 @@ export default function App() {
       // Ignore storage failures; the panel still works for the current session.
     }
   }, []);
-
-  useEffect(() => {
-    let alive = true;
-    const refreshSourceControlCount = () => {
-      if (!sourceControlContextPath) {
-        setSourceControlCount(0);
-        return;
-      }
-      void native
-        .gitResolveRepo(sourceControlContextPath)
-        .then((repo) => {
-          if (!alive || !repo) return null;
-          return native.gitStatus(repo.repoRoot);
-        })
-        .then((status) => {
-          if (!alive) return;
-          setSourceControlCount(status?.changedFiles.length ?? 0);
-        })
-        .catch(() => {
-          if (alive) setSourceControlCount(0);
-        });
-    };
-
-    refreshSourceControlCount();
-    window.addEventListener("focus", refreshSourceControlCount);
-    return () => {
-      alive = false;
-      window.removeEventListener("focus", refreshSourceControlCount);
-    };
-  }, [sourceControlContextPath]);
 
   const openSourceControl = useCallback(() => {
     setSourceControlPinnedContextPath(sourceControlContextPath);
@@ -728,6 +703,20 @@ export default function App() {
     }
     openSourceControl();
   }, [closeSourceControl, openSourceControl, sourceControlOpen]);
+
+  const runSourceControlRemoteAction = useCallback(async () => {
+    const result = await sourceControl.runRemoteAction();
+    if (!result.ok && result.error) {
+      setSourceControlPinnedContextPath(
+        sourceControlTrackedContextPath ?? sourceControlContextPath,
+      );
+      setSourceControlOpen(true);
+    }
+  }, [
+    sourceControl,
+    sourceControlContextPath,
+    sourceControlTrackedContextPath,
+  ]);
 
   useEffect(() => {
     if (!sourceControlOpen) return;
@@ -1052,8 +1041,9 @@ export default function App() {
             onOpenShortcuts={() => setShortcutsOpen(true)}
               onOpenSettings={() => void openSettingsWindow()}
               sourceControlOpen={sourceControlOpen}
-              sourceControlCount={sourceControlCount}
+              sourceControl={sourceControl}
               onToggleSourceControl={toggleSourceControl}
+              onRunSourceControlRemoteAction={runSourceControlRemoteAction}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
           />
@@ -1114,9 +1104,8 @@ export default function App() {
                       >
                         <SourceControlPanel
                           open={sourceControlOpen}
-                          contextPath={sourceControlPinnedContextPath}
+                          sourceControl={sourceControl}
                           onClose={closeSourceControl}
-                          onStatusCountChange={setSourceControlCount}
                           onOpenDiff={openGitDiffTab}
                         />
                       </ResizablePanel>

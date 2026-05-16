@@ -1,78 +1,61 @@
 import {
   native,
-  type GitChangedFile,
   type GitRepoInfo,
   type GitStatusSnapshot,
 } from "@/modules/ai/lib/native";
-import { buildConfiguredLanguageModel } from "@/modules/ai/lib/agent";
-import { useChatStore } from "@/modules/ai/store/chatStore";
-import { getModel, providerNeedsKey } from "@/modules/ai/config";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import { generateText } from "ai";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-type PanelState = "closed" | "loading" | "no-repo" | "ready" | "error";
-type DiffMode = "+" | "-";
-type SelectionTransition = "none" | "moved-group" | "reset";
+const AUTO_FETCH_THROTTLE_MS = 30_000;
 
-const COMPACT_PANEL_WIDTH = 380;
-const COMMIT_DIFF_CHAR_LIMIT = 60_000;
-const COMMIT_MESSAGE_MAX_OUTPUT_TOKENS = 1024;
-const CONVENTIONAL_PREFIX =
-  /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?: .+/;
-const COMMIT_MESSAGE_SYSTEM_PROMPT =
-  "You write concise Conventional Commit subject lines in English. Return exactly one complete line, with no markdown, no quotes, no body, and no explanation.";
+export type SourceControlRefreshMode = "auto" | "always" | "never";
+export type SourceControlRemoteAction = "fetch" | "pull" | "push";
+export type SourceControlRemoteActionMode =
+  | "contextual"
+  | SourceControlRemoteAction;
 
-export type DiffSelection = {
-  path: string;
-  mode: DiffMode;
+export type SourceControlRemoteActionResult = {
+  ok: boolean;
+  action: SourceControlRemoteAction | null;
+  error?: string;
+  blocked?: "diverged" | "missing-upstream" | "no-repo";
 };
 
-export type SourceControlEntry = {
-  key: string;
-  path: string;
-  mode: DiffMode;
-  indexStatus: string;
-  worktreeStatus: string;
-  statusLabel: string;
-  statusCode: string;
-  originalPath: string | null;
-  untracked: boolean;
-};
-
-type SourceControlState = {
-  panelState: PanelState;
+export type SourceControlSummary = {
   repo: GitRepoInfo | null;
   status: GitStatusSnapshot | null;
-  selected: DiffSelection | null;
-  diffLoading: boolean;
-  commitMessage: string;
-  actionBusy: string | null;
-  error: string | null;
-  actionMessage: string | null;
-  stagedEntries: SourceControlEntry[];
-  unstagedEntries: SourceControlEntry[];
-  allClean: boolean;
-  compact: boolean;
-  canPush: boolean;
-  pushHint: string | null;
-  canGenerateCommitMessage: boolean;
-  generateCommitMessageHint: string;
-  selectionTransition: SelectionTransition;
-  stagedEmptyText: string;
-  unstagedEmptyText: string;
-  setCommitMessage: (value: string) => void;
-  refresh: () => Promise<void>;
-  selectEntry: (entry: SourceControlEntry) => Promise<void>;
-  stageEntry: (entry: SourceControlEntry) => Promise<void>;
-  unstageEntry: (entry: SourceControlEntry) => Promise<void>;
-  discardEntry: (entry: SourceControlEntry) => Promise<void>;
-  stageAllEntries: () => Promise<void>;
-  unstageAllEntries: () => Promise<void>;
-  discardAllEntries: () => Promise<void>;
-  generateCommitMessage: () => Promise<void>;
-  commit: () => Promise<void>;
-  push: () => Promise<void>;
+  changedCount: number;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  hasRepo: boolean;
+  isLoading: boolean;
+  localError: string | null;
+  busyAction: SourceControlRemoteAction | null;
+  lastRemoteError: string | null;
+  refresh: (options?: {
+    remote?: SourceControlRefreshMode;
+  }) => Promise<void>;
+  runRemoteAction: (
+    mode?: SourceControlRemoteActionMode,
+  ) => Promise<SourceControlRemoteActionResult>;
+};
+
+export type SourceControlRemoteIndicator = {
+  visible: boolean;
+  label: string;
+  title: string;
+  disabled: boolean;
+  action: SourceControlRemoteAction | null;
+};
+
+type SourceControlSummaryState = {
+  repo: GitRepoInfo | null;
+  status: GitStatusSnapshot | null;
+  hasRepo: boolean;
+  isLoading: boolean;
+  localError: string | null;
+  busyAction: SourceControlRemoteAction | null;
+  lastRemoteError: string | null;
 };
 
 function normalizeError(error: unknown): string {
@@ -84,682 +67,267 @@ function normalizeError(error: unknown): string {
   return "Unknown source control error";
 }
 
-function normalizeStatusCode(status: string): string {
-  const code = status.trim().toUpperCase();
-  switch (code) {
-    case "?":
-      return "?";
-    case "A":
-      return "A";
-    case "M":
-      return "M";
-    case "D":
-      return "D";
-    case "R":
-    case "C":
-      return "R";
-    case "U":
-      return "U";
-    default:
-      return code || "M";
-  }
-}
-
-function statusCodeForMode(mode: DiffMode, file: GitChangedFile): string {
-  if (mode === "-" && file.untracked) return "?";
-  const primary = mode === "+" ? file.indexStatus : file.worktreeStatus;
-  const fallback = mode === "+" ? file.worktreeStatus : file.indexStatus;
-  return normalizeStatusCode(primary !== " " ? primary : fallback);
-}
-
-function makeEntry(
-  path: string,
-  mode: DiffMode,
-  file: GitChangedFile,
-): SourceControlEntry {
-  return {
-    key: `${mode}:${path}`,
-    path,
-    mode,
-    indexStatus: file.indexStatus,
-    worktreeStatus: file.worktreeStatus,
-    statusLabel: file.statusLabel,
-    statusCode: statusCodeForMode(mode, file),
-    originalPath: file.originalPath,
-    untracked: file.untracked,
-  };
-}
-
-function sameSelection(
-  a: DiffSelection | null,
-  b: DiffSelection | null,
-): boolean {
-  return !!a && !!b && a.path === b.path && a.mode === b.mode;
-}
-
-function firstEntry(
+function getContextualAction(
   status: GitStatusSnapshot | null,
-): SourceControlEntry | null {
-  if (!status) return null;
-  for (const file of status.changedFiles) {
-    if (file.unstaged) return makeEntry(file.path, "-", file);
-  }
-  for (const file of status.changedFiles) {
-    if (file.staged) return makeEntry(file.path, "+", file);
-  }
-  return null;
+): SourceControlRemoteAction | null {
+  if (!status?.upstream) return null;
+  if (status.ahead > 0 && status.behind > 0) return null;
+  if (status.behind > 0) return "pull";
+  if (status.ahead > 0) return "push";
+  return "fetch";
 }
 
-function stagedFilesSummary(entries: SourceControlEntry[]): string {
-  return entries
-    .map((entry) => {
-      const status = entry.originalPath
-        ? `R ${entry.originalPath} -> ${entry.path}`
-        : `${entry.statusCode} ${entry.path}`;
-      return `- ${status}`;
-    })
-    .join("\n");
-}
-
-function truncateDiff(diff: string): { text: string; truncated: boolean } {
-  if (diff.length <= COMMIT_DIFF_CHAR_LIMIT) {
-    return { text: diff, truncated: false };
+export function getSourceControlRemoteIndicator(
+  summary: Pick<
+    SourceControlSummary,
+    "hasRepo" | "upstream" | "ahead" | "behind" | "busyAction"
+  >,
+): SourceControlRemoteIndicator {
+  if (!summary.hasRepo || !summary.upstream) {
+    return {
+      visible: false,
+      label: "",
+      title: "",
+      disabled: true,
+      action: null,
+    };
   }
+
+  if (summary.ahead > 0 && summary.behind > 0) {
+    return {
+      visible: true,
+      label: `↑${summary.ahead} ↓${summary.behind}`,
+      title:
+        "Branch has diverged from upstream. Use Source Control or the terminal to resolve it.",
+      disabled: true,
+      action: null,
+    };
+  }
+
+  if (summary.behind > 0) {
+    return {
+      visible: true,
+      label: `↓${summary.behind}`,
+      title: `Pull ${summary.behind} remote ${
+        summary.behind === 1 ? "commit" : "commits"
+      } with fast-forward only.`,
+      disabled: summary.busyAction !== null,
+      action: "pull",
+    };
+  }
+
+  if (summary.ahead > 0) {
+    return {
+      visible: true,
+      label: `↑${summary.ahead}`,
+      title: `Push ${summary.ahead} local ${
+        summary.ahead === 1 ? "commit" : "commits"
+      }.`,
+      disabled: summary.busyAction !== null,
+      action: "push",
+    };
+  }
+
   return {
-    text: diff.slice(0, COMMIT_DIFF_CHAR_LIMIT),
-    truncated: true,
+    visible: true,
+    label: "Sync",
+    title: "Fetch remote updates.",
+    disabled: summary.busyAction !== null,
+    action: "fetch",
   };
-}
-
-function cleanCommitMessage(raw: string): string {
-  let text = raw.trim();
-  const fence = text.match(/^```[a-zA-Z0-9_-]*\n([\s\S]*?)\n```\s*$/);
-  if (fence) text = fence[1].trim();
-  const firstLine = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean);
-  if (!firstLine) return "";
-  return firstLine.replace(/^["'`]+|["'`]+$/g, "").trim();
-}
-
-function isValidCommitMessage(message: string): boolean {
-  return CONVENTIONAL_PREFIX.test(message);
-}
-
-function buildCommitMessagePrompt(
-  entries: SourceControlEntry[],
-  diffText: string,
-  truncated: boolean,
-): string {
-  return [
-    "Generate one complete commit message for the staged changes only.",
-    "Format: type(scope): subject",
-    "Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert.",
-    "Examples:",
-    "- feat(source-control): generate commit messages",
-    "- fix(git): handle staged diff errors",
-    "- chore: update project metadata",
-    "Use a short lowercase subject in imperative mood. Omit the scope if it would be vague.",
-    "Do not stop after the type or an opening parenthesis; the line must include a subject after ': '.",
-    truncated
-      ? "The diff below was truncated; infer from the visible staged changes only."
-      : "The full staged diff is included below.",
-    "",
-    "Staged files:",
-    stagedFilesSummary(entries),
-    "",
-    "Staged diff:",
-    diffText || "(No textual diff available.)",
-  ].join("\n");
-}
-
-function buildRepairCommitMessagePrompt(
-  invalidMessage: string,
-  entries: SourceControlEntry[],
-): string {
-  return [
-    "Repair this invalid Conventional Commit subject line.",
-    `Invalid line: ${invalidMessage || "(empty)"}`,
-    "Return exactly one complete valid line in this format: type(scope): subject",
-    "Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert.",
-    "If the scope is unclear, omit it and use: type: subject",
-    "",
-    "Staged files:",
-    stagedFilesSummary(entries),
-  ].join("\n");
 }
 
 export function useSourceControl(
-  isOpen: boolean,
   contextPath: string | null,
-  onOpenDiff:
-    | ((input: {
-        path: string;
-        repoRoot: string;
-        mode: DiffMode;
-        originalContent: string;
-        modifiedContent: string;
-        isBinary: boolean;
-        fallbackPatch: string;
-      }) => void)
-    | null,
-  panelWidth = 0,
-): SourceControlState {
-  const apiKeys = useChatStore((state) => state.apiKeys);
-  const selectedModelId = useChatStore((state) => state.selectedModelId);
-  const agentStatus = useChatStore((state) => state.agentMeta.status);
-  const lmstudioBaseURL = usePreferencesStore((state) => state.lmstudioBaseURL);
-  const lmstudioModelId = usePreferencesStore((state) => state.lmstudioModelId);
-  const openaiCompatibleBaseURL = usePreferencesStore(
-    (state) => state.openaiCompatibleBaseURL,
-  );
-  const openaiCompatibleModelId = usePreferencesStore(
-    (state) => state.openaiCompatibleModelId,
-  );
-  const [panelState, setPanelState] = useState<PanelState>("closed");
-  const [repo, setRepo] = useState<GitRepoInfo | null>(null);
-  const [status, setStatus] = useState<GitStatusSnapshot | null>(null);
-  const [selected, setSelected] = useState<DiffSelection | null>(null);
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [commitMessage, setCommitMessage] = useState("");
-  const [actionBusy, setActionBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [selectionTransition, setSelectionTransition] =
-    useState<SelectionTransition>("none");
-  const panelStateRef = useRef<PanelState>("closed");
-  const selectedRef = useRef<DiffSelection | null>(null);
+): SourceControlSummary {
+  const [state, setState] = useState<SourceControlSummaryState>({
+    repo: null,
+    status: null,
+    hasRepo: false,
+    isLoading: false,
+    localError: null,
+    busyAction: null,
+    lastRemoteError: null,
+  });
+  const stateRef = useRef(state);
+  const requestIdRef = useRef(0);
+  const autoFetchByRepoRef = useRef(new Map<string, number>());
 
   useEffect(() => {
-    panelStateRef.current = panelState;
-  }, [panelState]);
+    stateRef.current = state;
+  }, [state]);
 
-  useEffect(() => {
-    selectedRef.current = selected;
-  }, [selected]);
+  const refresh = useCallback(
+    async (options?: { remote?: SourceControlRefreshMode }) => {
+      const remoteMode = options?.remote ?? "auto";
+      const requestId = ++requestIdRef.current;
+      let resolvedRepo: GitRepoInfo | null = null;
 
-  const stagedEntries = useMemo(
-    () =>
-      (status?.changedFiles ?? [])
-        .filter((file) => file.staged)
-        .map((file) => makeEntry(file.path, "+", file)),
-    [status],
-  );
+      if (!contextPath) {
+        setState({
+          repo: null,
+          status: null,
+          hasRepo: false,
+          isLoading: false,
+          localError: null,
+          busyAction: null,
+          lastRemoteError: stateRef.current.lastRemoteError,
+        });
+        return;
+      }
 
-  const unstagedEntries = useMemo(
-    () =>
-      (status?.changedFiles ?? [])
-        .filter((file) => file.unstaged)
-        .map((file) => makeEntry(file.path, "-", file)),
-    [status],
-  );
+      setState((current) => ({
+        ...current,
+        isLoading: true,
+        localError: null,
+      }));
 
-  const compact = panelWidth > 0 && panelWidth < COMPACT_PANEL_WIDTH;
-  const allClean = stagedEntries.length === 0 && unstagedEntries.length === 0;
-  const canPush = !!status?.upstream;
-  const selectedModel = getModel(selectedModelId);
-  const aiBusy = agentStatus !== "idle" && agentStatus !== "error";
-  const aiUnavailableReason = useMemo(() => {
-    if (stagedEntries.length === 0) {
-      return "Stage changes to generate a commit message";
-    }
-    if (providerNeedsKey(selectedModel.provider) && !apiKeys[selectedModel.provider]) {
-      return "Connect an AI provider to generate commit messages";
-    }
-    if (selectedModel.id === "lmstudio-local" && !lmstudioModelId.trim()) {
-      return "Connect an AI provider to generate commit messages";
-    }
-    if (
-      selectedModel.id === "openai-compatible-custom" &&
-      (!openaiCompatibleBaseURL.trim() || !openaiCompatibleModelId.trim())
-    ) {
-      return "Connect an AI provider to generate commit messages";
-    }
-    return null;
-  }, [
-    apiKeys,
-    lmstudioModelId,
-    openaiCompatibleBaseURL,
-    openaiCompatibleModelId,
-    selectedModel,
-    stagedEntries.length,
-  ]);
-  const canGenerateCommitMessage =
-    stagedEntries.length > 0 && actionBusy === null && !aiBusy && !!repo;
-  const generateCommitMessageHint = aiUnavailableReason
-    ? aiUnavailableReason
-    : aiBusy
-      ? "Wait for the current AI action to finish"
-    : "Generate commit message";
-  const pushHint = useMemo(() => {
-    if (!status) return null;
-    if (!status.upstream) {
-      return "Configure or publish this branch in the terminal to enable push in this iteration.";
-    }
-    return `Pushes to ${status.upstream}.`;
-  }, [status]);
-  const stagedEmptyText = "No staged changes";
-  const unstagedEmptyText = "No unstaged changes";
-
-  const loadDiff = useCallback(
-    async (
-      repoRoot: string,
-      nextSelection: DiffSelection,
-      currentStatus: GitStatusSnapshot | null,
-    ) => {
-      setDiffLoading(true);
       try {
-        const file = currentStatus?.changedFiles.find(
-          (candidate) => candidate.path === nextSelection.path,
-        );
-        const result = await native.gitDiffContent(
-          repoRoot,
-          nextSelection.path,
-          nextSelection.mode === "+",
-        );
-        if (
-          !result.fallbackPatch &&
-          nextSelection.mode === "-" &&
-          file?.untracked
-        ) {
-          onOpenDiff?.({
-            path: nextSelection.path,
-            repoRoot,
-            mode: nextSelection.mode,
-            originalContent: "",
-            modifiedContent: result.modifiedContent,
-            isBinary: result.isBinary,
-            fallbackPatch: `Untracked file: ${nextSelection.path}\n\nStage the file to compare it against the index.`,
-          });
+        const repo = await native.gitResolveRepo(contextPath);
+        if (requestId !== requestIdRef.current) return;
+        resolvedRepo = repo;
+
+        if (!repo) {
+          setState((current) => ({
+            ...current,
+            repo: null,
+            status: null,
+            hasRepo: false,
+            isLoading: false,
+            localError: null,
+          }));
           return;
         }
-        onOpenDiff?.({
-          path: nextSelection.path,
-          repoRoot,
-          mode: nextSelection.mode,
-          originalContent: result.originalContent,
-          modifiedContent: result.modifiedContent,
-          isBinary: result.isBinary,
-          fallbackPatch: result.fallbackPatch,
-        });
-      } catch (err) {
-        setError(normalizeError(err));
-      } finally {
-        setDiffLoading(false);
+
+        let nextRemoteError = stateRef.current.lastRemoteError;
+        const shouldAutoFetch =
+          repo.upstream &&
+          remoteMode !== "never" &&
+          (remoteMode === "always" ||
+            Date.now() -
+              (autoFetchByRepoRef.current.get(repo.repoRoot) ?? 0) >=
+              AUTO_FETCH_THROTTLE_MS);
+
+        if (shouldAutoFetch) {
+          try {
+            await native.gitFetch(repo.repoRoot);
+            autoFetchByRepoRef.current.set(repo.repoRoot, Date.now());
+            nextRemoteError = null;
+          } catch (error) {
+            nextRemoteError = normalizeError(error);
+          }
+        }
+
+        const snapshot = await native.gitStatus(repo.repoRoot);
+        if (requestId !== requestIdRef.current) return;
+
+        setState((current) => ({
+          ...current,
+          repo,
+          status: snapshot,
+          hasRepo: true,
+          isLoading: false,
+          localError: null,
+          lastRemoteError: nextRemoteError,
+        }));
+      } catch (error) {
+        if (requestId !== requestIdRef.current) return;
+        const repo = resolvedRepo ?? stateRef.current.repo;
+        setState((current) => ({
+          ...current,
+          repo,
+          status: null,
+          hasRepo: !!repo,
+          isLoading: false,
+          localError: normalizeError(error),
+        }));
       }
     },
-    [onOpenDiff],
+    [contextPath],
   );
 
-  const refresh = useCallback(async () => {
-    if (!isOpen) {
-      setPanelState("closed");
-      setSelectionTransition("none");
-      return;
-    }
-    if (!contextPath) {
-      setRepo(null);
-      setStatus(null);
-      setSelected(null);
-      setPanelState("no-repo");
-      setSelectionTransition("none");
-      return;
-    }
-    const shouldShowLoading = panelStateRef.current !== "ready";
-    if (shouldShowLoading) setPanelState("loading");
-    setError(null);
-    try {
-      const repoInfo = await native.gitResolveRepo(contextPath);
-      if (!repoInfo) {
-        setRepo(null);
-        setStatus(null);
-        setSelected(null);
-        setPanelState("no-repo");
-        setSelectionTransition("none");
-        return;
+  const runRemoteAction = useCallback(
+    async (
+      mode: SourceControlRemoteActionMode = "contextual",
+    ): Promise<SourceControlRemoteActionResult> => {
+      const { repo, status } = stateRef.current;
+      if (!repo || !status) {
+        return { ok: false, action: null, blocked: "no-repo" };
       }
-      const snapshot = await native.gitStatus(repoInfo.repoRoot);
-      setRepo(repoInfo);
-      setStatus(snapshot);
-      setPanelState("ready");
+      if (!status.upstream) {
+        return { ok: false, action: null, blocked: "missing-upstream" };
+      }
 
-      let nextSelection = selectedRef.current;
-      let shouldOpenDiff = false;
-      let nextTransition: SelectionTransition = "none";
-      const exists =
-        !!nextSelection &&
-        snapshot.changedFiles.some((file) => {
-          if (file.path !== nextSelection?.path) return false;
-          return nextSelection.mode === "+" ? file.staged : file.unstaged;
-        });
+      const action =
+        mode === "contextual" ? getContextualAction(status) : mode;
+      if (!action) {
+        return { ok: false, action: null, blocked: "diverged" };
+      }
 
-      if (exists) {
-        nextTransition = "none";
-      } else if (nextSelection) {
-        const samePathOtherMode = snapshot.changedFiles.find(
-          (file) =>
-            file.path === nextSelection?.path &&
-            (nextSelection.mode === "+" ? file.unstaged : file.staged),
-        );
-        if (samePathOtherMode) {
-          nextSelection = {
-            path: samePathOtherMode.path,
-            mode: nextSelection.mode === "+" ? "-" : "+",
-          };
-          setSelected(nextSelection);
-          shouldOpenDiff = true;
-          nextTransition = "moved-group";
+      setState((current) => ({
+        ...current,
+        busyAction: action,
+      }));
+
+      try {
+        if (action === "fetch") {
+          await native.gitFetch(repo.repoRoot);
+          autoFetchByRepoRef.current.set(repo.repoRoot, Date.now());
+        } else if (action === "pull") {
+          await native.gitFetch(repo.repoRoot);
+          autoFetchByRepoRef.current.set(repo.repoRoot, Date.now());
+          await native.gitPullFfOnly(repo.repoRoot);
+        } else {
+          await native.gitPush(repo.repoRoot);
         }
-      }
 
-      if (!exists && nextTransition === "none") {
-        const first = firstEntry(snapshot);
-        nextSelection = first ? { path: first.path, mode: first.mode } : null;
-        setSelected(nextSelection);
-        shouldOpenDiff = nextSelection !== null;
-        nextTransition =
-          selectedRef.current && !sameSelection(selectedRef.current, nextSelection)
-            ? "reset"
-            : "none";
+        setState((current) => ({
+          ...current,
+          lastRemoteError: null,
+        }));
+        await refresh({ remote: "never" });
+        return { ok: true, action };
+      } catch (error) {
+        const message = normalizeError(error);
+        setState((current) => ({
+          ...current,
+          lastRemoteError: message,
+        }));
+        await refresh({ remote: "never" }).catch(() => {});
+        return { ok: false, action, error: message };
+      } finally {
+        setState((current) => ({
+          ...current,
+          busyAction: null,
+        }));
       }
-
-      setSelectionTransition(nextTransition);
-
-      if (shouldOpenDiff && nextSelection) {
-        await loadDiff(repoInfo.repoRoot, nextSelection, snapshot);
-      }
-    } catch (err) {
-      setRepo(null);
-      setStatus(null);
-      setSelected(null);
-      setPanelState("error");
-      setSelectionTransition("none");
-      setError(normalizeError(err));
-    }
-  }, [contextPath, isOpen, loadDiff]);
+    },
+    [refresh],
+  );
 
   useEffect(() => {
-    void refresh();
-  }, [contextPath, isOpen, refresh]);
+    void refresh({ remote: "auto" });
+  }, [refresh]);
 
   useEffect(() => {
-    if (!isOpen) return;
-    const onFocus = () => void refresh();
+    const onFocus = () => void refresh({ remote: "auto" });
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
-  }, [isOpen, refresh]);
-
-  const selectEntry = useCallback(
-    async (entry: SourceControlEntry) => {
-      if (!repo) return;
-      const nextSelection = {
-        path: entry.path,
-        mode: entry.mode,
-      } satisfies DiffSelection;
-      if (sameSelection(selected, nextSelection)) {
-        setError(null);
-        setActionMessage(null);
-        setSelectionTransition("none");
-        await loadDiff(repo.repoRoot, nextSelection, status);
-        return;
-      }
-      setSelected(nextSelection);
-      setError(null);
-      setActionMessage(null);
-      setSelectionTransition("none");
-      await loadDiff(repo.repoRoot, nextSelection, status);
-    },
-    [loadDiff, repo, selected, status],
-  );
-
-  const stageEntry = useCallback(
-    async (entry: SourceControlEntry) => {
-      if (!repo) return;
-      setActionBusy(`stage:${entry.path}`);
-      setActionMessage(null);
-      setError(null);
-      try {
-        await native.gitStage(repo.repoRoot, [entry.path]);
-        await refresh();
-      } catch (err) {
-        setError(normalizeError(err));
-      } finally {
-        setActionBusy(null);
-      }
-    },
-    [refresh, repo],
-  );
-
-  const unstageEntry = useCallback(
-    async (entry: SourceControlEntry) => {
-      if (!repo) return;
-      setActionBusy(`unstage:${entry.path}`);
-      setActionMessage(null);
-      setError(null);
-      try {
-        await native.gitUnstage(repo.repoRoot, [entry.path]);
-        await refresh();
-      } catch (err) {
-        setError(normalizeError(err));
-      } finally {
-        setActionBusy(null);
-      }
-    },
-    [refresh, repo],
-  );
-
-  const discardEntry = useCallback(
-    async (entry: SourceControlEntry) => {
-      if (!repo) return;
-      const confirmed = window.confirm(`Discard changes in ${entry.path}?`);
-      if (!confirmed) return;
-      setActionBusy(`discard:${entry.path}`);
-      setActionMessage(null);
-      setError(null);
-      try {
-        await native.gitDiscard(repo.repoRoot, [entry.path]);
-        await refresh();
-      } catch (err) {
-        setError(normalizeError(err));
-      } finally {
-        setActionBusy(null);
-      }
-    },
-    [refresh, repo],
-  );
-
-  const stageAllEntries = useCallback(async () => {
-    if (!repo || unstagedEntries.length === 0) return;
-    setActionBusy("stage:all");
-    setActionMessage(null);
-    setError(null);
-    try {
-      await native.gitStage(
-        repo.repoRoot,
-        unstagedEntries.map((entry) => entry.path),
-      );
-      await refresh();
-    } catch (err) {
-      setError(normalizeError(err));
-    } finally {
-      setActionBusy(null);
-    }
-  }, [refresh, repo, unstagedEntries]);
-
-  const unstageAllEntries = useCallback(async () => {
-    if (!repo || stagedEntries.length === 0) return;
-    setActionBusy("unstage:all");
-    setActionMessage(null);
-    setError(null);
-    try {
-      await native.gitUnstage(
-        repo.repoRoot,
-        stagedEntries.map((entry) => entry.path),
-      );
-      await refresh();
-    } catch (err) {
-      setError(normalizeError(err));
-    } finally {
-      setActionBusy(null);
-    }
-  }, [refresh, repo, stagedEntries]);
-
-  const discardAllEntries = useCallback(async () => {
-    if (!repo || unstagedEntries.length === 0) return;
-    const confirmed = window.confirm("Discard all unstaged changes?");
-    if (!confirmed) return;
-    setActionBusy("discard:all");
-    setActionMessage(null);
-    setError(null);
-    try {
-      await native.gitDiscard(
-        repo.repoRoot,
-        unstagedEntries.map((entry) => entry.path),
-      );
-      await refresh();
-    } catch (err) {
-      setError(normalizeError(err));
-    } finally {
-      setActionBusy(null);
-    }
-  }, [refresh, repo, unstagedEntries]);
-
-  const generateCommitMessage = useCallback(async () => {
-    if (!repo || stagedEntries.length === 0) return;
-    if (aiBusy) {
-      setError("Wait for the current AI action to finish");
-      return;
-    }
-    if (aiUnavailableReason) {
-      setError(aiUnavailableReason);
-      return;
-    }
-    setActionBusy("generate-message");
-    setActionMessage(null);
-    setError(null);
-    try {
-      const diff = await native.gitDiff(repo.repoRoot, null, true);
-      const { text: diffText, truncated } = truncateDiff(diff.diffText);
-      const model = await buildConfiguredLanguageModel(
-        selectedModelId,
-        apiKeys,
-        lmstudioBaseURL,
-        lmstudioModelId,
-        openaiCompatibleBaseURL,
-        openaiCompatibleModelId,
-      );
-      const result = await generateText({
-        model,
-        system: COMMIT_MESSAGE_SYSTEM_PROMPT,
-        prompt: buildCommitMessagePrompt(stagedEntries, diffText, truncated),
-        maxOutputTokens: COMMIT_MESSAGE_MAX_OUTPUT_TOKENS,
-        temperature: 0.2,
-      });
-      let message = cleanCommitMessage(result.text);
-      if (!isValidCommitMessage(message)) {
-        const repair = await generateText({
-          model,
-          system: COMMIT_MESSAGE_SYSTEM_PROMPT,
-          prompt: buildRepairCommitMessagePrompt(message, stagedEntries),
-          maxOutputTokens: COMMIT_MESSAGE_MAX_OUTPUT_TOKENS,
-          temperature: 0,
-        });
-        message = cleanCommitMessage(repair.text);
-      }
-      if (!isValidCommitMessage(message)) {
-        throw new Error(
-          "AI returned an invalid commit message. Try again or switch models.",
-        );
-      }
-      setCommitMessage(message);
-      setActionMessage(null);
-    } catch (err) {
-      setError(normalizeError(err));
-    } finally {
-      setActionBusy(null);
-    }
-  }, [
-    aiUnavailableReason,
-    apiKeys,
-    aiBusy,
-    lmstudioBaseURL,
-    lmstudioModelId,
-    openaiCompatibleBaseURL,
-    openaiCompatibleModelId,
-    repo,
-    selectedModelId,
-    stagedEntries,
-  ]);
-
-  const commit = useCallback(async () => {
-    if (!repo) return;
-    setActionBusy("commit");
-    setActionMessage(null);
-    setError(null);
-    try {
-      const result = await native.gitCommit(repo.repoRoot, commitMessage);
-      setCommitMessage("");
-      setActionMessage(
-        `Committed ${result.commitSha.slice(0, 7)} ${result.summary}`,
-      );
-      await refresh();
-    } catch (err) {
-      setError(normalizeError(err));
-    } finally {
-      setActionBusy(null);
-    }
-  }, [commitMessage, refresh, repo]);
-
-  const push = useCallback(async () => {
-    if (!repo) return;
-    setActionBusy("push");
-    setActionMessage(null);
-    setError(null);
-    try {
-      const result = await native.gitPush(repo.repoRoot);
-      const target = [result.remote, result.branch].filter(Boolean).join("/");
-      setActionMessage(target ? `Pushed to ${target}` : "Push completed");
-      await refresh();
-    } catch (err) {
-      setError(normalizeError(err));
-    } finally {
-      setActionBusy(null);
-    }
-  }, [refresh, repo]);
+  }, [refresh]);
 
   return {
-    panelState,
-    repo,
-    status,
-    selected,
-    diffLoading,
-    commitMessage,
-    actionBusy,
-    error,
-    actionMessage,
-    stagedEntries,
-    unstagedEntries,
-    allClean,
-    compact,
-    canPush,
-    pushHint,
-    canGenerateCommitMessage,
-    generateCommitMessageHint,
-    selectionTransition,
-    stagedEmptyText,
-    unstagedEmptyText,
-    setCommitMessage,
+    repo: state.repo,
+    status: state.status,
+    changedCount: state.status?.changedFiles.length ?? 0,
+    upstream: state.status?.upstream ?? state.repo?.upstream ?? null,
+    ahead: state.status?.ahead ?? 0,
+    behind: state.status?.behind ?? 0,
+    hasRepo: state.hasRepo,
+    isLoading: state.isLoading,
+    localError: state.localError,
+    busyAction: state.busyAction,
+    lastRemoteError: state.lastRemoteError,
     refresh,
-    selectEntry,
-    stageEntry,
-    unstageEntry,
-    discardEntry,
-    stageAllEntries,
-    unstageAllEntries,
-    discardAllEntries,
-    generateCommitMessage,
-    commit,
-    push,
+    runRemoteAction,
   };
 }

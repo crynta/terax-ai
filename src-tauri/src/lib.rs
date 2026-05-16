@@ -117,6 +117,8 @@ pub fn run() {
             git::commands::git_unstage,
             git::commands::git_discard,
             git::commands::git_commit,
+            git::commands::git_fetch,
+            git::commands::git_pull_ff_only,
             git::commands::git_push,
             shell::shell_run_command,
             shell::shell_session_open,

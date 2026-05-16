@@ -37,13 +37,16 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { useSourceControl, type SourceControlEntry } from "./useSourceControl";
+import type { SourceControlSummary } from "./useSourceControl";
+import {
+  useSourceControlPanel,
+  type SourceControlEntry,
+} from "./useSourceControlPanel";
 
 type Props = {
   open: boolean;
-  contextPath: string | null;
+  sourceControl: SourceControlSummary;
   onClose: () => void;
-  onStatusCountChange?: (count: number) => void;
   onOpenDiff: (input: {
     path: string;
     repoRoot: string;
@@ -101,16 +104,15 @@ function statusTone(statusCode: string): string {
 
 export const SourceControlPanel = memo(function SourceControlPanel({
   open,
-  contextPath,
+  sourceControl,
   onClose,
-  onStatusCountChange,
   onOpenDiff,
 }: Props) {
   const rootRef = useRef<HTMLElement | null>(null);
   const refreshAnimationRef = useRef<number | null>(null);
   const [panelWidth, setPanelWidth] = useState(0);
   const [refreshAnimating, setRefreshAnimating] = useState(false);
-  const scm = useSourceControl(open, contextPath, onOpenDiff, panelWidth);
+  const scm = useSourceControlPanel(open, sourceControl, onOpenDiff, panelWidth);
 
   useEffect(() => {
     const node = rootRef.current;
@@ -178,18 +180,17 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         : `Ready: ${stagedCount} ${stagedCount === 1 ? "file" : "files"}`;
   const pushStatusLabel = upstreamBadgeLabel(scm.status?.upstream);
   const footerFeedback = useMemo(() => {
-    if (scm.error) {
-      return { tone: "error", message: scm.error } as const;
+    if (scm.actionError) {
+      return { tone: "error", message: scm.actionError } as const;
+    }
+    if (scm.remoteError) {
+      return { tone: "error", message: scm.remoteError } as const;
     }
     if (scm.actionMessage) {
       return { tone: "success", message: scm.actionMessage } as const;
     }
     return null;
-  }, [scm.actionMessage, scm.error]);
-
-  useEffect(() => {
-    onStatusCountChange?.(scm.status?.changedFiles.length ?? 0);
-  }, [onStatusCountChange, scm.status]);
+  }, [scm.actionError, scm.actionMessage, scm.remoteError]);
 
   const handleCommitShortcut = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || (!event.metaKey && !event.ctrlKey)) return;
@@ -247,24 +248,13 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                   />
                 )}
               </IconActionButton>
-              {scm.compact ? (
-                <IconActionButton label="Close source control" onClick={onClose}>
-                  <HugeiconsIcon
-                    icon={Cancel01Icon}
-                    size={14}
-                    strokeWidth={1.9}
-                  />
-                </IconActionButton>
-              ) : (
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  className="rounded-lg text-[11px]"
-                  onClick={onClose}
-                >
-                  Close
-                </Button>
-              )}
+              <IconActionButton label="Close source control" onClick={onClose}>
+                <HugeiconsIcon
+                  icon={Cancel01Icon}
+                  size={14}
+                  strokeWidth={1.9}
+                />
+              </IconActionButton>
             </div>
           </div>
           <div className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-background/70 px-2 py-1 text-[11.5px] font-semibold leading-none text-foreground">
@@ -298,7 +288,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       {scm.panelState === "error" ? (
         <PanelCenter
           title="Source control error"
-          body={scm.error ?? "Unknown source control error"}
+          body={scm.statusError ?? "Unknown source control error"}
           action={
             <Button size="sm" onClick={() => void scm.refresh()}>
               Retry

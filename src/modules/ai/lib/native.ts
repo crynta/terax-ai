@@ -215,6 +215,9 @@ export const native = {
     invoke<void>("git_discard", { repoRoot, paths }),
   gitCommit: (repoRoot: string, message: string) =>
     invoke<GitCommitResult>("git_commit", { repoRoot, message }),
+  gitFetch: (repoRoot: string) => invoke<void>("git_fetch", { repoRoot }),
+  gitPullFfOnly: (repoRoot: string) =>
+    invoke<void>("git_pull_ff_only", { repoRoot }),
   gitPush: (repoRoot: string) =>
     invoke<GitPushResult>("git_push", { repoRoot }),
 };

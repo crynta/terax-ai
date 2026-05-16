@@ -53,6 +53,16 @@ pub async fn git_commit(repo_root: String, message: String) -> Result<GitCommitR
 }
 
 #[tauri::command]
+pub async fn git_fetch(repo_root: String) -> Result<(), String> {
+    operations::fetch(&repo_root)
+}
+
+#[tauri::command]
+pub async fn git_pull_ff_only(repo_root: String) -> Result<(), String> {
+    operations::pull_ff_only(&repo_root)
+}
+
+#[tauri::command]
 pub async fn git_push(repo_root: String) -> Result<GitPushResult, String> {
     operations::push(&repo_root)
 }

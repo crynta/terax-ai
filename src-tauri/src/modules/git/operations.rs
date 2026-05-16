@@ -207,6 +207,20 @@ pub fn push(repo_root: &str) -> Result<GitPushResult, String> {
     })
 }
 
+pub fn fetch(repo_root: &str) -> Result<(), String> {
+    let repo_root = canonical_dir(repo_root)?;
+    ensure_git_available()?;
+    let output = run_git(Some(&repo_root), git_fetch_args(), DEFAULT_TIMEOUT_SECS)?;
+    ensure_success(&output, "git fetch failed")
+}
+
+pub fn pull_ff_only(repo_root: &str) -> Result<(), String> {
+    let repo_root = canonical_dir(repo_root)?;
+    ensure_git_available()?;
+    let output = run_git(Some(&repo_root), git_pull_ff_only_args(), DEFAULT_TIMEOUT_SECS)?;
+    ensure_success(&output, "git pull --ff-only failed")
+}
+
 fn repo_info_from_cwd(cwd: &Path) -> Result<Option<GitRepoInfo>, String> {
     ensure_git_available()?;
     let root = match git_stdout_line_opt(cwd, ["rev-parse", "--show-toplevel"])? {
@@ -264,4 +278,27 @@ fn status_paths(repo_root: &Path, paths: &[String], untracked: bool) -> Result<V
         }
     }
     Ok(filtered)
+}
+
+fn git_fetch_args() -> [&'static str; 2] {
+    ["fetch", "--prune"]
+}
+
+fn git_pull_ff_only_args() -> [&'static str; 2] {
+    ["pull", "--ff-only"]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{git_fetch_args, git_pull_ff_only_args};
+
+    #[test]
+    fn fetch_uses_prune() {
+        assert_eq!(git_fetch_args(), ["fetch", "--prune"]);
+    }
+
+    #[test]
+    fn pull_uses_fast_forward_only() {
+        assert_eq!(git_pull_ff_only_args(), ["pull", "--ff-only"]);
+    }
 }

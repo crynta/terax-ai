@@ -100,3 +100,52 @@ fn status_label(index_status: char, worktree_status: char) -> String {
         _ => "Changed".into(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_branch_header;
+
+    #[test]
+    fn parses_ahead_branch_header() {
+        let (branch, upstream, ahead, behind, detached) =
+            parse_branch_header("## main...origin/main [ahead 2]").unwrap();
+        assert_eq!(branch, "main");
+        assert_eq!(upstream.as_deref(), Some("origin/main"));
+        assert_eq!(ahead, 2);
+        assert_eq!(behind, 0);
+        assert!(!detached);
+    }
+
+    #[test]
+    fn parses_behind_branch_header() {
+        let (branch, upstream, ahead, behind, detached) =
+            parse_branch_header("## main...origin/main [behind 3]").unwrap();
+        assert_eq!(branch, "main");
+        assert_eq!(upstream.as_deref(), Some("origin/main"));
+        assert_eq!(ahead, 0);
+        assert_eq!(behind, 3);
+        assert!(!detached);
+    }
+
+    #[test]
+    fn parses_diverged_branch_header() {
+        let (branch, upstream, ahead, behind, detached) =
+            parse_branch_header("## main...origin/main [ahead 4, behind 1]").unwrap();
+        assert_eq!(branch, "main");
+        assert_eq!(upstream.as_deref(), Some("origin/main"));
+        assert_eq!(ahead, 4);
+        assert_eq!(behind, 1);
+        assert!(!detached);
+    }
+
+    #[test]
+    fn parses_detached_head_header() {
+        let (branch, upstream, ahead, behind, detached) =
+            parse_branch_header("## HEAD (detached at 1a2b3c4)").unwrap();
+        assert_eq!(branch, "HEAD");
+        assert_eq!(upstream, None);
+        assert_eq!(ahead, 0);
+        assert_eq!(behind, 0);
+        assert!(detached);
+    }
+}
