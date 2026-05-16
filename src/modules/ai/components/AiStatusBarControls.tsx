@@ -358,6 +358,8 @@ function ModelDropdown() {
 
       <DropdownMenuContent
         align="end"
+        side="bottom"
+        sideOffset={4}
         className="w-[28rem] p-0 overflow-hidden rounded-xl border border-border/70 shadow-xl"
         onFocusCapture={(e) => {
           if (e.target !== inputRef.current) inputRef.current?.focus();
@@ -426,7 +428,7 @@ function ModelDropdown() {
           </div>
 
           {/* Models list */}
-          <div className="flex-1 overflow-y-auto py-1 max-h-[26rem]">
+          <div className="flex-1 overflow-y-auto py-1 max-h-[22rem]">
             {activeProvider !== null ? (
               <ProviderHeader
                 providerId={activeProvider}
