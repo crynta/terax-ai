@@ -306,8 +306,19 @@ export async function runAgentStream(opts: RunAgentOptions) {
   );
 
   const history = await convertToModelMessages(opts.uiMessages);
+  const strippedHistory = history.map((m) => {
+    if (m.role === "assistant" && Array.isArray(m.content)) {
+      const filtered = m.content.filter(
+        (p): p is Exclude<typeof p, { type: "reasoning" }> =>
+          !("type" in p && p.type === "reasoning"),
+      );
+      if (filtered.length === m.content.length) return m;
+      return { ...m, content: filtered.length === 0 ? "" : filtered };
+    }
+    return m;
+  });
   const compact = compactModelMessagesDetailed(
-    history,
+    strippedHistory,
     getModelContextLimit(getModel(modelId).id),
   );
   const compactedHistory = compact.messages;
