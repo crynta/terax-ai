@@ -27,11 +27,13 @@ import {
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { redactSensitive } from "@/modules/ai/lib/redact";
+import { native } from "@/modules/ai/lib/native";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
 import {
   AiDiffStack,
   EditorStack,
+  GitDiffStack,
   NewEditorDialog,
   type EditorPaneHandle,
 } from "@/modules/editor";
@@ -51,10 +53,15 @@ import {
   useGlobalShortcuts,
   type ShortcutHandlers,
 } from "@/modules/shortcuts";
+import {
+  SourceControlPanel,
+  useSourceControl,
+} from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
   disposeSession,
+  findLeafCwd,
   hasLeaf,
   leafIds,
   respawnSession,
@@ -72,9 +79,43 @@ import {
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
+function dirname(path: string | null): string | null {
+  if (!path) return null;
+  const normalized = path.replace(/\\/g, "/");
+  const idx = normalized.lastIndexOf("/");
+  if (idx <= 0) return normalized;
+  return normalized.slice(0, idx);
+}
+
+const SOURCE_CONTROL_DEFAULT_WIDTH = 300;
+const SOURCE_CONTROL_MIN_WIDTH = 150;
+const SOURCE_CONTROL_MAX_WIDTH = 420;
+const SOURCE_CONTROL_MIN_SIZE = `${SOURCE_CONTROL_MIN_WIDTH}px`;
+const SOURCE_CONTROL_MAX_SIZE = `${SOURCE_CONTROL_MAX_WIDTH}px`;
+const SOURCE_CONTROL_MAIN_MIN_SIZE = "72px";
+const SOURCE_CONTROL_WIDTH_STORAGE_KEY = "terax.sourceControl.width";
+
+function clampSourceControlWidth(width: number): number {
+  return Math.min(
+    SOURCE_CONTROL_MAX_WIDTH,
+    Math.max(SOURCE_CONTROL_MIN_WIDTH, Math.round(width)),
+  );
+}
+
+function readSourceControlWidth(): number {
+  try {
+    const stored = window.localStorage.getItem(SOURCE_CONTROL_WIDTH_STORAGE_KEY);
+    const parsed = stored ? Number.parseInt(stored, 10) : NaN;
+    return Number.isFinite(parsed)
+      ? clampSourceControlWidth(parsed)
+      : SOURCE_CONTROL_DEFAULT_WIDTH;
+  } catch {
+    return SOURCE_CONTROL_DEFAULT_WIDTH;
+  }
+}
 
 export default function App() {
   const {
@@ -88,6 +129,7 @@ export default function App() {
     newPreviewTab,
     openAiDiffTab,
     closeAiDiffTab,
+    openGitDiffTab,
     closeTab,
     updateTab,
     selectByIndex,
@@ -125,6 +167,10 @@ export default function App() {
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
+  const sourceControlRef = useRef<PanelImperativeHandle | null>(null);
+  const sourceControlReadyRef = useRef(false);
+  const sourceControlWidthRef = useRef(readSourceControlWidth());
+  const sourceControlWidthWriteTimerRef = useRef<number | null>(null);
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
     if (!p) return;
@@ -157,6 +203,8 @@ export default function App() {
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
+  const [launchCwd, setLaunchCwd] = useState<string | null>(null);
+  const [launchCwdResolved, setLaunchCwdResolved] = useState(false);
   const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
     null,
   );
@@ -207,9 +255,19 @@ export default function App() {
     },
     [workspaceEnv, setWorkspaceEnv, resetWorkspace],
   );
+  useEffect(() => {
+    native
+      .appCurrentDir()
+      .then(setLaunchCwd)
+      .catch(() => setLaunchCwd(null))
+      .finally(() => setLaunchCwdResolved(true));
+  }, []);
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
+  const [sourceControlOpen, setSourceControlOpen] = useState(false);
+  const [sourceControlPinnedContextPath, setSourceControlPinnedContextPath] =
+    useState<string | null>(null);
   const miniOpen = useChatStore((s) => s.mini.open);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
@@ -277,6 +335,7 @@ export default function App() {
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
   const isAiDiffTab = activeTab?.kind === "ai-diff";
+  const isGitDiffTab = activeTab?.kind === "git-diff";
 
   // When an AI diff is approved (write_file applied to disk), reload any
   // open editor tabs for that path so the user sees the new content. We
@@ -297,10 +356,13 @@ export default function App() {
     }
   }, [tabs]);
 
+  const workspaceFallbackPath = launchCwdResolved
+    ? (launchCwd ?? home ?? null)
+    : null;
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
     tabs,
-    home,
+    workspaceFallbackPath,
   );
 
   useEffect(() => {
@@ -592,7 +654,112 @@ export default function App() {
     [tabs, disposeTab],
   );
 
-  const activeFilePath = activeTab?.kind === "editor" ? activeTab.path : null;
+  const activeTerminalLeafCwd =
+    activeTab?.kind === "terminal"
+      ? (findLeafCwd(activeTab.paneTree, activeTab.activeLeafId) ??
+        activeTab.cwd ??
+        null)
+      : null;
+
+  const activeFilePath =
+    activeTab?.kind === "editor" || activeTab?.kind === "git-diff"
+      ? activeTab.path
+      : null;
+  const sourceControlContextPath = (() => {
+    if (activeTab?.kind === "terminal") {
+      return activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath;
+    }
+    if (activeTab?.kind === "editor") return dirname(activeTab.path);
+    if (activeTab?.kind === "git-diff") return activeTab.repoRoot;
+    return explorerRoot ?? workspaceFallbackPath;
+  })();
+  const sourceControlTrackedContextPath =
+    sourceControlPinnedContextPath ?? sourceControlContextPath;
+  const sourceControl = useSourceControl(sourceControlTrackedContextPath);
+
+  const rememberSourceControlWidth = useCallback((width: number, immediate = false) => {
+    if (!Number.isFinite(width) || width <= 0) return;
+    const next = clampSourceControlWidth(width);
+    sourceControlWidthRef.current = next;
+
+    const persist = () => {
+      sourceControlWidthWriteTimerRef.current = null;
+      try {
+        window.localStorage.setItem(SOURCE_CONTROL_WIDTH_STORAGE_KEY, String(next));
+      } catch {
+        // Ignore storage failures; the panel still works for the current session.
+      }
+    };
+
+    if (sourceControlWidthWriteTimerRef.current !== null) {
+      window.clearTimeout(sourceControlWidthWriteTimerRef.current);
+      sourceControlWidthWriteTimerRef.current = null;
+    }
+    if (immediate) {
+      persist();
+      return;
+    }
+    sourceControlWidthWriteTimerRef.current = window.setTimeout(persist, 120);
+  }, []);
+
+  const openSourceControl = useCallback((pinnedContextPath?: string | null) => {
+    setSourceControlPinnedContextPath(
+      pinnedContextPath ?? sourceControlContextPath,
+    );
+    setSourceControlOpen(true);
+    const panel = sourceControlRef.current;
+    if (panel?.isCollapsed()) {
+      panel.expand();
+      panel.resize(`${sourceControlWidthRef.current}px`);
+    }
+  }, [sourceControlContextPath]);
+
+  const closeSourceControl = useCallback(() => {
+    const panel = sourceControlRef.current;
+    if (panel && !panel.isCollapsed()) {
+      rememberSourceControlWidth(panel.getSize().inPixels, true);
+      panel.collapse();
+    }
+    setSourceControlOpen(false);
+    setSourceControlPinnedContextPath(null);
+  }, [rememberSourceControlWidth]);
+
+  useEffect(() => {
+    return () => {
+      if (sourceControlWidthWriteTimerRef.current !== null) {
+        window.clearTimeout(sourceControlWidthWriteTimerRef.current);
+      }
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const panel = sourceControlRef.current;
+    if (!panel) return;
+    if (!sourceControlOpen && !panel.isCollapsed()) {
+      panel.collapse();
+    }
+    sourceControlReadyRef.current = true;
+  }, []);
+
+  const toggleSourceControl = useCallback(() => {
+    if (sourceControlOpen) {
+      closeSourceControl();
+      return;
+    }
+    openSourceControl();
+  }, [closeSourceControl, openSourceControl, sourceControlOpen]);
+
+  const runSourceControlRemoteAction = useCallback(async () => {
+    const result = await sourceControl.runRemoteAction();
+    if (!result.ok && result.error) {
+      openSourceControl(sourceControlTrackedContextPath);
+    }
+  }, [
+    openSourceControl,
+    sourceControl,
+    sourceControlContextPath,
+    sourceControlTrackedContextPath,
+  ]);
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -638,6 +805,7 @@ export default function App() {
       "pane.splitDown": () => splitActivePaneInActiveTab("col"),
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
+      "pane.source": toggleSourceControl,
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
@@ -659,6 +827,7 @@ export default function App() {
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
+      toggleSourceControl,
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
@@ -751,18 +920,21 @@ export default function App() {
     return null;
   }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
 
-  const activeCwd =
-    activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
+  const activeCwd = activeTerminalLeafCwd;
 
   useEffect(() => {
     const findCwd = () => {
       const active = tabs.find((x) => x.id === activeId);
-      if (active?.kind === "terminal" && active.cwd) return active.cwd;
+      if (active?.kind === "terminal") {
+        return findLeafCwd(active.paneTree, active.activeLeafId) ?? active.cwd ?? null;
+      }
       for (let i = tabs.length - 1; i >= 0; i--) {
         const t = tabs[i];
-        if (t.kind === "terminal" && t.cwd) return t.cwd;
+        if (t.kind !== "terminal") continue;
+        const cwd = findLeafCwd(t.paneTree, t.activeLeafId) ?? t.cwd;
+        if (cwd) return cwd;
       }
-      return explorerRoot ?? home ?? null;
+      return explorerRoot ?? launchCwd ?? home ?? null;
     };
 
     setLive({
@@ -787,7 +959,7 @@ export default function App() {
         term.focus();
         return true;
       },
-      getWorkspaceRoot: () => explorerRoot ?? home ?? null,
+      getWorkspaceRoot: () => explorerRoot ?? launchCwd ?? home ?? null,
       getActiveFile: () => {
         const t = tabs.find((x) => x.id === activeId);
         return t?.kind === "editor" ? t.path : null;
@@ -797,7 +969,81 @@ export default function App() {
         return true;
       },
     });
-  }, [setLive, activeId, tabs, explorerRoot, home, openPreviewTab]);
+  }, [setLive, activeId, tabs, explorerRoot, launchCwd, home, openPreviewTab]);
+
+  const workspaceSurface = (
+    <div className="relative h-full min-h-0">
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isTerminalTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isTerminalTab}
+      >
+        <TerminalStack
+          tabs={tabs}
+          activeId={activeId}
+          registerHandle={registerTerminalHandle}
+          onSearchReady={handleSearchReady}
+          onCwd={handleTerminalCwd}
+          onExit={handleLeafExit}
+          onFocusLeaf={handleFocusLeaf}
+        />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isEditorTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isEditorTab}
+      >
+        <EditorStack
+          tabs={tabs}
+          activeId={activeId}
+          registerHandle={registerEditorHandle}
+          onDirtyChange={handleEditorDirty}
+          onCloseTab={disposeTab}
+        />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isPreviewTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isPreviewTab}
+      >
+        <PreviewStack
+          tabs={tabs}
+          activeId={activeId}
+          registerHandle={registerPreviewHandle}
+          onUrlChange={handlePreviewUrl}
+        />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isAiDiffTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isAiDiffTab}
+      >
+        <AiDiffStack
+          tabs={tabs}
+          activeId={activeId}
+          onAccept={(id) => respondToApproval(id, true)}
+          onReject={(id) => respondToApproval(id, false)}
+        />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isGitDiffTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isGitDiffTab}
+      >
+        <GitDiffStack tabs={tabs} activeId={activeId} />
+      </div>
+    </div>
+  );
 
   const shell = (
     <ThemeProvider>
@@ -821,6 +1067,10 @@ export default function App() {
             }
             onOpenShortcuts={() => setShortcutsOpen(true)}
             onOpenSettings={() => void openSettingsWindow()}
+            sourceControlOpen={sourceControlOpen}
+            sourceControl={sourceControl}
+            onToggleSourceControl={toggleSourceControl}
+            onRunSourceControlRemoteAction={runSourceControlRemoteAction}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
           />
@@ -854,67 +1104,48 @@ export default function App() {
               <ResizableHandle withHandle />
               <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
                 <div className="flex h-full min-h-0 flex-col">
-                  <div className="relative min-h-0 flex-1">
-                    <div
-                      className={cn(
-                        "absolute inset-0 px-3 pt-2 pb-2",
-                        !isTerminalTab && "invisible pointer-events-none",
-                      )}
-                      aria-hidden={!isTerminalTab}
-                    >
-                      <TerminalStack
-                        tabs={tabs}
-                        activeId={activeId}
-                        registerHandle={registerTerminalHandle}
-                        onSearchReady={handleSearchReady}
-                        onCwd={handleTerminalCwd}
-                        onExit={handleLeafExit}
-                        onFocusLeaf={handleFocusLeaf}
-                      />
-                    </div>
-                    <div
-                      className={cn(
-                        "absolute inset-0 px-3 pt-2 pb-2",
-                        !isEditorTab && "invisible pointer-events-none",
-                      )}
-                      aria-hidden={!isEditorTab}
-                    >
-                      <EditorStack
-                        tabs={tabs}
-                        activeId={activeId}
-                        registerHandle={registerEditorHandle}
-                        onDirtyChange={handleEditorDirty}
-                        onCloseTab={disposeTab}
-                      />
-                    </div>
-                    <div
-                      className={cn(
-                        "absolute inset-0 px-3 pt-2 pb-2",
-                        !isPreviewTab && "invisible pointer-events-none",
-                      )}
-                      aria-hidden={!isPreviewTab}
-                    >
-                      <PreviewStack
-                        tabs={tabs}
-                        activeId={activeId}
-                        registerHandle={registerPreviewHandle}
-                        onUrlChange={handlePreviewUrl}
-                      />
-                    </div>
-                    <div
-                      className={cn(
-                        "absolute inset-0 px-3 pt-2 pb-2",
-                        !isAiDiffTab && "invisible pointer-events-none",
-                      )}
-                      aria-hidden={!isAiDiffTab}
-                    >
-                      <AiDiffStack
-                        tabs={tabs}
-                        activeId={activeId}
-                        onAccept={(id) => respondToApproval(id, true)}
-                        onReject={(id) => respondToApproval(id, false)}
-                      />
-                    </div>
+                  <div className="flex min-h-0 flex-1">
+                    <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
+                      <ResizablePanel
+                        id="workspace-main"
+                        defaultSize="100%"
+                        minSize={SOURCE_CONTROL_MAIN_MIN_SIZE}
+                      >
+                        {workspaceSurface}
+                      </ResizablePanel>
+                      <ResizableHandle withHandle />
+                      <ResizablePanel
+                        id="source-control"
+                        panelRef={sourceControlRef}
+                        defaultSize={`${sourceControlWidthRef.current}px`}
+                        minSize={SOURCE_CONTROL_MIN_SIZE}
+                        maxSize={SOURCE_CONTROL_MAX_SIZE}
+                        collapsible
+                        collapsedSize={0}
+                        onResize={(size) => {
+                          if (!sourceControlReadyRef.current) return;
+                          if (size.inPixels > 0) {
+                            rememberSourceControlWidth(size.inPixels);
+                            if (!sourceControlOpen) {
+                              setSourceControlPinnedContextPath(
+                                (current) => current ?? sourceControlContextPath,
+                              );
+                              setSourceControlOpen(true);
+                            }
+                          } else if (sourceControlOpen) {
+                            setSourceControlOpen(false);
+                            setSourceControlPinnedContextPath(null);
+                          }
+                        }}
+                      >
+                        <SourceControlPanel
+                          open={sourceControlOpen}
+                          sourceControl={sourceControl}
+                          onClose={closeSourceControl}
+                          onOpenDiff={openGitDiffTab}
+                        />
+                      </ResizablePanel>
+                    </ResizablePanelGroup>
                   </div>
 
                   {keysLoaded ? (
@@ -999,9 +1230,8 @@ export default function App() {
                 <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
                 <AlertDialogDescription>
                   {tabs.find((t) => t.id === pendingCloseTab)?.title
-                    ? `"${
-                        tabs.find((t) => t.id === pendingCloseTab)?.title
-                      }" has unsaved changes. Close anyway?`
+                    ? `"${tabs.find((t) => t.id === pendingCloseTab)?.title
+                    }" has unsaved changes. Close anyway?`
                     : "This file has unsaved changes. Close anyway?"}
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -1026,13 +1256,13 @@ export default function App() {
                 <AlertDialogDescription>
                   {pendingDeleteTabs?.length === 1
                     ? (() => {
-                        const title = tabs.find(
-                          (t) => t.id === pendingDeleteTabs[0],
-                        )?.title;
-                        return title
-                          ? `"${title}" has unsaved changes. The file has been deleted. Close anyway?`
-                          : "This file has unsaved changes. The file has been deleted. Close anyway?";
-                      })()
+                      const title = tabs.find(
+                        (t) => t.id === pendingDeleteTabs[0],
+                      )?.title;
+                      return title
+                        ? `"${title}" has unsaved changes. The file has been deleted. Close anyway?`
+                        : "This file has unsaved changes. The file has been deleted. Close anyway?";
+                    })()
                     : `${pendingDeleteTabs?.length ?? 0} files have unsaved changes. They have been deleted. Close all anyway?`}
                 </AlertDialogDescription>
               </AlertDialogHeader>

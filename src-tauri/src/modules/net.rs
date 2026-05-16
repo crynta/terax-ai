@@ -191,7 +191,6 @@ pub async fn lm_ping(base_url: String) -> Result<u16, String> {
         .map(|r| r.status().as_u16())
         .map_err(|e| e.to_string())
 }
-
 // AI HTTP proxy — bypasses webview CORS / Mixed-Content / PNA so local-network
 // model servers (LM Studio, Ollama, vLLM) work in the production bundle.
 

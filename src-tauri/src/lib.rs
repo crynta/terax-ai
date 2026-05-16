@@ -1,8 +1,15 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell, workspace};
+use modules::{fs, git, net, pty, secrets, shell, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
+
+#[tauri::command]
+async fn app_current_dir() -> Result<String, String> {
+    std::env::current_dir()
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .map_err(|e| e.to_string())
+}
 
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
@@ -103,6 +110,17 @@ pub fn run() {
             fs::search::fs_list_files,
             fs::grep::fs_grep,
             fs::grep::fs_glob,
+            git::commands::git_resolve_repo,
+            git::commands::git_status,
+            git::commands::git_diff,
+            git::commands::git_diff_content,
+            git::commands::git_stage,
+            git::commands::git_unstage,
+            git::commands::git_discard,
+            git::commands::git_commit,
+            git::commands::git_fetch,
+            git::commands::git_pull_ff_only,
+            git::commands::git_push,
             shell::shell_run_command,
             shell::shell_session_open,
             shell::shell_session_run,
@@ -114,6 +132,7 @@ pub fn run() {
             workspace::wsl_list_distros,
             workspace::wsl_default_distro,
             workspace::wsl_home,
+            app_current_dir,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,
