@@ -264,14 +264,6 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   },
   {
     id: "openai-compatible",
-    label: "OpenRouter",
-    keyringAccount: "openrouter-api-key",
-    keyPrefix: "sk-or-",
-    consoleUrl: "https://openrouter.ai/keys",
-    modelsUrl: "https://openrouter.ai/api/v1/models",
-  },
-  {
-    id: "openai-compatible",
     label: "OpenAI Compatible",
     keyringAccount: "openai-compatible-api-key",
     keyPrefix: null,
@@ -1126,8 +1118,9 @@ export type ModelId = (typeof MODELS)[number]["id"];
 
 export function getModel(id: ModelId): ModelInfo {
   const m = MODELS.find((x) => x.id === id);
-  if (!m) throw new Error(`Unknown model: ${id}`);
-  return m;
+  if (m) return m;
+  const fallback = MODELS.find((x) => x.id === DEFAULT_MODEL_ID);
+  return fallback ?? MODELS[0];
 }
 
 export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";

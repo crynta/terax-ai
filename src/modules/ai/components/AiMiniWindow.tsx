@@ -285,6 +285,7 @@ function formatTokens(n: number): string {
 
 function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const modelId = useChatStore((s) => s.selectedModelId);
+  const remoteOverride = useChatStore((s) => s.remoteModelOverride);
   const tokens = useChatStore((s) => s.agentMeta.tokens);
   const lastInput = useChatStore((s) => s.agentMeta.lastInputTokens);
   const lastCached = useChatStore((s) => s.agentMeta.lastCachedTokens);
@@ -293,12 +294,13 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const reported = tokens.inputTokens + tokens.outputTokens;
   const max = getModelContextLimit(modelId);
   const modelLabel = useMemo(() => {
+    if (remoteOverride) return remoteOverride;
     try {
       return getModel(modelId).label;
     } catch {
       return modelId;
     }
-  }, [modelId]);
+  }, [modelId, remoteOverride]);
   const cost = estimateCost(modelId, tokens);
   const cacheRate =
     tokens.inputTokens > 0

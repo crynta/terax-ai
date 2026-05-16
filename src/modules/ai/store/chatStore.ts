@@ -115,6 +115,10 @@ type StoreState = {
   selectedModelId: ModelId;
   setSelectedModelId: (id: ModelId) => void;
 
+  remoteModelOverride: string | null;
+  setRemoteModelOverride: (id: string | null) => void;
+  selectRemoteModel: (carrierId: ModelId, remoteId: string) => void;
+
   mini: MiniState;
   openMini: () => void;
   closeMini: () => void;
@@ -253,6 +257,7 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       usePreferencesStore.getState().openaiCompatibleModelId,
     getOllamaBaseURL: () => usePreferencesStore.getState().ollamaBaseURL,
     getZhipuBaseURL: () => usePreferencesStore.getState().zhipuBaseURL,
+    getRemoteModelOverride: () => useChatStore.getState().remoteModelOverride,
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
     },
@@ -314,8 +319,17 @@ export const useChatStore = create<StoreState>((set, get) => ({
 
   selectedModelId: DEFAULT_MODEL_ID,
   setSelectedModelId: (id) => {
-    set({ selectedModelId: id });
+    set({ selectedModelId: id, remoteModelOverride: null });
     void pushRecentModel(id);
+  },
+
+  remoteModelOverride: null,
+  setRemoteModelOverride: (id) => {
+    set({ remoteModelOverride: id });
+  },
+  selectRemoteModel: (carrierId, remoteId) => {
+    set({ selectedModelId: carrierId, remoteModelOverride: remoteId });
+    void pushRecentModel(carrierId);
   },
 
   mini: { open: false },
