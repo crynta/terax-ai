@@ -437,9 +437,35 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         const paneTree = setLeafCwdInTree(t.paneTree, leafId, cwd);
         const isActive = t.activeLeafId === leafId;
         const cwdChanged = isActive && t.cwd !== cwd;
-        if (paneTree === t.paneTree && !cwdChanged) return t;
+
+        // Dynamic WSL detection: If we are on Windows, in a Local workspace, 
+        // and see a Linux-style path (starts with / but not /C:/ etc), 
+        // and it's NOT a git-bash session, then we've likely run 'wsl'.
+        let nextWorkspace = t.workspace;
+        if (
+          typeof window !== "undefined" && 
+          navigator.platform.indexOf("Win") !== -1 && 
+          (!t.workspace || t.workspace.kind === "local") && 
+          t.sessionType !== "git-bash" &&
+          cwd.startsWith("/") && 
+          !/^\/[A-Za-z]:/.test(cwd)
+        ) {
+          // Default to a generic WSL distro indicator if we don't have the full list here.
+          // The bridge backend will use the default distro if one is not specified or 
+          // if it can't find the exact one.
+          nextWorkspace = { kind: "wsl", distro: "" }; 
+        }
+
+        const workspaceChanged = nextWorkspace !== t.workspace;
+
+        if (paneTree === t.paneTree && !cwdChanged && !workspaceChanged) return t;
         changed = true;
-        return { ...t, paneTree, ...(cwdChanged && { cwd }) };
+        return { 
+          ...t, 
+          paneTree, 
+          ...(cwdChanged && { cwd }),
+          ...(workspaceChanged && { workspace: nextWorkspace as any, sessionType: "wsl" as any })
+        };
       });
       return changed ? next : curr;
     });

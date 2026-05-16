@@ -36,14 +36,16 @@ import { useTheme } from "@/modules/theme";
 import {
   ArrowDown01Icon,
   ComputerIcon,
+  KeyboardIcon,
   Moon02Icon,
   Sun03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
+import { Input } from "@/components/ui/input";
 
 const APPEARANCE: {
   id: ThemePref;
@@ -68,6 +70,13 @@ export function GeneralSection() {
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+
+  const [manualFont, setManualFont] = useState(() => {
+    return (
+      terminalFontFamily !== "" &&
+      !MONO_FONT_FAMILIES.some((f) => f.value === terminalFontFamily)
+    );
+  });
 
   // Reconcile autostart pref with the actual OS state on mount — the user may
   // have toggled it from System Settings.
@@ -104,9 +113,11 @@ export function GeneralSection() {
     );
   };
 
-  const onPickTerminalFontFamily = (family: string) => void setTerminalFontFamily(family);
+  const onPickTerminalFontFamily = (family: string) =>
+    void setTerminalFontFamily(family);
 
-  const onPickTerminalFontSize = (size: number) => void setTerminalFontSize(size);
+  const onPickTerminalFontSize = (size: number) =>
+    void setTerminalFontSize(size);
 
   const onPickScrollback = (lines: number) => void setTerminalScrollback(lines);
 
@@ -211,8 +222,15 @@ export function GeneralSection() {
                       ⓘ
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[260px] text-[11px]">
-                    xterm's WebGL renderer caches glyphs in a GPU texture atlas. On some macOS setups (especially with Nerd Fonts), the atlas corrupts and terminal text becomes unreadable. Turn this off as a fallback — performance dips slightly, but text renders correctly via the DOM renderer.
+                  <TooltipContent
+                    side="top"
+                    className="max-w-[260px] text-[11px]"
+                  >
+                    xterm's WebGL renderer caches glyphs in a GPU texture atlas.
+                    On some macOS setups (especially with Nerd Fonts), the atlas
+                    corrupts and terminal text becomes unreadable. Turn this off
+                    as a fallback — performance dips slightly, but text renders
+                    correctly via the DOM renderer.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -227,50 +245,86 @@ export function GeneralSection() {
         </SettingRow>
         <SettingRow
           title="Font family"
-          description="Terminal font. Default auto-detects a Nerd Font on your system."
+          description="Terminal font. Supports CSS fallback chains in manual mode."
         >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px] min-w-[160px]"
-              >
-                <span className="truncate">
-                  {terminalFontFamily
-                    ? MONO_FONT_FAMILIES.find((f) => f.value === terminalFontFamily)?.label ?? terminalFontFamily
-                    : "Default (auto-detected)"}
-                </span>
-                <HugeiconsIcon
-                  icon={ArrowDown01Icon}
-                  size={12}
-                  strokeWidth={2}
-                  className="opacity-70 shrink-0"
-                />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="min-w-[200px] rounded-none border border-border bg-popover p-0 shadow-none ring-0 max-h-[300px] overflow-y-auto"
-            >
-              {MONO_FONT_FAMILIES.map((f) => (
-                <DropdownMenuItem
-                  key={f.value}
-                  onSelect={() => onPickTerminalFontFamily(f.value)}
-                  className={cn(
-                    "rounded-none px-3 py-1.5 text-[12px]",
-                    f.value === terminalFontFamily && "bg-accent/50",
-                  )}
+          <div className="flex gap-1.5 flex-1 max-w-[240px] justify-end">
+            {!manualFont ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-8 flex-1 justify-between gap-2 rounded-none px-2.5 text-[12px] min-w-[140px]"
+                  >
+                    <span className="truncate">
+                      {terminalFontFamily
+                        ? (MONO_FONT_FAMILIES.find(
+                            (f) => f.value === terminalFontFamily,
+                          )?.label ?? terminalFontFamily)
+                        : "Default (auto-detected)"}
+                    </span>
+                    <HugeiconsIcon
+                      icon={ArrowDown01Icon}
+                      size={12}
+                      strokeWidth={2}
+                      className="opacity-70 shrink-0"
+                    />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="min-w-[200px] rounded-none border border-border bg-popover p-0 shadow-none ring-0 max-h-[300px] overflow-y-auto"
                 >
-                  {f.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                  {MONO_FONT_FAMILIES.map((f) => (
+                    <DropdownMenuItem
+                      key={f.value}
+                      onSelect={() => onPickTerminalFontFamily(f.value)}
+                      className={cn(
+                        "rounded-none px-3 py-1.5 text-[12px]",
+                        f.value === terminalFontFamily && "bg-accent/50",
+                      )}
+                    >
+                      {f.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Input
+                value={terminalFontFamily}
+                onChange={(e) => onPickTerminalFontFamily(e.target.value)}
+                className="h-8 text-[12px] rounded-none focus-visible:ring-0"
+                placeholder="'JetBrains Mono', monospace"
+              />
+            )}
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className={cn(
+                      "h-8 w-8 shrink-0 rounded-none",
+                      manualFont && "bg-accent",
+                    )}
+                    onClick={() => setManualFont(!manualFont)}
+                  >
+                    <HugeiconsIcon
+                      icon={KeyboardIcon}
+                      size={14}
+                      strokeWidth={1.5}
+                    />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[11px]">
+                  {manualFont
+                    ? "Switch to dropdown"
+                    : "Type custom font family"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </SettingRow>
-        <SettingRow
-          title="Font size"
-          description="Terminal text size."
-        >
+        <SettingRow title="Font size" description="Terminal text size.">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
