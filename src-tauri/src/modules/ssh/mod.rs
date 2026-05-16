@@ -5,7 +5,8 @@ pub(crate) mod pty;
 pub(crate) mod sftp;
 
 pub use connection::{SshConn, SshState};
-pub use profiles::{ssh_profile_delete, ssh_profile_list, ssh_profile_save, update_fingerprint, AuthMethod, SshProfile};
+pub use profiles::{ssh_profile_list, AuthMethod, SshProfile};
+use profiles::update_fingerprint;
 
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
@@ -49,6 +50,19 @@ pub async fn ssh_connect(
     let mut handle = client::connect(config, addr, handler)
         .await
         .map_err(|e| e.to_string())?;
+
+    // TOFU: verify fingerprint BEFORE sending any credentials.
+    // If the host is unknown, disconnect immediately and return the fingerprint
+    // so the frontend can show a confirmation dialog. The caller must call
+    // ssh_fingerprint_save and retry — only then will authentication proceed.
+    if profile.known_fingerprint.is_none() {
+        if let Some(fp) = observed_fp.lock().unwrap().clone() {
+            let _ = handle
+                .disconnect(russh::Disconnect::ByApplication, "", "English")
+                .await;
+            return Err(format!("TOFU_REQUIRED:{fp}"));
+        }
+    }
 
     // Authenticate
     match profile.auth_method {
@@ -107,13 +121,6 @@ pub async fn ssh_connect(
         }
     }
 
-    // If this was a first-connect (no known fingerprint), persist the observed one.
-    if profile.known_fingerprint.is_none() {
-        if let Some(fp) = observed_fp.lock().unwrap().clone() {
-            update_fingerprint(&app, &profile.id, fp)?;
-        }
-    }
-
     // Open SFTP subsystem
     let sftp_channel = handle
         .channel_open_session()
@@ -164,4 +171,15 @@ pub async fn ssh_fingerprint_get(
 ) -> Result<Option<String>, String> {
     let profile = load_profile(&app, &profile_id)?;
     Ok(profile.known_fingerprint)
+}
+
+/// Persist a trusted host fingerprint after the user explicitly accepts the TOFU
+/// prompt, then the caller should retry `ssh_connect`.
+#[tauri::command]
+pub fn ssh_fingerprint_save(
+    app: tauri::AppHandle,
+    profile_id: String,
+    fingerprint: String,
+) -> Result<(), String> {
+    update_fingerprint(&app, &profile_id, fingerprint)
 }
