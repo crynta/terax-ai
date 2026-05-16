@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 
 type WorkspaceEnv =
   | { kind: "local" }
@@ -30,6 +31,19 @@ export type LspDiagnosticsResponse = {
 
 export type LspHoverResponse = {
   contents: string;
+};
+
+export type LspDefinitionResponse = {
+  uri: string;
+  line: number;
+  character: number;
+};
+
+const ROOT_MARKERS: Record<string, string[]> = {
+  typescript: ["tsconfig.json", "jsconfig.json", "package.json", ".git"],
+  python: ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", ".git"],
+  rust: ["Cargo.toml", "rust-project.json", ".git"],
+  go: ["go.work", "go.mod", ".git"],
 };
 
 const SERVER_CONFIGS: LspServerConfig[] = [
@@ -65,11 +79,46 @@ export function getLspServerConfig(path: string): LspServerConfig | null {
   return SERVER_CONFIGS.find((config) => config.extensions.includes(ext)) ?? null;
 }
 
-export function getLspRootPath(path: string): string {
-  const normalized = path.replace(/\\+/g, "/");
-  const lastSlash = normalized.lastIndexOf("/");
-  if (lastSlash <= 0) return path;
-  return path.slice(0, lastSlash);
+export function getLspDocumentLanguageId(path: string): string | null {
+  const ext = path.split(".").pop()?.toLowerCase();
+  switch (ext) {
+    case "ts":
+      return "typescript";
+    case "tsx":
+      return "typescriptreact";
+    case "js":
+    case "mjs":
+    case "cjs":
+      return "javascript";
+    case "jsx":
+      return "javascriptreact";
+    case "py":
+      return "python";
+    case "rs":
+      return "rust";
+    case "go":
+      return "go";
+    default:
+      return null;
+  }
+}
+
+export async function getLspRootPath(path: string, languageId: string): Promise<string> {
+  let current = parentPath(path);
+  const markers = ROOT_MARKERS[languageId] ?? [".git"];
+
+  while (current) {
+    for (const marker of markers) {
+      if (await pathExists(joinPath(current, marker))) {
+        return current;
+      }
+    }
+    const parent = parentPath(current);
+    if (!parent || parent === current) break;
+    current = parent;
+  }
+
+  return parentPath(path) ?? path;
 }
 
 export async function lspStart(
@@ -140,6 +189,58 @@ export async function lspHover(
   });
 }
 
+export async function lspDefinition(
+  handle: number,
+  path: string,
+  line: number,
+  character: number,
+): Promise<LspDefinitionResponse | null> {
+  return invoke<LspDefinitionResponse | null>("lsp_definition", {
+    request: { handle, path, line, character },
+  });
+}
+
 export async function lspStop(handle: number): Promise<void> {
   return invoke("lsp_stop", { handle });
+}
+
+export function fileUriToPath(uri: string): string | null {
+  if (!uri.startsWith("file://")) return null;
+
+  try {
+    const decoded = decodeURIComponent(uri.slice("file://".length));
+    if (/^\/[a-zA-Z]:\//.test(decoded)) {
+      return decoded.slice(1);
+    }
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await invoke("fs_stat", { path, workspace: currentWorkspaceEnv() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parentPath(path: string): string | null {
+  const normalized = path.replace(/\\+/g, "/");
+  const trimmed = normalized.endsWith("/") && normalized.length > 1
+    ? normalized.slice(0, -1)
+    : normalized;
+  const lastSlash = trimmed.lastIndexOf("/");
+  if (lastSlash < 0) return null;
+  if (lastSlash === 0) return "/";
+  if (/^[a-zA-Z]:$/.test(trimmed.slice(0, lastSlash))) {
+    return `${trimmed.slice(0, lastSlash)}/`;
+  }
+  return trimmed.slice(0, lastSlash);
+}
+
+function joinPath(base: string, segment: string): string {
+  return `${base.replace(/\/+$/, "")}/${segment}`;
 }

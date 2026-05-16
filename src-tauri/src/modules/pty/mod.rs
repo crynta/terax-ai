@@ -43,6 +43,13 @@ pub async fn pty_open(
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    log::info!(
+        "pty_open request cols={} rows={} cwd={:?} workspace={:?}",
+        cols,
+        rows,
+        cwd,
+        workspace
+    );
 
     let handle = match &workspace {
         WorkspaceEnv::Ssh { profile_id } => {

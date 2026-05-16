@@ -18,6 +18,7 @@ export type ShortcutId =
   | "pane.focusNext"
   | "pane.focusPrev"
   | "search.focus"
+  | "editor.goBack"
   | "explorer.search"
   | "explorer.focus"
   | "view.zoomIn"
@@ -149,6 +150,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Find in terminal",
     group: "Search",
     defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
+  },
+  {
+    id: "editor.goBack",
+    label: "Go back",
+    group: "Search",
+    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowLeft" }],
   },
   {
     id: "ai.toggle",

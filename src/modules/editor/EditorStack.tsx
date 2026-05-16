@@ -9,6 +9,14 @@ type Props = {
   onDirtyChange: (id: number, dirty: boolean) => void;
   registerHandle: (id: number, handle: EditorPaneHandle | null) => void;
   onCloseTab: (id: number) => void;
+  onNavigateToDefinition: (
+    path: string,
+    line: number,
+    character: number,
+    fromPath: string,
+    fromLine: number,
+    fromCharacter: number,
+  ) => void;
 };
 
 export function EditorStack({
@@ -17,6 +25,7 @@ export function EditorStack({
   onDirtyChange,
   registerHandle,
   onCloseTab,
+  onNavigateToDefinition,
 }: Props) {
   const editors = tabs.filter((t): t is EditorTab => t.kind === "editor");
 
@@ -102,6 +111,7 @@ export function EditorStack({
                 path={t.path}
                 onDirtyChange={getDirtyCallback(t.id)}
                 onClose={getCloseCallback(t.id)}
+                onNavigateToDefinition={onNavigateToDefinition}
               />
             </div>
           </div>

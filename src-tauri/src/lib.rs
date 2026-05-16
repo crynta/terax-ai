@@ -102,6 +102,7 @@ pub fn run() {
             lsp::lsp_save,
             lsp::lsp_close,
             lsp::lsp_hover,
+            lsp::lsp_definition,
             lsp::lsp_read_diagnostics,
             lsp::lsp_stop,
             fs::mutate::fs_create_file,

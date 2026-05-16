@@ -101,7 +101,6 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
 
   session.ready = (async () => {
     await ensureMonoFontsLoaded();
-    await document.fonts.ready;
   })();
 
   return session;
@@ -196,6 +195,15 @@ function attachSession(
   if (!s || s.disposed) return;
   s.callbacks = callbacks;
   s.container = container;
+  console.info("[terax:terminal] attach", {
+    leafId,
+    visible: s.visibleNow,
+    focused: s.focusedNow,
+    initialCwd: s.initialCwd ?? null,
+    hasSlot: s.hasSlot,
+    hasPty: s.pty !== null,
+    shellExited: s.shellExited,
+  });
 
   if (s.visibleNow) bindLeafToSlot(leafId, s);
 
@@ -209,6 +217,12 @@ function attachSession(
           return;
         }
         s.pty = pty;
+        console.info("[terax:terminal] pty ready", {
+          leafId,
+          initialCwd: s.initialCwd ?? null,
+          cols: s.cols,
+          rows: s.rows,
+        });
         if (s.cols > 0 && s.rows > 0) pty.resize(s.cols, s.rows);
       })
       .catch((e) => {

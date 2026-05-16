@@ -19,6 +19,9 @@ export async function openPty(
   handlers: PtyHandlers,
   cwd?: string,
 ): Promise<PtySession> {
+  const workspace = currentWorkspaceEnv();
+  console.info("[terax:pty] open request", { cols, rows, cwd: cwd ?? null, workspace });
+
   // Raw bytes — no base64/JSON round-trip; messages arrive as ArrayBuffer.
   const onData = new Channel<ArrayBuffer>();
   const onExit = new Channel<number>();
@@ -34,6 +37,7 @@ export async function openPty(
 
   onData.onmessage = (buf) => handlers.onData(new Uint8Array(buf));
   onExit.onmessage = (code) => {
+    console.info("[terax:pty] exit", { code, cwd: cwd ?? null, workspace });
     handlers.onExit?.(code);
     releaseHandlers();
   };
@@ -42,10 +46,12 @@ export async function openPty(
     cols,
     rows,
     cwd: cwd ?? null,
-    workspace: currentWorkspaceEnv(),
+    workspace,
     onData,
     onExit,
   });
+
+  console.info("[terax:pty] open success", { id, cwd: cwd ?? null, workspace });
 
   let closed = false;
 

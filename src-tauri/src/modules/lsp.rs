@@ -113,6 +113,15 @@ pub struct LspHoverRequest {
     pub character: u32,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspDefinitionRequest {
+    pub handle: u32,
+    pub path: String,
+    pub line: u32,
+    pub character: u32,
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LspDiagnosticsResponse {
@@ -137,6 +146,14 @@ pub struct LspDiagnostic {
 #[serde(rename_all = "camelCase")]
 pub struct LspHoverResponse {
     pub contents: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspDefinitionResponse {
+    pub uri: String,
+    pub line: u32,
+    pub character: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,6 +182,19 @@ struct LspRange {
 struct LspPosition {
     line: u32,
     character: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct LspLocation {
+    uri: String,
+    range: LspRange,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LspLocationLink {
+    target_uri: String,
+    target_selection_range: LspRange,
 }
 
 impl LspSession {
@@ -328,7 +358,7 @@ pub fn lsp_start(
         return Err("LSP is currently supported only for Local and SSH workspaces".into());
     }
 
-    let (session, root_uri, root_display) = match &workspace {
+    let (session, root_uri) = match &workspace {
         WorkspaceEnv::Local => {
             let root_path = resolve_path(&request.root_path, &workspace);
             if !root_path.is_dir() {
@@ -362,13 +392,13 @@ pub fn lsp_start(
             }));
             spawn_stdout_reader(session.clone(), stdout);
             spawn_stderr_reader(session.clone(), stderr);
-            (session, file_url(&root_path)?, root_path.display().to_string())
+            (session, file_url(&root_path)?)
         }
         WorkspaceEnv::Ssh { profile_id } => {
             let conn = ssh_state.get_or_err(profile_id)?;
             let cmdline = build_remote_command(&request.command, &request.args, &request.root_path);
             let session = spawn_ssh_lsp_session(conn, &cmdline)?;
-            (session, file_url(&request.root_path)?, request.root_path.clone())
+            (session, file_url(&request.root_path)?)
         }
         WorkspaceEnv::Wsl { .. } => unreachable!(),
     };
@@ -381,6 +411,16 @@ pub fn lsp_start(
         init.request_id = Some(init_id);
     }
 
+    let root_uri = normalize_uri_key(&root_uri);
+    log::info!(
+        "lsp start command={} args={:?} root_path={} root_uri={} workspace={:?}",
+        request.command,
+        request.args,
+        request.root_path,
+        root_uri,
+        workspace
+    );
+
     session.write_message(json!({
         "jsonrpc": "2.0",
         "id": init_id,
@@ -389,6 +429,13 @@ pub fn lsp_start(
             "processId": std::process::id(),
             "clientInfo": { "name": "Terax", "version": env!("CARGO_PKG_VERSION") },
             "rootUri": root_uri,
+            "rootPath": request.root_path,
+            "workspaceFolders": [
+                {
+                    "uri": root_uri,
+                    "name": "workspace"
+                }
+            ],
             "capabilities": {
                 "textDocument": {
                     "publishDiagnostics": {
@@ -421,6 +468,13 @@ pub fn lsp_open(
 ) -> Result<(), String> {
     let session = get_session(&state, request.handle)?;
     let uri = normalize_uri_key(&file_url(&request.path)?);
+    log::info!(
+        "lsp open handle={} path={} uri={} language_id={}",
+        request.handle,
+        request.path,
+        uri,
+        request.language_id
+    );
     session.docs.lock().unwrap().insert(uri.clone(), 1);
     session.send_notification(
         "textDocument/didOpen",
@@ -528,6 +582,26 @@ pub fn lsp_hover(
     )?;
     let parsed = parse_hover_result(result);
     Ok(parsed)
+}
+
+#[tauri::command]
+pub fn lsp_definition(
+    state: tauri::State<'_, LspState>,
+    request: LspDefinitionRequest,
+) -> Result<Option<LspDefinitionResponse>, String> {
+    let session = get_session(&state, request.handle)?;
+    let uri = normalize_uri_key(&file_url(&request.path)?);
+    let result = session.send_request(
+        "textDocument/definition",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": {
+                "line": request.line,
+                "character": request.character,
+            }
+        }),
+    )?;
+    Ok(parse_definition_result(result))
 }
 
 #[tauri::command]
@@ -690,7 +764,7 @@ fn handle_server_message(session: &LspSession, message: Value) {
         };
         if let Ok(params) = serde_json::from_value::<LspPublishDiagnostics>(params.clone()) {
             let uri = normalize_uri_key(&params.uri);
-            let diagnostics = params
+            let diagnostics: Vec<LspDiagnostic> = params
                 .diagnostics
                 .into_iter()
                 .map(|diag| LspDiagnostic {
@@ -704,6 +778,17 @@ fn handle_server_message(session: &LspSession, message: Value) {
                     code: diag.code.map(code_to_string),
                 })
                 .collect();
+            let count = diagnostics.len();
+            let first_message = diagnostics
+                .first()
+                .map(|diag| diag.message.as_str())
+                .unwrap_or("<none>");
+            log::info!(
+                "lsp diagnostics uri={} count={} first={}",
+                uri,
+                count,
+                first_message
+            );
             session.diagnostics.write().unwrap().insert(
                 uri,
                 LspDiagnosticsResponse {
@@ -794,6 +879,31 @@ fn parse_content_length(header: &str) -> Option<usize> {
     header.lines().find_map(|line| {
         line.strip_prefix("Content-Length:")
             .and_then(|value| value.trim().parse::<usize>().ok())
+    })
+}
+
+fn parse_definition_result(result: Value) -> Option<LspDefinitionResponse> {
+    match result {
+        Value::Null => None,
+        Value::Array(items) => items.into_iter().find_map(parse_definition_item),
+        other => parse_definition_item(other),
+    }
+}
+
+fn parse_definition_item(value: Value) -> Option<LspDefinitionResponse> {
+    if let Ok(location) = serde_json::from_value::<LspLocation>(value.clone()) {
+        return Some(LspDefinitionResponse {
+            uri: location.uri,
+            line: location.range.start.line,
+            character: location.range.start.character,
+        });
+    }
+
+    let link = serde_json::from_value::<LspLocationLink>(value).ok()?;
+    Some(LspDefinitionResponse {
+        uri: link.target_uri,
+        line: link.target_selection_range.start.line,
+        character: link.target_selection_range.start.character,
     })
 }
 

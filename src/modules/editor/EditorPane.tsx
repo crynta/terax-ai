@@ -5,8 +5,9 @@ import {
   setSearchQuery,
 } from "@codemirror/search";
 import { type Diagnostic, setDiagnostics } from "@codemirror/lint";
+import { IS_MAC } from "@/lib/platform";
 import { useWorkspaceEnvStore } from "@/modules/workspace";
-import { hoverTooltip, keymap } from "@codemirror/view";
+import { EditorView, hoverTooltip, keymap } from "@codemirror/view";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EDITOR_THEME_EXT } from "./lib/themes";
@@ -34,6 +35,9 @@ import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { getKey } from "@/modules/ai/lib/keyring";
 import { onKeysChanged } from "@/modules/settings/store";
 import {
+  fileUriToPath,
+  getLspDocumentLanguageId,
+  lspDefinition,
   getLspRootPath,
   getLspServerConfig,
   lspChange,
@@ -54,6 +58,7 @@ export type EditorPaneHandle = {
   findPrevious: () => void;
   clearQuery: () => void;
   focus: () => void;
+  goToPosition: (line: number, character: number) => void;
   getSelection: () => string | null;
   getPath: () => string;
   /** Re-read the file from disk. Skips silently if the buffer is dirty. */
@@ -65,6 +70,14 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
+  onNavigateToDefinition?: (
+    path: string,
+    line: number,
+    character: number,
+    fromPath: string,
+    fromLine: number,
+    fromCharacter: number,
+  ) => void;
 };
 
 function formatBytes(n: number): string {
@@ -74,7 +87,10 @@ function formatBytes(n: number): string {
 }
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
-  function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
+  function EditorPane(
+    { path, onDirtyChange, onSaved, onClose, onNavigateToDefinition },
+    ref,
+  ) {
     const { doc, onChange, save, reload } = useDocument({ path, onDirtyChange });
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
@@ -133,6 +149,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     onSavedRef.current = onSaved;
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+    const onNavigateToDefinitionRef = useRef(onNavigateToDefinition);
+    onNavigateToDefinitionRef.current = onNavigateToDefinition;
 
     const pathRef = useRef(path);
     pathRef.current = path;
@@ -211,17 +229,29 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const startLspSession = async (initialText: string, announce = true) => {
       const config = getLspServerConfig(pathRef.current);
       if (!config || workspaceEnv.kind === "wsl") return;
+      const documentLanguageId =
+        getLspDocumentLanguageId(pathRef.current) ?? config.languageId;
 
       const existingHandle = lspHandleRef.current;
       if (existingHandle !== null) {
         stopLspSession(existingHandle, pathRef.current);
       }
 
-      const rootPath = getLspRootPath(pathRef.current);
+      const rootPath = await getLspRootPath(pathRef.current, config.languageId);
       if (announce) {
         setLspStatus(`Starting ${config.command}...`);
       }
       clearDiagnostics();
+
+      console.info("[terax:lsp] start", {
+        path: pathRef.current,
+        rootPath,
+        command: config.command,
+        args: config.args,
+        serverLanguageId: config.languageId,
+        documentLanguageId,
+        workspace: workspaceEnv,
+      });
 
       const handle = await lspStart(
         config.command,
@@ -230,7 +260,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         workspaceEnv,
       );
       lspHandleRef.current = handle;
-      await lspOpen(handle, pathRef.current, config.languageId, initialText);
+      await lspOpen(handle, pathRef.current, documentLanguageId, initialText);
       setLspStatus(null);
       lspPollRef.current = window.setInterval(() => {
         const activeHandle = lspHandleRef.current;
@@ -291,6 +321,31 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       onSavedRef.current?.();
     };
 
+    const navigateToDefinition = async (position?: number) => {
+      const handle = lspHandleRef.current;
+      const view = cmRef.current?.view;
+      if (handle === null || !view) return;
+      const pos = position ?? view.state.selection.main.head;
+      const line = view.state.doc.lineAt(pos);
+      const target = await lspDefinition(
+        handle,
+        pathRef.current,
+        line.number - 1,
+        pos - line.from,
+      ).catch(() => null);
+      if (!target) return;
+      const targetPath = fileUriToPath(target.uri);
+      if (!targetPath) return;
+      onNavigateToDefinitionRef.current?.(
+        targetPath,
+        target.line,
+        target.character,
+        pathRef.current,
+        line.number - 1,
+        pos - line.from,
+      );
+    };
+
     const extensions = useMemo(
       () => [
         // basicSetup is added before user extensions by @uiw/react-codemirror,
@@ -348,6 +403,22 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           getPath: () => pathRef.current,
           getLanguage: () => languageRef.current,
         }),
+        Prec.highest(
+          EditorView.domEventHandlers({
+            mousedown: (event, view) => {
+              if (!isDefinitionClick(event) || lspHandleRef.current === null) {
+                return false;
+              }
+
+              const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+              if (pos === null) return false;
+
+              event.preventDefault();
+              void navigateToDefinition(pos);
+              return true;
+            },
+          }),
+        ),
         keymap.of([
           {
             key: "Mod-s",
@@ -356,6 +427,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               void (async () => {
                 await saveWithLspSync();
               })();
+              return true;
+            },
+          },
+          {
+            key: "F12",
+            run: () => {
+              if (lspHandleRef.current === null) return false;
+              void navigateToDefinition();
               return true;
             },
           },
@@ -466,6 +545,16 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         },
         focus: () => {
           cmRef.current?.view?.focus();
+        },
+        goToPosition: (line: number, character: number) => {
+          const view = cmRef.current?.view;
+          if (!view) return;
+          const offset = offsetForPosition(view.state.doc.toString(), line, character);
+          view.dispatch({
+            selection: { anchor: offset },
+            scrollIntoView: true,
+          });
+          view.focus();
         },
         getSelection: () => {
           const view = cmRef.current?.view;
@@ -585,6 +674,11 @@ function offsetForPosition(text: string, line: number, character: number): numbe
     currentLine += 1;
   }
   return Math.min(index + character, text.length);
+}
+
+function isDefinitionClick(event: MouseEvent): boolean {
+  if (event.button !== 0) return false;
+  return IS_MAC ? event.metaKey : event.ctrlKey;
 }
 
 function toCodemirrorSeverity(severity?: number): Diagnostic["severity"] {

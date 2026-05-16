@@ -58,9 +58,9 @@ import {
   hasLeaf,
   leafIds,
   respawnSession,
-  TerminalStack,
   type TerminalPaneHandle,
 } from "@/modules/terminal";
+import { TerminalStack } from "@/modules/terminal/TerminalStack";
 import { ThemeProvider } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import {
@@ -77,8 +77,31 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
+const SSH_RETRY_WINDOW_MS = 20_000;
+const SSH_RETRY_INITIAL_DELAY_MS = 500;
+const SSH_RETRY_MAX_DELAY_MS = 3_000;
+
+function isRetryableSshError(error: unknown) {
+  const message = String(error).toLowerCase();
+  return (
+    message.includes("connection refused") ||
+    message.includes("connection reset") ||
+    message.includes("broken pipe") ||
+    message.includes("timed out") ||
+    message.includes("temporarily unavailable") ||
+    message.includes("failed to connect") ||
+    message.includes("no route to host")
+  );
+}
+
 
 export default function App() {
+  type DefinitionLocation = {
+    path: string;
+    line: number;
+    character: number;
+  };
+
   const {
     tabs,
     activeId,
@@ -113,6 +136,34 @@ export default function App() {
   }, [tabs, activeId]);
   const activeLeafId = activeTerminalTab?.activeLeafId ?? null;
 
+  useEffect(() => {
+    if (activeLeafId === null) return;
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    const focusWhenReady = (attemptsLeft: number) => {
+      if (cancelled) return;
+      const handle = terminalRefs.current.get(activeLeafId);
+      if (handle) {
+        handle.focus();
+        return;
+      }
+      if (attemptsLeft <= 0) return;
+      timeoutId = window.setTimeout(() => focusWhenReady(attemptsLeft - 1), 30);
+    };
+
+    const raf = window.requestAnimationFrame(() => {
+      focusWhenReady(20);
+    });
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(raf);
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [activeLeafId]);
+
   const searchAddons = useRef<Map<number, SearchAddon>>(new Map());
   const [activeSearchAddon, setActiveSearchAddon] =
     useState<SearchAddon | null>(null);
@@ -120,12 +171,12 @@ export default function App() {
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
+  const definitionHistoryRef = useRef<DefinitionLocation[]>([]);
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   const explorerRef = useRef<FileExplorerHandle>(null);
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
-
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
@@ -168,6 +219,80 @@ export default function App() {
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
+
+  useEffect(() => {
+    if (workspaceEnv.kind !== "ssh") return;
+
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    let retryUntil = Date.now() + SSH_RETRY_WINDOW_MS;
+    let nextDelayMs = SSH_RETRY_INITIAL_DELAY_MS;
+    const profileId = workspaceEnv.profileId;
+
+    const clearRetryTimer = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const scheduleRetry = () => {
+      if (cancelled || retryTimer !== null) return;
+      const remainingMs = retryUntil - Date.now();
+      if (remainingMs <= 0) return;
+      const delayMs = Math.min(nextDelayMs, remainingMs);
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        void ensureConnected("retry");
+      }, delayMs);
+      nextDelayMs = Math.min(nextDelayMs * 2, SSH_RETRY_MAX_DELAY_MS);
+    };
+
+    const ensureConnected = async (reason: string) => {
+      const state = useSshStore.getState().connState[profileId];
+      if (state === "connected" || state === "connecting") return;
+
+      clearRetryTimer();
+      void useSshStore
+        .getState()
+        .connect(profileId)
+        .catch((error) => {
+          if (cancelled) return;
+          console.warn("ssh reconnect failed", { profileId, reason, error });
+          if (isRetryableSshError(error)) {
+            scheduleRetry();
+          }
+        });
+    };
+
+    const resetRetryWindow = () => {
+      retryUntil = Date.now() + SSH_RETRY_WINDOW_MS;
+      nextDelayMs = SSH_RETRY_INITIAL_DELAY_MS;
+    };
+
+    resetRetryWindow();
+    void ensureConnected("initial");
+
+    const onFocus = () => {
+      resetRetryWindow();
+      void ensureConnected("focus");
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        resetRetryWindow();
+        void ensureConnected("visibility");
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      clearRetryTimer();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [workspaceEnv]);
 
   const switchWorkspace = useCallback(
     async (env: WorkspaceEnv) => {
@@ -555,6 +680,79 @@ export default function App() {
     [openFileTab],
   );
 
+  const handleNavigateToDefinition = useCallback(
+    (
+      path: string,
+      line: number,
+      character: number,
+      fromPath: string,
+      fromLine: number,
+      fromCharacter: number,
+    ) => {
+      const history = definitionHistoryRef.current;
+      const last = history.length > 0 ? history[history.length - 1] : null;
+      if (
+        !last ||
+        last.path !== fromPath ||
+        last.line !== fromLine ||
+        last.character !== fromCharacter
+      ) {
+        definitionHistoryRef.current.push({
+          path: fromPath,
+          line: fromLine,
+          character: fromCharacter,
+        });
+      }
+
+      const tabId = openFileTab(path, true);
+      if (tabId === null) return;
+
+      const focusTarget = (attemptsLeft: number) => {
+        const handle = editorRefs.current.get(tabId);
+        if (handle) {
+          handle.goToPosition(line, character);
+          return;
+        }
+        if (attemptsLeft <= 0) return;
+        window.setTimeout(() => focusTarget(attemptsLeft - 1), 30);
+      };
+
+      focusTarget(20);
+    },
+    [openFileTab],
+  );
+
+  const handleGoBackDefinition = useCallback(() => {
+    const target = definitionHistoryRef.current.pop();
+    if (!target) return;
+
+    const tabId = openFileTab(target.path, true);
+    if (tabId === null) return;
+
+    const focusTarget = (attemptsLeft: number) => {
+      const handle = editorRefs.current.get(tabId);
+      if (handle) {
+        handle.goToPosition(target.line, target.character);
+        return;
+      }
+      if (attemptsLeft <= 0) return;
+      window.setTimeout(() => focusTarget(attemptsLeft - 1), 30);
+    };
+
+    focusTarget(20);
+  }, [openFileTab]);
+
+  const confirmDeleteClose = useCallback(() => {
+    if (pendingDeleteTabs !== null) {
+      for (const id of pendingDeleteTabs) disposeTab(id);
+      setPendingDeleteTabs(null);
+    }
+  }, [pendingDeleteTabs, disposeTab]);
+
+  const cancelDeleteClose = useCallback(() => {
+    setPendingDeleteTabs(null);
+  }, []);
+
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
       for (const t of tabs) {
@@ -575,17 +773,6 @@ export default function App() {
     },
     [tabs, updateTab],
   );
-
-  const confirmDeleteClose = useCallback(() => {
-    if (pendingDeleteTabs !== null) {
-      for (const id of pendingDeleteTabs) disposeTab(id);
-      setPendingDeleteTabs(null);
-    }
-  }, [pendingDeleteTabs, disposeTab]);
-
-  const cancelDeleteClose = useCallback(() => {
-    setPendingDeleteTabs(null);
-  }, []);
 
   const handlePathDeleted = useCallback(
     (path: string) => {
@@ -651,6 +838,7 @@ export default function App() {
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
       "search.focus": () => searchInlineRef.current?.focus(),
+      "editor.goBack": handleGoBackDefinition,
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
@@ -671,6 +859,7 @@ export default function App() {
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
+      handleGoBackDefinition,
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
@@ -897,6 +1086,7 @@ export default function App() {
                         registerHandle={registerEditorHandle}
                         onDirtyChange={handleEditorDirty}
                         onCloseTab={disposeTab}
+                        onNavigateToDefinition={handleNavigateToDefinition}
                       />
                     </div>
                     <div
