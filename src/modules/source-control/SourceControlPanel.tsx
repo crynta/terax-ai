@@ -301,19 +301,21 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         <div className="flex min-h-0 flex-1 flex-col">
           <ScrollArea className="min-h-0 flex-1">
             <div className={cn("space-y-2.5", scm.compact ? "py-2" : "py-3")}>
-              <ChangeGroup
-                title="Staged Changes"
-                entries={scm.stagedEntries}
-                selected={scm.selected}
-                actionBusy={scm.actionBusy}
-                empty={scm.stagedEmptyText}
-                compact={scm.compact}
-                defaultOpen
-                actionType="unstage"
-                onActionAll={scm.unstageAllEntries}
-                onSelect={scm.selectEntry}
-                onAction={scm.unstageEntry}
-              />
+              {scm.stagedEntries.length > 0 && (
+                <ChangeGroup
+                  title="Staged Changes"
+                  entries={scm.stagedEntries}
+                  selected={scm.selected}
+                  actionBusy={scm.actionBusy}
+                  empty={scm.stagedEmptyText}
+                  compact={scm.compact}
+                  defaultOpen
+                  actionType="unstage"
+                  onActionAll={scm.unstageAllEntries}
+                  onSelect={scm.selectEntry}
+                  onAction={scm.unstageEntry}
+                />
+              )}
               <ChangeGroup
                 title="Changes"
                 entries={scm.unstagedEntries}
@@ -348,7 +350,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 placeholder="Commit message"
                 rows={1}
                 className={cn(
-                  "min-h-10 resize-none rounded-lg border border-border/60 bg-background/95 py-2 pl-2.5 pr-8 !text-[12px] leading-snug shadow-none placeholder:text-muted-foreground/80 focus-visible:border-border/60 focus-visible:ring-0",
+                  "min-h-10 resize-none rounded-lg border border-border/60 bg-background/95 py-[11px] pl-2.5 pr-8 !text-[12px] leading-snug shadow-none placeholder:text-muted-foreground/80 focus-visible:border-border/60 focus-visible:ring-0",
                 )}
               />
               <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
@@ -566,16 +568,7 @@ function ChangeGroup({
       </div>
 
       <CollapsibleContent>
-        {entries.length === 0 ? (
-          <div
-            className={cn(
-              "px-2 py-1 text-[11px] text-muted-foreground",
-              compact && "px-1.5",
-            )}
-          >
-            {empty}
-          </div>
-        ) : (
+        {entries.length > 0 && (
           <ul className="space-y-px">
             {entries.map((entry) => {
               const isSelected =
