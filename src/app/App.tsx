@@ -77,6 +77,23 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
+const SSH_RETRY_WINDOW_MS = 20_000;
+const SSH_RETRY_INITIAL_DELAY_MS = 500;
+const SSH_RETRY_MAX_DELAY_MS = 3_000;
+
+function isRetryableSshError(error: unknown) {
+  const message = String(error).toLowerCase();
+  return (
+    message.includes("connection refused") ||
+    message.includes("connection reset") ||
+    message.includes("broken pipe") ||
+    message.includes("timed out") ||
+    message.includes("temporarily unavailable") ||
+    message.includes("failed to connect") ||
+    message.includes("no route to host")
+  );
+}
+
 
 export default function App() {
   const {
@@ -168,6 +185,80 @@ export default function App() {
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
+
+  useEffect(() => {
+    if (workspaceEnv.kind !== "ssh") return;
+
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    let retryUntil = Date.now() + SSH_RETRY_WINDOW_MS;
+    let nextDelayMs = SSH_RETRY_INITIAL_DELAY_MS;
+    const profileId = workspaceEnv.profileId;
+
+    const clearRetryTimer = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const scheduleRetry = () => {
+      if (cancelled || retryTimer !== null) return;
+      const remainingMs = retryUntil - Date.now();
+      if (remainingMs <= 0) return;
+      const delayMs = Math.min(nextDelayMs, remainingMs);
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        void ensureConnected("retry");
+      }, delayMs);
+      nextDelayMs = Math.min(nextDelayMs * 2, SSH_RETRY_MAX_DELAY_MS);
+    };
+
+    const ensureConnected = async (reason: string) => {
+      const state = useSshStore.getState().connState[profileId];
+      if (state === "connected" || state === "connecting") return;
+
+      clearRetryTimer();
+      void useSshStore
+        .getState()
+        .connect(profileId)
+        .catch((error) => {
+          if (cancelled) return;
+          console.warn("ssh reconnect failed", { profileId, reason, error });
+          if (isRetryableSshError(error)) {
+            scheduleRetry();
+          }
+        });
+    };
+
+    const resetRetryWindow = () => {
+      retryUntil = Date.now() + SSH_RETRY_WINDOW_MS;
+      nextDelayMs = SSH_RETRY_INITIAL_DELAY_MS;
+    };
+
+    resetRetryWindow();
+    void ensureConnected("initial");
+
+    const onFocus = () => {
+      resetRetryWindow();
+      void ensureConnected("focus");
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        resetRetryWindow();
+        void ensureConnected("visibility");
+      }
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      clearRetryTimer();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [workspaceEnv]);
 
   const switchWorkspace = useCallback(
     async (env: WorkspaceEnv) => {
