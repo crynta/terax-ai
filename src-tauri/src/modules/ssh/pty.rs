@@ -41,7 +41,7 @@ pub async fn open_ssh_pty_channel(
         .await
         .map_err(|e| e.to_string())?;
 
-    let (cmd_tx, mut cmd_rx) = mpsc::channel::<SshPtyCmd>(256);
+    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<SshPtyCmd>();
 
     tauri::async_runtime::spawn(async move {
         let mut pending: Vec<u8> = Vec::with_capacity(16 * 1024);

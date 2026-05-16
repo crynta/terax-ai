@@ -222,7 +222,7 @@ pub enum SshPtyCmd {
 
 /// Thin handle to a tokio task that owns the russh channel.
 pub struct SshPtySession {
-    pub cmd_tx: mpsc::Sender<SshPtyCmd>,
+    pub cmd_tx: mpsc::UnboundedSender<SshPtyCmd>,
 }
 
 pub enum PtyHandle {
@@ -241,7 +241,7 @@ impl PtyHandle {
                 .map_err(|e| e.to_string()),
             PtyHandle::Ssh(s) => s
                 .cmd_tx
-                .try_send(SshPtyCmd::Data(data.to_vec()))
+                .send(SshPtyCmd::Data(data.to_vec()))
                 .map_err(|e| e.to_string()),
         }
     }
@@ -261,7 +261,7 @@ impl PtyHandle {
                 .map_err(|e| e.to_string()),
             PtyHandle::Ssh(s) => s
                 .cmd_tx
-                .try_send(SshPtyCmd::Resize { cols, rows })
+                .send(SshPtyCmd::Resize { cols, rows })
                 .map_err(|e| e.to_string()),
         }
     }
@@ -270,7 +270,7 @@ impl PtyHandle {
         match self {
             PtyHandle::Local(s) => s.killer.lock().unwrap().kill().map_err(|e| e.to_string()),
             PtyHandle::Ssh(s) => {
-                let _ = s.cmd_tx.try_send(SshPtyCmd::Close);
+                let _ = s.cmd_tx.send(SshPtyCmd::Close);
                 Ok(())
             }
         }

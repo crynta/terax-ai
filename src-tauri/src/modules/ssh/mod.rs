@@ -107,10 +107,12 @@ pub async fn ssh_connect(
         }
     }
 
-    // If this was a first-connect (no known fingerprint), persist the observed one.
+    // TOFU: if no fingerprint is stored, require explicit user confirmation before
+    // persisting. Return the observed fingerprint so the frontend can show a
+    // confirmation dialog. The caller must call ssh_fingerprint_save and retry.
     if profile.known_fingerprint.is_none() {
         if let Some(fp) = observed_fp.lock().unwrap().clone() {
-            update_fingerprint(&app, &profile.id, fp)?;
+            return Err(format!("TOFU_REQUIRED:{fp}"));
         }
     }
 
@@ -164,4 +166,15 @@ pub async fn ssh_fingerprint_get(
 ) -> Result<Option<String>, String> {
     let profile = load_profile(&app, &profile_id)?;
     Ok(profile.known_fingerprint)
+}
+
+/// Persist a trusted host fingerprint after the user explicitly accepts the TOFU
+/// prompt, then the caller should retry `ssh_connect`.
+#[tauri::command]
+pub fn ssh_fingerprint_save(
+    app: tauri::AppHandle,
+    profile_id: String,
+    fingerprint: String,
+) -> Result<(), String> {
+    update_fingerprint(&app, &profile_id, fingerprint)
 }

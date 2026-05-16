@@ -117,10 +117,11 @@ pub async fn sftp_delete(conn: &SshConn, path: &str) -> Result<(), String> {
 }
 
 pub async fn sftp_search(conn: &SshConn, path: &str, query: &str) -> Result<Vec<String>, String> {
+    let iname_pattern = format!("*{query}*");
     let cmd = format!(
-        "find {} -maxdepth 10 -iname '*{}*' 2>/dev/null",
+        "find {} -maxdepth 10 -iname {} 2>/dev/null",
         shell_escape(path),
-        shell_escape(query)
+        shell_escape(&iname_pattern)
     );
     let output = run_remote_command(conn, &cmd).await?;
     Ok(output.lines().map(|l| l.to_string()).collect())

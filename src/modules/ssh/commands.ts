@@ -19,5 +19,8 @@ export const sshDisconnect = (profileId: string) =>
 export const sshFingerprintGet = (profileId: string) =>
   invoke<string | null>("ssh_fingerprint_get", { profileId });
 
+export const sshFingerprintSave = (profileId: string, fingerprint: string) =>
+  invoke<void>("ssh_fingerprint_save", { profileId, fingerprint });
+
 export const sshHome = (profileId: string) =>
   invoke<string>("ssh_home", { profileId });

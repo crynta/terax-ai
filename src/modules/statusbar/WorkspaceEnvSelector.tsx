@@ -16,7 +16,7 @@ import {
 import { Refresh01Icon, ServerStack03Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useSshStore } from "@/modules/ssh/store";
-import { sshFingerprintGet } from "@/modules/ssh/commands";
+import { sshFingerprintSave } from "@/modules/ssh/commands";
 import { FingerprintDialog } from "@/modules/ssh/FingerprintDialog";
 
 type Props = {
@@ -48,31 +48,26 @@ export function WorkspaceEnvSelector({ onSelect }: Props) {
     const profile = profiles.find((p) => p.id === profileId);
     if (!profile) return;
 
-    if (!profile.knownFingerprint) {
-      try {
-        const fp = await sshFingerprintGet(profileId);
-        if (fp) {
-          setTofu({ profileId, host: profile.host, fingerprint: fp });
-          return;
-        }
-      } catch {
-        // If fingerprint fetch fails, proceed — connect will handle it
-      }
-    }
-
     try {
       await connect(profileId);
       onSelect({ kind: "ssh", profileId });
     } catch (e) {
-      console.error("ssh connect failed", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("TOFU_REQUIRED:")) {
+        const fp = msg.slice("TOFU_REQUIRED:".length);
+        setTofu({ profileId, host: profile.host, fingerprint: fp });
+      } else {
+        console.error("ssh connect failed", e);
+      }
     }
   };
 
   const handleTofuAccept = async () => {
     if (!tofu) return;
-    const { profileId } = tofu;
+    const { profileId, fingerprint } = tofu;
     setTofu(null);
     try {
+      await sshFingerprintSave(profileId, fingerprint);
       await connect(profileId);
       onSelect({ kind: "ssh", profileId });
     } catch (e) {
