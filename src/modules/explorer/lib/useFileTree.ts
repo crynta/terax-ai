@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { currentWorkspaceEnv, useWorkspaceEnvStore } from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 
 export type DirEntry = {
@@ -23,6 +23,23 @@ export type PendingCreate = {
   kind: "file" | "dir";
 };
 
+function sameEntries(a: DirEntry[], b: DirEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const left = a[i];
+    const right = b[i];
+    if (
+      left.name !== right.name ||
+      left.kind !== right.kind ||
+      left.size !== right.size ||
+      left.mtime !== right.mtime
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function joinPath(parent: string, name: string): string {
   if (parent.endsWith("/")) return `${parent}${name}`;
   return `${parent}/${name}`;
@@ -40,6 +57,7 @@ type Options = {
 };
 
 export function useFileTree(rootPath: string | null, options?: Options) {
+  const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const showHiddenRef = useRef(showHidden);
   const [nodes, setNodes] = useState<TreeState>({});
@@ -48,20 +66,40 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     null,
   );
   const [renaming, setRenaming] = useState<string | null>(null);
+  const nodesRef = useRef(nodes);
+  const expandedRef = useRef(expanded);
 
   useEffect(() => {
     showHiddenRef.current = showHidden;
   }, [showHidden]);
 
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
+    expandedRef.current = expanded;
+  }, [expanded]);
+
   const fetchChildren = useCallback(async (path: string) => {
-    setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
+    setNodes((s) => {
+      const current = s[path];
+      if (current?.status === "loaded") return s;
+      return { ...s, [path]: { status: "loading" } };
+    });
     try {
       const entries = await invoke<DirEntry[]>("fs_read_dir", {
         path,
         showHidden: showHiddenRef.current,
         workspace: currentWorkspaceEnv(),
       });
-      setNodes((s) => ({ ...s, [path]: { status: "loaded", entries } }));
+      setNodes((s) => {
+        const current = s[path];
+        if (current?.status === "loaded" && sameEntries(current.entries, entries)) {
+          return s;
+        }
+        return { ...s, [path]: { status: "loaded", entries } };
+      });
     } catch (e) {
       setNodes((s) => ({
         ...s,
@@ -97,6 +135,24 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     // every expanded directory.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHidden, rootPath, fetchChildren]);
+
+  useEffect(() => {
+    if (!rootPath || workspaceEnv.kind !== "ssh") return;
+
+    const interval = window.setInterval(() => {
+      const paths = new Set<string>([rootPath, ...expandedRef.current]);
+      for (const path of paths) {
+        const state = nodesRef.current[path];
+        if (!state || state.status === "loaded") {
+          void fetchChildren(path);
+        }
+      }
+    }, 2000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [rootPath, workspaceEnv.kind, fetchChildren]);
 
   const toggle = useCallback(
     (path: string) => {

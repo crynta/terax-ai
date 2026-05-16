@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell, ssh, workspace};
+use modules::{fs, lsp, net, pty, secrets, shell, ssh, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
@@ -81,6 +81,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .manage(lsp::LspState::default())
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
@@ -95,12 +96,19 @@ pub fn run() {
             fs::file::fs_read_file,
             fs::file::fs_write_file,
             fs::file::fs_stat,
+            lsp::lsp_start,
+            lsp::lsp_open,
+            lsp::lsp_change,
+            lsp::lsp_save,
+            lsp::lsp_close,
+            lsp::lsp_hover,
+            lsp::lsp_read_diagnostics,
+            lsp::lsp_stop,
             fs::mutate::fs_create_file,
             fs::mutate::fs_create_dir,
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
             fs::search::fs_search,
-            fs::search::fs_list_files,
             fs::grep::fs_grep,
             fs::grep::fs_glob,
             shell::shell_run_command,
