@@ -270,6 +270,8 @@ export default function App() {
   }, [hydrateSessions]);
 
   const activeTab = tabs.find((t) => t.id === activeId);
+  const activeTabKindRef = useRef<string | null>(activeTab?.kind ?? null);
+  activeTabKindRef.current = activeTab?.kind ?? null;
   const isTerminalTab = activeTab?.kind === "terminal";
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
@@ -467,6 +469,10 @@ export default function App() {
     };
     const onUp = (e: MouseEvent) => {
       if (isInsideAi(e.target)) return;
+      if (activeTabKindRef.current !== "editor") {
+        setAskPopup(null);
+        return;
+      }
       // Defer one tick so xterm/CodeMirror finalize the selection.
       setTimeout(() => {
         const text = captureActiveSelection();

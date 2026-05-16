@@ -1,4 +1,5 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
+import { IS_LINUX, IS_MAC, IS_WINDOWS } from "@/lib/platform";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -7,7 +8,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type ITerminalAddon } from "@xterm/xterm";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -105,6 +106,7 @@ function createSlot(): Slot {
   host.setAttribute("data-terax-slot", String(slots.length));
   getRecycler().appendChild(host);
   term.open(host);
+  term.loadAddon(new TerminalPasteAddon());
 
   const slot: Slot = {
     id: slots.length,
@@ -135,6 +137,9 @@ function createSlot(): Slot {
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
+    if (handleClipboardShortcut(term, event)) {
+      return false;
+    }
     if (isCtrlBackspace(event)) {
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty("\x17");
@@ -568,9 +573,7 @@ export function getSlotForLeaf(leafId: number): Slot | null {
 }
 
 function isCtrlBackspace(e: KeyboardEvent): boolean {
-  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  const isMac = /Mac|iPhone|iPad/.test(ua);
-  const mod = isMac ? e.metaKey : e.ctrlKey;
+  const mod = IS_MAC ? e.metaKey : e.ctrlKey;
   return mod && (e.key === "Backspace" || e.code === "Backspace");
 }
 
@@ -578,4 +581,90 @@ function isShiftEnter(e: KeyboardEvent): boolean {
   return (
     e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
   );
+}
+
+class TerminalPasteAddon implements ITerminalAddon {
+  private term: Terminal | null = null;
+  private element: HTMLElement | null = null;
+
+  private readonly onPaste = (event: ClipboardEvent) => {
+    const text = event.clipboardData?.getData("text/plain") ?? "";
+    if (!text) return;
+    event.preventDefault();
+    this.term?.paste(text);
+  };
+
+  activate(term: Terminal): void {
+    this.term = term;
+    this.element = term.element ?? null;
+    this.element?.addEventListener("paste", this.onPaste);
+  }
+
+  dispose(): void {
+    this.element?.removeEventListener("paste", this.onPaste);
+    this.element = null;
+    this.term = null;
+  }
+}
+
+function handleClipboardShortcut(term: Terminal, event: KeyboardEvent): boolean {
+  if (event.type !== "keydown") return false;
+  if (IS_WINDOWS && isCtrlV(event)) {
+    event.preventDefault();
+    void pasteFromClipboard(term);
+    return true;
+  }
+  if (isCopyShortcut(event)) {
+    return copySelectionIfPresent(term, event);
+  }
+  return false;
+}
+
+function isCopyShortcut(event: KeyboardEvent): boolean {
+  if (IS_WINDOWS) return isCtrlC(event);
+  if (IS_MAC) return isCmdC(event);
+  if (IS_LINUX) return isCtrlShiftC(event);
+  return false;
+}
+
+function copySelectionIfPresent(term: Terminal, event: KeyboardEvent): boolean {
+  const selection = term.getSelection();
+  if (!selection) return false;
+  event.preventDefault();
+  void copySelectionToClipboard(selection);
+  return true;
+}
+
+async function copySelectionToClipboard(selection: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(selection);
+  } catch (error) {
+    console.warn("[terax] terminal copy failed:", error);
+  }
+}
+
+async function pasteFromClipboard(term: Terminal): Promise<void> {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text) return;
+    term.paste(text);
+  } catch (error) {
+    console.warn("[terax] terminal paste failed:", error);
+  }
+}
+
+function isCtrlC(event: KeyboardEvent): boolean {
+  return event.key.toLowerCase() === "c" && event.ctrlKey && !event.altKey && !event.metaKey;
+}
+
+function isCmdC(event: KeyboardEvent): boolean {
+  return event.key.toLowerCase() === "c" && event.metaKey && !event.altKey && !event.ctrlKey;
+}
+
+function isCtrlV(event: KeyboardEvent): boolean {
+  return event.key.toLowerCase() === "v" && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey;
+}
+
+function isCtrlShiftC(event: KeyboardEvent): boolean {
+  return event.key.toLowerCase() === "c" && event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
 }
