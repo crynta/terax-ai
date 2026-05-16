@@ -1,8 +1,33 @@
 mod modules;
 
 use modules::{fs, net, pty, secrets, shell, workspace};
-use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use std::sync::Mutex;
+use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
+
+/// Drained on first read so HMR / re-mounts can't replay the launch dir.
+#[derive(Default)]
+struct LaunchDir(Mutex<Option<String>>);
+
+#[tauri::command]
+fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
+    state.0.lock().expect("LaunchDir mutex poisoned").take()
+}
+
+fn parse_launch_dir() -> Option<String> {
+    for arg in std::env::args().skip(1) {
+        if arg.starts_with('-') {
+            continue;
+        }
+        let Ok(canon) = std::fs::canonicalize(&arg) else { continue };
+        if !canon.is_dir() {
+            continue;
+        }
+        let s = canon.to_string_lossy();
+        return Some(s.strip_prefix(r"\\?\").unwrap_or(&s).to_string());
+    }
+    None
+}
 
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
@@ -84,6 +109,7 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
+        .manage(LaunchDir(Mutex::new(parse_launch_dir())))
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -114,6 +140,7 @@ pub fn run() {
             workspace::wsl_list_distros,
             workspace::wsl_default_distro,
             workspace::wsl_home,
+            get_launch_dir,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,
