@@ -3,6 +3,9 @@ import type { Extension } from "@codemirror/state";
 type LoaderResult = Extension | { token: unknown };
 type LanguageLoader = () => Promise<LoaderResult>;
 
+const rubyLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/ruby").then((m) => m.ruby);
+
 /**
  * Extension → loader. Each loader is a dynamic import so language packs
  * only enter the bundle when a matching file is opened.
@@ -42,6 +45,10 @@ const loaders: Record<string, LanguageLoader> = {
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
 
   php: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
+  rb: rubyLoader,
+  rake: rubyLoader,
+  gemspec: rubyLoader,
+  ru: rubyLoader,
 
   // C / C++ family
   c: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.c),
@@ -75,6 +82,12 @@ const loaders: Record<string, LanguageLoader> = {
 const filenameOverrides: Record<string, LanguageLoader> = {
   dockerfile: loaders.dockerfile!,
   "dockerfile.dev": loaders.dockerfile!,
+  gemfile: rubyLoader,
+  rakefile: rubyLoader,
+  podfile: rubyLoader,
+  fastfile: rubyLoader,
+  guardfile: rubyLoader,
+  brewfile: rubyLoader,
 };
 
 function extOf(name: string): string | null {
