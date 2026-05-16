@@ -19,7 +19,6 @@ export type ProviderId =
   | "hyperbolic"
   | "deepinfra"
   | "novita"
-  | "ai21"
   | "huggingface"
   | "sambanova"
   | "minimax"
@@ -39,6 +38,8 @@ export type ProviderInfo = {
   consoleUrl: string;
   /** Provider accepts (but does not require) an API key. */
   keyOptional?: boolean;
+  /** Provider is disabled (coming soon). Hides key input in settings. */
+  disabled?: boolean;
   /** OpenAI-compatible GET endpoint returning `{ data: { id, object, owned_by }[] }`.
    *  Set to `null` when the provider has no standard /models endpoint. */
   modelsUrl: string | null;
@@ -190,20 +191,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     modelsUrl: "https://api.novita.ai/v3/openai/models",
   },
   {
-    id: "ai21",
-    label: "AI21 Labs",
-    keyringAccount: "ai21-api-key",
-    keyPrefix: null,
-    consoleUrl: "https://studio.ai21.com/account/api-key",
-    modelsUrl: null,
-  },
-  {
     id: "huggingface",
     label: "Hugging Face",
     keyringAccount: "huggingface-api-key",
     keyPrefix: "hf_",
     consoleUrl: "https://huggingface.co/settings/tokens",
     modelsUrl: null,
+    disabled: true,
   },
   {
     id: "sambanova",
@@ -244,6 +238,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPrefix: null,
     consoleUrl: "https://platform.01.ai/apikeys",
     modelsUrl: "https://api.01.ai/v1/models",
+    disabled: true,
   },
   {
     id: "replicate",
@@ -252,6 +247,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPrefix: "r8_",
     consoleUrl: "https://replicate.com/account/api-tokens",
     modelsUrl: null,
+    disabled: true,
   },
   {
     id: "ollama",
@@ -728,26 +724,6 @@ export const MODELS = [
     tags: ["tools"],
   },
 
-  // ── AI21 Labs ───────────────────────────────────────────────────────────
-  {
-    id: "jamba-1.5-large",
-    provider: "ai21",
-    label: "Jamba 1.5 Large",
-    hint: "Best",
-    description: "Hybrid SSM-Transformer, 256K context.",
-    capabilities: { intelligence: 4, speed: 3, cost: 3 },
-    tags: ["tools"],
-  },
-  {
-    id: "jamba-1.5-mini",
-    provider: "ai21",
-    label: "Jamba 1.5 Mini",
-    hint: "Fast",
-    description: "Lightweight hybrid for fast responses.",
-    capabilities: { intelligence: 3, speed: 5, cost: 4 },
-    tags: ["tools"],
-  },
-
   // ── Hugging Face ────────────────────────────────────────────────────────
   {
     id: "meta-llama/Llama-3.3-70B-Instruct",
@@ -1172,8 +1148,6 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepinfra/deepseek-v3": 128_000,
   "deepseek/deepseek-r1-0528": 128_000,
   "qwen/qwen3-30b-a3b": 128_000,
-  "jamba-1.5-large": 256_000,
-  "jamba-1.5-mini": 256_000,
   "meta-llama/Llama-3.3-70B-Instruct": 128_000,
   "huggingface/qwen2.5-72b": 128_000,
   "sambanova/deepseek-r1": 128_000,
@@ -1306,7 +1280,6 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   hyperbolic: "deepseek-ai/DeepSeek-R1",
   deepinfra: "deepinfra/deepseek-v3",
   novita: "qwen/qwen3-30b-a3b",
-  ai21: "jamba-1.5-mini",
   huggingface: "huggingface/qwen2.5-72b",
   sambanova: "sambanova/llama4-maverick",
   minimax: "MiniMax-M2.5",

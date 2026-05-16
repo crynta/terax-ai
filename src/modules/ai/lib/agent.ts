@@ -293,17 +293,6 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
-    case "ai21": {
-      const { createOpenAICompatible } = await import(
-        "@ai-sdk/openai-compatible"
-      );
-      built = createOpenAICompatible({
-        name: "ai21",
-        baseURL: "https://api.ai21.com/studio/v1",
-        apiKey: key,
-      })(resolvedModelId);
-      break;
-    }
     case "huggingface": {
       const { createOpenAICompatible } = await import(
         "@ai-sdk/openai-compatible"

@@ -44,6 +44,18 @@ export function ProviderKeyCard({
     setEditing(!currentKey);
   }, [currentKey]);
 
+  if (provider.disabled) {
+    return (
+      <div className="flex items-center gap-2 self-start rounded-lg border border-border/60 bg-card/60 px-3 py-2.5 opacity-60">
+        <ProviderIcon provider={provider.id} size={15} />
+        <span className="text-[12.5px] font-medium">{provider.label}</span>
+        <span className="ml-1 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          Coming soon
+        </span>
+      </div>
+    );
+  }
+
   const submit = async () => {
     const trimmed = value.trim();
     if (!trimmed) {

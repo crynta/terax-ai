@@ -86,7 +86,6 @@ export function detectFromUrl(url: string): DetectedProvider | null {
     ["api.hyperbolic.xyz", "hyperbolic", 0.99],
     ["api.deepinfra.com", "deepinfra", 0.99],
     ["api.novita.ai", "novita", 0.99],
-    ["api.ai21.com", "ai21", 0.99],
     ["api-inference.huggingface.co", "huggingface", 0.99],
     ["api.sambanova.ai", "sambanova", 0.99],
     ["api.minimax.io", "minimax", 0.99],

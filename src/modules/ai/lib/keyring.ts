@@ -28,7 +28,6 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   hyperbolic: null,
   deepinfra: null,
   novita: null,
-  ai21: null,
   huggingface: null,
   sambanova: null,
   minimax: null,

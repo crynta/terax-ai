@@ -87,7 +87,6 @@ const PROVIDER_ICON = {
   hyperbolic: Hexagon01Icon,
   deepinfra: NeuralNetworkIcon,
   novita: CampfireIcon,
-  ai21: GlobeIcon,
   huggingface: Package01Icon,
   sambanova: BrainIcon,
   minimax: SquareIcon,
