@@ -106,6 +106,7 @@ pub fn run() {
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
             fs::search::fs_search,
+            fs::search::fs_list_files,
             fs::grep::fs_grep,
             fs::grep::fs_glob,
             git::commands::git_resolve_repo,

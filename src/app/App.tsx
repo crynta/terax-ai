@@ -37,7 +37,8 @@ import {
   NewEditorDialog,
   type EditorPaneHandle,
 } from "@/modules/editor";
-import { FileExplorer } from "@/modules/explorer";
+import { useZoom } from "@/lib/useZoom";
+import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
   Header,
   type SearchInlineHandle,
@@ -159,6 +160,10 @@ export default function App() {
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
+  const { zoomIn, zoomOut, zoomReset } = useZoom();
+  const explorerRef = useRef<FileExplorerHandle>(null);
+  const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
+
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
   const sourceControlRef = useRef<PanelImperativeHandle | null>(null);
   const toggleSidebar = useCallback(() => {
@@ -168,11 +173,35 @@ export default function App() {
     else p.collapse();
   }, []);
 
+  const toggleExplorerFocus = useCallback(() => {
+    const explorer = explorerRef.current;
+    if (!explorer) return;
+    if (explorer.isFocused()) {
+      const target = explorerReturnFocusRef.current;
+      explorerReturnFocusRef.current = null;
+      if (target && document.body.contains(target)) {
+        target.focus();
+      } else {
+        (document.activeElement as HTMLElement | null)?.blur?.();
+      }
+      return;
+    }
+    const active = document.activeElement;
+    explorerReturnFocusRef.current =
+      active instanceof HTMLElement && active !== document.body ? active : null;
+    const p = sidebarRef.current;
+    if (p && p.getSize().asPercentage <= 0) p.expand();
+    explorer.focus();
+  }, []);
+
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
+  const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
+    null,
+  );
   useEffect(() => {
     // Forward-slash form so explorerRoot stays equal across home → OSC 7.
     homeDir()
@@ -243,7 +272,19 @@ export default function App() {
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
-  const hasComposer = hasAnyKey(apiKeys);
+  const lmstudioModelId = usePreferencesStore((s) => s.lmstudioModelId);
+  const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
+  const openaiCompatibleModelId = usePreferencesStore(
+    (s) => s.openaiCompatibleModelId,
+  );
+  const openaiCompatibleBaseURL = usePreferencesStore(
+    (s) => s.openaiCompatibleBaseURL,
+  );
+  const hasLocalModel =
+    (lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0) ||
+    (openaiCompatibleBaseURL.trim().length > 0 &&
+      openaiCompatibleModelId.trim().length > 0);
+  const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
 
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
@@ -576,14 +617,30 @@ export default function App() {
     [tabs, updateTab],
   );
 
+  const confirmDeleteClose = useCallback(() => {
+    if (pendingDeleteTabs !== null) {
+      for (const id of pendingDeleteTabs) disposeTab(id);
+      setPendingDeleteTabs(null);
+    }
+  }, [pendingDeleteTabs, disposeTab]);
+
+  const cancelDeleteClose = useCallback(() => {
+    setPendingDeleteTabs(null);
+  }, []);
+
   const handlePathDeleted = useCallback(
     (path: string) => {
+      const dirty: number[] = [];
       for (const t of tabs) {
         if (t.kind !== "editor") continue;
-        if (t.path === path || t.path.startsWith(`${path}/`)) {
+        if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
+        if (t.dirty) {
+          dirty.push(t.id);
+        } else {
           disposeTab(t.id);
         }
       }
+      if (dirty.length > 0) setPendingDeleteTabs(dirty);
     },
     [tabs, disposeTab],
   );
@@ -739,6 +796,10 @@ export default function App() {
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
+      "explorer.focus": toggleExplorerFocus,
+      "view.zoomIn": zoomIn,
+      "view.zoomOut": zoomOut,
+      "view.zoomReset": zoomReset,
     }),
     [
       activeId,
@@ -754,6 +815,10 @@ export default function App() {
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
+      toggleExplorerFocus,
+      zoomIn,
+      zoomOut,
+      zoomReset,
     ],
   );
 
@@ -993,7 +1058,7 @@ export default function App() {
             searchRef={searchInlineRef}
           />
 
-          <main className="flex min-h-0 flex-1 flex-col">
+          <main className="zoom-content flex min-h-0 flex-1 flex-col">
             <ResizablePanelGroup
               orientation="horizontal"
               className="min-h-0 flex-1"
@@ -1009,6 +1074,7 @@ export default function App() {
               >
                 <div className="h-full border-r border-border/60 bg-card">
                   <FileExplorer
+                    ref={explorerRef}
                     rootPath={explorerRoot}
                     onOpenFile={handleOpenFile}
                     onPathRenamed={handlePathRenamed}
@@ -1150,6 +1216,37 @@ export default function App() {
                   Cancel
                 </AlertDialogCancel>
                 <AlertDialogAction onClick={confirmClose}>
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={pendingDeleteTabs !== null}
+            onOpenChange={(open) => !open && cancelDeleteClose()}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {pendingDeleteTabs?.length === 1
+                    ? (() => {
+                        const title = tabs.find(
+                          (t) => t.id === pendingDeleteTabs[0],
+                        )?.title;
+                        return title
+                          ? `"${title}" has unsaved changes. The file has been deleted. Close anyway?`
+                          : "This file has unsaved changes. The file has been deleted. Close anyway?";
+                      })()
+                    : `${pendingDeleteTabs?.length ?? 0} files have unsaved changes. They have been deleted. Close all anyway?`}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={cancelDeleteClose}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction onClick={confirmDeleteClose}>
                   Close Anyway
                 </AlertDialogAction>
               </AlertDialogFooter>
