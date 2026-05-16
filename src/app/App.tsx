@@ -76,7 +76,6 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
-
 export default function App() {
   const {
     tabs,
@@ -84,7 +83,6 @@ export default function App() {
     setActiveId,
     newTab,
     newTabWithSession,
-    newPrivateTab,
     openFileTab,
     pinTab,
     newPreviewTab,
@@ -181,11 +179,16 @@ export default function App() {
       const same =
         env.kind === workspaceEnv.kind &&
         (env.kind === "local" ||
-          (env.kind === "wsl" && "distro" in env && "distro" in workspaceEnv && env.distro === workspaceEnv.distro));
+          (env.kind === "wsl" &&
+            "distro" in env &&
+            "distro" in workspaceEnv &&
+            env.distro === workspaceEnv.distro));
       if (same) return;
       const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
       if (dirty) {
-        window.alert("Save or close unsaved editor tabs before switching workspace.");
+        window.alert(
+          "Save or close unsaved editor tabs before switching workspace.",
+        );
         return;
       }
 
@@ -216,6 +219,7 @@ export default function App() {
   );
 
   const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
+  const [creatingPrivateTerminal, setCreatingPrivateTerminal] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
@@ -317,7 +321,9 @@ export default function App() {
 
   useEffect(() => {
     setActiveSearchAddon(
-      activeLeafId !== null ? (searchAddons.current.get(activeLeafId) ?? null) : null,
+      activeLeafId !== null
+        ? (searchAddons.current.get(activeLeafId) ?? null)
+        : null,
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
   }, [activeId, activeLeafId]);
@@ -516,9 +522,14 @@ export default function App() {
       if (cwd === undefined) {
         cwd = opts.workspace?.kind === "ssh" ? "/" : inheritedCwdForNewTab();
       }
-      newTabWithSession({ ...opts, cwd });
+      newTabWithSession({
+        ...opts,
+        cwd,
+        private: opts.private ?? creatingPrivateTerminal,
+      });
+      setCreatingPrivateTerminal(false);
     },
-    [newTabWithSession, inheritedCwdForNewTab],
+    [newTabWithSession, inheritedCwdForNewTab, creatingPrivateTerminal],
   );
 
   const openNewDefaultTab = useCallback(() => {
@@ -526,8 +537,9 @@ export default function App() {
   }, [handleCreateSession]);
 
   const openNewPrivateTab = useCallback(() => {
-    newPrivateTab(inheritedCwdForNewTab());
-  }, [newPrivateTab, inheritedCwdForNewTab]);
+    setCreatingPrivateTerminal(true);
+    setSessionDialogOpen(true);
+  }, []);
 
   const sendCd = useCallback(
     (path: string) => {
@@ -776,7 +788,13 @@ export default function App() {
         focus: () => activeEditorHandle.focus(),
       };
     return null;
-  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
+  }, [
+    isTerminalTab,
+    isEditorTab,
+    activeId,
+    activeSearchAddon,
+    activeEditorHandle,
+  ]);
 
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
@@ -1014,7 +1032,11 @@ export default function App() {
 
           <SessionDialog
             open={sessionDialogOpen}
-            onOpenChange={setSessionDialogOpen}
+            isPrivate={creatingPrivateTerminal}
+            onOpenChange={(open) => {
+              setSessionDialogOpen(open);
+              if (!open) setCreatingPrivateTerminal(false);
+            }}
             onCreate={handleCreateSession}
           />
 

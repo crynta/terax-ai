@@ -21,6 +21,7 @@ import type { ProviderKeys } from "./keyring";
 import { proxyFetch } from "./proxyFetch";
 import { buildTools, type ToolContext } from "../tools/tools";
 import { compactModelMessagesDetailed } from "./compact";
+import { AcpClient } from "./acp";
 
 const TOOL_LABELS: Record<string, (input: Record<string, unknown>) => string> = {
   read_file: (i) => `Reading ${shortPath(i.path)}`,
@@ -58,6 +59,7 @@ export type BuildModelOptions = {
   modelIdOverride?: string;
   lmstudioBaseURL?: string;
   openaiCompatibleBaseURL?: string;
+  aiAcpCommand?: string;
 };
 
 const modelCache = new Map<string, LanguageModel>();
@@ -88,8 +90,13 @@ export async function buildLanguageModel(
       break;
     }
     case "anthropic": {
-      const { createAnthropic } = await import("@ai-sdk/anthropic");
-      built = createAnthropic({ apiKey: key })(resolvedModelId);
+      if (resolvedModelId === "claude-acp-agent") {
+        const cmd = options.aiAcpCommand || "npx -y @zed-industries/claude-code-acp";
+        built = new AcpClient(cmd).toLanguageModel();
+      } else {
+        const { createAnthropic } = await import("@ai-sdk/anthropic");
+        built = createAnthropic({ apiKey: key })(resolvedModelId);
+      }
       break;
     }
     case "google": {
@@ -166,6 +173,7 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);
@@ -182,6 +190,7 @@ function buildModel(
   lmstudioModelId?: string,
   openaiCompatibleBaseURL?: string,
   openaiCompatibleModelId?: string,
+  aiAcpCommand?: string,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
   let resolvedId: string = m.id;
@@ -203,6 +212,7 @@ function buildModel(
   return buildLanguageModel(m.provider, keys, resolvedId, {
     lmstudioBaseURL,
     openaiCompatibleBaseURL,
+    aiAcpCommand,
   });
 }
 
@@ -280,6 +290,7 @@ export type RunAgentOptions = {
   lmstudioModelId?: string;
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
+  aiAcpCommand?: string;
   planMode?: boolean;
   projectMemory?: string | null;
   uiMessages: UIMessage[];
@@ -295,6 +306,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.lmstudioModelId,
     opts.openaiCompatibleBaseURL,
     opts.openaiCompatibleModelId,
+    opts.aiAcpCommand,
   );
   const provider = getModel(modelId).provider;
 

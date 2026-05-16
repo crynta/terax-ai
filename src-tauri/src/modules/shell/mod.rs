@@ -255,6 +255,22 @@ pub fn shell_bg_logs(
 }
 
 #[tauri::command]
+pub fn shell_bg_stdin(
+    state: tauri::State<'_, ShellState>,
+    handle: u32,
+    data: String,
+) -> Result<(), String> {
+    let proc = state
+        .bg
+        .read()
+        .unwrap()
+        .get(&handle)
+        .cloned()
+        .ok_or_else(|| "no background handle".to_string())?;
+    proc.write_stdin(data.as_bytes())
+}
+
+#[tauri::command]
 pub fn shell_bg_kill(state: tauri::State<ShellState>, handle: u32) -> Result<(), String> {
     if let Some(proc) = state.bg.read().unwrap().get(&handle).cloned() {
         proc.kill();
@@ -279,14 +295,24 @@ pub(crate) fn build_oneshot_command(
     #[cfg_attr(not(windows), allow(unused_variables))] cwd: Option<&str>,
 ) -> Command {
     // SSH one-shot: run via ssh user@host command
-    if let WorkspaceEnv::Ssh { host, user, port, key_path, password } = workspace {
+    if let WorkspaceEnv::Ssh {
+        host,
+        user,
+        port,
+        key_path,
+        password,
+    } = workspace
+    {
         let use_sshpass = password.is_some()
             && std::process::Command::new("sshpass")
                 .arg("--version")
                 .output()
                 .is_ok();
         let (program, pass_args): (&str, Vec<String>) = if use_sshpass {
-            ("sshpass", vec!["-p".into(), password.clone().unwrap(), "ssh".into()])
+            (
+                "sshpass",
+                vec!["-p".into(), password.clone().unwrap(), "ssh".into()],
+            )
         } else {
             ("ssh", vec![])
         };

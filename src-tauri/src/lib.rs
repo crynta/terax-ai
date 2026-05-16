@@ -108,6 +108,7 @@ pub fn run() {
             shell::shell_session_close,
             shell::shell_bg_spawn,
             shell::shell_bg_logs,
+            shell::shell_bg_stdin,
             shell::shell_bg_kill,
             shell::shell_bg_list,
             workspace::wsl_list_distros,

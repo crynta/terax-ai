@@ -18,6 +18,7 @@ import { useWorkspaceEnvStore } from "@/modules/workspace";
 import {
   ComputerTerminal02Icon,
   Delete02Icon,
+  IncognitoIcon,
   ServerStack03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -28,14 +29,29 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreate: (opts: SessionOptions) => void;
+  isPrivate?: boolean;
 };
 
-export function SessionDialog({ open, onOpenChange, onCreate }: Props) {
+export function SessionDialog({
+  open,
+  onOpenChange,
+  onCreate,
+  isPrivate,
+}: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>New Session</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {isPrivate && (
+              <HugeiconsIcon
+                icon={IncognitoIcon}
+                size={18}
+                className="text-amber-600 dark:text-amber-400"
+              />
+            )}
+            <span>{isPrivate ? "New Privacy Session" : "New Session"}</span>
+          </DialogTitle>
         </DialogHeader>
         <Tabs defaultValue="local">
           <TabsList

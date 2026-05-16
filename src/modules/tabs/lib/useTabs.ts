@@ -101,6 +101,7 @@ export type SessionOptions = {
   sessionType?: SessionType;
   sessionName?: string;
   workspace?: { kind: "local" } | { kind: "wsl"; distro: string } | { kind: "ssh"; host: string; user?: string; port?: number; key_path?: string; password?: string };
+  private?: boolean;
 };
 
 export function useTabs(initial?: Partial<TerminalTab>) {
@@ -157,6 +158,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         workspace: opts.workspace,
         paneTree: { kind: "leaf", id: leafId, cwd: opts.cwd },
         activeLeafId: leafId,
+        private: opts.private,
       },
     ]);
     setActiveId(tabId);

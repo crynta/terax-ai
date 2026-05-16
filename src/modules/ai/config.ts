@@ -521,6 +521,15 @@ export const MODELS = [
     description: "Local GGUF models via LM Studio.",
     capabilities: { intelligence: 3, speed: 3, cost: 5 },
   },
+  // ── Claude Agent (ACP) ────────────────────────────────────────────────────
+  {
+    id: "claude-acp-agent",
+    provider: "anthropic",
+    label: "Claude Code",
+    hint: "Agent",
+    description: "Connect to Claude Code via ACP (requires Pro/Max).",
+    capabilities: { intelligence: 5, speed: 4, cost: 4 },
+  },
 ] as const satisfies readonly ModelInfo[];
 
 export type ModelId = (typeof MODELS)[number]["id"];
@@ -629,7 +638,6 @@ export function estimateCost(
   );
 }
 
-/** Providers that do not require an API key (local servers, key-optional). */
 export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
   "lmstudio",
   "openai-compatible",
