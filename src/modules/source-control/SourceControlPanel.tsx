@@ -218,7 +218,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     <TooltipProvider delayDuration={800} skipDelayDuration={300}>
       <aside
         ref={rootRef}
-        className="flex h-full min-w-0 flex-col border-l border-border/60 bg-card/80 backdrop-blur"
+        className="flex h-full min-w-0 flex-col border-l border-border/60 bg-card"
       >
       <div
         className={cn(
@@ -300,7 +300,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       {scm.panelState === "ready" && scm.status ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <ScrollArea className="min-h-0 flex-1">
-            <div className={cn("space-y-2.5", scm.compact ? "p-2" : "p-3")}>
+            <div className={cn("space-y-2.5", scm.compact ? "py-2" : "py-3")}>
               <ChangeGroup
                 title="Staged Changes"
                 entries={scm.stagedEntries}
@@ -336,7 +336,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
 
           <div
             className={cn(
-              "relative border-t border-border/30 bg-card/90 backdrop-blur supports-[backdrop-filter]:bg-card/90",
+              "relative border-t border-border/30 bg-card",
               scm.compact ? "space-y-1.5 p-2" : "space-y-2 p-3",
             )}
           >
@@ -348,7 +348,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 placeholder="Commit message"
                 rows={1}
                 className={cn(
-                  "min-h-10 resize-none rounded-lg border border-border/60 bg-background/95 py-2 pl-2.5 pr-8 text-[12.5px] leading-snug shadow-none placeholder:text-muted-foreground/80 focus-visible:border-border/60 focus-visible:ring-0",
+                  "min-h-10 resize-none rounded-lg border border-border/60 bg-background/95 py-2 pl-2.5 pr-8 !text-[12px] leading-snug shadow-none placeholder:text-muted-foreground/80 focus-visible:border-border/60 focus-visible:ring-0",
                 )}
               />
               <div className="absolute right-1.5 top-1/2 -translate-y-1/2">
@@ -508,13 +508,13 @@ function ChangeGroup({
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen} className="space-y-1">
-      <div className="flex items-center gap-2">
+      <div className={cn("flex items-center gap-2", compact ? "px-1.5" : "px-2")}>
         <CollapsibleTrigger asChild>
           <button
             type="button"
             className={cn(
               "flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left text-muted-foreground transition-colors hover:text-foreground",
-              compact ? "px-1 py-0.5" : "px-1.5 py-0.5",
+              "py-0.5",
             )}
           >
             <span className="flex size-3.5 shrink-0 items-center justify-center">
@@ -588,8 +588,8 @@ function ChangeGroup({
                 <li key={entry.key}>
                   <div
                     className={cn(
-                      "group grid grid-cols-[minmax(0,1fr)_1.5rem] items-center gap-2 rounded-lg border border-transparent transition-colors",
-                      compact ? "px-1 py-0" : "px-1.5 py-px",
+                      "group grid grid-cols-[minmax(0,1fr)_1.5rem] items-center gap-2 rounded-sm border border-transparent transition-colors",
+                      compact ? "px-2 py-0" : "px-2.5 py-px",
                       isSelected
                         ? "bg-accent/80 text-foreground"
                         : "hover:bg-accent/45",
