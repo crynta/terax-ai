@@ -70,18 +70,6 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     const searchRef = useRef<ExplorerSearchHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
-    useImperativeHandle(ref, () => ({
-      focus: () => {
-        containerRef.current?.focus();
-      },
-      isFocused: () => {
-        const c = containerRef.current;
-        if (!c) return false;
-        const active = document.activeElement;
-        return active instanceof Node && c.contains(active);
-      },
-    }));
-
     type FlatItem = { path: string; isDir: boolean };
     const flat = useMemo<FlatItem[]>(() => {
       if (!rootPath) return [];
@@ -105,7 +93,33 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
         setSelectedPath(null);
       }
     }, [flat, selectedPath]);
-  
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        focus: () => {
+          containerRef.current?.focus();
+          if (!selectedPath && flat.length > 0) {
+            const first = flat[0].path;
+            setSelectedPath(first);
+            requestAnimationFrame(() => {
+              const el = listRef.current?.querySelector<HTMLElement>(
+                `[data-fs-path="${CSS.escape(first)}"]`,
+              );
+              el?.scrollIntoView({ block: "nearest" });
+            });
+          }
+        },
+        isFocused: () => {
+          const c = containerRef.current;
+          if (!c) return false;
+          const active = document.activeElement;
+          return active instanceof Node && c.contains(active);
+        },
+      }),
+      [flat, selectedPath],
+    );
+
     useGlobalShortcuts({
       "explorer.search": () => {
         if (searchRef.current?.isFocused()) {
