@@ -19,8 +19,18 @@ import {
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 import type { EditorTab, Tab } from "./lib/useTabs";
+
+const TAB_SCROLL_THUMB_WIDTH = 44;
 
 type Props = {
   tabs: Tab[];
@@ -49,153 +59,314 @@ export function TabBar({
   compact,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ startX: number; startScrollLeft: number } | null>(
+    null,
+  );
+  const [scrollThumb, setScrollThumb] = useState({
+    left: 0,
+    visible: false,
+    width: TAB_SCROLL_THUMB_WIDTH,
+    scrollLeft: 0,
+    maxScrollLeft: 0,
+  });
+
+  const updateScrollThumb = useCallback(() => {
+    const el = scrollRef.current;
+    const track = trackRef.current;
+    if (!el || !track || el.scrollWidth <= el.clientWidth) {
+      setScrollThumb((current) =>
+        current.visible ? { ...current, left: 0, visible: false } : current,
+      );
+      return;
+    }
+
+    const thumbWidth = Math.min(TAB_SCROLL_THUMB_WIDTH, track.clientWidth);
+    const maxThumbLeft = Math.max(1, track.clientWidth - thumbWidth);
+    const maxScrollLeft = Math.max(1, el.scrollWidth - el.clientWidth);
+    const left = (el.scrollLeft / maxScrollLeft) * maxThumbLeft;
+    setScrollThumb({
+      left,
+      visible: true,
+      width: thumbWidth,
+      scrollLeft: el.scrollLeft,
+      maxScrollLeft,
+    });
+  }, []);
 
   // Horizontal wheel scroll without holding shift.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
       if (el.scrollWidth <= el.clientWidth) return;
+      const delta =
+        Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (delta === 0) return;
+
+      const maxScrollLeft = el.scrollWidth - el.clientWidth;
+      const nextScrollLeft = Math.min(
+        maxScrollLeft,
+        Math.max(0, el.scrollLeft + delta),
+      );
+      if (nextScrollLeft === el.scrollLeft) return;
+
       e.preventDefault();
-      el.scrollLeft += e.deltaY;
+      el.scrollLeft = nextScrollLeft;
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    const track = trackRef.current;
+    if (!el || !content || !track) return;
+
+    updateScrollThumb();
+    const observer = new ResizeObserver(updateScrollThumb);
+    observer.observe(el);
+    observer.observe(content);
+    observer.observe(track);
+    el.addEventListener("scroll", updateScrollThumb);
+
+    return () => {
+      observer.disconnect();
+      el.removeEventListener("scroll", updateScrollThumb);
+    };
+  }, [tabs, updateScrollThumb]);
+
+  useLayoutEffect(() => {
+    updateScrollThumb();
+  }, [tabs, updateScrollThumb]);
 
   // Keep the active tab visible after selection / open.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const active = el.querySelector<HTMLElement>(`[data-tab-id="${activeId}"]`);
-    active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    active?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
   }, [activeId, tabs.length]);
 
+  const onScrollbarPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      startX: e.clientX,
+      startScrollLeft: el.scrollLeft,
+    };
+  };
+
+  const onScrollbarPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    const track = trackRef.current;
+    const drag = dragRef.current;
+    if (!el || !track || !drag) return;
+
+    const maxThumbLeft = Math.max(1, track.clientWidth - scrollThumb.width);
+    const maxScrollLeft = Math.max(1, el.scrollWidth - el.clientWidth);
+    const dragRatio = (e.clientX - drag.startX) / maxThumbLeft;
+    el.scrollLeft = drag.startScrollLeft + dragRatio * maxScrollLeft;
+  };
+
+  const onScrollbarPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  const onScrollbarKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const step = 80;
+    let nextScrollLeft = el.scrollLeft;
+    if (e.key === "ArrowLeft") nextScrollLeft -= step;
+    else if (e.key === "ArrowRight") nextScrollLeft += step;
+    else if (e.key === "Home") nextScrollLeft = 0;
+    else if (e.key === "End") nextScrollLeft = el.scrollWidth - el.clientWidth;
+    else return;
+
+    e.preventDefault();
+    el.scrollLeft = Math.min(
+      el.scrollWidth - el.clientWidth,
+      Math.max(0, nextScrollLeft),
+    );
+  };
+
   return (
-    <div
-      ref={scrollRef}
-      data-tauri-drag-region
-      className="min-w-0 shrink overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
-      <div className="flex w-max items-center gap-0.5">
-        <Tabs
-          value={String(activeId)}
-          onValueChange={(v) => onSelect(Number(v))}
-        >
-          <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
-            {tabs.map((t) => {
-              const isPreview = t.kind === "editor" && (t as EditorTab).preview;
-              return (
-                <TabsTrigger
-                  key={t.id}
-                  value={String(t.id)}
-                  data-tab-id={t.id}
-                  onDoubleClick={() => isPreview && onPin(t.id)}
-                  className={cn(
-                    "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
-                    compact
-                      ? "px-1.5!"
-                      : tabs.length === 1
-                        ? "px-2!"
-                        : "ps-2! pe-1!",
-                  )}
-                >
-                  <span
+    <div className="relative min-w-0 shrink">
+      <div
+        id="terax-tab-scroll"
+        ref={scrollRef}
+        className="terax-tab-scroll min-w-0 overflow-x-auto overflow-y-hidden"
+      >
+        <div ref={contentRef} className="flex w-max items-center gap-0.5">
+          <Tabs
+            value={String(activeId)}
+            onValueChange={(v) => onSelect(Number(v))}
+          >
+            <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
+              {tabs.map((t) => {
+                const isPreview =
+                  t.kind === "editor" && (t as EditorTab).preview;
+                return (
+                  <TabsTrigger
+                    key={t.id}
+                    value={String(t.id)}
+                    data-tab-id={t.id}
+                    onDoubleClick={() => isPreview && onPin(t.id)}
                     className={cn(
-                      "flex items-center gap-1.5 truncate",
-                      compact ? "max-w-48" : "max-w-80",
+                      "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
+                      compact
+                        ? "px-1.5!"
+                        : tabs.length === 1
+                          ? "px-2!"
+                          : "ps-2! pe-1!",
                     )}
                   >
-                    <TabIcon tab={t} />
-                    {/* Preview tabs use italic to signal the transient state,
-                        matching the visual convention from VSCode. */}
-                    <span className={cn("truncate", isPreview && "italic")}>
-                      {labelFor(t)}
-                    </span>
-                    {t.kind === "editor" && t.dirty ? (
-                      <span
-                        aria-label="Unsaved changes"
-                        className="size-1.5 shrink-0 rounded-full bg-foreground/70"
-                      />
-                    ) : null}
-                  </span>
-                  {tabs.length > 1 && (
                     <span
-                      role="button"
-                      aria-label="Close tab"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onClose(t.id);
-                      }}
-                      className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
+                      className={cn(
+                        "flex items-center gap-1.5 truncate",
+                        compact ? "max-w-48" : "max-w-80",
+                      )}
                     >
-                      <HugeiconsIcon
-                        icon={Cancel01Icon}
-                        size={11}
-                        strokeWidth={2}
-                      />
+                      <TabIcon tab={t} />
+                      {/* Preview tabs use italic to signal the transient state,
+                          matching the visual convention from VSCode. */}
+                      <span className={cn("truncate", isPreview && "italic")}>
+                        {labelFor(t)}
+                      </span>
+                      {t.kind === "editor" && t.dirty ? (
+                        <span
+                          aria-label="Unsaved changes"
+                          className="size-1.5 shrink-0 rounded-full bg-foreground/70"
+                        />
+                      ) : null}
                     </span>
-                  )}
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
-        </Tabs>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-              title="New tab"
-            >
-              <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-44">
-            <DropdownMenuItem onSelect={() => onNew()}>
-              <HugeiconsIcon
-                icon={ComputerTerminal02Icon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Terminal</span>
-              <span className="text-xs text-muted-foreground">
-                {fmtShortcut(MOD_KEY, "T")}
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onNewPrivate()}>
-              <HugeiconsIcon
-                icon={IncognitoIcon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Privacy</span>
-              <span className="text-xs text-muted-foreground">
-                {fmtShortcut(MOD_KEY, "R")}
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onNewEditor()}>
-              <HugeiconsIcon
-                icon={PencilEdit02Icon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Editor</span>
-              <span className="text-xs text-muted-foreground">
-                {fmtShortcut(MOD_KEY, "E")}
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onNewPreview()}>
-              <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
-              <span className="flex-1">Preview</span>
-              <span className="text-xs text-muted-foreground">
-                {fmtShortcut(MOD_KEY, "P")}
-              </span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                    {tabs.length > 1 && (
+                      <span
+                        role="button"
+                        aria-label="Close tab"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onClose(t.id);
+                        }}
+                        className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
+                      >
+                        <HugeiconsIcon
+                          icon={Cancel01Icon}
+                          size={11}
+                          strokeWidth={2}
+                        />
+                      </span>
+                    )}
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+          </Tabs>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="New tab"
+              >
+                <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-44">
+              <DropdownMenuItem onSelect={() => onNew()}>
+                <HugeiconsIcon
+                  icon={ComputerTerminal02Icon}
+                  size={14}
+                  strokeWidth={1.75}
+                />
+                <span className="flex-1">Terminal</span>
+                <span className="text-xs text-muted-foreground">
+                  {fmtShortcut(MOD_KEY, "T")}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNewPrivate()}>
+                <HugeiconsIcon
+                  icon={IncognitoIcon}
+                  size={14}
+                  strokeWidth={1.75}
+                />
+                <span className="flex-1">Privacy</span>
+                <span className="text-xs text-muted-foreground">
+                  {fmtShortcut(MOD_KEY, "R")}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNewEditor()}>
+                <HugeiconsIcon
+                  icon={PencilEdit02Icon}
+                  size={14}
+                  strokeWidth={1.75}
+                />
+                <span className="flex-1">Editor</span>
+                <span className="text-xs text-muted-foreground">
+                  {fmtShortcut(MOD_KEY, "E")}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNewPreview()}>
+                <HugeiconsIcon
+                  icon={Globe02Icon}
+                  size={14}
+                  strokeWidth={1.75}
+                />
+                <span className="flex-1">Preview</span>
+                <span className="text-xs text-muted-foreground">
+                  {fmtShortcut(MOD_KEY, "P")}
+                </span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      <div
+        ref={trackRef}
+        className={cn(
+          "pointer-events-none absolute inset-x-0 bottom-0 h-1 opacity-0 transition-opacity",
+          scrollThumb.visible && "opacity-100",
+        )}
+      >
+        <div
+          role="scrollbar"
+          tabIndex={scrollThumb.visible ? 0 : -1}
+          aria-label="Scroll tabs"
+          aria-controls="terax-tab-scroll"
+          aria-orientation="horizontal"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(scrollThumb.maxScrollLeft)}
+          aria-valuenow={Math.round(scrollThumb.scrollLeft)}
+          className={cn(
+            "flex h-2 cursor-ew-resize items-end pb-0.5",
+            scrollThumb.visible ? "pointer-events-auto" : "pointer-events-none",
+          )}
+          style={{
+            width: scrollThumb.width,
+            transform: `translateX(${scrollThumb.left}px)`,
+          }}
+          onPointerDown={onScrollbarPointerDown}
+          onPointerMove={onScrollbarPointerMove}
+          onPointerUp={onScrollbarPointerUp}
+          onPointerCancel={onScrollbarPointerUp}
+          onKeyDown={onScrollbarKeyDown}
+        >
+          <div className="h-0.5 w-full rounded-full bg-muted-foreground/45 transition-colors hover:bg-muted-foreground/65 active:bg-muted-foreground/75" />
+        </div>
       </div>
     </div>
   );
