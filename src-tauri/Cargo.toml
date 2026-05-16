@@ -41,6 +41,13 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 bytes = "1"
 futures-util = "0.3"
+russh = "0.45"
+russh-sftp = "2"
+ssh-key = { version = "0.6", features = ["std"] }
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+shellexpand = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

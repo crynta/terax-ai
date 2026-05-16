@@ -61,6 +61,7 @@ export type Preferences = {
   terminalScrollback: number;
   lastWslDistro: string | null;
   zoomLevel: number;
+  lastSshProfileId: string | null;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
 };
 
@@ -88,6 +89,7 @@ const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
+const KEY_LAST_SSH_PROFILE = "lastSshProfileId";
 const KEY_SHORTCUTS = "shortcuts";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
@@ -128,6 +130,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
   lastWslDistro: null,
   zoomLevel: 1.0,
+  lastSshProfileId: null,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
 };
 
@@ -207,6 +210,9 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string | null>(KEY_LAST_WSL_DISTRO) ??
       DEFAULT_PREFERENCES.lastWslDistro,
     zoomLevel: get<number>(KEY_ZOOM_LEVEL) ?? DEFAULT_PREFERENCES.zoomLevel,
+    lastSshProfileId:
+      get<string | null>(KEY_LAST_SSH_PROFILE) ??
+      DEFAULT_PREFERENCES.lastSshProfileId,
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
@@ -315,6 +321,8 @@ export async function setLastWslDistro(value: string | null): Promise<void> {
 
 export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
+export async function setLastSshProfileId(value: string | null): Promise<void> {
+  await writePref(KEY_LAST_SSH_PROFILE, value);
 }
 
 export async function setShortcuts(
@@ -358,6 +366,7 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",
+    [KEY_LAST_SSH_PROFILE]: "lastSshProfileId",
     [KEY_SHORTCUTS]: "shortcuts",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
