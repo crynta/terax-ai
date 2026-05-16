@@ -1,22 +1,20 @@
 #[cfg(windows)]
 mod job;
-mod session;
+pub(crate) mod session;
 pub(crate) mod shell_init;
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::thread;
 
-use portable_pty::PtySize;
 use tauri::ipc::{Channel, Response};
 
 use crate::modules::workspace::WorkspaceEnv;
-use session::Session;
+use session::PtyHandle;
 
 pub struct PtyState {
-    sessions: RwLock<HashMap<u32, Arc<Session>>>,
+    sessions: RwLock<HashMap<u32, PtyHandle>>,
     // Starts at 1 so freshly-handed-out ids are never 0, which the frontend
     // sometimes treats as "unset". Increments monotonically; never reused.
     next_id: AtomicU32,
@@ -32,8 +30,9 @@ impl Default for PtyState {
 }
 
 #[tauri::command]
-pub fn pty_open(
-    state: tauri::State<PtyState>,
+pub async fn pty_open(
+    state: tauri::State<'_, PtyState>,
+    ssh_state: tauri::State<'_, crate::modules::ssh::SshState>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
@@ -42,42 +41,44 @@ pub fn pty_open(
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
-    let (session, _) =
-        session::spawn(cols, rows, cwd, workspace, on_data, on_exit).map_err(|e| {
-            log::error!("pty_open failed: {e}");
-            e
-        })?;
+
+    let handle = match &workspace {
+        WorkspaceEnv::Ssh { profile_id } => {
+            let conn = ssh_state.get_or_err(profile_id)?;
+            crate::modules::ssh::pty::open_ssh_pty_channel(conn, cols, rows, on_data, on_exit)
+                .await?
+        }
+        _ => {
+            let (session, _) = tauri::async_runtime::spawn_blocking(move || {
+                session::spawn(cols, rows, cwd, workspace, on_data, on_exit)
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| {
+                log::error!("pty_open failed: {e}");
+                e
+            })?;
+            PtyHandle::Local(session)
+        }
+    };
+
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
-    state.sessions.write().unwrap().insert(id, session);
+    state.sessions.write().unwrap().insert(id, handle);
     log::info!("pty opened id={id} cols={cols} rows={rows}");
     Ok(id)
 }
 
 #[tauri::command]
 pub fn pty_write(state: tauri::State<PtyState>, id: u32, data: String) -> Result<(), String> {
-    let session = state
-        .sessions
-        .read()
-        .unwrap()
-        .get(&id)
-        .cloned()
-        .ok_or_else(|| {
-            log::warn!("pty_write: unknown id={id}");
-            "no session".to_string()
-        })?;
-    // Bind to a local so the MutexGuard temporary drops before `session` —
-    // see rustc note on tail-expression temporary drop order.
-    let result = session
-        .writer
-        .lock()
-        .unwrap()
-        .write_all(data.as_bytes())
-        .map_err(|e| {
-            // EPIPE is expected if the child already exited.
-            log::debug!("pty_write id={id} failed: {e}");
-            e.to_string()
-        });
-    result
+    let sessions = state.sessions.read().unwrap();
+    let handle = sessions.get(&id).ok_or_else(|| {
+        log::warn!("pty_write: unknown id={id}");
+        "no session".to_string()
+    })?;
+    handle.write(data.as_bytes()).map_err(|e| {
+        log::debug!("pty_write id={id} failed: {e}");
+        e
+    })
 }
 
 #[tauri::command]
@@ -87,54 +88,32 @@ pub fn pty_resize(
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
-    let session = state
-        .sessions
-        .read()
-        .unwrap()
-        .get(&id)
-        .cloned()
-        .ok_or_else(|| {
-            log::warn!("pty_resize: unknown id={id}");
-            "no session".to_string()
-        })?;
-    let result = session
-        .master
-        .lock()
-        .unwrap()
-        .resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| {
-            log::warn!("pty_resize id={id} failed: {e}");
-            e.to_string()
-        });
-    result
+    let sessions = state.sessions.read().unwrap();
+    let handle = sessions.get(&id).ok_or_else(|| {
+        log::warn!("pty_resize: unknown id={id}");
+        "no session".to_string()
+    })?;
+    handle.resize(cols, rows).map_err(|e| {
+        log::warn!("pty_resize id={id} failed: {e}");
+        e
+    })
 }
 
 #[tauri::command]
 pub fn pty_close(state: tauri::State<PtyState>, id: u32) -> Result<(), String> {
-    let session = state.sessions.write().unwrap().remove(&id);
-    if let Some(s) = session {
-        if let Err(e) = s.killer.lock().unwrap().kill() {
-            // Non-fatal: the child may already have exited on its own (e.g. the
-            // user ran `exit`). Log so this isn't invisible during debugging.
+    let handle = state.sessions.write().unwrap().remove(&id);
+    if let Some(h) = handle {
+        if let Err(e) = h.kill() {
             log::debug!("pty_close: kill id={id} returned {e}");
         }
         log::info!("pty closed id={id}");
-        // Drop the Arc on a detached thread. On Windows `MasterPty`'s Drop
-        // calls `ClosePseudoConsole`, which can block until conhost finishes
-        // draining its output buffer. Doing it here would freeze the Tauri
-        // worker thread that handled this command — and on Windows that
-        // sometimes manifests as the closed pane refusing to disappear from
-        // the React tree because subsequent IPC stalls behind it.
+        // Drop on a detached thread to avoid blocking the Tauri worker on Windows
+        // (ClosePseudoConsole can block until conhost drains its output buffer).
         thread::Builder::new()
             .name(format!("terax-pty-drop-{id}"))
             .spawn(move || {
                 let t0 = std::time::Instant::now();
-                drop(s);
+                drop(h);
                 log::info!(
                     "pty session id={id} dropped in {}ms",
                     t0.elapsed().as_millis()

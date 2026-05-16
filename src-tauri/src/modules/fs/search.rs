@@ -43,12 +43,13 @@ const PRUNE_DIRS: &[&str] = &[
 ];
 
 #[tauri::command]
-pub fn fs_search(
+pub async fn fs_search(
     root: String,
     query: String,
     limit: Option<usize>,
     workspace: Option<WorkspaceEnv>,
     show_hidden: Option<bool>,
+    ssh_state: tauri::State<'_, crate::modules::ssh::SshState>,
 ) -> Result<SearchResult, String> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
@@ -58,83 +59,100 @@ pub fn fs_search(
         });
     }
     let cap = limit.unwrap_or(200).min(1000);
-    let show_hidden = show_hidden.unwrap_or(false);
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root_path = resolve_path(&root, &workspace);
-    if !root_path.is_dir() {
-        return Err(format!("not a directory: {root}"));
+    if let WorkspaceEnv::Ssh { profile_id } = &workspace {
+        let conn = ssh_state.get_or_err(profile_id)?;
+        let lines = crate::modules::ssh::sftp::sftp_search(&conn, &root, &q).await?;
+        let truncated = lines.len() >= cap;
+        let hits = lines
+            .into_iter()
+            .take(cap)
+            .map(|p| {
+                let name = p.rsplit('/').next().unwrap_or(&p).to_string();
+                let rel = p.strip_prefix(&root).unwrap_or(&p).trim_start_matches('/').to_string();
+                let is_dir = false;
+                SearchHit { path: p, rel, name, is_dir }
+            })
+            .collect();
+        return Ok(SearchResult { hits, truncated });
     }
+    let show_hidden = show_hidden.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || {
+        let root_path = resolve_path(&root, &workspace);
+        if !root_path.is_dir() {
+            return Err(format!("not a directory: {root}"));
+        }
 
-    let mut out: Vec<SearchHit> = Vec::with_capacity(cap.min(64));
-    let mut scanned: usize = 0;
-    let mut truncated = false;
+        let mut out: Vec<SearchHit> = Vec::with_capacity(cap.min(64));
+        let mut scanned: usize = 0;
+        let mut truncated = false;
 
-    let walker = WalkBuilder::new(&root_path)
-        .hidden(!show_hidden)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .ignore(true)
-        .parents(true)
-        .follow_links(false)
-        .filter_entry(|dent| {
-            // Prune known-heavy dirs even when no .gitignore is present (e.g.
-            // searching from $HOME).
-            if dent.depth() == 0 {
-                return true;
+        let walker = WalkBuilder::new(&root_path)
+            .hidden(!show_hidden)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .ignore(true)
+            .parents(true)
+            .follow_links(false)
+            .filter_entry(|dent| {
+                if dent.depth() == 0 {
+                    return true;
+                }
+                match dent.file_name().to_str() {
+                    Some(name) => !PRUNE_DIRS.contains(&name),
+                    None => true,
+                }
+            })
+            .build();
+
+        for dent in walker.flatten() {
+            scanned += 1;
+            if scanned > MAX_SCANNED {
+                truncated = true;
+                break;
             }
-            match dent.file_name().to_str() {
-                Some(name) => !PRUNE_DIRS.contains(&name),
-                None => true,
+            if out.len() >= cap {
+                truncated = true;
+                break;
             }
-        })
-        .build();
+            let path = dent.path();
+            if path == root_path {
+                continue;
+            }
+            let rel = match path.strip_prefix(&root_path) {
+                Ok(r) => to_canon(r),
+                Err(_) => continue,
+            };
+            if !rel.to_lowercase().contains(&q) {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let is_dir = dent.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            out.push(SearchHit {
+                path: display_path(path, &root_path, &root, &workspace),
+                rel,
+                name,
+                is_dir,
+            });
+        }
 
-    for dent in walker.flatten() {
-        scanned += 1;
-        if scanned > MAX_SCANNED {
-            truncated = true;
-            break;
-        }
-        if out.len() >= cap {
-            truncated = true;
-            break;
-        }
-        let path = dent.path();
-        if path == root_path {
-            continue;
-        }
-        let rel = match path.strip_prefix(&root_path) {
-            Ok(r) => to_canon(r),
-            Err(_) => continue,
-        };
-        if !rel.to_lowercase().contains(&q) {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let is_dir = dent.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        out.push(SearchHit {
-            path: display_path(path, &root_path, &root, &workspace),
-            rel,
-            name,
-            is_dir,
+        out.sort_by(|a, b| {
+            let an = a.name.to_lowercase().contains(&q);
+            let bn = b.name.to_lowercase().contains(&q);
+            bn.cmp(&an).then(a.rel.len().cmp(&b.rel.len()))
         });
-    }
 
-    // Rank: filename matches first, then shorter relative paths.
-    out.sort_by(|a, b| {
-        let an = a.name.to_lowercase().contains(&q);
-        let bn = b.name.to_lowercase().contains(&q);
-        bn.cmp(&an).then(a.rel.len().cmp(&b.rel.len()))
-    });
-
-    Ok(SearchResult {
-        hits: out,
-        truncated,
+        Ok(SearchResult {
+            hits: out,
+            truncated,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn display_path(
