@@ -6,10 +6,13 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
 fn settings_data_dir(app: &tauri::AppHandle) -> PathBuf {
-    app.path()
+    let dir = app
+        .path()
         .app_data_dir()
         .expect("no app-data dir")
-        .join("webview-settings")
+        .join("webview-settings");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
 }
 
 #[tauri::command]
@@ -57,6 +60,17 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     let builder = builder.decorations(false).transparent(true);
 
     let window = builder.build().map_err(|e| e.to_string())?;
+
+    // Intercept close — hide the settings window instead of destroying it.
+    // This avoids the WebView2 0x80070057 error on Windows when recreating
+    // a transparent/undecorated webview with the same data directory.
+    let win_clone = window.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = win_clone.hide();
+        }
+    });
 
     // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the
     // builder-time decorations flag — re-assert it after realize.
