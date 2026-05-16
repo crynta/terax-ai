@@ -69,6 +69,8 @@ import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { sshHome } from "@/modules/ssh/commands";
+import { useSshStore } from "@/modules/ssh/store";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
@@ -186,6 +188,9 @@ export default function App() {
       try {
         if (env.kind === "wsl") {
           nextHome = await getWslHome(env.distro);
+        } else if (env.kind === "ssh") {
+          await useSshStore.getState().connect(env.profileId);
+          nextHome = await sshHome(env.profileId);
         } else {
           nextHome = (await homeDir()).replace(/\\/g, "/");
         }
@@ -257,6 +262,7 @@ export default function App() {
   const initPrefs = usePreferencesStore((s) => s.init);
   const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
+  const lastSshProfileId = usePreferencesStore((s) => s.lastSshProfileId);
   useEffect(() => {
     void initPrefs();
   }, [initPrefs]);
@@ -264,6 +270,12 @@ export default function App() {
     if (!prefsHydrated) return;
     setSelectedModelId(prefDefaultModel);
   }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
+  useEffect(() => {
+    if (!prefsHydrated || !lastSshProfileId) return;
+    const env: WorkspaceEnv = { kind: "ssh", profileId: lastSshProfileId };
+    void switchWorkspace(env);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefsHydrated]);
 
   const hydrateSessions = useChatStore((s) => s.hydrateSessions);
   useEffect(() => {

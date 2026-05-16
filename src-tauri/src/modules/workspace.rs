@@ -11,6 +11,7 @@ pub enum WorkspaceEnv {
         distro: String,
     },
     Ssh {
+        #[serde(rename = "profileId")]
         profile_id: String,
     },
 }

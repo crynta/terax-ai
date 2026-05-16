@@ -148,6 +148,16 @@ pub async fn ssh_disconnect(
 }
 
 #[tauri::command]
+pub async fn ssh_home(
+    state: tauri::State<'_, SshState>,
+    profile_id: String,
+) -> Result<String, String> {
+    let conn = state.get_or_err(&profile_id)?;
+    let output = crate::modules::ssh::sftp::run_remote_command(&conn, "echo $HOME").await?;
+    Ok(output.trim().to_string())
+}
+
+#[tauri::command]
 pub async fn ssh_fingerprint_get(
     app: tauri::AppHandle,
     profile_id: String,

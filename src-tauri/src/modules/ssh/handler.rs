@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use russh::client;
-use russh::keys::PublicKey;
+use russh::keys::key::PublicKey;
 
 pub struct SshHandler {
     /// Fingerprint stored in the profile. `None` on first connect (TOFU).

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
-import { setLastWslDistro } from "@/modules/settings/store";
+import { setLastWslDistro, setLastSshProfileId } from "@/modules/settings/store";
 
 export type WorkspaceEnv =
   | { kind: "local" }
@@ -32,6 +32,8 @@ export const useWorkspaceEnvStore = create<State>((set) => ({
   setEnv: (env) => {
     set({ env });
     if (env.kind === "wsl") void setLastWslDistro(env.distro);
+    if (env.kind === "ssh") void setLastSshProfileId(env.profileId);
+    if (env.kind === "local") void setLastSshProfileId(null);
   },
   refreshDistros: async () => {
     set({ loading: true, error: null });
