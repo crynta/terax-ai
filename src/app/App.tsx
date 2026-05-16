@@ -174,7 +174,7 @@ export default function App() {
       if (
         env.kind === workspaceEnv.kind &&
         (env.kind === "local" ||
-          (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
+          (env.kind === "wsl" && workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
       ) {
         return;
       }

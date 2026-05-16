@@ -1,3 +1,4 @@
+mod da_filter;
 #[cfg(windows)]
 mod job;
 pub(crate) mod session;

@@ -321,6 +321,8 @@ export async function setLastWslDistro(value: string | null): Promise<void> {
 
 export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
+}
+
 export async function setLastSshProfileId(value: string | null): Promise<void> {
   await writePref(KEY_LAST_SSH_PROFILE, value);
 }

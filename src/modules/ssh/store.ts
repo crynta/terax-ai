@@ -15,7 +15,7 @@ type State = {
   setConnState: (profileId: string, state: ConnState) => void;
 };
 
-export const useSshStore = create<State>((set, get) => ({
+export const useSshStore = create<State>((set) => ({
   profiles: [],
   connState: {},
 
