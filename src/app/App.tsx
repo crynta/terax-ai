@@ -79,7 +79,7 @@ import {
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
 function dirname(path: string | null): string | null {
@@ -91,11 +91,10 @@ function dirname(path: string | null): string | null {
 }
 
 const SOURCE_CONTROL_DEFAULT_WIDTH = 300;
-const SOURCE_CONTROL_MIN_WIDTH = 240;
+const SOURCE_CONTROL_MIN_WIDTH = 150;
 const SOURCE_CONTROL_MAX_WIDTH = 420;
 const SOURCE_CONTROL_MIN_SIZE = `${SOURCE_CONTROL_MIN_WIDTH}px`;
 const SOURCE_CONTROL_MAX_SIZE = `${SOURCE_CONTROL_MAX_WIDTH}px`;
-const SOURCE_CONTROL_COMFORT_WIDTH = 285;
 const SOURCE_CONTROL_MAIN_MIN_SIZE = "72px";
 const SOURCE_CONTROL_WIDTH_STORAGE_KEY = "terax.sourceControl.width";
 
@@ -169,6 +168,9 @@ export default function App() {
 
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
   const sourceControlRef = useRef<PanelImperativeHandle | null>(null);
+  const sourceControlReadyRef = useRef(false);
+  const sourceControlWidthRef = useRef(readSourceControlWidth());
+  const sourceControlWidthWriteTimerRef = useRef<number | null>(null);
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
     if (!p) return;
@@ -202,6 +204,7 @@ export default function App() {
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
+  const [launchCwdResolved, setLaunchCwdResolved] = useState(false);
   const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
     null,
   );
@@ -253,7 +256,11 @@ export default function App() {
     [workspaceEnv, setWorkspaceEnv, resetWorkspace],
   );
   useEffect(() => {
-    native.appCurrentDir().then(setLaunchCwd).catch(() => setLaunchCwd(null));
+    native
+      .appCurrentDir()
+      .then(setLaunchCwd)
+      .catch(() => setLaunchCwd(null))
+      .finally(() => setLaunchCwdResolved(true));
   }, []);
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -261,9 +268,6 @@ export default function App() {
   const [sourceControlOpen, setSourceControlOpen] = useState(false);
   const [sourceControlPinnedContextPath, setSourceControlPinnedContextPath] =
     useState<string | null>(null);
-  const [sourceControlWidth, setSourceControlWidth] = useState(
-    readSourceControlWidth,
-  );
   const miniOpen = useChatStore((s) => s.mini.open);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
@@ -352,10 +356,13 @@ export default function App() {
     }
   }, [tabs]);
 
+  const workspaceFallbackPath = launchCwdResolved
+    ? (launchCwd ?? home ?? null)
+    : null;
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
     tabs,
-    launchCwd ?? home,
+    workspaceFallbackPath,
   );
 
   useEffect(() => {
@@ -658,43 +665,78 @@ export default function App() {
     activeTab?.kind === "editor" || activeTab?.kind === "git-diff"
       ? activeTab.path
       : null;
-  const sourceControlContextPath =
-    activeTab?.kind === "terminal"
-      ? (activeTerminalLeafCwd ?? explorerRoot ?? launchCwd ?? home ?? null)
-      : activeTab?.kind === "editor"
-        ? dirname(activeTab.path)
-        : activeTab?.kind === "git-diff"
-          ? activeTab.repoRoot
-        : explorerRoot ?? launchCwd ?? home ?? null;
+  const sourceControlContextPath = (() => {
+    if (activeTab?.kind === "terminal") {
+      return activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath;
+    }
+    if (activeTab?.kind === "editor") return dirname(activeTab.path);
+    if (activeTab?.kind === "git-diff") return activeTab.repoRoot;
+    return explorerRoot ?? workspaceFallbackPath;
+  })();
   const sourceControlTrackedContextPath =
     sourceControlPinnedContextPath ?? sourceControlContextPath;
   const sourceControl = useSourceControl(sourceControlTrackedContextPath);
 
-  const rememberSourceControlWidth = useCallback((width: number) => {
+  const rememberSourceControlWidth = useCallback((width: number, immediate = false) => {
     if (!Number.isFinite(width) || width <= 0) return;
     const next = clampSourceControlWidth(width);
-    setSourceControlWidth(next);
-    try {
-      window.localStorage.setItem(SOURCE_CONTROL_WIDTH_STORAGE_KEY, String(next));
-    } catch {
-      // Ignore storage failures; the panel still works for the current session.
+    sourceControlWidthRef.current = next;
+
+    const persist = () => {
+      sourceControlWidthWriteTimerRef.current = null;
+      try {
+        window.localStorage.setItem(SOURCE_CONTROL_WIDTH_STORAGE_KEY, String(next));
+      } catch {
+        // Ignore storage failures; the panel still works for the current session.
+      }
+    };
+
+    if (sourceControlWidthWriteTimerRef.current !== null) {
+      window.clearTimeout(sourceControlWidthWriteTimerRef.current);
+      sourceControlWidthWriteTimerRef.current = null;
     }
+    if (immediate) {
+      persist();
+      return;
+    }
+    sourceControlWidthWriteTimerRef.current = window.setTimeout(persist, 120);
   }, []);
 
-  const openSourceControl = useCallback(() => {
-    setSourceControlPinnedContextPath(sourceControlContextPath);
+  const openSourceControl = useCallback((pinnedContextPath?: string | null) => {
+    setSourceControlPinnedContextPath(
+      pinnedContextPath ?? sourceControlContextPath,
+    );
     setSourceControlOpen(true);
+    const panel = sourceControlRef.current;
+    if (panel?.isCollapsed()) panel.expand();
   }, [sourceControlContextPath]);
 
   const closeSourceControl = useCallback(() => {
     const panel = sourceControlRef.current;
     if (panel && !panel.isCollapsed()) {
-      rememberSourceControlWidth(panel.getSize().inPixels);
+      rememberSourceControlWidth(panel.getSize().inPixels, true);
       panel.collapse();
     }
     setSourceControlOpen(false);
     setSourceControlPinnedContextPath(null);
   }, [rememberSourceControlWidth]);
+
+  useEffect(() => {
+    return () => {
+      if (sourceControlWidthWriteTimerRef.current !== null) {
+        window.clearTimeout(sourceControlWidthWriteTimerRef.current);
+      }
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const panel = sourceControlRef.current;
+    if (!panel) return;
+    if (!sourceControlOpen && !panel.isCollapsed()) {
+      panel.collapse();
+    }
+    sourceControlReadyRef.current = true;
+  }, []);
 
   const toggleSourceControl = useCallback(() => {
     if (sourceControlOpen) {
@@ -707,32 +749,14 @@ export default function App() {
   const runSourceControlRemoteAction = useCallback(async () => {
     const result = await sourceControl.runRemoteAction();
     if (!result.ok && result.error) {
-      setSourceControlPinnedContextPath(
-        sourceControlTrackedContextPath ?? sourceControlContextPath,
-      );
-      setSourceControlOpen(true);
+      openSourceControl(sourceControlTrackedContextPath);
     }
   }, [
+    openSourceControl,
     sourceControl,
     sourceControlContextPath,
     sourceControlTrackedContextPath,
   ]);
-
-  useEffect(() => {
-    if (!sourceControlOpen) return;
-    const frame = window.requestAnimationFrame(() => {
-      const panel = sourceControlRef.current;
-      if (!panel) return;
-      if (panel.isCollapsed()) panel.expand();
-      const targetSize = `${sourceControlWidth}px`;
-      if (Math.abs(panel.getSize().inPixels - sourceControlWidth) > 2) {
-        panel.resize(targetSize);
-      } else if (panel.getSize().inPixels < SOURCE_CONTROL_COMFORT_WIDTH) {
-        panel.resize(targetSize);
-      }
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [sourceControlOpen, sourceControlWidth]);
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -1039,11 +1063,11 @@ export default function App() {
               leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
             }
             onOpenShortcuts={() => setShortcutsOpen(true)}
-              onOpenSettings={() => void openSettingsWindow()}
-              sourceControlOpen={sourceControlOpen}
-              sourceControl={sourceControl}
-              onToggleSourceControl={toggleSourceControl}
-              onRunSourceControlRemoteAction={runSourceControlRemoteAction}
+            onOpenSettings={() => void openSettingsWindow()}
+            sourceControlOpen={sourceControlOpen}
+            sourceControl={sourceControl}
+            onToggleSourceControl={toggleSourceControl}
+            onRunSourceControlRemoteAction={runSourceControlRemoteAction}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
           />
@@ -1086,19 +1110,28 @@ export default function App() {
                       >
                         {workspaceSurface}
                       </ResizablePanel>
-                      {sourceControlOpen ? <ResizableHandle withHandle /> : null}
+                      <ResizableHandle withHandle />
                       <ResizablePanel
                         id="source-control"
                         panelRef={sourceControlRef}
-                        defaultSize={`${sourceControlWidth}px`}
+                        defaultSize={`${sourceControlWidthRef.current}px`}
                         minSize={SOURCE_CONTROL_MIN_SIZE}
                         maxSize={SOURCE_CONTROL_MAX_SIZE}
                         collapsible
                         collapsedSize={0}
-                        onResize={() => {
-                          const width = sourceControlRef.current?.getSize().inPixels;
-                          if (sourceControlOpen && width) {
-                            rememberSourceControlWidth(width);
+                        onResize={(size) => {
+                          if (!sourceControlReadyRef.current) return;
+                          if (size.inPixels > 0) {
+                            rememberSourceControlWidth(size.inPixels);
+                            if (!sourceControlOpen) {
+                              setSourceControlPinnedContextPath(
+                                (current) => current ?? sourceControlContextPath,
+                              );
+                              setSourceControlOpen(true);
+                            }
+                          } else if (sourceControlOpen) {
+                            setSourceControlOpen(false);
+                            setSourceControlPinnedContextPath(null);
                           }
                         }}
                       >

@@ -8,7 +8,7 @@ use crate::modules::git::process::{
 };
 use crate::modules::git::types::{
     GitCommitResult, GitDiffContentResult, GitDiffResult, GitPushResult, GitRepoInfo,
-    GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS,
+    GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS,
 };
 use crate::modules::git::utils::{canonical_dir, display_path, split_upstream};
 
@@ -168,6 +168,9 @@ pub fn commit(repo_root: &str, message: &str) -> Result<GitCommitResult, String>
         [OsStr::new("commit"), OsStr::new("-m"), OsStr::new(trimmed)],
         DEFAULT_TIMEOUT_SECS,
     )?;
+    if output.exit_code != Some(0) && commit_has_nothing_to_commit(&output) {
+        return Err("No staged changes to commit.".into());
+    }
     ensure_success(&output, "git commit failed")?;
 
     let sha = git_stdout_line(
@@ -190,7 +193,7 @@ pub fn commit(repo_root: &str, message: &str) -> Result<GitCommitResult, String>
 pub fn push(repo_root: &str) -> Result<GitPushResult, String> {
     let repo_root = canonical_dir(repo_root)?;
     ensure_git_available()?;
-    let output = run_git(Some(&repo_root), ["push"], DEFAULT_TIMEOUT_SECS)?;
+    let output = run_git(Some(&repo_root), ["push"], NETWORK_TIMEOUT_SECS)?;
     ensure_success(&output, "git push failed")?;
 
     let upstream = git_stdout_line(
@@ -210,14 +213,18 @@ pub fn push(repo_root: &str) -> Result<GitPushResult, String> {
 pub fn fetch(repo_root: &str) -> Result<(), String> {
     let repo_root = canonical_dir(repo_root)?;
     ensure_git_available()?;
-    let output = run_git(Some(&repo_root), git_fetch_args(), DEFAULT_TIMEOUT_SECS)?;
+    let output = run_git(Some(&repo_root), git_fetch_args(), NETWORK_TIMEOUT_SECS)?;
     ensure_success(&output, "git fetch failed")
 }
 
 pub fn pull_ff_only(repo_root: &str) -> Result<(), String> {
     let repo_root = canonical_dir(repo_root)?;
     ensure_git_available()?;
-    let output = run_git(Some(&repo_root), git_pull_ff_only_args(), DEFAULT_TIMEOUT_SECS)?;
+    let output = run_git(
+        Some(&repo_root),
+        git_pull_ff_only_args(),
+        NETWORK_TIMEOUT_SECS,
+    )?;
     ensure_success(&output, "git pull --ff-only failed")
 }
 
@@ -258,26 +265,42 @@ fn run_git_paths(repo_root: &Path, command: &str, paths: &[String]) -> Result<()
     ensure_success(&output, &format!("git {command} failed"))
 }
 
-fn status_paths(repo_root: &Path, paths: &[String], untracked: bool) -> Result<Vec<String>, String> {
-    let mut filtered = Vec::new();
-    for path in paths {
-        let mut args: Vec<&OsStr> = vec![OsStr::new("ls-files")];
-        if untracked {
-            args.push(OsStr::new("--others"));
-            args.push(OsStr::new("--exclude-standard"));
-        } else {
-            args.push(OsStr::new("--modified"));
-            args.push(OsStr::new("--deleted"));
-        }
-        args.push(OsStr::new("--"));
-        args.push(OsStr::new(path));
-        let output = run_git_os(Some(repo_root), args, DEFAULT_TIMEOUT_SECS)?;
-        ensure_success(&output, "git ls-files failed")?;
-        if !output.stdout.is_empty() {
-            filtered.push(path.clone());
-        }
+fn status_paths(
+    repo_root: &Path,
+    paths: &[String],
+    untracked: bool,
+) -> Result<Vec<String>, String> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
     }
-    Ok(filtered)
+
+    let mut args: Vec<&OsStr> = vec![OsStr::new("ls-files"), OsStr::new("-z")];
+    if untracked {
+        args.push(OsStr::new("--others"));
+        args.push(OsStr::new("--exclude-standard"));
+    } else {
+        args.push(OsStr::new("--modified"));
+        args.push(OsStr::new("--deleted"));
+    }
+    args.push(OsStr::new("--"));
+    for path in paths {
+        args.push(OsStr::new(path));
+    }
+
+    let output = run_git_os(Some(repo_root), args, DEFAULT_TIMEOUT_SECS)?;
+    ensure_success(&output, "git ls-files failed")?;
+
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(ToString::to_string)
+        .collect())
+}
+
+fn commit_has_nothing_to_commit(output: &crate::modules::git::types::GitOutput) -> bool {
+    let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
+    stderr.contains("nothing to commit") || stdout.contains("nothing to commit")
 }
 
 fn git_fetch_args() -> [&'static str; 2] {

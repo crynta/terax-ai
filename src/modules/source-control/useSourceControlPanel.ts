@@ -688,7 +688,7 @@ export function useSourceControlPanel(
       setCommitMessage(message);
       setActionMessage(null);
     } catch (error) {
-      setActionError(normalizeError(error));
+      setActionError(`Failed to generate commit message: ${normalizeError(error)}`);
     } finally {
       setLocalActionBusy(null);
     }

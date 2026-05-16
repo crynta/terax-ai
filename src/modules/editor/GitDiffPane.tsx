@@ -22,7 +22,7 @@ type Props = {
 
 const DIFF_THEME = EditorView.theme({
   ".cm-changedText": {
-    background: "#88ff881a !important",
+    background: "color-mix(in srgb, var(--primary) 18%, transparent) !important",
   },
 });
 

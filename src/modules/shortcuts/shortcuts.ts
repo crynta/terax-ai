@@ -120,12 +120,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus previous pane",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
-  },  
+  },
   {
     id: "pane.source",
     label: "Toggle source panel",
     group: "Panes",
-    defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "g" }],
   },
   {
     id: "tab.next",
