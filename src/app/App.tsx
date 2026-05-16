@@ -736,11 +736,11 @@ export default function App() {
   );
 
   const searchTarget = useMemo<SearchTarget>(() => {
-    if (isTerminalTab && activeSearchAddon)
+    if (isTerminalTab && activeLeafId !== null && activeSearchAddon)
       return {
         kind: "terminal",
         addon: activeSearchAddon,
-        focus: () => terminalRefs.current.get(activeId)?.focus(),
+        focus: () => terminalRefs.current.get(activeLeafId)?.focus(),
       };
     if (isEditorTab && activeEditorHandle)
       return {
@@ -749,7 +749,13 @@ export default function App() {
         focus: () => activeEditorHandle.focus(),
       };
     return null;
-  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
+  }, [
+    isTerminalTab,
+    isEditorTab,
+    activeLeafId,
+    activeSearchAddon,
+    activeEditorHandle,
+  ]);
 
   const activeCwd =
     activeTab?.kind === "terminal" ? (activeTab.cwd ?? null) : null;
