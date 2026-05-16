@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell, ssh, workspace};
+use modules::{fs, net, preview, pty, secrets, shell, ssh, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
@@ -128,6 +128,11 @@ pub fn run() {
             modules::ssh::profiles::ssh_profile_list,
             modules::ssh::profiles::ssh_profile_save,
             modules::ssh::profiles::ssh_profile_delete,
+            preview::preview_open,
+            preview::preview_set_bounds,
+            preview::preview_set_visible,
+            preview::preview_reload,
+            preview::preview_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

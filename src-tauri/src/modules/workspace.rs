@@ -25,6 +25,7 @@ impl WorkspaceEnv {
         matches!(self, Self::Wsl { .. })
     }
 
+    #[allow(dead_code)]
     pub fn is_ssh(&self) -> bool {
         matches!(self, Self::Ssh { .. })
     }

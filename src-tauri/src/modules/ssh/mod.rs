@@ -5,7 +5,7 @@ pub(crate) mod pty;
 pub(crate) mod sftp;
 
 pub use connection::{SshConn, SshState};
-pub use profiles::{ssh_profile_delete, ssh_profile_list, ssh_profile_save, update_fingerprint, AuthMethod, SshProfile};
+pub use profiles::{ssh_profile_list, update_fingerprint, AuthMethod, SshProfile};
 
 use std::net::ToSocketAddrs;
 use std::sync::Arc;

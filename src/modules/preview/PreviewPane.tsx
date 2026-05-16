@@ -1,5 +1,7 @@
-import { Alert02Icon, Globe02Icon } from "@hugeicons/core-free-icons";
+import { Globe02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   forwardRef,
   useEffect,
@@ -19,6 +21,7 @@ export type PreviewPaneHandle = {
 };
 
 type Props = {
+  tabId: number;
   url: string;
   visible: boolean;
   onUrlChange: (url: string) => void;
@@ -29,37 +32,157 @@ type Props = {
 const SUSPEND_AFTER_MS = 30_000;
 
 export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
-  function PreviewPane({ url, visible, onUrlChange }, ref) {
-    // `nonce` is part of the iframe `key`. Bumping it remounts the iframe,
-    // which is the only reliable cross-origin reload (calling
-    // contentWindow.location.reload() throws on cross-origin frames).
+  function PreviewPane({ tabId, url, visible, onUrlChange }, ref) {
     const [nonce, setNonce] = useState(0);
     const [loaded, setLoaded] = useState(visible);
     const addressRef = useRef<PreviewAddressBarHandle>(null);
+    const contentRef = useRef<HTMLDivElement>(null);
 
+    // Tracks the URL the native webview is actually showing so we can avoid
+    // a navigate -> onUrlChange -> url-prop-update -> navigate loop.
+    const nativeUrlRef = useRef<string | null>(null);
+
+    const isExternal = url ? !isLocalUrl(url) : false;
+
+    // -- iframe suspension (localhost only) ---
     useEffect(() => {
+      if (isExternal) return;
       if (visible) {
         setLoaded(true);
         return;
       }
       const t = setTimeout(() => setLoaded(false), SUSPEND_AFTER_MS);
       return () => clearTimeout(t);
-    }, [visible]);
+    }, [visible, isExternal]);
 
+    // -- imperative handle ---
     useImperativeHandle(
       ref,
       () => ({
         reload: () => {
-          setLoaded(true);
-          setNonce((n) => n + 1);
+          if (isExternal) {
+            invoke("preview_reload", { tabId }).catch(console.error);
+          } else {
+            setLoaded(true);
+            setNonce((n) => n + 1);
+          }
         },
         focusAddressBar: () => addressRef.current?.focus(),
-        getUrl: () => url,
+        getUrl: () => nativeUrlRef.current ?? url,
       }),
-      [url],
+      [url, isExternal, tabId],
     );
 
-    const showXfoHint = url ? !isLocalUrl(url) : false;
+    // -- native webview: open / navigate when URL changes ---
+    useEffect(() => {
+      if (!isExternal || !url) return;
+
+      // Skip if the webview already navigated here (prevents loop with
+      // the preview:url-changed listener below).
+      if (url === nativeUrlRef.current) return;
+
+      const el = contentRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+
+      invoke("preview_open", {
+        tabId,
+        url,
+        x: rect.left,
+        y: rect.top,
+        w: rect.width,
+        h: rect.height,
+        visible,
+      })
+        .then(() => {
+          nativeUrlRef.current = url;
+        })
+        .catch(console.error);
+    }, [url, isExternal, tabId, visible]);
+
+    // -- native webview: close when URL switches back to localhost ---
+    useEffect(() => {
+      if (!isExternal) {
+        invoke("preview_close", { tabId }).catch(console.error);
+        nativeUrlRef.current = null;
+      }
+    }, [isExternal, tabId]);
+
+    // -- native webview: sync visibility on tab switch ---
+    useEffect(() => {
+      if (!isExternal) return;
+      invoke("preview_set_visible", { tabId, visible }).catch(console.error);
+
+      if (visible) {
+        // Re-sync bounds in case the layout changed while the tab was hidden.
+        const el = contentRef.current;
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          invoke("preview_set_bounds", {
+            tabId,
+            x: rect.left,
+            y: rect.top,
+            w: rect.width,
+            h: rect.height,
+          }).catch(console.error);
+        }
+      }
+    }, [visible, isExternal, tabId]);
+
+    // -- native webview: track size/position changes ---
+    useEffect(() => {
+      if (!isExternal) return;
+      const el = contentRef.current;
+      if (!el) return;
+
+      const updateBounds = () => {
+        const rect = el.getBoundingClientRect();
+        invoke("preview_set_bounds", {
+          tabId,
+          x: rect.left,
+          y: rect.top,
+          w: rect.width,
+          h: rect.height,
+        }).catch(console.error);
+      };
+
+      const ro = new ResizeObserver(updateBounds);
+      ro.observe(el);
+      window.addEventListener("resize", updateBounds);
+      return () => {
+        ro.disconnect();
+        window.removeEventListener("resize", updateBounds);
+      };
+    }, [isExternal, tabId]);
+
+    // -- native webview: listen for navigation events (OAuth redirects, etc.)
+    useEffect(() => {
+      if (!isExternal) return;
+
+      let cancelled = false;
+      let unlisten: (() => void) | null = null;
+
+      listen<{ tabId: number; url: string }>("preview:url-changed", (event) => {
+        if (event.payload.tabId !== tabId) return;
+        nativeUrlRef.current = event.payload.url;
+        if (!cancelled) onUrlChange(event.payload.url);
+      }).then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      });
+
+      return () => {
+        cancelled = true;
+        unlisten?.();
+      };
+    }, [isExternal, tabId, onUrlChange]);
+
+    // -- cleanup on tab close ---
+    useEffect(() => {
+      return () => {
+        invoke("preview_close", { tabId }).catch(console.error);
+      };
+    }, [tabId]);
 
     return (
       <div
@@ -73,30 +196,32 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
           ref={addressRef}
           url={url}
           onSubmit={onUrlChange}
-          onReload={() => setNonce((n) => n + 1)}
+          onReload={() => {
+            if (isExternal) {
+              invoke("preview_reload", { tabId }).catch(console.error);
+            } else {
+              setNonce((n) => n + 1);
+            }
+          }}
         />
-        {showXfoHint ? (
-          <div className="flex h-7 shrink-0 items-center gap-1.5 border-b border-border/60 bg-amber-500/8 px-3 text-[11px] text-amber-600 dark:text-amber-400">
-            <HugeiconsIcon
-              icon={Alert02Icon}
-              size={12}
-              strokeWidth={1.75}
-              className="shrink-0"
-            />
-            <span className="truncate">
-              Many public sites refuse to embed (X-Frame-Options). If the page
-              is blank, open it externally.
-            </span>
-          </div>
-        ) : null}
+        {/* This div is a layout placeholder. For external URLs a native
+            child webview is layered on top at the OS level, bypassing
+            X-Frame-Options / CSP entirely. */}
         <div
+          ref={contentRef}
           className={
-            url
+            url && !isExternal
               ? "relative min-h-0 flex-1 bg-white"
               : "relative min-h-0 flex-1 bg-background"
           }
         >
-          {url ? (
+          {isExternal ? (
+            url ? (
+              <ExternalLoadingState />
+            ) : (
+              <EmptyState />
+            )
+          ) : url ? (
             loaded ? (
               <iframe
                 key={`${url}#${nonce}`}
@@ -121,6 +246,17 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
     );
   },
 );
+
+// Shown behind the native webview while it loads its first frame.
+function ExternalLoadingState() {
+  return (
+    <div className="flex h-full w-full items-center justify-center">
+      <div className="flex size-10 items-center justify-center rounded-2xl border border-border/60 bg-card text-muted-foreground">
+        <HugeiconsIcon icon={Globe02Icon} size={18} strokeWidth={1.5} />
+      </div>
+    </div>
+  );
+}
 
 function SuspendedState({ onReload }: { onReload: () => void }) {
   return (
@@ -162,9 +298,7 @@ function EmptyState() {
           <span className="rounded bg-muted px-1 py-0.5 font-mono text-[10.5px]">
             Ports
           </span>{" "}
-          dropdown to jump straight to your running dev server. Public sites
-          often block embedding — open them in your browser via the link icon
-          if you see a blank page.
+          dropdown to jump straight to your running dev server.
         </p>
       </div>
     </div>
