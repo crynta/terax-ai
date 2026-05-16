@@ -34,6 +34,17 @@ const loaders: Record<string, LanguageLoader> = {
   py: () => import("@codemirror/lang-python").then((m) => m.python()),
   json: () => import("@codemirror/lang-json").then((m) => m.json()),
 
+  // SQL family — one package, dialect picked per extension
+  sql: () => import("@codemirror/lang-sql").then((m) => m.sql()),
+  psql: () =>
+    import("@codemirror/lang-sql").then((m) => m.sql({ dialect: m.PostgreSQL })),
+  pgsql: () =>
+    import("@codemirror/lang-sql").then((m) => m.sql({ dialect: m.PostgreSQL })),
+  mysql: () =>
+    import("@codemirror/lang-sql").then((m) => m.sql({ dialect: m.MySQL })),
+  sqlite: () =>
+    import("@codemirror/lang-sql").then((m) => m.sql({ dialect: m.SQLite })),
+
   md: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
   markdown: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
 
