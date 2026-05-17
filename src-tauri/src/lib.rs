@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell, workspace};
+use modules::{fs, net, preview, pty, secrets, shell, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
@@ -81,7 +81,9 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .register_uri_scheme_protocol("terax-preview", preview::serve_preview_protocol)
         .manage(pty::PtyState::default())
+        .manage(preview::PreviewState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
         .invoke_handler(tauri::generate_handler![
@@ -92,6 +94,7 @@ pub fn run() {
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
             fs::file::fs_read_file,
+            fs::file::fs_preview_metadata,
             fs::file::fs_write_file,
             fs::file::fs_stat,
             fs::file::fs_canonicalize,
@@ -114,6 +117,7 @@ pub fn run() {
             workspace::wsl_list_distros,
             workspace::wsl_default_distro,
             workspace::wsl_home,
+            preview::preview_prepare_file,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,

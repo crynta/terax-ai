@@ -6,6 +6,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
+import { canPreviewFile } from "@/modules/preview";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { memo, useCallback, useState } from "react";
@@ -33,6 +34,7 @@ type Props = {
    * omitting it means the caller decides the default (preview).
    */
   onOpenFile: (path: string, pin?: boolean) => void;
+  onPreviewFile?: (path: string, pin?: boolean) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   selectedPath: string | null;
@@ -46,6 +48,7 @@ function FileTreeNodeImpl({
   depth,
   tree,
   onOpenFile,
+  onPreviewFile,
   onRevealInTerminal,
   onAttachToAgent,
   selectedPath,
@@ -136,12 +139,20 @@ function FileTreeNodeImpl({
             </button>
           )}
         </ContextMenuTrigger>
-        <ContextMenuContent 
+        <ContextMenuContent
           className={COMPACT_CONTENT}
           onCloseAutoFocus={(e) => {
             if (tree.renaming || tree.pendingCreate) e.preventDefault();
           }}
         >
+          {!isDir && canPreviewFile(path) && onPreviewFile && (
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              onSelect={() => onPreviewFile(path, true)}
+            >
+              Preview
+            </ContextMenuItem>
+          )}
           {!isDir && (
             <ContextMenuItem
               className={COMPACT_ITEM}
@@ -276,6 +287,7 @@ function FileTreeNodeImpl({
             depth={depth + 1}
             tree={tree}
             onOpenFile={onOpenFile}
+            onPreviewFile={onPreviewFile}
             onRevealInTerminal={onRevealInTerminal}
             onAttachToAgent={onAttachToAgent}
             selectedPath={selectedPath}

@@ -4,6 +4,7 @@ import {
   SearchQuery,
   setSearchQuery,
 } from "@codemirror/search";
+import { Button } from "@/components/ui/button";
 import { keymap } from "@codemirror/view";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
@@ -30,6 +31,7 @@ import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { getKey } from "@/modules/ai/lib/keyring";
 import { onKeysChanged } from "@/modules/settings/store";
+import { openPath } from "@tauri-apps/plugin-opener";
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -245,21 +247,37 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }
     if (doc.status === "binary") {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
           <div className="text-sm text-foreground">Binary file</div>
           <div className="text-xs text-muted-foreground">
             {formatBytes(doc.size)} · preview not supported
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void openPath(path).catch(console.error)}
+          >
+            Open externally
+          </Button>
         </div>
       );
     }
     if (doc.status === "toolarge") {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
           <div className="text-sm text-foreground">File too large</div>
           <div className="text-xs text-muted-foreground">
             {formatBytes(doc.size)} exceeds the {formatBytes(doc.limit)} limit.
           </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void openPath(path).catch(console.error)}
+          >
+            Open externally
+          </Button>
         </div>
       );
     }

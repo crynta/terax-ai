@@ -7,6 +7,7 @@ type Props = {
   tabs: Tab[];
   activeId: number;
   onUrlChange: (id: number, url: string) => void;
+  onOpenFile?: (path: string, pin?: boolean) => void;
   registerHandle: (id: number, handle: PreviewPaneHandle | null) => void;
 };
 
@@ -14,6 +15,7 @@ export function PreviewStack({
   tabs,
   activeId,
   onUrlChange,
+  onOpenFile,
   registerHandle,
 }: Props) {
   const previews = tabs.filter((t): t is PreviewTab => t.kind === "preview");
@@ -76,8 +78,10 @@ export function PreviewStack({
             <PreviewPane
               ref={getRefCallback(t.id)}
               url={t.url}
+              filePath={t.filePath}
               visible={visible}
               onUrlChange={getUrlCallback(t.id)}
+              onOpenFile={onOpenFile}
             />
           </div>
         );
