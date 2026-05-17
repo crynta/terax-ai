@@ -38,6 +38,7 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   ollama: null,
   "openai-compatible": null,
   lmstudio: null,
+  "huggingface-endpoint": null,
 };
 
 export async function getKey(provider: ProviderId): Promise<string | null> {

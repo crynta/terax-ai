@@ -28,7 +28,8 @@ export type ProviderId =
   | "replicate"
   | "ollama"
   | "openai-compatible"
-  | "lmstudio";
+  | "lmstudio"
+  | "huggingface-endpoint";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -196,6 +197,16 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "huggingface-api-key",
     keyPrefix: "hf_",
     consoleUrl: "https://huggingface.co/settings/tokens",
+    keyOptional: true,
+    modelsUrl: "https://router.huggingface.co/v1/models",
+  },
+  {
+    id: "huggingface-endpoint",
+    label: "HF Dedicated Endpoint",
+    keyringAccount: "huggingface-endpoint-api-key",
+    keyPrefix: "hf_",
+    consoleUrl: "https://ui.endpoints.huggingface.co/",
+    keyOptional: true,
     modelsUrl: null,
     disabled: true,
   },
@@ -230,6 +241,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPrefix: null,
     consoleUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/api-key",
     modelsUrl: "https://ark.cn-beijing.volces.com/api/v3/models",
+    disabled: true,
   },
   {
     id: "yi",
@@ -730,17 +742,26 @@ export const MODELS = [
     provider: "huggingface",
     label: "Llama 3.3 70B",
     hint: "HuggingFace",
-    description: "Open model via HF Inference API.",
+    description: "Open model via HF Inference Providers.",
     capabilities: { intelligence: 4, speed: 3, cost: 4 },
     tags: ["tools"],
   },
   {
-    id: "huggingface/qwen2.5-72b",
+    id: "Qwen/Qwen2.5-72B-Instruct",
     provider: "huggingface",
     label: "Qwen 2.5 72B",
     hint: "HuggingFace",
-    description: "Multilingual Qwen via HF Inference.",
+    description: "Multilingual Qwen via HF Inference Providers.",
     capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "deepseek-ai/DeepSeek-V3",
+    provider: "huggingface",
+    label: "DeepSeek V3",
+    hint: "HuggingFace",
+    description: "DeepSeek V3 via HF Inference Providers.",
+    capabilities: { intelligence: 5, speed: 3, cost: 3 },
     tags: ["tools", "coding"],
   },
 
@@ -872,6 +893,18 @@ export const MODELS = [
     hint: "Local",
     description: "Local models via Ollama.",
     capabilities: { intelligence: 3, speed: 3, cost: 5 },
+  },
+
+  // ── HF Dedicated Endpoint (AWS/Azure/GCP; model id = "tgi") ─────────────
+  {
+    id: "hf-endpoint-dedicated",
+    provider: "huggingface-endpoint",
+    label: "HF Endpoint",
+    hint: "Dedicated",
+    description:
+      "Dedicated HF Inference Endpoint (AWS/Azure/GCP). Set endpoint URL in Settings.",
+    capabilities: { intelligence: 4, speed: 4, cost: 3 },
+    tags: ["tools"],
   },
 
   // ── Cerebras (autocomplete-tier) ──────────────────────────────────────────
@@ -1149,7 +1182,6 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek/deepseek-r1-0528": 128_000,
   "qwen/qwen3-30b-a3b": 128_000,
   "meta-llama/Llama-3.3-70B-Instruct": 128_000,
-  "huggingface/qwen2.5-72b": 128_000,
   "sambanova/deepseek-r1": 128_000,
   "sambanova/llama4-maverick": 1_000_000,
   "MiniMax-M2.7": 1_000_000,
@@ -1163,6 +1195,7 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "replicate/snowflake-arctic-instruct": 128_000,
   "replicate/meta-llama-3.1-405b": 128_000,
   "ollama-local": 32_000,
+  "hf-endpoint-dedicated": 128_000,
   "gpt-oss-120b": 128_000,
   "llama3.3-70b": 128_000,
   "qwen-3-32b": 32_000,
@@ -1241,6 +1274,7 @@ export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
   "ollama",
   "lmstudio",
   "openai-compatible",
+  "huggingface-endpoint",
 ] as const;
 
 export function providerNeedsKey(id: ProviderId): boolean {
@@ -1289,6 +1323,7 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   replicate: "replicate/snowflake-arctic-instruct",
   ollama: "qwen2.5-coder-7b-instruct",
   "openai-compatible": "",
+  "huggingface-endpoint": "tgi",
 };
 
 /** Curated list of fast models suitable for inline completion (speed ≥ 4). */
@@ -1300,6 +1335,8 @@ export function getAutocompleteEligibleModels(): readonly ModelInfo[] {
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
 export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434/v1";
+export const HUGGINGFACE_ENDPOINT_DEFAULT_BASE_URL =
+  "https://YOUR_ENDPOINT_ID.aws.endpoints.huggingface.cloud/v1";
 export const ZHIPU_DEFAULT_BASE_URL = "https://api.z.ai/api/paas/v4";
 export const OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "";
 export const MAX_AGENT_STEPS = 24;

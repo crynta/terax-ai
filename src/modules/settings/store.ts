@@ -1,6 +1,7 @@
 import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
+  HUGGINGFACE_ENDPOINT_DEFAULT_BASE_URL,
   LMSTUDIO_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_BASE_URL,
   OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
@@ -57,6 +58,7 @@ export type Preferences = {
   openaiCompatibleContextWindow: number;
   ollamaBaseURL: string;
   zhipuBaseURL: string;
+  huggingfaceEndpointBaseURL: string;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
@@ -86,6 +88,7 @@ const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_OPENAI_COMPAT_CONTEXT_WINDOW = "openaiCompatibleContextWindow";
 const KEY_OLLAMA_BASE_URL = "ollamaBaseURL";
 const KEY_ZHIPU_BASE_URL = "zhipuBaseURL";
+const KEY_HF_ENDPOINT_BASE_URL = "huggingfaceEndpointBaseURL";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
@@ -130,6 +133,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   openaiCompatibleContextWindow: 128_000,
   ollamaBaseURL: OLLAMA_DEFAULT_BASE_URL,
   zhipuBaseURL: ZHIPU_DEFAULT_BASE_URL,
+  huggingfaceEndpointBaseURL: HUGGINGFACE_ENDPOINT_DEFAULT_BASE_URL,
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
@@ -201,6 +205,9 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_OLLAMA_BASE_URL) ?? DEFAULT_PREFERENCES.ollamaBaseURL,
     zhipuBaseURL:
       get<string>(KEY_ZHIPU_BASE_URL) ?? DEFAULT_PREFERENCES.zhipuBaseURL,
+    huggingfaceEndpointBaseURL:
+      get<string>(KEY_HF_ENDPOINT_BASE_URL) ??
+      DEFAULT_PREFERENCES.huggingfaceEndpointBaseURL,
     favoriteModelIds:
       get<string[]>(KEY_FAVORITE_MODELS) ??
       DEFAULT_PREFERENCES.favoriteModelIds,
@@ -382,6 +389,7 @@ export async function onPreferencesChange(
     [KEY_OPENAI_COMPAT_CONTEXT_WINDOW]: "openaiCompatibleContextWindow",
     [KEY_OLLAMA_BASE_URL]: "ollamaBaseURL",
     [KEY_ZHIPU_BASE_URL]: "zhipuBaseURL",
+    [KEY_HF_ENDPOINT_BASE_URL]: "huggingfaceEndpointBaseURL",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",

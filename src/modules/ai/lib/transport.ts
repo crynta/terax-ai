@@ -52,6 +52,7 @@ type Deps = {
   getOpenaiCompatibleModelId?: () => string | undefined;
   getOllamaBaseURL?: () => string | undefined;
   getZhipuBaseURL?: () => string | undefined;
+  getHuggingfaceEndpointBaseURL?: () => string | undefined;
   getRemoteModelOverride?: () => string | null;
   getOpenaiCompatibleContextWindow?: () => number | undefined;
   onStep?: (step: string | null) => void;
@@ -91,6 +92,7 @@ export function createContextAwareTransport(deps: Deps) {
       openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
       ollamaBaseURL: deps.getOllamaBaseURL?.(),
       zhipuBaseURL: deps.getZhipuBaseURL?.(),
+      huggingfaceEndpointBaseURL: deps.getHuggingfaceEndpointBaseURL?.(),
       remoteModelOverride: deps.getRemoteModelOverride?.() ?? null,
       openaiCompatibleContextWindow: deps.getOpenaiCompatibleContextWindow?.(),
       planMode: deps.getPlanMode?.(),

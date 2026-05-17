@@ -48,6 +48,7 @@ import {
   StarIcon,
   StopCircleIcon,
   Tick01Icon,
+  CloudServerIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
@@ -62,7 +63,7 @@ import {
   type ModelInfo,
   type ProviderId,
 } from "../config";
-import { fetchProviderModels, type RemoteModel } from "../lib/fetchModels";
+import { fetchProviderModels, type RemoteModel, type RemoteModelPricing } from "../lib/fetchModels";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { toggleFavoriteModel } from "../lib/modelPrefs";
 import { useChatStore } from "../store/chatStore";
@@ -97,6 +98,7 @@ const PROVIDER_ICON = {
   ollama: ServerStack01Icon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
+  "huggingface-endpoint": CloudServerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
@@ -479,6 +481,10 @@ function ModelDropdown() {
                         key={rm.id}
                         modelId={rm.id}
                         ownedBy={rm.owned_by}
+                        contextLength={rm.context_length}
+                        supportsTools={rm.supports_tools}
+                        pricing={rm.pricing}
+                        providerCount={rm.provider_count}
                         providerId={activeProvider!}
                         selected={remoteOverride === rm.id}
                         onPick={() => {
@@ -727,16 +733,26 @@ function ModelRow({
 function RemoteModelRow({
   modelId,
   ownedBy,
+  contextLength,
+  supportsTools,
+  pricing,
+  providerCount,
   providerId,
   selected,
   onPick,
 }: {
   modelId: string;
   ownedBy: string;
+  contextLength: number | null;
+  supportsTools?: boolean;
+  pricing?: RemoteModelPricing;
+  providerCount?: number;
   providerId: ProviderId;
   selected: boolean;
   onPick: () => void;
 }) {
+  const safePricing = pricing ?? { input: null, output: null };
+  const hasPricing = safePricing.input != null || safePricing.output != null;
   return (
     <DropdownMenuItem
       onSelect={(e) => {
@@ -754,15 +770,43 @@ function RemoteModelRow({
         strokeWidth={1.5}
         className="shrink-0 text-muted-foreground/50"
       />
-      <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
-        <span className="shrink-0 text-[11px] font-medium leading-none">
-          {modelId}
-        </span>
-        {ownedBy ? (
-          <span className="truncate text-[10px] leading-none text-muted-foreground/50">
-            {ownedBy}
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="shrink-0 text-[11px] font-medium leading-none">
+            {modelId}
           </span>
-        ) : null}
+          {ownedBy ? (
+            <span className="truncate text-[10px] leading-none text-muted-foreground/50">
+              {ownedBy}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {contextLength != null ? (
+            <span className="text-[9px] leading-none text-muted-foreground/40 tabular-nums">
+              {contextLength >= 1_000_000
+                ? `${(contextLength / 1_000_000).toFixed(contextLength % 1_000_000 === 0 ? 0 : 1)}M ctx`
+                : contextLength >= 1_000
+                  ? `${(contextLength / 1_000).toFixed(contextLength % 1_000 === 0 ? 0 : 1)}K ctx`
+                  : `${contextLength} ctx`}
+            </span>
+          ) : null}
+          {hasPricing ? (
+            <span className="text-[9px] leading-none text-muted-foreground/40 tabular-nums">
+              ${safePricing.input?.toFixed(2) ?? "?"}/${safePricing.output?.toFixed(2) ?? "?"}
+            </span>
+          ) : null}
+          {supportsTools ? (
+            <span className="text-[9px] leading-none text-muted-foreground/40">
+              tools
+            </span>
+          ) : null}
+          {(providerCount ?? 0) > 0 ? (
+            <span className="text-[9px] leading-none text-muted-foreground/30 tabular-nums">
+              {providerCount}P
+            </span>
+          ) : null}
+        </div>
       </div>
       {selected ? (
         <HugeiconsIcon
