@@ -1,11 +1,19 @@
 import { create } from "zustand";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { sshProfileList, sshProfileSave, sshProfileDelete, sshConnect, sshDisconnect } from "./commands";
+import { getLastSshProfileId, setLastSshProfileId } from "@/modules/settings/store";
 import type { SshProfile } from "./types";
+
+const SSH_PROFILES_CHANGED_EVENT = "terax://ssh-profiles-changed";
+let loadProfilesRequestSeq = 0;
+let inFlightLoadProfiles: Promise<void> | null = null;
+let queuedLoadProfiles = false;
 
 type ConnState = "disconnected" | "connecting" | "connected" | "error";
 
 type State = {
   profiles: SshProfile[];
+  profilesLoaded: boolean;
   connState: Record<string, ConnState>;
   loadProfiles: () => Promise<void>;
   saveProfile: (profile: Omit<SshProfile, "id"> & { id?: string }) => Promise<SshProfile>;
@@ -17,16 +25,40 @@ type State = {
 
 export const useSshStore = create<State>((set) => ({
   profiles: [],
+  profilesLoaded: false,
   connState: {},
 
   loadProfiles: async () => {
-    try {
-      const profiles = await sshProfileList();
-      set({ profiles });
-    } catch (e) {
-      // Non-fatal — store stays at last known state
-      console.warn("ssh: failed to load profiles", e);
+    if (inFlightLoadProfiles) {
+      queuedLoadProfiles = true;
+      await inFlightLoadProfiles;
+      return;
     }
+
+    do {
+      queuedLoadProfiles = false;
+      const requestSeq = ++loadProfilesRequestSeq;
+      const request = (async () => {
+        try {
+          const profiles = await sshProfileList();
+          if (requestSeq !== loadProfilesRequestSeq) return;
+          set({ profiles, profilesLoaded: true });
+        } catch (e) {
+          if (requestSeq !== loadProfilesRequestSeq) return;
+          // Non-fatal — store stays at last known state
+          console.warn("ssh: failed to load profiles", e);
+        }
+      })();
+
+      inFlightLoadProfiles = request;
+      try {
+        await request;
+      } finally {
+        if (inFlightLoadProfiles === request) {
+          inFlightLoadProfiles = null;
+        }
+      }
+    } while (queuedLoadProfiles);
   },
 
   saveProfile: async (profile) => {
@@ -40,12 +72,22 @@ export const useSshStore = create<State>((set) => ({
           : [...s.profiles, saved],
       };
     });
+    void emitSshProfilesChanged();
     return saved;
   },
 
   deleteProfile: async (id) => {
+    await sshDisconnect(id).catch(() => {});
     await sshProfileDelete(id);
-    set((s) => ({ profiles: s.profiles.filter((p) => p.id !== id) }));
+    set((s) => ({
+      profiles: s.profiles.filter((p) => p.id !== id),
+      connState: { ...s.connState, [id]: "disconnected" },
+    }));
+    const currentLastSshProfileId = await getLastSshProfileId();
+    if (currentLastSshProfileId === id) {
+      void setLastSshProfileId(null);
+    }
+    void emitSshProfilesChanged();
   },
 
   connect: async (profileId) => {
@@ -67,3 +109,11 @@ export const useSshStore = create<State>((set) => ({
   setConnState: (profileId, state) =>
     set((s) => ({ connState: { ...s.connState, [profileId]: state } })),
 }));
+
+export async function emitSshProfilesChanged(): Promise<void> {
+  await emit(SSH_PROFILES_CHANGED_EVENT);
+}
+
+export function onSshProfilesChanged(cb: () => void): Promise<UnlistenFn> {
+  return listen(SSH_PROFILES_CHANGED_EVENT, () => cb());
+}

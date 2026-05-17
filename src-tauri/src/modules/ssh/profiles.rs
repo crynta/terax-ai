@@ -25,7 +25,6 @@ pub enum AuthMethod {
     Agent,
 }
 
-#[tauri::command]
 pub fn ssh_profile_list(app: tauri::AppHandle) -> Result<Vec<SshProfile>, String> {
     let store = app.store("terax.json").map_err(|e| e.to_string())?;
     let profiles = store
@@ -35,7 +34,6 @@ pub fn ssh_profile_list(app: tauri::AppHandle) -> Result<Vec<SshProfile>, String
     Ok(profiles)
 }
 
-#[tauri::command]
 pub fn ssh_profile_save(app: tauri::AppHandle, profile: SshProfile) -> Result<SshProfile, String> {
     let store = app.store("terax.json").map_err(|e| e.to_string())?;
     let mut profiles: Vec<SshProfile> = store
@@ -52,7 +50,6 @@ pub fn ssh_profile_save(app: tauri::AppHandle, profile: SshProfile) -> Result<Ss
     Ok(profile)
 }
 
-#[tauri::command]
 pub fn ssh_profile_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let store = app.store("terax.json").map_err(|e| e.to_string())?;
     let mut profiles: Vec<SshProfile> = store

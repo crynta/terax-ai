@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -222,6 +223,10 @@ pub fn spawn(
 }
 
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
+
+pub(crate) const SSH_PTY_CMD_CAPACITY: usize = 256;
+const MAX_SSH_PENDING_INPUT: usize = 256 * 1024;
 
 pub enum SshPtyCmd {
     Data(Vec<u8>),
@@ -229,9 +234,17 @@ pub enum SshPtyCmd {
     Close,
 }
 
+pub struct PendingSshCommands {
+    pub queue: VecDeque<SshPtyCmd>,
+    pub data_bytes: usize,
+}
+
 /// Thin handle to a tokio task that owns the russh channel.
 pub struct SshPtySession {
     pub cmd_tx: mpsc::Sender<SshPtyCmd>,
+    pub pending_commands: Mutex<PendingSshCommands>,
+    pub draining_commands: AtomicBool,
+    pub closed: AtomicBool,
 }
 
 pub enum PtyHandle {
@@ -248,10 +261,7 @@ impl PtyHandle {
                 .unwrap()
                 .write_all(data)
                 .map_err(|e| e.to_string()),
-            PtyHandle::Ssh(s) => s
-                .cmd_tx
-                .try_send(SshPtyCmd::Data(data.to_vec()))
-                .map_err(|e| e.to_string()),
+            PtyHandle::Ssh(s) => enqueue_ssh_command(s, SshPtyCmd::Data(data.to_vec())),
         }
     }
 
@@ -268,10 +278,7 @@ impl PtyHandle {
                     pixel_height: 0,
                 })
                 .map_err(|e| e.to_string()),
-            PtyHandle::Ssh(s) => s
-                .cmd_tx
-                .try_send(SshPtyCmd::Resize { cols, rows })
-                .map_err(|e| e.to_string()),
+            PtyHandle::Ssh(s) => enqueue_ssh_command(s, SshPtyCmd::Resize { cols, rows }),
         }
     }
 
@@ -279,9 +286,83 @@ impl PtyHandle {
         match self {
             PtyHandle::Local(s) => s.killer.lock().unwrap().kill().map_err(|e| e.to_string()),
             PtyHandle::Ssh(s) => {
-                let _ = s.cmd_tx.try_send(SshPtyCmd::Close);
+                let _ = enqueue_ssh_command(s, SshPtyCmd::Close);
                 Ok(())
             }
         }
     }
+}
+
+fn enqueue_ssh_command(session: &Arc<SshPtySession>, command: SshPtyCmd) -> Result<(), String> {
+    if session.closed.load(Ordering::Acquire) {
+        return Err("SSH PTY channel is closed".to_string());
+    }
+
+    let mut pending = session.pending_commands.lock().unwrap();
+    if session.draining_commands.load(Ordering::Acquire) || !pending.queue.is_empty() {
+        push_pending_ssh_command(&mut pending, command)?;
+        drop(pending);
+        schedule_ssh_command_drain(session);
+        return Ok(());
+    }
+
+    match session.cmd_tx.try_send(command) {
+        Ok(()) => Ok(()),
+        Err(TrySendError::Closed(_)) => {
+            session.closed.store(true, Ordering::Release);
+            Err("SSH PTY channel is closed".to_string())
+        }
+        Err(TrySendError::Full(command)) => {
+            push_pending_ssh_command(&mut pending, command)?;
+            drop(pending);
+            schedule_ssh_command_drain(session);
+            Ok(())
+        }
+    }
+}
+
+fn push_pending_ssh_command(
+    pending: &mut PendingSshCommands,
+    command: SshPtyCmd,
+) -> Result<(), String> {
+    if let SshPtyCmd::Data(bytes) = &command {
+        if pending.data_bytes + bytes.len() > MAX_SSH_PENDING_INPUT {
+            return Err("SSH PTY input buffer is full".to_string());
+        }
+        pending.data_bytes += bytes.len();
+    }
+    pending.queue.push_back(command);
+    Ok(())
+}
+
+fn schedule_ssh_command_drain(session: &Arc<SshPtySession>) {
+    if session.draining_commands.swap(true, Ordering::AcqRel) {
+        return;
+    }
+
+    let session = Arc::clone(session);
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let command = {
+                let mut pending = session.pending_commands.lock().unwrap();
+                let Some(command) = pending.queue.pop_front() else {
+                    session.draining_commands.store(false, Ordering::Release);
+                    break;
+                };
+                if let SshPtyCmd::Data(bytes) = &command {
+                    pending.data_bytes = pending.data_bytes.saturating_sub(bytes.len());
+                }
+                command
+            };
+
+            if session.cmd_tx.send(command).await.is_err() {
+                session.closed.store(true, Ordering::Release);
+                let mut pending = session.pending_commands.lock().unwrap();
+                pending.queue.clear();
+                pending.data_bytes = 0;
+                session.draining_commands.store(false, Ordering::Release);
+                break;
+            }
+        }
+    });
 }

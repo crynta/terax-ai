@@ -139,17 +139,46 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   useEffect(() => {
     if (!rootPath || workspaceEnv.kind !== "ssh") return;
 
-    const interval = window.setInterval(() => {
-      const paths = new Set<string>([rootPath, ...expandedRef.current]);
-      for (const path of paths) {
-        const state = nodesRef.current[path];
-        if (!state || state.status === "loaded") {
-          void fetchChildren(path);
-        }
+    let cancelled = false;
+    let polling = false;
+
+    const refreshVisiblePaths = async () => {
+      if (cancelled || polling || document.visibilityState !== "visible") {
+        return;
       }
-    }, 2000);
+
+      polling = true;
+      try {
+        const paths = Array.from(new Set<string>([rootPath, ...expandedRef.current]));
+        for (const path of paths) {
+          if (cancelled) break;
+          const state = nodesRef.current[path];
+          if (!state || state.status === "loaded") {
+            await fetchChildren(path);
+          }
+        }
+      } finally {
+        polling = false;
+      }
+    };
+
+    void refreshVisiblePaths();
+
+    const interval = window.setInterval(() => {
+      void refreshVisiblePaths();
+    }, 10000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshVisiblePaths();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.clearInterval(interval);
     };
   }, [rootPath, workspaceEnv.kind, fetchChildren]);

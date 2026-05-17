@@ -216,6 +216,15 @@ impl LspSession {
         self.update_seq.fetch_add(1, Ordering::Relaxed) + 1
     }
 
+    fn register_pending_request(&self, id: u64) -> Arc<PendingRequest> {
+        let pending = Arc::new(PendingRequest {
+            result: Mutex::new(None),
+            ready: Condvar::new(),
+        });
+        self.pending.lock().unwrap().insert(id, pending.clone());
+        pending
+    }
+
     fn send_notification(&self, method: &str, params: Value) -> Result<(), String> {
         self.write_message(json!({
             "jsonrpc": "2.0",
@@ -226,11 +235,7 @@ impl LspSession {
 
     fn send_request(&self, method: &str, params: Value) -> Result<Value, String> {
         let id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
-        let pending = Arc::new(PendingRequest {
-            result: Mutex::new(None),
-            ready: Condvar::new(),
-        });
-        self.pending.lock().unwrap().insert(id, pending.clone());
+        let pending = self.register_pending_request(id);
 
         if let Err(error) = self.write_message(json!({
             "jsonrpc": "2.0",
@@ -355,7 +360,7 @@ pub fn lsp_start(
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(request.workspace);
     if matches!(workspace, WorkspaceEnv::Wsl { .. }) {
-        return Err("LSP is currently supported only for Local and SSH workspaces".into());
+        return Err("LSP is currently enabled for Local and SSH workspaces.".into());
     }
 
     let (session, root_uri) = match &workspace {
@@ -410,6 +415,7 @@ pub fn lsp_start(
         let mut init = lock.lock().unwrap();
         init.request_id = Some(init_id);
     }
+    session.register_pending_request(init_id);
 
     let root_uri = normalize_uri_key(&root_uri);
     log::info!(
@@ -421,7 +427,7 @@ pub fn lsp_start(
         workspace
     );
 
-    session.write_message(json!({
+    if let Err(error) = session.write_message(json!({
         "jsonrpc": "2.0",
         "id": init_id,
         "method": "initialize",
@@ -451,7 +457,10 @@ pub fn lsp_start(
                 }
             }
         }
-    }))?;
+    })) {
+        session.pending.lock().unwrap().remove(&init_id);
+        return Err(error);
+    }
 
     session.wait_for_init()?;
     session.send_notification("initialized", json!({}))?;
@@ -748,12 +757,24 @@ fn handle_server_message(session: &LspSession, message: Value) {
 
     if let Some(id) = obj.get("id").and_then(Value::as_u64) {
         if let Some(pending) = session.pending.lock().unwrap().remove(&id) {
-            let mut slot = pending.result.lock().unwrap();
-            *slot = Some(match obj.get("error") {
+            let response = match obj.get("error") {
                 Some(error) => Err(error.to_string()),
                 None => Ok(obj.get("result").cloned().unwrap_or(Value::Null)),
-            });
+            };
+            let mut slot = pending.result.lock().unwrap();
+            *slot = Some(response.clone());
             pending.ready.notify_all();
+
+            let init_id = {
+                let (lock, _) = &session.init;
+                lock.lock().unwrap().request_id
+            };
+            if init_id == Some(id) {
+                match response {
+                    Ok(_) => session.mark_init_ready(),
+                    Err(error) => session.mark_init_failed(error),
+                }
+            }
             return;
         }
     }
@@ -798,20 +819,6 @@ fn handle_server_message(session: &LspSession, message: Value) {
             );
         }
         return;
-    }
-
-    let Some(id) = obj.get("id").and_then(Value::as_u64) else {
-        return;
-    };
-    let (lock, _) = &session.init;
-    let init_id = lock.lock().unwrap().request_id;
-    if init_id != Some(id) {
-        return;
-    }
-    if let Some(error) = obj.get("error") {
-        session.mark_init_failed(error.to_string());
-    } else {
-        session.mark_init_ready();
     }
 }
 

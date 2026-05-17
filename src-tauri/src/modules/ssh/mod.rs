@@ -5,7 +5,7 @@ pub(crate) mod pty;
 pub(crate) mod sftp;
 
 pub use connection::{SshConn, SshState};
-pub use profiles::{ssh_profile_list, AuthMethod, SshProfile};
+pub use profiles::{AuthMethod, SshProfile};
 use profiles::update_fingerprint;
 
 use std::net::ToSocketAddrs;
@@ -18,11 +18,29 @@ use russh_sftp::client::SftpSession;
 use self::handler::SshHandler;
 
 fn load_profile(app: &tauri::AppHandle, profile_id: &str) -> Result<SshProfile, String> {
-    let profiles = ssh_profile_list(app.clone())?;
+    let profiles = profiles::ssh_profile_list(app.clone())?;
     profiles
         .into_iter()
         .find(|p| p.id == profile_id)
         .ok_or_else(|| format!("SSH profile not found: {profile_id}"))
+}
+
+#[tauri::command]
+pub fn ssh_profile_list(app: tauri::AppHandle) -> Result<Vec<SshProfile>, String> {
+    profiles::ssh_profile_list(app)
+}
+
+#[tauri::command]
+pub fn ssh_profile_save(
+    app: tauri::AppHandle,
+    profile: SshProfile,
+) -> Result<SshProfile, String> {
+    profiles::ssh_profile_save(app, profile)
+}
+
+#[tauri::command]
+pub fn ssh_profile_delete(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    profiles::ssh_profile_delete(app, id)
 }
 
 #[tauri::command]

@@ -41,7 +41,7 @@ pub async fn open_ssh_pty_channel(
         .await
         .map_err(|e| e.to_string())?;
 
-    let (cmd_tx, mut cmd_rx) = mpsc::channel::<SshPtyCmd>(256);
+    let (cmd_tx, mut cmd_rx) = mpsc::channel::<SshPtyCmd>(super::super::pty::session::SSH_PTY_CMD_CAPACITY);
 
     tauri::async_runtime::spawn(async move {
         let mut pending: Vec<u8> = Vec::with_capacity(16 * 1024);
@@ -80,6 +80,14 @@ pub async fn open_ssh_pty_channel(
                             let _ = on_exit.send(exit_status as i32);
                             break;
                         }
+                        Some(ChannelMsg::Eof) => {
+                            if !pending.is_empty() {
+                                let chunk = std::mem::take(&mut pending);
+                                let _ = on_data.send(Response::new(chunk));
+                            }
+                            let _ = on_exit.send(-1);
+                            break;
+                        }
                         None => {
                             if !pending.is_empty() {
                                 let chunk = std::mem::take(&mut pending);
@@ -105,5 +113,13 @@ pub async fn open_ssh_pty_channel(
         }
     });
 
-    Ok(PtyHandle::Ssh(Arc::new(SshPtySession { cmd_tx })))
+    Ok(PtyHandle::Ssh(Arc::new(SshPtySession {
+        cmd_tx,
+        pending_commands: std::sync::Mutex::new(crate::modules::pty::session::PendingSshCommands {
+            queue: std::collections::VecDeque::new(),
+            data_bytes: 0,
+        }),
+        draining_commands: std::sync::atomic::AtomicBool::new(false),
+        closed: std::sync::atomic::AtomicBool::new(false),
+    })))
 }

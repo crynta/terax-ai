@@ -33,7 +33,6 @@ export const useWorkspaceEnvStore = create<State>((set) => ({
     set({ env });
     if (env.kind === "wsl") void setLastWslDistro(env.distro);
     if (env.kind === "ssh") void setLastSshProfileId(env.profileId);
-    if (env.kind === "local") void setLastSshProfileId(null);
   },
   refreshDistros: async () => {
     set({ loading: true, error: null });

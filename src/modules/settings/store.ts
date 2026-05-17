@@ -327,6 +327,10 @@ export async function setLastSshProfileId(value: string | null): Promise<void> {
   await writePref(KEY_LAST_SSH_PROFILE, value);
 }
 
+export async function getLastSshProfileId(): Promise<string | null> {
+  return (await loadPreferences()).lastSshProfileId;
+}
+
 export async function setShortcuts(
   value: Record<ShortcutId, KeyBinding[]> | {},
 ): Promise<void> {

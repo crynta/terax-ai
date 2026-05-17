@@ -70,7 +70,7 @@ import {
   type WorkspaceEnv,
 } from "@/modules/workspace";
 import { sshHome } from "@/modules/ssh/commands";
-import { useSshStore } from "@/modules/ssh/store";
+import { onSshProfilesChanged, useSshStore } from "@/modules/ssh/store";
 import { homeDir } from "@tauri-apps/api/path";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
@@ -210,6 +210,10 @@ export default function App() {
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
+  const sshProfiles = useSshStore((s) => s.profiles);
+  const sshProfilesLoaded = useSshStore((s) => s.profilesLoaded);
+  const sshConnState = useSshStore((s) => s.connState);
+  const loadSshProfiles = useSshStore((s) => s.loadProfiles);
   const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
     null,
   );
@@ -219,6 +223,19 @@ export default function App() {
       .then((p) => setHome(p.replace(/\\/g, "/")))
       .catch(() => setHome(null));
   }, []);
+
+  useEffect(() => {
+    void loadSshProfiles();
+  }, [loadSshProfiles]);
+
+  useEffect(() => {
+    const unlistenProfilesChanged = onSshProfilesChanged(() => {
+      void loadSshProfiles();
+    });
+    return () => {
+      void unlistenProfilesChanged.then((unlisten) => unlisten());
+    };
+  }, [loadSshProfiles]);
 
   useEffect(() => {
     if (workspaceEnv.kind !== "ssh") return;
@@ -294,19 +311,44 @@ export default function App() {
     };
   }, [workspaceEnv]);
 
+  const applyWorkspaceSwitch = useCallback(
+    (env: WorkspaceEnv, nextHome: string | null) => {
+      for (const id of liveLeavesRef.current) disposeSession(id);
+      searchAddons.current.clear();
+      terminalRefs.current.clear();
+      editorRefs.current.clear();
+      previewRefs.current.clear();
+      setActiveSearchAddon(null);
+      setActiveEditorHandle(null);
+      setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
+      setHome(nextHome);
+      resetWorkspace(nextHome ?? undefined);
+    },
+    [setWorkspaceEnv, resetWorkspace],
+  );
+
   const switchWorkspace = useCallback(
-    async (env: WorkspaceEnv) => {
+    async (env: WorkspaceEnv, options?: { silent?: boolean }) => {
       if (
         env.kind === workspaceEnv.kind &&
-        (env.kind === "local" ||
-          (env.kind === "wsl" && workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
+        (
+          env.kind === "local" ||
+          (env.kind === "wsl" &&
+            workspaceEnv.kind === "wsl" &&
+            env.distro === workspaceEnv.distro) ||
+          (env.kind === "ssh" &&
+            workspaceEnv.kind === "ssh" &&
+            env.profileId === workspaceEnv.profileId)
+        )
       ) {
-        return;
+        return true;
       }
       const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
       if (dirty) {
-        window.alert("Save or close unsaved editor tabs before switching workspace.");
-        return;
+        if (!options?.silent) {
+          window.alert("Save or close unsaved editor tabs before switching workspace.");
+        }
+        return false;
       }
 
       let nextHome: string | null = null;
@@ -320,22 +362,16 @@ export default function App() {
           nextHome = (await homeDir()).replace(/\\/g, "/");
         }
       } catch (e) {
-        window.alert(String(e));
-        return;
+        if (!options?.silent) {
+          window.alert(String(e));
+        }
+        return false;
       }
 
-      for (const id of liveLeavesRef.current) disposeSession(id);
-      searchAddons.current.clear();
-      terminalRefs.current.clear();
-      editorRefs.current.clear();
-      previewRefs.current.clear();
-      setActiveSearchAddon(null);
-      setActiveEditorHandle(null);
-      setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
-      setHome(nextHome);
-      resetWorkspace(nextHome ?? undefined);
+      applyWorkspaceSwitch(env, nextHome);
+      return true;
     },
-    [workspaceEnv, setWorkspaceEnv, resetWorkspace],
+    [workspaceEnv, applyWorkspaceSwitch],
   );
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -388,6 +424,7 @@ export default function App() {
   const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   const lastSshProfileId = usePreferencesStore((s) => s.lastSshProfileId);
+  const attemptedInitialSshRestoreRef = useRef(false);
   useEffect(() => {
     void initPrefs();
   }, [initPrefs]);
@@ -396,11 +433,106 @@ export default function App() {
     setSelectedModelId(prefDefaultModel);
   }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
   useEffect(() => {
-    if (!prefsHydrated || !lastSshProfileId) return;
+    if (!prefsHydrated || attemptedInitialSshRestoreRef.current) return;
+    if (!lastSshProfileId) {
+      attemptedInitialSshRestoreRef.current = true;
+      return;
+    }
+    if (!sshProfilesLoaded) {
+      void loadSshProfiles();
+      return;
+    }
+
+    if (workspaceEnv.kind !== "local") {
+      attemptedInitialSshRestoreRef.current = true;
+      return;
+    }
+
+    const profile = sshProfiles.find((item) => item.id === lastSshProfileId);
+    if (!profile?.knownFingerprint) {
+      attemptedInitialSshRestoreRef.current = true;
+      return;
+    }
+
     const env: WorkspaceEnv = { kind: "ssh", profileId: lastSshProfileId };
-    void switchWorkspace(env);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefsHydrated]);
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    let retryUntil = Date.now() + SSH_RETRY_WINDOW_MS;
+    let nextDelayMs = SSH_RETRY_INITIAL_DELAY_MS;
+
+    const clearRetryTimer = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const scheduleRetry = () => {
+      if (cancelled || attemptedInitialSshRestoreRef.current || retryTimer !== null) {
+        return;
+      }
+      const remainingMs = retryUntil - Date.now();
+      if (remainingMs <= 0) {
+        attemptedInitialSshRestoreRef.current = true;
+        return;
+      }
+      const delayMs = Math.min(nextDelayMs, remainingMs);
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        void attemptRestore("retry");
+      }, delayMs);
+      nextDelayMs = Math.min(nextDelayMs * 2, SSH_RETRY_MAX_DELAY_MS);
+    };
+
+    const attemptRestore = async (reason: string) => {
+      if (cancelled || attemptedInitialSshRestoreRef.current) return;
+      const switched = await switchWorkspace(env, { silent: true });
+      if (cancelled || attemptedInitialSshRestoreRef.current) return;
+      if (switched) {
+        attemptedInitialSshRestoreRef.current = true;
+        return;
+      }
+      console.warn("initial ssh restore failed", { profileId: lastSshProfileId, reason });
+      scheduleRetry();
+    };
+
+    void attemptRestore("initial");
+
+    return () => {
+      cancelled = true;
+      clearRetryTimer();
+    };
+  }, [
+    prefsHydrated,
+    lastSshProfileId,
+    sshProfilesLoaded,
+    sshProfiles,
+    workspaceEnv.kind,
+    loadSshProfiles,
+    switchWorkspace,
+  ]);
+
+  useEffect(() => {
+    if (!sshProfilesLoaded || workspaceEnv.kind !== "ssh") return;
+    if (sshProfiles.some((profile) => profile.id === workspaceEnv.profileId)) {
+      return;
+    }
+
+    let cancelled = false;
+    void homeDir()
+      .then((path) => {
+        if (cancelled) return;
+        applyWorkspaceSwitch(LOCAL_WORKSPACE, path.replace(/\\/g, "/"));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        applyWorkspaceSwitch(LOCAL_WORKSPACE, null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceEnv, sshProfiles, sshProfilesLoaded, applyWorkspaceSwitch]);
 
   const hydrateSessions = useChatStore((s) => s.hydrateSessions);
   useEffect(() => {
@@ -410,6 +542,12 @@ export default function App() {
   }, [hydrateSessions]);
 
   const activeTab = tabs.find((t) => t.id === activeId);
+  const connectingProfileId = Object.entries(sshConnState).find(
+    ([, state]) => state === "connecting",
+  )?.[0] ?? null;
+  const connectingSshProfile = connectingProfileId
+    ? sshProfiles.find((profile) => profile.id === connectingProfileId) ?? null
+    : null;
   const isTerminalTab = activeTab?.kind === "terminal";
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
@@ -1025,6 +1163,13 @@ export default function App() {
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
           />
+
+          {connectingProfileId !== null ? (
+            <div className="border-b border-border bg-accent/50 px-3 py-1 text-[11px] text-muted-foreground">
+              Connecting to SSH workspace {connectingSshProfile?.name ?? connectingProfileId}
+              {connectingSshProfile?.host ? ` (${connectingSshProfile.host})` : ""}...
+            </div>
+          ) : null}
 
           <main className="zoom-content flex min-h-0 flex-1 flex-col">
             <ResizablePanelGroup
