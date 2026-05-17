@@ -38,6 +38,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "assets/android/proot-aarch64": "assets/android/proot-aarch64",
+      "assets/android/alpine-rootfs.tar.gz": "assets/android/alpine-rootfs.tar.gz"
+    },
+    "android": {
+      "minSdkVersion": 24
+    },
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
