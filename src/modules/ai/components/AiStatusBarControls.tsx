@@ -798,22 +798,22 @@ function RemoteModelRow({
             </span>
           ) : null}
           {hasPricing ? (
-            <span className="text-[7px] leading-none text-muted-foreground/90 tabular-nums">
+            <span className="text-[8px] leading-none text-muted-foreground/90 tabular-nums">
               ${safePricing.input?.toFixed(2) ?? "?"}/${safePricing.output?.toFixed(2) ?? "?"}
             </span>
           ) : null}
           {supportsTools ? (
-            <span className="text-[7px] leading-none text-muted-foreground/90">
-                <HugeiconsIcon icon={PlugIcon} size={7} className="inline -mt-px mr-px" />T
+            <span className="text-[8px] leading-none text-muted-foreground/90">
+                <HugeiconsIcon icon={PlugIcon} size={8} className="inline -mt-px mr-px" />T
             </span>
           ) : null}
           {supportsReasoning ? (
-            <span className="text-[7px] leading-none text-muted-foreground/90">
-              <HugeiconsIcon icon={BrainIcon} size={7} className="inline -mt-px mr-px" />R
+            <span className="text-[8px] leading-none text-muted-foreground/90">
+              <HugeiconsIcon icon={BrainIcon} size={8} className="inline -mt-px mr-px" />R
             </span>
           ) : null}
           {(inputModalities?.filter((m) => m !== "text").length ?? 0) > 0 ? (
-            <span className="text-[7px] leading-none text-muted-foreground/90">
+            <span className="text-[8px] leading-none text-muted-foreground/90">
               {inputModalities!.filter((m) => m !== "text").map((m) => m[0].toUpperCase()).join("/")}
             </span>
           ) : null}
