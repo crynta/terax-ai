@@ -483,8 +483,10 @@ function ModelDropdown() {
                         ownedBy={rm.owned_by}
                         contextLength={rm.context_length}
                         supportsTools={rm.supports_tools}
+                        supportsReasoning={rm.supports_reasoning}
                         pricing={rm.pricing}
                         providerCount={rm.provider_count}
+                        inputModalities={rm.input_modalities}
                         providerId={activeProvider!}
                         selected={remoteOverride === rm.id}
                         onPick={() => {
@@ -735,8 +737,10 @@ function RemoteModelRow({
   ownedBy,
   contextLength,
   supportsTools,
+  supportsReasoning,
   pricing,
   providerCount,
+  inputModalities,
   providerId,
   selected,
   onPick,
@@ -745,8 +749,10 @@ function RemoteModelRow({
   ownedBy: string;
   contextLength: number | null;
   supportsTools?: boolean;
+  supportsReasoning?: boolean;
   pricing?: RemoteModelPricing;
   providerCount?: number;
+  inputModalities?: string[];
   providerId: ProviderId;
   selected: boolean;
   onPick: () => void;
@@ -797,8 +803,18 @@ function RemoteModelRow({
             </span>
           ) : null}
           {supportsTools ? (
-            <span className="text-[9px] leading-none text-muted-foreground/40">
-              tools
+            <span className="text-[9px] leading-none text-blue-400/50">
+              <HugeiconsIcon icon={PlugIcon} size={9} className="inline -mt-px mr-px" />T
+            </span>
+          ) : null}
+          {supportsReasoning ? (
+            <span className="text-[9px] leading-none text-purple-400/50">
+              <HugeiconsIcon icon={BrainIcon} size={9} className="inline -mt-px mr-px" />R
+            </span>
+          ) : null}
+          {(inputModalities?.filter((m) => m !== "text").length ?? 0) > 0 ? (
+            <span className="text-[9px] leading-none text-amber-400/50">
+              {inputModalities!.filter((m) => m !== "text").map((m) => m[0].toUpperCase()).join("/")}
             </span>
           ) : null}
           {(providerCount ?? 0) > 0 ? (
