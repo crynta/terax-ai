@@ -93,6 +93,17 @@ pnpm tauri dev          # development
 pnpm tauri build        # production bundle
 ```
 
+## Homebrew tap
+
+Published macOS releases can sync a `terax` cask into a separate Homebrew tap.
+Set `HOMEBREW_TAP_GITHUB_TOKEN` and, if needed, `HOMEBREW_TAP_REPOSITORY` to enable [`.github/workflows/homebrew-tap.yml`](.github/workflows/homebrew-tap.yml).
+
+**For users**
+```bash
+brew tap <owner>/tap
+brew install --cask terax
+```
+
 **Checks**
 ```bash
 pnpm exec tsc --noEmit          # frontend type-check
