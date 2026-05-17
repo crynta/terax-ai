@@ -30,6 +30,7 @@ import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { getKey } from "@/modules/ai/lib/keyring";
 import { onKeysChanged } from "@/modules/settings/store";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -243,22 +244,64 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         </div>
       );
     }
-    if (doc.status === "binary") {
+    if (doc.status === "binary" || doc.status === "toolarge") {
+      const ext = path.split(".").pop()?.toLowerCase() ?? "";
+      const isImage = ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"].includes(ext);
+      const isVideo = ["mp4", "webm", "ogg", "mov"].includes(ext);
+      const isAudio = ["mp3", "wav", "flac", "aac", "m4a"].includes(ext);
+      const isPdf = ext === "pdf";
+
+      if (isImage || isVideo || isAudio || isPdf) {
+        const assetUrl = convertFileSrc(path);
+        return (
+          <div className="flex h-full min-h-0 flex-col items-center justify-center bg-background p-4 overflow-auto">
+            {isImage && (
+              <img
+                src={assetUrl}
+                loading="lazy"
+                decoding="async"
+                className="max-w-full max-h-full object-contain rounded-md border border-border shadow-sm"
+                style={{
+                  backgroundImage: 'conic-gradient(#e5e7eb 0.25turn, #f3f4f6 0.25turn 0.5turn, #e5e7eb 0.5turn 0.75turn, #f3f4f6 0.75turn)',
+                  backgroundSize: '20px 20px',
+                }}
+                alt={path.split('/').pop()}
+              />
+            )}
+            {isVideo && (
+              <video
+                controls
+                preload="metadata"
+                className="max-w-full max-h-full"
+                src={assetUrl}
+              />
+            )}
+            {isAudio && (
+              <audio
+                controls
+                preload="metadata"
+                className="w-full max-w-md"
+                src={assetUrl}
+              />
+            )}
+            {isPdf && (
+              <iframe
+                src={assetUrl}
+                className="w-full h-full border-none"
+                title={path.split('/').pop()}
+              />
+            )}
+          </div>
+        );
+      }
+
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-          <div className="text-sm text-foreground">Binary file</div>
+          <div className="text-sm text-foreground">
+            {doc.status === "binary" ? "Binary file" : "File too large"}
+          </div>
           <div className="text-xs text-muted-foreground">
             {formatBytes(doc.size)} · preview not supported
-          </div>
-        </div>
-      );
-    }
-    if (doc.status === "toolarge") {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-          <div className="text-sm text-foreground">File too large</div>
-          <div className="text-xs text-muted-foreground">
-            {formatBytes(doc.size)} exceeds the {formatBytes(doc.limit)} limit.
           </div>
         </div>
       );
