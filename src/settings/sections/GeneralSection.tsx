@@ -180,30 +180,47 @@ export function GeneralSection() {
 
       <div className="flex flex-col gap-2">
         <Label>Explorer</Label>
-        <div className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
-          <span className="text-[12.5px] font-medium">Hidden files</span>
-          <span className="text-[10.5px] leading-relaxed text-muted-foreground">
-            How dot-prefixed files and folders (.env, .gitignore, .config)
-            appear in the file explorer and search.
-          </span>
-          <div className="mt-1 grid grid-cols-3 gap-2">
-            {HIDDEN_FILES_MODES.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => void setHiddenFiles(m.id)}
-                className={cn(
-                  "rounded-md border px-2 py-1.5 text-[11.5px] transition-all",
-                  hiddenFiles === m.id
-                    ? "border-foreground/60 ring-1 ring-foreground/20"
-                    : "border-border/60 hover:border-border",
-                )}
+        <SettingRow
+          title="Hidden files"
+          description="How dot-prefixed files and folders (.env, .gitignore, .config) appear in the file explorer and search."
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px]"
               >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </div>
+                <span>
+                  {HIDDEN_FILES_MODES.find((m) => m.id === hiddenFiles)
+                    ?.label ?? hiddenFiles}
+                </span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={12}
+                  strokeWidth={2}
+                  className="opacity-70"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="min-w-[140px] rounded-none border border-border bg-popover p-0 shadow-none ring-0"
+            >
+              {HIDDEN_FILES_MODES.map((m) => (
+                <DropdownMenuItem
+                  key={m.id}
+                  onSelect={() => void setHiddenFiles(m.id)}
+                  className={cn(
+                    "rounded-none px-3 py-1.5 text-[12px]",
+                    m.id === hiddenFiles && "bg-accent/50",
+                  )}
+                >
+                  {m.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">
