@@ -354,6 +354,14 @@ export function useTerminalSession({
     [leafId],
   );
 
+  const paste = useCallback(
+    (data: string) => {
+      const slot = getSlotForLeaf(leafId);
+      slot?.term.paste(data);
+    },
+    [leafId],
+  );
+
   const focus = useCallback(() => focusSlot(leafId), [leafId]);
 
   const getBuffer = useCallback(
@@ -393,8 +401,8 @@ export function useTerminalSession({
   }, []);
 
   return useMemo(
-    () => ({ write, focus, getBuffer, getSelection, applyTheme }),
-    [write, focus, getBuffer, getSelection, applyTheme],
+    () => ({ write, paste, focus, getBuffer, getSelection, applyTheme }),
+    [write, paste, focus, getBuffer, getSelection, applyTheme],
   );
 }
 
