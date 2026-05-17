@@ -5,6 +5,7 @@ import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import { nord } from "@uiw/codemirror-theme-nord";
 import { tokyoNight } from "@uiw/codemirror-theme-tokyo-night";
 import { xcodeDark, xcodeLight } from "@uiw/codemirror-theme-xcode";
+import { monokaiPro } from "./monokai-pro";
 import type { Extension } from "@codemirror/state";
 import type { EditorThemeId } from "@/modules/settings/store";
 
@@ -16,6 +17,7 @@ export const EDITOR_THEME_EXT: Record<EditorThemeId, Extension> = {
   "github-light": githubLight,
   nord,
   "tokyo-night": tokyoNight,
+  "monokai-pro": monokaiPro,
   "xcode-dark": xcodeDark,
   "xcode-light": xcodeLight,
 };
