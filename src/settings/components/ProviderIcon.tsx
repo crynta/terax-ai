@@ -26,6 +26,7 @@ import {
   DashboardSpeed01Icon,
   AiBookIcon,
   BrainIcon,
+  CloudServerIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -58,6 +59,7 @@ const ICON_BY_PROVIDER = {
   ollama: ServerStack01Icon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
+  "huggingface-endpoint": CloudServerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 type Props = {

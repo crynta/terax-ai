@@ -10,6 +10,7 @@ import {
   DEFAULT_MODEL_ID,
   getModel,
   getModelContextLimit,
+  HUGGINGFACE_ENDPOINT_DEFAULT_BASE_URL,
   LMSTUDIO_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
   OLLAMA_DEFAULT_BASE_URL,
@@ -65,6 +66,7 @@ export type BuildModelOptions = {
   openaiCompatibleBaseURL?: string;
   ollamaBaseURL?: string;
   zhipuBaseURL?: string;
+  huggingfaceEndpointBaseURL?: string;
 };
 
 const modelCache = new Map<string, LanguageModel>();
@@ -85,7 +87,10 @@ export async function buildLanguageModel(
   const compatURL = options.openaiCompatibleBaseURL ?? "";
   const ollamaURL = options.ollamaBaseURL ?? OLLAMA_DEFAULT_BASE_URL;
   const zhipuURL = options.zhipuBaseURL ?? ZHIPU_DEFAULT_BASE_URL;
-  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL} ${ollamaURL} ${zhipuURL}`;
+  const hfEndpointURL =
+    options.huggingfaceEndpointBaseURL ??
+    HUGGINGFACE_ENDPOINT_DEFAULT_BASE_URL;
+  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL} ${ollamaURL} ${zhipuURL} ${hfEndpointURL}`;
   const hit = modelCache.get(cacheKey);
   if (hit) return hit;
 
@@ -298,7 +303,7 @@ export async function buildLanguageModel(
       );
       built = createOpenAICompatible({
         name: "huggingface",
-        baseURL: "https://api-inference.huggingface.co/v1",
+        baseURL: "https://router.huggingface.co/v1",
         apiKey: key,
       })(resolvedModelId);
       break;
@@ -369,6 +374,17 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "huggingface-endpoint": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "huggingface-endpoint",
+        baseURL: hfEndpointURL,
+        ...(key ? { apiKey: key } : {}),
+      })(resolvedModelId);
+      break;
+    }
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);
@@ -387,6 +403,7 @@ function buildModel(
   openaiCompatibleModelId?: string,
   ollamaBaseURL?: string,
   zhipuBaseURL?: string,
+  huggingfaceEndpointBaseURL?: string,
   remoteModelOverride?: string | null,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
@@ -413,6 +430,7 @@ function buildModel(
     openaiCompatibleBaseURL,
     ollamaBaseURL,
     zhipuBaseURL,
+    huggingfaceEndpointBaseURL,
   });
 }
 
@@ -494,6 +512,7 @@ export type RunAgentOptions = {
   openaiCompatibleModelId?: string;
   ollamaBaseURL?: string;
   zhipuBaseURL?: string;
+  huggingfaceEndpointBaseURL?: string;
   remoteModelOverride?: string | null;
   openaiCompatibleContextWindow?: number;
   planMode?: boolean;
@@ -513,6 +532,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.openaiCompatibleModelId,
     opts.ollamaBaseURL,
     opts.zhipuBaseURL,
+    opts.huggingfaceEndpointBaseURL,
     opts.remoteModelOverride,
   );
   const provider = getModel(modelId).provider;
