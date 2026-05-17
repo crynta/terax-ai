@@ -115,28 +115,49 @@ jobs:
           fi
           echo "SHA256 OK"
 
-      - name: Build proot for aarch64-linux-android
+      #- name: Build proot for aarch64-linux-android
+       # run: |
+       #   set -euo pipefail
+       #   export NDK="$ANDROID_HOME/ndk/${NDK_VERSION}"
+       #   export TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+        #  mkdir -p /tmp/proot-build
+        # git clone --depth 1 https://github.com/proot-me/proot.git /tmp/proot-build/proot
+        #  cd /tmp/proot-build/proot/src
+
+        # The Makefile understands CC/AR/STRIP overrides.
+        # make -j"$(nproc)" \
+        #  CC="$TOOLCHAIN/aarch64-linux-android33-clang" \
+        #   AR="$TOOLCHAIN/llvm-ar" \
+        #   STRIP="$TOOLCHAIN/llvm-strip" \
+        #  LOADER_NAMES="ld-musl-aarch64.so.1 ld-linux-aarch64.so.1" \
+        #    proot
+
+        #  "$TOOLCHAIN/llvm-strip" proot
+         # file proot | tee /dev/stderr | grep -q "ARM aarch64" \
+        #    || (echo "::error::proot binary is not aarch64 ELF"; exit 1)
+        #  cp proot "$GITHUB_WORKSPACE/src-tauri/assets/android/proot-aarch64"
+
+      - name: Download proot for aarch64-linux-android
         run: |
-          set -euo pipefail
-          export NDK="$ANDROID_HOME/ndk/${NDK_VERSION}"
-          export TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          # Download pre-built proot from Termux package repo (Android aarch64)
+          curl -fL -o /tmp/proot.deb \
+            "https://packages.termux.dev/apt/termux-main/pool/main/p/proot/proot_5.4.0_aarch64.deb"
 
-          mkdir -p /tmp/proot-build
-          git clone --depth 1 https://github.com/proot-me/proot.git /tmp/proot-build/proot
-          cd /tmp/proot-build/proot/src
+          # Extract the binary from the .deb
+          cd /tmp
+          ar x proot.deb
+          tar xf data.tar.xz ./data/data/com.termux/files/usr/bin/proot
 
-          # The Makefile understands CC/AR/STRIP overrides.
-          make -j"$(nproc)" \
-            CC="$TOOLCHAIN/aarch64-linux-android33-clang" \
-            AR="$TOOLCHAIN/llvm-ar" \
-            STRIP="$TOOLCHAIN/llvm-strip" \
-            LOADER_NAMES="ld-musl-aarch64.so.1 ld-linux-aarch64.so.1" \
-            proot
+          # Copy into the repo assets
+          cp data/data/com.termux/files/usr/bin/proot \
+            "$GITHUB_WORKSPACE/src-tauri/assets/android/proot-aarch64"
 
-          "$TOOLCHAIN/llvm-strip" proot
-          file proot | tee /dev/stderr | grep -q "ARM aarch64" \
+          # Verify it's the right ELF type
+          file "$GITHUB_WORKSPACE/src-tauri/assets/android/proot-aarch64" \
+            | tee /dev/stderr \
+            | grep -q "ARM aarch64" \
             || (echo "::error::proot binary is not aarch64 ELF"; exit 1)
-          cp proot "$GITHUB_WORKSPACE/src-tauri/assets/android/proot-aarch64"
 
       # ── Initialize the Android project + copy our Kotlin plugins in ───────
       - name: Initialize Android project
