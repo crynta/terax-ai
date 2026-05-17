@@ -22,20 +22,33 @@ import {
   CoinsDollarIcon,
   ComputerIcon,
   CpuIcon,
+  CampfireIcon,
+  DashboardSpeed01Icon,
+  DatabaseIcon,
   DeepseekIcon,
   FavouriteIcon,
+  FireworksIcon,
   FlashIcon,
   GlobeIcon,
   GoogleGeminiIcon,
   Grok02Icon,
+  Hexagon01Icon,
   Message01Icon,
   Mic01Icon,
+  Moon02Icon,
+  NeuralNetworkIcon,
+  Package01Icon,
   PlugIcon,
+  Rocket01Icon,
   Search01Icon,
+  ServerStack01Icon,
+  SparklesIcon,
   Settings01Icon,
+  SquareIcon,
   StarIcon,
   StopCircleIcon,
   Tick01Icon,
+  CloudServerIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
@@ -50,6 +63,7 @@ import {
   type ModelInfo,
   type ProviderId,
 } from "../config";
+import { fetchProviderModels, type RemoteModel, type RemoteModelPricing } from "../lib/fetchModels";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { toggleFavoriteModel } from "../lib/modelPrefs";
 import { useChatStore } from "../store/chatStore";
@@ -63,9 +77,28 @@ const PROVIDER_ICON = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   deepseek: DeepseekIcon,
+  mistral: GlobeIcon,
   openrouter: GlobeIcon,
+  together: Rocket01Icon,
+  fireworks: FireworksIcon,
+  perplexity: Search01Icon,
+  cohere: DatabaseIcon,
+  moonshot: Moon02Icon,
+  siliconflow: SparklesIcon,
+  hyperbolic: Hexagon01Icon,
+  deepinfra: NeuralNetworkIcon,
+  novita: CampfireIcon,
+  huggingface: Package01Icon,
+  sambanova: BrainIcon,
+  minimax: SquareIcon,
+  zhipu: StarIcon,
+  volcengine: DashboardSpeed01Icon,
+  yi: AiBookIcon,
+  replicate: FlashIcon,
+  ollama: ServerStack01Icon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
+  "huggingface-endpoint": CloudServerIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
@@ -204,12 +237,17 @@ function ModelDropdown() {
   const selected = useChatStore((s) => s.selectedModelId);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
+  const selectRemote = useChatStore((s) => s.selectRemoteModel);
+  const remoteOverride = useChatStore((s) => s.remoteModelOverride);
   const favoriteIds = usePreferencesStore((s) => s.favoriteModelIds);
   const recentIds = usePreferencesStore((s) => s.recentModelIds);
   const current = getModel(selected);
   const [search, setSearch] = useState("");
   const [activeProvider, setActiveProvider] = useState<ProviderId | null>(null);
   const [tab, setTab] = useState<Tab>("all");
+  const [remoteModels, setRemoteModels] = useState<Map<ProviderId, RemoteModel[]>>(new Map());
+  const [remoteLoading, setRemoteLoading] = useState<Set<ProviderId>>(new Set());
+  const [remoteError, setRemoteError] = useState<Map<ProviderId, string>>(new Map());
   const inputRef = useRef<HTMLInputElement>(null);
   const currentProviderHasKey = providerNeedsKey(current.provider)
     ? !!apiKeys[current.provider]
@@ -217,6 +255,26 @@ function ModelDropdown() {
 
   const hasKeyFor = (id: ProviderId) =>
     providerNeedsKey(id) ? !!apiKeys[id] : true;
+
+  const loadRemoteModels = async (providerId: ProviderId) => {
+    setRemoteLoading((prev) => new Set(prev).add(providerId));
+    setRemoteError((prev) => {
+      const next = new Map(prev);
+      next.delete(providerId);
+      return next;
+    });
+    const result = await fetchProviderModels(providerId, apiKeys[providerId]);
+    setRemoteLoading((prev) => {
+      const next = new Set(prev);
+      next.delete(providerId);
+      return next;
+    });
+    if (result.error) {
+      setRemoteError((prev) => new Map(prev).set(providerId, result.error!));
+    } else {
+      setRemoteModels((prev) => new Map(prev).set(providerId, result.models));
+    }
+  };
 
   const sortedProviders = useMemo(() => {
     const configured: (typeof PROVIDERS)[number][] = [];
@@ -240,6 +298,7 @@ function ModelDropdown() {
         .slice()
         .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
     }
+    pool = pool.filter((m) => hasKeyFor(m.provider));
     if (activeProvider !== null) {
       pool = pool.filter((m) => m.provider === activeProvider);
     }
@@ -256,6 +315,19 @@ function ModelDropdown() {
     return pool;
   }, [activeProvider, favoriteIds, recentIds, search, tab]);
 
+  const remoteFiltered = useMemo(() => {
+    if (activeProvider === null) return [];
+    const models = remoteModels.get(activeProvider);
+    if (!models) return [];
+    const q = search.trim().toLowerCase();
+    const staticIds = new Set<string>(
+      MODELS.filter((m) => m.provider === activeProvider).map((m) => m.id),
+    );
+    const deduped = models.filter((m) => !staticIds.has(m.id));
+    if (!q) return deduped;
+    return deduped.filter((m) => m.id.toLowerCase().includes(q));
+  }, [activeProvider, remoteModels, search]);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -271,11 +343,11 @@ function ModelDropdown() {
           )}
           title={
             currentProviderHasKey
-              ? `Model: ${current.label}`
+              ? `Model: ${remoteOverride ?? current.label}`
               : `${current.label} — no key configured`
           }
         >
-          {current.label}
+          {remoteOverride ?? current.label}
           <HugeiconsIcon
             icon={ArrowDown01Icon}
             size={11}
@@ -287,6 +359,8 @@ function ModelDropdown() {
 
       <DropdownMenuContent
         align="end"
+        side="bottom"
+        sideOffset={4}
         className="w-[28rem] p-0 overflow-hidden rounded-xl border border-border/70 shadow-xl"
         onFocusCapture={(e) => {
           if (e.target !== inputRef.current) inputRef.current?.focus();
@@ -335,7 +409,7 @@ function ModelDropdown() {
         </div>
 
         <div className="flex">
-          {/* Provider sidebar — configured first, unconfigured muted, no dividers. */}
+          {/* Provider sidebar — only show configured + keyless providers. */}
           <div className="flex w-11 flex-col gap-0.5 border-r border-border/70 bg-muted/20 py-1.5">
             <ProviderPill
               icon={AiBookIcon}
@@ -343,33 +417,32 @@ function ModelDropdown() {
               active={activeProvider === null}
               onClick={() => setActiveProvider(null)}
             />
-            {[...sortedProviders.configured, ...sortedProviders.unconfigured].map(
-              (p) => (
-                <ProviderPill
-                  key={p.id}
-                  icon={PROVIDER_ICON[p.id]}
-                  title={
-                    hasKeyFor(p.id)
-                      ? p.label
-                      : `${p.label} — not configured`
-                  }
-                  active={activeProvider === p.id}
-                  muted={!hasKeyFor(p.id)}
-                  onClick={() => setActiveProvider(p.id)}
-                />
-              ),
-            )}
+            {sortedProviders.configured.map((p) => (
+              <ProviderPill
+                key={p.id}
+                icon={PROVIDER_ICON[p.id]}
+                title={p.label}
+                active={activeProvider === p.id}
+                onClick={() => setActiveProvider(p.id)}
+              />
+            ))}
           </div>
 
           {/* Models list */}
           <div className="flex-1 overflow-y-auto py-1 max-h-[26rem]">
             {activeProvider !== null ? (
-              <ProviderHeader providerId={activeProvider} />
+              <ProviderHeader
+                providerId={activeProvider}
+                remoteModels={remoteModels.get(activeProvider)}
+                remoteLoading={remoteLoading.has(activeProvider)}
+                remoteError={remoteError.get(activeProvider)}
+                onRefresh={() => void loadRemoteModels(activeProvider)}
+              />
             ) : null}
             {activeProvider !== null && !hasKeyFor(activeProvider) ? (
               <ProviderConfigureCTA providerId={activeProvider} />
             ) : null}
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && remoteFiltered.length === 0 ? (
               <div className="flex items-center justify-center px-4 py-10 text-xs text-muted-foreground/70">
                 {tab === "favorites"
                   ? "No favorites yet — star a model to pin it here."
@@ -378,24 +451,57 @@ function ModelDropdown() {
                     : "No models match."}
               </div>
             ) : (
-              filtered.map((m) => (
-                <ModelRow
-                  key={m.id}
-                  model={m}
-                  selected={m.id === selected}
-                  hasKey={hasKeyFor(m.provider)}
-                  favorite={favoriteIds.includes(m.id)}
-                  showProviderIcon={activeProvider === null}
-                  onPick={() => {
-                    if (!hasKeyFor(m.provider)) {
-                      void openSettingsWindow("models");
-                      return;
-                    }
-                    setSelected(m.id as ModelId);
-                  }}
-                  onToggleFavorite={() => void toggleFavoriteModel(m.id)}
-                />
-              ))
+              <>
+                {filtered.map((m) => (
+                  <ModelRow
+                    key={m.id}
+                    model={m}
+                    selected={!remoteOverride && m.id === selected}
+                    hasKey={hasKeyFor(m.provider)}
+                    favorite={favoriteIds.includes(m.id)}
+                    showProviderIcon={activeProvider === null}
+                    onPick={() => {
+                      if (!hasKeyFor(m.provider)) {
+                        void openSettingsWindow("models");
+                        return;
+                      }
+                      setSelected(m.id as ModelId);
+                    }}
+                    onToggleFavorite={() => void toggleFavoriteModel(m.id)}
+                  />
+                ))}
+                {remoteFiltered.length > 0 ? (
+                  <>
+                    <div className="mx-3 my-1 border-t border-border/40" />
+                    <div className="px-3 pb-1 pt-0.5 text-[10px] text-muted-foreground/50">
+                      Remote models ({remoteFiltered.length})
+                    </div>
+                    {remoteFiltered.map((rm) => (
+                      <RemoteModelRow
+                        key={rm.id}
+                        modelId={rm.id}
+                        ownedBy={rm.owned_by}
+                        contextLength={rm.context_length}
+                        supportsTools={rm.supports_tools}
+                        supportsReasoning={rm.supports_reasoning}
+                        pricing={rm.pricing}
+                        providerCount={rm.provider_count}
+                        inputModalities={rm.input_modalities}
+                        providerId={activeProvider!}
+                        selected={remoteOverride === rm.id}
+                        onPick={() => {
+                          const carrier = MODELS.find(
+                            (m) => m.provider === activeProvider,
+                          );
+                          if (carrier) {
+                            selectRemote(carrier.id as ModelId, rm.id);
+                          }
+                        }}
+                      />
+                    ))}
+                  </>
+                ) : null}
+              </>
             )}
           </div>
         </div>
@@ -471,9 +577,22 @@ function ProviderPill({
   );
 }
 
-function ProviderHeader({ providerId }: { providerId: ProviderId }) {
+function ProviderHeader({
+  providerId,
+  remoteModels,
+  remoteLoading,
+  remoteError,
+  onRefresh,
+}: {
+  providerId: ProviderId;
+  remoteModels?: RemoteModel[];
+  remoteLoading?: boolean;
+  remoteError?: string;
+  onRefresh: () => void;
+}) {
   const p = PROVIDERS.find((x) => x.id === providerId);
   if (!p) return null;
+  const canFetch = p.modelsUrl !== null;
   return (
     <div className="flex items-center gap-1.5 px-3 pt-1 pb-1.5 text-[11px] font-medium tracking-tight text-muted-foreground/90">
       <HugeiconsIcon
@@ -482,6 +601,29 @@ function ProviderHeader({ providerId }: { providerId: ProviderId }) {
         strokeWidth={1.75}
       />
       <span>{p.label}</span>
+      {canFetch ? (
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={remoteLoading}
+          className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground/70 transition-colors hover:bg-accent/40 hover:text-foreground"
+          title="Fetch available models from API"
+        >
+          {remoteLoading ? (
+            <Spinner className="size-3" />
+          ) : (
+            <HugeiconsIcon icon={ArrowDown01Icon} size={10} strokeWidth={2} />
+          )}
+          {remoteModels
+            ? `${remoteModels.length} models`
+            : "Fetch models"}
+        </button>
+      ) : null}
+      {remoteError ? (
+        <span className="ml-1 truncate text-[10px] text-destructive/70" title={remoteError}>
+          error
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -578,6 +720,110 @@ function ModelRow({
 
       <CapabilityBars caps={model.capabilities} />
 
+      {selected ? (
+        <HugeiconsIcon
+          icon={Tick01Icon}
+          size={13}
+          strokeWidth={2}
+          className="shrink-0 text-foreground"
+        />
+      ) : null}
+    </DropdownMenuItem>
+  );
+}
+
+function RemoteModelRow({
+  modelId,
+  ownedBy,
+  contextLength,
+  supportsTools,
+  supportsReasoning,
+  pricing,
+  providerCount,
+  inputModalities,
+  providerId,
+  selected,
+  onPick,
+}: {
+  modelId: string;
+  ownedBy: string;
+  contextLength: number | null;
+  supportsTools?: boolean;
+  supportsReasoning?: boolean;
+  pricing?: RemoteModelPricing;
+  providerCount?: number;
+  inputModalities?: string[];
+  providerId: ProviderId;
+  selected: boolean;
+  onPick: () => void;
+}) {
+  const safePricing = pricing ?? { input: null, output: null };
+  const hasPricing = safePricing.input != null || safePricing.output != null;
+  return (
+    <DropdownMenuItem
+      onSelect={(e) => {
+        e.preventDefault();
+        onPick();
+      }}
+      className={cn(
+        "group mx-1 my-0.5 flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5",
+        selected ? "bg-accent/60 text-foreground" : "text-foreground/70",
+      )}
+    >
+      <HugeiconsIcon
+        icon={PROVIDER_ICON[providerId]}
+        size={13}
+        strokeWidth={1.5}
+        className="shrink-0 text-muted-foreground/50"
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-0 items-baseline gap-1.5">
+          <span className="shrink-0 text-[11px] font-medium leading-none">
+            {modelId}
+          </span>
+          {ownedBy ? (
+            <span className="truncate text-[10px] leading-none text-muted-foreground/50">
+              {ownedBy}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {contextLength != null ? (
+            <span className="text-[9px] leading-none text-muted-foreground/40 tabular-nums">
+              {contextLength >= 1_000_000
+                ? `${(contextLength / 1_000_000).toFixed(contextLength % 1_000_000 === 0 ? 0 : 1)}M ctx`
+                : contextLength >= 1_000
+                  ? `${(contextLength / 1_000).toFixed(contextLength % 1_000 === 0 ? 0 : 1)}K ctx`
+                  : `${contextLength} ctx`}
+            </span>
+          ) : null}
+          {hasPricing ? (
+            <span className="text-[9px] leading-none text-muted-foreground/40 tabular-nums">
+              ${safePricing.input?.toFixed(2) ?? "?"}/${safePricing.output?.toFixed(2) ?? "?"}
+            </span>
+          ) : null}
+          {supportsTools ? (
+            <span className="text-[9px] leading-none text-muted-foreground/50">
+              <HugeiconsIcon icon={PlugIcon} size={9} className="inline -mt-px mr-px" />T
+            </span>
+          ) : null}
+          {supportsReasoning ? (
+            <span className="text-[9px] leading-none text-muted-foreground/50">
+              <HugeiconsIcon icon={BrainIcon} size={9} className="inline -mt-px mr-px" />R
+            </span>
+          ) : null}
+          {(inputModalities?.filter((m) => m !== "text").length ?? 0) > 0 ? (
+            <span className="text-[9px] leading-none text-muted-foreground/50">
+              {inputModalities!.filter((m) => m !== "text").map((m) => m[0].toUpperCase()).join("/")}
+            </span>
+          ) : null}
+          {(providerCount ?? 0) > 0 ? (
+            <span className="text-[9px] leading-none text-muted-foreground/30 tabular-nums">
+              {providerCount}P
+            </span>
+          ) : null}
+        </div>
+      </div>
       {selected ? (
         <HugeiconsIcon
           icon={Tick01Icon}

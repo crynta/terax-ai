@@ -1,6 +1,20 @@
-import { lazy, Suspense } from "react";
+import { Component, lazy, type ReactNode, Suspense } from "react";
 import type { AgentRunBridgeProps } from "./AgentRunBridge";
 import type { SelectionAskAiProps } from "./SelectionAskAi";
+
+class ErrorBoundary extends Component<
+  { children: ReactNode; fallback?: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) return this.props.fallback ?? null;
+    return this.props.children;
+  }
+}
 
 const AgentRunBridgeInner = lazy(() =>
   import("./AgentRunBridge").then((m) => ({ default: m.AgentRunBridge })),
@@ -42,17 +56,21 @@ export function AiMiniWindow() {
 
 export function AiInputBar() {
   return (
-    <Suspense fallback={null}>
-      <AiInputBarInner />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={null}>
+        <AiInputBarInner />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
 export function AiInputBarConnect({ onAdd }: { onAdd: () => void }) {
   return (
-    <Suspense fallback={null}>
-      <AiInputBarConnectInner onAdd={onAdd} />
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={null}>
+        <AiInputBarConnectInner onAdd={onAdd} />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 

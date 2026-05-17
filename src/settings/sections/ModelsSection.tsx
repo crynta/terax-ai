@@ -31,6 +31,7 @@ import {
   setLmstudioModelId,
   setOpenaiCompatibleBaseURL,
   setOpenaiCompatibleModelId,
+  setOpenaiCompatibleContextWindow,
 } from "@/modules/settings/store";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -341,8 +342,10 @@ function OpenAICompatibleBlock({
 }) {
   const baseURL = usePreferencesStore((s) => s.openaiCompatibleBaseURL);
   const modelId = usePreferencesStore((s) => s.openaiCompatibleModelId);
+  const contextWindow = usePreferencesStore((s) => s.openaiCompatibleContextWindow);
   const [urlDraft, setUrlDraft] = useState(baseURL);
   const [modelDraft, setModelDraft] = useState(modelId);
+  const [ctxDraft, setCtxDraft] = useState(String(contextWindow));
   const [keyDraft, setKeyDraft] = useState("");
   const [testStatus, setTestStatus] = useState<
     "idle" | "testing" | "ok" | "fail"
@@ -350,6 +353,7 @@ function OpenAICompatibleBlock({
 
   useEffect(() => setUrlDraft(baseURL), [baseURL]);
   useEffect(() => setModelDraft(modelId), [modelId]);
+  useEffect(() => setCtxDraft(String(contextWindow)), [contextWindow]);
 
   const dirty =
     urlDraft.trim() !== baseURL || modelDraft.trim() !== modelId;
@@ -428,6 +432,20 @@ function OpenAICompatibleBlock({
             placeholder="gpt-4o, qwen3-max, glm-4.6, …"
             spellCheck={false}
             className="h-8 font-mono text-[11.5px]"
+          />
+        </FieldRow>
+
+        <FieldRow label="Context">
+          <Input
+            value={ctxDraft}
+            onChange={(e) => setCtxDraft(e.target.value.replace(/\D/g, ""))}
+            onBlur={() => {
+              const v = parseInt(ctxDraft, 10);
+              if (v > 0 && v !== contextWindow) void setOpenaiCompatibleContextWindow(v);
+            }}
+            placeholder="128000"
+            spellCheck={false}
+            className="h-8 w-28 font-mono text-[11.5px]"
           />
         </FieldRow>
 

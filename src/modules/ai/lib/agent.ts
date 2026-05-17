@@ -10,8 +10,11 @@ import {
   DEFAULT_MODEL_ID,
   getModel,
   getModelContextLimit,
+  HUGGINGFACE_ENDPOINT_DEFAULT_BASE_URL,
   LMSTUDIO_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
+  OLLAMA_DEFAULT_BASE_URL,
+  ZHIPU_DEFAULT_BASE_URL,
   providerNeedsKey,
   selectSystemPrompt,
   type ModelId,
@@ -61,6 +64,9 @@ export type BuildModelOptions = {
   modelIdOverride?: string;
   lmstudioBaseURL?: string;
   openaiCompatibleBaseURL?: string;
+  ollamaBaseURL?: string;
+  zhipuBaseURL?: string;
+  huggingfaceEndpointBaseURL?: string;
 };
 
 const modelCache = new Map<string, LanguageModel>();
@@ -79,7 +85,12 @@ export async function buildLanguageModel(
   const key = keys[provider] ?? "";
   const lmstudioURL = options.lmstudioBaseURL ?? LMSTUDIO_DEFAULT_BASE_URL;
   const compatURL = options.openaiCompatibleBaseURL ?? "";
-  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL}`;
+  const ollamaURL = options.ollamaBaseURL ?? OLLAMA_DEFAULT_BASE_URL;
+  const zhipuURL = options.zhipuBaseURL ?? ZHIPU_DEFAULT_BASE_URL;
+  const hfEndpointURL =
+    options.huggingfaceEndpointBaseURL ??
+    HUGGINGFACE_ENDPOINT_DEFAULT_BASE_URL;
+  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL} ${ollamaURL} ${zhipuURL} ${hfEndpointURL}`;
   const hit = modelCache.get(cacheKey);
   if (hit) return hit;
 
@@ -165,6 +176,215 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "mistral": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "mistral",
+        baseURL: "https://api.mistral.ai/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "together": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "together",
+        baseURL: "https://api.together.xyz/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "fireworks": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "fireworks",
+        baseURL: "https://api.fireworks.ai/inference/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "perplexity": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "perplexity",
+        baseURL: "https://api.perplexity.ai",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "cohere": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "cohere",
+        baseURL: "https://api.cohere.com/v2",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "moonshot": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "moonshot",
+        baseURL: "https://api.moonshot.cn/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "ollama": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "ollama",
+        baseURL: ollamaURL,
+        ...(key ? { apiKey: key } : {}),
+      })(resolvedModelId);
+      break;
+    }
+    case "siliconflow": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "siliconflow",
+        baseURL: "https://api.siliconflow.cn/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "hyperbolic": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "hyperbolic",
+        baseURL: "https://api.hyperbolic.xyz/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "deepinfra": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "deepinfra",
+        baseURL: "https://api.deepinfra.com/v1/openai",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "novita": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "novita",
+        baseURL: "https://api.novita.ai/v3/openai",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "huggingface": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "huggingface",
+        baseURL: "https://router.huggingface.co/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "sambanova": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "sambanova",
+        baseURL: "https://api.sambanova.ai/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "minimax": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "minimax",
+        baseURL: "https://api.minimax.io/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "zhipu": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "zhipu",
+        baseURL: zhipuURL,
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "volcengine": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "volcengine",
+        baseURL: "https://ark.cn-beijing.volces.com/api/v3",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "yi": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "yi",
+        baseURL: "https://api.01.ai/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "replicate": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "replicate",
+        baseURL: "https://api.replicate.com/v1",
+        apiKey: key,
+      })(resolvedModelId);
+      break;
+    }
+    case "huggingface-endpoint": {
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
+      built = createOpenAICompatible({
+        name: "huggingface-endpoint",
+        baseURL: hfEndpointURL,
+        ...(key ? { apiKey: key } : {}),
+      })(resolvedModelId);
+      break;
+    }
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);
@@ -181,10 +401,16 @@ function buildModel(
   lmstudioModelId?: string,
   openaiCompatibleBaseURL?: string,
   openaiCompatibleModelId?: string,
+  ollamaBaseURL?: string,
+  zhipuBaseURL?: string,
+  huggingfaceEndpointBaseURL?: string,
+  remoteModelOverride?: string | null,
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
   let resolvedId: string = m.id;
-  if (m.id === "lmstudio-local") {
+  if (remoteModelOverride) {
+    resolvedId = remoteModelOverride;
+  } else if (m.id === "lmstudio-local") {
     if (!lmstudioModelId?.trim()) {
       throw new Error(
         "LM Studio: no model id set. Open Settings → Models and enter the model id loaded in LM Studio.",
@@ -202,6 +428,9 @@ function buildModel(
   return buildLanguageModel(m.provider, keys, resolvedId, {
     lmstudioBaseURL,
     openaiCompatibleBaseURL,
+    ollamaBaseURL,
+    zhipuBaseURL,
+    huggingfaceEndpointBaseURL,
   });
 }
 
@@ -281,6 +510,11 @@ export type RunAgentOptions = {
   lmstudioModelId?: string;
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
+  ollamaBaseURL?: string;
+  zhipuBaseURL?: string;
+  huggingfaceEndpointBaseURL?: string;
+  remoteModelOverride?: string | null;
+  openaiCompatibleContextWindow?: number;
   planMode?: boolean;
   projectMemory?: string | null;
   uiMessages: UIMessage[];
@@ -296,6 +530,10 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.lmstudioModelId,
     opts.openaiCompatibleBaseURL,
     opts.openaiCompatibleModelId,
+    opts.ollamaBaseURL,
+    opts.zhipuBaseURL,
+    opts.huggingfaceEndpointBaseURL,
+    opts.remoteModelOverride,
   );
   const provider = getModel(modelId).provider;
 
@@ -307,9 +545,12 @@ export async function runAgentStream(opts: RunAgentOptions) {
   );
 
   const history = await convertToModelMessages(opts.uiMessages);
+  const contextLimit = modelId === "openai-compatible-custom" && opts.openaiCompatibleContextWindow
+    ? opts.openaiCompatibleContextWindow
+    : getModelContextLimit(getModel(modelId).id);
   const compact = compactModelMessagesDetailed(
     history,
-    getModelContextLimit(getModel(modelId).id),
+    contextLimit,
   );
   const compactedHistory = compact.messages;
   if (compact.compacted) {

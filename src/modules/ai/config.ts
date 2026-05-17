@@ -8,9 +8,28 @@ export type ProviderId =
   | "cerebras"
   | "groq"
   | "deepseek"
+  | "mistral"
   | "openrouter"
+  | "together"
+  | "fireworks"
+  | "perplexity"
+  | "cohere"
+  | "moonshot"
+  | "siliconflow"
+  | "hyperbolic"
+  | "deepinfra"
+  | "novita"
+  | "huggingface"
+  | "sambanova"
+  | "minimax"
+  | "zhipu"
+  | "volcengine"
+  | "yi"
+  | "replicate"
+  | "ollama"
   | "openai-compatible"
-  | "lmstudio";
+  | "lmstudio"
+  | "huggingface-endpoint";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -20,6 +39,11 @@ export type ProviderInfo = {
   consoleUrl: string;
   /** Provider accepts (but does not require) an API key. */
   keyOptional?: boolean;
+  /** Provider is disabled (coming soon). Hides key input in settings. */
+  disabled?: boolean;
+  /** OpenAI-compatible GET endpoint returning `{ data: { id, object, owned_by }[] }`.
+   *  Set to `null` when the provider has no standard /models endpoint. */
+  modelsUrl: string | null;
 };
 
 export const PROVIDERS: readonly ProviderInfo[] = [
@@ -29,6 +53,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openai-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.openai.com/api-keys",
+    modelsUrl: "https://api.openai.com/v1/models",
   },
   {
     id: "anthropic",
@@ -36,6 +61,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "anthropic-api-key",
     keyPrefix: "sk-ant-",
     consoleUrl: "https://console.anthropic.com/settings/keys",
+    modelsUrl: null,
   },
   {
     id: "google",
@@ -43,6 +69,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "google-api-key",
     keyPrefix: null,
     consoleUrl: "https://aistudio.google.com/apikey",
+    modelsUrl: null,
   },
   {
     id: "xai",
@@ -50,6 +77,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "xai-api-key",
     keyPrefix: "xai-",
     consoleUrl: "https://console.x.ai/",
+    modelsUrl: "https://api.x.ai/v1/models",
   },
   {
     id: "cerebras",
@@ -57,6 +85,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "cerebras-api-key",
     keyPrefix: "csk-",
     consoleUrl: "https://cloud.cerebras.ai/",
+    modelsUrl: "https://api.cerebras.ai/v1/models",
   },
   {
     id: "groq",
@@ -64,6 +93,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "groq-api-key",
     keyPrefix: "gsk_",
     consoleUrl: "https://console.groq.com/keys",
+    modelsUrl: "https://api.groq.com/openai/v1/models",
   },
   {
     id: "deepseek",
@@ -71,6 +101,15 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "deepseek-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.deepseek.com/api_keys",
+    modelsUrl: "https://api.deepseek.com/v1/models",
+  },
+  {
+    id: "mistral",
+    label: "Mistral",
+    keyringAccount: "mistral-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://console.mistral.ai/api-keys",
+    modelsUrl: "https://api.mistral.ai/v1/models",
   },
   {
     id: "openrouter",
@@ -78,6 +117,158 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openrouter-api-key",
     keyPrefix: "sk-or-",
     consoleUrl: "https://openrouter.ai/keys",
+    modelsUrl: "https://openrouter.ai/api/v1/models",
+  },
+  {
+    id: "together",
+    label: "Together AI",
+    keyringAccount: "together-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://api.together.xyz/settings/api-keys",
+    modelsUrl: "https://api.together.xyz/v1/models",
+  },
+  {
+    id: "fireworks",
+    label: "Fireworks AI",
+    keyringAccount: "fireworks-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://app.fireworks.ai/users/api-keys",
+    modelsUrl: "https://api.fireworks.ai/inference/v1/models",
+  },
+  {
+    id: "perplexity",
+    label: "Perplexity",
+    keyringAccount: "perplexity-api-key",
+    keyPrefix: "pplx-",
+    consoleUrl: "https://www.perplexity.ai/settings/api",
+    modelsUrl: null,
+  },
+  {
+    id: "cohere",
+    label: "Cohere",
+    keyringAccount: "cohere-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://dashboard.cohere.com/api-keys",
+    modelsUrl: null,
+  },
+  {
+    id: "moonshot",
+    label: "Moonshot (Kimi)",
+    keyringAccount: "moonshot-api-key",
+    keyPrefix: "sk-",
+    consoleUrl: "https://platform.moonshot.cn/console/api-keys",
+    modelsUrl: "https://api.moonshot.cn/v1/models",
+  },
+  {
+    id: "siliconflow",
+    label: "SiliconFlow",
+    keyringAccount: "siliconflow-api-key",
+    keyPrefix: "sk-",
+    consoleUrl: "https://cloud.siliconflow.cn/account/ak",
+    modelsUrl: "https://api.siliconflow.cn/v1/models",
+  },
+  {
+    id: "hyperbolic",
+    label: "Hyperbolic",
+    keyringAccount: "hyperbolic-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://app.hyperbolic.xyz/settings",
+    modelsUrl: "https://api.hyperbolic.xyz/v1/models",
+  },
+  {
+    id: "deepinfra",
+    label: "DeepInfra",
+    keyringAccount: "deepinfra-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://deepinfra.com/dash/api_keys",
+    modelsUrl: "https://api.deepinfra.com/v1/openai/models",
+  },
+  {
+    id: "novita",
+    label: "Novita AI",
+    keyringAccount: "novita-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://novita.ai/api-key",
+    modelsUrl: "https://api.novita.ai/v3/openai/models",
+  },
+  {
+    id: "huggingface",
+    label: "Hugging Face",
+    keyringAccount: "huggingface-api-key",
+    keyPrefix: "hf_",
+    consoleUrl: "https://huggingface.co/settings/tokens",
+    keyOptional: true,
+    modelsUrl: "https://router.huggingface.co/v1/models",
+  },
+  {
+    id: "huggingface-endpoint",
+    label: "HF Dedicated Endpoint",
+    keyringAccount: "huggingface-endpoint-api-key",
+    keyPrefix: "hf_",
+    consoleUrl: "https://ui.endpoints.huggingface.co/",
+    keyOptional: true,
+    modelsUrl: null,
+    disabled: true,
+  },
+  {
+    id: "sambanova",
+    label: "SambaNova",
+    keyringAccount: "sambanova-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://cloud.sambanova.ai/",
+    modelsUrl: "https://api.sambanova.ai/v1/models",
+  },
+  {
+    id: "minimax",
+    label: "MiniMax",
+    keyringAccount: "minimax-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://platform.minimaxi.com/",
+    modelsUrl: "https://api.minimax.io/v1/models",
+  },
+  {
+    id: "zhipu",
+    label: "Zhipu AI (GLM)",
+    keyringAccount: "zhipu-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://z.ai/model-api",
+    modelsUrl: "https://api.z.ai/api/paas/v4/models",
+  },
+  {
+    id: "volcengine",
+    label: "Volcengine (Doubao)",
+    keyringAccount: "volcengine-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/api-key",
+    modelsUrl: "https://ark.cn-beijing.volces.com/api/v3/models",
+    disabled: true,
+  },
+  {
+    id: "yi",
+    label: "01.AI (Yi)",
+    keyringAccount: "yi-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://platform.01.ai/apikeys",
+    modelsUrl: "https://api.01.ai/v1/models",
+    disabled: true,
+  },
+  {
+    id: "replicate",
+    label: "Replicate",
+    keyringAccount: "replicate-api-key",
+    keyPrefix: "r8_",
+    consoleUrl: "https://replicate.com/account/api-tokens",
+    modelsUrl: null,
+    disabled: true,
+  },
+  {
+    id: "ollama",
+    label: "Ollama",
+    keyringAccount: "ollama-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://ollama.com",
+    keyOptional: true,
+    modelsUrl: "http://localhost:11434/v1/models",
   },
   {
     id: "openai-compatible",
@@ -86,6 +277,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPrefix: null,
     consoleUrl: "https://platform.openai.com/docs/api-reference",
     keyOptional: true,
+    modelsUrl: null,
   },
   {
     id: "lmstudio",
@@ -93,6 +285,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
+    modelsUrl: "http://localhost:1234/v1/models",
   },
 ] as const;
 
@@ -305,6 +498,413 @@ export const MODELS = [
     description: "Chain-of-thought at open-weight prices.",
     capabilities: { intelligence: 5, speed: 2, cost: 4 },
     tags: ["reasoning", "coding"],
+  },
+
+  // ── Mistral ──────────────────────────────────────────────────────────────
+  {
+    id: "mistral-large-latest",
+    provider: "mistral",
+    label: "Mistral Large 3",
+    hint: "Best",
+    description: "EU-hosted flagship for code and agents.",
+    capabilities: { intelligence: 4, speed: 4, cost: 3 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "mistral-nemo",
+    provider: "mistral",
+    label: "Mistral Nemo",
+    hint: "Fast",
+    description: "Lightweight and cost-efficient.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["tools"],
+  },
+  {
+    id: "codestral-latest",
+    provider: "mistral",
+    label: "Codestral",
+    hint: "Coding",
+    description: "Mistral's code-specialized model.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["coding"],
+  },
+
+  // ── Together AI ──────────────────────────────────────────────────────────
+  {
+    id: "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+    provider: "together",
+    label: "Llama 4 Maverick",
+    hint: "Together",
+    description: "Meta's flagship MoE on Together AI.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["vision", "tools"],
+  },
+  {
+    id: "Qwen/Qwen3-235B-A22B-fp8-tput",
+    provider: "together",
+    label: "Qwen3 235B",
+    hint: "Together",
+    description: "Alibaba's MoE reasoner.",
+    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "deepseek-ai/DeepSeek-V3",
+    provider: "together",
+    label: "DeepSeek V3",
+    hint: "Together",
+    description: "Open-weight DeepSeek on Together.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+
+  // ── Fireworks AI ─────────────────────────────────────────────────────────
+  {
+    id: "accounts/fireworks/models/llama4-maverick-instruct-basic",
+    provider: "fireworks",
+    label: "Llama 4 Maverick",
+    hint: "Fireworks",
+    description: "Fast Llama 4 inference on Fireworks.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["vision", "tools"],
+  },
+  {
+    id: "accounts/fireworks/models/qwen3-235b-a22b",
+    provider: "fireworks",
+    label: "Qwen3 235B",
+    hint: "Fireworks",
+    description: "Qwen MoE on FireAttention engine.",
+    capabilities: { intelligence: 5, speed: 4, cost: 4 },
+    tags: ["reasoning", "tools"],
+  },
+
+  // ── Perplexity ───────────────────────────────────────────────────────────
+  {
+    id: "sonar-pro",
+    provider: "perplexity",
+    label: "Sonar Pro",
+    hint: "Search",
+    description: "Search-grounded reasoning.",
+    capabilities: { intelligence: 4, speed: 4, cost: 3 },
+    tags: ["tools"],
+  },
+  {
+    id: "sonar",
+    provider: "perplexity",
+    label: "Sonar",
+    hint: "Fast",
+    description: "Fast search-augmented answers.",
+    capabilities: { intelligence: 3, speed: 5, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── Cohere ───────────────────────────────────────────────────────────────
+  {
+    id: "command-a-03-2025",
+    provider: "cohere",
+    label: "Command A",
+    hint: "Best",
+    description: "Enterprise RAG and tool use.",
+    capabilities: { intelligence: 4, speed: 4, cost: 3 },
+    tags: ["tools"],
+  },
+  {
+    id: "command-r7b-12-2024",
+    provider: "cohere",
+    label: "Command R7B",
+    hint: "Fast",
+    description: "Lightweight retrieval model.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["tools"],
+  },
+
+  // ── Moonshot (Kimi) ──────────────────────────────────────────────────────
+  {
+    id: "moonshot-v1-auto",
+    provider: "moonshot",
+    label: "Moonshot Auto",
+    hint: "Auto",
+    description: "Auto-routing Moonshot model.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["tools"],
+  },
+  {
+    id: "kimi-k2.5",
+    provider: "moonshot",
+    label: "Kimi K2.5",
+    hint: "Best",
+    description: "Moonshot's agentic flagship.",
+    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+     tags: ["tools", "coding"],
+  },
+
+  // ── SiliconFlow ─────────────────────────────────────────────────────────
+  {
+    id: "siliconflow/deepseek-v3",
+    provider: "siliconflow",
+    label: "DeepSeek V3",
+    hint: "SiliconFlow",
+    description: "DeepSeek V3 on fast SiliconFlow inference.",
+    capabilities: { intelligence: 5, speed: 4, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "siliconflow/qwen3-235b",
+    provider: "siliconflow",
+    label: "Qwen3 235B",
+    hint: "SiliconFlow",
+    description: "Alibaba's MoE model on SiliconFlow.",
+    capabilities: { intelligence: 5, speed: 4, cost: 5 },
+    tags: ["reasoning", "tools"],
+  },
+  {
+    id: "siliconflow/llama4-maverick",
+    provider: "siliconflow",
+    label: "Llama 4 Maverick",
+    hint: "SiliconFlow",
+    description: "Meta's flagship MoE on SiliconFlow.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["vision", "tools"],
+  },
+
+  // ── Hyperbolic ──────────────────────────────────────────────────────────
+  {
+    id: "meta-llama/Meta-Llama-3.1-405B-Instruct",
+    provider: "hyperbolic",
+    label: "Llama 3.1 405B",
+    hint: "Hyperbolic",
+    description: "Largest Llama on discounted GPU.",
+    capabilities: { intelligence: 4, speed: 3, cost: 5 },
+    tags: ["tools"],
+  },
+  {
+    id: "deepseek-ai/DeepSeek-R1",
+    provider: "hyperbolic",
+    label: "DeepSeek R1",
+    hint: "Hyperbolic",
+    description: "Chain-of-thought reasoning on Hyperbolic.",
+    capabilities: { intelligence: 5, speed: 3, cost: 5 },
+    tags: ["reasoning", "coding"],
+  },
+
+  // ── DeepInfra ───────────────────────────────────────────────────────────
+  {
+    id: "meta-llama/Meta-Llama-3.1-70B-Instruct",
+    provider: "deepinfra",
+    label: "Llama 3.1 70B",
+    hint: "DeepInfra",
+    description: "Stable Llama on DeepInfra.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools"],
+  },
+  {
+    id: "Qwen/Qwen2.5-72B-Instruct",
+    provider: "deepinfra",
+    label: "Qwen 2.5 72B",
+    hint: "DeepInfra",
+    description: "Multilingual Qwen on DeepInfra.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "deepinfra/deepseek-v3",
+    provider: "deepinfra",
+    label: "DeepSeek V3",
+    hint: "DeepInfra",
+    description: "Open-weight flagship on DeepInfra.",
+    capabilities: { intelligence: 5, speed: 4, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+
+  // ── Novita AI ───────────────────────────────────────────────────────────
+  {
+    id: "deepseek/deepseek-r1-0528",
+    provider: "novita",
+    label: "DeepSeek R1",
+    hint: "Novita",
+    description: "Reasoning model on Novita GPU network.",
+    capabilities: { intelligence: 5, speed: 3, cost: 5 },
+    tags: ["reasoning", "coding"],
+  },
+  {
+    id: "qwen/qwen3-30b-a3b",
+    provider: "novita",
+    label: "Qwen3 30B MoE",
+    hint: "Novita",
+    description: "Efficient MoE on Novita.",
+    capabilities: { intelligence: 4, speed: 5, cost: 5 },
+    tags: ["tools"],
+  },
+
+  // ── Hugging Face ────────────────────────────────────────────────────────
+  {
+    id: "meta-llama/Llama-3.3-70B-Instruct",
+    provider: "huggingface",
+    label: "Llama 3.3 70B",
+    hint: "HuggingFace",
+    description: "Open model via HF Inference Providers.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["tools"],
+  },
+  {
+    id: "Qwen/Qwen2.5-72B-Instruct",
+    provider: "huggingface",
+    label: "Qwen 2.5 72B",
+    hint: "HuggingFace",
+    description: "Multilingual Qwen via HF Inference Providers.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "deepseek-ai/DeepSeek-V3",
+    provider: "huggingface",
+    label: "DeepSeek V3",
+    hint: "HuggingFace",
+    description: "DeepSeek V3 via HF Inference Providers.",
+    capabilities: { intelligence: 5, speed: 3, cost: 3 },
+    tags: ["tools", "coding"],
+  },
+
+  // ── SambaNova ────────────────────────────────────────────────────────────
+  {
+    id: "sambanova/deepseek-r1",
+    provider: "sambanova",
+    label: "DeepSeek R1",
+    hint: "SambaNova",
+    description: "Fast reasoning on SambaNova silicon.",
+    capabilities: { intelligence: 5, speed: 5, cost: 5 },
+    tags: ["reasoning", "coding"],
+  },
+  {
+    id: "sambanova/llama4-maverick",
+    provider: "sambanova",
+    label: "Llama 4 Maverick",
+    hint: "SambaNova",
+    description: "Meta's MoE on wafer-scale inference.",
+    capabilities: { intelligence: 4, speed: 5, cost: 5 },
+    tags: ["vision", "tools"],
+  },
+
+  // ── MiniMax ─────────────────────────────────────────────────────────────
+  {
+    id: "MiniMax-M2.7",
+    provider: "minimax",
+    label: "MiniMax M2.7",
+    hint: "Best",
+    description: "MiniMax flagship multimodal model.",
+    capabilities: { intelligence: 5, speed: 3, cost: 3 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "MiniMax-M2.5",
+    provider: "minimax",
+    label: "MiniMax M2.5",
+    hint: "Fast",
+    description: "Fast MiniMax for general tasks.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── Zhipu AI (GLM) ─────────────────────────────────────────────────────
+  {
+    id: "glm-5",
+    provider: "zhipu",
+    label: "GLM 5",
+    hint: "Best",
+    description: "Zhipu's latest flagship model.",
+    capabilities: { intelligence: 5, speed: 3, cost: 3 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "glm-4.7",
+    provider: "zhipu",
+    label: "GLM 4.7",
+    hint: "Coding",
+    description: "Zhipu's code-specialized model.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["tools", "coding"],
+  },
+
+  // ── Volcengine (Doubao) ─────────────────────────────────────────────────
+  {
+    id: "doubao-seed-1.8",
+    provider: "volcengine",
+    label: "Doubao Seed 1.8",
+    hint: "Best",
+    description: "ByteDance's flagship Doubao model.",
+    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "doubao-1.5-pro",
+    provider: "volcengine",
+    label: "Doubao 1.5 Pro",
+    hint: "Balanced",
+    description: "Balanced Doubao for everyday tasks.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── 01.AI (Yi) ─────────────────────────────────────────────────────────
+  {
+    id: "yi-large",
+    provider: "yi",
+    label: "Yi Large",
+    hint: "Best",
+    description: "01.AI's flagship reasoning model.",
+    capabilities: { intelligence: 4, speed: 3, cost: 3 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "yi-large-turbo",
+    provider: "yi",
+    label: "Yi Large Turbo",
+    hint: "Fast",
+    description: "Fast Yi for quick responses.",
+    capabilities: { intelligence: 3, speed: 5, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── Replicate ───────────────────────────────────────────────────────────
+  {
+    id: "replicate/snowflake-arctic-instruct",
+    provider: "replicate",
+    label: "Snowflake Arctic",
+    hint: "Replicate",
+    description: "Open MoE model via Replicate.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["tools"],
+  },
+  {
+    id: "replicate/meta-llama-3.1-405b",
+    provider: "replicate",
+    label: "Llama 3.1 405B",
+    hint: "Replicate",
+    description: "Largest open model on Replicate.",
+    capabilities: { intelligence: 4, speed: 3, cost: 4 },
+    tags: ["tools"],
+  },
+
+  // ── Ollama (local; model id is user-supplied at runtime) ─────────────────
+  {
+    id: "ollama-local",
+    provider: "ollama",
+    label: "Ollama",
+    hint: "Local",
+    description: "Local models via Ollama.",
+    capabilities: { intelligence: 3, speed: 3, cost: 5 },
+  },
+
+  // ── HF Dedicated Endpoint (AWS/Azure/GCP; model id = "tgi") ─────────────
+  {
+    id: "hf-endpoint-dedicated",
+    provider: "huggingface-endpoint",
+    label: "HF Endpoint",
+    hint: "Dedicated",
+    description:
+      "Dedicated HF Inference Endpoint (AWS/Azure/GCP). Set endpoint URL in Settings.",
+    capabilities: { intelligence: 4, speed: 4, cost: 3 },
+    tags: ["tools"],
   },
 
   // ── Cerebras (autocomplete-tier) ──────────────────────────────────────────
@@ -527,8 +1127,9 @@ export type ModelId = (typeof MODELS)[number]["id"];
 
 export function getModel(id: ModelId): ModelInfo {
   const m = MODELS.find((x) => x.id === id);
-  if (!m) throw new Error(`Unknown model: ${id}`);
-  return m;
+  if (m) return m;
+  const fallback = MODELS.find((x) => x.id === DEFAULT_MODEL_ID);
+  return fallback ?? MODELS[0];
 }
 
 export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
@@ -556,6 +1157,45 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-v4-pro": 1_000_000,
   "deepseek-v4-flash": 1_000_000,
   "deepseek-reasoner": 128_000,
+  "mistral-large-latest": 128_000,
+  "mistral-nemo": 128_000,
+  "codestral-latest": 256_000,
+  "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": 1_000_000,
+  "Qwen/Qwen3-235B-A22B-fp8-tput": 128_000,
+  "deepseek-ai/DeepSeek-V3": 128_000,
+  "accounts/fireworks/models/llama4-maverick-instruct-basic": 256_000,
+  "accounts/fireworks/models/qwen3-235b-a22b": 256_000,
+  "sonar-pro": 200_000,
+  "sonar": 128_000,
+  "command-a-03-2025": 256_000,
+  "command-r7b-12-2024": 128_000,
+  "moonshot-v1-auto": 128_000,
+  "kimi-k2.5": 256_000,
+  "siliconflow/deepseek-v3": 128_000,
+  "siliconflow/qwen3-235b": 128_000,
+  "siliconflow/llama4-maverick": 1_000_000,
+  "meta-llama/Meta-Llama-3.1-405B-Instruct": 128_000,
+  "deepseek-ai/DeepSeek-R1": 128_000,
+  "meta-llama/Meta-Llama-3.1-70B-Instruct": 128_000,
+  "Qwen/Qwen2.5-72B-Instruct": 128_000,
+  "deepinfra/deepseek-v3": 128_000,
+  "deepseek/deepseek-r1-0528": 128_000,
+  "qwen/qwen3-30b-a3b": 128_000,
+  "meta-llama/Llama-3.3-70B-Instruct": 128_000,
+  "sambanova/deepseek-r1": 128_000,
+  "sambanova/llama4-maverick": 1_000_000,
+  "MiniMax-M2.7": 1_000_000,
+  "MiniMax-M2.5": 160_000,
+  "glm-5": 128_000,
+  "glm-4.7": 128_000,
+  "doubao-seed-1.8": 256_000,
+  "doubao-1.5-pro": 256_000,
+  "yi-large": 32_000,
+  "yi-large-turbo": 32_000,
+  "replicate/snowflake-arctic-instruct": 128_000,
+  "replicate/meta-llama-3.1-405b": 128_000,
+  "ollama-local": 32_000,
+  "hf-endpoint-dedicated": 128_000,
   "gpt-oss-120b": 128_000,
   "llama3.3-70b": 128_000,
   "qwen-3-32b": 32_000,
@@ -631,8 +1271,10 @@ export function estimateCost(
 
 /** Providers that do not require an API key (local servers, key-optional). */
 export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
+  "ollama",
   "lmstudio",
   "openai-compatible",
+  "huggingface-endpoint",
 ] as const;
 
 export function providerNeedsKey(id: ProviderId): boolean {
@@ -662,7 +1304,26 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   xai: "grok-4-fast-reasoning",
   deepseek: "deepseek-v4-flash",
   openrouter: "openai/gpt-5.4-mini",
+  mistral: "mistral-nemo",
+  together: "deepseek-ai/DeepSeek-V3",
+  fireworks: "accounts/fireworks/models/llama4-maverick-instruct-basic",
+  perplexity: "sonar",
+  cohere: "command-r7b-12-2024",
+  moonshot: "moonshot-v1-auto",
+  siliconflow: "siliconflow/deepseek-v3",
+  hyperbolic: "deepseek-ai/DeepSeek-R1",
+  deepinfra: "deepinfra/deepseek-v3",
+  novita: "qwen/qwen3-30b-a3b",
+  huggingface: "huggingface/qwen2.5-72b",
+  sambanova: "sambanova/llama4-maverick",
+  minimax: "MiniMax-M2.5",
+  zhipu: "glm-4.7",
+  volcengine: "doubao-1.5-pro",
+  yi: "yi-large-turbo",
+  replicate: "replicate/snowflake-arctic-instruct",
+  ollama: "qwen2.5-coder-7b-instruct",
   "openai-compatible": "",
+  "huggingface-endpoint": "tgi",
 };
 
 /** Curated list of fast models suitable for inline completion (speed ≥ 4). */
@@ -673,6 +1334,10 @@ export function getAutocompleteEligibleModels(): readonly ModelInfo[] {
 }
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
+export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434/v1";
+export const HUGGINGFACE_ENDPOINT_DEFAULT_BASE_URL =
+  "https://YOUR_ENDPOINT_ID.aws.endpoints.huggingface.cloud/v1";
+export const ZHIPU_DEFAULT_BASE_URL = "https://api.z.ai/api/paas/v4";
 export const OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;

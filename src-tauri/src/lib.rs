@@ -1,8 +1,19 @@
 mod modules;
 
 use modules::{fs, net, pty, secrets, shell, workspace};
+use std::path::PathBuf;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
+
+fn settings_data_dir(app: &tauri::AppHandle) -> PathBuf {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .expect("no app-data dir")
+        .join("webview-settings");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
 
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
@@ -14,10 +25,12 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.set_focus();
         if let Some(t) = tab.as_deref().filter(|s| !s.is_empty()) {
-            // emit() serializes via JSON — no string-escape footgun, unlike
-            // eval() with format!(). Frontend listens via Tauri event API.
             let _ = window.emit("terax:settings-tab", t);
         }
+        if window.is_visible().unwrap_or(false) {
+            return Ok(());
+        }
+        let _ = window.show();
         return Ok(());
     }
 
@@ -28,8 +41,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         .max_inner_size(720.0, 520.0)
         .resizable(false)
         .visible(false)
-        // Keep settings above the main app window so it doesn't get hidden
-        // when the user clicks back into the editor or terminal (#33).
+        .data_directory(settings_data_dir(&app))
         .always_on_top(true);
 
     // Tie lifecycle to the main window so settings minimizes/closes with it.
@@ -48,6 +60,17 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     let builder = builder.decorations(false).transparent(true);
 
     let window = builder.build().map_err(|e| e.to_string())?;
+
+    // Intercept close — hide the settings window instead of destroying it.
+    // This avoids the WebView2 0x80070057 error on Windows when recreating
+    // a transparent/undecorated webview with the same data directory.
+    let win_clone = window.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = win_clone.hide();
+        }
+    });
 
     // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the
     // builder-time decorations flag — re-assert it after realize.
