@@ -96,6 +96,15 @@ export function AiComposerProvider({ children }: ProviderProps) {
     }
   }, [focusSignal, pendingPrefill, consumePrefill]);
 
+  // Re-focus the textarea whenever the agent finishes a response
+  const prevIsBusyRef = useRef(false);
+  useEffect(() => {
+    if (prevIsBusyRef.current && !isBusy) {
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+    prevIsBusyRef.current = isBusy;
+  }, [isBusy, textareaRef]);
+
   // Listen for explorer's "Attach to Agent" event.
   useEffect(() => {
     const onAttach = (e: Event) => {
@@ -306,6 +315,8 @@ export function AiComposerProvider({ children }: ProviderProps) {
     setFiles([]);
     setPickedSnippets([]);
     setPickedCommands([]);
+    // Re-focus immediately after submit so the user can type a follow-up
+    requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
   const stop = () => {
