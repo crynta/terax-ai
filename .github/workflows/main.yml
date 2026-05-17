@@ -50,14 +50,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+    
       - name: Setup Android SDK + NDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            build-tools;34.0.0
-            platforms;android-34
-            ndk;${{ env.NDK_VERSION }}
-            cmake;3.22.1
+          packages: build-tools;34.0.0 platforms;android-34 ndk;${{ env.NDK_VERSION }} cmake;3.22.1
 
       - name: Export NDK_HOME
         run: echo "NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> "$GITHUB_ENV"
