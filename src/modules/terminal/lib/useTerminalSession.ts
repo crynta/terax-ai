@@ -8,8 +8,8 @@ import { openPty, type PtySession } from "./pty-bridge";
 import {
   acquireSlot,
   applyFontSize,
-  applyScrollback,
   applyTheme as applyPoolTheme,
+  applyScrollback,
   applyWebglPreference,
   configureRendererPool,
   focusSlot,
@@ -320,9 +320,10 @@ export function useTerminalSession({
   }, [leafId, container, initialCwd]);
 
   const fontSize = usePreferencesStore((p) => p.terminalFontSize);
+  const zoomLevel = usePreferencesStore((p) => p.zoomLevel);
   useEffect(() => {
-    applyFontSize(fontSize);
-  }, [fontSize]);
+    applyFontSize(Math.max(4, Math.round(fontSize * zoomLevel)));
+  }, [fontSize, zoomLevel]);
 
   const scrollback = usePreferencesStore((p) => p.terminalScrollback);
   useEffect(() => {

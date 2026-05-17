@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
 use tauri::ipc::{Channel, Response};
 
+use super::da_filter::DaFilter;
 use super::shell_init;
 use crate::modules::workspace::WorkspaceEnv;
 
@@ -37,7 +38,7 @@ pub struct Session {
     #[cfg(windows)]
     _job: Option<super::job::PtyJob>,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
-    pub writer: Mutex<Box<dyn Write + Send>>,
+    pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
 }
 
@@ -79,7 +80,9 @@ pub fn spawn(
 
     let killer = child.clone_killer();
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    let writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(
+        pair.master.take_writer().map_err(|e| e.to_string())?,
+    ));
 
     #[cfg(windows)]
     let job = match child.process_id() {
@@ -97,7 +100,7 @@ pub fn spawn(
         #[cfg(windows)]
         _job: job,
         killer: Mutex::new(killer),
-        writer: Mutex::new(writer),
+        writer: writer.clone(),
         master: Mutex::new(pair.master),
     });
 
@@ -106,10 +109,13 @@ pub fn spawn(
     let spawn_at = Instant::now();
 
     let pending_r = pending.clone();
+    let writer_for_da = writer.clone();
     let reader_thread = thread::Builder::new()
         .name("terax-pty-reader".into())
         .spawn(move || {
             let mut buf = [0u8; READ_BUF];
+            let mut filtered: Vec<u8> = Vec::with_capacity(READ_BUF);
+            let mut da_filter = DaFilter::new();
             let mut dropped_bytes: u64 = 0;
             let mut logged_first = false;
             loop {
@@ -120,21 +126,24 @@ pub fn spawn(
                             logged_first = true;
                             log::info!("pty first byte after {}ms", spawn_at.elapsed().as_millis());
                         }
+                        filtered.clear();
+                        da_filter.process(&buf[..n], &mut filtered, |reply| {
+                            if let Ok(mut w) = writer_for_da.lock() {
+                                let _ = w.write_all(reply);
+                            }
+                        });
+                        if filtered.is_empty() {
+                            continue;
+                        }
                         let mut g = pending_r.lock().unwrap();
-                        if g.len() + n > MAX_PENDING {
-                            // Discard the whole backlog rather than slicing
-                            // through escape sequences. Emit a hard reset so
-                            // xterm doesn't carry stale SGR/cursor state.
+                        if g.len() + filtered.len() > MAX_PENDING {
                             dropped_bytes += g.len() as u64;
                             g.clear();
                             g.extend_from_slice(OVERFLOW_NOTICE);
                         }
-                        g.extend_from_slice(&buf[..n]);
+                        g.extend_from_slice(&filtered);
                     }
                     Err(e) => {
-                        // Normal on child exit: the slave fd is closed and
-                        // read(2) returns EIO on some platforms. Kept at debug
-                        // to avoid noise in the common case.
                         log::debug!("pty reader ended: {e}");
                         break;
                     }
@@ -185,6 +194,14 @@ pub fn spawn(
             };
             // Wait for the reader to hit EOF before taking a final snapshot of
             // `pending`, so the last line of output never races the Exit event.
+            #[cfg(windows)]
+            {
+                let deadline = Instant::now() + Duration::from_millis(50);
+                while Instant::now() < deadline && !reader_thread.is_finished() {
+                    thread::sleep(Duration::from_millis(5));
+                }
+            }
+            #[cfg(not(windows))]
             if let Err(e) = reader_thread.join() {
                 log::error!("pty reader thread panicked: {e:?}");
             }
