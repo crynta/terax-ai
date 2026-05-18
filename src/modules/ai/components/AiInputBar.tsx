@@ -13,13 +13,22 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { useComposer, type FileAttachment } from "../lib/composer";
+import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
 import type { Snippet } from "../lib/snippets";
+import { useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { AgentSwitcher } from "./AgentSwitcher";
+import { FilePickerContent } from "./FilePicker";
 import { SnippetPickerContent, type PickerItem } from "./SnippetPicker";
 
 type SnippetTrigger = {
+  start: number;
+  end: number;
+  query: string;
+};
+
+type FileTrigger = {
   start: number;
   end: number;
   query: string;
@@ -44,12 +53,43 @@ function detectSnippetTrigger(
   return null;
 }
 
+function detectFileTrigger(
+  value: string,
+  caret: number,
+): FileTrigger | null {
+  for (let i = caret - 1; i >= 0; i--) {
+    const ch = value[i];
+    if (ch === "@") {
+      const prev = i === 0 ? " " : value[i - 1];
+      if (!/\s/.test(prev)) return null;
+      const slice = value.slice(i + 1, caret);
+      return { start: i, end: caret, query: slice };
+    }
+    if (/\s/.test(ch)) return null;
+  }
+  return null;
+}
+
 export function AiInputBar() {
   const c = useComposer();
   const snippets = useSnippetsStore((s) => s.snippets);
+  const workspaceRoot = useChatStore((s) => s.live.getWorkspaceRoot());
 
   const [trigger, setTrigger] = useState<SnippetTrigger | null>(null);
+  const [fileTrigger, setFileTrigger] = useState<FileTrigger | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  const workspaceFiles = useWorkspaceFiles(workspaceRoot, fileTrigger !== null);
+
+  const [fileQuery, setFileQuery] = useState("");
+  useEffect(() => {
+    if (!fileTrigger) {
+      setFileQuery("");
+      return;
+    }
+    const q = fileTrigger.query;
+    const t = window.setTimeout(() => setFileQuery(q), 50);
+    return () => window.clearTimeout(t);
+  }, [fileTrigger]);
 
   useEffect(() => {
     autoresize(c.textareaRef.current);
@@ -59,9 +99,12 @@ export function AiInputBar() {
     const el = c.textareaRef.current;
     if (!el) {
       setTrigger(null);
+      setFileTrigger(null);
       return;
     }
-    setTrigger(detectSnippetTrigger(c.value, el.selectionStart ?? 0));
+    const caret = el.selectionStart ?? 0;
+    setTrigger(detectSnippetTrigger(c.value, caret));
+    setFileTrigger(detectFileTrigger(c.value, caret));
   };
 
   useEffect(updateTrigger, [c.value, c.textareaRef]);
@@ -86,11 +129,28 @@ export function AiInputBar() {
     return [...cmdItems, ...snipItems];
   }, [trigger, snippets]);
 
-  useEffect(() => {
-    if (activeIndex >= filteredItems.length) setActiveIndex(0);
-  }, [filteredItems.length, activeIndex]);
+  const FILE_PICKER_CAP = 30;
+  const filteredFiles = useMemo<string[]>(() => {
+    if (!fileTrigger) return [];
+    const q = fileQuery.toLowerCase();
+    if (!q) return workspaceFiles.files.slice(0, FILE_PICKER_CAP);
+    const out: string[] = [];
+    for (const f of workspaceFiles.files) {
+      if (f.toLowerCase().includes(q)) {
+        out.push(f);
+        if (out.length >= FILE_PICKER_CAP) break;
+      }
+    }
+    return out;
+  }, [fileTrigger, fileQuery, workspaceFiles.files]);
 
-  const pickerOpen = trigger !== null;
+  const fileTriggerOpen = fileTrigger !== null;
+  const snippetTriggerOpen = trigger !== null;
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [snippetTriggerOpen, fileTriggerOpen, fileQuery]);
+
+  const pickerOpen = trigger !== null || fileTrigger !== null;
 
   const onPickItem = (item: PickerItem) => {
     if (!trigger) return;
@@ -118,7 +178,31 @@ export function AiInputBar() {
     });
   };
 
+  const onPickFile = async (filePath: string) => {
+    if (!fileTrigger || !workspaceRoot) return;
+    const before = c.value.slice(0, fileTrigger.start);
+    const after = c.value.slice(fileTrigger.end);
+    c.setValue(`${before}${after}`);
+    setFileTrigger(null);
+    setActiveIndex(0);
+    const fullPath = workspaceRoot.endsWith("/")
+      ? `${workspaceRoot}${filePath}`
+      : `${workspaceRoot}/${filePath}`;
+    await c.attachFileByPath(fullPath);
+    requestAnimationFrame(() => {
+      const el = c.textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(before.length, before.length);
+    });
+  };
+
   const pickActive = () => {
+    if (fileTrigger) {
+      const file = filteredFiles[activeIndex];
+      if (file) void onPickFile(file);
+      return;
+    }
     const it = filteredItems[activeIndex];
     if (it) onPickItem(it);
   };
@@ -164,10 +248,11 @@ export function AiInputBar() {
                 onSelect={updateTrigger}
                 onKeyDown={(e) => {
                   if (pickerOpen) {
+                    const items = fileTrigger ? filteredFiles : filteredItems;
                     if (e.key === "ArrowDown") {
                       e.preventDefault();
                       setActiveIndex((i) =>
-                        Math.min(i + 1, Math.max(0, filteredItems.length - 1)),
+                        Math.min(i + 1, Math.max(0, items.length - 1)),
                       );
                       return;
                     }
@@ -177,7 +262,7 @@ export function AiInputBar() {
                       return;
                     }
                     if (e.key === "Tab" || e.key === "Enter") {
-                      if (filteredItems.length > 0) {
+                      if (items.length > 0) {
                         e.preventDefault();
                         pickActive();
                         return;
@@ -185,7 +270,14 @@ export function AiInputBar() {
                     }
                     if (e.key === "Escape") {
                       e.preventDefault();
-                      setTrigger(null);
+                      if (fileTrigger) {
+                        const before = c.value.slice(0, fileTrigger.start);
+                        const after = c.value.slice(fileTrigger.end);
+                        c.setValue(`${before}${after}`);
+                        setFileTrigger(null);
+                      } else {
+                        setTrigger(null);
+                      }
                       return;
                     }
                   }
@@ -194,7 +286,7 @@ export function AiInputBar() {
                     c.submit();
                   }
                 }}
-                placeholder="Ask Terax anything   -   # for snippets and commands"
+                placeholder="Ask Terax anything   -   # for snippets and commands, @ for files"
                 rows={1}
                 disabled={c.isBusy}
                 className={cn(
@@ -205,12 +297,24 @@ export function AiInputBar() {
               <AgentSwitcher />
             </div>
           </PopoverAnchor>
-          <SnippetPickerContent
-            items={filteredItems}
-            activeIndex={activeIndex}
-            onPick={onPickItem}
-            onHover={setActiveIndex}
-          />
+          {fileTrigger ? (
+            <FilePickerContent
+              files={filteredFiles}
+              activeIndex={activeIndex}
+              indexing={workspaceFiles.indexing}
+              truncated={workspaceFiles.truncated}
+              hasWorkspace={workspaceRoot !== null}
+              onPick={(f) => void onPickFile(f)}
+              onHover={setActiveIndex}
+            />
+          ) : (
+            <SnippetPickerContent
+              items={filteredItems}
+              activeIndex={activeIndex}
+              onPick={onPickItem}
+              onHover={setActiveIndex}
+            />
+          )}
         </Popover>
 
         <AnimatePresence initial={false}>
@@ -390,7 +494,7 @@ export function AiInputBarConnect({ onAdd }: { onAdd: () => void }) {
         </span>
         <Button size="xs" onClick={onAdd}>
           <HugeiconsIcon icon={Key01Icon} />
-          Add API key
+          Connect provider
         </Button>
       </div>
     </div>

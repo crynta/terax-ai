@@ -1,5 +1,5 @@
-export { EditorPane, type EditorPaneHandle } from "./EditorPane";
-export { EditorStack } from "./EditorStack";
-export { AiDiffPane } from "./AiDiffPane";
-export { AiDiffStack } from "./AiDiffStack";
+export type { EditorPaneHandle } from "./EditorPane";
+export { EditorStack } from "./EditorStackLazy";
+export { AiDiffStack } from "./AiDiffStackLazy";
+export { GitDiffStack } from "./GitDiffStackLazy";
 export { NewEditorDialog } from "./NewEditorDialog";

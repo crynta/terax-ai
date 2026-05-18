@@ -137,6 +137,16 @@
     }
 }
 
+:root {
+  --app-zoom: 1;
+}
+.zoom-content {
+  zoom: var(--app-zoom);
+}
+.zoom-exempt {
+  zoom: calc(1 / var(--app-zoom));
+}
+
 /* Custom window chrome (Linux/Windows): the OS gives us a transparent
  * borderless window, and we paint the rounded corners + border + shadow
  * ourselves so the app doesn't look naked on GNOME/KDE/Hyprland. */

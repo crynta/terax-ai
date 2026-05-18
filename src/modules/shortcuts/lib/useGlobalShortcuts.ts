@@ -27,12 +27,10 @@ export function useGlobalShortcuts(
     const onKey = (e: KeyboardEvent) => {
       const { handlers, options } = latest.current;
       for (const s of SHORTCUTS) {
-        // Use user-defined bindings if they exist, otherwise use default
+        if (e.repeat && !s.allowRepeat) continue;
         const bindings = userShortcuts[s.id] || s.defaultBindings;
-
         const isMatch = bindings.some((b) => matchBinding(e, b, s.id));
         if (!isMatch) continue;
-
         if (options?.isDisabled?.(s.id, e)) return;
         const h = handlers[s.id];
         if (!h) return;

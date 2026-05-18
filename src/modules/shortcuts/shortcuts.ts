@@ -17,8 +17,13 @@ export type ShortcutId =
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
+  | "pane.source"
   | "search.focus"
   | "explorer.search"
+  | "explorer.focus"
+  | "view.zoomIn"
+  | "view.zoomOut"
+  | "view.zoomReset"
   | "ai.toggle"
   | "ai.askSelection"
   | "shortcuts.open"
@@ -46,6 +51,7 @@ export type Shortcut = {
   label: string;
   group: ShortcutGroup;
   defaultBindings: KeyBinding[];
+  allowRepeat?: boolean;
 };
 
 export const SHORTCUTS: Shortcut[] = [
@@ -114,6 +120,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus previous pane",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
+  },  
+  {
+    id: "pane.source",
+    label: "Toggle source panel",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
   },
   {
     id: "tab.next",
@@ -162,6 +174,38 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle file explorer",
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, key: "b" }],
+  },
+  {
+    id: "explorer.focus",
+    label: "Toggle file explorer focus",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "e" }],
+  },
+  {
+    id: "view.zoomIn",
+    label: "Zoom in",
+    group: "View",
+    defaultBindings: [
+      { [MOD_PROP]: true, key: "=" },
+      { [MOD_PROP]: true, shift: true, key: "+" },
+    ],
+    allowRepeat: true,
+  },
+  {
+    id: "view.zoomOut",
+    label: "Zoom out",
+    group: "View",
+    defaultBindings: [
+      { [MOD_PROP]: true, key: "-" },
+      { [MOD_PROP]: true, shift: true, key: "_" },
+    ],
+    allowRepeat: true,
+  },
+  {
+    id: "view.zoomReset",
+    label: "Reset zoom",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, key: "0" }],
   },
 ];
 

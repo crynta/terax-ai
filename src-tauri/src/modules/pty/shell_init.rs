@@ -56,8 +56,10 @@ fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
     let resolved_cwd = cwd
         .map(PathBuf::from)
         .filter(|p| p.is_dir())
-        .or_else(|| dirs::home_dir().filter(|p| p.is_dir()))
-        .or_else(|| std::env::current_dir().ok());
+        // In `tauri dev`, inherit the repo cwd so explorer/source-control
+        // point at the project the user launched from instead of `$HOME`.
+        .or_else(|| std::env::current_dir().ok().filter(|p| p.is_dir()))
+        .or_else(|| dirs::home_dir().filter(|p| p.is_dir()));
     if let Some(cwd) = resolved_cwd {
         #[cfg(windows)]
         let cwd = PathBuf::from(cwd.to_string_lossy().replace('/', "\\"));
@@ -92,7 +94,10 @@ mod unix {
 
     impl Shell {
         pub fn detect() -> (Shell, String) {
-            let path = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+            let path = login_shell()
+                .or_else(|| std::env::var("SHELL").ok())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "/bin/zsh".into());
             let name = path.rsplit('/').next().unwrap_or("").to_string();
             let shell = match name.as_str() {
                 "zsh" => Shell::Zsh,
@@ -101,6 +106,22 @@ mod unix {
                 _ => Shell::Other,
             };
             (shell, path)
+        }
+    }
+
+    fn login_shell() -> Option<String> {
+        use std::ffi::CStr;
+        unsafe {
+            let uid = libc::getuid();
+            let pw = libc::getpwuid(uid);
+            if pw.is_null() {
+                return None;
+            }
+            let shell_ptr = (*pw).pw_shell;
+            if shell_ptr.is_null() {
+                return None;
+            }
+            CStr::from_ptr(shell_ptr).to_str().ok().map(String::from)
         }
     }
 
@@ -113,10 +134,13 @@ mod unix {
             Shell::Zsh => {
                 match prepare_zdotdir() {
                     Ok(zdotdir) => {
+                        // Guard against Terax-in-Terax :)
                         if let Ok(user_zd) = std::env::var("ZDOTDIR") {
-                            cmd.env("TERAX_USER_ZDOTDIR", user_zd);
+                            if Path::new(&user_zd) != zdotdir.as_path() {
+                                cmd.env("TERAX_USER_ZDOTDIR", user_zd);
+                            }
                         }
-                        cmd.env("ZDOTDIR", zdotdir);
+                        cmd.env("ZDOTDIR", &zdotdir);
                     }
                     Err(e) => {
                         log::warn!("zsh shell integration disabled: {e}");

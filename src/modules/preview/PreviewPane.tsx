@@ -1,6 +1,12 @@
 import { Alert02Icon, Globe02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import {
   PreviewAddressBar,
   type PreviewAddressBarHandle,
@@ -18,18 +24,35 @@ type Props = {
   onUrlChange: (url: string) => void;
 };
 
+// Tear the iframe down after this much invisibility — a background dev
+// server page can hold hundreds of MB inside the WebView.
+const SUSPEND_AFTER_MS = 30_000;
+
 export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
   function PreviewPane({ url, visible, onUrlChange }, ref) {
     // `nonce` is part of the iframe `key`. Bumping it remounts the iframe,
     // which is the only reliable cross-origin reload (calling
     // contentWindow.location.reload() throws on cross-origin frames).
     const [nonce, setNonce] = useState(0);
+    const [loaded, setLoaded] = useState(visible);
     const addressRef = useRef<PreviewAddressBarHandle>(null);
+
+    useEffect(() => {
+      if (visible) {
+        setLoaded(true);
+        return;
+      }
+      const t = setTimeout(() => setLoaded(false), SUSPEND_AFTER_MS);
+      return () => clearTimeout(t);
+    }, [visible]);
 
     useImperativeHandle(
       ref,
       () => ({
-        reload: () => setNonce((n) => n + 1),
+        reload: () => {
+          setLoaded(true);
+          setNonce((n) => n + 1);
+        },
         focusAddressBar: () => addressRef.current?.focus(),
         getUrl: () => url,
       }),
@@ -74,13 +97,22 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
           }
         >
           {url ? (
-            <iframe
-              key={`${url}#${nonce}`}
-              src={url}
-              title="Preview"
-              className="h-full w-full border-0"
-              allow="clipboard-read; clipboard-write; fullscreen"
-            />
+            loaded ? (
+              <iframe
+                key={`${url}#${nonce}`}
+                src={url}
+                title="Preview"
+                className="h-full w-full border-0"
+                allow="clipboard-read; clipboard-write; fullscreen"
+              />
+            ) : (
+              <SuspendedState
+                onReload={() => {
+                  setLoaded(true);
+                  setNonce((n) => n + 1);
+                }}
+              />
+            )
           ) : (
             <EmptyState />
           )}
@@ -89,6 +121,31 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
     );
   },
 );
+
+function SuspendedState({ onReload }: { onReload: () => void }) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center">
+      <div className="flex size-10 items-center justify-center rounded-2xl border border-border/60 bg-card text-muted-foreground">
+        <HugeiconsIcon icon={Globe02Icon} size={18} strokeWidth={1.5} />
+      </div>
+      <div className="space-y-1">
+        <p className="text-[12.5px] font-medium text-foreground">
+          Preview suspended
+        </p>
+        <p className="max-w-xs text-[11px] leading-relaxed text-muted-foreground">
+          Released to free memory after sitting in the background.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onReload}
+        className="rounded-md border border-border/60 bg-card px-3 py-1 text-[11px] hover:bg-accent/50"
+      >
+        Reload
+      </button>
+    </div>
+  );
+}
 
 function EmptyState() {
   return (

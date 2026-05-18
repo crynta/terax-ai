@@ -1,6 +1,6 @@
 mod modules;
 
-use modules::{fs, net, pty, secrets, shell, workspace};
+use modules::{fs, git, net, pty, secrets, shell, workspace};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_window_state::StateFlags;
 
@@ -84,6 +84,11 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
+        .manage({
+            let registry = workspace::WorkspaceRegistry::default();
+            workspace::bootstrap_registry(&registry);
+            registry
+        })
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -94,13 +99,32 @@ pub fn run() {
             fs::file::fs_read_file,
             fs::file::fs_write_file,
             fs::file::fs_stat,
+            fs::file::fs_canonicalize,
             fs::mutate::fs_create_file,
             fs::mutate::fs_create_dir,
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
             fs::search::fs_search,
+            fs::search::fs_list_files,
             fs::grep::fs_grep,
             fs::grep::fs_glob,
+            git::commands::git_resolve_repo,
+            git::commands::git_panel_snapshot,
+            git::commands::git_status,
+            git::commands::git_diff,
+            git::commands::git_diff_content,
+            git::commands::git_stage,
+            git::commands::git_unstage,
+            git::commands::git_discard,
+            git::commands::git_commit,
+            git::commands::git_fetch,
+            git::commands::git_pull_ff_only,
+            git::commands::git_push,
+            git::commands::git_log,
+            git::commands::git_show_commit,
+            git::commands::git_commit_files,
+            git::commands::git_commit_file_diff,
+            git::commands::git_remote_url,
             shell::shell_run_command,
             shell::shell_session_open,
             shell::shell_session_run,
@@ -112,6 +136,8 @@ pub fn run() {
             workspace::wsl_list_distros,
             workspace::wsl_default_distro,
             workspace::wsl_home,
+            workspace::workspace_authorize,
+            workspace::workspace_current_dir,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,

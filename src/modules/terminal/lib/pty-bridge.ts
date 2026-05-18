@@ -21,10 +21,22 @@ export async function openPty(
 ): Promise<PtySession> {
   // Raw bytes — no base64/JSON round-trip; messages arrive as ArrayBuffer.
   const onData = new Channel<ArrayBuffer>();
-  onData.onmessage = (buf) => handlers.onData(new Uint8Array(buf));
-
   const onExit = new Channel<number>();
-  onExit.onmessage = (code) => handlers.onExit?.(code);
+
+  let released = false;
+  const noop = () => {};
+  const releaseHandlers = () => {
+    if (released) return;
+    released = true;
+    onData.onmessage = noop;
+    onExit.onmessage = noop;
+  };
+
+  onData.onmessage = (buf) => handlers.onData(new Uint8Array(buf));
+  onExit.onmessage = (code) => {
+    handlers.onExit?.(code);
+    releaseHandlers();
+  };
 
   const id = await invoke<number>("pty_open", {
     cols,
@@ -35,10 +47,20 @@ export async function openPty(
     onExit,
   });
 
+  let closed = false;
+
   return {
     id,
     write: (data) => invoke("pty_write", { id, data }),
     resize: (c, r) => invoke("pty_resize", { id, cols: c, rows: r }),
-    close: () => invoke("pty_close", { id }),
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      try {
+        await invoke("pty_close", { id });
+      } finally {
+        releaseHandlers();
+      }
+    },
   };
 }

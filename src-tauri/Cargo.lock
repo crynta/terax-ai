@@ -5144,7 +5144,7 @@ dependencies = [
 
 [[package]]
 name = "terax"
-version = "0.6.4"
+version = "0.6.6"
 dependencies = [
  "bytes",
  "dirs 5.0.1",
@@ -5155,6 +5155,7 @@ dependencies = [
  "grep-searcher",
  "ignore",
  "keyring",
+ "libc",
  "log",
  "parking_lot",
  "portable-pty",
@@ -5172,6 +5173,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tokio",
  "windows-sys 0.59.0",
 ]
 
