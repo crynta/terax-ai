@@ -5157,6 +5157,7 @@ dependencies = [
  "keyring",
  "libc",
  "log",
+ "parking_lot",
  "portable-pty",
  "reqwest 0.12.28",
  "serde",
