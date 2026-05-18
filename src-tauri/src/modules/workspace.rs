@@ -1,6 +1,56 @@
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+
+#[derive(Default)]
+pub struct WorkspaceRegistry {
+    roots: Mutex<HashSet<PathBuf>>,
+}
+
+impl WorkspaceRegistry {
+    pub fn authorize<P: AsRef<Path>>(&self, path: P) -> std::io::Result<PathBuf> {
+        let canonical = std::fs::canonicalize(path.as_ref())?;
+        let mut set = self.roots.lock().expect("workspace registry poisoned");
+        set.insert(canonical.clone());
+        Ok(canonical)
+    }
+
+    pub fn is_authorized(&self, target: &Path) -> bool {
+        let set = self.roots.lock().expect("workspace registry poisoned");
+        set.iter().any(|root| target.starts_with(root))
+    }
+}
+
+pub fn bootstrap_registry(registry: &WorkspaceRegistry) {
+    if let Ok(cwd) = std::env::current_dir() {
+        let _ = registry.authorize(cwd);
+    }
+    if let Some(home) = dirs::home_dir() {
+        let _ = registry.authorize(home);
+    }
+}
+
+#[tauri::command]
+pub async fn workspace_authorize(
+    path: String,
+    registry: tauri::State<'_, WorkspaceRegistry>,
+) -> Result<String, String> {
+    let canonical = registry.authorize(&path).map_err(|e| e.to_string())?;
+    Ok(canonical.to_string_lossy().replace('\\', "/"))
+}
+
+#[tauri::command]
+pub async fn workspace_current_dir(
+    registry: tauri::State<'_, WorkspaceRegistry>,
+) -> Result<String, String> {
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let canonical = registry.authorize(&cwd).map_err(|e| e.to_string())?;
+    Ok(canonical.to_string_lossy().replace('\\', "/"))
+}
+
+
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]

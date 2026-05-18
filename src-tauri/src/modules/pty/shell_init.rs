@@ -56,8 +56,10 @@ fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
     let resolved_cwd = cwd
         .map(PathBuf::from)
         .filter(|p| p.is_dir())
-        .or_else(|| dirs::home_dir().filter(|p| p.is_dir()))
-        .or_else(|| std::env::current_dir().ok());
+        // In `tauri dev`, inherit the repo cwd so explorer/source-control
+        // point at the project the user launched from instead of `$HOME`.
+        .or_else(|| std::env::current_dir().ok().filter(|p| p.is_dir()))
+        .or_else(|| dirs::home_dir().filter(|p| p.is_dir()));
     if let Some(cwd) = resolved_cwd {
         #[cfg(windows)]
         let cwd = PathBuf::from(cwd.to_string_lossy().replace('/', "\\"));
@@ -132,10 +134,13 @@ mod unix {
             Shell::Zsh => {
                 match prepare_zdotdir() {
                     Ok(zdotdir) => {
+                        // Guard against Terax-in-Terax :)
                         if let Ok(user_zd) = std::env::var("ZDOTDIR") {
-                            cmd.env("TERAX_USER_ZDOTDIR", user_zd);
+                            if Path::new(&user_zd) != zdotdir.as_path() {
+                                cmd.env("TERAX_USER_ZDOTDIR", user_zd);
+                            }
                         }
-                        cmd.env("ZDOTDIR", zdotdir);
+                        cmd.env("ZDOTDIR", &zdotdir);
                     }
                     Err(e) => {
                         log::warn!("zsh shell integration disabled: {e}");

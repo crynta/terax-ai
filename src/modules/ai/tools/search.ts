@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { native } from "../lib/native";
-import { checkReadable } from "../lib/security";
+import { checkReadableCanonical } from "../lib/security";
 import { resolvePath, type ToolContext } from "./context";
 
 function resolveRoot(
@@ -67,8 +67,9 @@ export function buildSearchTools(ctx: ToolContext) {
       }) => {
         const r = resolveRoot(root, ctx);
         if (!r.ok) return { error: r.error };
-        const safety = checkReadable(r.path);
+        const safety = await checkReadableCanonical(r.path, native.canonicalize);
         if (!safety.ok) return { error: safety.reason, root: r.path };
+        r.path = safety.canonical;
         const cap = Math.min(max_results ?? 30, 500);
         try {
           const res = await native.grep({
@@ -106,8 +107,9 @@ export function buildSearchTools(ctx: ToolContext) {
       execute: async ({ pattern, root, max_results }) => {
         const r = resolveRoot(root, ctx);
         if (!r.ok) return { error: r.error };
-        const safety = checkReadable(r.path);
+        const safety = await checkReadableCanonical(r.path, native.canonicalize);
         if (!safety.ok) return { error: safety.reason, root: r.path };
+        r.path = safety.canonical;
         try {
           const res = await native.glob({
             pattern,

@@ -5,6 +5,7 @@ export {
   respawnSession,
 } from "./lib/useTerminalSession";
 export {
+  findLeafCwd,
   hasLeaf,
   isLeaf,
   leafIds,

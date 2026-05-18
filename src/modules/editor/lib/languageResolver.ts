@@ -92,22 +92,53 @@ function isStreamParser(v: unknown): boolean {
   );
 }
 
+const cache = new Map<string, Extension | null>();
+
+function cacheKey(filename: string): string | null {
+  const lower = filename.toLowerCase();
+  const base = lower.split("/").pop() ?? lower;
+  if (filenameOverrides[base]) return `name:${base}`;
+  const ext = extOf(base);
+  return ext ? `ext:${ext}` : null;
+}
+
+export function resolveLanguageSync(filename: string): Extension | null {
+  const key = cacheKey(filename);
+  return key ? (cache.get(key) ?? null) : null;
+}
+
 export async function resolveLanguage(
   filename: string,
 ): Promise<Extension | null> {
+  const key = cacheKey(filename);
+  if (!key) return null;
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+
   const lower = filename.toLowerCase();
   const base = lower.split("/").pop() ?? lower;
-
-  const byName = filenameOverrides[base];
-  const loader = byName ?? loaders[extOf(base) ?? ""];
-  if (!loader) return null;
+  const loader = filenameOverrides[base] ?? loaders[extOf(base) ?? ""];
+  if (!loader) {
+    cache.set(key, null);
+    return null;
+  }
 
   const result = await loader();
+  let ext: Extension;
   if (isStreamParser(result)) {
     const { StreamLanguage } = await import("@codemirror/language");
-    return StreamLanguage.define(
+    ext = StreamLanguage.define(
       result as Parameters<typeof StreamLanguage.define>[0],
     );
+  } else {
+    ext = result as Extension;
   }
-  return result as Extension;
+  cache.set(key, ext);
+  return ext;
+}
+
+export function preloadLanguages(filenames: string[]): void {
+  for (const f of filenames) {
+    void resolveLanguage(f).catch(() => {});
+  }
 }

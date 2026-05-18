@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  findLeafCwd,
   hasLeaf,
   leafIds,
   nextLeafId,
@@ -63,7 +64,43 @@ export type AiDiffTab = {
   isNewFile: boolean;
 };
 
-export type Tab = TerminalTab | EditorTab | PreviewTab | AiDiffTab;
+export type GitDiffTab = {
+  id: number;
+  kind: "git-diff";
+  title: string;
+  path: string;
+  repoRoot: string;
+  mode: "-" | "+";
+  originalPath: string | null;
+};
+
+export type GitHistoryTab = {
+  id: number;
+  kind: "git-history";
+  title: string;
+  repoRoot: string;
+};
+
+export type GitCommitFileDiffTab = {
+  id: number;
+  kind: "git-commit-file";
+  title: string;
+  repoRoot: string;
+  sha: string;
+  shortSha: string;
+  subject: string;
+  path: string;
+  originalPath: string | null;
+};
+
+export type Tab =
+  | TerminalTab
+  | EditorTab
+  | PreviewTab
+  | AiDiffTab
+  | GitDiffTab
+  | GitHistoryTab
+  | GitCommitFileDiffTab;
 
 export type TabPatch = Partial<{
   title: string;
@@ -104,6 +141,11 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   });
   const [activeId, setActiveId] = useState(1);
   const nextIdRef = useRef(3);
+  const tabsRef = useRef(tabs);
+
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
 
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
@@ -185,7 +227,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       } else {
         // Preview open: persistent tab for this path takes priority.
         const persistent = curr.find(
-          (t) => t.kind === "editor" && t.path === path && !(t as EditorTab).preview,
+          (t) =>
+            t.kind === "editor" && t.path === path && !(t as EditorTab).preview,
         );
         if (persistent) {
           targetId = persistent.id;
@@ -193,7 +236,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         }
         // Reuse the slot if it already shows the same path.
         const existingPreview = curr.find(
-          (t) => t.kind === "editor" && t.path === path && (t as EditorTab).preview,
+          (t) =>
+            t.kind === "editor" && t.path === path && (t as EditorTab).preview,
         );
         if (existingPreview) {
           targetId = existingPreview.id;
@@ -321,6 +365,152 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return id;
   }, []);
 
+  const openGitDiffTab = useCallback(
+    (input: {
+      path: string;
+      repoRoot: string;
+      mode: "-" | "+";
+      originalPath?: string | null;
+      title?: string;
+    }) => {
+      const curr = tabsRef.current;
+      const existing = curr.find(
+        (t) =>
+          t.kind === "git-diff" &&
+          t.repoRoot === input.repoRoot &&
+          t.path === input.path &&
+          t.mode === input.mode,
+      );
+      const computedTitle =
+        input.title ?? `${basename(input.path)} (${input.mode})`;
+      const originalPath = input.originalPath ?? null;
+
+      if (existing) {
+        const nextTabs = curr.map((t) =>
+          t.id === existing.id
+            ? { ...t, title: computedTitle, originalPath }
+            : t,
+        );
+        tabsRef.current = nextTabs;
+        setTabs(nextTabs);
+        setActiveId(existing.id);
+        return existing.id;
+      }
+
+      const id = nextIdRef.current++;
+      const nextTabs = [
+        ...curr,
+        {
+          id,
+          kind: "git-diff",
+          title: computedTitle,
+          path: input.path,
+          repoRoot: input.repoRoot,
+          mode: input.mode,
+          originalPath,
+        } satisfies GitDiffTab,
+      ];
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      setActiveId(id);
+      return id;
+    },
+    [],
+  );
+
+  const openCommitHistoryTab = useCallback(
+    (input: { repoRoot: string; branch?: string | null }) => {
+      const curr = tabsRef.current;
+      const existing = curr.find(
+        (t) => t.kind === "git-history" && t.repoRoot === input.repoRoot,
+      );
+      const title = input.branch
+        ? `History · ${input.branch}`
+        : "Git History";
+      if (existing) {
+        const nextTabs = curr.map((t) =>
+          t.id === existing.id ? { ...t, title } : t,
+        );
+        tabsRef.current = nextTabs;
+        setTabs(nextTabs);
+        setActiveId(existing.id);
+        return existing.id;
+      }
+      const id = nextIdRef.current++;
+      const nextTabs = [
+        ...curr,
+        {
+          id,
+          kind: "git-history",
+          title,
+          repoRoot: input.repoRoot,
+        } satisfies GitHistoryTab,
+      ];
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      setActiveId(id);
+      return id;
+    },
+    [],
+  );
+
+  const openCommitFileDiffTab = useCallback(
+    (input: {
+      repoRoot: string;
+      sha: string;
+      shortSha: string;
+      subject: string;
+      path: string;
+      originalPath: string | null;
+    }) => {
+      const curr = tabsRef.current;
+      const existing = curr.find(
+        (t) =>
+          t.kind === "git-commit-file" &&
+          t.repoRoot === input.repoRoot &&
+          t.sha === input.sha &&
+          t.path === input.path,
+      );
+      const title = `${basename(input.path)} @ ${input.shortSha}`;
+      if (existing) {
+        const nextTabs = curr.map((t) =>
+          t.id === existing.id
+            ? {
+                ...t,
+                title,
+                subject: input.subject,
+                originalPath: input.originalPath,
+              }
+            : t,
+        );
+        tabsRef.current = nextTabs;
+        setTabs(nextTabs);
+        setActiveId(existing.id);
+        return existing.id;
+      }
+      const id = nextIdRef.current++;
+      const nextTabs = [
+        ...curr,
+        {
+          id,
+          kind: "git-commit-file",
+          title,
+          repoRoot: input.repoRoot,
+          sha: input.sha,
+          shortSha: input.shortSha,
+          subject: input.subject,
+          path: input.path,
+          originalPath: input.originalPath,
+        } satisfies GitCommitFileDiffTab,
+      ];
+      tabsRef.current = nextTabs;
+      setTabs(nextTabs);
+      setActiveId(id);
+      return id;
+    },
+    [],
+  );
+
   const closeTab = useCallback((id: number) => {
     let toDispose: number[] = [];
     setTabs((curr) => {
@@ -411,24 +601,27 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         if (t.id !== tabId || t.kind !== "terminal") return t;
         if (!hasLeaf(t.paneTree, leafId)) return t;
         if (t.activeLeafId === leafId) return t;
-        return { ...t, activeLeafId: leafId };
+        const cwd = findLeafCwd(t.paneTree, leafId);
+        return {
+          ...t,
+          activeLeafId: leafId,
+          ...(cwd !== undefined && { cwd }),
+        };
       }),
     );
   }, []);
 
-  const focusNextPaneInTab = useCallback(
-    (tabId: number, delta: 1 | -1) => {
-      setTabs((curr) =>
-        curr.map((t) => {
-          if (t.id !== tabId || t.kind !== "terminal") return t;
-          const next = nextLeafId(t.paneTree, t.activeLeafId, delta);
-          if (next === t.activeLeafId) return t;
-          return { ...t, activeLeafId: next };
-        }),
-      );
-    },
-    [],
-  );
+  const focusNextPaneInTab = useCallback((tabId: number, delta: 1 | -1) => {
+    setTabs((curr) =>
+      curr.map((t) => {
+        if (t.id !== tabId || t.kind !== "terminal") return t;
+        const next = nextLeafId(t.paneTree, t.activeLeafId, delta);
+        if (next === t.activeLeafId) return t;
+        const cwd = findLeafCwd(t.paneTree, next);
+        return { ...t, activeLeafId: next, ...(cwd !== undefined && { cwd }) };
+      }),
+    );
+  }, []);
 
   /** Split the active leaf of `tabId` along `dir`. Returns the new leaf id. */
   const splitActivePane = useCallback(
@@ -558,6 +751,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     pinTab,
     newPreviewTab,
     openAiDiffTab,
+    openGitDiffTab,
+    openCommitHistoryTab,
+    openCommitFileDiffTab,
     setAiDiffStatus,
     closeAiDiffTab,
     closeTab,
