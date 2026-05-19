@@ -905,7 +905,20 @@ export default function App() {
     ],
   );
 
-  useGlobalShortcuts(shortcutHandlers);
+  useGlobalShortcuts(shortcutHandlers, {
+    isDisabled: (id, e) => {
+      // When an xterm has keyboard focus and nothing is selected, let the
+      // keydown fall through to xterm so the shell receives it (e.g. Ctrl+L
+      // → \x0c → clear screen). Only relax ai.askSelection — it has nothing
+      // to do when there's no selection anyway.
+      if (id !== "ai.askSelection") return false;
+      const target = (e.target as HTMLElement | null) ?? document.activeElement;
+      const inTerminal = !!(target as HTMLElement | null)?.closest?.(".xterm");
+      if (!inTerminal) return false;
+      const sel = captureActiveSelection();
+      return !sel || !sel.trim();
+    },
+  });
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {
