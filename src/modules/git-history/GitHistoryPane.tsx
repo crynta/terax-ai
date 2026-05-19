@@ -19,6 +19,7 @@ import {
   type GitLogEntry,
 } from "@/modules/ai/lib/native";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { useI18n } from "@/modules/i18n";
 import {
   Cancel01Icon,
   Copy01Icon,
@@ -196,6 +197,7 @@ function highlight(text: string, query: string): ReactNode {
 }
 
 export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
+  const { t } = useI18n();
   const [commits, setCommits] = useState<GitLogEntry[]>([]);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -534,14 +536,14 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
               onChange={(event: ChangeEvent<HTMLInputElement>) =>
                 setSearchInput(event.target.value)
               }
-              placeholder="Search subject, author, sha…"
+              placeholder={t("Search subject, author, sha…")}
               className="h-7 rounded-md border-border/55 bg-background/85 pl-7 pr-7 text-[12px] placeholder:text-muted-foreground/70 focus-visible:border-border/80 focus-visible:ring-0"
             />
             {searchInput ? (
               <button
                 type="button"
                 onClick={() => setSearchInput("")}
-                aria-label="Clear search"
+                aria-label={t("Clear search")}
                 className="absolute right-1 top-1/2 inline-flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-accent/50 hover:text-foreground"
               >
                 <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
@@ -562,7 +564,7 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
               <Button
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Refresh history"
+                aria-label={t("Refresh history")}
                 disabled={loadStatus === "initial"}
                 onClick={handleRefresh}
                 className="cursor-pointer rounded-md text-muted-foreground disabled:cursor-not-allowed"
@@ -579,7 +581,7 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" className="text-[10.5px]">
-              Refresh
+              {t("Refresh")}
             </TooltipContent>
           </Tooltip>
         </header>
@@ -588,26 +590,26 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
           <CenterPlaceholder>
             <Spinner className="size-4" />
             <span className="text-[11.5px] text-muted-foreground">
-              Loading commits…
+              {t("Loading commits…")}
             </span>
           </CenterPlaceholder>
         ) : loadStatus === "error" && commits.length === 0 ? (
           <CenterPlaceholder>
             <div className="text-[13px] font-medium">
-              Could not load history
+              {t("Could not load history")}
             </div>
             <div className="max-w-md text-[11px] leading-relaxed text-muted-foreground">
-              {error ?? "Unknown error"}
+              {error ?? t("Unknown error")}
             </div>
             <Button size="sm" onClick={handleRefresh}>
-              Retry
+              {t("Retry")}
             </Button>
           </CenterPlaceholder>
         ) : commits.length === 0 ? (
           <CenterPlaceholder>
-            <div className="text-[13px] font-medium">No commits yet</div>
+            <div className="text-[13px] font-medium">{t("No commits yet")}</div>
             <div className="max-w-md text-[11px] leading-relaxed text-muted-foreground">
-              This branch has no commits.
+              {t("This branch has no commits.")}
             </div>
           </CenterPlaceholder>
         ) : (
@@ -620,12 +622,12 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
               }}
             >
               <div />
-              <div className="pl-px">SHA</div>
-              <div className="min-w-0">Subject</div>
+              <div className="pl-px">{t("SHA")}</div>
+              <div className="min-w-0">{t("Subject")}</div>
               <div />
-              <div className="ml-2">Author</div>
-              <div className="text-right">Date</div>
-              <div className="text-right">Changes</div>
+              <div className="ml-2">{t("Author")}</div>
+              <div className="text-right">{t("Date")}</div>
+              <div className="text-right">{t("Changes")}</div>
             </div>
             <div
               ref={scrollRef}

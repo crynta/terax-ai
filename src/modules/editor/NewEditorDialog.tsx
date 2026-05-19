@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useI18n } from "@/modules/i18n";
 import { File02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -32,6 +33,7 @@ export function NewEditorDialog({
   rootPath,
   onCreated,
 }: Props) {
+  const { t } = useI18n();
   const [name, setName] = useState("untitled.txt");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -54,15 +56,15 @@ export function NewEditorDialog({
   const submit = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setError("Name is required");
+      setError(t("Name is required"));
       return;
     }
     if (trimmed.includes("..")) {
-      setError("Path must be relative");
+      setError(t("Path must be relative"));
       return;
     }
     if (!rootPath) {
-      setError("No workspace root");
+      setError(t("No workspace root"));
       return;
     }
     const path = trimmed.startsWith("/")
@@ -83,11 +85,12 @@ export function NewEditorDialog({
         <DialogHeader>
           <DialogTitle className="flex gap-1.75">
             <HugeiconsIcon icon={File02Icon} size={16} strokeWidth={1.75} />
-            New file
+            {t("New file")}
           </DialogTitle>
           <DialogDescription>
-            Filename (relative to workspace root). The extension determines the
-            language mode.
+            {t(
+              "Filename (relative to workspace root). The extension determines the language mode.",
+            )}
           </DialogDescription>
         </DialogHeader>
         <Input
@@ -114,9 +117,9 @@ export function NewEditorDialog({
         )}
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("Cancel")}
           </Button>
-          <Button onClick={() => void submit()}>Create</Button>
+          <Button onClick={() => void submit()}>{t("Create")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

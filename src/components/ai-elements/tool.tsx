@@ -6,6 +6,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/modules/i18n";
 import {
   ArrowRight01Icon,
   CheckListIcon,
@@ -144,9 +145,10 @@ const ToolImpl = ({
   defaultOpen,
   ...props
 }: ToolProps) => {
+  const { t } = useI18n();
   const meta = TOOL_META[toolName];
   const Icon = meta?.icon ?? ToolsIcon;
-  const label = meta?.label ?? toolName;
+  const label = meta?.label ? t(meta.label) : toolName;
   const summary = deriveSummary(toolName, input);
   const isError = state === "output-error";
   const open = defaultOpen ?? isError;
@@ -193,7 +195,7 @@ const ToolImpl = ({
         )}
         {isError && (
           <span className="shrink-0 text-[10px] font-medium text-destructive">
-            failed
+            {t("failed")}
           </span>
         )}
       </CollapsibleTrigger>
@@ -236,13 +238,14 @@ export const Tool = memo(ToolImpl, (a, b) => {
 });
 
 function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
+  const { t } = useI18n();
   if (input == null) return null;
   const preview = renderInputPreview(toolName, input);
   if (preview) {
     return (
       <div className="space-y-1">
         <div className="text-[10px] font-medium text-muted-foreground">
-          Input
+          {t("Input")}
         </div>
         {preview}
       </div>
@@ -250,7 +253,7 @@ function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
   }
   return (
     <div className="space-y-1">
-      <div className="text-[10px] font-medium text-muted-foreground">Input</div>
+      <div className="text-[10px] font-medium text-muted-foreground">{t("Input")}</div>
       <CodeBlockMini
         code={
           typeof input === "string" ? input : JSON.stringify(input, null, 2)
@@ -322,10 +325,11 @@ function ToolOutput({
   output: unknown;
   errorText?: string;
 }) {
+  const { t } = useI18n();
   if (errorText) {
     return (
       <div className="space-y-1">
-        <div className="text-[10px] font-medium text-destructive">Error</div>
+        <div className="text-[10px] font-medium text-destructive">{t("Error")}</div>
         <div className="rounded bg-destructive/10 px-2 py-1.5 font-mono text-[11px] text-destructive whitespace-pre-wrap">
           {errorText}
         </div>
@@ -334,7 +338,7 @@ function ToolOutput({
   }
   if (output === undefined || output === null) return null;
 
-  const custom = renderToolOutput(toolName, output);
+  const custom = renderToolOutput(toolName, output, t);
   if (custom) return custom;
 
   let body: ReactNode;
@@ -351,14 +355,18 @@ function ToolOutput({
   return (
     <div className="space-y-1">
       <div className="text-[10px] font-medium text-muted-foreground">
-        Output
+        {t("Output")}
       </div>
       {body}
     </div>
   );
 }
 
-function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
+function renderToolOutput(
+  toolName: string,
+  output: unknown,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): ReactNode | null {
   if (!output || typeof output !== "object") return null;
   const o = output as Record<string, unknown>;
 
@@ -370,11 +378,11 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
     return (
       <div className="flex items-center gap-1.5 font-mono text-[11px]">
         <span className="text-emerald-600 dark:text-emerald-400">✓</span>
-        <span className="text-foreground">read</span>
+        <span className="text-foreground">{t("read")}</span>
         {path ? <span className="text-muted-foreground">· {path}</span> : null}
         {lines != null ? (
           <span className="text-muted-foreground">
-            ({lines} line{lines === 1 ? "" : "s"}
+            ({t("{{count}} line(s)", { count: lines })}
             {size != null ? `, ${formatBytes(size)}` : ""})
           </span>
         ) : null}
@@ -388,7 +396,9 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
       : [];
     if (entries.length === 0) {
       return (
-        <div className="text-[11px] italic text-muted-foreground">empty</div>
+        <div className="text-[11px] italic text-muted-foreground">
+          {t("empty")}
+        </div>
       );
     }
     const dirs = entries.filter(
@@ -460,8 +470,10 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
     if (hits.length === 0) {
       return (
         <div className="text-[11px] italic text-muted-foreground">
-          no matches
-          {filesScanned != null ? ` · ${filesScanned} files scanned` : ""}
+          {t("no matches")}
+          {filesScanned != null
+            ? ` · ${t("{{count}} files scanned", { count: filesScanned })}`
+            : ""}
         </div>
       );
     }
@@ -485,12 +497,14 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
         </div>
         <div className="flex items-center justify-between text-[10px] text-muted-foreground">
           <span>
-            {hits.length} hit{hits.length === 1 ? "" : "s"}
-            {filesScanned != null ? ` · ${filesScanned} files` : ""}
+            {t("{{count}} hit(s)", { count: hits.length })}
+            {filesScanned != null
+              ? ` · ${t("{{count}} file(s)", { count: filesScanned })}`
+              : ""}
           </span>
           {truncated ? (
             <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
-              truncated
+              {t("truncated")}
             </span>
           ) : null}
         </div>
@@ -507,7 +521,7 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
     if (matches.length === 0) {
       return (
         <div className="text-[11px] italic text-muted-foreground">
-          no matches
+          {t("no matches")}
         </div>
       );
     }
@@ -532,7 +546,7 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
           <span className="text-emerald-600 dark:text-emerald-400">✓</span>
           {reps != null ? (
             <span className="text-foreground">
-              {reps} replacement{reps === 1 ? "" : "s"}
+              {t("{{count}} replacement(s)", { count: reps })}
             </span>
           ) : null}
           {path ? (
@@ -550,7 +564,7 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
       <div className="flex items-center gap-1.5 font-mono text-[11px]">
         <span className="text-emerald-600 dark:text-emerald-400">✓</span>
         <span className="text-foreground">
-          {toolName === "create_directory" ? "created" : "wrote"}
+          {toolName === "create_directory" ? t("created") : t("wrote")}
         </span>
         {path ? <span className="text-muted-foreground">· {path}</span> : null}
         {bytes != null ? (
@@ -568,7 +582,7 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
         <div className="flex items-center gap-1.5">
           <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
           {handle ? <span className="text-foreground">{handle}</span> : null}
-          <span className="text-muted-foreground">running</span>
+          <span className="text-muted-foreground">{t("running")}</span>
         </div>
         {cmd ? (
           <div className="truncate text-muted-foreground">{cmd}</div>
@@ -581,6 +595,7 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
 }
 
 function BashRunOutput({ data }: { data: Record<string, unknown> }) {
+  const { t } = useI18n();
   const stdout = typeof data.stdout === "string" ? data.stdout : "";
   const stderr = typeof data.stderr === "string" ? data.stderr : "";
   const exit = typeof data.exit_code === "number" ? data.exit_code : null;
@@ -635,17 +650,17 @@ function BashRunOutput({ data }: { data: Record<string, unknown> }) {
                 : "bg-destructive/15 text-destructive",
             )}
           >
-            exit {exit}
+            {t("exit")} {exit}
           </span>
         ) : null}
         {timedOut ? (
           <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-400">
-            timed out
+            {t("timed out")}
           </span>
         ) : null}
         {truncated ? (
           <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-400">
-            truncated
+            {t("truncated")}
           </span>
         ) : null}
       </div>
@@ -654,7 +669,7 @@ function BashRunOutput({ data }: { data: Record<string, unknown> }) {
       </pre>
       {cwdAfter ? (
         <div className="font-mono text-[10px] text-muted-foreground">
-          cwd → {cwdAfter}
+          {t("cwd")} → {cwdAfter}
         </div>
       ) : null}
     </div>
@@ -708,6 +723,7 @@ function SuggestCommandCard({
   command: string;
   explanation: string | null;
 }) {
+  const { t } = useI18n();
   const [inserted, setInserted] = useState(false);
   const onInsert = () => {
     const ok = useChatStore
@@ -735,14 +751,14 @@ function SuggestCommandCard({
             "disabled:opacity-60 disabled:cursor-default disabled:hover:bg-transparent",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           )}
-          aria-label="Insert into active terminal"
+          aria-label={t("Insert into active terminal")}
         >
           <HugeiconsIcon
             icon={inserted ? TerminalIcon : ArrowRight01Icon}
             size={12}
             strokeWidth={1.75}
           />
-          <span>{inserted ? "Inserted" : "Insert"}</span>
+          <span>{inserted ? t("Inserted") : t("Insert")}</span>
         </button>
       </div>
     </div>

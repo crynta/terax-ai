@@ -6,6 +6,7 @@ import {
 } from "@codemirror/search";
 import { keymap } from "@codemirror/view";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useI18n } from "@/modules/i18n";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EDITOR_THEME_EXT } from "./lib/themes";
 import {
@@ -58,6 +59,7 @@ function formatBytes(n: number): string {
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
   function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
+    const { t } = useI18n();
     const { doc, onChange, save, reload } = useDocument({ path, onDirtyChange });
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
@@ -232,7 +234,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     if (doc.status === "loading") {
       return (
         <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-          Loading…
+          {t("Loading…")}
         </div>
       );
     }
@@ -246,9 +248,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     if (doc.status === "binary") {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-          <div className="text-sm text-foreground">Binary file</div>
+          <div className="text-sm text-foreground">{t("Binary file")}</div>
           <div className="text-xs text-muted-foreground">
-            {formatBytes(doc.size)} · preview not supported
+            {t("{{size}} · preview not supported", {
+              size: formatBytes(doc.size),
+            })}
           </div>
         </div>
       );
@@ -256,9 +260,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     if (doc.status === "toolarge") {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-          <div className="text-sm text-foreground">File too large</div>
+          <div className="text-sm text-foreground">{t("File too large")}</div>
           <div className="text-xs text-muted-foreground">
-            {formatBytes(doc.size)} exceeds the {formatBytes(doc.limit)} limit.
+            {t("{{size}} exceeds the {{limit}} limit.", {
+              size: formatBytes(doc.size),
+              limit: formatBytes(doc.limit),
+            })}
           </div>
         </div>
       );

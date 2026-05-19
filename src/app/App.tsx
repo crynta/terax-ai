@@ -15,6 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/modules/i18n";
 import {
   AgentRunBridge,
   AiInputBar,
@@ -138,6 +139,7 @@ function readSidebarView(): SidebarViewId {
 }
 
 export default function App() {
+  const { t } = useI18n();
   const {
     tabs,
     activeId,
@@ -1285,21 +1287,23 @@ export default function App() {
           >
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+                <AlertDialogTitle>{t("Unsaved Changes")}</AlertDialogTitle>
                 <AlertDialogDescription>
                   {tabs.find((t) => t.id === pendingCloseTab)?.title
-                    ? `"${
-                        tabs.find((t) => t.id === pendingCloseTab)?.title
-                      }" has unsaved changes. Close anyway?`
-                    : "This file has unsaved changes. Close anyway?"}
+                    ? t('"{{name}}" has unsaved changes. Close anyway?', {
+                        name:
+                          tabs.find((t) => t.id === pendingCloseTab)?.title ??
+                          "",
+                      })
+                    : t("This file has unsaved changes. Close anyway?")}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={cancelClose}>
-                  Cancel
+                  {t("Cancel")}
                 </AlertDialogCancel>
                 <AlertDialogAction onClick={confirmClose}>
-                  Close Anyway
+                  {t("Close Anyway")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -1311,7 +1315,7 @@ export default function App() {
           >
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+                <AlertDialogTitle>{t("Unsaved Changes")}</AlertDialogTitle>
                 <AlertDialogDescription>
                   {pendingDeleteTabs?.length === 1
                     ? (() => {
@@ -1319,18 +1323,18 @@ export default function App() {
                           (t) => t.id === pendingDeleteTabs[0],
                         )?.title;
                         return title
-                          ? `"${title}" has unsaved changes. The file has been deleted. Close anyway?`
-                          : "This file has unsaved changes. The file has been deleted. Close anyway?";
+                          ? t('"{{name}}" has unsaved changes. The file has been deleted. Close anyway?', { name: title })
+                          : t("This file has unsaved changes. The file has been deleted. Close anyway?");
                       })()
-                    : `${pendingDeleteTabs?.length ?? 0} files have unsaved changes. They have been deleted. Close all anyway?`}
+                    : t("{{count}} files have unsaved changes. They have been deleted. Close all anyway?", { count: pendingDeleteTabs?.length ?? 0 })}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel onClick={cancelDeleteClose}>
-                  Cancel
+                  {t("Cancel")}
                 </AlertDialogCancel>
                 <AlertDialogAction onClick={confirmDeleteClose}>
-                  Close Anyway
+                  {t("Close Anyway")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

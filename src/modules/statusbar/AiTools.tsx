@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
+import { useI18n } from "@/modules/i18n";
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
@@ -31,6 +32,7 @@ type Props = {
 };
 
 export function AiTools({ aiOpen, canSubmit, onOpenAi, onSubmit }: Props) {
+  const { t } = useI18n();
   return (
     <AnimatePresence mode="wait" initial={false}>
       {aiOpen ? (
@@ -43,7 +45,7 @@ export function AiTools({ aiOpen, canSubmit, onOpenAi, onSubmit }: Props) {
           className="flex items-center gap-0.5"
         >
           <ModelSelector />
-          <ToolButton title="Voice input">
+          <ToolButton title={t("Voice input")}>
             <HugeiconsIcon icon={Mic01Icon} size={14} strokeWidth={1.75} />
           </ToolButton>
           <Button
@@ -65,7 +67,7 @@ export function AiTools({ aiOpen, canSubmit, onOpenAi, onSubmit }: Props) {
           onClick={onOpenAi}
           className="flex h-7 items-center gap-2 rounded-md border border-border/60 bg-card px-2 text-xs text-muted-foreground hover:text-foreground"
         >
-          Open AI Agent
+          {t("Open AI Agent")}
           <KbdGroup>
             <Kbd className="h-4.5 min-w-4.5 px-1 font-mono">
               {fmtShortcut(MOD_KEY, "I")}

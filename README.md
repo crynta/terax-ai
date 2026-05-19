@@ -96,6 +96,9 @@ pnpm tauri build        # production bundle
 **Checks**
 ```bash
 pnpm exec tsc --noEmit          # frontend type-check
+pnpm check:zh                   # incremental Simplified Chinese UI check
+pnpm check:zh:all               # full Simplified Chinese UI audit
+pnpm check:zh:baseline          # record baseline after a successful zh pass
 cd src-tauri && cargo clippy    # Rust lint
 ```
 

@@ -9,6 +9,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/modules/i18n";
 import { AGENT_ICONS } from "@/modules/ai/components/AgentSwitcher";
 import {
   BUILTIN_AGENTS,
@@ -48,6 +49,7 @@ const ICON_OPTIONS: AgentIconId[] = [
 ];
 
 export function AgentsSection() {
+  const { t } = useI18n();
   const customInstructions = usePreferencesStore((s) => s.customInstructions);
   const customAgents = useAgentsStore((s) => s.customAgents);
   const activeAgentId = useAgentsStore((s) => s.activeId);
@@ -72,15 +74,17 @@ export function AgentsSection() {
   return (
     <div className="flex flex-col gap-7">
       <SectionHeader
-        title="Agents"
-        description="Personas and snippets the AI uses. Switch agents from the input bar."
+        title={t("Agents")}
+        description={t(
+          "Personas and snippets the AI uses. Switch agents from the input bar.",
+        )}
       />
 
       <CustomInstructionsBlock value={customInstructions} />
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <Label>Agents</Label>
+          <Label>{t("Agents")}</Label>
           <Button
             size="sm"
             variant="outline"
@@ -88,7 +92,7 @@ export function AgentsSection() {
             onClick={() =>
               setEditingAgent({
                 id: newAgentId(),
-                name: "New agent",
+                name: t("New agent"),
                 description: "",
                 instructions: "",
                 icon: "spark",
@@ -97,7 +101,7 @@ export function AgentsSection() {
             }
           >
             <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={1.75} />
-            New agent
+            {t("New agent")}
           </Button>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -117,9 +121,9 @@ export function AgentsSection() {
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div className="flex flex-col">
-            <Label>Snippets</Label>
+            <Label>{t("Snippets")}</Label>
             <span className="text-[10.5px] text-muted-foreground">
-              Reusable instructions you can drop into any prompt with{" "}
+              {t("Reusable instructions you can drop into any prompt with")}{" "}
               <code className="rounded bg-muted/50 px-1 font-mono">
                 #handle
               </code>
@@ -141,14 +145,15 @@ export function AgentsSection() {
             }
           >
             <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={1.75} />
-            New snippet
+            {t("New snippet")}
           </Button>
         </div>
 
         {snippets.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border/60 bg-card/30 px-4 py-6 text-center text-[11px] text-muted-foreground">
-            No snippets yet. Create one and insert it with{" "}
-            <code className="font-mono">#handle</code> in the AI input.
+            {t("No snippets yet. Create one and insert it with")}{" "}
+            <code className="font-mono">#handle</code>{" "}
+            {t("in the AI input.")}
           </div>
         ) : (
           <ul className="flex flex-col gap-1.5">
@@ -175,7 +180,7 @@ export function AgentsSection() {
                   variant="ghost"
                   className="size-7"
                   onClick={() => setEditingSnippet(s)}
-                  title="Edit"
+                  title={t("Edit")}
                 >
                   <HugeiconsIcon
                     icon={Edit02Icon}
@@ -188,7 +193,7 @@ export function AgentsSection() {
                   variant="ghost"
                   className="size-7 text-muted-foreground hover:text-destructive"
                   onClick={() => removeSnippet(s.id)}
-                  title="Delete"
+                  title={t("Delete")}
                 >
                   <HugeiconsIcon
                     icon={Delete02Icon}
@@ -237,6 +242,7 @@ function AgentCard({
   onEdit: (() => void) | null;
   onDelete: (() => void) | null;
 }) {
+  const { t } = useI18n();
   const Icon = AGENT_ICONS[agent.icon] ?? SparklesIcon;
   return (
     <div
@@ -253,15 +259,15 @@ function AgentCard({
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="flex items-center gap-1.5 text-[12.5px] font-medium">
-            {agent.name}
+            {agent.builtIn ? t(agent.name) : agent.name}
             {agent.builtIn ? (
               <span className="rounded bg-muted/50 px-1 py-0.5 text-[9px] tracking-wide text-muted-foreground uppercase">
-                Built-in
+                {t("Built-in")}
               </span>
             ) : null}
           </span>
           <span className="line-clamp-2 text-[10.5px] leading-relaxed text-muted-foreground">
-            {agent.description}
+            {agent.builtIn ? t(agent.description) : agent.description}
           </span>
         </div>
       </div>
@@ -279,10 +285,10 @@ function AgentCard({
                 size={10}
                 strokeWidth={2}
               />
-              Active
+              {t("Active")}
             </>
           ) : (
-            "Use agent"
+            t("Use agent")
           )}
         </Button>
         <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
@@ -292,7 +298,7 @@ function AgentCard({
               variant="ghost"
               className="size-6"
               onClick={onEdit}
-              title="Edit"
+              title={t("Edit")}
             >
               <HugeiconsIcon icon={Edit02Icon} size={11} strokeWidth={1.75} />
             </Button>
@@ -303,7 +309,7 @@ function AgentCard({
               variant="ghost"
               className="size-6 text-muted-foreground hover:text-destructive"
               onClick={onDelete}
-              title="Delete"
+              title={t("Delete")}
             >
               <HugeiconsIcon icon={Delete02Icon} size={11} strokeWidth={1.75} />
             </Button>
@@ -325,6 +331,7 @@ function AgentEditorDialog({
   onClose: () => void;
   onSave: (a: Agent) => void;
 }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState<Agent | null>(agent);
   useEffect(() => setDraft(agent), [agent]);
   if (!draft) return null;
@@ -338,13 +345,13 @@ function AgentEditorDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="text-[14px]">
-            {isNew ? "New agent" : "Edit agent"}
+            {isNew ? t("New agent") : t("Edit agent")}
           </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <div className="flex gap-2">
             <div className="flex flex-col gap-1">
-              <Label>Icon</Label>
+              <Label>{t("Icon")}</Label>
               <div className="flex flex-wrap gap-1">
                 {ICON_OPTIONS.map((id) => {
                   const Icon = AGENT_ICONS[id] ?? SparklesIcon;
@@ -368,48 +375,50 @@ function AgentEditorDialog({
               </div>
             </div>
             <div className="flex flex-1 flex-col gap-1">
-              <Label>Name</Label>
+              <Label>{t("Name")}</Label>
               <Input
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 className="h-8 text-[12px]"
-                placeholder="e.g. Test Engineer"
+                placeholder={t("e.g. Test Engineer")}
               />
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <Label>Description</Label>
+            <Label>{t("Description")}</Label>
             <Input
               value={draft.description}
               onChange={(e) =>
                 setDraft({ ...draft, description: e.target.value })
               }
-              placeholder="One line — shown in the agent picker"
+              placeholder={t("One line — shown in the agent picker")}
               className="h-8 text-[12px]"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label>Instructions</Label>
+            <Label>{t("Instructions")}</Label>
             <Textarea
               value={draft.instructions}
               onChange={(e) =>
                 setDraft({ ...draft, instructions: e.target.value })
               }
-              placeholder="Persona & rules. Appended to Terax's core system prompt."
+              placeholder={t(
+                "Persona & rules. Appended to Terax's core system prompt.",
+              )}
               className="min-h-40 resize-y text-[12px] leading-relaxed"
             />
           </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button
             size="sm"
             disabled={!canSave}
             onClick={() => onSave({ ...draft, builtIn: false })}
           >
-            Save
+            {t("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -428,16 +437,17 @@ function SnippetEditorDialog({
   onClose: () => void;
   onSave: (s: Snippet) => void;
 }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState<Snippet | null>(snippet);
   useEffect(() => setDraft(snippet), [snippet]);
   if (!draft) return null;
 
   const handleErr = !draft.handle
-    ? "Required."
+    ? t("Required.")
     : !isValidHandle(draft.handle)
-      ? "Lowercase letters, digits, and dashes only."
+      ? t("Lowercase letters, digits, and dashes only.")
       : existing.some((s) => s.id !== draft.id && s.handle === draft.handle)
-        ? "Already in use."
+        ? t("Already in use.")
         : null;
   const canSave =
     !handleErr &&
@@ -450,14 +460,14 @@ function SnippetEditorDialog({
         <DialogHeader>
           <DialogTitle className="text-[14px]">
             {existing.some((s) => s.id === draft.id)
-              ? "Edit snippet"
-              : "New snippet"}
+              ? t("Edit snippet")
+              : t("New snippet")}
           </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-3">
           <div className="flex gap-2">
             <div className="flex w-32 flex-col gap-1">
-              <Label>Handle</Label>
+              <Label>{t("Handle")}</Label>
               <div className="relative">
                 <span className="absolute top-1/2 left-2 -translate-y-1/2 font-mono text-[11.5px] text-muted-foreground">
                   #
@@ -481,42 +491,44 @@ function SnippetEditorDialog({
               ) : null}
             </div>
             <div className="flex flex-1 flex-col gap-1">
-              <Label>Name</Label>
+              <Label>{t("Name")}</Label>
               <Input
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                placeholder="e.g. Pre-merge review checklist"
+                placeholder={t("e.g. Pre-merge review checklist")}
                 className="h-8 text-[12px]"
               />
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <Label>Description</Label>
+            <Label>{t("Description")}</Label>
             <Input
               value={draft.description}
               onChange={(e) =>
                 setDraft({ ...draft, description: e.target.value })
               }
-              placeholder="One line — shown in the # picker"
+              placeholder={t("One line — shown in the # picker")}
               className="h-8 text-[12px]"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <Label>Content</Label>
+            <Label>{t("Content")}</Label>
             <Textarea
               value={draft.content}
               onChange={(e) => setDraft({ ...draft, content: e.target.value })}
-              placeholder="Inserted into the prompt as a <snippet> block when you use #handle."
+              placeholder={t(
+                "Inserted into the prompt as a <snippet> block when you use #handle.",
+              )}
               className="min-h-40 resize-y font-mono text-[11.5px] leading-relaxed"
             />
           </div>
         </div>
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={onClose}>
-            Cancel
+            {t("Cancel")}
           </Button>
           <Button size="sm" disabled={!canSave} onClick={() => onSave(draft)}>
-            Save
+            {t("Save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -525,6 +537,7 @@ function SnippetEditorDialog({
 }
 
 function CustomInstructionsBlock({ value }: { value: string }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState(value);
   const hadFirstSync = useRef(false);
 
@@ -538,20 +551,22 @@ function CustomInstructionsBlock({ value }: { value: string }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <Label>Custom instructions</Label>
+        <Label>{t("Custom instructions")}</Label>
         {/* {savedTick > 0 ? (
           <span className="text-[10px] text-muted-foreground">Saved</span>
         ) : null} */}
         {draft && (
           <Button size="xs" onClick={() => void setCustomInstructions(draft)}>
-            Save
+            {t("Save")}
           </Button>
         )}
       </div>
       <Textarea
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        placeholder="e.g. Always reply in concise bullet points. Prefer pnpm over npm. My machine is an M-series Mac."
+        placeholder={t(
+          "e.g. Always reply in concise bullet points. Prefer pnpm over npm. My machine is an M-series Mac.",
+        )}
         className="min-h-[100px] resize-y bg-card/60 font-sans text-[12px] leading-relaxed border border-border"
       />
     </div>

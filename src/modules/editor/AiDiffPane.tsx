@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/modules/i18n";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { AiDiffStatus } from "@/modules/tabs";
 import { presentableDiff, unifiedMergeView } from "@codemirror/merge";
@@ -91,6 +92,7 @@ export function AiDiffPane({
   onAccept,
   onReject,
 }: Props) {
+  const { t } = useI18n();
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const editorThemeId = usePreferencesStore((s) => s.editorTheme);
   const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
@@ -143,11 +145,11 @@ export function AiDiffPane({
             className="text-[11px] px-2.5 py-2.5"
             variant={STATUS_BADGE[status]}
           >
-            {STATUS_LABEL[status]}
+            {t(STATUS_LABEL[status])}
           </Badge>
           {isNewFile ? (
             <span className="shrink-0 rounded-full border border-border/60 bg-accent/40 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              New file
+              {t("New file")}
             </span>
           ) : null}
           <span
@@ -174,7 +176,7 @@ export function AiDiffPane({
               className="h-7 gap-1.5"
             >
               <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2} />
-              Accept
+              {t("Accept")}
             </Button>
             <Button
               size="sm"
@@ -183,7 +185,7 @@ export function AiDiffPane({
               className="h-7 gap-1.5"
             >
               <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} />
-              Reject
+              {t("Reject")}
             </Button>
           </div>
         ) : null}

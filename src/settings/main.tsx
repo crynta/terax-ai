@@ -9,6 +9,7 @@ import ReactDOM from "react-dom/client";
 import { ThemeProvider } from "@/modules/theme";
 import { USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { SettingsApp } from "./SettingsApp";
+import { I18nProvider } from "@/modules/i18n";
 
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";
@@ -17,9 +18,11 @@ if (USE_CUSTOM_WINDOW_CONTROLS) {
 ReactDOM.createRoot(
   document.getElementById("settings-root") as HTMLElement,
 ).render(
-  <ThemeProvider>
-    <SettingsApp />
-  </ThemeProvider>,
+  <I18nProvider>
+    <ThemeProvider>
+      <SettingsApp />
+    </ThemeProvider>
+  </I18nProvider>,
 );
 
 const showWindow = () => {

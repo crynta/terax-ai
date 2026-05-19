@@ -8,6 +8,7 @@ import {
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/modules/i18n";
 import { Settings01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -24,6 +25,7 @@ type Props = {
 };
 
 export function ShortcutsDialog({ open, onOpenChange }: Props) {
+  const { t } = useI18n();
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
 
   const onOpenSettings = () => {
@@ -36,9 +38,9 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
       <DialogContent className="sm:max-w-lg">
         <DialogHeader className="flex-row items-start justify-between pr-10">
           <div className="flex flex-col gap-1.5">
-            <DialogTitle>Keyboard shortcuts</DialogTitle>
+            <DialogTitle>{t("Keyboard shortcuts")}</DialogTitle>
             <DialogDescription>
-              Quick reference for Terax controls.
+              {t("Quick reference for Terax controls.")}
             </DialogDescription>
           </div>
           <Button
@@ -48,7 +50,7 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
             onClick={onOpenSettings}
           >
             <HugeiconsIcon icon={Settings01Icon} size={12} strokeWidth={2} />
-            <span>Customize</span>
+            <span>{t("Customize")}</span>
           </Button>
         </DialogHeader>
 
@@ -60,7 +62,7 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
               return (
                 <section key={group} className="flex flex-col gap-2">
                   <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {group}
+                    {t(group)}
                   </h3>
                   <ul className="flex flex-col divide-y divide-border/60">
                     {items.map((s) => {
@@ -73,7 +75,7 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
                           className="flex items-center justify-between py-2"
                         >
                           <span className="text-sm text-foreground/90">
-                            {s.label}
+                            {t(s.label)}
                           </span>
                           {tokens.length > 0 ? (
                             <KbdGroup>
@@ -90,7 +92,7 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
                             </KbdGroup>
                           ) : (
                             <span className="text-xs text-muted-foreground italic">
-                              Unassigned
+                              {t("Unassigned")}
                             </span>
                           )}
                         </li>

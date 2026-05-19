@@ -10,6 +10,7 @@ import ReactDOM from "react-dom/client";
 import App from "./app/App";
 import { initLaunchDir } from "./lib/launchDir";
 import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
+import { I18nProvider } from "./modules/i18n";
 
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";
@@ -19,7 +20,9 @@ if (USE_CUSTOM_WINDOW_CONTROLS) {
 await initLaunchDir();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <App />,
+  <I18nProvider>
+    <App />
+  </I18nProvider>,
 );
 
 // Window starts hidden (per tauri.conf.json) so users never see a transparent

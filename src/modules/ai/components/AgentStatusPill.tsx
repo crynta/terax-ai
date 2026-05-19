@@ -7,17 +7,19 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useChatStore, type AgentMeta } from "../store/chatStore";
+import { useI18n } from "@/modules/i18n";
 
 type Props = {
   onClick: () => void;
 };
 
 export function AgentStatusPill({ onClick }: Props) {
+  const { t } = useI18n();
   const meta = useChatStore((s) => s.agentMeta);
 
   if (meta.status === "idle" && !meta.error) return null;
 
-  const { tone, icon, label } = describe(meta);
+  const { tone, icon, label } = describe(meta, t);
 
   return (
     <AnimatePresence mode="wait">
@@ -33,7 +35,7 @@ export function AgentStatusPill({ onClick }: Props) {
           "flex h-6 items-center gap-1.5 rounded-md border px-1.5 text-[11px] transition-colors",
           tone,
         )}
-        title="Open AI log"
+        title={t("Open AI log")}
       >
         {icon}
         <span className="max-w-[180px] truncate">{label}</span>
@@ -42,7 +44,10 @@ export function AgentStatusPill({ onClick }: Props) {
   );
 }
 
-function describe(meta: AgentMeta): {
+function describe(
+  meta: AgentMeta,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): {
   tone: string;
   icon: React.ReactNode;
   label: string;
@@ -56,8 +61,8 @@ function describe(meta: AgentMeta): {
       ),
       label:
         meta.approvalsPending > 1
-          ? `${meta.approvalsPending} approvals needed`
-          : "Approval needed",
+          ? t("{{count}} approvals needed", { count: meta.approvalsPending })
+          : t("Approval needed"),
     };
   }
   if (meta.status === "error") {
@@ -67,7 +72,7 @@ function describe(meta: AgentMeta): {
       icon: (
         <HugeiconsIcon icon={AlertCircleIcon} size={12} strokeWidth={1.75} />
       ),
-      label: meta.error ?? "Error",
+      label: meta.error ?? t("Error"),
     };
   }
   // thinking | streaming
@@ -75,6 +80,6 @@ function describe(meta: AgentMeta): {
     tone:
       "border-border/60 bg-card text-muted-foreground hover:text-foreground",
     icon: <Spinner className="size-3" />,
-    label: meta.step ?? "Thinking…",
+    label: meta.step ? t(meta.step) : t("Thinking…"),
   };
 }

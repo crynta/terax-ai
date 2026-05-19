@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, KEY_SEP, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { useI18n } from "@/modules/i18n";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   getBindingTokens,
@@ -73,6 +74,7 @@ export function Header({
   searchRef,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
   const [compact, setCompact] = useState(false);
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
 
@@ -86,9 +88,9 @@ export function Header({
 
   const shortcutLabel = useMemo(() => {
     const tokens = tokensFor("shortcuts.open");
-    return tokens ? `Keyboard shortcuts (${tokens})` : "Keyboard shortcuts";
+    return tokens ? `${t("Keyboard shortcuts")} (${tokens})` : t("Keyboard shortcuts");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userShortcuts]);
+  }, [userShortcuts, t]);
 
   const splitRightTokens = tokensFor("pane.splitRight");
   const splitDownTokens = tokensFor("pane.splitDown");
@@ -122,7 +124,7 @@ export function Header({
       size="icon"
       className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
       onClick={onOpenSettings}
-      title="Settings"
+      title={t("Settings")}
     >
       <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
     </Button>
@@ -139,7 +141,7 @@ export function Header({
       <div className="flex shrink-0 items-center gap-0.5">
         <Button
           onClick={onToggleSidebar}
-          title="Toggle sidebar"
+          title={t("Toggle sidebar")}
           variant="ghost"
           size="icon-sm"
           className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -153,7 +155,7 @@ export function Header({
               variant="ghost"
               size="icon-sm"
               className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-              title="Split terminal"
+              title={t("Split terminal")}
               disabled={!canSplit}
             >
               <HugeiconsIcon icon={GridViewIcon} size={16} strokeWidth={1.75} />
@@ -166,7 +168,7 @@ export function Header({
                 size={14}
                 strokeWidth={1.75}
               />
-              <span className="flex-1">Split right</span>
+              <span className="flex-1">{t("Split right")}</span>
               {splitRightTokens && (
                 <span className="text-xs text-muted-foreground">
                   {splitRightTokens}
@@ -179,7 +181,7 @@ export function Header({
                 size={14}
                 strokeWidth={1.75}
               />
-              <span className="flex-1">Split down</span>
+              <span className="flex-1">{t("Split down")}</span>
               {splitDownTokens && (
                 <span className="text-xs text-muted-foreground">
                   {splitDownTokens}

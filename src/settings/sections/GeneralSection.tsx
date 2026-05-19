@@ -13,8 +13,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/modules/i18n";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { ThemePref } from "@/modules/settings/store";
+import type { LanguagePref, ThemePref } from "@/modules/settings/store";
 import {
   EDITOR_THEME_LABELS,
   EDITOR_THEMES,
@@ -22,6 +23,7 @@ import {
   TERMINAL_SCROLLBACK_PRESETS,
   setAutostart,
   setEditorTheme,
+  setLanguage,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontSize,
@@ -53,7 +55,13 @@ const APPEARANCE: {
   { id: "dark", label: "Dark", icon: Moon02Icon },
 ];
 
+const LANGUAGES: { id: LanguagePref; label: string }[] = [
+  { id: "en", label: "English" },
+  { id: "zh-CN", label: "Simplified Chinese" },
+];
+
 export function GeneralSection() {
+  const { language, t } = useI18n();
   const { theme, setTheme } = useTheme();
   const editorTheme = usePreferencesStore((s) => s.editorTheme);
   const autostart = usePreferencesStore((s) => s.autostart);
@@ -108,12 +116,33 @@ export function GeneralSection() {
   return (
     <div className="flex flex-col gap-6">
       <SectionHeader
-        title="General"
-        description="Appearance, editor, and startup."
+        title={t("General")}
+        description={t("Appearance, editor, and startup.")}
       />
 
       <div className="flex flex-col gap-2">
-        <Label>Appearance</Label>
+        <Label>{t("Language")}</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {LANGUAGES.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => void setLanguage(o.id)}
+              className={cn(
+                "h-9 rounded-lg border bg-card px-3 text-[12px] transition-all",
+                language === o.id
+                  ? "border-foreground/60 ring-1 ring-foreground/20"
+                  : "border-border/60 hover:border-border",
+              )}
+            >
+              {t(o.label)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>{t("Appearance")}</Label>
         <div className="grid grid-cols-3 gap-2">
           {APPEARANCE.map((o) => (
             <button
@@ -128,14 +157,14 @@ export function GeneralSection() {
               )}
             >
               <HugeiconsIcon icon={o.icon} size={18} strokeWidth={1.5} />
-              <span className="text-[11.5px]">{o.label}</span>
+              <span className="text-[11.5px]">{t(o.label)}</span>
             </button>
           ))}
         </div>
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Editor theme</Label>
+        <Label>{t("Editor theme")}</Label>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -167,8 +196,8 @@ export function GeneralSection() {
           </DropdownMenuContent>
         </DropdownMenu>
         <SettingRow
-          title="Vim mode"
-          description="Enable Vim keybindings in the code editor."
+          title={t("Vim mode")}
+          description={t("Enable Vim keybindings in the code editor.")}
         >
           <Switch
             checked={vimMode}
@@ -178,10 +207,10 @@ export function GeneralSection() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Explorer</Label>
+        <Label>{t("Explorer")}</Label>
         <SettingRow
-          title="Show hidden files"
-          description="Include dot-prefixed files and folders (.env, .gitignore, .config) in the file explorer and search."
+          title={t("Show hidden files")}
+          description={t("Include dot-prefixed files and folders (.env, .gitignore, .config) in the file explorer and search.")}
         >
           <Switch
             checked={showHidden}
@@ -191,29 +220,29 @@ export function GeneralSection() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Terminal</Label>
+        <Label>{t("Terminal")}</Label>
         <SettingRow
           title={
             <span className="inline-flex items-center gap-1.5">
-              Use WebGL renderer
+              {t("Use WebGL renderer")}
               <TooltipProvider delayDuration={200}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span
                       className="cursor-help text-[11px] text-muted-foreground/70 leading-none"
-                      aria-label="More info about WebGL renderer"
+                      aria-label={t("More info about WebGL renderer")}
                     >
                       ⓘ
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[260px] text-[11px]">
-                    xterm's WebGL renderer caches glyphs in a GPU texture atlas. On some macOS setups (especially with Nerd Fonts), the atlas corrupts and terminal text becomes unreadable. Turn this off as a fallback — performance dips slightly, but text renders correctly via the DOM renderer.
+                    {t("xterm's WebGL renderer caches glyphs in a GPU texture atlas. On some macOS setups (especially with Nerd Fonts), the atlas corrupts and terminal text becomes unreadable. Turn this off as a fallback — performance dips slightly, but text renders correctly via the DOM renderer.")}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </span>
           }
-          description="Hardware-accelerated rendering. Turn off if text shows corruption or blank tiles."
+          description={t("Hardware-accelerated rendering. Turn off if text shows corruption or blank tiles.")}
         >
           <Switch
             checked={terminalWebglEnabled}
@@ -221,8 +250,8 @@ export function GeneralSection() {
           />
         </SettingRow>
         <SettingRow
-          title="Font size"
-          description="Terminal text size."
+          title={t("Font size")}
+          description={t("Terminal text size.")}
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -259,8 +288,10 @@ export function GeneralSection() {
           </DropdownMenu>
         </SettingRow>
         <SettingRow
-          title="Scrollback"
-          description="Lines of history kept per terminal. Higher uses more RAM (~3 KB / line)."
+          title={t("Scrollback")}
+          description={t(
+            "Lines of history kept per terminal. Higher uses more RAM (~3 KB / line).",
+          )}
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -299,11 +330,11 @@ export function GeneralSection() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Startup</Label>
+        <Label>{t("Startup")}</Label>
         <div className="flex flex-col gap-2">
           <SettingRow
-            title="Launch at login"
-            description="Open Terax automatically when you sign in."
+            title={t("Launch at login")}
+            description={t("Open Terax automatically when you sign in.")}
           >
             <Switch
               checked={autostart}
@@ -311,8 +342,8 @@ export function GeneralSection() {
             />
           </SettingRow>
           <SettingRow
-            title="Restore window position & size"
-            description="Reopen the main window where you left it. Applies on next launch."
+            title={t("Restore window position & size")}
+            description={t("Reopen the main window where you left it. Applies on next launch.")}
           >
             <Switch
               checked={restoreWindowState}

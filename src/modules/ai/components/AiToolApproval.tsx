@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/modules/i18n";
 import {
   Cancel01Icon,
   Edit02Icon,
@@ -31,8 +32,9 @@ const TOOL_META: Record<string, { label: string; icon: typeof FilePlusIcon }> =
   };
 
 function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
+  const { t } = useI18n();
   const meta = TOOL_META[toolName];
-  const label = meta?.label ?? toolName;
+  const label = meta?.label ? t(meta.label) : toolName;
   const Icon = meta?.icon ?? ToolsIcon;
   const input = part.input as Record<string, unknown>;
 
@@ -50,7 +52,7 @@ function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
           {label}
         </span>
         <span className="ml-auto text-[10px] text-muted-foreground">
-          needs approval
+          {t("needs approval")}
         </span>
       </div>
 
@@ -66,7 +68,7 @@ function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
           className="h-7 gap-1.5 text-[11px]"
         >
           <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={2} />
-          Deny
+          {t("Deny")}
         </Button>
         <Button
           size="sm"
@@ -75,7 +77,7 @@ function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
           className="h-7 gap-1.5 text-[11px]"
         >
           <HugeiconsIcon icon={Tick02Icon} size={12} strokeWidth={2} />
-          Approve
+          {t("Approve")}
         </Button>
       </div>
     </div>
@@ -100,6 +102,7 @@ function PreviewBlock({
   toolName: string;
   input: Record<string, unknown>;
 }) {
+  const { t } = useI18n();
   if (toolName === "bash_run" || toolName === "bash_background") {
     const cwd = typeof input.cwd === "string" ? input.cwd : null;
     return (
@@ -130,7 +133,7 @@ function PreviewBlock({
       <div className="space-y-0.5 font-mono text-[11px]">
         <div className="text-muted-foreground">{String(input.path ?? "")}</div>
         <div className="text-[10.5px] text-muted-foreground/80">
-          {lines} line{lines === 1 ? "" : "s"} · review in the diff tab
+          {t("{{count}} line(s) · review in the diff tab", { count: lines })}
         </div>
       </div>
     );
@@ -144,11 +147,13 @@ function PreviewBlock({
       <div className="space-y-0.5 font-mono text-[11px]">
         <div className="text-muted-foreground">
           {String(input.path ?? "")}
-          {input.replace_all ? " · replace all" : ""}
+          {input.replace_all ? ` · ${t("replace all")}` : ""}
         </div>
         <div className="text-[10.5px] text-muted-foreground/80">
-          −{removed} / +{added} line{added === 1 && removed === 1 ? "" : "s"} ·
-          review in the diff tab
+          {t("−{{removed}} / +{{added}} line(s) · review in the diff tab", {
+            removed,
+            added,
+          })}
         </div>
       </div>
     );
@@ -161,8 +166,9 @@ function PreviewBlock({
       <div className="space-y-0.5 font-mono text-[11px]">
         <div className="text-muted-foreground">{String(input.path ?? "")}</div>
         <div className="text-[10.5px] text-muted-foreground/80">
-          {edits.length} edit{edits.length === 1 ? "" : "s"} · review in the
-          diff tab
+          {t("{{count}} edit(s) · review in the diff tab", {
+            count: edits.length,
+          })}
         </div>
       </div>
     );

@@ -11,6 +11,7 @@ import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { useI18n } from "@/modules/i18n";
 import { Refresh01Icon, ServerStack03Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -21,6 +22,7 @@ type Props = {
 export function WorkspaceEnvSelector({ onSelect }: Props) {
   if (!IS_WINDOWS) return null;
 
+  const { t } = useI18n();
   const env = useWorkspaceEnvStore((s) => s.env);
   const distros = useWorkspaceEnvStore((s) => s.distros);
   const loading = useWorkspaceEnvStore((s) => s.loading);
@@ -41,7 +43,7 @@ export function WorkspaceEnvSelector({ onSelect }: Props) {
         <button
           type="button"
           className="flex h-6 shrink-0 items-center gap-1 rounded-sm px-1.5 text-[11px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus:outline-none focus-visible:outline-none focus-visible:ring-0 data-[state=open]:bg-accent data-[state=open]:text-foreground"
-          title="Workspace environment"
+          title={t("Workspace environment")}
         >
           <HugeiconsIcon
             icon={ServerStack03Icon}
@@ -53,16 +55,16 @@ export function WorkspaceEnvSelector({ onSelect }: Props) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-48">
         <DropdownMenuItem onSelect={() => onSelect(LOCAL_WORKSPACE)}>
-          Windows Local
+          {t("Windows Local")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {distros.length === 0 ? (
           <DropdownMenuItem disabled>
             {loading
-              ? "Loading WSL distros..."
+              ? t("Loading WSL distros...")
               : error
-                ? "WSL unavailable"
-                : "No WSL distros found"}
+                ? t("WSL unavailable")
+                : t("No WSL distros found")}
           </DropdownMenuItem>
         ) : (
           distros.map((distro) => (
@@ -77,7 +79,7 @@ export function WorkspaceEnvSelector({ onSelect }: Props) {
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => void refreshDistros()}>
           <HugeiconsIcon icon={Refresh01Icon} size={13} strokeWidth={1.75} />
-          Refresh
+          {t("Refresh")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

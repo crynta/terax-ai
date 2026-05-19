@@ -11,6 +11,7 @@ Terax loads `TERAX.md` from the workspace root as agent memory (similar to AGENT
 - Platforms: macOS, Linux, Windows
 - Frontend type-check: `pnpm exec tsc --noEmit`
 - Rust checks: `cd src-tauri && cargo check && cargo clippy`
+- Chinese localization check: `pnpm check:zh` (incremental since `.omx/i18n-baseline.json`; use `pnpm check:zh:baseline` after a successful adaptation pass)
 
 ## Architecture
 
@@ -90,6 +91,7 @@ BYOK. Multi-provider via `@ai-sdk/*`: **OpenAI, Anthropic, Google, Groq, xAI, Ce
 - Path imports: always `@/…`, never relative across modules.
 - Cross-platform paths: anywhere a path may originate from OSC 7, the explorer, or the OS, normalize separators with `.split(/[\\/]/)` rather than `.split("/")`.
 - Canonical path form on the frontend is **forward-slash**. `homeDir()` returns backslashes on Windows; convert at the boundary (App.tsx setHome). OSC 7 already arrives as forward-slash. Equal canonical strings keep `useFileTree` from wiping its tree and flashing the explorer when `tab.cwd` first arrives.
+- After every remote update/merge and every local code change, run `pnpm check:zh`. The check scans frontend files changed since `.omx/i18n-baseline.json` when present, plus untracked frontend files; without a baseline it scans changes against `HEAD`. Any missing Simplified Chinese UI adaptation in the increment must be fixed before packaging or final reporting. After a successful adaptation pass, run `pnpm check:zh:baseline` to move the baseline forward and avoid repeatedly rescanning historical gaps. New user-facing frontend text should use `useI18n().t(...)` and have a matching `ZH_CN` entry in `src/modules/i18n/index.tsx`.
 
 ### Window styling
 

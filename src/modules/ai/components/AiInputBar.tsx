@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/modules/i18n";
 import {
   Cancel01Icon,
   CodeIcon,
@@ -71,6 +72,7 @@ function detectFileTrigger(
 }
 
 export function AiInputBar() {
+  const { t } = useI18n();
   const c = useComposer();
   const snippets = useSnippetsStore((s) => s.snippets);
   const workspaceRoot = useChatStore((s) => s.live.getWorkspaceRoot());
@@ -208,9 +210,9 @@ export function AiInputBar() {
   };
 
   const voiceLabel = c.voice.recording
-    ? "Listening…"
+    ? t("Listening…")
     : c.voice.transcribing
-      ? "Transcribing…"
+      ? t("Transcribing…")
       : null;
 
   return (
@@ -286,7 +288,7 @@ export function AiInputBar() {
                     c.submit();
                   }
                 }}
-                placeholder="Ask Terax anything   -   # for snippets and commands, @ for files"
+                placeholder={t("Ask Terax anything   -   # for snippets and commands, @ for files")}
                 rows={1}
                 disabled={c.isBusy}
                 className={cn(
@@ -356,6 +358,7 @@ function ChipsRow({
   commands: { name: string; label: string; icon: typeof HashtagIcon }[];
   onRemoveCommand: (name: string) => void;
 }) {
+  const { t } = useI18n();
   if (files.length === 0 && snippets.length === 0 && commands.length === 0)
     return null;
   return (
@@ -383,7 +386,7 @@ function ChipsRow({
               type="button"
               onClick={() => onRemoveCommand(cmd.name)}
               className="ml-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="Remove command"
+              aria-label={t("Remove command")}
             >
               <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
             </button>
@@ -411,7 +414,7 @@ function ChipsRow({
               type="button"
               onClick={() => onRemoveSnippet(s.id)}
               className="ml-0.5 opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="Remove snippet"
+              aria-label={t("Remove snippet")}
             >
               <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
             </button>
@@ -453,7 +456,7 @@ function ChipsRow({
               type="button"
               onClick={() => onRemoveFile(f.id)}
               className="ml-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="Remove"
+              aria-label={t("Remove")}
             >
               <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
             </button>
@@ -485,16 +488,16 @@ function autoresize(el: HTMLTextAreaElement | null) {
 export type AiInputBarProps = { tabId: number };
 
 export function AiInputBarConnect({ onAdd }: { onAdd: () => void }) {
+  const { t } = useI18n();
   return (
     <div className="shrink-0 border-t border-border/60 bg-card/40 px-3 py-2">
       <div className="flex h-10 items-center justify-between gap-3 rounded-lg px-3 text-xs">
         <span className="text-muted-foreground">
-          Connect any AI provider (or use local models) - your key stays in your
-          OS keychain.
+          {t("Connect any AI provider (or use local models) - your key stays in your OS keychain.")}
         </span>
         <Button size="xs" onClick={onAdd}>
           <HugeiconsIcon icon={Key01Icon} />
-          Connect provider
+          {t("Connect provider")}
         </Button>
       </div>
     </div>

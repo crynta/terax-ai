@@ -8,6 +8,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/modules/i18n";
 import {
   MODELS,
   PROVIDERS,
@@ -47,6 +48,7 @@ import { SectionHeader } from "../components/SectionHeader";
 type KeysMap = Record<ProviderId, string | null>;
 
 export function ModelsSection() {
+  const { t } = useI18n();
   const [keys, setKeys] = useState<KeysMap | null>(null);
   const defaultModel = usePreferencesStore((s) => s.defaultModelId);
   const lmstudioModelId = usePreferencesStore((s) => s.lmstudioModelId);
@@ -71,7 +73,7 @@ export function ModelsSection() {
   };
 
   if (!keys) {
-    return <div className="text-[12px] text-muted-foreground">Loading…</div>;
+    return <div className="text-[12px] text-muted-foreground">{t("Loading…")}</div>;
   }
 
   const cloudProviders = PROVIDERS.filter(
@@ -83,8 +85,8 @@ export function ModelsSection() {
   return (
     <div className="flex flex-col gap-7">
       <SectionHeader
-        title="Models"
-        description="Bring your own keys. They live in your OS keychain and are used only by Terax."
+        title={t("Models")}
+        description={t("Bring your own keys. They live in your OS keychain and are used only by Terax.")}
       />
 
       <DefaultModelBlock
@@ -96,9 +98,12 @@ export function ModelsSection() {
 
       <div className="flex flex-col gap-2">
         <div className="flex items-baseline justify-between">
-          <Label>Cloud providers</Label>
+          <Label>{t("Cloud providers")}</Label>
           <span className="text-[10.5px] text-muted-foreground">
-            {configuredCount} of {cloudProviders.length} configured
+            {t("{{configured}} of {{total}} configured", {
+              configured: configuredCount,
+              total: cloudProviders.length,
+            })}
           </span>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -138,6 +143,7 @@ function DefaultModelBlock({
   lmstudioModelId: string;
   openaiCompatModelId: string;
 }) {
+  const { t } = useI18n();
   const m = getModel(defaultModel);
 
   const isAvailable = (modelId: string, providerId: ProviderId): boolean => {
@@ -149,7 +155,7 @@ function DefaultModelBlock({
 
   return (
     <div className="flex flex-col gap-2">
-      <Label>Default model</Label>
+      <Label>{t("Default model")}</Label>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -159,7 +165,7 @@ function DefaultModelBlock({
             <span className="flex items-center gap-2">
               <ProviderIcon provider={m.provider} size={14} />
               <span>{m.label}</span>
-              <span className="text-muted-foreground">· {m.hint}</span>
+              <span className="text-muted-foreground">· {t(m.hint)}</span>
             </span>
             <HugeiconsIcon
               icon={ArrowDown01Icon}
@@ -188,7 +194,7 @@ function DefaultModelBlock({
                     <span>{p.label}</span>
                     {!hasKey ? (
                       <span className="ml-auto text-[9.5px] normal-case tracking-normal text-muted-foreground/70">
-                        no key
+                        {t("no key")}
                       </span>
                     ) : null}
                   </div>
@@ -209,7 +215,7 @@ function DefaultModelBlock({
                         <span className="flex flex-1 flex-col">
                           <span>{mod.label}</span>
                           <span className="text-[10px] text-muted-foreground">
-                            {mod.description}
+                            {t(mod.description)}
                           </span>
                         </span>
                       </DropdownMenuItem>
@@ -226,6 +232,7 @@ function DefaultModelBlock({
 }
 
 function LocalModelsBlock() {
+  const { t } = useI18n();
   const baseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
   const modelId = usePreferencesStore((s) => s.lmstudioModelId);
   const [urlDraft, setUrlDraft] = useState(baseURL);
@@ -262,15 +269,14 @@ function LocalModelsBlock() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-0.5">
-        <Label>Local — LM Studio</Label>
+        <Label>{t("Local — LM Studio")}</Label>
         <span className="text-[10.5px] leading-relaxed text-muted-foreground">
-          Run any GGUF model on your machine via LM Studio's HTTP server. Enable
-          the server in LM Studio → Developer tab.
+          {t("Run any GGUF model on your machine via LM Studio's HTTP server. Enable the server in LM Studio → Developer tab.")}
         </span>
       </div>
 
       <div className="flex flex-col gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
-        <FieldRow label="Base URL">
+        <FieldRow label={t("Base URL")}>
           <div className="flex flex-1 gap-1.5">
             <Input
               value={urlDraft}
@@ -290,7 +296,7 @@ function LocalModelsBlock() {
               disabled={!urlDraft.trim()}
               className="h-8 px-3 text-[11px]"
             >
-              Test
+              {t("Test")}
             </Button>
             <Button
               size="sm"
@@ -298,12 +304,12 @@ function LocalModelsBlock() {
               disabled={!dirty}
               className="h-8 px-3 text-[11px]"
             >
-              Save
+              {t("Save")}
             </Button>
           </div>
         </FieldRow>
 
-        <FieldRow label="Model ID">
+        <FieldRow label={t("Model ID")}>
           <Input
             value={modelDraft}
             onChange={(e) => setModelDraft(e.target.value)}
@@ -321,8 +327,8 @@ function LocalModelsBlock() {
 
         {!modelId.trim() ? (
           <p className="text-[10.5px] leading-relaxed text-amber-600 dark:text-amber-400">
-            Enter the model id that's loaded in LM Studio — e.g. the one shown
-            on the server's <span className="font-mono">/v1/models</span> page.
+            {t("Enter the model id that's loaded in LM Studio — e.g. the one shown on the server's")}{" "}
+            <span className="font-mono">/v1/models</span> {t("page.")}
           </p>
         ) : null}
       </div>
@@ -339,6 +345,7 @@ function OpenAICompatibleBlock({
   onSaveKey: (v: string) => Promise<void>;
   onClearKey: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   const baseURL = usePreferencesStore((s) => s.openaiCompatibleBaseURL);
   const modelId = usePreferencesStore((s) => s.openaiCompatibleModelId);
   const [urlDraft, setUrlDraft] = useState(baseURL);
@@ -376,15 +383,14 @@ function OpenAICompatibleBlock({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-0.5">
-        <Label>OpenAI-compatible endpoint</Label>
+        <Label>{t("OpenAI-compatible endpoint")}</Label>
         <span className="text-[10.5px] leading-relaxed text-muted-foreground">
-          Any OpenAI-compatible HTTPS endpoint — vLLM, Z.AI, Fireworks, hosted
-          Ollama, etc.
+          {t("Any OpenAI-compatible HTTPS endpoint — vLLM, Z.AI, Fireworks, hosted Ollama, etc.")}
         </span>
       </div>
 
       <div className="flex flex-col gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
-        <FieldRow label="Base URL">
+        <FieldRow label={t("Base URL")}>
           <div className="flex flex-1 gap-1.5">
             <Input
               value={urlDraft}
@@ -404,7 +410,7 @@ function OpenAICompatibleBlock({
               disabled={!urlDraft.trim()}
               className="h-8 px-3 text-[11px]"
             >
-              Test
+              {t("Test")}
             </Button>
             <Button
               size="sm"
@@ -412,12 +418,12 @@ function OpenAICompatibleBlock({
               disabled={!dirty}
               className="h-8 px-3 text-[11px]"
             >
-              Save
+              {t("Save")}
             </Button>
           </div>
         </FieldRow>
 
-        <FieldRow label="Model ID">
+        <FieldRow label={t("Model ID")}>
           <Input
             value={modelDraft}
             onChange={(e) => setModelDraft(e.target.value)}
@@ -425,13 +431,13 @@ function OpenAICompatibleBlock({
               const v = modelDraft.trim();
               if (v !== modelId) void setOpenaiCompatibleModelId(v);
             }}
-            placeholder="gpt-4o, qwen3-max, glm-4.6, …"
+            placeholder={t("gpt-4o, qwen3-max, glm-4.6, …")}
             spellCheck={false}
             className="h-8 font-mono text-[11.5px]"
           />
         </FieldRow>
 
-        <FieldRow label="API key">
+        <FieldRow label={t("API key")}>
           {compatKey ? (
             <div className="flex flex-1 items-center gap-1.5">
               <code className="flex-1 truncate rounded bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground">
@@ -441,7 +447,7 @@ function OpenAICompatibleBlock({
                 size="icon"
                 variant="ghost"
                 onClick={() => void onClearKey()}
-                title="Remove"
+                title={t("Remove")}
                 className="size-7 text-muted-foreground hover:text-destructive"
               >
                 <HugeiconsIcon
@@ -457,7 +463,7 @@ function OpenAICompatibleBlock({
                 type="password"
                 value={keyDraft}
                 onChange={(e) => setKeyDraft(e.target.value)}
-                placeholder="Optional — leave empty for unauthenticated endpoints"
+                placeholder={t("Optional — leave empty for unauthenticated endpoints")}
                 spellCheck={false}
                 className="h-8 flex-1 font-mono text-[11.5px]"
               />
@@ -472,7 +478,7 @@ function OpenAICompatibleBlock({
                 disabled={!keyDraft.trim()}
                 className="h-8 px-3 text-[11px]"
               >
-                Save
+                {t("Save")}
               </Button>
             </div>
           )}
@@ -485,6 +491,7 @@ function OpenAICompatibleBlock({
 }
 
 function AutocompleteBlock({ keys }: { keys: KeysMap }) {
+  const { t } = useI18n();
   const enabled = usePreferencesStore((s) => s.autocompleteEnabled);
   const provider = usePreferencesStore((s) => s.autocompleteProvider);
   const modelId = usePreferencesStore((s) => s.autocompleteModelId);
@@ -524,10 +531,9 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
     <div className="flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-0.5">
-          <Label>Editor autocomplete</Label>
+          <Label>{t("Editor autocomplete")}</Label>
           <span className="text-[10.5px] leading-relaxed text-muted-foreground">
-            Inline ghost-text suggestions in the code editor. Pick a fast model
-            (LPU/wafer-scale, local, or a small cloud tier).
+            {t("Inline ghost-text suggestions in the code editor. Pick a fast model (LPU/wafer-scale, local, or a small cloud tier).")}
           </span>
         </div>
         <Switch
@@ -537,7 +543,7 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
       </div>
 
       <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
-        <FieldRow label="Model">
+        <FieldRow label={t("Model")}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -548,7 +554,7 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
                   <ProviderIcon provider={currentModel.provider} size={12} />
                   <span className="truncate">{currentModel.label}</span>
                   <span className="text-muted-foreground">
-                    · {currentModel.hint}
+                    · {t(currentModel.hint)}
                   </span>
                 </span>
                 <HugeiconsIcon
@@ -574,7 +580,7 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
                       <span>{p.label}</span>
                       {!pHasKey ? (
                         <span className="ml-auto text-[9.5px] normal-case tracking-normal text-muted-foreground/70">
-                          no key
+                          {t("no key")}
                         </span>
                       ) : null}
                     </div>
@@ -591,7 +597,7 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
                         <span className="flex flex-col">
                           <span>{m.label}</span>
                           <span className="text-[10px] text-muted-foreground">
-                            {m.description}
+                            {t(m.description)}
                           </span>
                         </span>
                       </DropdownMenuItem>
@@ -605,8 +611,9 @@ function AutocompleteBlock({ keys }: { keys: KeysMap }) {
 
         {!hasKey ? (
           <span className="text-[10.5px] text-amber-500">
-            No API key configured for {getProvider(provider).label}. Add one
-            above.
+            {t("No API key configured for {{provider}}. Add one above.", {
+              provider: getProvider(provider).label,
+            })}
           </span>
         ) : null}
       </div>
@@ -636,23 +643,24 @@ function StatusLine({
 }: {
   status: "idle" | "testing" | "ok" | "fail";
 }) {
+  const { t } = useI18n();
   if (status === "idle") return null;
   if (status === "testing") {
     return (
-      <span className="text-[10.5px] text-muted-foreground">Testing…</span>
+      <span className="text-[10.5px] text-muted-foreground">{t("Testing…")}</span>
     );
   }
   if (status === "ok") {
     return (
       <span className="flex items-center gap-1 text-[10.5px] text-emerald-600 dark:text-emerald-400">
         <HugeiconsIcon icon={CheckmarkCircle02Icon} size={11} strokeWidth={2} />
-        Reachable — server responded.
+        {t("Reachable — server responded.")}
       </span>
     );
   }
   return (
     <span className="text-[10.5px] text-destructive">
-      Could not reach the server.
+      {t("Could not reach the server.")}
     </span>
   );
 }

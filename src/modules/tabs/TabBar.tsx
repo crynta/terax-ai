@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { useI18n } from "@/modules/i18n";
 import {
   Cancel01Icon,
   Clock01Icon,
@@ -49,6 +50,7 @@ export function TabBar({
   onPin,
   compact,
 }: Props) {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Horizontal wheel scroll without holding shift.
@@ -85,14 +87,15 @@ export function TabBar({
           onValueChange={(v) => onSelect(Number(v))}
         >
           <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
-            {tabs.map((t) => {
-              const isPreview = t.kind === "editor" && (t as EditorTab).preview;
+            {tabs.map((tab) => {
+              const isPreview =
+                tab.kind === "editor" && (tab as EditorTab).preview;
               return (
                 <TabsTrigger
-                  key={t.id}
-                  value={String(t.id)}
-                  data-tab-id={t.id}
-                  onDoubleClick={() => isPreview && onPin(t.id)}
+                  key={tab.id}
+                  value={String(tab.id)}
+                  data-tab-id={tab.id}
+                  onDoubleClick={() => isPreview && onPin(tab.id)}
                   className={cn(
                     "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
                     compact
@@ -108,15 +111,15 @@ export function TabBar({
                       compact ? "max-w-48" : "max-w-80",
                     )}
                   >
-                    <TabIcon tab={t} />
+                    <TabIcon tab={tab} />
                     {/* Preview tabs use italic to signal the transient state,
                         matching the visual convention from VSCode. */}
                     <span className={cn("truncate", isPreview && "italic")}>
-                      {labelFor(t)}
+                      {labelFor(tab)}
                     </span>
-                    {t.kind === "editor" && t.dirty ? (
+                    {tab.kind === "editor" && tab.dirty ? (
                       <span
-                        aria-label="Unsaved changes"
+                        aria-label={t("Unsaved changes")}
                         className="size-1.5 shrink-0 rounded-full bg-foreground/70"
                       />
                     ) : null}
@@ -124,10 +127,10 @@ export function TabBar({
                   {tabs.length > 1 && (
                     <span
                       role="button"
-                      aria-label="Close tab"
+                      aria-label={t("Close tab")}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onClose(t.id);
+                        onClose(tab.id);
                       }}
                       className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
                     >
@@ -149,7 +152,7 @@ export function TabBar({
               variant="ghost"
               size="icon"
               className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-              title="New tab"
+              title={t("New tab")}
             >
               <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
             </Button>
@@ -161,7 +164,7 @@ export function TabBar({
                 size={14}
                 strokeWidth={1.75}
               />
-              <span className="flex-1">Terminal</span>
+              <span className="flex-1">{t("Terminal")}</span>
               <span className="text-xs text-muted-foreground">
                 {fmtShortcut(MOD_KEY, "T")}
               </span>
@@ -172,7 +175,7 @@ export function TabBar({
                 size={14}
                 strokeWidth={1.75}
               />
-              <span className="flex-1">Privacy</span>
+              <span className="flex-1">{t("Privacy")}</span>
               <span className="text-xs text-muted-foreground">
                 {fmtShortcut(MOD_KEY, "R")}
               </span>
@@ -183,14 +186,14 @@ export function TabBar({
                 size={14}
                 strokeWidth={1.75}
               />
-              <span className="flex-1">Editor</span>
+              <span className="flex-1">{t("Editor")}</span>
               <span className="text-xs text-muted-foreground">
                 {fmtShortcut(MOD_KEY, "E")}
               </span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewPreview()}>
               <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
-              <span className="flex-1">Preview</span>
+              <span className="flex-1">{t("Preview")}</span>
               <span className="text-xs text-muted-foreground">
                 {fmtShortcut(MOD_KEY, "P")}
               </span>

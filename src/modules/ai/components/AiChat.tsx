@@ -30,6 +30,7 @@ import {
   HashtagIcon,
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
+import { useI18n } from "@/modules/i18n";
 import { SLASH_COMMANDS, TERAX_CMD_RE } from "../lib/slashCommands";
 import { Spinner } from "@/components/ui/spinner";
 import { useChatStore, sendMessage } from "../store/chatStore";
@@ -185,6 +186,7 @@ export function AiChatView({
   clearError,
   addToolApprovalResponse,
 }: Props) {
+  const { t } = useI18n();
   const isBusy = status === "submitted" || status === "streaming";
   const lastMessage = messages[messages.length - 1];
   const showSpinner = isBusy && lastMessage?.role === "user";
@@ -209,8 +211,10 @@ export function AiChatView({
       <Conversation>
         <ConversationContent>
           <ConversationEmptyState
-            title="Ask Terax anything"
-            description="Explain command output, fix errors, generate snippets, or run a task."
+            title={t("Ask Terax anything")}
+            description={t(
+              "Explain command output, fix errors, generate snippets, or run a task.",
+            )}
           />
         </ConversationContent>
       </Conversation>
@@ -237,7 +241,7 @@ export function AiChatView({
         {showSpinner && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Spinner />
-            <span className="truncate">{step ?? "Thinking…"}</span>
+            <span className="truncate">{step ?? t("Thinking…")}</span>
           </div>
         )}
         {showContinue && (
@@ -252,7 +256,7 @@ export function AiChatView({
         )}
         {error && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            <div className="font-medium">Something went wrong.</div>
+            <div className="font-medium">{t("Something went wrong.")}</div>
             <div className="mt-0.5 leading-relaxed opacity-90">
               {error.message}
             </div>
@@ -261,7 +265,7 @@ export function AiChatView({
               onClick={clearError}
               className="mt-1 underline opacity-80 hover:opacity-100"
             >
-              Dismiss
+              {t("Dismiss")}
             </button>
           </div>
         )}

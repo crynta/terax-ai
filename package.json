@@ -9,7 +9,10 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:zh": "node scripts/count-ui-english.cjs",
+    "check:zh:all": "node scripts/count-ui-english.cjs --all",
+    "check:zh:baseline": "node scripts/count-ui-english.cjs --record-baseline"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",
