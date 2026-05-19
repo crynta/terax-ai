@@ -24,6 +24,7 @@ import {
   setEditorTheme,
   setRestoreWindowState,
   setShowHidden,
+  setTerminalFontFamily,
   setTerminalFontSize,
   setTerminalScrollback,
   setTerminalWebglEnabled,
@@ -63,6 +64,7 @@ export function GeneralSection() {
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
+  const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
 
@@ -218,6 +220,18 @@ export function GeneralSection() {
           <Switch
             checked={terminalWebglEnabled}
             onCheckedChange={onToggleTerminalWebgl}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Font family"
+          description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
+        >
+          <input
+            type="text"
+            value={terminalFontFamily}
+            placeholder="Auto-detect"
+            onChange={(e) => void setTerminalFontFamily(e.target.value)}
+            className="h-8 w-48 rounded-none border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
           />
         </SettingRow>
         <SettingRow

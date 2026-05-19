@@ -11,6 +11,7 @@ import {
 import { openPty, type PtySession } from "./pty-bridge";
 import {
   acquireSlot,
+  applyFontFamily,
   applyFontSize,
   applyTheme as applyPoolTheme,
   applyScrollback,
@@ -333,6 +334,11 @@ export function useTerminalSession({
   useEffect(() => {
     applyFontSize(Math.max(4, Math.round(fontSize * zoomLevel)));
   }, [fontSize, zoomLevel]);
+
+  const fontFamily = usePreferencesStore((p) => p.terminalFontFamily);
+  useEffect(() => {
+    applyFontFamily(fontFamily);
+  }, [fontFamily]);
 
   const scrollback = usePreferencesStore((p) => p.terminalScrollback);
   useEffect(() => {
