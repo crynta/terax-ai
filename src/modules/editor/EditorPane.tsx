@@ -1,3 +1,4 @@
+import { redo, undo } from "@codemirror/commands";
 import {
   findNext,
   findPrevious,
@@ -41,6 +42,9 @@ export type EditorPaneHandle = {
   getPath: () => string;
   /** Re-read the file from disk. Skips silently if the buffer is dirty. */
   reload: () => boolean;
+  /** Apply CodeMirror's undo/redo commands. */
+  undo: () => void;
+  redo: () => void;
 };
 
 type Props = {
@@ -225,6 +229,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         },
         getPath: () => path,
         reload: () => reloadRef.current(),
+        undo: () => {
+          const view = cmRef.current?.view;
+          if (view) undo(view);
+        },
+        redo: () => {
+          const view = cmRef.current?.view;
+          if (view) redo(view);
+        },
       }),
       [path],
     );

@@ -11,7 +11,9 @@ import {
 import { openPty, type PtySession } from "./pty-bridge";
 import {
   acquireSlot,
+  applyFontFamily,
   applyFontSize,
+  applyLetterSpacing,
   applyTheme as applyPoolTheme,
   applyScrollback,
   applyWebglPreference,
@@ -47,6 +49,10 @@ type Session = {
   searchQuery: string | null;
   dormantRing: DormantRing;
   hasSlot: boolean;
+  // True if the slot was in alt-screen mode (TUI like vim, htop, dofek)
+  // at the most recent release. Read once on the next bind to trigger a
+  // SIGWINCH-driven repaint instead of replaying dormant bytes.
+  altScreenAtRelease: boolean;
 };
 
 const sessions = new Map<number, Session>();
@@ -63,6 +69,17 @@ configureRendererPool({
         s.cols = cols;
         s.rows = rows;
         s.pty?.resize(cols, rows);
+      },
+      kickPty: (cols, rows) => {
+        const pty = s.pty;
+        if (!pty || cols <= 0 || rows <= 0) return;
+        // Linux only emits SIGWINCH when the winsize ioctl actually
+        // changes dims, so bump +1 row then restore. The TUI receives
+        // (possibly two) SIGWINCHes and repaints from scratch.
+        pty
+          .resize(cols, rows + 1)
+          .then(() => pty.resize(cols, rows))
+          .catch((e) => console.warn("[terax] kickPty failed:", e));
       },
     };
   },
@@ -100,6 +117,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     searchQuery: null,
     dormantRing: new DormantRing(),
     hasSlot: false,
+    altScreenAtRelease: false,
   };
   sessions.set(leafId, session);
 
@@ -146,19 +164,18 @@ async function openPtyForSession(
 
 function bindLeafToSlot(leafId: number, s: Session): void {
   if (!s.container) return;
+  const altScreen = s.altScreenAtRelease;
+  s.altScreenAtRelease = false;
   acquireSlot({
     leafId,
     container: s.container,
     snapshot: s.snapshot,
+    altScreen,
     drainRing: (write) => s.dormantRing.drain(write),
     shellExited: s.shellExited,
     searchQuery: s.searchQuery,
     cols: s.cols,
     rows: s.rows,
-    onScopeChange: (cols, rows) => {
-      s.cols = cols;
-      s.rows = rows;
-    },
     registerOsc: (term) => {
       // Shared in-command flag — see osc-handlers.ts. The prompt tracker
       // flips it on OSC 133 B/C/D/A; the cwd handler reads it to ignore OSC
@@ -196,6 +213,7 @@ function unbindLeafFromSlot(leafId: number, s: Session): void {
     s.snapshot = out.snapshot;
     if (out.cols > 0) s.cols = out.cols;
     if (out.rows > 0) s.rows = out.rows;
+    s.altScreenAtRelease = out.altScreen;
   }
   s.hasSlot = false;
 }
@@ -251,6 +269,7 @@ export async function respawnSession(
   s.dormantRing = new DormantRing();
   s.shellExited = false;
   s.pendingExit = null;
+  s.altScreenAtRelease = false;
 
   const slot = getSlotForLeaf(leafId);
   if (slot) {
@@ -337,6 +356,16 @@ export function useTerminalSession({
   useEffect(() => {
     applyFontSize(Math.max(4, Math.round(fontSize * zoomLevel)));
   }, [fontSize, zoomLevel]);
+
+  const fontFamily = usePreferencesStore((p) => p.terminalFontFamily);
+  useEffect(() => {
+    applyFontFamily(fontFamily);
+  }, [fontFamily]);
+
+  const letterSpacing = usePreferencesStore((p) => p.terminalLetterSpacing);
+  useEffect(() => {
+    applyLetterSpacing(letterSpacing);
+  }, [letterSpacing]);
 
   const scrollback = usePreferencesStore((p) => p.terminalScrollback);
   useEffect(() => {

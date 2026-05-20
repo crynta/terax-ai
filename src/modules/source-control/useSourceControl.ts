@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const AUTO_FETCH_THROTTLE_MS = 5 * 60_000;
 const AUTO_FETCH_LRU_LIMIT = 16;
+const FOCUS_REFRESH_MIN_INTERVAL_MS = 1500;
 
 export type SourceControlRefreshMode = "auto" | "always" | "never";
 export type SourceControlRemoteAction = "fetch" | "pull" | "push";
@@ -163,6 +164,7 @@ export function useSourceControl(
   const inflightModeRef = useRef<SourceControlRefreshMode>("never");
   const autoFetchByRepoRef = useRef(new Map<string, number>());
   const enabledRef = useRef(enabled);
+  const lastRefreshAtRef = useRef(0);
 
   useEffect(() => {
     stateRef.current = state;
@@ -332,6 +334,8 @@ export function useSourceControl(
           isLoading: false,
           localError: normalizeError(error),
         }));
+      } finally {
+        lastRefreshAtRef.current = Date.now();
       }
     },
     [contextPath, workspaceKey],
@@ -448,6 +452,8 @@ export function useSourceControl(
       if (timer) window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         timer = 0;
+        const elapsed = Date.now() - lastRefreshAtRef.current;
+        if (elapsed < FOCUS_REFRESH_MIN_INTERVAL_MS) return;
         void refresh({ remote: "never" });
       }, 400);
     };

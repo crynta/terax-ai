@@ -254,6 +254,8 @@ where
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS", "")
         .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GCM_INTERACTIVE", "Never")
+        .env("GCM_PROVIDER", "")
         .env("LC_ALL", "C")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

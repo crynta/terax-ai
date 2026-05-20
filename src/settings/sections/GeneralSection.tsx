@@ -25,6 +25,8 @@ import {
   setEditorTheme,
   setRestoreWindowState,
   setShowHidden,
+  setTerminalFontFamily,
+  setTerminalLetterSpacing,
   setTerminalFontSize,
   setTerminalScrollback,
   setTerminalWebglEnabled,
@@ -64,6 +66,8 @@ export function GeneralSection() {
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
+  const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
+  const terminalLetterSpacing = usePreferencesStore((s) => s.terminalLetterSpacing);
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const discordPresenceEnabled = usePreferencesStore(
@@ -223,6 +227,45 @@ export function GeneralSection() {
             checked={terminalWebglEnabled}
             onCheckedChange={onToggleTerminalWebgl}
           />
+        </SettingRow>
+        <SettingRow
+          title="Font family"
+          description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
+        >
+          <input
+            type="text"
+            value={terminalFontFamily}
+            placeholder="Auto-detect"
+            onChange={(e) => void setTerminalFontFamily(e.target.value)}
+            className="h-8 w-48 rounded-none border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+          />
+        </SettingRow>
+        <SettingRow
+          title="Letter spacing"
+          description="Extra horizontal space between characters (px). Use negative values to tighten Nerd Fonts."
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 justify-between gap-2 rounded-none px-2.5 text-[12px]"
+              >
+                <span>{terminalLetterSpacing > 0 ? `+${terminalLetterSpacing}` : terminalLetterSpacing} px</span>
+                <HugeiconsIcon icon={ArrowDown01Icon} size={12} strokeWidth={2} className="opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[100px] rounded-none border border-border bg-popover p-0 shadow-none ring-0">
+              {[-4, -3, -2, -1, 0, 1, 2, 3, 4].map((v) => (
+                <DropdownMenuItem
+                  key={v}
+                  onSelect={() => void setTerminalLetterSpacing(v)}
+                  className={cn("rounded-none px-3 py-1.5 text-[12px]", v === terminalLetterSpacing && "bg-accent/50")}
+                >
+                  {v > 0 ? `+${v}` : v} px
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </SettingRow>
         <SettingRow
           title="Font size"

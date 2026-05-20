@@ -48,6 +48,13 @@ export type PreviewTab = {
   url: string;
 };
 
+export type MarkdownTab = {
+  id: number;
+  kind: "markdown";
+  title: string;
+  path: string;
+};
+
 export type AiDiffStatus = "pending" | "approved" | "rejected";
 
 export type AiDiffTab = {
@@ -97,6 +104,7 @@ export type Tab =
   | TerminalTab
   | EditorTab
   | PreviewTab
+  | MarkdownTab
   | AiDiffTab
   | GitDiffTab
   | GitHistoryTab
@@ -365,6 +373,24 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return id;
   }, []);
 
+  const newMarkdownTab = useCallback((path: string) => {
+    let targetId: number | null = null;
+    setTabs((curr) => {
+      const existing = curr.find(
+        (t) => t.kind === "markdown" && t.path === path,
+      );
+      if (existing) {
+        targetId = existing.id;
+        return curr;
+      }
+      const id = nextIdRef.current++;
+      targetId = id;
+      return [...curr, { id, kind: "markdown", title: basename(path), path }];
+    });
+    if (targetId !== null) setActiveId(targetId);
+    return targetId;
+  }, []);
+
   const openGitDiffTab = useCallback(
     (input: {
       path: string;
@@ -548,6 +574,12 @@ export function useTabs(initial?: Partial<TerminalTab>) {
               url: patch.url,
               title: patch.title ?? titleFromUrl(patch.url),
             }),
+          };
+        }
+        if (x.kind === "markdown") {
+          return {
+            ...x,
+            ...(patch.title !== undefined && { title: patch.title }),
           };
         }
         // editor tab: auto-promote from preview the moment the file becomes dirty.
@@ -750,6 +782,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     openFileTab,
     pinTab,
     newPreviewTab,
+    newMarkdownTab,
     openAiDiffTab,
     openGitDiffTab,
     openCommitHistoryTab,

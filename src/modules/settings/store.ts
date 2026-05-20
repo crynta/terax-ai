@@ -52,11 +52,14 @@ export type Preferences = {
   lmstudioModelId: string;
   openaiCompatibleBaseURL: string;
   openaiCompatibleModelId: string;
+  openaiCompatibleContextLimit: number;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
   showHidden: boolean;
   terminalWebglEnabled: boolean;
+  terminalFontFamily: string;
+  terminalLetterSpacing: number;
   terminalFontSize: number;
   terminalScrollback: number;
   lastWslDistro: string | null;
@@ -79,12 +82,15 @@ const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
 const KEY_LMSTUDIO_MODEL_ID = "lmstudioModelId";
 const KEY_OPENAI_COMPAT_BASE_URL = "openaiCompatibleBaseURL";
 const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
+const KEY_OPENAI_COMPAT_CONTEXT_LIMIT = "openaiCompatibleContextLimit";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
+const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
+const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
@@ -121,11 +127,14 @@ export const DEFAULT_PREFERENCES: Preferences = {
   lmstudioModelId: "",
   openaiCompatibleBaseURL: OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   openaiCompatibleModelId: "",
+  openaiCompatibleContextLimit: 128_000,
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
   showHidden: false,
   terminalWebglEnabled: true,
+  terminalFontFamily: "",
+  terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
   lastWslDistro: null,
@@ -186,6 +195,9 @@ export async function loadPreferences(): Promise<Preferences> {
     openaiCompatibleModelId:
       get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ??
       DEFAULT_PREFERENCES.openaiCompatibleModelId,
+    openaiCompatibleContextLimit:
+      get<number>(KEY_OPENAI_COMPAT_CONTEXT_LIMIT) ??
+      DEFAULT_PREFERENCES.openaiCompatibleContextLimit,
     favoriteModelIds:
       get<string[]>(KEY_FAVORITE_MODELS) ??
       DEFAULT_PREFERENCES.favoriteModelIds,
@@ -199,6 +211,12 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
       DEFAULT_PREFERENCES.terminalWebglEnabled,
+    terminalFontFamily:
+      get<string>(KEY_TERMINAL_FONT_FAMILY) ??
+      DEFAULT_PREFERENCES.terminalFontFamily,
+    terminalLetterSpacing:
+      get<number>(KEY_TERMINAL_LETTER_SPACING) ??
+      DEFAULT_PREFERENCES.terminalLetterSpacing,
     terminalFontSize:
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
       DEFAULT_PREFERENCES.terminalFontSize,
@@ -273,6 +291,15 @@ export async function setOpenaiCompatibleModelId(value: string): Promise<void> {
   await writePref(KEY_OPENAI_COMPAT_MODEL_ID, value);
 }
 
+export async function setOpenaiCompatibleContextLimit(
+  value: number,
+): Promise<void> {
+  const clamped = Number.isFinite(value)
+    ? Math.max(1_000, Math.round(value))
+    : DEFAULT_PREFERENCES.openaiCompatibleContextLimit;
+  await writePref(KEY_OPENAI_COMPAT_CONTEXT_LIMIT, clamped);
+}
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -291,6 +318,15 @@ export async function setShowHidden(value: boolean): Promise<void> {
 
 export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
+}
+
+export async function setTerminalFontFamily(value: string): Promise<void> {
+  await writePref(KEY_TERMINAL_FONT_FAMILY, value.trim());
+}
+
+export async function setTerminalLetterSpacing(value: number): Promise<void> {
+  const clamped = Number.isFinite(value) ? Math.max(-10, Math.min(10, Math.round(value))) : 0;
+  await writePref(KEY_TERMINAL_LETTER_SPACING, clamped);
 }
 
 export async function setTerminalFontSize(value: number): Promise<void> {
@@ -359,11 +395,14 @@ export async function onPreferencesChange(
     [KEY_LMSTUDIO_MODEL_ID]: "lmstudioModelId",
     [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
     [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
+    [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
+    [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
+    [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",

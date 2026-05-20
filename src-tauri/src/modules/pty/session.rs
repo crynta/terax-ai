@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -11,7 +11,10 @@ use super::da_filter::DaFilter;
 use super::shell_init;
 use crate::modules::workspace::WorkspaceEnv;
 
-const FLUSH_INTERVAL: Duration = Duration::from_millis(4);
+// Flusher coalesces a short window after first-byte arrival so we send chunks,
+// not single bytes. MAX_IDLE is only a safety net for missed signals.
+const FLUSH_COALESCE: Duration = Duration::from_millis(4);
+const FLUSH_MAX_IDLE: Duration = Duration::from_millis(50);
 const READ_BUF: usize = 16 * 1024;
 // Cap on buffered-but-not-yet-flushed bytes. On overflow we discard the
 // entire pending buffer and emit an SGR-reset + notice in its place.
@@ -53,7 +56,32 @@ impl Drop for Session {
         }
     }
 }
+// Windows ConPTY has a documented race when two `CreatePseudoConsole` calls
+// interleave. Unix openpty/fork is fine in parallel.
+#[cfg(windows)]
 static SPAWN_LOCK: Mutex<()> = Mutex::new(());
+
+struct ChildKillGuard {
+    killer: Option<Box<dyn ChildKiller + Send + Sync>>,
+}
+
+impl ChildKillGuard {
+    fn new(killer: Box<dyn ChildKiller + Send + Sync>) -> Self {
+        Self { killer: Some(killer) }
+    }
+
+    fn disarm(&mut self) {
+        self.killer = None;
+    }
+}
+
+impl Drop for ChildKillGuard {
+    fn drop(&mut self) {
+        if let Some(mut k) = self.killer.take() {
+            let _ = k.kill();
+        }
+    }
+}
 
 pub fn spawn(
     cols: u16,
@@ -63,6 +91,7 @@ pub fn spawn(
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
+    #[cfg(windows)]
     let _spawn_guard = SPAWN_LOCK.lock().unwrap();
 
     let pty_system = native_pty_system();
@@ -78,11 +107,15 @@ pub fn spawn(
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
+    // Kill the child if any of the pipe setup below fails so the spawned shell
+    // can't outlive an aborted pty_open.
+    let mut guard = ChildKillGuard::new(child.clone_killer());
     let killer = child.clone_killer();
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(
         pair.master.take_writer().map_err(|e| e.to_string())?,
     ));
+    guard.disarm();
 
     #[cfg(windows)]
     let job = match child.process_id() {
@@ -104,7 +137,10 @@ pub fn spawn(
         master: Mutex::new(pair.master),
     });
 
-    let pending: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::with_capacity(READ_BUF)));
+    let pending: Arc<(Mutex<Vec<u8>>, Condvar)> = Arc::new((
+        Mutex::new(Vec::with_capacity(READ_BUF)),
+        Condvar::new(),
+    ));
     let done = Arc::new(AtomicBool::new(false));
     let spawn_at = Instant::now();
 
@@ -124,7 +160,7 @@ pub fn spawn(
                     Ok(n) => {
                         if !logged_first {
                             logged_first = true;
-                            log::info!("pty first byte after {}ms", spawn_at.elapsed().as_millis());
+                            log::debug!("pty first byte after {}ms", spawn_at.elapsed().as_millis());
                         }
                         filtered.clear();
                         da_filter.process(&buf[..n], &mut filtered, |reply| {
@@ -135,13 +171,15 @@ pub fn spawn(
                         if filtered.is_empty() {
                             continue;
                         }
-                        let mut g = pending_r.lock().unwrap();
+                        let (lock, cv) = &*pending_r;
+                        let mut g = lock.lock().unwrap();
                         if g.len() + filtered.len() > MAX_PENDING {
                             dropped_bytes += g.len() as u64;
                             g.clear();
                             g.extend_from_slice(OVERFLOW_NOTICE);
                         }
                         g.extend_from_slice(&filtered);
+                        cv.notify_one();
                     }
                     Err(e) => {
                         log::debug!("pty reader ended: {e}");
@@ -149,6 +187,7 @@ pub fn spawn(
                     }
                 }
             }
+            pending_r.1.notify_one();
             if dropped_bytes > 0 {
                 log::warn!("pty backpressure: dropped {dropped_bytes} bytes (cap {MAX_PENDING})");
             }
@@ -160,21 +199,29 @@ pub fn spawn(
     let done_f = done.clone();
     thread::Builder::new()
         .name("terax-pty-flusher".into())
-        .spawn(move || loop {
-            thread::sleep(FLUSH_INTERVAL);
-            let chunk = {
-                let mut g = pending_f.lock().unwrap();
-                if g.is_empty() {
-                    if done_f.load(Ordering::Acquire) {
-                        break;
+        .spawn(move || {
+            let (lock, cv) = &*pending_f;
+            loop {
+                {
+                    let mut g = lock.lock().unwrap();
+                    while g.is_empty() {
+                        if done_f.load(Ordering::Acquire) {
+                            return;
+                        }
+                        let (next, _) = cv.wait_timeout(g, FLUSH_MAX_IDLE).unwrap();
+                        g = next;
                     }
+                }
+                // Coalesce a short window so a burst flushes as one chunk.
+                thread::sleep(FLUSH_COALESCE);
+                let chunk = std::mem::take(&mut *lock.lock().unwrap());
+                if chunk.is_empty() {
                     continue;
                 }
-                std::mem::take(&mut *g)
-            };
-            if let Err(e) = on_data_flush.send(Response::new(chunk)) {
-                log::debug!("pty flusher exiting, channel closed: {e}");
-                break;
+                if let Err(e) = on_data_flush.send(Response::new(chunk)) {
+                    log::debug!("pty flusher exiting, channel closed: {e}");
+                    break;
+                }
             }
         })
         .expect("spawn pty flusher thread");
@@ -205,13 +252,15 @@ pub fn spawn(
             if let Err(e) = reader_thread.join() {
                 log::error!("pty reader thread panicked: {e:?}");
             }
-            let tail = std::mem::take(&mut *pending_e.lock().unwrap());
+            let (lock, cv) = &*pending_e;
+            let tail = std::mem::take(&mut *lock.lock().unwrap());
             if !tail.is_empty() {
                 if let Err(e) = on_data_exit.send(Response::new(tail)) {
                     log::debug!("pty final-data send failed (channel closed): {e}");
                 }
             }
             done_e.store(true, Ordering::Release);
+            cv.notify_all();
             if let Err(e) = on_exit.send(code) {
                 log::debug!("pty exit send failed (channel closed): {e}");
             }

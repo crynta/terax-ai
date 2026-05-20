@@ -47,6 +47,7 @@ import {
   type SearchInlineHandle,
   type SearchTarget,
 } from "@/modules/header";
+import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -55,6 +56,7 @@ import {
   ShortcutsDialog,
   useGlobalShortcuts,
   type ShortcutHandlers,
+  type ShortcutId,
 } from "@/modules/shortcuts";
 import {
   ExtensionsView,
@@ -85,6 +87,7 @@ import {
   type WorkspaceEnv,
 } from "@/modules/workspace";
 import { homeDir } from "@tauri-apps/api/path";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -148,6 +151,7 @@ export default function App() {
     openFileTab,
     pinTab,
     newPreviewTab,
+    newMarkdownTab,
     openAiDiffTab,
     closeAiDiffTab,
     openGitDiffTab,
@@ -425,6 +429,7 @@ export default function App() {
   const isTerminalTab = activeTab?.kind === "terminal";
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
+  const isMarkdownTab = activeTab?.kind === "markdown";
   const isAiDiffTab = activeTab?.kind === "ai-diff";
   const isGitDiffTab =
     activeTab?.kind === "git-diff" || activeTab?.kind === "git-commit-file";
@@ -448,6 +453,27 @@ export default function App() {
       }
     }
   }, [tabs]);
+
+  useEffect(() => {
+    type FileWrittenPayload = { path: string; source?: string };
+    const unlistenPromise = getCurrentWebviewWindow().listen<FileWrittenPayload>(
+      "fs:file-written",
+      (event) => {
+        if (event.payload.source === "editor") return;
+        const normalizedPath = event.payload.path.replace(/\\/g, "/");
+        const currentTabs = tabsRef.current;
+        for (const t of currentTabs) {
+          if (t.kind !== "editor") continue;
+          if (t.path.replace(/\\/g, "/") === normalizedPath) {
+            editorRefs.current.get(t.id)?.reload();
+          }
+        }
+      },
+    );
+    return () => {
+      void unlistenPromise.then((un) => un());
+    };
+  }, []);
 
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
@@ -846,6 +872,13 @@ export default function App() {
     [newPreviewTab],
   );
 
+  const openMarkdownPreview = useCallback(
+    (path: string) => {
+      newMarkdownTab(path);
+    },
+    [newMarkdownTab],
+  );
+
   const splitActivePaneInActiveTab = useCallback(
     (dir: "row" | "col") => {
       const t = tabsRef.current.find((x) => x.id === activeId);
@@ -889,6 +922,8 @@ export default function App() {
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
+      "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
+      "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
     }),
     [
       activeId,
@@ -911,7 +946,27 @@ export default function App() {
     ],
   );
 
-  useGlobalShortcuts(shortcutHandlers);
+  const shortcutsDisabled = useCallback(
+    (id: ShortcutId, e: KeyboardEvent) => {
+      if (id === "editor.undo" || id === "editor.redo") {
+        return activeTab?.kind !== "editor";
+      }
+      if (id === "ai.askSelection") {
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
+          ".xterm",
+        );
+        if (!inTerminal) return false;
+        const sel = captureActiveSelection();
+        return !sel || !sel.trim();
+      }
+      return false;
+    },
+    [activeTab],
+  );
+
+  useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {
@@ -978,11 +1033,11 @@ export default function App() {
   );
 
   const searchTarget = useMemo<SearchTarget>(() => {
-    if (isTerminalTab && activeSearchAddon)
+    if (isTerminalTab && activeLeafId !== null && activeSearchAddon)
       return {
         kind: "terminal",
         addon: activeSearchAddon,
-        focus: () => terminalRefs.current.get(activeId)?.focus(),
+        focus: () => terminalRefs.current.get(activeLeafId)?.focus(),
       };
     if (isEditorTab && activeEditorHandle)
       return {
@@ -991,7 +1046,13 @@ export default function App() {
         focus: () => activeEditorHandle.focus(),
       };
     return null;
-  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
+  }, [
+    isTerminalTab,
+    isEditorTab,
+    activeLeafId,
+    activeSearchAddon,
+    activeEditorHandle,
+  ]);
 
   const activeCwd = activeTerminalLeafCwd;
 
@@ -1095,6 +1156,15 @@ export default function App() {
       <div
         className={cn(
           "absolute inset-0 px-3 pt-2 pb-2",
+          !isMarkdownTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isMarkdownTab}
+      >
+        <MarkdownStack tabs={tabs} activeId={activeId} />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
           !isAiDiffTab && "invisible pointer-events-none",
         )}
         aria-hidden={!isAiDiffTab}
@@ -1185,6 +1255,7 @@ export default function App() {
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
+                        onOpenMarkdownPreview={openMarkdownPreview}
                       />
                     ) : sidebarView === "source-control" ? (
                       <SourceControlPanel

@@ -8,6 +8,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
+import { terminalWordNavigationSequence } from "./keymap";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -23,6 +24,11 @@ export type SlotAdapter = {
 export type LeafBridge = {
   writeToPty(data: string): void;
   resizePty(cols: number, rows: number): void;
+  // Force a SIGWINCH on the underlying PTY at the given dims. Implemented
+  // as a +1 row / restore bump because the Linux kernel suppresses winsize
+  // ioctls that don't actually change the size. Used to make alt-screen
+  // TUIs repaint from scratch after they were dormant.
+  kickPty(cols: number, rows: number): void;
 };
 
 export type Slot = {
@@ -77,7 +83,8 @@ function getRecycler(): HTMLDivElement {
 function termOptions() {
   const prefs = usePreferencesStore.getState();
   return {
-    fontFamily: detectMonoFontFamily(),
+    fontFamily: prefs.terminalFontFamily || detectMonoFontFamily(),
+    letterSpacing: prefs.terminalLetterSpacing,
     fontSize: Math.max(4, Math.round(prefs.terminalFontSize * prefs.zoomLevel)),
     theme: buildTerminalTheme(),
     cursorBlink: false,
@@ -135,6 +142,12 @@ function createSlot(): Slot {
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
+    const wordNavigation = terminalWordNavigationSequence(event);
+    if (wordNavigation) {
+      event.preventDefault();
+      if (event.type === "keydown") bridge.writeToPty(wordNavigation);
+      return false;
+    }
     if (isCtrlBackspace(event)) {
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty("\x17");
@@ -196,12 +209,15 @@ export type AcquireParams = {
   leafId: number;
   container: HTMLDivElement;
   snapshot: string | null;
+  // True if the slot was in alt-screen mode (TUI like vim, htop, dofek)
+  // at the time it was released. When set, bindSlot skips ring replay
+  // and kicks SIGWINCH so the TUI repaints from scratch.
+  altScreen: boolean;
   drainRing: (write: (bytes: Uint8Array) => void) => void;
   shellExited: boolean;
   searchQuery: string | null;
   cols: number;
   rows: number;
-  onScopeChange: (cols: number, rows: number) => void;
   registerOsc: (term: Terminal) => (() => void)[];
   onSearchReady: (addon: SearchAddon) => void;
 };
@@ -257,7 +273,14 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
       console.warn("[terax] snapshot replay failed:", e);
     }
   }
-  p.drainRing((bytes) => slot.term.write(bytes));
+  if (p.altScreen) {
+    // Discard the dormant ring. TUI output is incremental cursor-positioned
+    // updates that can't be replayed coherently on top of a stale snapshot
+    // — see the SIGWINCH kick below, which makes the TUI redraw from scratch.
+    p.drainRing(() => {});
+  } else {
+    p.drainRing((bytes) => slot.term.write(bytes));
+  }
   try {
     slot.term.write("\x1b[?25h");
   } catch {}
@@ -276,7 +299,8 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   slot.lastW = p.container.clientWidth;
   slot.lastH = p.container.clientHeight;
   if (slot.lastCols !== p.cols || slot.lastRows !== p.rows) {
-    p.onScopeChange(slot.lastCols, slot.lastRows);
+    // resizePty updates session.cols/rows + pty backend; no separate scope call.
+    adapter?.resolveLeaf(p.leafId)?.resizePty(slot.lastCols, slot.lastRows);
   }
 
   if (p.searchQuery) {
@@ -286,6 +310,10 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   }
 
   applyCursorBlinkOnSlot(slot, adapter?.isLeafFocused(p.leafId) ?? false);
+
+  if (p.altScreen && !p.shellExited) {
+    adapter?.resolveLeaf(p.leafId)?.kickPty(slot.term.cols, slot.term.rows);
+  }
 
   scheduleUnhide(slot);
 
@@ -322,8 +350,10 @@ function rewireSlot(slot: Slot, p: AcquireParams): void {
   slot.lastW = p.container.clientWidth;
   slot.lastH = p.container.clientHeight;
   if (slot.term.cols !== p.cols || slot.term.rows !== p.rows) {
-    p.onScopeChange(slot.term.cols, slot.term.rows);
+    adapter?.resolveLeaf(p.leafId)?.resizePty(slot.term.cols, slot.term.rows);
   }
+  slot.lastCols = slot.term.cols;
+  slot.lastRows = slot.term.rows;
   p.onSearchReady(slot.searchAddon);
 }
 
@@ -342,9 +372,7 @@ function setupResizeObserver(slot: Slot, p: AcquireParams): void {
       return;
     slot.lastCols = slot.term.cols;
     slot.lastRows = slot.term.rows;
-    const bridge = adapter?.resolveLeaf(p.leafId);
-    bridge?.resizePty(slot.term.cols, slot.term.rows);
-    p.onScopeChange(slot.lastCols, slot.lastRows);
+    adapter?.resolveLeaf(p.leafId)?.resizePty(slot.lastCols, slot.lastRows);
   };
 
   slot.observer = new ResizeObserver(() => {
@@ -369,6 +397,7 @@ export type SerializeOutput = {
   snapshot: string | null;
   cols: number;
   rows: number;
+  altScreen: boolean;
 };
 
 export function releaseSlot(leafId: number): SerializeOutput | null {
@@ -390,7 +419,12 @@ function serializeSlot(slot: Slot): SerializeOutput {
   } catch (e) {
     console.warn("[terax] serialize failed:", e);
   }
-  return { snapshot, cols: slot.term.cols, rows: slot.term.rows };
+  return {
+    snapshot,
+    cols: slot.term.cols,
+    rows: slot.term.rows,
+    altScreen: isAltScreen(slot),
+  };
 }
 
 function detachSlotFromLeaf(slot: Slot): void {
@@ -522,6 +556,29 @@ export function applyFontSize(size: number): void {
   for (const slot of slots) {
     if (slot.term.options.fontSize === size) continue;
     slot.term.options.fontSize = size;
+    slot.fitAddon.fit();
+    if (slot.currentLeafId !== null) {
+      slot.lastCols = slot.term.cols;
+      slot.lastRows = slot.term.rows;
+      const bridge = adapter?.resolveLeaf(slot.currentLeafId);
+      bridge?.resizePty(slot.term.cols, slot.term.rows);
+    }
+  }
+}
+
+export function applyLetterSpacing(spacing: number): void {
+  for (const slot of slots) {
+    if (slot.term.options.letterSpacing === spacing) continue;
+    slot.term.options.letterSpacing = spacing;
+    slot.fitAddon.fit();
+  }
+}
+
+export function applyFontFamily(family: string): void {
+  const resolved = family || detectMonoFontFamily();
+  for (const slot of slots) {
+    if (slot.term.options.fontFamily === resolved) continue;
+    slot.term.options.fontFamily = resolved;
     slot.fitAddon.fit();
     if (slot.currentLeafId !== null) {
       slot.lastCols = slot.term.cols;

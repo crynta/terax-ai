@@ -291,6 +291,7 @@ export type RunAgentOptions = {
   lmstudioModelId?: string;
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
+  openaiCompatibleContextLimit?: number;
   planMode?: boolean;
   projectMemory?: string | null;
   uiMessages: UIMessage[];
@@ -319,7 +320,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
   const history = await convertToModelMessages(opts.uiMessages);
   const compact = compactModelMessagesDetailed(
     history,
-    getModelContextLimit(getModel(modelId).id),
+    getModelContextLimit(getModel(modelId).id, opts.openaiCompatibleContextLimit),
   );
   const compactedHistory = compact.messages;
   if (compact.compacted) {

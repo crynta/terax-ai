@@ -621,8 +621,13 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "codestral-latest": 256_000,
 };
 
-export function getModelContextLimit(modelId: string | undefined): number {
+export function getModelContextLimit(
+  modelId: string | undefined,
+  compatOverride?: number,
+): number {
   if (!modelId) return 128_000;
+  if (modelId === "openai-compatible-custom" && compatOverride)
+    return compatOverride;
   return MODEL_CONTEXT_LIMITS[modelId] ?? 128_000;
 }
 

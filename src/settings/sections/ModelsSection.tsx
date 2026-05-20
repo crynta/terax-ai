@@ -30,6 +30,7 @@ import {
   setLmstudioBaseURL,
   setLmstudioModelId,
   setOpenaiCompatibleBaseURL,
+  setOpenaiCompatibleContextLimit,
   setOpenaiCompatibleModelId,
 } from "@/modules/settings/store";
 import { invoke } from "@tauri-apps/api/core";
@@ -341,8 +342,12 @@ function OpenAICompatibleBlock({
 }) {
   const baseURL = usePreferencesStore((s) => s.openaiCompatibleBaseURL);
   const modelId = usePreferencesStore((s) => s.openaiCompatibleModelId);
+  const contextLimit = usePreferencesStore(
+    (s) => s.openaiCompatibleContextLimit,
+  );
   const [urlDraft, setUrlDraft] = useState(baseURL);
   const [modelDraft, setModelDraft] = useState(modelId);
+  const [contextDraft, setContextDraft] = useState(String(contextLimit));
   const [keyDraft, setKeyDraft] = useState("");
   const [testStatus, setTestStatus] = useState<
     "idle" | "testing" | "ok" | "fail"
@@ -350,15 +355,20 @@ function OpenAICompatibleBlock({
 
   useEffect(() => setUrlDraft(baseURL), [baseURL]);
   useEffect(() => setModelDraft(modelId), [modelId]);
+  useEffect(() => setContextDraft(String(contextLimit)), [contextLimit]);
 
   const dirty =
-    urlDraft.trim() !== baseURL || modelDraft.trim() !== modelId;
+    urlDraft.trim() !== baseURL ||
+    modelDraft.trim() !== modelId ||
+    parseInt(contextDraft) !== contextLimit;
 
   const save = async () => {
     const u = urlDraft.trim();
     const m = modelDraft.trim();
+    const c = parseInt(contextDraft);
     if (u !== baseURL) await setOpenaiCompatibleBaseURL(u);
     if (m !== modelId) await setOpenaiCompatibleModelId(m);
+    if (c !== contextLimit) await setOpenaiCompatibleContextLimit(c);
   };
 
   const test = async () => {
@@ -429,6 +439,25 @@ function OpenAICompatibleBlock({
             spellCheck={false}
             className="h-8 font-mono text-[11.5px]"
           />
+        </FieldRow>
+
+        <FieldRow label="Context limit">
+          <div className="flex flex-1 items-center gap-1.5">
+            <Input
+              value={contextDraft}
+              onChange={(e) => setContextDraft(e.target.value)}
+              onBlur={() => {
+                const v = parseInt(contextDraft);
+                if (Number.isFinite(v) && v >= 1000)
+                  void setOpenaiCompatibleContextLimit(v);
+                else setContextDraft(String(contextLimit));
+              }}
+              placeholder="128000"
+              spellCheck={false}
+              className="h-8 w-28 font-mono text-[11.5px]"
+            />
+            <span className="text-[10.5px] text-muted-foreground">tokens</span>
+          </div>
         </FieldRow>
 
         <FieldRow label="API key">
