@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 const AUTO_FETCH_THROTTLE_MS = 5 * 60_000;
 const AUTO_FETCH_LRU_LIMIT = 16;
 const FOCUS_REFRESH_MIN_INTERVAL_MS = 1500;
+const STATUS_POLL_INTERVAL_MS = 2500;
 
 export type SourceControlRefreshMode = "auto" | "always" | "never";
 export type SourceControlRemoteAction = "fetch" | "pull" | "push";
@@ -463,6 +464,17 @@ export function useSourceControl(
       if (timer) window.clearTimeout(timer);
     };
   }, [refresh, enabled]);
+
+  useEffect(() => {
+    if (!enabled || !state.hasRepo) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void refresh({ remote: "never" });
+    }, STATUS_POLL_INTERVAL_MS);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [enabled, refresh, state.hasRepo]);
 
   return useMemo<SourceControlSummary>(
     () => ({

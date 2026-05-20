@@ -16,17 +16,27 @@ type Props = {
   activeView: SidebarViewId;
   onSelectView: (view: SidebarViewId) => void;
   changedCount: number;
+  hasRepo: boolean;
 };
 
-export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
+export function SidebarRail({
+  activeView,
+  onSelectView,
+  changedCount,
+  hasRepo,
+}: Props) {
   const items: RailItem[] = [
     { id: "explorer", label: "Files", icon: FolderTreeIcon },
-    {
-      id: "source-control",
-      label: "Source Control",
-      icon: FolderGitTwoIcon,
-      badge: changedCount,
-    },
+    ...(hasRepo || activeView === "source-control"
+      ? [
+          {
+            id: "source-control" as const,
+            label: "Source Control",
+            icon: FolderGitTwoIcon,
+            badge: changedCount,
+          },
+        ]
+      : []),
   ];
 
   return (
