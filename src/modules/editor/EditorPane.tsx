@@ -14,6 +14,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { Prec } from "@codemirror/state";
 import { vim } from "@replit/codemirror-vim";
@@ -30,6 +31,7 @@ import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { getKey } from "@/modules/ai/lib/keyring";
 import { onKeysChanged } from "@/modules/settings/store";
+import { CsvPreviewPane } from "@/modules/preview/csv/CsvPreviewPane";
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -41,6 +43,7 @@ export type EditorPaneHandle = {
   getPath: () => string;
   /** Re-read the file from disk. Skips silently if the buffer is dirty. */
   reload: () => boolean;
+  toggleCsvPreview: () => void;
 };
 
 type Props = {
@@ -56,6 +59,11 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function isCsvPath(path: string): boolean {
+  const ext = path.split(".").pop()?.toLowerCase();
+  return ext === "csv" || ext === "tsv" || ext === "psv";
+}
+
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
   function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
     const { doc, onChange, save, reload } = useDocument({ path, onDirtyChange });
@@ -66,6 +74,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const vimMode = usePreferencesStore((s) => s.vimMode);
     const languageRef = useRef<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
+    const isCsvFile = isCsvPath(path);
+    const [showCsvPreview, setShowCsvPreview] = useState(() => isCsvFile);
 
     useEffect(() => {
       let cancelled = false;
@@ -94,6 +104,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         unsubPrefs();
       };
     }, []);
+
+    useEffect(() => {
+      setShowCsvPreview(isCsvPath(path));
+    }, [path]);
     const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
 
     // Stabilize save + onSaved via refs so the extensions array never changes
@@ -225,8 +239,12 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         },
         getPath: () => path,
         reload: () => reloadRef.current(),
+        toggleCsvPreview: () => {
+          if (!isCsvFile) return;
+          setShowCsvPreview((prev) => !prev);
+        },
       }),
-      [path],
+      [path, isCsvFile],
     );
 
     if (doc.status === "loading") {
@@ -264,28 +282,51 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       );
     }
 
+    const editorView = (
+      <CodeMirror
+        ref={cmRef}
+        value={doc.content}
+        onChange={onChange}
+        theme={themeExt}
+        extensions={extensions}
+        height="100%"
+        className="h-full min-h-0 overflow-hidden"
+        basicSetup={{
+          lineNumbers: true,
+          highlightActiveLineGutter: true,
+          foldGutter: true,
+          bracketMatching: true,
+          closeBrackets: true,
+          autocompletion: true,
+          highlightActiveLine: true,
+          highlightSelectionMatches: true,
+          searchKeymap: true,
+        }}
+      />
+    );
+
+    if (!isCsvFile) {
+      return <div className="flex h-full min-h-0 flex-col">{editorView}</div>;
+    }
+
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <CodeMirror
-          ref={cmRef}
-          value={doc.content}
-          onChange={onChange}
-          theme={themeExt}
-          extensions={extensions}
-          height="100%"
-          className="flex-1 min-h-0 overflow-hidden"
-          basicSetup={{
-            lineNumbers: true,
-            highlightActiveLineGutter: true,
-            foldGutter: true,
-            bracketMatching: true,
-            closeBrackets: true,
-            autocompletion: true,
-            highlightActiveLine: true,
-            highlightSelectionMatches: true,
-            searchKeymap: true,
-          }}
-        />
+        <div className="relative flex-1 min-h-0">
+          <div
+            className="absolute inset-0"
+            style={{
+              visibility: showCsvPreview ? "hidden" : "visible",
+              pointerEvents: showCsvPreview ? "none" : "auto",
+            }}
+          >
+            {editorView}
+          </div>
+          {showCsvPreview && (
+            <div className="absolute inset-0">
+              <CsvPreviewPane content={doc.content} />
+            </div>
+          )}
+        </div>
       </div>
     );
   },

@@ -18,6 +18,7 @@ export type ShortcutId =
   | "pane.focusNext"
   | "pane.focusPrev"
   | "pane.source"
+  | "editor.toggleCsvPreview"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
@@ -180,6 +181,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle file explorer focus",
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "e" }],
+  },
+  {
+    id: "editor.toggleCsvPreview",
+    label: "Toggle CSV preview",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "v" }],
   },
   {
     id: "view.zoomIn",

@@ -96,6 +96,12 @@ function dirname(path: string | null): string | null {
   return normalized.slice(0, idx);
 }
 
+function isCsvPath(path: string | null): boolean {
+  if (!path) return false;
+  const ext = path.split(".").pop()?.toLowerCase();
+  return ext === "csv" || ext === "tsv" || ext === "psv";
+}
+
 const SIDEBAR_DEFAULT_WIDTH = 260;
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 480;
@@ -855,6 +861,12 @@ export default function App() {
     handleClose(activeId);
   }, [activeId, closeActivePane, handleClose]);
 
+  const toggleCsvPreview = useCallback(() => {
+    const t = tabsRef.current.find((x) => x.id === activeId);
+    if (t?.kind !== "editor") return;
+    editorRefs.current.get(activeId)?.toggleCsvPreview();
+  }, [activeId]);
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "tab.new": openNewTab,
@@ -871,6 +883,7 @@ export default function App() {
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
       "pane.source": toggleSourceControl,
       "search.focus": () => searchInlineRef.current?.focus(),
+      "editor.toggleCsvPreview": toggleCsvPreview,
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
@@ -896,13 +909,21 @@ export default function App() {
       askFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
+      toggleCsvPreview,
       zoomIn,
       zoomOut,
       zoomReset,
     ],
   );
 
-  useGlobalShortcuts(shortcutHandlers);
+  useGlobalShortcuts(shortcutHandlers, {
+    isDisabled: (id) => {
+      if (id !== "editor.toggleCsvPreview") return false;
+      const t = tabsRef.current.find((x) => x.id === activeId);
+      if (!t || t.kind !== "editor") return true;
+      return !isCsvPath(t.path);
+    },
+  });
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {
