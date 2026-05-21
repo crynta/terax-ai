@@ -296,6 +296,7 @@ function AddProviderMenu({
   providers: readonly ProviderInfo[];
   onAdd: (id: ProviderId) => void;
 }) {
+  const { t } = useI18n();
   const cloud = providers.filter((p) => !isLocalProvider(p.id));
   const local = providers.filter((p) => isLocalProvider(p.id));
   const disabled = providers.length === 0;
@@ -310,14 +311,14 @@ function AddProviderMenu({
           className="h-7 gap-1.5 px-2.5 text-[11px]"
         >
           <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={2} />
-          Add provider
+          {t("Add provider")}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-55 p-1">
         {cloud.length > 0 ? (
           <>
             <DropdownMenuLabel className="px-2 text-[10px] tracking-wide text-muted-foreground uppercase">
-              Cloud
+              {t("Cloud")}
             </DropdownMenuLabel>
             {cloud.map((p) => (
               <ProviderMenuItem key={p.id} provider={p} onAdd={onAdd} />
@@ -327,7 +328,7 @@ function AddProviderMenu({
         {local.length > 0 ? (
           <>
             <DropdownMenuLabel className="px-2 text-[10px] tracking-wide text-muted-foreground uppercase">
-              Local & custom
+              {t("Local & custom")}
             </DropdownMenuLabel>
             {local.map((p) => (
               <ProviderMenuItem key={p.id} provider={p} onAdd={onAdd} />
@@ -366,11 +367,13 @@ function DefaultsBlock({
   configuredIds: Set<ProviderId>;
   keys: KeysMap;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="flex flex-col gap-3">
-      <Label>Defaults</Label>
+      <Label>{t("Defaults")}</Label>
       <div className="flex flex-col gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
-        <FieldRow label="Chat model">
+        <FieldRow label={t("Chat model")}>
           <DefaultModelPicker
             defaultModel={defaultModel}
             configuredIds={configuredIds}
@@ -379,6 +382,143 @@ function DefaultsBlock({
         <AutocompleteRow keys={keys} configuredIds={configuredIds} />
       </div>
     </div>
+  );
+}
+
+function AutocompleteRow({
+  keys,
+  configuredIds,
+}: {
+  keys: KeysMap;
+  configuredIds: Set<ProviderId>;
+}) {
+  const { t } = useI18n();
+  const enabled = usePreferencesStore((s) => s.autocompleteEnabled);
+  const provider = usePreferencesStore((s) => s.autocompleteProvider);
+  const modelId = usePreferencesStore((s) => s.autocompleteModelId);
+  const eligible = useMemo(() => getAutocompleteEligibleModels(), []);
+
+  const items = useMemo(() => {
+    const local = PROVIDERS.filter(
+      (p) => isLocalProvider(p.id) && configuredIds.has(p.id),
+    ).flatMap((p) => {
+      const m = MODELS.find((x) => x.provider === p.id);
+      return m ? [m] : [];
+    });
+    return [...eligible, ...local];
+  }, [eligible, configuredIds]);
+
+  const currentModel = useMemo(() => {
+    if (isLocalProvider(provider)) {
+      return MODELS.find((m) => m.provider === provider) ?? eligible[0];
+    }
+    return (
+      MODELS.find((m) => m.provider === provider && m.id === modelId) ??
+      MODELS.find((m) => m.id === modelId) ??
+      eligible[0]
+    );
+  }, [eligible, provider, modelId]);
+
+  const setModel = (id: string, providerId: ProviderId) => {
+    void setAutocompleteProvider(providerId);
+    void setAutocompleteModelId(isLocalProvider(providerId) ? "" : id);
+  };
+
+  const grouped = useMemo(() => {
+    const map = new Map<ProviderId, (typeof items)[number][]>();
+    for (const m of items) {
+      const arr = map.get(m.provider) ?? [];
+      arr.push(m);
+      map.set(m.provider, arr);
+    }
+    return map;
+  }, [items]);
+
+  const hasKey = providerNeedsKey(provider) ? !!keys[provider] : true;
+
+  return (
+    <>
+      <FieldRow label={t("Autocomplete")}>
+        <div className="flex flex-1 items-center gap-2">
+          <Switch
+            checked={enabled}
+            onCheckedChange={(v) => void setAutocompleteEnabled(v)}
+          />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={!enabled}
+                className="h-8 flex-1 justify-between gap-2 px-2.5 text-[11.5px]"
+              >
+                <span className="flex items-center gap-2 truncate">
+                  <ProviderIcon provider={currentModel.provider} size={12} />
+                  <span className="truncate">{currentModel.label}</span>
+                  <span className="text-muted-foreground">
+                    · {t(currentModel.hint)}
+                  </span>
+                </span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={11}
+                  strokeWidth={2}
+                  className="opacity-70"
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="start"
+              collisionPadding={12}
+              className="max-h-72 min-w-70 overflow-y-auto"
+            >
+              {PROVIDERS.map((p) => {
+                const list = grouped.get(p.id);
+                if (!list || list.length === 0) return null;
+                const pConfigured = configuredIds.has(p.id);
+                return (
+                  <div key={p.id} className="px-1 pt-1.5 first:pt-1">
+                    <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                      <ProviderIcon provider={p.id} size={11} />
+                      <span>{p.label}</span>
+                      {!pConfigured ? (
+                        <span className="ml-auto text-[9.5px] normal-case tracking-normal text-muted-foreground/70">
+                          {t("not connected")}
+                        </span>
+                      ) : null}
+                    </div>
+                    {list.map((m) => (
+                      <DropdownMenuItem
+                        key={m.id}
+                        disabled={!pConfigured}
+                        onSelect={() => pConfigured && setModel(m.id, p.id)}
+                        className={cn(
+                          "text-[11.5px]",
+                          m.id === modelId && "bg-accent/50",
+                        )}
+                      >
+                        <span className="flex flex-col">
+                          <span>{m.label}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {t(m.description)}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </FieldRow>
+      {enabled && !hasKey ? (
+        <p className="pl-19 text-[10.5px] text-muted-foreground">
+          {t("{{provider}} isn't connected — add it below.", {
+            provider: getProvider(provider).label,
+          })}
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -457,160 +597,6 @@ function DefaultModelPicker({
   );
 }
 
-function OpenAICompatibleRow({
-  compatKey,
-  onSaveKey,
-  onClearKey,
-}: {
-  compatKey: string | null | undefined;
-  onSaveKey: (v: string) => Promise<void>;
-  onClearKey: () => void;
-}) {
-  const { t } = useI18n();
-  const baseURL = usePreferencesStore((s) => s.openaiCompatibleBaseURL);
-  const modelId = usePreferencesStore((s) => s.openaiCompatibleModelId);
-  const [urlDraft, setUrlDraft] = useState(baseURL);
-  const [modelDraft, setModelDraft] = useState(modelId);
-  const [keyDraft, setKeyDraft] = useState("");
-  const [testStatus, setTestStatus] = useState<
-    "idle" | "testing" | "ok" | "fail"
-  >("idle");
-
-  useEffect(() => setUrlDraft(baseURL), [baseURL]);
-  useEffect(() => setModelDraft(modelId), [modelId]);
-
-  const dirty =
-    urlDraft.trim() !== baseURL || modelDraft.trim() !== modelId;
-
-  const save = async () => {
-    const u = urlDraft.trim();
-    const m = modelDraft.trim();
-    if (u !== baseURL) await setOpenaiCompatibleBaseURL(u);
-    if (m !== modelId) await setOpenaiCompatibleModelId(m);
-  };
-
-  const test = async () => {
-    setTestStatus("testing");
-    try {
-      const status = await invoke<number>("lm_ping", {
-        baseUrl: urlDraft,
-      });
-      setTestStatus(status > 0 ? "ok" : "fail");
-    } catch {
-      setTestStatus("fail");
-    }
-  };
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-0.5">
-        <Label>{t("OpenAI-compatible endpoint")}</Label>
-        <span className="text-[10.5px] leading-relaxed text-muted-foreground">
-          {t("Any OpenAI-compatible HTTPS endpoint — vLLM, Z.AI, Fireworks, hosted Ollama, etc.")}
-        </span>
-      </div>
-
-      <div className="flex flex-col gap-2.5 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
-        <FieldRow label={t("Base URL")}>
-          <div className="flex flex-1 gap-1.5">
-            <Input
-              value={urlDraft}
-              onChange={(e) => setUrlDraft(e.target.value)}
-              onBlur={() => {
-                const v = urlDraft.trim();
-                if (v !== baseURL) void setOpenaiCompatibleBaseURL(v);
-              }}
-              placeholder="https://api.example.com/v1"
-              spellCheck={false}
-              className="h-8 flex-1 font-mono text-[11.5px]"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void test()}
-              disabled={!urlDraft.trim()}
-              className="h-8 px-3 text-[11px]"
-            >
-              {t("Test")}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => void save()}
-              disabled={!dirty}
-              className="h-8 px-3 text-[11px]"
-            >
-              {t("Save")}
-            </Button>
-          </div>
-        </FieldRow>
-
-        <FieldRow label={t("Model ID")}>
-          <Input
-            value={modelDraft}
-            onChange={(e) => setModelDraft(e.target.value)}
-            onBlur={() => {
-              const v = modelDraft.trim();
-              if (v !== modelId) void setOpenaiCompatibleModelId(v);
-            }}
-            placeholder={t("gpt-4o, qwen3-max, glm-4.6, …")}
-            spellCheck={false}
-            className="h-8 font-mono text-[11.5px]"
-          />
-        </FieldRow>
-
-        <FieldRow label={t("API key")}>
-          {compatKey ? (
-            <div className="flex flex-1 items-center gap-1.5">
-              <code className="flex-1 truncate rounded bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground">
-                {`${compatKey.slice(0, 4)}${"•".repeat(8)}${compatKey.slice(-4)}`}
-              </code>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => void onClearKey()}
-                title={t("Remove")}
-                className="size-7 text-muted-foreground hover:text-destructive"
-              >
-                <HugeiconsIcon
-                  icon={Cancel01Icon}
-                  size={12}
-                  strokeWidth={1.75}
-                />
-              </Button>
-            </div>
-          ) : (
-            <div className="flex flex-1 gap-1.5">
-              <Input
-                type="password"
-                value={keyDraft}
-                onChange={(e) => setKeyDraft(e.target.value)}
-                placeholder={t("Optional — leave empty for unauthenticated endpoints")}
-                spellCheck={false}
-                className="h-8 flex-1 font-mono text-[11.5px]"
-              />
-              <Button
-                size="sm"
-                onClick={async () => {
-                  const v = keyDraft.trim();
-                  if (!v) return;
-                  await onSaveKey(v);
-                  setKeyDraft("");
-                }}
-                disabled={!keyDraft.trim()}
-                className="h-8 px-3 text-[11px]"
-              >
-                {t("Save")}
-              </Button>
-            </div>
-          )}
-        </FieldRow>
-
-        <StatusLine status={testStatus} />
-      </div>
-    </div>
-  );
-}
-
 function LocalProviderCard({
   provider,
   configured,
@@ -630,6 +616,7 @@ function LocalProviderCard({
   onClearKey: () => Promise<void>;
   onRemove: () => void;
 }) {
+  const { t } = useI18n();
   const { baseURL, modelId, setBaseURL, setModelId, contextLimit, setContextLimit } =
     config;
   const [urlDraft, setUrlDraft] = useState(baseURL);
@@ -667,7 +654,7 @@ function LocalProviderCard({
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
             <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
-            Connected
+            {t("Connected")}
           </Badge>
         ) : null}
         <button
@@ -675,14 +662,14 @@ function LocalProviderCard({
           onClick={() => void openUrl(provider.consoleUrl)}
           className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
-          Docs
+          {t("Docs")}
           <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
         </button>
         <Button
           size="icon"
           variant="ghost"
           onClick={onRemove}
-          title="Remove provider"
+          title={t("Remove provider")}
           className="size-7 text-muted-foreground hover:text-destructive"
         >
           <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
@@ -690,11 +677,11 @@ function LocalProviderCard({
       </div>
 
       <span className="text-[10.5px] leading-relaxed text-muted-foreground">
-        {meta.description}
+        {t(meta.description)}
       </span>
 
       <div className="mt-0.5 flex flex-col gap-2.5">
-        <FieldRow label="Base URL">
+        <FieldRow label={t("Base URL")}>
           <div className="flex flex-1 gap-1.5">
             <Input
               value={urlDraft}
@@ -714,7 +701,7 @@ function LocalProviderCard({
               disabled={!urlDraft.trim()}
               className="h-8 px-3 text-[11px]"
             >
-              Test
+              {t("Test")}
             </Button>
           </div>
         </FieldRow>

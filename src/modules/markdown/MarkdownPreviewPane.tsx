@@ -1,5 +1,6 @@
 import { MarkdownCode } from "@/components/ai-elements/markdown-code";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/modules/i18n";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
@@ -25,6 +26,7 @@ type Props = {
 const components = { code: MarkdownCode };
 
 export function MarkdownPreviewPane({ path, visible }: Props) {
+  const { t } = useI18n();
   const [status, setStatus] = useState<Status>({ kind: "loading" });
 
   useEffect(() => {
@@ -65,7 +67,7 @@ export function MarkdownPreviewPane({ path, visible }: Props) {
     >
       <div className="flex-1 overflow-auto px-6 py-4">
         {status.kind === "loading" && (
-          <p className="text-[12px] text-muted-foreground">Loading…</p>
+          <p className="text-[12px] text-muted-foreground">{t("Loading…")}</p>
         )}
         {status.kind === "error" && (
           <p className="text-[12px] text-destructive">

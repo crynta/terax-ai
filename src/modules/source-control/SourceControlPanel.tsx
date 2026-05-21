@@ -517,7 +517,9 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               strokeWidth={1.85}
               className="shrink-0"
             />
-            <span className="flex-1 text-[12px] font-medium">Commit Graph</span>
+            <span className="flex-1 text-[12px] font-medium">
+              {t("Commit Graph")}
+            </span>
             <HugeiconsIcon
               icon={ArrowRight01Icon}
               size={12}

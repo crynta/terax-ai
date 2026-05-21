@@ -103,7 +103,7 @@ export function ProviderKeyCard({
             size="icon"
             variant="ghost"
             onClick={onRemove}
-            title="Remove provider"
+            title={t("Remove provider")}
             className="size-7 text-muted-foreground hover:text-destructive"
           >
             <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />

@@ -203,7 +203,7 @@ export function TabBar({
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewGitGraph()}>
               <HugeiconsIcon icon={GitBranchIcon} size={14} strokeWidth={1.75} />
-              <span className="flex-1">Git Graph</span>
+              <span className="flex-1">{t("Git Graph")}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
