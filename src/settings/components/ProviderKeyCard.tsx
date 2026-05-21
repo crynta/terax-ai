@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/modules/i18n";
 import type { ProviderInfo } from "@/modules/ai/config";
 import {
+  ArrowUpRight01Icon,
   Cancel01Icon,
   CheckmarkCircle02Icon,
   Edit02Icon,
@@ -22,6 +23,7 @@ type Props = {
   currentKey: string | null;
   onSave: (key: string) => Promise<void>;
   onClear: () => Promise<void>;
+  onRemove?: () => void;
 };
 
 function maskKey(key: string): string {
@@ -34,6 +36,7 @@ export function ProviderKeyCard({
   currentKey,
   onSave,
   onClear,
+  onRemove,
 }: Props) {
   const { t } = useI18n();
   const [editing, setEditing] = useState(!currentKey);
@@ -77,7 +80,7 @@ export function ProviderKeyCard({
         {currentKey ? (
           <Badge
             variant="outline"
-            className="ml-1 h-4 gap-1 border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] text-emerald-700 dark:text-emerald-300"
+            className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
             <HugeiconsIcon
               icon={CheckmarkCircle02Icon}
@@ -90,10 +93,22 @@ export function ProviderKeyCard({
         <button
           type="button"
           onClick={() => void openUrl(provider.consoleUrl)}
-          className="ml-auto text-[10.5px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
           {t("Get key")}
+          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
         </button>
+        {onRemove ? (
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={onRemove}
+            title="Remove provider"
+            className="size-7 text-muted-foreground hover:text-destructive"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+          </Button>
+        ) : null}
       </div>
 
       {editing ? (
@@ -174,15 +189,17 @@ export function ProviderKeyCard({
           >
             <HugeiconsIcon icon={Edit02Icon} size={12} strokeWidth={1.75} />
           </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => void onClear()}
-            title={t("Remove")}
-            className="size-7 text-muted-foreground hover:text-destructive"
-          >
-            <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
-          </Button>
+          {!onRemove ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={() => void onClear()}
+              title={t("Remove")}
+              className="size-7 text-muted-foreground hover:text-destructive"
+            >
+              <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+            </Button>
+          ) : null}
         </div>
       )}
     </div>

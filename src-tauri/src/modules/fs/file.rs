@@ -1,7 +1,10 @@
 use std::io::Write;
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+use tauri::Emitter;
+use tempfile::NamedTempFile;
 
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
@@ -75,48 +78,49 @@ pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<Rea
     }
 }
 
-/// Atomic write: stage into a sibling temp file, then rename over the target.
-/// Prevents partial writes from leaving a half-saved file on crash/power loss.
+#[derive(Serialize, Clone)]
+struct FileWrittenEvent {
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+}
+
+/// Atomic write via O_EXCL tempfile in the target's parent, then rename.
+/// The random suffix is what blocks pre-staged symlink attacks.
+fn write_atomic(target: &Path, content: &[u8]) -> std::io::Result<()> {
+    let parent = target.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidInput, "path has no parent")
+    })?;
+    let mut tmp = NamedTempFile::new_in(parent)?;
+    tmp.as_file_mut().write_all(content)?;
+    tmp.as_file_mut().sync_all()?;
+    tmp.persist(target).map_err(|e| e.error)?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn fs_write_file(
     path: String,
     content: String,
     workspace: Option<WorkspaceEnv>,
+    source: Option<String>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let target = resolve_path(&path, &workspace);
-    let parent = target
-        .parent()
-        .ok_or_else(|| "path has no parent".to_string())?;
-    let file_name = target
-        .file_name()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| "path has no file name".to_string())?;
 
-    let tmp = parent.join(format!(".{file_name}.terax.tmp"));
-
-    {
-        let mut f = std::fs::File::create(&tmp).map_err(|e| {
-            log::debug!("fs_write_file create({}) failed: {e}", tmp.display());
-            e.to_string()
-        })?;
-        f.write_all(content.as_bytes()).map_err(|e| {
-            log::debug!("fs_write_file write({}) failed: {e}", tmp.display());
-            e.to_string()
-        })?;
-        f.sync_all().map_err(|e| e.to_string())?;
-    }
-
-    std::fs::rename(&tmp, &target).map_err(|e| {
-        log::warn!(
-            "fs_write_file rename({} -> {}) failed: {e}",
-            tmp.display(),
-            target.display()
-        );
-        // Best-effort cleanup of the staged temp.
-        let _ = std::fs::remove_file(&tmp);
+    write_atomic(&target, content.as_bytes()).map_err(|e| {
+        log::warn!("fs_write_file({}) failed: {e}", target.display());
         e.to_string()
     })?;
+
+    let _ = app.emit(
+        "fs:file-written",
+        FileWrittenEvent {
+            path: path.clone(),
+            source,
+        },
+    );
 
     Ok(())
 }
@@ -156,4 +160,37 @@ pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat
         mtime,
         kind,
     })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn overwrites_existing_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("note.txt");
+        std::fs::write(&target, b"old").unwrap();
+        write_atomic(&target, b"new").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+    }
+
+    #[test]
+    fn does_not_follow_legacy_staging_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside.txt");
+        std::fs::write(&outside, b"untouched").unwrap();
+
+        let target = dir.path().join("note.txt");
+        // Pre-stage a symlink at the legacy deterministic staging path.
+        let legacy = dir.path().join(".note.txt.terax.tmp");
+        symlink(&outside, &legacy).unwrap();
+
+        write_atomic(&target, b"payload").unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"payload");
+        // The pre-staged symlink target must not have been written through.
+        assert_eq!(std::fs::read(&outside).unwrap(), b"untouched");
+    }
 }

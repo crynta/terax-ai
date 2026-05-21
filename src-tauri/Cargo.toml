@@ -1,6 +1,6 @@
 [package]
 name = "terax"
-version = "0.6.6"
+version = "0.7.0"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
 edition = "2021"
@@ -42,6 +42,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 bytes = "1"
 futures-util = "0.3"
 tokio = { version = "1", default-features = false, features = ["rt"] }
+tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -3,6 +3,27 @@ import type { Extension } from "@codemirror/state";
 type LoaderResult = Extension | { token: unknown };
 type LanguageLoader = () => Promise<LoaderResult>;
 
+const rubyLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/ruby").then((m) => m.ruby);
+
+const jsonLoader: LanguageLoader = () =>
+  import("@codemirror/lang-json").then((m) => m.json());
+
+const sqlLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/sql").then((m) => m.standardSQL);
+const pgsqlLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/sql").then((m) => m.pgSQL);
+const mysqlLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/sql").then((m) => m.mySQL);
+const sqliteLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/sql").then((m) => m.sqlite);
+const mariadbLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/sql").then((m) => m.mariaDB);
+const mssqlLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/sql").then((m) => m.msSQL);
+const plsqlLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/sql").then((m) => m.plSQL);
+
 /**
  * Extension → loader. Each loader is a dynamic import so language packs
  * only enter the bundle when a matching file is opened.
@@ -32,7 +53,18 @@ const loaders: Record<string, LanguageLoader> = {
   rs: () => import("@codemirror/lang-rust").then((m) => m.rust()),
   go: () => import("@codemirror/lang-go").then((m) => m.go()),
   py: () => import("@codemirror/lang-python").then((m) => m.python()),
-  json: () => import("@codemirror/lang-json").then((m) => m.json()),
+  json: jsonLoader,
+  jsonc: jsonLoader,
+  json5: jsonLoader,
+
+  sql: sqlLoader,
+  psql: pgsqlLoader,
+  pgsql: pgsqlLoader,
+  mysql: mysqlLoader,
+  sqlite: sqliteLoader,
+  mariadb: mariadbLoader,
+  mssql: mssqlLoader,
+  plsql: plsqlLoader,
 
   md: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
   markdown: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
@@ -42,6 +74,10 @@ const loaders: Record<string, LanguageLoader> = {
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
 
   php: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
+  rb: rubyLoader,
+  rake: rubyLoader,
+  gemspec: rubyLoader,
+  ru: rubyLoader,
 
   // C / C++ family
   c: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.c),
@@ -75,6 +111,12 @@ const loaders: Record<string, LanguageLoader> = {
 const filenameOverrides: Record<string, LanguageLoader> = {
   dockerfile: loaders.dockerfile!,
   "dockerfile.dev": loaders.dockerfile!,
+  gemfile: rubyLoader,
+  rakefile: rubyLoader,
+  podfile: rubyLoader,
+  fastfile: rubyLoader,
+  guardfile: rubyLoader,
+  brewfile: rubyLoader,
 };
 
 function extOf(name: string): string | null {

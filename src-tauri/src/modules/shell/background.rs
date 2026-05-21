@@ -112,10 +112,19 @@ pub fn spawn(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let shared = SharedChild::spawn(&mut cmd).map_err(|e| e.to_string())?;
-    let stdout_pipe = shared.take_stdout().ok_or("no stdout pipe")?;
-    let stderr_pipe = shared.take_stderr().ok_or("no stderr pipe")?;
-    let child = Arc::new(shared);
+    let shared = Arc::new(SharedChild::spawn(&mut cmd).map_err(|e| e.to_string())?);
+    let kill_on_fail = || {
+        let _ = shared.kill();
+    };
+    let stdout_pipe = shared.take_stdout().ok_or_else(|| {
+        kill_on_fail();
+        "no stdout pipe".to_string()
+    })?;
+    let stderr_pipe = shared.take_stderr().ok_or_else(|| {
+        kill_on_fail();
+        "no stderr pipe".to_string()
+    })?;
+    let child = shared;
 
     let started_at_ms = SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -93,7 +93,12 @@ export function useDocument({ path, onDirtyChange }: Options) {
   const save = useCallback(async () => {
     if (!dirty) return;
     const content = bufferRef.current;
-    await invoke("fs_write_file", { path, content, workspace: currentWorkspaceEnv() });
+    await invoke("fs_write_file", {
+      path,
+      content,
+      workspace: currentWorkspaceEnv(),
+      source: "editor",
+    });
     savedRef.current = content;
     setDirty(false);
   }, [path, dirty]);

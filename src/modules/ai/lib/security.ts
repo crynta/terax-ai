@@ -326,9 +326,14 @@ export function checkShellCommand(cmd: string): SafetyResult {
   if (c.length === 0) {
     return { ok: false, reason: "Refused: empty command." };
   }
-  // Block NUL bytes in commands — never legitimate.
-  if (/\x00/.test(c)) {
-    return { ok: false, reason: "Refused: command contains NUL byte." };
+  // Block C0 controls. CR/LF would let a second statement smuggle past the
+  // approval UI, which shows the command as one logical line.
+  if (/[\x00-\x1f]/.test(c)) {
+    return {
+      ok: false,
+      reason:
+        "Refused: command contains control characters (including CR/LF). Commands must be single-line.",
+    };
   }
   // Block Unicode bidi-override and invisible directional marks. These let an
   // attacker craft a command whose visual order (in the approval UI's <pre>

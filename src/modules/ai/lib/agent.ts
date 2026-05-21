@@ -11,6 +11,8 @@ import {
   getModel,
   getModelContextLimit,
   LMSTUDIO_DEFAULT_BASE_URL,
+  MLX_DEFAULT_BASE_URL,
+  OLLAMA_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
   providerNeedsKey,
   selectSystemPrompt,
@@ -60,6 +62,8 @@ function ellipsize(s: string, max: number): string {
 export type BuildModelOptions = {
   modelIdOverride?: string;
   lmstudioBaseURL?: string;
+  mlxBaseURL?: string;
+  ollamaBaseURL?: string;
   openaiCompatibleBaseURL?: string;
 };
 
@@ -78,8 +82,10 @@ export async function buildLanguageModel(
   }
   const key = keys[provider] ?? "";
   const lmstudioURL = options.lmstudioBaseURL ?? LMSTUDIO_DEFAULT_BASE_URL;
+  const mlxURL = options.mlxBaseURL ?? MLX_DEFAULT_BASE_URL;
+  const ollamaURL = options.ollamaBaseURL ?? OLLAMA_DEFAULT_BASE_URL;
   const compatURL = options.openaiCompatibleBaseURL ?? "";
-  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${compatURL}`;
+  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${mlxURL} ${ollamaURL} ${compatURL}`;
   const hit = modelCache.get(cacheKey);
   if (hit) return hit;
 
@@ -175,6 +181,26 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "mlx": {
+      const { createOpenAICompatible } =
+        await import("@ai-sdk/openai-compatible");
+      built = createOpenAICompatible({
+        name: "mlx",
+        baseURL: mlxURL,
+        fetch: localProxyFetch,
+      })(resolvedModelId);
+      break;
+    }
+    case "ollama": {
+      const { createOpenAICompatible } =
+        await import("@ai-sdk/openai-compatible");
+      built = createOpenAICompatible({
+        name: "ollama",
+        baseURL: ollamaURL,
+        fetch: localProxyFetch,
+      })(resolvedModelId);
+      break;
+    }
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);
@@ -184,34 +210,58 @@ export async function buildLanguageModel(
   return built;
 }
 
+export type LocalProviderConfig = {
+  lmstudioBaseURL?: string;
+  lmstudioModelId?: string;
+  mlxBaseURL?: string;
+  mlxModelId?: string;
+  ollamaBaseURL?: string;
+  ollamaModelId?: string;
+  openaiCompatibleBaseURL?: string;
+  openaiCompatibleModelId?: string;
+};
+
 export function buildConfiguredLanguageModel(
   modelId: ModelId,
   keys: ProviderKeys,
-  lmstudioBaseURL?: string,
-  lmstudioModelId?: string,
-  openaiCompatibleBaseURL?: string,
-  openaiCompatibleModelId?: string,
+  local: LocalProviderConfig = {},
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
   let resolvedId: string = m.id;
   if (m.id === "lmstudio-local") {
-    if (!lmstudioModelId?.trim()) {
+    if (!local.lmstudioModelId?.trim()) {
       throw new Error(
         "LM Studio: no model id set. Open Settings → Models and enter the model id loaded in LM Studio.",
       );
     }
-    resolvedId = lmstudioModelId.trim();
+    resolvedId = local.lmstudioModelId.trim();
+  } else if (m.id === "mlx-local") {
+    if (!local.mlxModelId?.trim()) {
+      throw new Error(
+        "MLX: no model id set. Open Settings → Models and enter the model id served by mlx_lm.server.",
+      );
+    }
+    resolvedId = local.mlxModelId.trim();
+  } else if (m.id === "ollama-local") {
+    if (!local.ollamaModelId?.trim()) {
+      throw new Error(
+        "Ollama: no model id set. Open Settings → Models and enter the model id (e.g. the name from `ollama list`).",
+      );
+    }
+    resolvedId = local.ollamaModelId.trim();
   } else if (m.id === "openai-compatible-custom") {
-    if (!openaiCompatibleModelId?.trim()) {
+    if (!local.openaiCompatibleModelId?.trim()) {
       throw new Error(
         "OpenAI-compatible: no model id set. Open Settings → Models.",
       );
     }
-    resolvedId = openaiCompatibleModelId.trim();
+    resolvedId = local.openaiCompatibleModelId.trim();
   }
   return buildLanguageModel(m.provider, keys, resolvedId, {
-    lmstudioBaseURL,
-    openaiCompatibleBaseURL,
+    lmstudioBaseURL: local.lmstudioBaseURL,
+    mlxBaseURL: local.mlxBaseURL,
+    ollamaBaseURL: local.ollamaBaseURL,
+    openaiCompatibleBaseURL: local.openaiCompatibleBaseURL,
   });
 }
 
@@ -289,8 +339,13 @@ export type RunAgentOptions = {
   onFinishMeta?: (info: { hitStepCap: boolean; finishReason: string }) => void;
   lmstudioBaseURL?: string;
   lmstudioModelId?: string;
+  mlxBaseURL?: string;
+  mlxModelId?: string;
+  ollamaBaseURL?: string;
+  ollamaModelId?: string;
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
+  openaiCompatibleContextLimit?: number;
   planMode?: boolean;
   projectMemory?: string | null;
   uiMessages: UIMessage[];
@@ -299,14 +354,16 @@ export type RunAgentOptions = {
 
 export async function runAgentStream(opts: RunAgentOptions) {
   const modelId = opts.modelId ?? DEFAULT_MODEL_ID;
-  const model = await buildConfiguredLanguageModel(
-    modelId,
-    opts.keys,
-    opts.lmstudioBaseURL,
-    opts.lmstudioModelId,
-    opts.openaiCompatibleBaseURL,
-    opts.openaiCompatibleModelId,
-  );
+  const model = await buildConfiguredLanguageModel(modelId, opts.keys, {
+    lmstudioBaseURL: opts.lmstudioBaseURL,
+    lmstudioModelId: opts.lmstudioModelId,
+    mlxBaseURL: opts.mlxBaseURL,
+    mlxModelId: opts.mlxModelId,
+    ollamaBaseURL: opts.ollamaBaseURL,
+    ollamaModelId: opts.ollamaModelId,
+    openaiCompatibleBaseURL: opts.openaiCompatibleBaseURL,
+    openaiCompatibleModelId: opts.openaiCompatibleModelId,
+  });
   const provider = getModel(modelId).provider;
 
   const stableSystem = buildStableSystem(
@@ -319,7 +376,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
   const history = await convertToModelMessages(opts.uiMessages);
   const compact = compactModelMessagesDetailed(
     history,
-    getModelContextLimit(getModel(modelId).id),
+    getModelContextLimit(getModel(modelId).id, opts.openaiCompatibleContextLimit),
   );
   const compactedHistory = compact.messages;
   if (compact.compacted) {

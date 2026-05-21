@@ -217,8 +217,15 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
     [originalContent, initialLang],
   );
 
+  // Resolve and apply syntax highlighting asynchronously when the language pack
+  // isn't cached yet. This must wait until the editor is actually mounted
+  // (state === "loaded"): the pane renders a spinner while the diff loads, so if
+  // the language import resolved first the view would be null and the reconfigure
+  // would be silently dropped — leaving the diff unhighlighted until a remount.
+  // Keying on `state.kind` re-runs this once the view exists.
   useEffect(() => {
     if (useFallback || initialLang) return;
+    if (state.kind !== "loaded") return;
     let cancelled = false;
     resolveLanguage(path).then((ext) => {
       if (cancelled) return;
@@ -231,7 +238,7 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [useFallback, path, initialLang]);
+  }, [useFallback, path, initialLang, state.kind]);
 
   const stats = useMemo(
     () => (useFallback ? countDiffLines(fallbackPatch) : { added: 0, removed: 0 }),

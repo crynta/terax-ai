@@ -38,7 +38,10 @@ import {
   NewEditorDialog,
   type EditorPaneHandle,
 } from "@/modules/editor";
-import { GitHistoryStack } from "@/modules/git-history";
+import {
+  GitHistoryStack,
+  type GitHistorySearchHandle,
+} from "@/modules/git-history";
 import { getLaunchDir } from "@/lib/launchDir";
 import { useZoom } from "@/lib/useZoom";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
@@ -47,6 +50,7 @@ import {
   type SearchInlineHandle,
   type SearchTarget,
 } from "@/modules/header";
+import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -55,12 +59,9 @@ import {
   ShortcutsDialog,
   useGlobalShortcuts,
   type ShortcutHandlers,
+  type ShortcutId,
 } from "@/modules/shortcuts";
-import {
-  ExtensionsView,
-  SidebarRail,
-  type SidebarViewId,
-} from "@/modules/sidebar";
+import { SidebarRail, type SidebarViewId } from "@/modules/sidebar";
 import {
   SourceControlPanel,
   useSourceControl,
@@ -85,6 +86,7 @@ import {
   type WorkspaceEnv,
 } from "@/modules/workspace";
 import { homeDir } from "@tauri-apps/api/path";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -126,12 +128,7 @@ function readSidebarWidth(): number {
 function readSidebarView(): SidebarViewId {
   try {
     const stored = window.localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
-    if (
-      stored === "explorer" ||
-      stored === "source-control" ||
-      stored === "extensions"
-    )
-      return stored;
+    if (stored === "explorer" || stored === "source-control") return stored;
   } catch {
     // ignore
   }
@@ -149,6 +146,7 @@ export default function App() {
     openFileTab,
     pinTab,
     newPreviewTab,
+    newMarkdownTab,
     openAiDiffTab,
     closeAiDiffTab,
     openGitDiffTab,
@@ -186,6 +184,8 @@ export default function App() {
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
+  const [gitHistoryHandle, setGitHistoryHandle] =
+    useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   const explorerRef = useRef<FileExplorerHandle>(null);
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -372,6 +372,10 @@ export default function App() {
   const respondToApproval = useChatStore((s) => s.respondToApproval);
   const lmstudioModelId = usePreferencesStore((s) => s.lmstudioModelId);
   const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
+  const mlxModelId = usePreferencesStore((s) => s.mlxModelId);
+  const mlxBaseURL = usePreferencesStore((s) => s.mlxBaseURL);
+  const ollamaModelId = usePreferencesStore((s) => s.ollamaModelId);
+  const ollamaBaseURL = usePreferencesStore((s) => s.ollamaBaseURL);
   const openaiCompatibleModelId = usePreferencesStore(
     (s) => s.openaiCompatibleModelId,
   );
@@ -380,6 +384,8 @@ export default function App() {
   );
   const hasLocalModel =
     (lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0) ||
+    (mlxBaseURL.trim().length > 0 && mlxModelId.trim().length > 0) ||
+    (ollamaBaseURL.trim().length > 0 && ollamaModelId.trim().length > 0) ||
     (openaiCompatibleBaseURL.trim().length > 0 &&
       openaiCompatibleModelId.trim().length > 0);
   const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
@@ -426,6 +432,7 @@ export default function App() {
   const isTerminalTab = activeTab?.kind === "terminal";
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
+  const isMarkdownTab = activeTab?.kind === "markdown";
   const isAiDiffTab = activeTab?.kind === "ai-diff";
   const isGitDiffTab =
     activeTab?.kind === "git-diff" || activeTab?.kind === "git-commit-file";
@@ -449,6 +456,27 @@ export default function App() {
       }
     }
   }, [tabs]);
+
+  useEffect(() => {
+    type FileWrittenPayload = { path: string; source?: string };
+    const unlistenPromise = getCurrentWebviewWindow().listen<FileWrittenPayload>(
+      "fs:file-written",
+      (event) => {
+        if (event.payload.source === "editor") return;
+        const normalizedPath = event.payload.path.replace(/\\/g, "/");
+        const currentTabs = tabsRef.current;
+        for (const t of currentTabs) {
+          if (t.kind !== "editor") continue;
+          if (t.path.replace(/\\/g, "/") === normalizedPath) {
+            editorRefs.current.get(t.id)?.reload();
+          }
+        }
+      },
+    );
+    return () => {
+      void unlistenPromise.then((un) => un());
+    };
+  }, []);
 
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
@@ -842,6 +870,13 @@ export default function App() {
     [newPreviewTab],
   );
 
+  const openMarkdownPreview = useCallback(
+    (path: string) => {
+      newMarkdownTab(path);
+    },
+    [newMarkdownTab],
+  );
+
   const splitActivePaneInActiveTab = useCallback(
     (dir: "row" | "col") => {
       const t = tabsRef.current.find((x) => x.id === activeId);
@@ -885,6 +920,8 @@ export default function App() {
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
+      "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
+      "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
     }),
     [
       activeId,
@@ -907,7 +944,27 @@ export default function App() {
     ],
   );
 
-  useGlobalShortcuts(shortcutHandlers);
+  const shortcutsDisabled = useCallback(
+    (id: ShortcutId, e: KeyboardEvent) => {
+      if (id === "editor.undo" || id === "editor.redo") {
+        return activeTab?.kind !== "editor";
+      }
+      if (id === "ai.askSelection") {
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
+          ".xterm",
+        );
+        if (!inTerminal) return false;
+        const sel = captureActiveSelection();
+        return !sel || !sel.trim();
+      }
+      return false;
+    },
+    [activeTab],
+  );
+
+  useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {
@@ -974,11 +1031,11 @@ export default function App() {
   );
 
   const searchTarget = useMemo<SearchTarget>(() => {
-    if (isTerminalTab && activeSearchAddon)
+    if (isTerminalTab && activeLeafId !== null && activeSearchAddon)
       return {
         kind: "terminal",
         addon: activeSearchAddon,
-        focus: () => terminalRefs.current.get(activeId)?.focus(),
+        focus: () => terminalRefs.current.get(activeLeafId)?.focus(),
       };
     if (isEditorTab && activeEditorHandle)
       return {
@@ -986,8 +1043,22 @@ export default function App() {
         handle: activeEditorHandle,
         focus: () => activeEditorHandle.focus(),
       };
+    if (isGitHistoryTab && gitHistoryHandle)
+      return {
+        kind: "git-history",
+        handle: gitHistoryHandle,
+        focus: () => {},
+      };
     return null;
-  }, [isTerminalTab, isEditorTab, activeId, activeSearchAddon, activeEditorHandle]);
+  }, [
+    isTerminalTab,
+    isEditorTab,
+    isGitHistoryTab,
+    activeLeafId,
+    activeSearchAddon,
+    activeEditorHandle,
+    gitHistoryHandle,
+  ]);
 
   const activeCwd = activeTerminalLeafCwd;
 
@@ -1091,6 +1162,15 @@ export default function App() {
       <div
         className={cn(
           "absolute inset-0 px-3 pt-2 pb-2",
+          !isMarkdownTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isMarkdownTab}
+      >
+        <MarkdownStack tabs={tabs} activeId={activeId} />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
           !isAiDiffTab && "invisible pointer-events-none",
         )}
         aria-hidden={!isAiDiffTab}
@@ -1122,6 +1202,7 @@ export default function App() {
           tabs={tabs}
           activeId={activeId}
           onOpenCommitFile={openCommitFileDiffTab}
+          onSearchHandle={setGitHistoryHandle}
         />
       </div>
     </div>
@@ -1139,6 +1220,7 @@ export default function App() {
             onNewPrivate={openNewPrivateTab}
             onNewPreview={() => openPreviewTab("")}
             onNewEditor={() => setNewEditorOpen(true)}
+            onNewGitGraph={openGitGraphFromContext}
             onClose={handleClose}
             onPin={pinTab}
             onToggleSidebar={toggleSidebar}
@@ -1181,23 +1263,21 @@ export default function App() {
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
+                        onOpenMarkdownPreview={openMarkdownPreview}
                       />
-                    ) : sidebarView === "source-control" ? (
+                    ) : (
                       <SourceControlPanel
                         open
                         sourceControl={sourceControl}
                         onOpenDiff={openGitDiffTab}
+                        onOpenGitGraph={openGitGraphFromContext}
                       />
-                    ) : (
-                      <ExtensionsView />
                     )}
                   </div>
                   <SidebarRail
                     activeView={sidebarView}
                     onSelectView={persistSidebarView}
                     changedCount={sourceControl.changedCount}
-                    onOpenCommandPalette={() => setShortcutsOpen(true)}
-                    onOpenGitGraph={openGitGraphFromContext}
                   />
                 </div>
               </ResizablePanel>

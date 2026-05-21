@@ -45,6 +45,21 @@ export type SourceControlEntry = {
   untracked: boolean;
 };
 
+export type CheckState = "checked" | "indeterminate" | "unchecked";
+
+/** One row per changed file (flat list) — merges the staged/unstaged split. */
+export type SourceControlFileEntry = {
+  key: string;
+  path: string;
+  originalPath: string | null;
+  statusCode: string;
+  statusLabel: string;
+  checkState: CheckState;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: boolean;
+};
+
 export type PendingDiscard = {
   scope: "single" | "all";
   count: number;
@@ -64,6 +79,8 @@ type SourceControlPanelState = {
   actionMessage: string | null;
   stagedEntries: SourceControlEntry[];
   unstagedEntries: SourceControlEntry[];
+  fileEntries: SourceControlFileEntry[];
+  headerCheckState: CheckState;
   allClean: boolean;
   canPush: boolean;
   pushHint: string | null;
@@ -76,9 +93,13 @@ type SourceControlPanelState = {
   setCommitMessage: (value: string) => void;
   refresh: () => Promise<void>;
   selectEntry: (entry: SourceControlEntry) => Promise<void>;
+  selectFile: (entry: SourceControlFileEntry) => Promise<void>;
   stageEntry: (entry: SourceControlEntry) => Promise<void>;
   unstageEntry: (entry: SourceControlEntry) => Promise<void>;
+  toggleStageFile: (entry: SourceControlFileEntry) => Promise<void>;
+  toggleAll: () => Promise<void>;
   requestDiscardEntry: (entry: SourceControlEntry) => void;
+  requestDiscardFile: (entry: SourceControlFileEntry) => void;
   requestDiscardAll: () => void;
   confirmPendingDiscard: () => Promise<void>;
   cancelPendingDiscard: () => void;
@@ -352,6 +373,8 @@ export function useSourceControlPanel(
     return !providerNeedsKey(model.provider) || !!state.apiKeys[model.provider];
   });
   const lmstudioModelId = usePreferencesStore((state) => state.lmstudioModelId);
+  const mlxModelId = usePreferencesStore((state) => state.mlxModelId);
+  const ollamaModelId = usePreferencesStore((state) => state.ollamaModelId);
   const openaiCompatibleBaseURL = usePreferencesStore(
     (state) => state.openaiCompatibleBaseURL,
   );
@@ -396,6 +419,44 @@ export function useSourceControlPanel(
     [status],
   );
 
+  const fileEntries = useMemo<SourceControlFileEntry[]>(() => {
+    const seen = new Set<string>();
+    const out: SourceControlFileEntry[] = [];
+    for (const file of status?.changedFiles ?? []) {
+      if (seen.has(file.path)) continue;
+      seen.add(file.path);
+      const checkState: CheckState =
+        file.staged && file.unstaged
+          ? "indeterminate"
+          : file.staged
+            ? "checked"
+            : "unchecked";
+      const statusCode = file.unstaged
+        ? statusCodeForMode("-", file)
+        : statusCodeForMode("+", file);
+      out.push({
+        key: file.path,
+        path: file.path,
+        originalPath: file.originalPath,
+        statusCode,
+        statusLabel: file.statusLabel,
+        checkState,
+        staged: file.staged,
+        unstaged: file.unstaged,
+        untracked: file.untracked,
+      });
+    }
+    return out;
+  }, [status]);
+
+  const headerCheckState = useMemo<CheckState>(() => {
+    if (fileEntries.length === 0) return "unchecked";
+    const allChecked = fileEntries.every((e) => e.checkState === "checked");
+    if (allChecked) return "checked";
+    const anyStaged = fileEntries.some((e) => e.staged);
+    return anyStaged ? "indeterminate" : "unchecked";
+  }, [fileEntries]);
+
   const allClean = stagedEntries.length === 0 && unstagedEntries.length === 0;
   const canPush = !!status?.upstream && status.behind === 0;
   const selectedModel = getModel(selectedModelId);
@@ -411,6 +472,12 @@ export function useSourceControlPanel(
     if (selectedModel.id === "lmstudio-local" && !lmstudioModelId.trim()) {
       return "Connect an AI provider to generate commit messages";
     }
+    if (selectedModel.id === "mlx-local" && !mlxModelId.trim()) {
+      return "Connect an AI provider to generate commit messages";
+    }
+    if (selectedModel.id === "ollama-local" && !ollamaModelId.trim()) {
+      return "Connect an AI provider to generate commit messages";
+    }
     if (
       selectedModel.id === "openai-compatible-custom" &&
       (!openaiCompatibleBaseURL.trim() || !openaiCompatibleModelId.trim())
@@ -421,6 +488,8 @@ export function useSourceControlPanel(
   }, [
     hasApiKeyForSelected,
     lmstudioModelId,
+    mlxModelId,
+    ollamaModelId,
     openaiCompatibleBaseURL,
     openaiCompatibleModelId,
     selectedModel,
@@ -701,6 +770,76 @@ export function useSourceControlPanel(
     );
   }, [repo, runMutation, stagedEntries]);
 
+  const selectFile = useCallback(
+    async (entry: SourceControlFileEntry) => {
+      if (!repo) return;
+      const mode: DiffMode = entry.unstaged ? "-" : "+";
+      const nextSelection: DiffSelection = { path: entry.path, mode };
+      if (sameSelection(selected, nextSelection)) {
+        setActionError(null);
+        setActionMessage(null);
+        setSelectionTransition("none");
+        return;
+      }
+      setSelected(nextSelection);
+      setActionError(null);
+      setActionMessage(null);
+      setSelectionTransition("none");
+      const file = status?.changedFiles.find((c) => c.path === entry.path);
+      openSelection(nextSelection, repo.repoRoot, file);
+    },
+    [openSelection, repo, selected, status],
+  );
+
+  const toggleStageFile = useCallback(
+    async (entry: SourceControlFileEntry) => {
+      if (!repo) return;
+      const paths = new Set([entry.path]);
+      if (entry.checkState === "checked") {
+        await runMutation(
+          `unstage:${entry.path}`,
+          (s) => optimisticUnstage(s, paths),
+          () => native.gitUnstage(repo.repoRoot, [entry.path]),
+          [entry.path],
+        );
+      } else {
+        await runMutation(
+          `stage:${entry.path}`,
+          (s) => optimisticStage(s, paths),
+          () => native.gitStage(repo.repoRoot, [entry.path]),
+          [entry.path],
+        );
+      }
+    },
+    [repo, runMutation],
+  );
+
+  const toggleAll = useCallback(async () => {
+    if (headerCheckState === "checked") await unstageAllEntries();
+    else await stageAllEntries();
+  }, [headerCheckState, stageAllEntries, unstageAllEntries]);
+
+  const requestDiscardFile = useCallback(
+    (entry: SourceControlFileEntry) => {
+      if (!repo || summary.busyAction) return;
+      setPendingDiscard({
+        scope: "single",
+        entry: {
+          key: `-:${entry.path}`,
+          path: entry.path,
+          mode: "-",
+          indexStatus: " ",
+          worktreeStatus: entry.statusCode,
+          statusLabel: entry.statusLabel,
+          statusCode: entry.statusCode,
+          originalPath: entry.originalPath,
+          untracked: entry.untracked,
+        },
+      });
+    },
+    [repo, summary.busyAction],
+  );
+
   const generateCommitMessage = useCallback(async () => {
     if (!repo || stagedEntries.length === 0) return;
     if (aiBusy) {
@@ -727,10 +866,16 @@ export function useSourceControlPanel(
       const model = await buildConfiguredLanguageModel(
         selectedModelId,
         chatState.apiKeys,
-        prefs.lmstudioBaseURL,
-        lmstudioModelId,
-        openaiCompatibleBaseURL,
-        openaiCompatibleModelId,
+        {
+          lmstudioBaseURL: prefs.lmstudioBaseURL,
+          lmstudioModelId,
+          mlxBaseURL: prefs.mlxBaseURL,
+          mlxModelId,
+          ollamaBaseURL: prefs.ollamaBaseURL,
+          ollamaModelId,
+          openaiCompatibleBaseURL,
+          openaiCompatibleModelId,
+        },
       );
       const result = await generateText({
         model,
@@ -766,6 +911,8 @@ export function useSourceControlPanel(
     aiUnavailableReason,
     aiBusy,
     lmstudioModelId,
+    mlxModelId,
+    ollamaModelId,
     openaiCompatibleBaseURL,
     openaiCompatibleModelId,
     repo,
@@ -840,6 +987,8 @@ export function useSourceControlPanel(
     actionMessage,
     stagedEntries,
     unstagedEntries,
+    fileEntries,
+    headerCheckState,
     allClean,
     canPush,
     pushHint,
@@ -852,9 +1001,13 @@ export function useSourceControlPanel(
     setCommitMessage,
     refresh,
     selectEntry,
+    selectFile,
     stageEntry,
     unstageEntry,
+    toggleStageFile,
+    toggleAll,
     requestDiscardEntry,
+    requestDiscardFile,
     requestDiscardAll,
     confirmPendingDiscard,
     cancelPendingDiscard,

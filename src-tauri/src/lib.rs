@@ -86,6 +86,8 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    workspace::init_launch_cwd();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

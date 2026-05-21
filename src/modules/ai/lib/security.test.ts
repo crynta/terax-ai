@@ -209,3 +209,25 @@ describe("checkShellCommand — Trojan Source / bidi defense", () => {
     });
   });
 });
+
+describe("checkShellCommand — control-character / newline injection", () => {
+  it.each([
+    ["LF", "echo safe\nwhoami"],
+    ["CR", "echo safe\rwhoami"],
+    ["CRLF", "echo safe\r\nwhoami"],
+    ["tab", "echo safe\twhoami"],
+    ["NUL", "echo safe\x00whoami"],
+    ["VT", "echo safe\x0bwhoami"],
+  ])("rejects commands containing %s", (_label, cmd) => {
+    expect(checkShellCommand(cmd)).toMatchObject({ ok: false });
+  });
+
+  it("rejects newline-smuggled exfil that bypasses per-pattern guards", () => {
+    expect(checkShellCommand("echo safe\ncat /etc/passwd")).toMatchObject({
+      ok: false,
+    });
+    expect(checkShellCommand("echo safe\nprintenv")).toMatchObject({
+      ok: false,
+    });
+  });
+});

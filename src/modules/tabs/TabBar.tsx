@@ -14,6 +14,7 @@ import {
   Cancel01Icon,
   Clock01Icon,
   ComputerTerminal02Icon,
+  GitBranchIcon,
   GitCompareIcon,
   Globe02Icon,
   IncognitoIcon,
@@ -32,6 +33,7 @@ type Props = {
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
+  onNewGitGraph: () => void;
   onClose: (id: number) => void;
   /** Pin (promote) a preview tab to persistent on double-click. */
   onPin: (id: number) => void;
@@ -46,6 +48,7 @@ export function TabBar({
   onNewPrivate,
   onNewPreview,
   onNewEditor,
+  onNewGitGraph,
   onClose,
   onPin,
   compact,
@@ -198,6 +201,10 @@ export function TabBar({
                 {fmtShortcut(MOD_KEY, "P")}
               </span>
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onNewGitGraph()}>
+              <HugeiconsIcon icon={GitBranchIcon} size={14} strokeWidth={1.75} />
+              <span className="flex-1">Git Graph</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -206,7 +213,7 @@ export function TabBar({
 }
 
 function TabIcon({ tab }: { tab: Tab }) {
-  if (tab.kind === "editor") {
+  if (tab.kind === "editor" || tab.kind === "markdown") {
     const url = fileIconUrl(tab.title);
     return url ? <img src={url} alt="" className="size-3.5 shrink-0" /> : null;
   }
@@ -226,7 +233,7 @@ function TabIcon({ tab }: { tab: Tab }) {
         icon={GitCompareIcon}
         size={14}
         strokeWidth={2}
-        className="shrink-0 text-yellow-600 dark:text-yellow-400"
+        className="shrink-0"
       />
     );
   }
@@ -236,7 +243,7 @@ function TabIcon({ tab }: { tab: Tab }) {
         icon={IncognitoIcon}
         size={14}
         strokeWidth={2}
-        className="shrink-0 text-amber-600 dark:text-amber-400"
+        className="shrink-0"
       />
     );
   }
@@ -246,7 +253,7 @@ function TabIcon({ tab }: { tab: Tab }) {
         icon={GitCompareIcon}
         size={14}
         strokeWidth={2}
-        className="shrink-0 text-emerald-600 dark:text-emerald-400"
+        className="shrink-0"
       />
     );
   }
@@ -256,7 +263,7 @@ function TabIcon({ tab }: { tab: Tab }) {
         icon={Clock01Icon}
         size={14}
         strokeWidth={2}
-        className="shrink-0 text-sky-600 dark:text-sky-400"
+        className="shrink-0"
       />
     );
   }
@@ -273,6 +280,7 @@ function TabIcon({ tab }: { tab: Tab }) {
 function labelFor(t: Tab): string {
   if (t.kind === "editor") return t.title;
   if (t.kind === "preview") return t.title;
+  if (t.kind === "markdown") return t.title;
   if (t.kind === "ai-diff") return t.title;
   if (t.kind === "git-diff") return t.title;
   if (t.kind === "git-history") return t.title;

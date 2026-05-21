@@ -1,17 +1,11 @@
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   native,
@@ -21,14 +15,9 @@ import {
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import { useI18n } from "@/modules/i18n";
 import {
-  Cancel01Icon,
   Copy01Icon,
   File02Icon,
-  GitBranchIcon,
-  GitCommitHorizontalIcon,
   LinkSquare02Icon,
-  Refresh01Icon,
-  Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -41,7 +30,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
@@ -78,10 +66,16 @@ type CommitFileDiffOpenInput = {
   originalPath: string | null;
 };
 
+export type GitHistorySearchHandle = {
+  setQuery: (query: string) => void;
+  clearQuery: () => void;
+};
+
 type Props = {
   repoRoot: string;
-  branch?: string | null;
   onOpenCommitFile: (input: CommitFileDiffOpenInput) => void;
+  /** Lets the header search bar drive commit filtering for the active pane. */
+  onSearchHandle?: (handle: GitHistorySearchHandle | null) => void;
 };
 
 type LoadStatus = "idle" | "initial" | "more" | "error";
@@ -196,7 +190,11 @@ function highlight(text: string, query: string): ReactNode {
   );
 }
 
-export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
+export function GitHistoryPane({
+  repoRoot,
+  onOpenCommitFile,
+  onSearchHandle,
+}: Props) {
   const { t } = useI18n();
   const [commits, setCommits] = useState<GitLogEntry[]>([]);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("idle");
@@ -204,6 +202,17 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
   const [endReached, setEndReached] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const deferredSearch = useDeferredValue(searchInput.trim());
+  // Require at least 2 characters before filtering to avoid noisy single-char
+  // matches and pointless full-list scans on every keystroke.
+  const activeSearch = deferredSearch.length >= 2 ? deferredSearch : "";
+
+  useEffect(() => {
+    onSearchHandle?.({
+      setQuery: (query: string) => setSearchInput(query),
+      clearQuery: () => setSearchInput(""),
+    });
+    return () => onSearchHandle?.(null);
+  }, [onSearchHandle]);
   const [openAnchor, setOpenAnchor] = useState<{
     sha: string;
     top: number;
@@ -284,7 +293,7 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
   const gridTemplate = GRID_TEMPLATE;
 
   const filtered = useMemo(() => {
-    const q = deferredSearch.toLowerCase();
+    const q = activeSearch.toLowerCase();
     if (!q) return commits;
     return commits.filter((c) => {
       const subject = c.subject.toLowerCase();
@@ -297,7 +306,7 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
         c.shortSha.includes(q)
       );
     });
-  }, [commits, deferredSearch]);
+  }, [commits, activeSearch]);
 
   const virtualizer = useVirtualizer({
     count: filtered.length,
@@ -383,12 +392,12 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
     const el = scrollRef.current;
     if (!el) return;
     setOpenAnchor((prev) => (prev ? null : prev));
-    if (deferredSearch) return;
+    if (activeSearch) return;
     const remaining = el.scrollHeight - el.scrollTop - el.clientHeight;
     if (remaining < NEAR_BOTTOM_PX) {
       void loadMore();
     }
-  }, [deferredSearch, loadMore]);
+  }, [activeSearch, loadMore]);
 
   // Auto-fill: if the list doesn't fill the viewport (no scroll possible)
   // after a load, keep pulling pages until it does or the end is reached.
@@ -396,7 +405,7 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
   useEffect(() => {
     if (loadStatus !== "idle") return;
     if (endReached) return;
-    if (deferredSearch) return;
+    if (activeSearch) return;
     if (commits.length === 0) return;
     const el = scrollRef.current;
     if (!el) return;
@@ -406,7 +415,7 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
       void loadMore();
     }, 0);
     return () => window.clearTimeout(id);
-  }, [commits.length, deferredSearch, endReached, loadMore, loadStatus]);
+  }, [commits.length, activeSearch, endReached, loadMore, loadStatus]);
 
   const handleRefresh = useCallback(() => {
     filesInflightRef.current.clear();
@@ -500,92 +509,6 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
   return (
     <TooltipProvider delayDuration={500} skipDelayDuration={200}>
       <div className="flex h-full min-h-0 flex-col bg-background [contain:layout_style]">
-        <header className="flex shrink-0 items-center gap-2 border-b border-border/55 bg-card/65 px-3 py-2 backdrop-blur">
-          <div className="flex shrink-0 items-center gap-1.5">
-            <HugeiconsIcon
-              icon={GitCommitHorizontalIcon}
-              size={14}
-              strokeWidth={1.85}
-              className="text-muted-foreground"
-            />
-            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/85">
-              Git Graph
-            </span>
-            {branch ? (
-              <div className="ml-1 inline-flex items-center gap-1 rounded-md border border-border/55 bg-background/70 px-1.5 py-0.5 text-[11px] font-medium leading-none text-foreground">
-                <HugeiconsIcon
-                  icon={GitBranchIcon}
-                  size={10}
-                  strokeWidth={2}
-                  className="shrink-0 text-muted-foreground"
-                />
-                <span className="max-w-[180px] truncate">{branch}</span>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="relative ml-auto min-w-0 max-w-md flex-1">
-            <HugeiconsIcon
-              icon={Search01Icon}
-              size={12}
-              strokeWidth={1.9}
-              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground/70"
-            />
-            <Input
-              value={searchInput}
-              onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                setSearchInput(event.target.value)
-              }
-              placeholder={t("Search subject, author, sha…")}
-              className="h-7 rounded-md border-border/55 bg-background/85 pl-7 pr-7 text-[12px] placeholder:text-muted-foreground/70 focus-visible:border-border/80 focus-visible:ring-0"
-            />
-            {searchInput ? (
-              <button
-                type="button"
-                onClick={() => setSearchInput("")}
-                aria-label={t("Clear search")}
-                className="absolute right-1 top-1/2 inline-flex size-5 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-muted-foreground/70 transition-colors hover:bg-accent/50 hover:text-foreground"
-              >
-                <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
-              </button>
-            ) : null}
-          </div>
-
-          <div className="shrink-0 text-[10.5px] tabular-nums text-muted-foreground/75">
-            {deferredSearch
-              ? `${filtered.length} / ${commits.length}`
-              : endReached
-                ? `${commits.length}`
-                : `${commits.length}+`}
-          </div>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                aria-label={t("Refresh history")}
-                disabled={loadStatus === "initial"}
-                onClick={handleRefresh}
-                className="cursor-pointer rounded-md text-muted-foreground disabled:cursor-not-allowed"
-              >
-                {loadStatus === "initial" ? (
-                  <Spinner className="size-3" />
-                ) : (
-                  <HugeiconsIcon
-                    icon={Refresh01Icon}
-                    size={13}
-                    strokeWidth={2}
-                  />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-[10.5px]">
-              {t("Refresh")}
-            </TooltipContent>
-          </Tooltip>
-        </header>
-
         {loadStatus === "initial" && commits.length === 0 ? (
           <CenterPlaceholder>
             <Spinner className="size-4" />
@@ -658,7 +581,7 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
                     >
                       <CommitRow
                         commit={commit}
-                        query={deferredSearch}
+                        query={activeSearch}
                         active={openAnchor?.sha === commit.sha}
                         graphRow={graphByCommit.get(commit.sha) ?? null}
                         maxLaneCount={maxLaneCount}
@@ -676,7 +599,7 @@ export function GitHistoryPane({ repoRoot, branch, onOpenCommitFile }: Props) {
                   Loading more…
                 </div>
               ) : null}
-              {endReached && !deferredSearch ? (
+              {endReached && !activeSearch ? (
                 <div className="py-3 text-center text-[10.5px] text-muted-foreground/65">
                   End of history
                 </div>

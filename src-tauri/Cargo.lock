@@ -5144,7 +5144,7 @@ dependencies = [
 
 [[package]]
 name = "terax"
-version = "0.6.6"
+version = "0.7.0"
 dependencies = [
  "bytes",
  "dirs 5.0.1",
@@ -5172,6 +5172,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tempfile",
  "tokio",
  "windows-sys 0.59.0",
 ]

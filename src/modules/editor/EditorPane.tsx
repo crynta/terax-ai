@@ -1,3 +1,4 @@
+import { redo, undo } from "@codemirror/commands";
 import {
   findNext,
   findPrevious,
@@ -42,6 +43,9 @@ export type EditorPaneHandle = {
   getPath: () => string;
   /** Re-read the file from disk. Skips silently if the buffer is dirty. */
   reload: () => boolean;
+  /** Apply CodeMirror's undo/redo commands. */
+  undo: () => void;
+  redo: () => void;
 };
 
 type Props = {
@@ -73,7 +77,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       let cancelled = false;
       const refresh = async () => {
         const provider = usePreferencesStore.getState().autocompleteProvider;
-        if (provider === "lmstudio") {
+        if (provider === "lmstudio" || provider === "mlx" || provider === "ollama") {
           apiKeyRef.current = null;
           return;
         }
@@ -132,12 +136,26 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         inlineCompletion({
           getPrefs: () => {
             const s = usePreferencesStore.getState();
+            const p = s.autocompleteProvider;
+            const modelId =
+              p === "lmstudio"
+                ? s.lmstudioModelId
+                : p === "mlx"
+                  ? s.mlxModelId
+                  : p === "ollama"
+                    ? s.ollamaModelId
+                    : p === "openai-compatible"
+                      ? s.openaiCompatibleModelId
+                      : s.autocompleteModelId;
             return {
               enabled: s.autocompleteEnabled,
-              provider: s.autocompleteProvider,
-              modelId: s.autocompleteModelId,
+              provider: p,
+              modelId,
               apiKey: apiKeyRef.current,
               lmstudioBaseURL: s.lmstudioBaseURL,
+              mlxBaseURL: s.mlxBaseURL,
+              ollamaBaseURL: s.ollamaBaseURL,
+              openaiCompatibleBaseURL: s.openaiCompatibleBaseURL,
             };
           },
           getPath: () => pathRef.current,
@@ -227,6 +245,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         },
         getPath: () => path,
         reload: () => reloadRef.current(),
+        undo: () => {
+          const view = cmRef.current?.view;
+          if (view) undo(view);
+        },
+        redo: () => {
+          const view = cmRef.current?.view;
+          if (view) redo(view);
+        },
       }),
       [path],
     );
