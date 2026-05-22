@@ -61,6 +61,7 @@ import {
   type ShortcutId,
 } from "@/modules/shortcuts";
 import { SidebarPanelHost, type SidebarViewId } from "@/modules/sidebar";
+import { useRecentFilesStore } from "@/modules/sidebar/recentFilesStore";
 import { useSourceControl } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
@@ -779,6 +780,7 @@ export default function App() {
       // Explorer defaults to preview (pin=false); explicit actions like
       // context-menu "Open" pass pin=true for a persistent tab.
       openFileTab(path, pin ?? false);
+      useRecentFilesStore.getState().push(path);
     },
     [openFileTab],
   );
