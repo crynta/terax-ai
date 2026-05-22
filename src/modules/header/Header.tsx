@@ -51,6 +51,7 @@ type Props = {
   onOpenSettings: () => void;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
+  showTabBar: boolean;
 };
 
 const COMPACT_WIDTH = 720;
@@ -73,6 +74,7 @@ export function Header({
   onOpenSettings,
   searchTarget,
   searchRef,
+  showTabBar,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
@@ -198,25 +200,32 @@ export function Header({
 
       {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border" />}
 
-      <div
-        className="flex min-w-0 flex-1 items-center gap-2"
-        data-tauri-drag-region
-      >
-        <TabBar
-          tabs={tabs}
-          activeId={activeId}
-          onSelect={onSelect}
-          onNew={onNew}
-          onNewPrivate={onNewPrivate}
-          onNewPreview={onNewPreview}
-          onNewEditor={onNewEditor}
-          onNewGitGraph={onNewGitGraph}
-          onClose={onClose}
-          onPin={onPin}
-          compact={compact}
+      {showTabBar ? (
+        <div
+          className="flex min-w-0 flex-1 items-center gap-2"
+          data-tauri-drag-region
+        >
+          <TabBar
+            tabs={tabs}
+            activeId={activeId}
+            onSelect={onSelect}
+            onNew={onNew}
+            onNewPrivate={onNewPrivate}
+            onNewPreview={onNewPreview}
+            onNewEditor={onNewEditor}
+            onNewGitGraph={onNewGitGraph}
+            onClose={onClose}
+            onPin={onPin}
+            compact={compact}
+          />
+          <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
+        </div>
+      ) : (
+        <div
+          className="h-full min-w-2 flex-1"
+          data-tauri-drag-region
         />
-        <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
-      </div>
+      )}
 
       <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
 
