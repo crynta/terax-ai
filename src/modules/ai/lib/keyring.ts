@@ -9,6 +9,12 @@ import {
 
 export type ProviderKeys = Record<ProviderId, string | null>;
 
+export type OpenAiOAuthCredentials = {
+  access_token: string;
+  account_id: string | null;
+  is_fedramp_account: boolean;
+};
+
 export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   openai: null,
   anthropic: null,
@@ -27,12 +33,30 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
 
 export async function getKey(provider: ProviderId): Promise<string | null> {
   if (!providerSupportsKey(provider)) return null;
+  if (provider === "openai") {
+    try {
+      const token = await invoke<string | null>("openai_oauth_access_token");
+      if (token) return token;
+    } catch {
+      // Fall through to the manually configured API key.
+    }
+  }
   try {
     const v = await invoke<string | null>("secrets_get", {
       service: KEYRING_SERVICE,
       account: getProvider(provider).keyringAccount,
     });
     return v && v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getOpenAiOAuthCredentials(): Promise<OpenAiOAuthCredentials | null> {
+  try {
+    return await invoke<OpenAiOAuthCredentials | null>(
+      "openai_oauth_credentials",
+    );
   } catch {
     return null;
   }
@@ -53,6 +77,13 @@ export async function setKey(provider: ProviderId, key: string): Promise<void> {
 
 export async function clearKey(provider: ProviderId): Promise<void> {
   if (!providerSupportsKey(provider)) return;
+  if (provider === "openai") {
+    try {
+      await invoke("openai_oauth_logout");
+    } catch {
+      // Continue clearing the API key below.
+    }
+  }
   try {
     await invoke("secrets_delete", {
       service: KEYRING_SERVICE,
@@ -75,6 +106,7 @@ export async function getAllKeys(): Promise<ProviderKeys> {
       const v = results[i];
       out[p.id] = v && v.length > 0 ? v : null;
     });
+    out.openai = await getKey("openai");
     return out;
   } catch {
     const entries = await Promise.all(

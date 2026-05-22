@@ -104,6 +104,8 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
 export function ModelsSection() {
   const [keys, setKeys] = useState<KeysMap | null>(null);
   const [adding, setAdding] = useState<Set<ProviderId>>(new Set());
+  const [oauthBusy, setOauthBusy] = useState(false);
+  const [oauthError, setOauthError] = useState<string | null>(null);
 
   const defaultModel = usePreferencesStore((s) => s.defaultModelId);
   const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
@@ -132,6 +134,22 @@ export function ModelsSection() {
     await clearKey(provider);
     setKeys((prev) => (prev ? { ...prev, [provider]: null } : prev));
     await emitKeysChanged();
+  };
+
+  const onOpenAiOAuth = async () => {
+    setOauthBusy(true);
+    setOauthError(null);
+    try {
+      const token = await invoke<{ access_token: string }>("openai_oauth_login");
+      setKeys((prev) =>
+        prev ? { ...prev, openai: token.access_token } : prev,
+      );
+      await emitKeysChanged();
+    } catch (e) {
+      setOauthError(`OpenAI sign-in failed: ${String(e)}`);
+    } finally {
+      setOauthBusy(false);
+    }
   };
 
   const localConfig = (id: ProviderId): LocalConfig | null => {
@@ -268,6 +286,9 @@ export function ModelsSection() {
                   onSave={(v) => onSaveKey(p.id, v)}
                   onClear={() => onClearKey(p.id)}
                   onRemove={() => removeProvider(p.id)}
+                  onOAuth={p.id === "openai" ? onOpenAiOAuth : undefined}
+                  oauthBusy={p.id === "openai" ? oauthBusy : false}
+                  oauthError={p.id === "openai" ? oauthError : null}
                 />
               ),
             )}
