@@ -992,9 +992,14 @@ export default function App() {
       "view.zoomReset": zoomReset,
       "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
       "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
+      "terminal.clear": () => {
+        if (activeLeafId !== null)
+          terminalRefs.current.get(activeLeafId)?.clear();
+      },
     }),
     [
       activeId,
+      activeLeafId,
       cycleTab,
       handleCloseTabOrPane,
       openNewTab,

@@ -30,7 +30,8 @@ export type ShortcutId =
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
-  | "editor.redo";
+  | "editor.redo"
+  | "terminal.clear";
 
 export type ShortcutGroup =
   | "General"
@@ -39,7 +40,8 @@ export type ShortcutGroup =
   | "Search"
   | "AI"
   | "View"
-  | "Editor";
+  | "Editor"
+  | "Terminal";
 
 export type KeyBinding = {
   key: string;
@@ -227,6 +229,12 @@ export const SHORTCUTS: Shortcut[] = [
     group: "Editor",
     defaultBindings: [{ [MOD_PROP]: true, key: "y" }],
   },
+  {
+    id: "terminal.clear",
+    label: "Clear terminal",
+    group: "Terminal",
+    defaultBindings: [],
+  },
 ];
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
@@ -237,6 +245,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "Search",
   "AI",
   "Editor",
+  "Terminal",
 ];
 
 /**

@@ -438,13 +438,17 @@ export function useTerminalSession({
     return sel.length > 0 ? sel : null;
   }, [leafId]);
 
+  const clear = useCallback(() => {
+    getSlotForLeaf(leafId)?.term.clear();
+  }, [leafId]);
+
   const applyTheme = useCallback(() => {
     applyPoolTheme();
   }, []);
 
   return useMemo(
-    () => ({ write, focus, getBuffer, getSelection, applyTheme }),
-    [write, focus, getBuffer, getSelection, applyTheme],
+    () => ({ write, focus, getBuffer, getSelection, clear, applyTheme }),
+    [write, focus, getBuffer, getSelection, clear, applyTheme],
   );
 }
 
