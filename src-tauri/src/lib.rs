@@ -49,10 +49,9 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
     let mut builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
         .title("Settings")
-        .inner_size(820.0, 620.0)
+        .inner_size(900.0, 700.0)
         .min_inner_size(820.0, 620.0)
-        .max_inner_size(820.0, 620.0)
-        .resizable(false)
+        .resizable(true)
         .visible(false)
         // Keep settings above the main app window so it doesn't get hidden
         // when the user clicks back into the editor or terminal (#33).
