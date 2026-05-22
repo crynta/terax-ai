@@ -2,25 +2,34 @@
 ; HKCU matches installer currentUser scope. %V = clicked path.
 ; NoWorkingDirectory keeps Explorer from overriding %V (System32 on Drive).
 
+  !macro REGISTER_SHELL_VERB CLASS PARAM
+    WriteRegStr HKCU "Software\Classes\${CLASS}\shell\OpenInTerax" "" "Open in Terax"
+    WriteRegStr HKCU "Software\Classes\${CLASS}\shell\OpenInTerax" "Icon" '"$INSTDIR\terax.exe",0'
+    WriteRegStr HKCU "Software\Classes\${CLASS}\shell\OpenInTerax" "NoWorkingDirectory" ""
+    WriteRegStr HKCU "Software\Classes\${CLASS}\shell\OpenInTerax\command" "" '"$INSTDIR\terax.exe" "${PARAM}"'
+  !macroend
+
+  !macro UNREGISTER_SHELL_VERB CLASS
+    DeleteRegKey HKCU "Software\Classes\${CLASS}\shell\OpenInTerax"
+  !macroend
+
 !macro NSIS_HOOK_POSTINSTALL
-  WriteRegStr HKCU "Software\Classes\Directory\shell\OpenInTerax" "" "Open in Terax"
-  WriteRegStr HKCU "Software\Classes\Directory\shell\OpenInTerax" "Icon" '"$INSTDIR\terax.exe",0'
-  WriteRegStr HKCU "Software\Classes\Directory\shell\OpenInTerax" "NoWorkingDirectory" ""
-  WriteRegStr HKCU "Software\Classes\Directory\shell\OpenInTerax\command" "" '"$INSTDIR\terax.exe" "%V"'
+  !insertmacro REGISTER_SHELL_VERB "Directory" "%V"
+  !insertmacro REGISTER_SHELL_VERB "Directory\Background" "%V"
+  !insertmacro REGISTER_SHELL_VERB "Drive" "%V"
+  !insertmacro REGISTER_SHELL_VERB "*" "%1"
 
-  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\OpenInTerax" "" "Open in Terax"
-  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\OpenInTerax" "Icon" '"$INSTDIR\terax.exe",0'
-  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\OpenInTerax" "NoWorkingDirectory" ""
-  WriteRegStr HKCU "Software\Classes\Directory\Background\shell\OpenInTerax\command" "" '"$INSTDIR\terax.exe" "%V"'
-
-  WriteRegStr HKCU "Software\Classes\Drive\shell\OpenInTerax" "" "Open in Terax"
-  WriteRegStr HKCU "Software\Classes\Drive\shell\OpenInTerax" "Icon" '"$INSTDIR\terax.exe",0'
-  WriteRegStr HKCU "Software\Classes\Drive\shell\OpenInTerax" "NoWorkingDirectory" ""
-  WriteRegStr HKCU "Software\Classes\Drive\shell\OpenInTerax\command" "" '"$INSTDIR\terax.exe" "%V"'
+  ; Register Terax as a known application for the "Open with..." menu
+  WriteRegStr HKCU "Software\Classes\Applications\terax.exe" "" "Terax"
+  WriteRegStr HKCU "Software\Classes\Applications\terax.exe" "FriendlyAppName" "Terax"
+  WriteRegStr HKCU "Software\Classes\Applications\terax.exe\shell\open" "" "Open in Terax"
+  WriteRegStr HKCU "Software\Classes\Applications\terax.exe\shell\open\command" "" '"$INSTDIR\terax.exe" "%1"'
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
-  DeleteRegKey HKCU "Software\Classes\Directory\shell\OpenInTerax"
-  DeleteRegKey HKCU "Software\Classes\Directory\Background\shell\OpenInTerax"
-  DeleteRegKey HKCU "Software\Classes\Drive\shell\OpenInTerax"
+  !insertmacro UNREGISTER_SHELL_VERB "Directory"
+  !insertmacro UNREGISTER_SHELL_VERB "Directory\Background"
+  !insertmacro UNREGISTER_SHELL_VERB "Drive"
+  !insertmacro UNREGISTER_SHELL_VERB "*"
+  DeleteRegKey HKCU "Software\Classes\Applications\terax.exe"
 !macroend
