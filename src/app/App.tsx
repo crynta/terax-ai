@@ -41,7 +41,7 @@ import {
   GitHistoryStack,
   type GitHistorySearchHandle,
 } from "@/modules/git-history";
-import { getLaunchDir } from "@/lib/launchDir";
+import { getLaunchDir, getLaunchFile } from "@/lib/launchDir";
 import { useZoom } from "@/lib/useZoom";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
@@ -436,6 +436,13 @@ export default function App() {
     void useAgentsStore.getState().hydrate();
     void useSnippetsStore.getState().hydrate();
   }, [hydrateSessions]);
+
+  useEffect(() => {
+    const launchFile = getLaunchFile();
+    if (launchFile) {
+      openFileTab(launchFile);
+    }
+  }, [openFileTab]);
 
   const activeTab = tabs.find((t) => t.id === activeId);
   const isTerminalTab = activeTab?.kind === "terminal";
