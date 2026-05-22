@@ -134,9 +134,6 @@ pub fn run() {
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
             workspace::bootstrap_registry(&registry);
-            if let Some(ref dir) = launch_dir {
-                let _ = registry.authorize(dir);
-            }
             registry
         })
         .manage(LaunchDir(Mutex::new(launch_dir)))
