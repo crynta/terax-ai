@@ -5,7 +5,7 @@ import {
   SearchQuery,
   setSearchQuery,
 } from "@codemirror/search";
-import { keymap } from "@codemirror/view";
+import { keymap, EditorView } from "@codemirror/view";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EDITOR_THEME_EXT } from "./lib/themes";
@@ -31,6 +31,7 @@ import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { getKey } from "@/modules/ai/lib/keyring";
 import { onKeysChanged } from "@/modules/settings/store";
+import { extractOutline } from "@/modules/sidebar/panels/outlineExtractor";
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -45,6 +46,10 @@ export type EditorPaneHandle = {
   /** Apply CodeMirror's undo/redo commands. */
   undo: () => void;
   redo: () => void;
+  /** Returns the symbol outline for the current document. Empty array for unsupported languages. */
+  getOutline: () => import("@/modules/sidebar/panels/outlineExtractor").OutlineNode[];
+  /** Scrolls the editor to the given 1-based line number. */
+  goToLine: (line: number) => void;
 };
 
 type Props = {
@@ -260,6 +265,23 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         redo: () => {
           const view = cmRef.current?.view;
           if (view) redo(view);
+        },
+        getOutline: () => {
+          const view = cmRef.current?.view;
+          if (!view) return [];
+          const doc = view.state.doc.toString();
+          const ext = pathRef.current.split(".").pop()?.toLowerCase() ?? "";
+          return extractOutline(doc, ext);
+        },
+        goToLine: (line: number) => {
+          const view = cmRef.current?.view;
+          if (!view) return;
+          const lineInfo = view.state.doc.line(Math.max(1, Math.min(line, view.state.doc.lines)));
+          view.dispatch({
+            selection: { anchor: lineInfo.from },
+            effects: EditorView.scrollIntoView(lineInfo.from, { y: "center" }),
+          });
+          view.focus();
         },
       }),
       [path],
