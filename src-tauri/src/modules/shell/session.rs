@@ -16,6 +16,7 @@ pub struct ShellSession {
     #[allow(dead_code)]
     pub started_at_ms: u64,
     sentinel: String,
+    shell_override: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -45,6 +46,14 @@ fn generate_sentinel() -> String {
 
 impl ShellSession {
     pub fn new(initial_cwd: String, workspace: WorkspaceEnv) -> Self {
+        Self::new_with_shell(initial_cwd, workspace, None)
+    }
+
+    pub fn new_with_shell(
+        initial_cwd: String,
+        workspace: WorkspaceEnv,
+        shell_override: Option<String>,
+    ) -> Self {
         let started_at_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -55,6 +64,7 @@ impl ShellSession {
             pristine: AtomicBool::new(true),
             started_at_ms,
             sentinel: generate_sentinel(),
+            shell_override,
         }
     }
 
@@ -88,11 +98,13 @@ impl ShellSession {
 
         let (tx, rx) = mpsc::channel::<Result<super::CommandOutput, String>>();
         let cwd_for_thread = cwd.clone();
+        let shell_override = self.shell_override.clone();
         thread::spawn(move || {
             let _ = tx.send(run_blocking_inner(
                 wrapped,
                 Some(cwd_for_thread),
                 effective_workspace,
+                shell_override.as_deref(),
                 timeout,
             ));
         });

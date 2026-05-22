@@ -92,6 +92,7 @@ impl Drop for BackgroundProc {
 pub fn spawn(
     command: String,
     cwd: Option<String>,
+    shell_override: Option<String>,
     workspace: WorkspaceEnv,
 ) -> Result<Arc<BackgroundProc>, String> {
     let trimmed = command.trim().to_string();
@@ -104,7 +105,12 @@ pub fn spawn(
         }
     }
 
-    let mut cmd = super::build_oneshot_command(&trimmed, &workspace, cwd.as_deref())?;
+    let mut cmd = super::build_oneshot_command(
+        &trimmed,
+        &workspace,
+        cwd.as_deref(),
+        shell_override.as_deref(),
+    )?;
     if let (WorkspaceEnv::Local, Some(ref dir)) = (&workspace, &cwd) {
         cmd.current_dir(dir);
     }
