@@ -3,6 +3,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -87,32 +88,32 @@ export function PanelSection() {
         title="Panel"
         description="Choose which tools appear in the sidebar."
       />
-      <div className="flex flex-col gap-2">
-        {PANELS.map((panel) => {
-          const isEnabled = prefs[panel.prefKey];
-          const isLastEnabled = enabledCount === 1 && isEnabled;
-          return (
-            <Tooltip key={panel.prefKey} delayDuration={400}>
-              <TooltipTrigger asChild>
-                <div>
-                  <SettingRow title={panel.title} description={panel.description}>
-                    <Switch
-                      checked={isEnabled}
-                      disabled={isLastEnabled}
-                      onCheckedChange={(v) => void panel.setter(v)}
-                    />
-                  </SettingRow>
-                </div>
-              </TooltipTrigger>
-              {isLastEnabled ? (
+      <TooltipProvider delayDuration={400}>
+        <div className="flex flex-col gap-2">
+          {PANELS.map((panel) => {
+            const isEnabled = prefs[panel.prefKey];
+            const isLastEnabled = enabledCount === 1 && isEnabled;
+            return (
+              <Tooltip key={panel.prefKey} open={isLastEnabled ? undefined : false}>
+                <TooltipTrigger asChild>
+                  <div>
+                    <SettingRow title={panel.title} description={panel.description}>
+                      <Switch
+                        checked={isEnabled}
+                        disabled={isLastEnabled}
+                        onCheckedChange={(v) => void panel.setter(v)}
+                      />
+                    </SettingRow>
+                  </div>
+                </TooltipTrigger>
                 <TooltipContent side="left" className="text-[11px]">
                   At least one panel must remain enabled.
                 </TooltipContent>
-              ) : null}
-            </Tooltip>
-          );
-        })}
-      </div>
+              </Tooltip>
+            );
+          })}
+        </div>
+      </TooltipProvider>
     </div>
   );
 }
