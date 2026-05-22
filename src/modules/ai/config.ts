@@ -237,6 +237,24 @@ export const MODELS = [
 
   // ── Google ────────────────────────────────────────────────────────────────
   {
+    id: "gemini-3.5-flash",
+    provider: "google",
+    label: "Gemini 3.5 Flash",
+    hint: "Fast",
+    description: "High-intelligence, extremely fast multimodal model.",
+    capabilities: { intelligence: 4, speed: 5, cost: 4 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "gemini-3.1-flash-lite",
+    provider: "google",
+    label: "Gemini 3.1 Flash-Lite",
+    hint: "Lite",
+    description: "Extremely fast, cheap, and lightweight multimodal model.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["vision", "tools"],
+  },
+  {
     id: "gemini-3.1-pro-preview",
     provider: "google",
     label: "Gemini 3.1 Pro",
@@ -463,6 +481,24 @@ export const MODELS = [
     description: "Google flagship via OpenRouter.",
     capabilities: { intelligence: 5, speed: 3, cost: 2 },
     tags: ["vision", "reasoning", "tools", "coding"],
+  },
+  {
+    id: "google/gemini-3.5-flash",
+    provider: "openrouter",
+    label: "Gemini 3.5 Flash",
+    hint: "OpenRouter",
+    description: "High-intelligence, fast multimodal model via OpenRouter.",
+    capabilities: { intelligence: 4, speed: 5, cost: 4 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "google/gemini-3.1-flash-lite",
+    provider: "openrouter",
+    label: "Gemini 3.1 Flash-Lite",
+    hint: "OpenRouter",
+    description: "Extremely fast, lightweight model via OpenRouter.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["vision", "tools"],
   },
   {
     id: "x-ai/grok-4.20-reasoning",
