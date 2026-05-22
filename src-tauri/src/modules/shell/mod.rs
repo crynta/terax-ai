@@ -4,7 +4,7 @@ pub mod session;
 
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, RwLock};
@@ -43,6 +43,7 @@ pub async fn shell_run_command(
     command: String,
     cwd: Option<String>,
     timeout_secs: Option<u64>,
+    shell_override: Option<String>,
     workspace: Option<WorkspaceEnv>,
     registry: tauri::State<'_, WorkspaceRegistry>,
 ) -> Result<CommandOutput, String> {
@@ -69,7 +70,13 @@ pub async fn shell_run_command(
     // runtime stays unblocked.
     let (tx, rx) = mpsc::channel::<Result<CommandOutput, String>>();
     thread::spawn(move || {
-        let _ = tx.send(run_blocking(trimmed, cwd_path, workspace, dur));
+        let _ = tx.send(run_blocking(
+            trimmed,
+            cwd_path,
+            workspace,
+            shell_override.as_deref(),
+            dur,
+        ));
     });
 
     rx.recv().map_err(|e| e.to_string())?
@@ -79,18 +86,25 @@ pub(crate) fn run_blocking_inner(
     command: String,
     cwd: Option<String>,
     workspace: WorkspaceEnv,
+    shell_override: Option<&str>,
     dur: Duration,
 ) -> Result<CommandOutput, String> {
-    run_blocking(command, cwd, workspace, dur)
+    run_blocking(command, cwd, workspace, shell_override, dur)
 }
 
 fn run_blocking(
     command: String,
     cwd: Option<String>,
     workspace: WorkspaceEnv,
+    shell_override: Option<&str>,
     dur: Duration,
 ) -> Result<CommandOutput, String> {
-    let mut cmd = build_oneshot_command(&command, &workspace, cwd.as_deref())?;
+    let mut cmd = build_oneshot_command(
+        &command,
+        &workspace,
+        cwd.as_deref(),
+        shell_override,
+    )?;
     if let (WorkspaceEnv::Local, Some(dir)) = (&workspace, cwd) {
         cmd.current_dir(dir);
     }
@@ -173,6 +187,7 @@ pub fn shell_session_open(
     state: tauri::State<ShellState>,
     registry: tauri::State<WorkspaceRegistry>,
     cwd: Option<String>,
+    shell_override: Option<String>,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
@@ -187,7 +202,11 @@ pub fn shell_session_open(
             }
         }
     };
-    let session = Arc::new(ShellSession::new(initial, workspace));
+    let session = Arc::new(ShellSession::new_with_shell(
+        initial,
+        workspace,
+        shell_override,
+    ));
     let id = state.next_session_id.fetch_add(1, Ordering::Relaxed);
     state.sessions.write().unwrap().insert(id, session);
     Ok(id)
@@ -236,11 +255,12 @@ pub fn shell_bg_spawn(
     registry: tauri::State<WorkspaceRegistry>,
     command: String,
     cwd: Option<String>,
+    shell_override: Option<String>,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     authorize_spawn_cwd(&registry, cwd.as_deref(), &workspace)?;
-    let proc = background::spawn(command, cwd, workspace)?;
+    let proc = background::spawn(command, cwd, shell_override, workspace)?;
     let id = state.next_bg_id.fetch_add(1, Ordering::Relaxed);
     state.bg.write().unwrap().insert(id, proc);
     Ok(id)
@@ -285,29 +305,55 @@ pub(crate) fn build_oneshot_command(
     command: &str,
     #[cfg_attr(not(windows), allow(unused_variables))] workspace: &WorkspaceEnv,
     #[cfg_attr(not(windows), allow(unused_variables))] cwd: Option<&str>,
+    shell_override: Option<&str>,
 ) -> Result<Command, String> {
     #[cfg(windows)]
     if let WorkspaceEnv::Wsl { distro } = workspace {
         validate_wsl_distro_name(distro)?;
+        let shell = shell_override
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("sh");
         let mut cmd = Command::new("wsl.exe");
         cmd.arg("-d").arg(distro);
         if let Some(cwd) = cwd.filter(|s| !s.is_empty()) {
             cmd.arg("--cd").arg(cwd);
         }
-        cmd.arg("--exec").arg("sh").arg("-lc").arg(command);
+        cmd.arg("--exec").arg(shell).arg("-lc").arg(command);
         return Ok(cmd);
     }
     #[cfg(unix)]
     {
-        let mut cmd = Command::new("/bin/sh");
-        cmd.arg("-c").arg(command);
+        let shell = shell_override
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("/bin/sh");
+        let mut cmd = Command::new(shell);
+        let shell_name = Path::new(shell)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .unwrap_or_default();
+        if shell_name == "cmd" || shell_name == "cmd.exe" {
+            cmd.arg("/C").arg(command);
+        } else {
+            cmd.arg("-lc").arg(command);
+        }
         Ok(cmd)
     }
     #[cfg(windows)]
     {
-        let shell = crate::modules::pty::shell_init::windows_shell_path();
+        let shell = shell_override
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| {
+                crate::modules::pty::shell_init::windows_shell_path()
+                    .to_string_lossy()
+                    .into_owned()
+            });
         let mut cmd = Command::new(&shell);
-        let is_cmd = shell
+        let is_cmd = std::path::Path::new(&shell)
             .file_name()
             .and_then(|s| s.to_str())
             .map(|s| s.eq_ignore_ascii_case("cmd.exe"))

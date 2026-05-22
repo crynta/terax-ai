@@ -18,6 +18,7 @@ export async function openPty(
   rows: number,
   handlers: PtyHandlers,
   cwd?: string,
+  shellOverride?: string | null,
 ): Promise<PtySession> {
   // Raw bytes — no base64/JSON round-trip; messages arrive as ArrayBuffer.
   const onData = new Channel<ArrayBuffer>();
@@ -42,6 +43,7 @@ export async function openPty(
     cols,
     rows,
     cwd: cwd ?? null,
+    shellOverride: shellOverride?.trim() || null,
     workspace: currentWorkspaceEnv(),
     onData,
     onExit,
