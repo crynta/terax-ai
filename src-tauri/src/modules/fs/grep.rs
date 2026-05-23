@@ -9,7 +9,7 @@ use ignore::{WalkBuilder, WalkState};
 use serde::Serialize;
 
 use super::to_canon;
-use crate::modules::workspace::{resolve_path, WorkspaceEnv};
+use crate::modules::workspace::{resolve_path, WorkspaceEnv, WorkspaceRegistry};
 
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 200;
@@ -51,12 +51,33 @@ pub fn fs_grep(
     case_insensitive: Option<bool>,
     max_results: Option<usize>,
     workspace: Option<WorkspaceEnv>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
+) -> Result<GrepResponse, String> {
+    fs_grep_impl(
+        &pattern,
+        &root,
+        glob,
+        case_insensitive,
+        max_results,
+        workspace,
+        &registry,
+    )
+}
+
+pub fn fs_grep_impl(
+    pattern: &str,
+    root: &str,
+    glob: Option<Vec<String>>,
+    case_insensitive: Option<bool>,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+    registry: &WorkspaceRegistry,
 ) -> Result<GrepResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root_path = resolve_path(&root, &workspace);
+    let root_path = super::authorize_existing_path(registry, &resolve_path(root, &workspace))?;
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
@@ -67,7 +88,7 @@ pub fn fs_grep(
     let matcher = RegexMatcherBuilder::new()
         .case_insensitive(case_insensitive.unwrap_or(false))
         .line_terminator(Some(b'\n'))
-        .build(&pattern)
+        .build(pattern)
         .map_err(|e| format!("bad regex: {e}"))?;
 
     let globs = build_globset(glob.as_deref().unwrap_or(&[]))?;
@@ -93,7 +114,7 @@ pub fn fs_grep(
         let scanned = scanned.clone();
         let truncated = truncated.clone();
         let root_path = root_path.clone();
-        let root_display = root.clone();
+        let root_display = root.to_string();
         let workspace = workspace.clone();
 
         Box::new(move |dent_res| {
@@ -185,18 +206,29 @@ pub fn fs_glob(
     root: String,
     max_results: Option<usize>,
     workspace: Option<WorkspaceEnv>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
+) -> Result<GlobResponse, String> {
+    fs_glob_impl(&pattern, &root, max_results, workspace, &registry)
+}
+
+pub fn fs_glob_impl(
+    pattern: &str,
+    root: &str,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+    registry: &WorkspaceRegistry,
 ) -> Result<GlobResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root_path = resolve_path(&root, &workspace);
+    let root_path = super::authorize_existing_path(registry, &resolve_path(root, &workspace))?;
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
     let cap = max_results.unwrap_or(500).clamp(1, HARD_MAX_RESULTS);
 
-    let glob = Glob::new(&pattern).map_err(|e| format!("bad glob: {e}"))?;
+    let glob = Glob::new(pattern).map_err(|e| format!("bad glob: {e}"))?;
     let mut gb = GlobSetBuilder::new();
     gb.add(glob);
     let set = gb.build().map_err(|e| format!("globset build: {e}"))?;
@@ -230,12 +262,77 @@ pub fn fs_glob(
             continue;
         }
         hits.push(GlobHit {
-            path: display_path(path, &root_path, &root, &workspace),
+            path: display_path(path, &root_path, root, &workspace),
             rel,
         });
     }
 
     Ok(GlobResponse { hits, truncated })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn registry_for(path: &std::path::Path) -> WorkspaceRegistry {
+        let registry = WorkspaceRegistry::default();
+        registry.authorize(path).expect("authorize workspace");
+        registry
+    }
+
+    fn s(path: &std::path::Path) -> String {
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn grep_and_glob_reject_unauthorized_root() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let registry = registry_for(allowed.path());
+        std::fs::write(outside.path().join("secret.txt"), b"secret").unwrap();
+
+        let err = match fs_grep_impl(
+            "secret",
+            &s(outside.path()),
+            None,
+            None,
+            None,
+            None,
+            &registry,
+        ) {
+            Ok(_) => panic!("expected unauthorized grep to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("outside authorized workspace"), "got: {err}");
+
+        let err = match fs_glob_impl("*.txt", &s(outside.path()), None, None, &registry) {
+            Ok(_) => panic!("expected unauthorized glob to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("outside authorized workspace"), "got: {err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn grep_rejects_symlinked_root_escape() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let registry = registry_for(allowed.path());
+        let link = allowed.path().join("outside-link");
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+
+        let err = match fs_grep_impl("x", &s(&link), None, None, None, None, &registry) {
+            Ok(_) => panic!("expected symlinked root to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("outside authorized workspace"), "got: {err}");
+
+        let err = match fs_glob_impl("*.txt", &s(&link), None, None, &registry) {
+            Ok(_) => panic!("expected symlinked root to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("outside authorized workspace"), "got: {err}");
+    }
 }
 
 fn display_path(

@@ -2,7 +2,7 @@ use ignore::WalkBuilder;
 use serde::Serialize;
 
 use super::to_canon;
-use crate::modules::workspace::{resolve_path, WorkspaceEnv};
+use crate::modules::workspace::{resolve_path, WorkspaceEnv, WorkspaceRegistry};
 
 #[derive(Serialize)]
 pub struct SearchHit {
@@ -49,6 +49,18 @@ pub fn fs_search(
     limit: Option<usize>,
     workspace: Option<WorkspaceEnv>,
     show_hidden: Option<bool>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
+) -> Result<SearchResult, String> {
+    fs_search_impl(&root, &query, limit, workspace, show_hidden, &registry)
+}
+
+pub fn fs_search_impl(
+    root: &str,
+    query: &str,
+    limit: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+    show_hidden: Option<bool>,
+    registry: &WorkspaceRegistry,
 ) -> Result<SearchResult, String> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
@@ -60,7 +72,7 @@ pub fn fs_search(
     let cap = limit.unwrap_or(200).min(1000);
     let show_hidden = show_hidden.unwrap_or(false);
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root_path = resolve_path(&root, &workspace);
+    let root_path = super::authorize_existing_path(registry, &resolve_path(root, &workspace))?;
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
@@ -117,7 +129,7 @@ pub fn fs_search(
             .unwrap_or_default();
         let is_dir = dent.file_type().map(|t| t.is_dir()).unwrap_or(false);
         out.push(SearchHit {
-            path: display_path(path, &root_path, &root, &workspace),
+            path: display_path(path, &root_path, root, &workspace),
             rel,
             name,
             is_dir,
@@ -150,6 +162,18 @@ pub fn fs_list_files(
     max_depth: Option<usize>,
     workspace: Option<WorkspaceEnv>,
     show_hidden: Option<bool>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
+) -> Result<ListFilesResult, String> {
+    fs_list_files_impl(&root, limit, max_depth, workspace, show_hidden, &registry)
+}
+
+pub fn fs_list_files_impl(
+    root: &str,
+    limit: Option<usize>,
+    max_depth: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+    show_hidden: Option<bool>,
+    registry: &WorkspaceRegistry,
 ) -> Result<ListFilesResult, String> {
     const DEFAULT_LIMIT: usize = 2_000;
     const HARD_LIMIT: usize = 10_000;
@@ -160,7 +184,7 @@ pub fn fs_list_files(
     let depth = max_depth.unwrap_or(DEFAULT_DEPTH).clamp(1, HARD_DEPTH);
     let show_hidden = show_hidden.unwrap_or(false);
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root_path = resolve_path(&root, &workspace);
+    let root_path = super::authorize_existing_path(registry, &resolve_path(root, &workspace))?;
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
@@ -216,6 +240,51 @@ pub fn fs_list_files(
 
     files.sort_by_key(|a| a.to_lowercase());
     Ok(ListFilesResult { files, truncated })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn registry_for(path: &std::path::Path) -> WorkspaceRegistry {
+        let registry = WorkspaceRegistry::default();
+        registry.authorize(path).expect("authorize workspace");
+        registry
+    }
+
+    fn s(path: &std::path::Path) -> String {
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn search_rejects_unauthorized_root() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let registry = registry_for(allowed.path());
+        std::fs::write(outside.path().join("secret.txt"), b"secret").unwrap();
+
+        let err = match fs_search_impl(&s(outside.path()), "secret", None, None, None, &registry) {
+            Ok(_) => panic!("expected unauthorized search to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("outside authorized workspace"), "got: {err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn list_files_rejects_symlinked_root_escape() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let registry = registry_for(allowed.path());
+        let link = allowed.path().join("outside-link");
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+
+        let err = match fs_list_files_impl(&s(&link), None, None, None, None, &registry) {
+            Ok(_) => panic!("expected symlinked root to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("outside authorized workspace"), "got: {err}");
+    }
 }
 
 fn display_path(

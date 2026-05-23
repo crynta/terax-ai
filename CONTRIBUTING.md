@@ -91,9 +91,9 @@ The most common way a PR breaks Terax is a **local fix with global blast radius*
 So if your change touches behavior in any of these load-bearing paths, the PR must add or extend a test that locks the invariant you're relying on:
 
 - **Shell/terminal spawn**: what shell launches, with which cwd, env, and login flags. A "fix" here can stop terminals from starting entirely.
-- **Workspace authorization**: which directories spawns, git, and AI tools may operate in. Both the allow and the deny side.
+- **Workspace authorization**: which directories native fs IPC, spawns, git, and AI tools may operate in. Both the allow and the deny side. The home directory is not automatically authorized unless it is the deliberate active workspace root.
 - **Git command layer**: repo-root resolution, pathspec/argument guards, status parsing.
-- **Filesystem mutation**: atomic writes, symlink handling, no-data-loss on partial failure.
+- **Filesystem mutation**: atomic writes, symlink handling, no-data-loss on partial failure, and rejection of create/write/rename/delete targets outside authorized workspace roots.
 - **IPC command surface and AI tool surface**: anything the webview or the agent can invoke.
 - **Pure logic with wide reach**: cwd inheritance, tab/split tree transforms, OSC/prompt parsing, the command guard.
 

@@ -111,9 +111,6 @@ pub fn authorize_user_spawn_cwd(
 
 pub fn bootstrap_registry(registry: &WorkspaceRegistry) {
     let _ = registry.authorize(resolve_launch_dir());
-    if let Some(home) = dirs::home_dir() {
-        let _ = registry.authorize(home);
-    }
 }
 
 #[tauri::command]

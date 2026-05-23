@@ -299,14 +299,9 @@ export default function App() {
   );
   useEffect(() => {
     homeDir()
-      .then(async (p) => {
+      .then((p) => {
         const normalized = p.replace(/\\/g, "/");
         setHome(normalized);
-        try {
-          await native.workspaceAuthorize(normalized);
-        } catch {
-          // Bootstrap already authorizes home from Rust; ignore.
-        }
       })
       .catch(() => setHome(null));
   }, []);

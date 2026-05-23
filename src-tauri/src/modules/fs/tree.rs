@@ -2,7 +2,7 @@ use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
 
-use crate::modules::workspace::{resolve_path, WorkspaceEnv};
+use crate::modules::workspace::{resolve_path, WorkspaceEnv, WorkspaceRegistry};
 
 #[derive(Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -29,9 +29,19 @@ pub fn fs_read_dir(
     path: String,
     show_hidden: bool,
     workspace: Option<WorkspaceEnv>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
+) -> Result<Vec<DirEntry>, String> {
+    fs_read_dir_impl(&path, show_hidden, workspace, &registry)
+}
+
+pub fn fs_read_dir_impl(
+    path: &str,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+    registry: &WorkspaceRegistry,
 ) -> Result<Vec<DirEntry>, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root = resolve_path(&path, &workspace);
+    let root = super::authorize_existing_path(registry, &resolve_path(path, &workspace))?;
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
         e.to_string()
@@ -104,9 +114,19 @@ pub fn list_subdirs(
     path: String,
     show_hidden: bool,
     workspace: Option<WorkspaceEnv>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
+) -> Result<Vec<String>, String> {
+    list_subdirs_impl(&path, show_hidden, workspace, &registry)
+}
+
+pub fn list_subdirs_impl(
+    path: &str,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+    registry: &WorkspaceRegistry,
 ) -> Result<Vec<String>, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
-    let root = resolve_path(&path, &workspace);
+    let root = super::authorize_existing_path(registry, &resolve_path(path, &workspace))?;
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("list_subdirs({}) read_dir failed: {e}", root.display());
         e.to_string()
@@ -127,4 +147,54 @@ pub fn list_subdirs(
 
     dirs.sort_by_key(|a| a.to_lowercase());
     Ok(dirs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn registry_for(path: &std::path::Path) -> WorkspaceRegistry {
+        let registry = WorkspaceRegistry::default();
+        registry.authorize(path).expect("authorize workspace");
+        registry
+    }
+
+    fn s(path: &std::path::Path) -> String {
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn read_dir_rejects_unauthorized_root() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let registry = registry_for(allowed.path());
+
+        let err = match fs_read_dir_impl(&s(outside.path()), true, None, &registry) {
+            Ok(_) => panic!("expected unauthorized read_dir to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("outside authorized workspace"), "got: {err}");
+
+        let err = match list_subdirs_impl(&s(outside.path()), true, None, &registry) {
+            Ok(_) => panic!("expected unauthorized list_subdirs to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("outside authorized workspace"), "got: {err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn read_dir_rejects_symlinked_root_escape() {
+        let allowed = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let registry = registry_for(allowed.path());
+        let link = allowed.path().join("outside-link");
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+
+        let err = match fs_read_dir_impl(&s(&link), true, None, &registry) {
+            Ok(_) => panic!("expected symlinked root to fail"),
+            Err(err) => err,
+        };
+        assert!(err.contains("outside authorized workspace"), "got: {err}");
+    }
 }

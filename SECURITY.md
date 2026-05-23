@@ -37,6 +37,9 @@ Until `1.0.0`, only the latest minor gets security fixes. Right now that's `0.5.
 - **No telemetry.** Terax only talks to the network when you ask it to (AI requests, update checks, web preview).
 - **AI tool approval.** File writes and shell commands from the agent need your OK before they run.
 - **No Node in the renderer.** The frontend only reaches the host through the allow-listed Tauri commands.
+- **Workspace-scoped native filesystem access.** Rust filesystem IPC rejects reads, writes, search, rename, and delete operations outside explicitly authorized workspace roots. `$HOME` is not implicitly authorized unless it is the selected workspace.
+- **Symlink escape protection.** Reads, writes, stats, canonicalization, and recursive search operations resolve paths before authorization. Deleting or renaming a symlink inside an authorized workspace affects the link entry itself, not the outside target.
+- **AI sensitive-path guard.** The agent also refuses obvious secret paths such as `.env*`, `.ssh/`, credentials, and keychain directories before native IPC runs. This is defense-in-depth for AI tools, while normal editor and explorer access is governed by workspace authorization.
 - **Signed releases.** Updates are verified before they're applied.
 
 ## What we can't promise
