@@ -104,20 +104,20 @@ Latest installers are on the [Releases](https://github.com/crynta/terax-ai/relea
 2. Pick a provider and paste your API key. For local inference, point Terax at your LM Studio / MLX / Ollama endpoint.
 3. Keys are written to the OS keychain via `keyring`. They never touch disk or localStorage.
 
-## Shell command overrides
+## Shell executable overrides
 
-You can now configure shell commands used by both the built-in terminal and AI tool execution:
+You can now configure shell executables used by both the built-in terminal and AI tool execution:
 
-- **Settings -> General → Terminal shell command**
+- **Settings -> General -> Terminal shell executable**
   - Controls which shell binary opens interactive terminal tabs.
   - Leave empty to auto-detect based on your platform and default behavior.
-  - Supports presets like `bash`, `zsh`, `fish`, `cmd`, `powershell`, `pwsh`, or any absolute shell command.
+  - Supports presets like `bash`, `zsh`, `fish`, `cmd`, `powershell`, `pwsh`, or any absolute shell executable.
 
-- **Settings -> General → Agent shell command**
-  - Controls the shell used by AI tools that execute commands (`run_command`, `shell_session_run`, `shell_bg_spawn`).
+- **Settings -> General -> Agent shell executable**
+  - Controls the shell executable used by AI command tools (`bash_run`, `bash_background`).
   - Leave empty to keep platform defaults.
 
-Both fields are trimmed before use and applied to the backend shell launcher. If a custom command is invalid or unavailable, shell startup/execution will fail and the normal UI error path is used.
+Both fields are trimmed before use and applied to the backend shell launcher. If a custom executable is invalid or unavailable, shell startup/execution will fail and the normal UI error path is used.
 
 ## Build from source
 
