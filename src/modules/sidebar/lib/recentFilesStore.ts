@@ -1,4 +1,3 @@
-// src/modules/sidebar/recentFilesStore.ts
 import { create } from "zustand";
 
 const STORAGE_KEY = "terax.recent-files";
@@ -19,7 +18,7 @@ function writeToStorage(paths: string[]): void {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(paths));
   } catch {
-    // ignore
+    // localStorage can throw in private mode or when quota is exhausted.
   }
 }
 

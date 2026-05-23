@@ -1,4 +1,3 @@
-// src/settings/sections/PanelSection.tsx
 import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
@@ -15,19 +14,14 @@ import {
   setSidebarPanelSourceControl,
   setSidebarPanelTabs,
 } from "@/modules/settings/store";
+import type { SidebarPanelPrefKey } from "@/modules/sidebar";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 
 type PanelDef = {
   title: string;
   description: string;
-  prefKey:
-    | "sidebarPanelExplorer"
-    | "sidebarPanelSourceControl"
-    | "sidebarPanelTabs"
-    | "sidebarPanelSearch"
-    | "sidebarPanelOutline"
-    | "sidebarPanelRecent";
+  prefKey: SidebarPanelPrefKey;
   setter: (v: boolean) => Promise<void>;
 };
 

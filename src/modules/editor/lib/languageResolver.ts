@@ -119,7 +119,7 @@ const filenameOverrides: Record<string, LanguageLoader> = {
   brewfile: rubyLoader,
 };
 
-function extOf(name: string): string | null {
+export function extOf(name: string): string | null {
   const lower = name.toLowerCase();
   const dot = lower.lastIndexOf(".");
   if (dot === -1 || dot === lower.length - 1) return null;

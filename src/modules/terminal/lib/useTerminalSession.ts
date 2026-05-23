@@ -29,6 +29,7 @@ type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
+  onPreviewLine?: (text: string) => void;
 };
 
 type Session = {
@@ -54,6 +55,12 @@ type Session = {
   // at the most recent release. Read once on the next bind to trigger a
   // SIGWINCH-driven repaint instead of replaying dormant bytes.
   altScreenAtRelease: boolean;
+  /** Sliding window of recent decoded output — last ~500 printable chars. */
+  previewRing: string;
+  previewTimer: ReturnType<typeof setTimeout> | null;
+  /** True once OSC 133 D (command end) has fired at least once. Guards against
+   *  showing the shell's initial prompt as if it were command output. */
+  hasCommandOutput: boolean;
 };
 
 const sessions = new Map<number, Session>();
@@ -119,6 +126,9 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     dormantRing: new DormantRing(),
     hasSlot: false,
     altScreenAtRelease: false,
+    previewRing: "",
+    previewTimer: null,
+    hasCommandOutput: false,
   };
   sessions.set(leafId, session);
 
@@ -130,12 +140,63 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   return session;
 }
 
+const previewDecoder = new TextDecoder("utf-8", { fatal: false });
+const PREVIEW_RING_SIZE = 500;
+const PREVIEW_DEBOUNCE_MS = 250;
+
+const PREVIEW_LINES = 5;
+
+function readPreviewFromBuffer(leafId: number): string | null {
+  const s = sessions.get(leafId);
+  if (!s || !s.hasCommandOutput) return null;
+
+  const slot = getSlotForLeaf(leafId);
+  if (slot) {
+    const buf = slot.term.buffer.active;
+    const cursorAbs = buf.baseY + buf.cursorY;
+    const collected: string[] = [];
+    // Cap the scan window so blank separator lines don't pull us far back
+    // into earlier command output.
+    const scanLimit = Math.max(0, cursorAbs - PREVIEW_LINES * 2);
+    for (let i = cursorAbs - 1; i >= scanLimit; i--) {
+      const line = buf.getLine(i)?.translateToString(true).trim() ?? "";
+      if (line) {
+        collected.push(line);
+        if (collected.length >= PREVIEW_LINES) break;
+      }
+    }
+    if (collected.length > 0) return collected.reverse().join("\n");
+  }
+
+  // Dormant session or empty xterm scan: use the last N lines from the ring.
+  const lines = s.previewRing.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length > 0) return lines.slice(-PREVIEW_LINES).join("\n");
+  return null;
+}
+
 function deliverPtyBytes(leafId: number, bytes: Uint8Array): void {
   const s = sessions.get(leafId);
   if (!s) return;
   const slot = getSlotForLeaf(leafId);
   if (slot) slot.term.write(bytes);
   else s.dormantRing.push(bytes);
+
+  if (!s.callbacks.onPreviewLine) return;
+
+  const clean = stripAnsi(previewDecoder.decode(bytes))
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+  if (clean) {
+    s.previewRing = (s.previewRing + clean).slice(-PREVIEW_RING_SIZE);
+  }
+
+  if (s.previewTimer !== null) clearTimeout(s.previewTimer);
+  s.previewTimer = setTimeout(() => {
+    s.previewTimer = null;
+    const preview = readPreviewFromBuffer(leafId);
+    if (preview) s.callbacks.onPreviewLine?.(preview);
+  }, PREVIEW_DEBOUNCE_MS);
 }
 
 async function openPtyForSession(
@@ -183,7 +244,9 @@ function bindLeafToSlot(leafId: number, s: Session): void {
       // 7 emitted by untrusted command output (remote SSH, `cat` of an
       // attacker file, etc.).
       const shellState = createShellIntegrationState();
-      const prompt = registerPromptTracker(term, shellState);
+      const prompt = registerPromptTracker(term, shellState, () => {
+        s.hasCommandOutput = true;
+      });
       const cwd = registerCwdHandler(
         term,
         (next) => {
@@ -317,6 +380,7 @@ type Options = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
+  onPreviewLine?: (text: string) => void;
 };
 
 export function useTerminalSession({
@@ -328,9 +392,10 @@ export function useTerminalSession({
   onSearchReady,
   onExit,
   onCwd,
+  onPreviewLine,
 }: Options) {
-  const cbRef = useRef({ onSearchReady, onExit, onCwd });
-  cbRef.current = { onSearchReady, onExit, onCwd };
+  const cbRef = useRef({ onSearchReady, onExit, onCwd, onPreviewLine });
+  cbRef.current = { onSearchReady, onExit, onCwd, onPreviewLine };
 
   useEffect(() => {
     let cancelled = false;
@@ -343,6 +408,7 @@ export function useTerminalSession({
         onSearchReady: (a) => cbRef.current.onSearchReady?.(a),
         onExit: (c) => cbRef.current.onExit?.(c),
         onCwd: (c) => cbRef.current.onCwd?.(c),
+        onPreviewLine: (t) => cbRef.current.onPreviewLine?.(t),
       });
       if (s.visibleNow && s.focusedNow) focusSlot(leafId);
     });

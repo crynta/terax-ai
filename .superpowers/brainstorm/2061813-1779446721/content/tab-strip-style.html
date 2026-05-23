@@ -1,0 +1,61 @@
+<h2>How should the panel tab strip look?</h2>
+<p class="subtitle">Three layouts for switching between sidebar panels. The icons represent Files, Source Control, Tabs, Search, Outline, and Recent.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="icon-strip-top" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#1a1a2e;padding:0;border-radius:6px;overflow:hidden;font-family:monospace;">
+      <!-- Mockup A: compact icon row at very top -->
+      <div style="background:#16162a;border-bottom:1px solid #2a2a4a;padding:5px 8px;display:flex;gap:4px;align-items:center;">
+        <div style="width:26px;height:26px;border-radius:5px;background:#3b3bff22;border:1px solid #3b3bff66;display:flex;align-items:center;justify-content:center;font-size:13px;" title="Files">📁</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;" title="Source Control">⎇</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;" title="Tabs">🗂</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;" title="Search">🔍</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;" title="Outline">☰</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;" title="Recent">🕓</div>
+      </div>
+      <!-- content area -->
+      <div style="padding:8px;display:flex;flex-direction:column;gap:4px;">
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:90%;"></div>
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:75%;"></div>
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:85%;"></div>
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:60%;"></div>
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:80%;"></div>
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:70%;"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Compact icon row at top</h3>
+      <p>Icon-only buttons in a slim bar at the top of the sidebar. Tooltips on hover reveal the label. Active icon is highlighted. This is what you described.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="activity-bar" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#1a1a2e;padding:0;border-radius:6px;overflow:hidden;font-family:monospace;display:flex;">
+      <!-- Mockup B: narrow vertical activity bar on left -->
+      <div style="width:36px;background:#16162a;border-right:1px solid #2a2a4a;display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:4px;">
+        <div style="width:26px;height:26px;border-radius:5px;background:#3b3bff22;border:1px solid #3b3bff66;display:flex;align-items:center;justify-content:center;font-size:13px;">📁</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;">⎇</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;">🗂</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;">🔍</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;">☰</div>
+        <div style="width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#888;">🕓</div>
+      </div>
+      <!-- content area -->
+      <div style="flex:1;padding:8px;display:flex;flex-direction:column;gap:4px;">
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:90%;"></div>
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:75%;"></div>
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:85%;"></div>
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:60%;"></div>
+        <div style="height:8px;background:#2a2a4a;border-radius:3px;width:80%;"></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Vertical activity bar (left edge)</h3>
+      <p>A narrow column of icons pinned to the left edge of the sidebar, panel content to the right. VS Code style. Takes ~36px of horizontal space from the sidebar.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:1rem">Option A matches your original description. Option B is an alternative if you prefer VS Code's pattern.</p>

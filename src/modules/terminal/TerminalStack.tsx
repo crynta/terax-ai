@@ -14,6 +14,7 @@ type Props = {
   onCwd: (leafId: number, cwd: string) => void;
   onExit: (leafId: number, code: number) => void;
   onFocusLeaf: (tabId: number, leafId: number) => void;
+  onPreviewLine: (leafId: number, text: string) => void;
 };
 
 type Bundle = {
@@ -21,6 +22,7 @@ type Bundle = {
   onSearch: (addon: SearchAddon) => void;
   onCwd: (cwd: string) => void;
   onExit: (code: number) => void;
+  onPreviewLine: (text: string) => void;
 };
 
 export function TerminalStack({
@@ -31,6 +33,7 @@ export function TerminalStack({
   onCwd,
   onExit,
   onFocusLeaf,
+  onPreviewLine,
 }: Props) {
   const terminals = useMemo(
     () => tabs.filter((t) => t.kind === "terminal"),
@@ -41,6 +44,7 @@ export function TerminalStack({
   const searchReadyRef = useRef(onSearchReady);
   const cwdRef = useRef(onCwd);
   const exitRef = useRef(onExit);
+  const previewRef = useRef(onPreviewLine);
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -53,6 +57,9 @@ export function TerminalStack({
   useEffect(() => {
     exitRef.current = onExit;
   }, [onExit]);
+  useEffect(() => {
+    previewRef.current = onPreviewLine;
+  }, [onPreviewLine]);
 
   const bundles = useRef(new Map<number, Bundle>());
   const getBundle = (leafId: number): Bundle => {
@@ -63,6 +70,7 @@ export function TerminalStack({
         onSearch: (addon) => searchReadyRef.current(leafId, addon),
         onCwd: (cwd) => cwdRef.current(leafId, cwd),
         onExit: (code) => exitRef.current(leafId, code),
+        onPreviewLine: (text) => previewRef.current(leafId, text),
       };
       bundles.current.set(leafId, b);
     }

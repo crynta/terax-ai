@@ -42,6 +42,7 @@ export type PromptTracker = {
 export function registerPromptTracker(
   term: Terminal,
   state?: ShellIntegrationState,
+  onCommandEnd?: () => void,
 ): PromptTracker {
   let marker: IMarker | null = null;
   const d = term.parser.registerOscHandler(133, (data) => {
@@ -58,7 +59,9 @@ export function registerPromptTracker(
       // OSC 133 C — command pre-execution marker; still inside command.
       if (state) state.inCommand = true;
     } else if (data.startsWith("D")) {
-      // OSC 133 D — command ends.
+      // OSC 133 D — command ends. Only fire onCommandEnd if a command was
+      // actually launched (B/C was seen); some shells emit D during init.
+      if (state?.inCommand) onCommandEnd?.();
       if (state) state.inCommand = false;
     }
     return true;

@@ -96,3 +96,63 @@ describe("OSC 7 cwd handler — gated by OSC 133 in-command state", () => {
     expect(onCwd).toHaveBeenCalledWith("C:/Users/me/project");
   });
 });
+
+describe("registerPromptTracker — onCommandEnd callback", () => {
+  it("fires onCommandEnd when D follows B (real command sequence)", () => {
+    const { term, handlers } = makeFakeTerm();
+    const state = createShellIntegrationState();
+    const onCommandEnd = vi.fn();
+    registerPromptTracker(term, state, onCommandEnd);
+
+    handlers.get(133)?.("A"); // prompt drawn
+    handlers.get(133)?.("B"); // user submits command
+    handlers.get(133)?.("D;0"); // command exits
+
+    expect(onCommandEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fire onCommandEnd when D appears without prior B/C (shell init sequence)", () => {
+    // Some shells (e.g. zsh with plugins) emit OSC 133 D during initialization
+    // before any command has run. Without the inCommand guard this would trigger
+    // a preview update and surface shell startup noise as command output.
+    const { term, handlers } = makeFakeTerm();
+    const state = createShellIntegrationState();
+    const onCommandEnd = vi.fn();
+    registerPromptTracker(term, state, onCommandEnd);
+
+    handlers.get(133)?.("D;0"); // spurious D during init, no preceding B/C
+
+    expect(onCommandEnd).not.toHaveBeenCalled();
+  });
+
+  it("fires onCommandEnd when D follows C (pre-execution marker)", () => {
+    const { term, handlers } = makeFakeTerm();
+    const state = createShellIntegrationState();
+    const onCommandEnd = vi.fn();
+    registerPromptTracker(term, state, onCommandEnd);
+
+    handlers.get(133)?.("A");
+    handlers.get(133)?.("B");
+    handlers.get(133)?.("C"); // pre-execution marker
+    handlers.get(133)?.("D;0");
+
+    expect(onCommandEnd).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets inCommand after D so subsequent init-D does not fire again", () => {
+    const { term, handlers } = makeFakeTerm();
+    const state = createShellIntegrationState();
+    const onCommandEnd = vi.fn();
+    registerPromptTracker(term, state, onCommandEnd);
+
+    // Real command
+    handlers.get(133)?.("A");
+    handlers.get(133)?.("B");
+    handlers.get(133)?.("D;0");
+    expect(onCommandEnd).toHaveBeenCalledTimes(1);
+
+    // Spurious D immediately after (some shells double-fire)
+    handlers.get(133)?.("D;0");
+    expect(onCommandEnd).toHaveBeenCalledTimes(1);
+  });
+});

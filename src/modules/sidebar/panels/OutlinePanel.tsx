@@ -1,6 +1,5 @@
-// src/modules/sidebar/panels/OutlinePanel.tsx
 import type { EditorPaneHandle } from "@/modules/editor";
-import type { OutlineNode } from "./outlineExtractor";
+import type { OutlineNode } from "../lib/outlineExtractor";
 import {
   CodeIcon,
   Layers01Icon,

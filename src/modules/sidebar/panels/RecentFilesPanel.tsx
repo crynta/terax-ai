@@ -1,6 +1,5 @@
-// src/modules/sidebar/panels/RecentFilesPanel.tsx
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
-import { useRecentFilesStore } from "../recentFilesStore";
+import { useRecentFilesStore } from "../lib/recentFilesStore";
 import { Delete02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 

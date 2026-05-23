@@ -1,4 +1,5 @@
 export { TabBar } from "./TabBar";
+export { TabIcon } from "./TabIcon";
 export {
   MAX_PANES_PER_TAB,
   useTabs,

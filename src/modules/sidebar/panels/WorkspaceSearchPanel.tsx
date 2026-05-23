@@ -1,4 +1,3 @@
-// src/modules/sidebar/panels/WorkspaceSearchPanel.tsx
 import { native } from "@/modules/ai/lib/native";
 import type { GrepHit } from "@/modules/ai/lib/native";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
@@ -105,10 +104,9 @@ export function WorkspaceSearchPanel({ explorerRoot, onOpenFile }: WorkspaceSear
         )}
         {results.map((group) => {
           const iconUrl = fileIconUrl(group.path);
-          const filename = group.rel.split(/[\\/]/).pop() ?? group.rel;
-          const dir = group.rel.includes("/") || group.rel.includes("\\")
-            ? group.rel.slice(0, group.rel.lastIndexOf(group.rel.includes("/") ? "/" : "\\"))
-            : "";
+          const parts = group.rel.split(/[\\/]/);
+          const filename = parts.pop() ?? group.rel;
+          const dir = parts.join("/");
           return (
             <div key={group.path} className="border-b border-border/40 last:border-0">
               <div className="flex items-center gap-1.5 px-2 py-1">

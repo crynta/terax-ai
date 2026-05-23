@@ -1,3 +1,8 @@
 export { SidebarPanelHost } from "./SidebarPanelHost";
-export { PANEL_TAB_STRIP_HEIGHT } from "./PanelTabStrip";
-export type { SidebarViewId } from "./types";
+export {
+  SIDEBAR_PANEL_META,
+  SIDEBAR_VIEW_IDS,
+  type SidebarPanelMeta,
+  type SidebarPanelPrefKey,
+  type SidebarViewId,
+} from "./types";

@@ -25,6 +25,8 @@ export type TerminalTab = {
   activeLeafId: number;
   /** AI agent cannot read buffer / context of this terminal. */
   private?: boolean;
+  /** Last non-empty output line — shown as preview in the vertical tabs panel. */
+  previewText?: string;
 };
 
 export type EditorTab = {
@@ -116,6 +118,7 @@ export type TabPatch = Partial<{
   path: string;
   dirty: boolean;
   url: string;
+  previewText: string;
 }>;
 
 function basename(path: string): string {
@@ -564,6 +567,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             ...x,
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.cwd !== undefined && { cwd: patch.cwd }),
+            ...(patch.previewText !== undefined && { previewText: patch.previewText }),
           };
         }
         if (x.kind === "preview") {
@@ -750,6 +754,19 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return closedTab;
   }, []);
 
+  const setTerminalPreview = useCallback((leafId: number, text: string) => {
+    setTabs((curr) => {
+      const tab = curr.find(
+        (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
+      );
+      if (!tab) return curr;
+      if ((tab as TerminalTab).previewText === text) return curr;
+      return curr.map((t) =>
+        t.id === tab.id ? { ...t, previewText: text } : t,
+      );
+    });
+  }, []);
+
   const resetWorkspace = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
     const leafId = nextIdRef.current++;
@@ -793,6 +810,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     updateTab,
     selectByIndex,
     setLeafCwd,
+    setTerminalPreview,
     focusPane,
     focusNextPaneInTab,
     splitActivePane,

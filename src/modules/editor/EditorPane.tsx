@@ -26,12 +26,12 @@ import {
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
 
 initVimGlobals();
-import { resolveLanguage } from "./lib/languageResolver";
+import { extOf, resolveLanguage } from "./lib/languageResolver";
 import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { getKey } from "@/modules/ai/lib/keyring";
 import { onKeysChanged } from "@/modules/settings/store";
-import { extractOutline } from "@/modules/sidebar/panels/outlineExtractor";
+import { extractOutlineFromView } from "@/modules/sidebar/lib/outlineExtractor";
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -47,7 +47,7 @@ export type EditorPaneHandle = {
   undo: () => void;
   redo: () => void;
   /** Returns the symbol outline for the current document. Empty array for unsupported languages. */
-  getOutline: () => import("@/modules/sidebar/panels/outlineExtractor").OutlineNode[];
+  getOutline: () => import("@/modules/sidebar/lib/outlineExtractor").OutlineNode[];
   /** Scrolls the editor to the given 1-based line number. */
   goToLine: (line: number) => void;
   /** Subscribe to document content changes. Returns an unsubscribe function. */
@@ -201,7 +201,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
 
     useEffect(() => {
       let cancelled = false;
-      const ext = path.split(".").pop()?.toLowerCase() ?? null;
+      const ext = extOf(path);
       languageRef.current = ext;
       const resolve = async (): Promise<Extension> => {
         if (path.toLowerCase().endsWith(".terax-theme")) {
@@ -277,9 +277,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         getOutline: () => {
           const view = cmRef.current?.view;
           if (!view) return [];
-          const doc = view.state.doc.toString();
-          const ext = pathRef.current.split(".").pop()?.toLowerCase() ?? "";
-          return extractOutline(doc, ext);
+          return extractOutlineFromView(view, extOf(pathRef.current) ?? "");
         },
         goToLine: (line: number) => {
           const view = cmRef.current?.view;

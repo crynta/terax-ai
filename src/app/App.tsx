@@ -60,8 +60,12 @@ import {
   type ShortcutHandlers,
   type ShortcutId,
 } from "@/modules/shortcuts";
-import { SidebarPanelHost, type SidebarViewId } from "@/modules/sidebar";
-import { useRecentFilesStore } from "@/modules/sidebar/recentFilesStore";
+import {
+  SIDEBAR_VIEW_IDS,
+  SidebarPanelHost,
+  type SidebarViewId,
+} from "@/modules/sidebar";
+import { useRecentFilesStore } from "@/modules/sidebar/lib/recentFilesStore";
 import { useSourceControl } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
@@ -134,19 +138,13 @@ function readSidebarWidth(): number {
 }
 
 function readSidebarView(): SidebarViewId {
-  const VALID: SidebarViewId[] = [
-    "explorer",
-    "source-control",
-    "tabs",
-    "search",
-    "outline",
-    "recent",
-  ];
   try {
     const stored = window.localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
-    if (stored && (VALID as string[]).includes(stored)) return stored as SidebarViewId;
+    if (stored && (SIDEBAR_VIEW_IDS as readonly string[]).includes(stored)) {
+      return stored as SidebarViewId;
+    }
   } catch {
-    // ignore
+    // localStorage can throw in private mode.
   }
   return "explorer";
 }
@@ -171,6 +169,7 @@ export default function App() {
     updateTab,
     selectByIndex,
     setLeafCwd,
+    setTerminalPreview,
     focusPane,
     focusNextPaneInTab,
     splitActivePane,
@@ -1198,6 +1197,7 @@ export default function App() {
           onCwd={handleTerminalCwd}
           onExit={handleLeafExit}
           onFocusLeaf={handleFocusLeaf}
+          onPreviewLine={setTerminalPreview}
         />
       </div>
       <div

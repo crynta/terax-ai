@@ -1,0 +1,35 @@
+<h2>Which panel features do you want?</h2>
+<p class="subtitle">Select all that should be available in the multi-function sidebar. "Files" and "Source Control" already exist — pick which new ones to add.</p>
+
+<div class="options" data-multiselect>
+  <div class="option" data-choice="tabs" onclick="toggleSelect(this)">
+    <div class="letter">🗂</div>
+    <div class="content">
+      <h3>Vertical Tabs</h3>
+      <p>Lists all open tabs as a scrollable sidebar column — title, type icon, and close button. Click to switch; replaces the top tab bar or supplements it.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="search" onclick="toggleSelect(this)">
+    <div class="letter">🔍</div>
+    <div class="content">
+      <h3>Workspace Search</h3>
+      <p>Find in files (grep across the whole project) — query box, file matches, line previews, click to open. Like VS Code's Search panel.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="outline" onclick="toggleSelect(this)">
+    <div class="letter">📋</div>
+    <div class="content">
+      <h3>Outline / Symbols</h3>
+      <p>Shows the symbol tree of the active editor file (functions, classes, headings for Markdown). Click a symbol to jump to it.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="history" onclick="toggleSelect(this)">
+    <div class="letter">🕓</div>
+    <div class="content">
+      <h3>Recently Opened Files</h3>
+      <p>A quick-access list of recently visited files sorted by recency. Click to reopen without navigating the tree.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:1.5rem">Select one or more. You can also just type what you want — this is a starting point.</p>
