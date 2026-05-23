@@ -146,6 +146,12 @@ function readSidebarView(): SidebarViewId {
 }
 
 export default function App() {
+  const defaultTerminalCwd = usePreferencesStore(
+    (s) => s.defaultTerminalCwd,
+  );
+  const initialCwd =
+    getLaunchDir() || defaultTerminalCwd || undefined;
+
   const {
     tabs,
     activeId,
@@ -171,7 +177,7 @@ export default function App() {
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,
-  } = useTabs(getLaunchDir() ? { cwd: getLaunchDir() } : undefined);
+  } = useTabs(initialCwd ? { cwd: initialCwd } : undefined);
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
   // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
@@ -552,6 +558,7 @@ export default function App() {
     activeTab,
     tabs,
     launchCwd ?? home,
+    defaultTerminalCwd || null,
   );
 
   useEffect(() => {

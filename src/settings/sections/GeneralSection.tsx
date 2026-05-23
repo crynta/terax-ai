@@ -20,6 +20,7 @@ import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
   setAutostart,
+  setDefaultTerminalCwd,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
@@ -73,6 +74,7 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const defaultTerminalCwd = usePreferencesStore((s) => s.defaultTerminalCwd);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
 
   useEffect(() => {
@@ -289,6 +291,18 @@ export function GeneralSection() {
               ))}
             </SelectContent>
           </Select>
+        </SettingRow>
+        <SettingRow
+          title="Default directory"
+          description='Path for new terminals when no workspace is active. Leave blank to use the launch directory or home.'
+        >
+          <input
+            type="text"
+            value={defaultTerminalCwd}
+            placeholder="Inherited"
+            onChange={(e) => void setDefaultTerminalCwd(e.target.value)}
+            className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+          />
         </SettingRow>
       </div>
 
