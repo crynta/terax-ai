@@ -58,7 +58,15 @@ const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const ZOOM_STEP = 0.05;
-const SHELL_PRESETS = ["bash", "zsh", "fish", "sh", "cmd", "powershell", "pwsh"] as const;
+const SHELL_PRESETS = [
+  "bash",
+  "zsh",
+  "fish",
+  "sh",
+  "cmd",
+  "powershell",
+  "pwsh",
+] as const;
 const CUSTOM_SHELL_VALUE = "__custom__";
 
 function shellPresetFromValue(value: string): string {
@@ -90,12 +98,13 @@ function ShellCommandField({
   useEffect(() => {
     setIsCustom(selected === CUSTOM_SHELL_VALUE);
   }, [selected]);
+  const selectValue = isCustom ? CUSTOM_SHELL_VALUE : selected;
 
   return (
     <div className="flex flex-col gap-2">
       <SettingRow title={title} description={description}>
         <Select
-          value={selected}
+          value={selectValue}
           onValueChange={(v) => {
             setIsCustom(v === CUSTOM_SHELL_VALUE);
             if (v === "auto") onChange("");
@@ -128,7 +137,7 @@ function ShellCommandField({
         <input
           type="text"
           value={value}
-          placeholder="Type custom shell command"
+          placeholder="Type custom shell executable"
           onChange={(e) => onChange(e.target.value)}
           className="h-8 w-64 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
         />
@@ -373,14 +382,14 @@ export function GeneralSection() {
           </Select>
         </SettingRow>
         <ShellCommandField
-          title="Terminal shell command"
-          description="Shell command for the built-in terminal PTY session."
+          title="Terminal shell executable"
+          description="Shell executable for built-in terminal PTY sessions."
           value={terminalShellCommand}
           onChange={(value) => void setTerminalShellCommand(value)}
         />
         <ShellCommandField
-          title="Agent shell command"
-          description="Shell command used by AI tools (`run`, `background`)."
+          title="Agent shell executable"
+          description="Shell executable used by AI command tools."
           value={agentShellCommand}
           onChange={(value) => void setAgentShellCommand(value)}
         />
