@@ -320,6 +320,21 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           else onOpenFile(row.path);
           break;
         }
+        case "Delete":
+        case "Backspace": {
+          if (selectedPath) {
+            e.preventDefault();
+            tree.deletePath(selectedPath);
+          }
+          break;
+        }
+        case "F2": {
+          if (selectedPath) {
+            e.preventDefault();
+            tree.beginRename(selectedPath);
+          }
+          break;
+        }
       }
     };
 
