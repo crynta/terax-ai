@@ -3,6 +3,7 @@ import { Popover, PopoverAnchor } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import {
+  Brain02Icon,
   Cancel01Icon,
   CodeIcon,
   HashtagIcon,
@@ -12,6 +13,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
+import { getModel, getThinkingMode } from "../config";
 import { useComposer, type FileAttachment } from "../lib/composer";
 import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
@@ -293,6 +295,7 @@ export function AiInputBar() {
                   "placeholder:text-muted-foreground/60",
                 )}
               />
+              <ThinkingToggle />
               <AgentSwitcher />
             </div>
           </PopoverAnchor>
@@ -337,6 +340,42 @@ export function AiInputBar() {
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+function ThinkingToggle() {
+  const selectedModelId = useChatStore((s) => s.selectedModelId);
+  const thinkingEnabled = useChatStore((s) => s.thinkingEnabled);
+  const toggleThinking = useChatStore((s) => s.toggleThinking);
+
+  const mode = getThinkingMode(getModel(selectedModelId).id);
+  if (mode === "never") return null;
+
+  const forced = mode === "always";
+  const active = forced || thinkingEnabled;
+  const title = forced
+    ? "This model always thinks"
+    : active
+      ? "Deep thinking: on — click to turn off"
+      : "Deep thinking: off — click for deeper reasoning";
+
+  return (
+    <button
+      type="button"
+      onClick={forced ? undefined : () => toggleThinking()}
+      title={title}
+      aria-pressed={active}
+      className={cn(
+        "flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[10.5px] transition-colors",
+        active
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border/60 bg-card text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground",
+        forced ? "cursor-default" : active ? "hover:bg-primary/15" : "",
+      )}
+    >
+      <HugeiconsIcon icon={Brain02Icon} size={11} strokeWidth={1.75} />
+      <span>Think</span>
+    </button>
   );
 }
 
