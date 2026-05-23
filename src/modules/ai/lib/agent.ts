@@ -3,6 +3,7 @@ import {
   pruneMessages,
   stepCountIs,
   streamText,
+  type JSONValue,
   type LanguageModel,
   type ModelMessage,
   type UIMessage,
@@ -16,6 +17,7 @@ import {
   MLX_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_BASE_URL,
   providerNeedsKey,
+  resolveThinkingEnabled,
   selectSystemPrompt,
   type ModelId,
   type ProviderId,
@@ -311,6 +313,46 @@ function applyCacheBreakpoints(
   return out;
 }
 
+// Per-provider "deep thinking" knobs. Only the native SDKs expose a switch;
+// gateway/local providers think (or not) based on the chosen model, so we send
+// nothing for them. Returns undefined when thinking is off — letting the model
+// fall back to its own default rather than force-disabling (which some models,
+// e.g. Gemini 3 Pro, reject).
+function buildThinkingProviderOptions(
+  provider: ProviderId,
+  enabled: boolean,
+): Record<string, Record<string, JSONValue>> | undefined {
+  if (!enabled) return undefined;
+  switch (provider) {
+    case "anthropic":
+      return {
+        anthropic: { thinking: { type: "enabled", budgetTokens: 6000 } },
+      };
+    case "google":
+      return {
+        google: { thinkingConfig: { thinkingBudget: -1, includeThoughts: true } },
+      };
+    case "openai":
+      return { openai: { reasoningEffort: "high" } };
+    case "deepseek":
+      return {
+        deepseek: {
+          reasoningEffort: "high",
+          extraBody: { thinking: { type: "enabled" } },
+        },
+      };
+    case "openrouter":
+      return {
+        openrouter: {
+          reasoningEffort: "high",
+          extraBody: { thinking: { type: "enabled" } },
+        },
+      };
+    default:
+      return undefined;
+  }
+}
+
 export type AgentUsage = {
   inputTokens: number;
   outputTokens: number;
@@ -349,6 +391,9 @@ export type RunAgentOptions = {
   openaiCompatibleContextLimit?: number;
   planMode?: boolean;
   projectMemory?: string | null;
+  /** User's "deep thinking" toggle. Layered over model capability — ignored for
+   *  always-thinking and non-thinking models. */
+  thinkingEnabled?: boolean;
   uiMessages: UIMessage[];
   abortSignal?: AbortSignal;
 };
@@ -403,11 +448,19 @@ export async function runAgentStream(opts: RunAgentOptions) {
 
   const finalMessages = applyCacheBreakpoints(messages, provider);
 
+  const thinkingProviderOptions = buildThinkingProviderOptions(
+    provider,
+    resolveThinkingEnabled(getModel(modelId).id, opts.thinkingEnabled ?? false),
+  );
+
   let stepsSeen = 0;
   return streamText({
     model,
     messages: finalMessages,
     tools: buildTools(opts.toolContext),
+    ...(thinkingProviderOptions
+      ? { providerOptions: thinkingProviderOptions }
+      : {}),
     stopWhen: stepCountIs(MAX_AGENT_STEPS),
     abortSignal: opts.abortSignal,
     onStepFinish: (step) => {

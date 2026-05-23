@@ -606,6 +606,69 @@ export function getModel(id: ModelId): ModelInfo {
 
 export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
 
+/**
+ * Whether a model's chain-of-thought ("deep thinking") can be controlled.
+ * - `optional`: hybrid model whose thinking we can switch via providerOptions
+ *   (native OpenAI / Anthropic / Google). The input-bar toggle drives it.
+ * - `always`: reasoning-only model — thinking is inherent and can't be turned
+ *   off (toggle is shown locked-on, purely informational).
+ * - `never`: no thinking; no toggle shown.
+ */
+export type ThinkingMode = "always" | "optional" | "never";
+
+/** Hybrid models whose thinking we can toggle through providerOptions. Only the
+ *  three native SDKs expose this; gateway/local providers are model-bound. */
+const THINKING_OPTIONAL: ReadonlySet<string> = new Set([
+  // OpenAI GPT-5 family — reasoningEffort
+  "gpt-5.5",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+  "gpt-5.3-codex",
+  // Anthropic — extended thinking
+  "claude-opus-4-7",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5",
+  "claude-opus-4-6",
+  // Google Gemini — thinkingConfig
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-3.1-pro-preview",
+  "gemini-3-flash-preview",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  // DeepSeek V4 Pro — thinking toggle supported
+  "deepseek-v4-pro",
+  "deepseek/deepseek-v4-pro",
+]);
+
+/** Reasoning-only models — always think, regardless of the toggle. */
+const THINKING_ALWAYS: ReadonlySet<string> = new Set([
+  "grok-4.20-reasoning",
+  "grok-4-fast-reasoning",
+  "x-ai/grok-4.20-reasoning",
+  "deepseek-reasoner",
+  "deepseek/deepseek-reasoner",
+  "deepseek-r1-distill-llama-70b",
+]);
+
+export function getThinkingMode(modelId: string | undefined): ThinkingMode {
+  if (!modelId) return "never";
+  if (THINKING_ALWAYS.has(modelId)) return "always";
+  if (THINKING_OPTIONAL.has(modelId)) return "optional";
+  return "never";
+}
+
+/** Effective thinking state = model capability layered over the user toggle. */
+export function resolveThinkingEnabled(
+  modelId: string | undefined,
+  userEnabled: boolean,
+): boolean {
+  const mode = getThinkingMode(modelId);
+  if (mode === "always") return true;
+  if (mode === "never") return false;
+  return userEnabled;
+}
+
 /** Approximate context window (in tokens) per model. Used for the
  *  context-usage indicator in the AI mini-window header. Conservative
  *  estimates — actual provider limits may shift. */
