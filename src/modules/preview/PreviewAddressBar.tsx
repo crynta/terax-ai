@@ -61,12 +61,26 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
   function PreviewAddressBar({ url, onSubmit, onReload }, ref) {
     const [draft, setDraft] = useState(url);
     const inputRef = useRef<HTMLInputElement>(null);
+    const [menuOpen, setMenuOpen] = useState(false);
 
     // Keep draft in sync when the parent updates the URL externally
     // (AI tool, detected localhost chip, etc.).
     useEffect(() => {
       setDraft(url);
     }, [url]);
+
+    // Close the dropdown when clicking inside the iframe. Clicking inside the
+    // cross-origin iframe blurs the parent window, and document.activeElement
+    // will be set to the iframe element.
+    useEffect(() => {
+      const handleBlur = () => {
+        if (document.activeElement?.tagName === "IFRAME") {
+          setMenuOpen(false);
+        }
+      };
+      window.addEventListener("blur", handleBlur);
+      return () => window.removeEventListener("blur", handleBlur);
+    }, []);
 
     useImperativeHandle(
       ref,
@@ -126,7 +140,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
             strokeWidth={1.75}
           />
         </Button>
-        <DropdownMenu>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
@@ -153,6 +167,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
                 onSelect={(e) => {
                   e.preventDefault();
                   void tryPort(p.port);
+                  setMenuOpen(false);
                 }}
               >
                 <span className="flex-1">{p.label}</span>

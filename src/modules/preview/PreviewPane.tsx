@@ -95,6 +95,13 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
               ? "relative min-h-0 flex-1 bg-white"
               : "relative min-h-0 flex-1 bg-background"
           }
+          onMouseLeave={() => {
+            // Restore focus to the parent window so keyboard shortcuts work immediately
+            // once the user's cursor leaves the active iframe area.
+            if (document.activeElement?.tagName === "IFRAME") {
+              window.focus();
+            }
+          }}
         >
           {url ? (
             loaded ? (
