@@ -1,6 +1,6 @@
-use std::io::Write;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
+use std::{fs, io::Write};
 
 use serde::Serialize;
 use tauri::Emitter;
@@ -108,12 +108,15 @@ pub fn fs_write_file(
 ) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let target = resolve_path(&path, &workspace);
-
+    let original_permissions = fs::metadata(&target).ok().map(|m| m.permissions());
     write_atomic(&target, content.as_bytes()).map_err(|e| {
         log::warn!("fs_write_file({}) failed: {e}", target.display());
         e.to_string()
     })?;
 
+    if let Some(perms) = original_permissions {
+        let _ = fs::set_permissions(&target, perms);
+    }
     let _ = app.emit(
         "fs:file-written",
         FileWrittenEvent {
