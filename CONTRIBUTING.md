@@ -152,6 +152,7 @@ Within a PR, individual commit messages can be free-form (they get squashed or g
 ## Code style
 
 - Follow existing patterns. Read 2-3 adjacent files before adding new ones.
+- **Avoid duplicating code**: Do not copy-paste helpers or utilities. Reuse existing code or extract it to a shared module (such as `src/lib/utils.ts` or designated shared components).
 - TypeScript: no `any` unless you really mean it. Strict mode is on.
 - Rust: `cargo fmt` + `clippy` clean.
 - Comments: only for *why*, not *what*. Code should explain itself. No multi-paragraph docstrings.

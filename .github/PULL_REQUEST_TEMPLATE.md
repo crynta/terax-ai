@@ -20,6 +20,7 @@ Examples: feat(terminal): add split panes / fix(explorer): close button alignmen
 - [ ] Manual smoke-test of the affected feature
 - [ ] (If you touched `src-tauri/`) `cargo check` clean
 - [ ] (If UI) tested in `pnpm tauri dev`
+- [ ] No duplicate/redundant code introduced
 
 ## Screenshots / GIFs
 <!-- Required for any UI change. Before / after if applicable. -->

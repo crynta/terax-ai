@@ -48,6 +48,8 @@ Single-window React app. Path alias `@/*` → `src/*`. Tabs are tagged-union (`{
 
 `App.tsx` wires modules together — keep it a coordinator. New features go inside the appropriate `modules/<area>/`.
 
+**Avoid Duplicating Code**: Do not copy-paste helpers or utilities. Reuse existing code or export/import it from shared modules (such as `src/lib/utils.ts` or designated shared components).
+
 ### Module layout (`src/modules/`)
 
 Each module is self-contained, exports a thin barrel via `index.ts`, and owns its hooks under `lib/`.
