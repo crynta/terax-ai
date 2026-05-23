@@ -38,6 +38,85 @@ pub struct SecretsState {
     _phantom: Mutex<()>,
 }
 
+pub async fn secret_get(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| m.get(&key).cloned())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        match e.get_password() {
+            Ok(v) => Ok(Some(v)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+}
+
+pub async fn secret_set(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+    password: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| {
+            m.insert(key, password);
+        })?;
+        let snapshot = {
+            let guard = state.cache.lock().map_err(|e| e.to_string())?;
+            guard.as_ref().cloned().unwrap_or_default()
+        };
+        write_store(app, &snapshot)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        e.set_password(&password).map_err(|e| e.to_string())
+    }
+}
+
+pub async fn secret_delete(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| {
+            m.remove(&key);
+        })?;
+        let snapshot = {
+            let guard = state.cache.lock().map_err(|e| e.to_string())?;
+            guard.as_ref().cloned().unwrap_or_default()
+        };
+        write_store(app, &snapshot)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        match e.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn key(service: &str, account: &str) -> String {
     format!("{}::{}", service, account)
@@ -108,22 +187,7 @@ pub async fn secrets_get(
     service: String,
     account: String,
 ) -> Result<Option<String>, String> {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = state; // capture
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| m.get(&key).cloned())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        match e.get_password() {
-            Ok(v) => Ok(Some(v)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(err) => Err(err.to_string()),
-        }
-    }
+    secret_get(&app, &state, &service, &account).await
 }
 
 #[tauri::command]
@@ -134,24 +198,7 @@ pub async fn secrets_set(
     account: String,
     password: String,
 ) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| {
-            m.insert(key, password);
-        })?;
-        let snapshot = {
-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(&app, &snapshot)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        e.set_password(&password).map_err(|e| e.to_string())
-    }
+    secret_set(&app, &state, &service, &account, password).await
 }
 
 #[tauri::command]
@@ -161,27 +208,7 @@ pub async fn secrets_delete(
     service: String,
     account: String,
 ) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| {
-            m.remove(&key);
-        })?;
-        let snapshot = {
-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(&app, &snapshot)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        match e.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(err) => Err(err.to_string()),
-        }
-    }
+    secret_delete(&app, &state, &service, &account).await
 }
 
 /// Batch read — single IPC roundtrip for the cold-boot fan-out.

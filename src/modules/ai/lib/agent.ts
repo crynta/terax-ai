@@ -7,6 +7,7 @@ import {
   type ModelMessage,
   type UIMessage,
 } from "ai";
+import { invoke } from "@tauri-apps/api/core";
 import {
   DEFAULT_MODEL_ID,
   getModel,
@@ -22,7 +23,11 @@ import {
 } from "../config";
 import { buildTools, type ToolContext } from "../tools/tools";
 import { compactModelMessagesDetailed } from "./compact";
-import type { ProviderKeys } from "./keyring";
+import {
+  getKey,
+  getOpenAiOAuthCredentials,
+  type ProviderKeys,
+} from "./keyring";
 import { createProxyFetch } from "./proxyFetch";
 
 const localProxyFetch = createProxyFetch({ allowPrivateNetwork: true });
@@ -66,9 +71,110 @@ export type BuildModelOptions = {
   mlxBaseURL?: string;
   ollamaBaseURL?: string;
   openaiCompatibleBaseURL?: string;
+  codexPromptPrefix?: string;
 };
 
 const modelCache = new Map<string, LanguageModel>();
+
+function emptyUsage() {
+  return {
+    inputTokens: {
+      total: undefined,
+      noCache: undefined,
+      cacheRead: undefined,
+      cacheWrite: undefined,
+    },
+    outputTokens: {
+      total: undefined,
+      text: undefined,
+      reasoning: undefined,
+    },
+  };
+}
+
+function promptPartToText(part: unknown): string {
+  if (typeof part === "string") return part;
+  if (!part || typeof part !== "object") return "";
+  const p = part as Record<string, unknown>;
+  if (typeof p.text === "string") return p.text;
+  if (typeof p.output === "string") return p.output;
+  if (p.output && typeof p.output === "object") {
+    const out = p.output as Record<string, unknown>;
+    if (typeof out.value === "string") return out.value;
+  }
+  return "";
+}
+
+function promptToCodexText(prompt: unknown): string {
+  if (!Array.isArray(prompt)) return String(prompt ?? "");
+  return prompt
+    .map((message) => {
+      if (!message || typeof message !== "object") return "";
+      const m = message as Record<string, unknown>;
+      const role = String(m.role ?? "user").toUpperCase();
+      const content = Array.isArray(m.content)
+        ? m.content.map(promptPartToText).filter(Boolean).join("\n")
+        : promptPartToText(m.content);
+      return content ? `${role}:\n${content}` : "";
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function createCodexCliModel(
+  modelId: string,
+  promptPrefix: string | undefined,
+): LanguageModel {
+  const prefix = promptPrefix?.trim()
+    ? `Follow these Terax instructions for this entire response. They define the selected agent mode and override any generic default behavior when they conflict.\n\n${promptPrefix.trim()}\n\n---\n`
+    : "";
+  const model = {
+    specificationVersion: "v3" as const,
+    provider: "openai-codex-cli",
+    modelId,
+    supportedUrls: {},
+    async doGenerate(options: { prompt?: unknown }) {
+      const text = await invoke<string>("openai_codex_exec", {
+        prompt: `${prefix}${promptToCodexText(options.prompt)}`,
+        model: modelId,
+      });
+      return {
+        content: [{ type: "text" as const, text }],
+        finishReason: { unified: "stop" as const, raw: "stop" },
+        usage: emptyUsage(),
+        warnings: [],
+      };
+    },
+    async doStream(options: { prompt?: unknown }) {
+      const stream = new ReadableStream({
+        async start(controller) {
+          const id = "codex-cli-text";
+          controller.enqueue({ type: "stream-start", warnings: [] });
+          controller.enqueue({ type: "text-start", id });
+          try {
+            const text = await invoke<string>("openai_codex_exec", {
+              prompt: `${prefix}${promptToCodexText(options.prompt)}`,
+              model: modelId,
+            });
+            controller.enqueue({ type: "text-delta", id, delta: text });
+            controller.enqueue({ type: "text-end", id });
+            controller.enqueue({
+              type: "finish",
+              finishReason: { unified: "stop", raw: "stop" },
+              usage: emptyUsage(),
+            });
+            controller.close();
+          } catch (error) {
+            controller.enqueue({ type: "error", error });
+            controller.close();
+          }
+        },
+      });
+      return { stream };
+    },
+  };
+  return model as LanguageModel;
+}
 
 export async function buildLanguageModel(
   provider: ProviderId,
@@ -76,23 +182,33 @@ export async function buildLanguageModel(
   resolvedModelId: string,
   options: BuildModelOptions = {},
 ): Promise<LanguageModel> {
-  if (providerNeedsKey(provider) && !keys[provider]) {
+  const openAiOAuth =
+    provider === "openai" ? await getOpenAiOAuthCredentials() : null;
+  const refreshedOpenAiKey =
+    provider === "openai" ? (openAiOAuth?.access_token ?? await getKey("openai")) : null;
+  const key = refreshedOpenAiKey ?? keys[provider] ?? "";
+  if (providerNeedsKey(provider) && !key) {
     throw new Error(
       `No API key configured for ${provider}. Open Settings → AI to add one.`,
     );
   }
-  const key = keys[provider] ?? "";
   const lmstudioURL = options.lmstudioBaseURL ?? LMSTUDIO_DEFAULT_BASE_URL;
   const mlxURL = options.mlxBaseURL ?? MLX_DEFAULT_BASE_URL;
   const ollamaURL = options.ollamaBaseURL ?? OLLAMA_DEFAULT_BASE_URL;
   const compatURL = options.openaiCompatibleBaseURL ?? "";
-  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${mlxURL} ${ollamaURL} ${compatURL}`;
+  const codexPromptPrefix =
+    provider === "openai" && openAiOAuth ? (options.codexPromptPrefix ?? "") : "";
+  const cacheKey = `${provider} ${key} ${resolvedModelId} ${lmstudioURL} ${mlxURL} ${ollamaURL} ${compatURL} ${codexPromptPrefix}`;
   const hit = modelCache.get(cacheKey);
   if (hit) return hit;
 
   let built: LanguageModel;
   switch (provider) {
     case "openai": {
+      if (openAiOAuth) {
+        built = createCodexCliModel(resolvedModelId, options.codexPromptPrefix);
+        break;
+      }
       const { createOpenAI } = await import("@ai-sdk/openai");
       built = createOpenAI({ apiKey: key })(resolvedModelId);
       break;
@@ -220,6 +336,7 @@ export type LocalProviderConfig = {
   ollamaModelId?: string;
   openaiCompatibleBaseURL?: string;
   openaiCompatibleModelId?: string;
+  codexPromptPrefix?: string;
 };
 
 export function buildConfiguredLanguageModel(
@@ -263,6 +380,7 @@ export function buildConfiguredLanguageModel(
     mlxBaseURL: local.mlxBaseURL,
     ollamaBaseURL: local.ollamaBaseURL,
     openaiCompatibleBaseURL: local.openaiCompatibleBaseURL,
+    codexPromptPrefix: local.codexPromptPrefix,
   });
 }
 
@@ -355,6 +473,13 @@ export type RunAgentOptions = {
 
 export async function runAgentStream(opts: RunAgentOptions) {
   const modelId = opts.modelId ?? DEFAULT_MODEL_ID;
+  const provider = getModel(modelId).provider;
+  const stableSystem = buildStableSystem(
+    modelId,
+    opts.agentPersona ?? null,
+    opts.customInstructions,
+    opts.projectMemory ?? null,
+  );
   const model = await buildConfiguredLanguageModel(modelId, opts.keys, {
     lmstudioBaseURL: opts.lmstudioBaseURL,
     lmstudioModelId: opts.lmstudioModelId,
@@ -364,15 +489,8 @@ export async function runAgentStream(opts: RunAgentOptions) {
     ollamaModelId: opts.ollamaModelId,
     openaiCompatibleBaseURL: opts.openaiCompatibleBaseURL,
     openaiCompatibleModelId: opts.openaiCompatibleModelId,
+    codexPromptPrefix: stableSystem,
   });
-  const provider = getModel(modelId).provider;
-
-  const stableSystem = buildStableSystem(
-    modelId,
-    opts.agentPersona ?? null,
-    opts.customInstructions,
-    opts.projectMemory ?? null,
-  );
 
   const history = await convertToModelMessages(opts.uiMessages);
   const prunedHistory = pruneMessages({

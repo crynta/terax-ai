@@ -23,6 +23,9 @@ type Props = {
   onSave: (key: string) => Promise<void>;
   onClear: () => Promise<void>;
   onRemove?: () => void;
+  onOAuth?: () => Promise<void>;
+  oauthBusy?: boolean;
+  oauthError?: string | null;
 };
 
 function maskKey(key: string): string {
@@ -36,12 +39,17 @@ export function ProviderKeyCard({
   onSave,
   onClear,
   onRemove,
+  onOAuth,
+  oauthBusy = false,
+  oauthError,
 }: Props) {
   const [editing, setEditing] = useState(!currentKey);
   const [value, setValue] = useState("");
   const [reveal, setReveal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const connected = !!currentKey;
+  const showConnectActions = !connected;
 
   useEffect(() => {
     setEditing(!currentKey);
@@ -75,7 +83,7 @@ export function ProviderKeyCard({
       <div className="flex items-center gap-2">
         <ProviderIcon provider={provider.id} size={15} />
         <span className="text-[12.5px] font-medium">{provider.label}</span>
-        {currentKey ? (
+        {connected ? (
           <Badge
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
@@ -88,26 +96,54 @@ export function ProviderKeyCard({
             Connected
           </Badge>
         ) : null}
-        <button
-          type="button"
-          onClick={() => void openUrl(provider.consoleUrl)}
-          className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
-        >
-          Get key
-          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
-        </button>
+        {showConnectActions && onOAuth ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={oauthBusy}
+            onClick={() => void onOAuth()}
+            className="ml-auto h-7 gap-1.5 px-2.5 text-[11px]"
+          >
+            {oauthBusy ? <Spinner className="size-3" /> : null}
+            Sign in
+          </Button>
+        ) : null}
+        {showConnectActions ? (
+          <button
+            type="button"
+            onClick={() => void openUrl(provider.consoleUrl)}
+            className={cn(
+              "inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground",
+              !onOAuth && "ml-auto",
+            )}
+          >
+            Get key
+            <HugeiconsIcon
+              icon={ArrowUpRight01Icon}
+              size={11}
+              strokeWidth={1.75}
+            />
+          </button>
+        ) : null}
         {onRemove ? (
           <Button
             size="icon"
             variant="ghost"
             onClick={onRemove}
             title="Remove provider"
-            className="size-7 text-muted-foreground hover:text-destructive"
+            className={cn(
+              "size-7 text-muted-foreground hover:text-destructive",
+              !showConnectActions && "ml-auto",
+            )}
           >
             <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
           </Button>
         ) : null}
       </div>
+
+      {oauthError ? (
+        <p className="text-[10.5px] text-destructive">{oauthError}</p>
+      ) : null}
 
       {editing ? (
         <div className="flex flex-col gap-1.5">
