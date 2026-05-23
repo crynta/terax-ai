@@ -377,7 +377,10 @@ export async function runAgentStream(opts: RunAgentOptions) {
   const history = await convertToModelMessages(opts.uiMessages);
   const prunedHistory = pruneMessages({
     messages: history,
-    reasoning: "all",
+    // Keep reasoning in history: thinking models (DeepSeek Reasoner, GLM, Kimi)
+    // reject assistant tool-call turns whose reasoning_content was stripped, and
+    // Anthropic extended thinking needs the signed thinking block passed back.
+    reasoning: "none",
     emptyMessages: "remove",
   });
   const compact = compactModelMessagesDetailed(
