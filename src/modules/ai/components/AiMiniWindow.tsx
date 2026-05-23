@@ -27,8 +27,8 @@ import {
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { motion } from "motion/react";
-import { useEffect, useMemo } from "react";
+import { motion, useDragControls } from "motion/react";
+import { useEffect, useMemo, useState } from "react";
 import { estimateCost, getModel, getModelContextLimit } from "../config";
 import type { SessionMeta } from "../lib/sessions";
 import { useAgentsStore } from "../store/agentsStore";
@@ -70,6 +70,62 @@ export function AiMiniWindow() {
     openPanel();
   };
 
+  const initW = Math.min(500, window.innerWidth - 32);
+  const initH = Math.min(600, window.innerHeight - 112);
+  const [pos, setPos] = useState({
+    top: window.innerHeight - initH - 96,
+    left: window.innerWidth - initW - 16,
+  });
+
+  const [size, setSize] = useState({ width: initW, height: initH });
+  const dragControls = useDragControls();
+
+  const minW = 400, minH = 280;
+
+  const startResize = (e: React.PointerEvent, dir: "x" | "x-inv" | "y" | "xy" | "xy-inv") => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startW = size.width;
+    const startH = size.height;
+    const startLeft = pos.left;
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+
+      if (dir === "x") {
+        setSize(s => ({ ...s, width: Math.max(minW, startW + dx) }));
+      } else if (dir === "x-inv") {
+        const newW = Math.max(minW, startW - dx);
+        const actualDx = startW - newW; // clamped
+        setSize(s => ({ ...s, width: newW }));
+        setPos(p => ({ ...p, left: startLeft + actualDx }));
+      } else if (dir === "y") {
+        setSize(s => ({ ...s, height: Math.max(minH, startH + dy) }));
+      } else if (dir === "xy") {
+        setSize({ width: Math.max(minW, startW + dx), height: Math.max(minH, startH + dy) });
+      } else if (dir === "xy-inv") {
+        const newW = Math.max(minW, startW - dx);
+        const actualDx = startW - newW;
+        setSize({ width: newW, height: Math.max(minH, startH + dy) });
+        setPos(p => ({ ...p, left: startLeft + actualDx }));
+      }
+    };
+
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Anchor to bottom-right using top/left so resizing expands downward
+  const initialTop = window.innerHeight - initH - 96; // 96 = bottom-24 (6rem)
+  const initialLeft = window.innerWidth - initW - 16;  // 16 = right-4 (1rem)
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -89,6 +145,18 @@ export function AiMiniWindow() {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 12, scale: 0.98 }}
       transition={{ type: "spring", stiffness: 320, damping: 32 }}
+      drag
+      dragMomentum={false}
+      dragElastic={0}
+      dragControls={dragControls}
+      dragListener={false}
+      style={{
+        width: size.width,
+        height: size.height,
+        top: pos.top,
+        left: pos.left,
+      }}
+      dragConstraints={{ left: -initialLeft, right: window.innerWidth, top: -initialTop, bottom: window.innerHeight }}
       data-ai-mini-window
       className={cn(
         "no-scrollbar-deep fixed right-4 bottom-24 z-40 flex flex-col overflow-hidden",
@@ -98,6 +166,12 @@ export function AiMiniWindow() {
         "ring-1 ring-black/5 dark:ring-white/5",
       )}
     >
+      {/* Resize handles */}
+      <div onPointerDown={(e) => startResize(e, "x-inv")} className="absolute top-0 left-0 bottom-2 w-1.5 cursor-ew-resize z-50" />
+      <div onPointerDown={(e) => startResize(e, "x")} className="absolute top-0 right-0 bottom-2 w-1.5 cursor-ew-resize z-50" />
+      <div onPointerDown={(e) => startResize(e, "xy-inv")} className="absolute bottom-0 left-0 size-3 cursor-nesw-resize z-50" />
+      <div onPointerDown={(e) => startResize(e, "y")} className="absolute bottom-0 left-2 right-2 h-1.5 cursor-ns-resize z-50" />
+      <div onPointerDown={(e) => startResize(e, "xy")} className="absolute bottom-0 right-0 size-3 cursor-nwse-resize z-50" />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-foreground/[0.03] to-transparent"
@@ -107,6 +181,7 @@ export function AiMiniWindow() {
           sessionId={sessionId}
           onClose={closeMini}
           onExpand={expandToPanel}
+          dragControls={dragControls}
         />
       ) : (
         <EmptyShell onClose={closeMini} onExpand={expandToPanel} />
@@ -120,10 +195,12 @@ function Body({
   sessionId,
   onClose,
   onExpand,
+  dragControls,
 }: {
   sessionId: string;
   onClose: () => void;
   onExpand: () => void;
+  dragControls: ReturnType<typeof useDragControls>;
 }) {
   const focusInput = useChatStore((s) => s.focusInput);
   const step = useChatStore((s) => s.agentMeta.step);
@@ -141,6 +218,7 @@ function Body({
         onClose={onClose}
         onExpand={onExpand}
         messages={helpers.messages}
+        dragControls={dragControls}
       />
 
       <PlanModeStrip />
@@ -197,6 +275,7 @@ function EmptyShell({
 }: {
   onClose: () => void;
   onExpand: () => void;
+  dragControls?: ReturnType<typeof useDragControls>;
 }) {
   return (
     <>
@@ -218,18 +297,22 @@ function Header({
   isBusy,
   onClose,
   messages,
+  dragControls
 }: {
   step: string | null;
   isBusy: boolean;
   onClose: () => void;
   onExpand: () => void;
   messages?: UIMessage[];
+  dragControls?: ReturnType<typeof useDragControls>;
 }) {
   const customAgents = useAgentsStore((s) => s.customAgents);
   void customAgents;
 
   return (
-    <div className="relative flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
+    <div className="relative flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3 cursor-grab active:cursor-grabbing"
+      onPointerDown={(e) => dragControls?.start(e)}
+    >
       <div className="flex min-w-0 items-center gap-1.5">
         <AgentSwitcher isMiniWindow />
         {messages !== undefined ? (
