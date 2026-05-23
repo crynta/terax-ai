@@ -9,24 +9,42 @@ use tauri_plugin_window_state::StateFlags;
 #[derive(Default)]
 struct LaunchDir(Mutex<Option<String>>);
 
+/// Drained on first read so HMR / re-mounts can't replay the launch file.
+#[derive(Default)]
+struct LaunchFile(Mutex<Option<String>>);
+
 #[tauri::command]
 fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
     state.0.lock().expect("LaunchDir mutex poisoned").take()
 }
 
-fn parse_launch_dir() -> Option<String> {
+#[tauri::command]
+fn get_launch_file(state: State<'_, LaunchFile>) -> Option<String> {
+    state.0.lock().expect("LaunchFile mutex poisoned").take()
+}
+
+fn parse_launch_args() -> (Option<String>, Option<String>) {
     for arg in std::env::args().skip(1) {
         if arg.starts_with('-') {
             continue;
         }
         let Ok(canon) = std::fs::canonicalize(&arg) else { continue };
-        if !canon.is_dir() {
-            continue;
+        if canon.is_dir() {
+            let s = canon.to_string_lossy();
+            let dir = s.strip_prefix(r"\\?\").unwrap_or(&s).to_string();
+            return (Some(dir), None);
+        } else if canon.is_file() {
+            let s = canon.to_string_lossy();
+            let file = s.strip_prefix(r"\\?\").unwrap_or(&s).to_string();
+            if let Some(parent) = canon.parent() {
+                let ps = parent.to_string_lossy();
+                let dir = ps.strip_prefix(r"\\?\").unwrap_or(&ps).to_string();
+                return (Some(dir), Some(file));
+            }
+            return (None, Some(file));
         }
-        let s = canon.to_string_lossy();
-        return Some(s.strip_prefix(r"\\?\").unwrap_or(&s).to_string());
     }
-    None
+    (None, None)
 }
 
 #[tauri::command]
@@ -87,6 +105,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     workspace::init_launch_cwd();
+    let (launch_dir, launch_file) = parse_launch_args();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -114,12 +133,13 @@ pub fn run() {
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
             workspace::bootstrap_registry(&registry);
-            if let Some(launch_dir) = parse_launch_dir() {
-                let _ = registry.authorize(&launch_dir);
+            if let Some(ref launch_dir) = launch_dir {
+                let _ = registry.authorize(launch_dir);
             }
             registry
         })
-        .manage(LaunchDir(Mutex::new(parse_launch_dir())))
+        .manage(LaunchDir(Mutex::new(launch_dir)))
+        .manage(LaunchFile(Mutex::new(launch_file)))
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -170,6 +190,7 @@ pub fn run() {
             workspace::workspace_authorize,
             workspace::workspace_current_dir,
             get_launch_dir,
+            get_launch_file,
             open_settings_window,
             secrets::secrets_get,
             secrets::secrets_set,
