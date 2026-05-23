@@ -69,7 +69,7 @@ pub fn resolve_within_repo(repo_root: &Path, rel: &str) -> Result<PathBuf> {
         return Err(GitError::InvalidPath(rel.into()));
     }
     let joined = repo_root.join(rel);
-    let canonical = match std::fs::canonicalize(&joined) {
+    let canonical = match dunce::canonicalize(&joined) {
         Ok(p) => p,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return canonicalize_parent(repo_root, &joined, rel)
@@ -93,7 +93,7 @@ fn canonicalize_parent(repo_root: &Path, joined: &Path, rel: &str) -> Result<Pat
     let parent = joined
         .parent()
         .ok_or_else(|| GitError::InvalidPath(rel.into()))?;
-    let canonical_parent = std::fs::canonicalize(parent).map_err(GitError::Io)?;
+    let canonical_parent = dunce::canonicalize(parent).map_err(GitError::Io)?;
     if !canonical_parent.starts_with(repo_root) {
         return Err(GitError::PathOutsideWorkspace(canonical_parent));
     }

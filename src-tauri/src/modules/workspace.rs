@@ -23,7 +23,7 @@ pub struct WorkspaceRegistry {
 
 impl WorkspaceRegistry {
     pub fn authorize<P: AsRef<Path>>(&self, path: P) -> std::io::Result<PathBuf> {
-        let canonical = std::fs::canonicalize(path.as_ref())?;
+        let canonical = dunce::canonicalize(path.as_ref())?;
         let mut set = self.roots.lock().expect("workspace registry poisoned");
         set.insert(canonical.clone());
         Ok(canonical)
@@ -44,7 +44,7 @@ impl WorkspaceRegistry {
                 }
             }
         }
-        let canonical = std::fs::canonicalize(&key)?;
+        let canonical = dunce::canonicalize(&key)?;
         let mut cache = self.canonical_cache.lock().expect("canonical cache poisoned");
         if cache.len() >= CANONICAL_CACHE_CAP {
             cache.retain(|_, entry| entry.inserted_at.elapsed() < CANONICAL_TTL);
@@ -65,7 +65,7 @@ impl WorkspaceRegistry {
 }
 
 // `None` means "use bootstrapped default". `Some` is canonicalized to defeat
-// symlink/`..` traversal and must sit under an authorized root.
+// symlink/`..` traversal. The path must already be authorized in the registry.
 pub fn authorize_spawn_cwd(
     registry: &WorkspaceRegistry,
     cwd: Option<&str>,
@@ -75,16 +75,13 @@ pub fn authorize_spawn_cwd(
         return Ok(None);
     };
     let resolved = resolve_path(cwd, workspace);
-    let canonical = std::fs::canonicalize(&resolved)
+    let canonical = dunce::canonicalize(&resolved)
         .map_err(|e| format!("cwd not accessible: {e}"))?;
     if !canonical.is_dir() {
         return Err(format!("cwd is not a directory: {}", canonical.display()));
     }
     if !registry.is_authorized(&canonical) {
-        return Err(format!(
-            "cwd is outside the authorized workspace: {}",
-            canonical.display()
-        ));
+        return Err(format!("cwd not authorized: {}", canonical.display()));
     }
     Ok(Some(canonical))
 }
@@ -100,7 +97,7 @@ pub fn authorize_user_spawn_cwd(
         return Ok(None);
     };
     let resolved = resolve_path(cwd, workspace);
-    let canonical = std::fs::canonicalize(&resolved)
+    let canonical = dunce::canonicalize(&resolved)
         .map_err(|e| format!("cwd not accessible: {e}"))?;
     if !canonical.is_dir() {
         return Err(format!("cwd is not a directory: {}", canonical.display()));
@@ -141,8 +138,16 @@ pub async fn workspace_current_dir(
 // (file dialogs, plugin chdir) can't shift the value seen by IPC or spawn.
 static LAUNCH_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
 
-pub fn init_launch_cwd() {
+pub fn init_launch_cwd(cli_dir: Option<&str>) {
     LAUNCH_CWD.get_or_init(|| {
+        // Prefer the CLI arg ("Open with Terax" passes the project path as
+        // an arg, but the process CWD on Windows is often System32).
+        if let Some(dir) = cli_dir {
+            let p = PathBuf::from(dir);
+            if p.is_dir() {
+                return Some(p);
+            }
+        }
         std::env::current_dir()
             .ok()
             .filter(|p| is_usable_launch_dir(p))
@@ -187,7 +192,7 @@ fn is_executable_dir(path: &Path) -> bool {
     let Some(exe_dir) = exe.parent() else {
         return false;
     };
-    match (std::fs::canonicalize(path), std::fs::canonicalize(exe_dir)) {
+    match (dunce::canonicalize(path), dunce::canonicalize(exe_dir)) {
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     }
@@ -616,7 +621,7 @@ mod auth_tests {
             .unwrap_or(0);
         p.push(format!("terax-auth-{label}-{nanos}-{}", std::process::id()));
         fs::create_dir_all(&p).expect("create tempdir");
-        fs::canonicalize(&p).expect("canonicalize tempdir")
+        dunce::canonicalize(&p).expect("canonicalize tempdir")
     }
 
     #[test]
@@ -652,7 +657,7 @@ mod auth_tests {
         let root = tempdir("subroot");
         let sub = root.join("inside");
         fs::create_dir_all(&sub).expect("subdir");
-        let canonical_sub = fs::canonicalize(&sub).expect("canon sub");
+        let canonical_sub = dunce::canonicalize(&sub).expect("canon sub");
         let reg = WorkspaceRegistry::default();
         reg.authorize(&root).expect("authorize root");
         let s = canonical_sub.to_string_lossy().into_owned();
@@ -663,15 +668,16 @@ mod auth_tests {
     }
 
     #[test]
-    fn authorize_spawn_cwd_rejects_unauthorized_path() {
+    fn authorize_spawn_cwd_rejects_foreign_path() {
         let allowed = tempdir("allowed");
         let foreign = tempdir("foreign");
         let reg = WorkspaceRegistry::default();
         reg.authorize(&allowed).expect("authorize root");
         let s = foreign.to_string_lossy().into_owned();
+        // authorize_spawn_cwd rejects paths outside the registry.
         let err = authorize_spawn_cwd(&reg, Some(&s), &WorkspaceEnv::Local)
-            .expect_err("should reject unauthorized cwd");
-        assert!(err.contains("outside"), "got: {err}");
+            .expect_err("should reject foreign path");
+        assert!(err.contains("cwd not authorized"), "got: {err}");
     }
 
     #[test]
@@ -728,8 +734,9 @@ mod auth_tests {
         let reg = WorkspaceRegistry::default();
         reg.authorize(&allowed).expect("authorize root");
         let s = link.to_string_lossy().into_owned();
+        // Symlink resolves to `outside` which is NOT authorized — must reject.
         let err = authorize_spawn_cwd(&reg, Some(&s), &WorkspaceEnv::Local)
-            .expect_err("symlink-escape must be rejected");
-        assert!(err.contains("outside"), "got: {err}");
+            .expect_err("symlink escape must be blocked");
+        assert!(err.contains("cwd not authorized"), "got: {err}");
     }
 }

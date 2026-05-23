@@ -5148,6 +5148,7 @@ version = "0.7.1"
 dependencies = [
  "bytes",
  "dirs 5.0.1",
+ "dunce",
  "futures-util",
  "globset",
  "grep-matcher",

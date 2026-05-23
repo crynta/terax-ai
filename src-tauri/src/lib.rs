@@ -19,7 +19,7 @@ fn parse_launch_dir() -> Option<String> {
         if arg.starts_with('-') {
             continue;
         }
-        let Ok(canon) = std::fs::canonicalize(&arg) else { continue };
+        let Ok(canon) = dunce::canonicalize(&arg) else { continue };
         if !canon.is_dir() {
             continue;
         }
@@ -85,7 +85,8 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    workspace::init_launch_cwd();
+    let cli_dir = parse_launch_dir();
+    workspace::init_launch_cwd(cli_dir.as_deref());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -113,12 +114,12 @@ pub fn run() {
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
             workspace::bootstrap_registry(&registry);
-            if let Some(launch_dir) = parse_launch_dir() {
-                let _ = registry.authorize(&launch_dir);
+            if let Some(ref launch_dir) = cli_dir {
+                let _ = registry.authorize(launch_dir.as_str());
             }
             registry
         })
-        .manage(LaunchDir(Mutex::new(parse_launch_dir())))
+        .manage(LaunchDir(Mutex::new(cli_dir)))
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,

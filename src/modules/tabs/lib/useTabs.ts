@@ -16,6 +16,52 @@ import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 // Matches the renderer slot pool size — over this we'd evict an active leaf.
 export const MAX_PANES_PER_TAB = 4;
 
+// --- sessionStorage tab persistence (survives refresh, not window close) ---
+const TAB_STATE_KEY = "terax.tabs.state";
+
+type PersistedTerminalTab = {
+  title: string;
+  cwd?: string;
+  private?: boolean;
+};
+
+type PersistedTabState = {
+  tabs: PersistedTerminalTab[];
+  activeIndex: number;
+};
+
+function saveTabState(tabs: Tab[], activeId: number): void {
+  try {
+    const termTabs: PersistedTerminalTab[] = [];
+    let activeIndex = 0;
+    for (const t of tabs) {
+      if (t.kind !== "terminal") continue;
+      if (t.id === activeId) activeIndex = termTabs.length;
+      termTabs.push({ title: t.title, cwd: t.cwd, private: t.private });
+    }
+    if (termTabs.length === 0) return;
+    const state: PersistedTabState = { tabs: termTabs, activeIndex };
+    window.sessionStorage.setItem(TAB_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // storage full or unavailable
+  }
+}
+
+function loadTabState(): PersistedTabState | null {
+  try {
+    const raw = window.sessionStorage.getItem(TAB_STATE_KEY);
+    if (!raw) return null;
+    // Consume it — prevents stale state from replaying on next refresh
+    // if the app crashes before saving again.
+    window.sessionStorage.removeItem(TAB_STATE_KEY);
+    const parsed = JSON.parse(raw) as PersistedTabState;
+    if (!Array.isArray(parsed.tabs) || parsed.tabs.length === 0) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export type TerminalTab = {
   id: number;
   kind: "terminal";
@@ -132,28 +178,82 @@ function titleFromUrl(url: string): string {
   }
 }
 
-export function useTabs(initial?: Partial<TerminalTab>) {
-  const [tabs, setTabs] = useState<Tab[]>(() => {
-    const tabId = 1;
-    const leafId = 2;
-    return [
-      {
+// Compute initial state once — avoids window.__terax* globals.
+function buildInitialState(initial?: Partial<TerminalTab>) {
+  const saved = loadTabState();
+  if (saved) {
+    let nextId = 1;
+    const tabs: Tab[] = saved.tabs.map((st) => {
+      const tabId = nextId++;
+      const leafId = nextId++;
+      return {
         id: tabId,
-        kind: "terminal",
+        kind: "terminal" as const,
+        title: st.title,
+        cwd: st.cwd,
+        paneTree: { kind: "leaf" as const, id: leafId, cwd: st.cwd },
+        activeLeafId: leafId,
+        ...(st.private && { private: true }),
+      };
+    });
+    const activeId = tabs[saved.activeIndex]?.id ?? tabs[0]?.id ?? 1;
+    return { tabs, activeId, nextId };
+  }
+  return {
+    tabs: [
+      {
+        id: 1,
+        kind: "terminal" as const,
         title: initial?.title ?? "shell",
         cwd: initial?.cwd,
-        paneTree: { kind: "leaf", id: leafId, cwd: initial?.cwd },
-        activeLeafId: leafId,
+        paneTree: { kind: "leaf" as const, id: 2, cwd: initial?.cwd },
+        activeLeafId: 2,
       },
-    ];
-  });
-  const [activeId, setActiveId] = useState(1);
-  const nextIdRef = useRef(3);
+    ] as Tab[],
+    activeId: 1,
+    nextId: 3,
+  };
+}
+
+export function useTabs(initial?: Partial<TerminalTab>) {
+  const initRef = useRef(buildInitialState(initial));
+  const [tabs, setTabs] = useState<Tab[]>(() => initRef.current.tabs);
+  const [activeId, setActiveId] = useState(() => initRef.current.activeId);
+  const nextIdRef = useRef(initRef.current.nextId);
   const tabsRef = useRef(tabs);
+
+  // Guard: once set, saveTabState is skipped. Prevents the useEffect from
+  // overwriting the saved snapshot after beforeunload triggers onExit→closeTab.
+  const unloadingRef = useRef(false);
 
   useEffect(() => {
     tabsRef.current = tabs;
-  }, [tabs]);
+    // Skip if we're in the middle of beforeunload — state was already saved
+    // before PTY disposal, and the onExit→closeTab cascade would overwrite
+    // it with stale (emptied) state.
+    if (unloadingRef.current) return;
+    saveTabState(tabs, activeId);
+  }, [tabs, activeId]);
+
+  // Kill active PTY sessions on webview refresh so shell processes
+  // don't get orphaned while restored tabs spawn fresh ones.
+  useEffect(() => {
+    const cleanup = () => {
+      // Save the current state BEFORE killing PTYs. Disposing triggers
+      // onExit→closeTab→setTabs→useEffect→saveTabState which would
+      // overwrite this with an empty snapshot.
+      saveTabState(tabsRef.current, activeId);
+      unloadingRef.current = true;
+      for (const t of tabsRef.current) {
+        if (t.kind !== "terminal") continue;
+        for (const id of leafIds(t.paneTree)) {
+          disposeSession(id);
+        }
+      }
+    };
+    window.addEventListener("beforeunload", cleanup);
+    return () => window.removeEventListener("beforeunload", cleanup);
+  }, [activeId]);
 
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
