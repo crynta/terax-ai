@@ -133,8 +133,8 @@ pub fn run() {
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
             workspace::bootstrap_registry(&registry);
-            if let Some(launch_dir) = parse_launch_dir() {
-                let _ = registry.authorize(&launch_dir);
+            if let Some(ref launch_dir) = launch_dir {
+                let _ = registry.authorize(launch_dir);
             }
             registry
         })
