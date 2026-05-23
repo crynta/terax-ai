@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { setOpenAICompatibleSynthesizedModelIds } from "@/modules/ai/config";
 import {
   DEFAULT_PREFERENCES,
   loadPreferences,
@@ -59,6 +60,14 @@ export const usePreferencesStore = create<State>((set) => ({
       if (key === "backgroundKind" || key === "backgroundImageId") {
         const s = usePreferencesStore.getState();
         mirrorBgFastPath(s.backgroundKind, s.backgroundImageId);
+      }
+      // Cross-window writes (e.g. from the Settings window) bypass the local
+      // setter — keep the synthesized-model registry in sync so getModel()
+      // resolves user-defined OpenAI-compatible ids in every window.
+      if (key === "openaiCompatibleModelId") {
+        setOpenAICompatibleSynthesizedModelIds(
+          typeof value === "string" ? value : "",
+        );
       }
     });
   },

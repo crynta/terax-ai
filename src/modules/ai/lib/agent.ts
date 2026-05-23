@@ -15,6 +15,7 @@ import {
   MAX_AGENT_STEPS,
   MLX_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_BASE_URL,
+  parseOpenAICompatibleModelIds,
   providerNeedsKey,
   selectSystemPrompt,
   type ModelId,
@@ -229,7 +230,11 @@ export function buildConfiguredLanguageModel(
 ): Promise<LanguageModel> {
   const m = getModel(modelId);
   let resolvedId: string = m.id;
-  if (m.id === "lmstudio-local") {
+  // Synthesized compat models carry the raw upstream id on `upstreamId` —
+  // that's what the API expects. The namespaced `id` is app-internal only.
+  if (m.upstreamId) {
+    resolvedId = m.upstreamId;
+  } else if (m.id === "lmstudio-local") {
     if (!local.lmstudioModelId?.trim()) {
       throw new Error(
         "LM Studio: no model id set. Open Settings → Models and enter the model id loaded in LM Studio.",
@@ -251,12 +256,16 @@ export function buildConfiguredLanguageModel(
     }
     resolvedId = local.ollamaModelId.trim();
   } else if (m.id === "openai-compatible-custom") {
+    // Legacy "Custom endpoint" stub — predates per-model registration. Take
+    // the first parsed id from the comma list so requests go somewhere
+    // sensible instead of sending the whole literal comma-string upstream.
     if (!local.openaiCompatibleModelId?.trim()) {
       throw new Error(
         "OpenAI-compatible: no model id set. Open Settings → Models.",
       );
     }
-    resolvedId = local.openaiCompatibleModelId.trim();
+    const ids = parseOpenAICompatibleModelIds(local.openaiCompatibleModelId);
+    resolvedId = ids[0] ?? local.openaiCompatibleModelId.trim();
   }
   return buildLanguageModel(m.provider, keys, resolvedId, {
     lmstudioBaseURL: local.lmstudioBaseURL,

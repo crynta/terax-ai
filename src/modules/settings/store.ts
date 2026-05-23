@@ -5,6 +5,7 @@ import {
   MLX_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_BASE_URL,
   OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
+  setOpenAICompatibleSynthesizedModelIds,
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
@@ -195,6 +196,12 @@ export async function loadPreferences(): Promise<Preferences> {
   const entries = await store.entries();
   const map = new Map<string, unknown>(entries);
   const get = <T>(k: string): T | undefined => map.get(k) as T | undefined;
+  // Push synthesized OpenAI-compatible model ids into the AI config registry
+  // so `getModel(id)` resolves them everywhere from the very first tick.
+  setOpenAICompatibleSynthesizedModelIds(
+    get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ??
+      DEFAULT_PREFERENCES.openaiCompatibleModelId,
+  );
   return {
     theme: get<ThemePref>(KEY_THEME) ?? DEFAULT_PREFERENCES.theme,
     themeId: get<string>(KEY_THEME_ID) ?? DEFAULT_PREFERENCES.themeId,
@@ -388,6 +395,7 @@ export async function setOpenaiCompatibleBaseURL(value: string): Promise<void> {
 }
 
 export async function setOpenaiCompatibleModelId(value: string): Promise<void> {
+  setOpenAICompatibleSynthesizedModelIds(value);
   await writePref(KEY_OPENAI_COMPAT_MODEL_ID, value);
 }
 

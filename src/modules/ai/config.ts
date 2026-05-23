@@ -147,6 +147,10 @@ export type ModelInfo = {
   description: string;
   capabilities: ModelCapabilities;
   tags?: readonly ModelTag[];
+  /** For synthesized entries (e.g. OpenAI-compatible aggregators): the id the
+   *  upstream API actually expects. `id` is the app-internal namespaced key
+   *  used for picker selection, recents, and `getModel` lookups. */
+  upstreamId?: string;
 };
 
 export const MODELS = [
@@ -598,13 +602,126 @@ export const MODELS = [
 
 export type ModelId = (typeof MODELS)[number]["id"];
 
-export function getModel(id: ModelId): ModelInfo {
+// ── OpenAI-compatible: multi-model support ───────────────────────────────────
+//
+// `openaiCompatibleModelId` is stored as a comma-separated list so a single
+// proxy endpoint (Vibe Proxy, OpenRouter-self-host, LiteLLM, …) can surface
+// multiple selectable models in the picker. The placeholder text in
+// `ModelsSection` already advertises this shape (`gpt-4o, qwen3-max, …`).
+//
+// Synthesized entries are kept in a runtime registry so every existing
+// `getModel(id)` callsite transparently resolves them — no caller refactor.
+// The settings store pushes the parsed id list here on load and on change.
+
+let dynamicCompatModels: readonly ModelInfo[] = [];
+
+/** App-internal id prefix that namespaces synthesized OpenAI-compatible
+ *  models. Prevents collisions with curated MODELS entries whose ids happen
+ *  to match an upstream proxy's id (e.g. `qwen/qwen3-max`, which exists as
+ *  OpenRouter in MODELS — without namespacing, selecting the compat row
+ *  would silently route through OpenRouter). */
+export const OPENAI_COMPATIBLE_ID_PREFIX = "openai-compatible:";
+
+/** True if `id` is an app-internal namespaced OpenAI-compatible model id. */
+export function isOpenAICompatibleSynthId(id: string): boolean {
+  return id.startsWith(OPENAI_COMPATIBLE_ID_PREFIX);
+}
+
+/** Build the app-internal id for a given upstream model id. */
+export function makeOpenAICompatibleId(upstreamId: string): string {
+  return `${OPENAI_COMPATIBLE_ID_PREFIX}${upstreamId}`;
+}
+
+/** Parse the comma-separated `openaiCompatibleModelId` field into a deduped,
+ *  order-preserving list of *upstream* ids (the raw API model names). */
+export function parseOpenAICompatibleModelIds(raw: string): string[] {
+  if (!raw) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(",")) {
+    const id = part.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+/** Serialize a list of upstream ids back into the canonical comma-separated
+ *  form persisted in `openaiCompatibleModelId`. */
+export function serializeOpenAICompatibleModelIds(
+  ids: readonly string[],
+): string {
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const raw of ids) {
+    const id = raw.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    cleaned.push(id);
+  }
+  return cleaned.join(", ");
+}
+
+/** Build a synthetic {@link ModelInfo} for a user-configured OpenAI-compatible
+ *  upstream id. The `id` is namespaced; `upstreamId` is what's sent to the
+ *  API. The picker shows the raw upstream id as the label so users see what
+ *  they typed/picked, not the internal prefix. */
+export function synthesizeOpenAICompatibleModel(upstreamId: string): ModelInfo {
+  return {
+    id: makeOpenAICompatibleId(upstreamId),
+    provider: "openai-compatible",
+    label: upstreamId,
+    hint: "Compatible",
+    description: "User-configured OpenAI-compatible model.",
+    capabilities: { intelligence: 3, speed: 3, cost: 3 },
+    upstreamId,
+  };
+}
+
+/** Replace the runtime registry of synthesized OpenAI-compatible models.
+ *  Reconciliation of stale selections / recents / favorites is handled
+ *  separately by `useCompatReconciler`. */
+export function setOpenAICompatibleSynthesizedModelIds(
+  raw: string | readonly string[],
+): void {
+  const upstreamIds = Array.isArray(raw)
+    ? (raw as readonly string[]).filter((s) => typeof s === "string" && s.trim())
+    : parseOpenAICompatibleModelIds(raw as string);
+  dynamicCompatModels = upstreamIds.map(synthesizeOpenAICompatibleModel);
+}
+
+/** All models visible to the picker: curated + synthesized. When the user
+ *  has named at least one concrete compat model, the generic "Custom
+ *  endpoint" stub is hidden — the named ones replace it. */
+export function getAllModels(): readonly ModelInfo[] {
+  if (dynamicCompatModels.length === 0) return MODELS;
+  return [
+    ...MODELS.filter((m) => m.id !== "openai-compatible-custom"),
+    ...dynamicCompatModels,
+  ];
+}
+
+function findModel(id: string | undefined): ModelInfo | null {
+  if (!id) return null;
   const m = MODELS.find((x) => x.id === id);
-  if (!m) throw new Error(`Unknown model: ${id}`);
-  return m;
+  if (m) return m;
+  const synth = dynamicCompatModels.find((x) => x.id === id);
+  if (synth) return synth;
+  return null;
+}
+
+export function getModel(id: ModelId): ModelInfo {
+  const model = findModel(id);
+  if (model) return model;
+  throw new Error(`Unknown model: ${id}`);
 }
 
 export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
+
+export function getModelOrDefault(id: string | undefined): ModelInfo {
+  return findModel(id) ?? getModel(DEFAULT_MODEL_ID);
+}
 
 /** Approximate context window (in tokens) per model. Used for the
  *  context-usage indicator in the AI mini-window header. Conservative
@@ -664,8 +781,15 @@ export function getModelContextLimit(
   compatOverride?: number,
 ): number {
   if (!modelId) return 128_000;
-  if (modelId === "openai-compatible-custom" && compatOverride)
+  // The user's compat context-limit setting applies to the legacy "Custom
+  // endpoint" stub AND every synthesized compat model — they all share one
+  // base URL, so one limit setting covers all of them.
+  if (
+    compatOverride &&
+    (modelId === "openai-compatible-custom" || isOpenAICompatibleSynthId(modelId))
+  ) {
     return compatOverride;
+  }
   return MODEL_CONTEXT_LIMITS[modelId] ?? 128_000;
 }
 

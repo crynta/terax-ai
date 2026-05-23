@@ -44,8 +44,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 import {
-  getModel,
-  MODELS,
+  getAllModels,
+  getModelOrDefault,
   providerNeedsKey,
   PROVIDERS,
   type ModelCapabilities,
@@ -212,7 +212,10 @@ function ModelDropdown() {
   const setSelected = useChatStore((s) => s.setSelectedModelId);
   const favoriteIds = usePreferencesStore((s) => s.favoriteModelIds);
   const recentIds = usePreferencesStore((s) => s.recentModelIds);
-  const current = getModel(selected);
+  // Subscribe so the picker re-renders when user-defined compat models change.
+  const compatRaw = usePreferencesStore((s) => s.openaiCompatibleModelId);
+  const allModels = useMemo(() => getAllModels(), [compatRaw]);
+  const current = getModelOrDefault(selected);
   const [search, setSearch] = useState("");
   const [activeProvider, setActiveProvider] = useState<ProviderId | null>(null);
   const [tab, setTab] = useState<Tab>("all");
@@ -236,7 +239,7 @@ function ModelDropdown() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let pool: readonly ModelInfo[] = MODELS;
+    let pool: readonly ModelInfo[] = allModels;
     if (tab === "favorites") {
       pool = pool.filter((m) => favoriteIds.includes(m.id));
     } else if (tab === "recent") {
@@ -260,7 +263,7 @@ function ModelDropdown() {
       );
     }
     return pool;
-  }, [activeProvider, favoriteIds, recentIds, search, tab]);
+  }, [activeProvider, allModels, favoriteIds, recentIds, search, tab]);
 
   return (
     <DropdownMenu>

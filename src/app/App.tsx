@@ -52,6 +52,8 @@ import {
 import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import { DEFAULT_MODEL_ID, getModel, type ModelId } from "@/modules/ai/config";
+import { useCompatReconciler } from "@/modules/ai/lib/useCompatReconciler";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged, setThemeId as persistThemeId } from "@/modules/settings/store";
 import {
@@ -101,6 +103,20 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
+
+function tryStoredModelId(id: string | undefined): ModelId | null {
+  if (!id) return null;
+  try {
+    getModel(id as ModelId);
+    return id as ModelId;
+  } catch {
+    return null;
+  }
+}
+
+function resolveStoredModelId(id: string | undefined): ModelId {
+  return tryStoredModelId(id) ?? DEFAULT_MODEL_ID;
+}
 
 function dirname(path: string | null): string | null {
   if (!path) return null;
@@ -421,14 +437,40 @@ export default function App() {
   // into chatStore so the dropdown reflects what the user picked in Settings.
   const initPrefs = usePreferencesStore((s) => s.init);
   const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
+  const prefRecentModels = usePreferencesStore((s) => s.recentModelIds);
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   useEffect(() => {
     void initPrefs();
   }, [initPrefs]);
+  // First hydration: restore the most recently selected model so the picker
+  // shows what the user last had active — including any user-defined
+  // OpenAI-compatible models (registered in the model registry during
+  // loadPreferences). Subsequent changes to the default-model preference
+  // still flow through so updating it in Settings updates the active pick.
+  const restoredFromRecentRef = useRef(false);
+  const previousDefaultModelRef = useRef<string | null>(null);
   useEffect(() => {
     if (!prefsHydrated) return;
-    setSelectedModelId(prefDefaultModel);
-  }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
+    const defaultModel = resolveStoredModelId(prefDefaultModel);
+    if (!restoredFromRecentRef.current) {
+      restoredFromRecentRef.current = true;
+      previousDefaultModelRef.current = prefDefaultModel;
+      const lastKnown = prefRecentModels
+        .map((id) => tryStoredModelId(id))
+        .find((id): id is ModelId => id !== null);
+      setSelectedModelId(lastKnown ?? defaultModel);
+      return;
+    }
+
+    if (previousDefaultModelRef.current !== prefDefaultModel) {
+      previousDefaultModelRef.current = prefDefaultModel;
+      setSelectedModelId(defaultModel);
+    }
+  }, [prefsHydrated, prefDefaultModel, prefRecentModels, setSelectedModelId]);
+
+  // Clean up active/default/recent/favorite refs when the user removes a
+  // model from the OpenAI-compatible list, so the next render doesn't crash.
+  useCompatReconciler();
 
   const hydrateSessions = useChatStore((s) => s.hydrateSessions);
   useEffect(() => {

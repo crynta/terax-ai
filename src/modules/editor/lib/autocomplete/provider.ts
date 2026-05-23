@@ -1,6 +1,7 @@
 import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   LMSTUDIO_DEFAULT_BASE_URL,
+  parseOpenAICompatibleModelIds,
   type AutocompleteProviderId,
 } from "@/modules/ai/config";
 import { buildLanguageModel } from "@/modules/ai/lib/agent";
@@ -33,8 +34,15 @@ export async function requestCompletion(
   deps: CompletionDeps,
   signal: AbortSignal,
 ): Promise<string> {
+  // OpenAI-compatible stores a comma-separated list — autocomplete uses one
+  // model at a time, so pick the first parsed id. Without this the literal
+  // comma-string would be sent upstream as the model name.
+  const rawModelId =
+    deps.provider === "openai-compatible"
+      ? (parseOpenAICompatibleModelIds(deps.modelId)[0] ?? "")
+      : deps.modelId.trim();
   const modelId =
-    deps.modelId.trim() || DEFAULT_AUTOCOMPLETE_MODEL[deps.provider] || "";
+    rawModelId || DEFAULT_AUTOCOMPLETE_MODEL[deps.provider] || "";
   if (!modelId) {
     throw new Error(
       `No autocomplete model id set for ${deps.provider}.`,

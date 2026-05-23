@@ -13,15 +13,19 @@ import { cn } from "@/lib/utils";
 import {
   MODELS,
   PROVIDERS,
+  getAllModels,
   getAutocompleteEligibleModels,
-  getModel,
+  getModelOrDefault,
   getProvider,
+  parseOpenAICompatibleModelIds,
   providerNeedsKey,
+  serializeOpenAICompatibleModelIds,
   type ModelId,
   type ProviderId,
   type ProviderInfo,
 } from "@/modules/ai/config";
 import { clearKey, getAllKeys, setKey } from "@/modules/ai/lib/keyring";
+import { fetchOpenAICompatibleModels } from "@/modules/ai/lib/discovery";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   emitKeysChanged,
@@ -45,11 +49,13 @@ import {
   ArrowUpRight01Icon,
   Cancel01Icon,
   CheckmarkCircle02Icon,
+  RefreshIcon,
+  Tick01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
@@ -387,7 +393,10 @@ function DefaultModelPicker({
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
 }) {
-  const m = getModel(defaultModel);
+  // Re-render when user-defined OpenAI-compatible models change.
+  const compatRaw = usePreferencesStore((s) => s.openaiCompatibleModelId);
+  const allModels = useMemo(() => getAllModels(), [compatRaw]);
+  const m = getModelOrDefault(defaultModel);
   const hasAny = configuredIds.size > 0;
 
   return (
@@ -420,7 +429,7 @@ function DefaultModelPicker({
       >
         <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
           {PROVIDERS.filter((p) => configuredIds.has(p.id)).map((p) => {
-            const models = MODELS.filter((x) => x.provider === p.id);
+            const models = allModels.filter((x) => x.provider === p.id);
             if (models.length === 0) return null;
             return (
               <div key={p.id} className="px-1 pt-1.5 first:pt-1">
@@ -617,12 +626,27 @@ function LocalProviderCard({
   const [testStatus, setTestStatus] = useState<
     "idle" | "testing" | "ok" | "fail"
   >("idle");
+  // Discovery state — only used by the openai-compatible card.
+  const [discovered, setDiscovered] = useState<string[] | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const discoverAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => setUrlDraft(baseURL), [baseURL]);
   useEffect(() => setModelDraft(modelId), [modelId]);
   useEffect(() => setContextDraft(String(contextLimit ?? "")), [contextLimit]);
+  // Editing the base URL invalidates any in-flight or stale discovery result.
+  useEffect(() => {
+    discoverAbortRef.current?.abort();
+    discoverAbortRef.current = null;
+    setDiscovering(false);
+    setDiscovered(null);
+    setDiscoverError(null);
+  }, [urlDraft]);
+  useEffect(() => () => discoverAbortRef.current?.abort(), []);
 
   const supportsKey = provider.id === "openai-compatible";
+  const supportsDiscovery = provider.id === "openai-compatible";
 
   const test = async () => {
     setTestStatus("testing");
@@ -632,6 +656,56 @@ function LocalProviderCard({
     } catch {
       setTestStatus("fail");
     }
+  };
+
+  const discover = async () => {
+    discoverAbortRef.current?.abort();
+    const controller = new AbortController();
+    discoverAbortRef.current = controller;
+    setDiscovering(true);
+    setDiscoverError(null);
+    try {
+      const url = urlDraft.trim();
+      if (!url) throw new Error("Base URL is required");
+      if (url !== baseURL) await setBaseURL(url);
+      const apiKey = compatKey ?? null;
+      const list = await fetchOpenAICompatibleModels(
+        url,
+        apiKey,
+        controller.signal,
+      );
+      if (controller.signal.aborted) return;
+      const ids = list.map((m) => m.id);
+      setDiscovered(ids);
+      if (ids.length > 0) {
+        const serialized = serializeOpenAICompatibleModelIds(ids);
+        setModelDraft(serialized);
+        if (serialized !== modelId) await setModelId(serialized);
+      }
+    } catch (e) {
+      if (controller.signal.aborted) return; // user moved on; ignore.
+      setDiscovered(null);
+      setDiscoverError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (discoverAbortRef.current === controller) {
+        discoverAbortRef.current = null;
+        setDiscovering(false);
+      }
+    }
+  };
+
+  const selectedSet = useMemo(
+    () => new Set(parseOpenAICompatibleModelIds(modelDraft)),
+    [modelDraft],
+  );
+
+  const toggleModel = (id: string) => {
+    const next = new Set(selectedSet);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    const serialized = serializeOpenAICompatibleModelIds([...next]);
+    setModelDraft(serialized);
+    if (serialized !== modelId) void setModelId(serialized);
   };
 
   return (
@@ -694,15 +768,38 @@ function LocalProviderCard({
             >
               Test
             </Button>
+            {supportsDiscovery ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void discover()}
+                disabled={!urlDraft.trim() || discovering}
+                className="h-8 gap-1.5 px-3 text-[11px]"
+                title="Fetch model list from /v1/models"
+              >
+                <HugeiconsIcon
+                  icon={RefreshIcon}
+                  size={11}
+                  strokeWidth={1.75}
+                  className={discovering ? "animate-spin" : undefined}
+                />
+                {discovering ? "Loading…" : "Refresh"}
+              </Button>
+            ) : null}
           </div>
         </FieldRow>
 
-        <FieldRow label="Model ID">
+        <FieldRow label={supportsDiscovery ? "Model IDs" : "Model ID"}>
           <Input
             value={modelDraft}
             onChange={(e) => setModelDraft(e.target.value)}
             onBlur={() => {
-              const v = modelDraft.trim();
+              const v = supportsDiscovery
+                ? serializeOpenAICompatibleModelIds(
+                    parseOpenAICompatibleModelIds(modelDraft),
+                  )
+                : modelDraft.trim();
+              if (v !== modelDraft) setModelDraft(v);
               if (v !== modelId) void setModelId(v);
             }}
             placeholder={meta.modelPlaceholder}
@@ -710,6 +807,37 @@ function LocalProviderCard({
             className="h-8 font-mono text-[11.5px]"
           />
         </FieldRow>
+
+        {supportsDiscovery && (discovered || discoverError) ? (
+          <FieldRow label="Available">
+            <div className="flex flex-1 flex-col gap-1">
+              {discoverError ? (
+                <p className="text-[10.5px] text-destructive">
+                  Couldn't load models: {discoverError}
+                </p>
+              ) : discovered && discovered.length === 0 ? (
+                <p className="text-[10.5px] text-muted-foreground">
+                  Endpoint returned an empty model list.
+                </p>
+              ) : discovered ? (
+                <DiscoveredModelsList
+                  models={discovered}
+                  selected={selectedSet}
+                  onToggle={toggleModel}
+                  onSelectAll={() => {
+                    const next = serializeOpenAICompatibleModelIds(discovered);
+                    setModelDraft(next);
+                    if (next !== modelId) void setModelId(next);
+                  }}
+                  onClear={() => {
+                    setModelDraft("");
+                    if (modelId !== "") void setModelId("");
+                  }}
+                />
+              ) : null}
+            </div>
+          </FieldRow>
+        ) : null}
 
         {setContextLimit ? (
           <FieldRow label="Context">
@@ -836,5 +964,105 @@ function Label({ children }: { children: React.ReactNode }) {
     <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+function DiscoveredModelsList({
+  models,
+  selected,
+  onToggle,
+  onSelectAll,
+  onClear,
+}: {
+  models: readonly string[];
+  selected: Set<string>;
+  onToggle: (id: string) => void;
+  onSelectAll: () => void;
+  onClear: () => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return models;
+    return models.filter((id) => id.toLowerCase().includes(q));
+  }, [filter, models]);
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-md border border-border/60 bg-muted/20 p-1.5">
+      <div className="flex items-center gap-1.5">
+        <Input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder={`Filter ${models.length} models…`}
+          spellCheck={false}
+          className="h-7 flex-1 text-[11px]"
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onSelectAll}
+          className="h-7 px-2 text-[10.5px] text-muted-foreground"
+        >
+          All
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onClear}
+          disabled={selected.size === 0}
+          className="h-7 px-2 text-[10.5px] text-muted-foreground"
+        >
+          None
+        </Button>
+      </div>
+      <ul className="max-h-44 overflow-y-auto rounded-sm">
+        {filtered.length === 0 ? (
+          <li className="px-2 py-1.5 text-[10.5px] text-muted-foreground">
+            No matches.
+          </li>
+        ) : (
+          filtered.map((id) => {
+            const isSelected = selected.has(id);
+            return (
+              <li key={id}>
+                <button
+                  type="button"
+                  onClick={() => onToggle(id)}
+                  className={cn(
+                    "flex w-full items-center gap-1.5 rounded-sm px-2 py-1 text-left font-mono text-[11px] transition-colors",
+                    isSelected
+                      ? "bg-accent/60 text-foreground"
+                      : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-3.5 shrink-0 items-center justify-center rounded-sm border",
+                      isSelected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border/70 bg-transparent",
+                    )}
+                  >
+                    {isSelected ? (
+                      <HugeiconsIcon
+                        icon={Tick01Icon}
+                        size={9}
+                        strokeWidth={2.5}
+                      />
+                    ) : null}
+                  </span>
+                  <span className="truncate">{id}</span>
+                </button>
+              </li>
+            );
+          })
+        )}
+      </ul>
+      <p className="px-1 text-[10px] text-muted-foreground">
+        {selected.size} of {models.length} selected.
+      </p>
+    </div>
   );
 }
