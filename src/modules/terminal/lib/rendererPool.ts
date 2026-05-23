@@ -83,7 +83,9 @@ function getRecycler(): HTMLDivElement {
 const MCR_BG_ACTIVE = 4.5;
 const MCR_BG_INACTIVE = 1;
 
-function bgActive(prefs: ReturnType<typeof usePreferencesStore.getState>): boolean {
+function bgActive(
+  prefs: ReturnType<typeof usePreferencesStore.getState>,
+): boolean {
   return prefs.backgroundKind === "image" && !!prefs.backgroundImageId;
 }
 
@@ -661,11 +663,16 @@ export function getSlotForLeaf(leafId: number): Slot | null {
 }
 
 const IS_MAC =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 function isTerminalCopy(e: KeyboardEvent): boolean {
+  if (IS_MAC) {
+    return (
+      e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.code === "KeyC"
+    );
+  }
   return (
-    !IS_MAC &&
     e.ctrlKey &&
     e.shiftKey &&
     !e.altKey &&
@@ -675,8 +682,12 @@ function isTerminalCopy(e: KeyboardEvent): boolean {
 }
 
 function isTerminalPaste(e: KeyboardEvent): boolean {
+  if (IS_MAC) {
+    return (
+      e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.code === "KeyV"
+    );
+  }
   return (
-    !IS_MAC &&
     e.ctrlKey &&
     e.shiftKey &&
     !e.altKey &&
