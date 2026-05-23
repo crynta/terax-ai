@@ -23,6 +23,7 @@ import {
 import { buildTools, type ToolContext } from "../tools/tools";
 import { compactModelMessagesDetailed } from "./compact";
 import type { ProviderKeys } from "./keyring";
+import { normalizeDataUrlFileParts } from "./messageParts";
 import { createProxyFetch } from "./proxyFetch";
 
 const localProxyFetch = createProxyFetch({ allowPrivateNetwork: true });
@@ -374,7 +375,9 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.projectMemory ?? null,
   );
 
-  const history = await convertToModelMessages(opts.uiMessages);
+  const history = normalizeDataUrlFileParts(
+    await convertToModelMessages(opts.uiMessages),
+  );
   const prunedHistory = pruneMessages({
     messages: history,
     reasoning: "all",

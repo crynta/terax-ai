@@ -12,7 +12,11 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-import { useComposer, type FileAttachment } from "../lib/composer";
+import {
+  collectClipboardImageFiles,
+  useComposer,
+  type FileAttachment,
+} from "../lib/composer";
 import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
 import type { Snippet } from "../lib/snippets";
@@ -213,6 +217,13 @@ export function AiInputBar() {
       ? "Transcribing…"
       : null;
 
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = collectClipboardImageFiles(e.clipboardData?.items);
+    if (files.length === 0) return;
+    e.preventDefault();
+    void c.addFiles(files);
+  };
+
   return (
     <div className="shrink-0 border-t border-border/60 bg-card/40 px-3 py-2">
       <div
@@ -243,6 +254,7 @@ export function AiInputBar() {
                 ref={c.textareaRef}
                 value={c.value}
                 onChange={(e) => c.setValue(e.target.value)}
+                onPaste={onPaste}
                 onKeyUp={updateTrigger}
                 onClick={updateTrigger}
                 onSelect={updateTrigger}
