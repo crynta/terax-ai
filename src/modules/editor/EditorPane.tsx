@@ -191,7 +191,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       const ext = path.split(".").pop()?.toLowerCase() ?? null;
       languageRef.current = ext;
       const resolve = async (): Promise<Extension> => {
-        if (path.toLowerCase().endsWith(".terax-theme")) {
+        if (path.toLowerCase().endsWith(".termax-theme")) {
           const [{ json }, { colorSwatches }] = await Promise.all([
             import("@codemirror/lang-json"),
             import("./lib/colorSwatches"),

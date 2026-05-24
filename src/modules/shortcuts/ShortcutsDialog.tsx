@@ -38,7 +38,7 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
           <div className="flex flex-col gap-1.5">
             <DialogTitle>Keyboard shortcuts</DialogTitle>
             <DialogDescription>
-              Quick reference for Terax controls.
+              Quick reference for TerMax controls.
             </DialogDescription>
           </div>
           <Button

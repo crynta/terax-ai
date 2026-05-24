@@ -13,7 +13,7 @@ export type SlashOutcome =
   | { kind: "send-prompt"; prompt: string; commandName?: string }
   | { kind: "none" };
 
-const INIT_PROMPT = `Scan this workspace and produce TERAX.md at the workspace root with:
+const INIT_PROMPT = `Scan this workspace and produce TERMAX.md at the workspace root with:
 
 - One-paragraph project description.
 - Build / test / dev commands.
@@ -21,7 +21,7 @@ const INIT_PROMPT = `Scan this workspace and produce TERAX.md at the workspace r
 - Conventions worth knowing (naming, patterns, gotchas).
 - Paths to entry points.
 
-Use grep/glob/list_directory/read_file to explore. Cap TERAX.md under 200 lines. Use write_file to create it (will go through normal approval).`;
+Use grep/glob/list_directory/read_file to explore. Cap TERMAX.md under 200 lines. Use write_file to create it (will go through normal approval).`;
 
 export type SlashCommandMeta = {
   name: string;
@@ -45,11 +45,11 @@ export const SLASH_COMMANDS: Record<string, SlashCommandMeta> = {
   },
 };
 
-export const TERAX_CMD_RE =
-  /^<terax-command\s+name="([a-z0-9-]+)"(?:\s+state="([a-z]+)")?\s*\/>(?:\n+|$)/;
+export const TERMAX_CMD_RE =
+  /^<termax-command\s+name="([a-z0-9-]+)"(?:\s+state="([a-z]+)")?\s*\/>(?:\n+|$)/;
 
 export function wrapWithCommandMarker(prompt: string, name: string): string {
-  return `<terax-command name="${name}" />\n\n${prompt}`;
+  return `<termax-command name="${name}" />\n\n${prompt}`;
 }
 
 export function tryRunSlashCommand(input: string): SlashOutcome {

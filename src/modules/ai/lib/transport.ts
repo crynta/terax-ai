@@ -5,13 +5,13 @@ import type { ProviderKeys } from "./keyring";
 import { native } from "./native";
 import type { ToolContext } from "../tools/tools";
 
-const TERAX_MD_MAX_BYTES = 32 * 1024;
+const TERMAX_MD_MAX_BYTES = 32 * 1024;
 type MemoryCacheEntry = { content: string | null; mtime: number };
 const projectMemoryCache = new Map<string, MemoryCacheEntry>();
 
-async function readTeraxMd(workspaceRoot: string | null): Promise<string | null> {
+async function readTerMaxMd(workspaceRoot: string | null): Promise<string | null> {
   if (!workspaceRoot) return null;
-  const path = `${workspaceRoot.replace(/\/$/, "")}/TERAX.md`;
+  const path = `${workspaceRoot.replace(/\/$/, "")}/TERMAX.md`;
   const cached = projectMemoryCache.get(workspaceRoot);
   if (cached && Date.now() - cached.mtime < 30_000) return cached.content;
   try {
@@ -21,8 +21,8 @@ async function readTeraxMd(workspaceRoot: string | null): Promise<string | null>
       return null;
     }
     const content =
-      r.content.length > TERAX_MD_MAX_BYTES
-        ? r.content.slice(0, TERAX_MD_MAX_BYTES)
+      r.content.length > TERMAX_MD_MAX_BYTES
+        ? r.content.slice(0, TERMAX_MD_MAX_BYTES)
         : r.content;
     projectMemoryCache.set(workspaceRoot, { content, mtime: Date.now() });
     return content;
@@ -71,7 +71,7 @@ type SendOptions = {
 export function createContextAwareTransport(deps: Deps) {
   const run = async (options: SendOptions) => {
     const live = deps.getLive();
-    const projectMemory = await readTeraxMd(live.workspaceRoot);
+    const projectMemory = await readTerMaxMd(live.workspaceRoot);
     const envBlock = formatEnvBlock(live);
     const messagesForRun = envBlock
       ? injectEnvIntoLastUser(options.messages, envBlock)

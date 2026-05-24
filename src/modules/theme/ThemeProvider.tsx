@@ -46,8 +46,8 @@ type ThemeProviderState = {
 
 const ThemeProviderContext = createContext<ThemeProviderState | null>(null);
 
-const FAST_PATH_KEY = "terax-ui-theme-shadow";
-const FAST_PATH_THEME_ID = "terax-ui-theme-id-shadow";
+const FAST_PATH_KEY = "termax-ui-theme-shadow";
+const FAST_PATH_THEME_ID = "termax-ui-theme-id-shadow";
 
 function readFastMode(fallback: ThemePref): ThemePref {
   if (typeof window === "undefined") return fallback;

@@ -2,7 +2,7 @@ const DEFAULT_BYTE_CAP = 256 * 1024;
 const DEFAULT_CHUNK_CAP = 256;
 
 const OVERFLOW_NOTICE = new TextEncoder().encode(
-  "\x1bc\x1b[2m[terax: dropped output during hibernation]\x1b[0m\r\n",
+  "\x1bc\x1b[2m[termax: dropped output during hibernation]\x1b[0m\r\n",
 );
 
 export class DormantRing {

@@ -80,7 +80,7 @@ configureRendererPool({
         pty
           .resize(cols, rows + 1)
           .then(() => pty.resize(cols, rows))
-          .catch((e) => console.warn("[terax] kickPty failed:", e));
+          .catch((e) => console.warn("[termax] kickPty failed:", e));
       },
     };
   },
@@ -245,7 +245,7 @@ function attachSession(
       })
       .catch((e) => {
         s.ptyOpening = false;
-        console.error("[terax] openPty failed:", e);
+        console.error("[termax] openPty failed:", e);
       });
   }
 }
@@ -285,7 +285,7 @@ export async function respawnSession(
     pty = await openPtyForSession(leafId, s, cwd ?? s.initialCwd);
   } catch (e) {
     s.ptyOpening = false;
-    console.error("[terax] respawn openPty failed:", e);
+    console.error("[termax] respawn openPty failed:", e);
     return;
   }
   s.ptyOpening = false;

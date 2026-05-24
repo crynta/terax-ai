@@ -79,7 +79,7 @@ export const BUILTIN_AGENTS: readonly Agent[] = [
   },
 ] as const;
 
-const STORE_PATH = "terax-ai-agents.json";
+const STORE_PATH = "termax-ai-agents.json";
 const KEY_CUSTOM = "customAgents";
 const KEY_ACTIVE = "activeAgentId";
 

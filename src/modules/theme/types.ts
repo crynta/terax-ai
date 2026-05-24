@@ -62,4 +62,4 @@ export type Theme = {
   };
 };
 
-export const DEFAULT_THEME_ID = "terax-default";
+export const DEFAULT_THEME_ID = "termax-default";

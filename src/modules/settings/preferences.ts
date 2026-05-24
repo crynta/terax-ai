@@ -14,8 +14,8 @@ type State = Preferences & {
 
 let initialized = false;
 
-const FAST_BG_KIND_KEY = "terax-ui-bg-kind-shadow";
-const FAST_BG_IMAGE_ID_KEY = "terax-ui-bg-image-shadow";
+const FAST_BG_KIND_KEY = "termax-ui-bg-kind-shadow";
+const FAST_BG_IMAGE_ID_KEY = "termax-ui-bg-image-shadow";
 
 function mirrorBgFastPath(
   kind: Preferences["backgroundKind"],

@@ -200,7 +200,7 @@ const ToolImpl = ({
 
       {hasDetails && (
         <CollapsibleContent
-          className={cn("terax-collapsible-content")}
+          className={cn("termax-collapsible-content")}
         >
           <div className="ml-3 mt-1 space-y-2 border-l border-border/60 pl-3 pb-1">
             {showInputBody ? (

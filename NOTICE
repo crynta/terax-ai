@@ -1,0 +1,14 @@
+TerMax
+Copyright (c) 2026 RiotBeard
+
+This product is derived from Terax (https://github.com/crynta/terax-ai),
+licensed under the Apache License, Version 2.0.
+
+Modifications from upstream:
+  - Renamed product from "Terax" to "TerMax"
+  - Changed bundle identifier to com.riotbeard.termax
+  - Removed auto-updater plugin and configuration
+  - Replaced user-facing branding strings
+  - Distribution via personal Homebrew tap (RiotBeard/homebrew-tap)
+
+The original Apache 2.0 LICENSE file is preserved unchanged.

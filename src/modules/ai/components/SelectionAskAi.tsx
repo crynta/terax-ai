@@ -43,7 +43,7 @@ export function SelectionAskAi({ x, y, onAsk, onDismiss }: SelectionAskAiProps) 
         }}
         className="flex h-7 w-full items-center justify-between gap-1.5 rounded-md border border-border/60 bg-card/95 px-2 text-xs shadow-lg backdrop-blur-md hover:border-border hover:bg-accent"
       >
-        <span>Ask Terax</span>
+        <span>Ask TerMax</span>
         <KbdGroup>
           <Kbd className="h-4 min-w-4 px-1 text-[10px]">{fmtShortcut(MOD_KEY, "L")}</Kbd>
         </KbdGroup>
