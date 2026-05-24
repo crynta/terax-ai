@@ -1,3 +1,4 @@
 allowBuilds:
-  esbuild: set this to true or false
-  msw: set this to true or false
+  '@swc/core': true
+  esbuild: true
+  msw: true
