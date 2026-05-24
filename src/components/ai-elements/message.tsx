@@ -22,9 +22,29 @@ import {
   useMemo,
   useState,
 } from "react";
+import { createMathPlugin } from "@streamdown/math";
 import { Streamdown } from "streamdown";
 import { ChatStreamingProvider } from "./chat-code";
 import { MarkdownCode } from "./markdown-code";
+
+// Converts \[...\] and \(...\) to $$...$$ and $...$ so remark-math picks them up.
+// Skips fenced and inline code spans to avoid mangling code examples.
+function normalizeMathDelimiters(content: string | undefined): string | undefined {
+  if (typeof content !== "string") return content;
+  const parts = content.split(/(```[\s\S]*?```|`[^`]*`)/g);
+  return parts
+    .map((part, i) =>
+      i % 2 === 1
+        ? part
+        : part
+            .replace(/\\\[([\s\S]*?)\\\]/g, "$$$$\n$1\n$$$$")
+            .replace(/\\\(([\s\S]*?)\\\)/g, "$$$1$$"),
+    )
+    .join("");
+}
+
+const mathPlugin = createMathPlugin({ singleDollarTextMath: true });
+const mathPlugins = { math: mathPlugin };
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -324,7 +344,12 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
 const streamdownComponents = { code: MarkdownCode };
 
 export const MessageResponse = memo(
-  ({ className, streaming = false, ...props }: MessageResponseProps) => (
+  ({
+    className,
+    streaming = false,
+    children,
+    ...props
+  }: MessageResponseProps) => (
     <ChatStreamingProvider value={streaming}>
       <Streamdown
         className={cn(
@@ -332,8 +357,11 @@ export const MessageResponse = memo(
           className,
         )}
         components={streamdownComponents}
+        plugins={mathPlugins}
         {...props}
-      />
+      >
+        {normalizeMathDelimiters(children)}
+      </Streamdown>
     </ChatStreamingProvider>
   ),
   (prevProps, nextProps) =>
