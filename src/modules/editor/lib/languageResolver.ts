@@ -106,6 +106,9 @@ const loaders: Record<string, LanguageLoader> = {
     import("@codemirror/legacy-modes/mode/dockerfile").then(
       (m) => m.dockerFile,
     ),
+
+  typ: () =>
+    import("codemirror-lang-typst").then((m) => m.typst()),
 };
 
 const filenameOverrides: Record<string, LanguageLoader> = {
