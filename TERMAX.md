@@ -1,14 +1,14 @@
-# TERAX.md
+# TERMAX.md
 
-Terax loads `TERAX.md` from the workspace root as agent memory (similar to AGENTS.md / CLAUDE.md). This file is also the project's living architecture doc — read it before making changes.
+TerMax loads `TERMAX.md` from the workspace root as agent memory (similar to AGENTS.md / CLAUDE.md). This file is also the project's living architecture doc — read it before making changes.
 
 ## Project
 
-**Terax** — open-source AI-native terminal emulator. Tauri 2 + Rust (`portable-pty`) backend, React 19 + TypeScript + xterm.js (webgl) client, BYOK AI via Vercel AI SDK v6.
+**TerMax** (personal fork of [Terax](https://github.com/crynta/terax-ai)) — open-source AI-native terminal emulator. Tauri 2 + Rust (`portable-pty`) backend, React 19 + TypeScript + xterm.js (webgl) client, BYOK AI via Vercel AI SDK v6.
 
-- Bundle id: `app.crynta.terax`
+- Bundle id: `com.riotbeard.termax`
 - Package manager: **pnpm**
-- Platforms: macOS, Linux, Windows
+- Platforms: macOS (Apple Silicon only) — fork drops upstream Intel/Linux/Windows targets
 - Frontend checks: `pnpm exec tsc --noEmit`, `pnpm test`
 - Rust checks: `cd src-tauri && cargo clippy && cargo test --locked`
 
@@ -46,7 +46,7 @@ Verify before claiming done: `pnpm exec tsc --noEmit`, `pnpm test`, `cargo clipp
 - `shell::shell_session_*`: persistent agent shell with state across calls. `shell::shell_bg_*` (`spawn`, `logs`, `kill`, `list`): long-running background processes (dev servers etc.) with bounded ring-buffer log capture.
 - `workspace::*`: `workspace_authorize` / `workspace_current_dir` (the spawn/git/AI cwd authorization registry) plus the WSL bridge (`wsl_list_distros`, `wsl_default_distro`, `wsl_home`).
 - `net::*` (`ai_http_request`, `ai_http_stream`, `lm_ping`): AI HTTP proxy with SSRF guard; keeps provider calls and local-model pings off the webview.
-- `secrets::secrets_*`: OS keychain via the `keyring` crate. Service constant `terax-ai`. Linux uses a file-based fallback gated behind `#[cfg(target_os = "linux")]`.
+- `secrets::secrets_*`: OS keychain via the `keyring` crate. Service constant `termax-ai`. Linux uses a file-based fallback gated behind `#[cfg(target_os = "linux")]`.
 - `open_settings_window`: separate webview window for Settings (optional `tab` arg deep-links a section).
 
 ### PTY shell integration
@@ -88,18 +88,17 @@ Each module is self-contained, exports a thin barrel via `index.ts`, and owns it
 - **git-history/** — commit graph rail, refs, per-commit file diffs.
 - **markdown/** — markdown preview renderer (backs the `markdown` tab kind).
 - **workspace/** — workspace environment switching (Local + WSL distros).
-- **theme/** — custom theme engine (no `next-themes`). `ThemeProvider` + `applyTheme` write CSS variables; built-in presets in `themes/` (terax-default, nord, tide, catppuccin, tokyo-night, caffeine, claude, gruvbox, sage, rose-pine), user themes via `customThemes.ts` + `validateTheme.ts`, optional background image via `bgImageStore.ts` + `SurfaceLayer`.
-- **updater/** — auto-updater UI built on `tauri-plugin-updater`.
+- **theme/** — custom theme engine (no `next-themes`). `ThemeProvider` + `applyTheme` write CSS variables; built-in presets in `themes/` (termax-default, nord, tide, catppuccin, tokyo-night, caffeine, claude, gruvbox, sage, rose-pine), user themes via `customThemes.ts` + `validateTheme.ts`, optional background image via `bgImageStore.ts` + `SurfaceLayer`.
 - **ai/** — see below.
 
 ### AI subsystem (`src/modules/ai/`)
 
 BYOK. Cloud providers via `@ai-sdk/*`: **OpenAI, Anthropic, Google, xAI, Cerebras, Groq**, plus **OpenAI-compatible** for any custom base URL. Local / offline providers (key-optional, model id supplied at runtime): **LM Studio, MLX, Ollama**. Provider list in `config.ts` (`PROVIDERS`); model registry includes `DEFAULT_MODEL_ID` + `DEFAULT_AUTOCOMPLETE_MODEL`.
 
-- **Key storage**: OS keychain via `keyring` (Rust). Frontend reads/writes through `secrets_*` commands. Service `KEYRING_SERVICE = "terax-ai"`. Never persist keys to disk, settings store, or `localStorage`.
+- **Key storage**: OS keychain via `keyring` (Rust). Frontend reads/writes through `secrets_*` commands. Service `KEYRING_SERVICE = "termax-ai"`. Never persist keys to disk, settings store, or `localStorage`.
 - **Agent** (`lib/agent.ts`): `Experimental_Agent` with `stopWhen: stepCountIs(MAX_AGENT_STEPS)` and the system prompt from `config.ts`. Provider branching happens here — keep the `Agent` / `DirectChatTransport` shape; the rest of the system depends on AI SDK v6 chat semantics.
 - **Sub-agents** (`agents/registry.ts`, `agents/runSubagent.ts`): named sub-agents with their own system prompts and tool subsets, invoked by the main agent via `run_subagent` tool.
-- **Sessions** (`lib/sessions.ts` + `store/chatStore.ts`): conversations are organized into named sessions, persisted via `tauri-plugin-store` at `terax-ai-sessions.json` (list + `activeId` + per-session `messages:<id>` keys). `chatStore.ts` keeps a module-scoped `Map<sessionId, Chat<UIMessage>>`; `getOrCreateChat(apiKey, sessionId)` lazily constructs a `Chat`, seeded with messages from a hydration map populated by `hydrateSessions()` (called once from `App.tsx`). `AgentRunBridge` mirrors active-session messages to disk on every change and auto-derives titles from the first user message. Switching the API key wipes the chat map; sessions persist.
+- **Sessions** (`lib/sessions.ts` + `store/chatStore.ts`): conversations are organized into named sessions, persisted via `tauri-plugin-store` at `termax-ai-sessions.json` (list + `activeId` + per-session `messages:<id>` keys). `chatStore.ts` keeps a module-scoped `Map<sessionId, Chat<UIMessage>>`; `getOrCreateChat(apiKey, sessionId)` lazily constructs a `Chat`, seeded with messages from a hydration map populated by `hydrateSessions()` (called once from `App.tsx`). `AgentRunBridge` mirrors active-session messages to disk on every change and auto-derives titles from the first user message. Switching the API key wipes the chat map; sessions persist.
 - **Composer** (`lib/composer.tsx`): React context providing shared input state (text, attachments, voice) for both the docked `AiInputBar` and any other surface. Attachments include image, text-file, and `selection` kinds — selections come from `useChatStore.attachSelection(text, source)` (drained into chips, not pasted into the textarea) and are wrapped as `<selection source="terminal|editor">…</selection>` blocks at submit. Composer derives `isBusy` from `agentMeta.status` so it can mount safely before sessions hydrate.
 - **Voice input**: streamed transcription pipeline. Toggled from the composer.
 - **Live context bridge**: `App.tsx` calls `setLive({ getCwd, getTerminalContext, … })` so tools can read the *currently active* terminal's cwd + last 300 lines of buffer. Lazy by design — don't pre-snapshot.
@@ -125,7 +124,7 @@ BYOK. Cloud providers via `@ai-sdk/*`: **OpenAI, Anthropic, Google, xAI, Cerebra
 
 ### Tauri capabilities
 
-`src-tauri/capabilities/default.json` is the allowlist for plugin APIs available to the webview. New plugins (dialog, autostart, updater, window-state, store, opener, os, log are wired in `lib.rs`) typically need:
+`src-tauri/capabilities/default.json` is the allowlist for plugin APIs available to the webview. New plugins (dialog, autostart, window-state, store, opener, os, log are wired in `lib.rs`) typically need:
 1. `Cargo.toml` dependency
 2. `.plugin(...)` call in `lib.rs` `run()`
 3. capability entry in `default.json`
@@ -138,11 +137,10 @@ BYOK. Cloud providers via `@ai-sdk/*`: **OpenAI, Anthropic, Google, xAI, Cerebra
 
 ### Bundle config
 
-- `bundle.targets: "all"` plus per-platform sections in `tauri.conf.json`:
-  - **macOS**: `minimumSystemVersion: 10.15`.
-  - **Linux**: deb depends `libwebkit2gtk-4.1-0`, `libgtk-3-0`; rpm `webkit2gtk4.1`, `gtk3`; AppImage bundles its media framework.
-  - **Windows**: NSIS installer in `currentUser` mode (no admin required), WebView2 via `embedBootstrapper` (offline install).
-- Auto-updater configured with a public minisign key; release artifacts at `https://github.com/crynta/terax-ai/releases/latest/download/latest.json`.
+This fork ships **only macOS Apple Silicon (`aarch64-apple-darwin`)**. Per-platform `tauri.conf.json` sections for Intel/Linux/Windows still exist upstream and survive merges, but `pnpm tauri build` is always run with `--target aarch64-apple-darwin` here.
+
+- **macOS**: `minimumSystemVersion: 11.0` (raised from upstream's 10.15 since arm64 only).
+- **Auto-updater removed.** The fork distributes via the personal Homebrew tap (`RiotBeard/homebrew-tap`); `brew upgrade --cask termax` handles updates. Don't re-add `tauri-plugin-updater` or the `updater:default` capability — `scripts/strip-upstream.sh` will rip them out again.
 
 ### Known gotchas
 

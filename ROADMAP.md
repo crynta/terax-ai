@@ -1,5 +1,9 @@
 # Roadmap
 
+> **This is upstream's roadmap.** TerMax is a personal fork and does not maintain a separate roadmap — it tracks [crynta/terax-ai](https://github.com/crynta/terax-ai) with branding/distribution changes. See [README.md](README.md) for what this fork does differently.
+
+---
+
 Terax direction, what's shipped, what's coming, and what's deliberately out of scope.
 
 This file is updated as direction evolves. For day-to-day work, see [GitHub Issues](https://github.com/crynta/terax-ai/issues) and the Projects board.

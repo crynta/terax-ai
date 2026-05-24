@@ -1,137 +1,82 @@
 <div align="center">
-  <img src="public/logo.png" width="144" height="144" alt="Terax" />
-  <h1>Terax</h1>
+  <img src="public/logo.png" width="144" height="144" alt="TerMax" />
+  <h1>TerMax</h1>
 
-  <p><strong>Lightweight Terminal-first AI-native dev workspace.</strong></p>
+  <p><strong>Personal fork of <a href="https://github.com/crynta/terax-ai">Terax</a> — lightweight terminal-first AI-native dev workspace.</strong></p>
 
   <p>
-    <img src="https://img.shields.io/github/v/release/crynta/terax-ai?label=version&color=blue" alt="version" />
+    <img src="https://img.shields.io/github/v/release/RiotBeard/termax?label=version&color=blue" alt="version" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
-    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
+    <img src="https://img.shields.io/badge/platform-macOS%20(Apple%20Silicon)-lightgrey" alt="platform" />
   </p>
 </div>
 
 ---
 
-Terax is a lightweight open-source terminal (ADE) built on Tauri 2 + Rust and React 19. A native PTY backend with a WebGL renderer, an agentic AI side-panel that runs against your own keys or fully local models, plus a code editor, file explorer, source control with a git graph, and a web preview pane built in. About 7-8 MB on disk. No telemetry. No account.
+TerMax is a personal fork of [Terax](https://github.com/crynta/terax-ai), distributed only as a signed + notarized Apple Silicon build through a personal Homebrew tap. Functionality and credit for the upstream design and code go to [@crynta](https://github.com/crynta). This fork only changes branding, distribution, and removes the auto-updater (Homebrew handles updates instead).
 
-## Screenshots
+If you want the official cross-platform builds (macOS Intel, Linux, Windows), get them from [crynta/terax-ai](https://github.com/crynta/terax-ai) — this fork is for personal use.
 
-<table>
-  <tr>
-    <td align="center"><img src="docs/terminal.png" alt="Terminal" /><br/><sub>Multi-tab terminal with WebGL rendering</sub></td>
-    <td align="center"><img src="docs/themes.png" alt="Themes and background image" /><br/><sub>Custom themes, presets, and background images</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/web-preview.png" alt="Web preview" /><br/><sub>Web preview of local dev servers</sub></td>
-    <td align="center"><img src="docs/source-control.png" alt="Source control and git graph" /><br/><sub>Source control panel with git graph in history</sub></td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center"><img src="docs/ai-workflow.png" alt="AI window" /><br/><sub>Agentic AI workflow with edit diffs in the code editor</sub></td>
-  </tr>
-</table>
+## What it is (from upstream)
 
-## Features
+A lightweight open-source terminal built on Tauri 2 + Rust and React 19. Native PTY backend with a WebGL renderer, agentic AI side-panel that runs against your own keys or fully local models, plus code editor, file explorer, source control with git graph, and a web preview pane. About 7-8 MB on disk. No telemetry. No account.
 
-### Terminal
-
-- xterm.js with WebGL renderer, multi-tab with background streaming
-- Native PTY backend via `portable-pty` (zsh, bash, pwsh, fish, cmd)
-- Split panels (horizontal and vertical)
-- Inline search, link detection, true-color
-- Per-tab workspace environments on Windows (Local, or any installed WSL distro)
-
-### Code editor
-
-- CodeMirror 6 (supports all popular languages - TS/JS, Rust, Python, Go, C/C++, Java, HTML/CSS, JSON, Markdown, etc.)
-- Inline AI autocomplete with local model support
-- AI edit diffs, accept or reject hunk by hunk
-- Vim mode
-- Ten built-in editor themes: Atom One, Aura, Copilot, GitHub Dark / Light, Gruvbox Dark, Nord, Tokyo Night, Xcode Dark / Light
-
-### Source control
-
-- Stage / unstage hunks, commit (Cmd+Enter / Ctrl+Enter), push with upstream awareness
-- Branch display including detached HEAD state
-- Git history pane with a real commit graph (lane rendering for merges and branches)
-- Commit search and filter, click through to the remote commit page
-
-### File explorer
-
-- Catppuccin icon theme
-- Fuzzy search, keyboard navigation, inline rename, context actions
-- Attach files and selections directly to the AI side-panel
-
-### Web preview
-
-- Auto-detects local dev servers and opens them in a preview tab
-- External URL preview via a native child webview
-
-### Themes and customization
-
-- Custom themes built in-app, switch between bundled presets and your own
-- Create your own themes, share them or import from the community
-- Background images with adjustable opacity and blur
-- Editor theme is independent from the app theme
-
-### AI
-
-- **BYOK providers:** OpenAI, Anthropic, Google (Gemini), Groq, xAI (Grok), Cerebras, OpenRouter, DeepSeek, Mistral, plus any OpenAI-compatible endpoint
-- **Local / offline:** LM Studio, MLX, Ollama
-- **Agentic workflow:** plans, sub-agents, project memory via `TERAX.md`, file read / write / edit / multi-edit / grep / glob, bash with approval gating, background processes
-- **Composer:** snippets via `#handle`, files via `@path`, slash commands, voice input, attach-to-agent from explorer or selection
-- **Custom agents** with their own system prompt and tool subset
-- **Plan mode** for multi-step work, generates and confirms before doing
+For the full feature list, screenshots, and roadmap, see the [upstream README](https://github.com/crynta/terax-ai#readme).
 
 ## Install
 
-Latest installers are on the [Releases](https://github.com/crynta/terax-ai/releases/latest) page. Terax auto-updates from there.
+```sh
+brew tap RiotBeard/tap
+brew install --cask termax
+```
 
-### Windows notes
-
-- On first launch Windows shows "Windows protected your PC" because Terax isn't code-signed yet (will be fixed soon). Click **More info** then **Run anyway**.
-- Default shell detection: `pwsh.exe` (PowerShell 7+) -> `powershell.exe` (Windows PowerShell 5.1), -> `cmd.exe`.
-- WSL is a first-class workspace environment, not a wrapped subprocess.
-
-### Linux notes
-
-- **Arch / AUR:** `yay -S terax-bin` (or `paru`, etc.). Tracks the latest release.
-- **AppImage:** needs FUSE. Without it: `./Terax_*.AppImage --appimage-extract-and-run`. On Wayland with rendering glitches, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`. Otherwise the `.deb` / `.rpm` packages link against the system GTK stack and tend to be smoother.
+Updates ship as new releases on this repo; `brew upgrade --cask termax` pulls the latest.
 
 ## Configure AI
 
-1. Open **Settings -> AI**.
-2. Pick a provider and paste your API key. For local inference, point Terax at your LM Studio / MLX / Ollama endpoint.
+1. Open **Settings → AI**.
+2. Pick a provider and paste your API key. For local inference, point TerMax at your LM Studio / MLX / Ollama endpoint.
 3. Keys are written to the OS keychain via `keyring`. They never touch disk or localStorage.
 
 ## Build from source
 
 **Prerequisites**
-- Rust (stable), https://rustup.rs
+- Rust ≥ 1.85 stable (`rustup update stable`)
 - Node 20+ and [pnpm](https://pnpm.io)
-- Tauri prerequisites for your platform, https://tauri.app/start/prerequisites/
+- Xcode Command Line Tools
+- For signed/notarized builds: a Developer ID Application cert in your keychain and an App Store Connect API key — see [plan.md](plan.md) (Phase 3) for setup.
 
 **Run**
-```bash
+```sh
 pnpm install
-pnpm tauri dev          # development
-pnpm tauri build        # production bundle
+rustup target add aarch64-apple-darwin
+pnpm tauri dev                                # development
+pnpm tauri build --target aarch64-apple-darwin  # production bundle
 ```
 
 **Checks**
-```bash
+```sh
 pnpm exec tsc --noEmit          # frontend type-check
 cd src-tauri && cargo clippy    # Rust lint
 ```
 
-## Tech stack
+## Syncing with upstream
 
-Tauri 2, Rust, `portable-pty`, React 19, TypeScript, xterm.js, CodeMirror 6, Vercel AI SDK v6, Tailwind v4, shadcn/ui, Zustand.
+After pulling new commits from upstream, re-apply the fork's customizations:
 
-## Contributing
+```sh
+git fetch upstream && git merge upstream/main
+./scripts/strip-upstream.sh
+cd src-tauri && cargo check
+pnpm exec tsc --noEmit
+```
 
-Issues and PRs are welcome! Feel free to open issues, suggest features, or submit pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
+See [plan.md](plan.md) for the full end-to-end release procedure (build → notarize → release → cask bump).
+
+## Attribution
+
+TerMax is derived from [crynta/terax-ai](https://github.com/crynta/terax-ai), licensed under Apache 2.0. See [NOTICE](NOTICE) for the list of modifications and [LICENSE](LICENSE) for the original Apache 2.0 license, both preserved unchanged.
 
 ## License
 
-Terax is licensed under the Apache-2.0 License. For more information on our dependencies, see [Apache License 2.0](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).

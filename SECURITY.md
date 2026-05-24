@@ -1,8 +1,12 @@
 # Security
 
-Terax runs shells, reads/writes files, and talks to AI providers — so security bugs matter. If you find one, please tell us before posting it publicly.
+> **This is a personal fork.** TerMax shares its security surface with upstream [Terax](https://github.com/crynta/terax-ai) — bugs in the codebase should go to upstream so all users benefit. Report fork-specific issues (the `RiotBeard/homebrew-tap` cask, the signing pipeline, or modifications in `scripts/strip-upstream.sh`) by opening a private GitHub security advisory on `RiotBeard/termax`.
 
-## Reporting
+---
+
+TerMax / Terax runs shells, reads/writes files, and talks to AI providers — so security bugs matter. If you find one, please tell the right party before posting publicly.
+
+## Reporting (upstream)
 
 Email **security@terax.app**. Include:
 
@@ -18,12 +22,18 @@ Please **don't** open a public GitHub issue for security reports.
 
 Until `1.0.0`, only the latest minor gets security fixes. Right now that's `0.5.x`. 
 
-## What's in scope
+## What's in scope (upstream)
 
 - The Rust backend in `src-tauri/` (PTY, FS, IPC, plugins)
 - The frontend in `src/` — anywhere untrusted input lands (terminal output, file content, AI tool results, credentials)
 - Release artifacts on GitHub and `terax.app`
-- The auto-updater
+- The auto-updater (upstream only — this fork has it removed)
+
+## What's in scope (this fork specifically)
+
+- The Apple Developer ID signing identity and notarization pipeline used to ship TerMax releases
+- The `RiotBeard/homebrew-tap` cask URL and SHA pinning
+- Anything introduced by `scripts/strip-upstream.sh` or fork-only files (`NOTICE`, AboutSection rewrite)
 
 ## What's not
 

@@ -1,4 +1,10 @@
-# Contributing to Terax
+# Contributing
+
+> **This is a personal fork.** TerMax is not accepting feature contributions — please send those to the upstream project at [crynta/terax-ai](https://github.com/crynta/terax-ai). This file is preserved from upstream for reference on their contribution model, which any upstream PR will be judged by.
+
+---
+
+# Contributing to Terax (upstream)
 
 Terax is a solo-maintained project with a strong product direction. Contributions are welcome, but **alignment matters more than volume**.
 

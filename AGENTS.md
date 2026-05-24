@@ -1,1 +1,1 @@
-TERAX.md
+TERMAX.md
