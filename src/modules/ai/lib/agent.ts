@@ -375,9 +375,10 @@ export async function runAgentStream(opts: RunAgentOptions) {
   );
 
   const history = await convertToModelMessages(opts.uiMessages);
+  const isReasoningModel = getModel(modelId).tags?.includes("reasoning");
   const prunedHistory = pruneMessages({
     messages: history,
-    reasoning: "all",
+    reasoning: isReasoningModel ? "none" : "all",
     emptyMessages: "remove",
   });
   const compact = compactModelMessagesDetailed(
