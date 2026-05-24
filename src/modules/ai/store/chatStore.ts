@@ -115,6 +115,12 @@ type StoreState = {
   selectedModelId: ModelId;
   setSelectedModelId: (id: ModelId) => void;
 
+  /** User's "deep thinking" preference (persisted). Effective state also
+   *  depends on the model — see resolveThinkingEnabled. */
+  thinkingEnabled: boolean;
+  setThinkingEnabled: (v: boolean) => void;
+  toggleThinking: () => void;
+
   mini: MiniState;
   openMini: () => void;
   closeMini: () => void;
@@ -206,6 +212,24 @@ export function flushPersist(id?: string): void {
   for (const key of Array.from(pendingPersist.keys())) flushPersistEntry(key);
 }
 
+const THINKING_KEY = "terax.ai.thinkingEnabled";
+
+function readThinkingEnabled(): boolean {
+  try {
+    return window.localStorage.getItem(THINKING_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeThinkingEnabled(v: boolean): void {
+  try {
+    window.localStorage.setItem(THINKING_KEY, v ? "1" : "0");
+  } catch {
+    // storage may fail in private mode
+  }
+}
+
 function makeChat(sessionId: string): Chat<UIMessage> {
   const readCache = new Map<string, { size: number; hash: number }>();
   const toolContext: ToolContext = {
@@ -245,6 +269,7 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       };
     },
     getPlanMode: () => usePlanStore.getState().active,
+    getThinking: () => useChatStore.getState().thinkingEnabled,
     getLmstudioBaseURL: () => usePreferencesStore.getState().lmstudioBaseURL,
     getLmstudioModelId: () => usePreferencesStore.getState().lmstudioModelId,
     getMlxBaseURL: () => usePreferencesStore.getState().mlxBaseURL,
@@ -320,6 +345,17 @@ export const useChatStore = create<StoreState>((set, get) => ({
   setSelectedModelId: (id) => {
     set({ selectedModelId: id });
     void pushRecentModel(id);
+  },
+
+  thinkingEnabled: readThinkingEnabled(),
+  setThinkingEnabled: (v) => {
+    set({ thinkingEnabled: v });
+    writeThinkingEnabled(v);
+  },
+  toggleThinking: () => {
+    const next = !get().thinkingEnabled;
+    set({ thinkingEnabled: next });
+    writeThinkingEnabled(next);
   },
 
   mini: { open: false },

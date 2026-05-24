@@ -237,6 +237,24 @@ export const MODELS = [
 
   // ── Google ────────────────────────────────────────────────────────────────
   {
+    id: "gemini-3.5-flash",
+    provider: "google",
+    label: "Gemini 3.5 Flash",
+    hint: "Fast",
+    description: "High-intelligence, extremely fast multimodal model.",
+    capabilities: { intelligence: 4, speed: 5, cost: 4 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "gemini-3.1-flash-lite",
+    provider: "google",
+    label: "Gemini 3.1 Flash-Lite",
+    hint: "Lite",
+    description: "Extremely fast, cheap, and lightweight multimodal model.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["vision", "tools"],
+  },
+  {
     id: "gemini-3.1-pro-preview",
     provider: "google",
     label: "Gemini 3.1 Pro",
@@ -465,6 +483,24 @@ export const MODELS = [
     tags: ["vision", "reasoning", "tools", "coding"],
   },
   {
+    id: "google/gemini-3.5-flash",
+    provider: "openrouter",
+    label: "Gemini 3.5 Flash",
+    hint: "OpenRouter",
+    description: "High-intelligence, fast multimodal model via OpenRouter.",
+    capabilities: { intelligence: 4, speed: 5, cost: 4 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "google/gemini-3.1-flash-lite",
+    provider: "openrouter",
+    label: "Gemini 3.1 Flash-Lite",
+    hint: "OpenRouter",
+    description: "Extremely fast, lightweight model via OpenRouter.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["vision", "tools"],
+  },
+  {
     id: "x-ai/grok-4.20-reasoning",
     provider: "openrouter",
     label: "Grok 4.20 Reasoning",
@@ -606,6 +642,69 @@ export function getModel(id: ModelId): ModelInfo {
 
 export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
 
+/**
+ * Whether a model's chain-of-thought ("deep thinking") can be controlled.
+ * - `optional`: hybrid model whose thinking we can switch via providerOptions
+ *   (native OpenAI / Anthropic / Google). The input-bar toggle drives it.
+ * - `always`: reasoning-only model — thinking is inherent and can't be turned
+ *   off (toggle is shown locked-on, purely informational).
+ * - `never`: no thinking; no toggle shown.
+ */
+export type ThinkingMode = "always" | "optional" | "never";
+
+/** Hybrid models whose thinking we can toggle through providerOptions. Only the
+ *  three native SDKs expose this; gateway/local providers are model-bound. */
+const THINKING_OPTIONAL: ReadonlySet<string> = new Set([
+  // OpenAI GPT-5 family — reasoningEffort
+  "gpt-5.5",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+  "gpt-5.3-codex",
+  // Anthropic — extended thinking
+  "claude-opus-4-7",
+  "claude-sonnet-4-6",
+  "claude-haiku-4-5",
+  "claude-opus-4-6",
+  // Google Gemini — thinkingConfig
+  "gemini-3.5-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-3.1-pro-preview",
+  "gemini-3-flash-preview",
+  "gemini-2.5-pro",
+  "gemini-2.5-flash",
+  // DeepSeek V4 Pro — thinking toggle supported
+  "deepseek-v4-pro",
+  "deepseek/deepseek-v4-pro",
+]);
+
+/** Reasoning-only models — always think, regardless of the toggle. */
+const THINKING_ALWAYS: ReadonlySet<string> = new Set([
+  "grok-4.20-reasoning",
+  "grok-4-fast-reasoning",
+  "x-ai/grok-4.20-reasoning",
+  "deepseek-reasoner",
+  "deepseek/deepseek-reasoner",
+  "deepseek-r1-distill-llama-70b",
+]);
+
+export function getThinkingMode(modelId: string | undefined): ThinkingMode {
+  if (!modelId) return "never";
+  if (THINKING_ALWAYS.has(modelId)) return "always";
+  if (THINKING_OPTIONAL.has(modelId)) return "optional";
+  return "never";
+}
+
+/** Effective thinking state = model capability layered over the user toggle. */
+export function resolveThinkingEnabled(
+  modelId: string | undefined,
+  userEnabled: boolean,
+): boolean {
+  const mode = getThinkingMode(modelId);
+  if (mode === "always") return true;
+  if (mode === "never") return false;
+  return userEnabled;
+}
+
 /** Approximate context window (in tokens) per model. Used for the
  *  context-usage indicator in the AI mini-window header. Conservative
  *  estimates — actual provider limits may shift. */
@@ -619,6 +718,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "claude-sonnet-4-6": 200_000,
   "claude-haiku-4-5": 200_000,
   "claude-opus-4-6": 200_000,
+  "gemini-3.5-flash": 1_000_000,
+  "gemini-3.1-flash-lite": 1_000_000,
   "gemini-3.1-pro-preview": 1_000_000,
   "gemini-3-flash-preview": 1_000_000,
   "gemini-2.5-pro": 1_000_000,
@@ -640,6 +741,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "openai/gpt-5.5": 1_050_000,
   "openai/gpt-5.4-mini": 400_000,
   "google/gemini-3.1-pro-preview": 1_000_000,
+  "google/gemini-3.5-flash": 1_000_000,
+  "google/gemini-3.1-flash-lite": 1_000_000,
   "x-ai/grok-4.20-reasoning": 2_000_000,
   "deepseek/deepseek-v4-pro": 1_000_000,
   "deepseek/deepseek-reasoner": 128_000,
@@ -685,10 +788,14 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "claude-opus-4-6": { input: 15, output: 75, cacheRead: 1.5 },
   "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3 },
   "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1 },
+  "gemini-3.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.075 },
+  "gemini-3.1-flash-lite": { input: 0.075, output: 0.3, cacheRead: 0.015 },
   "gemini-3.1-pro-preview": { input: 1.25, output: 10, cacheRead: 0.31 },
   "gemini-3-flash-preview": { input: 0.3, output: 2.5, cacheRead: 0.075 },
   "gemini-2.5-pro": { input: 1.25, output: 10, cacheRead: 0.31 },
   "gemini-2.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.075 },
+  "google/gemini-3.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.075 },
+  "google/gemini-3.1-flash-lite": { input: 0.075, output: 0.3, cacheRead: 0.015 },
   "grok-4.20-reasoning": { input: 3, output: 15 },
   "grok-4.20-non-reasoning": { input: 1, output: 5 },
   "grok-4-fast-reasoning": { input: 0.2, output: 0.5 },
