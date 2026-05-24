@@ -721,6 +721,9 @@ export default function App() {
     };
     const onUp = (e: MouseEvent) => {
       if (isInsideAi(e.target)) return;
+      const el = e.target as HTMLElement | null;
+      const inContentArea = el?.closest?.(".xterm, .cm-editor");
+      if (!inContentArea) return;
       // Defer one tick so xterm/CodeMirror finalize the selection.
       setTimeout(() => {
         const text = captureActiveSelection();
