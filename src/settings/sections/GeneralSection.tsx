@@ -15,13 +15,14 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { ThemePref } from "@/modules/settings/store";
+import type { SidebarPosition, ThemePref } from "@/modules/settings/store";
 import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
   setAutostart,
   setRestoreWindowState,
   setShowHidden,
+  setSidebarPosition,
   setTerminalFontFamily,
   setTerminalLetterSpacing,
   setTerminalFontSize,
@@ -74,6 +75,7 @@ export function GeneralSection() {
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
 
   useEffect(() => {
     let alive = true;
@@ -152,6 +154,16 @@ export function GeneralSection() {
             onValueChange={(v) => void setZoomLevel(v[0] ?? 1)}
           />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Layout</Label>
+        <SettingRow
+          title="Sidebar position"
+          description="Dock the file explorer and source control panel to the left or right edge of the window."
+        >
+          <SidebarPositionToggle value={sidebarPosition} />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -324,5 +336,36 @@ function Label({ children }: { children: React.ReactNode }) {
     <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+function SidebarPositionToggle({ value }: { value: SidebarPosition }) {
+  const options: { id: SidebarPosition; label: string }[] = [
+    { id: "left", label: "Left" },
+    { id: "right", label: "Right" },
+  ];
+  return (
+    <div className="inline-flex overflow-hidden rounded-md border border-border/60">
+      {options.map((o, i) => {
+        const active = value === o.id;
+        return (
+          <button
+            key={o.id}
+            type="button"
+            aria-pressed={active}
+            onClick={() => void setSidebarPosition(o.id)}
+            className={cn(
+              "h-7 px-3 text-[11.5px] transition-colors",
+              i > 0 && "border-l border-border/60",
+              active
+                ? "bg-foreground/10 text-foreground"
+                : "bg-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }

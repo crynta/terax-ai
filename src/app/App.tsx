@@ -391,6 +391,7 @@ export default function App() {
   const openaiCompatibleBaseURL = usePreferencesStore(
     (s) => s.openaiCompatibleBaseURL,
   );
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
   const hasLocalModel =
     (lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0) ||
     (mlxBaseURL.trim().length > 0 && mlxModelId.trim().length > 0) ||
@@ -1319,77 +1320,104 @@ export default function App() {
               orientation="horizontal"
               className="min-h-0 flex-1"
             >
-              <ResizablePanel
-                id="sidebar"
-                panelRef={sidebarRef}
-                defaultSize={`${sidebarWidthRef.current}px`}
-                minSize={`${SIDEBAR_MIN_WIDTH}px`}
-                maxSize={`${SIDEBAR_MAX_WIDTH}px`}
-                collapsible
-                collapsedSize={0}
-                onResize={(size) => {
-                  if (size.inPixels > 0) persistSidebarWidth(size.inPixels);
-                }}
-              >
-                <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
-                  <div className="min-h-0 flex-1">
-                    {sidebarView === "explorer" ? (
-                      <FileExplorer
-                        ref={explorerRef}
-                        rootPath={explorerRoot}
-                        onOpenFile={handleOpenFile}
-                        onPathRenamed={handlePathRenamed}
-                        onPathDeleted={handlePathDeleted}
-                        onRevealInTerminal={cdInNewTab}
-                        onAttachToAgent={handleAttachFileToAgent}
-                        onOpenMarkdownPreview={openMarkdownPreview}
-                      />
-                    ) : (
-                      <SourceControlPanel
-                        open
-                        sourceControl={sourceControl}
-                        onOpenDiff={openGitDiffTab}
-                        onOpenGitGraph={openGitGraphFromContext}
-                      />
-                    )}
-                  </div>
-                  <SidebarRail
-                    activeView={sidebarView}
-                    onSelectView={persistSidebarView}
-                    changedCount={sourceControl.changedCount}
-                  />
-                </div>
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
-                <div className="flex h-full min-h-0 flex-col">
-                  <div className="relative min-h-0 flex-1">
-                    {workspaceSurface}
-                  </div>
-
-                  {keysLoaded ? (
-                    <motion.div
-                      data-ai-input-bar
-                      initial={false}
-                      animate={{
-                        height: panelOpen ? "auto" : 0,
-                        opacity: panelOpen ? 1 : 0,
-                      }}
-                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                      className="overflow-hidden"
-                      aria-hidden={!panelOpen}
-                    >
-                      {hasComposer ? (
-                        <AiInputBar />
-                      ) : (
-                        <AiInputBarConnect
-                          onAdd={() => void openSettingsWindow("models")}
-                        />
+              {(() => {
+                const sidebarPanel = (
+                  <ResizablePanel
+                    key="sidebar"
+                    id="sidebar"
+                    panelRef={sidebarRef}
+                    defaultSize={`${sidebarWidthRef.current}px`}
+                    minSize={`${SIDEBAR_MIN_WIDTH}px`}
+                    maxSize={`${SIDEBAR_MAX_WIDTH}px`}
+                    collapsible
+                    collapsedSize={0}
+                    onResize={(size) => {
+                      if (size.inPixels > 0) persistSidebarWidth(size.inPixels);
+                    }}
+                  >
+                    <div
+                      className={cn(
+                        "flex h-full min-h-0 flex-col bg-card",
+                        sidebarPosition === "right"
+                          ? "border-l border-border/60"
+                          : "border-r border-border/60",
                       )}
-                    </motion.div>
-                  ) : null}
-                </div>
-              </ResizablePanel>
+                    >
+                      <div className="min-h-0 flex-1">
+                        {sidebarView === "explorer" ? (
+                          <FileExplorer
+                            ref={explorerRef}
+                            rootPath={explorerRoot}
+                            onOpenFile={handleOpenFile}
+                            onPathRenamed={handlePathRenamed}
+                            onPathDeleted={handlePathDeleted}
+                            onRevealInTerminal={cdInNewTab}
+                            onAttachToAgent={handleAttachFileToAgent}
+                            onOpenMarkdownPreview={openMarkdownPreview}
+                          />
+                        ) : (
+                          <SourceControlPanel
+                            open
+                            sourceControl={sourceControl}
+                            onOpenDiff={openGitDiffTab}
+                            onOpenGitGraph={openGitGraphFromContext}
+                          />
+                        )}
+                      </div>
+                      <SidebarRail
+                        activeView={sidebarView}
+                        onSelectView={persistSidebarView}
+                        changedCount={sourceControl.changedCount}
+                      />
+                    </div>
+                  </ResizablePanel>
+                );
+                const workspacePanel = (
+                  <ResizablePanel
+                    key="workspace"
+                    id="workspace"
+                    defaultSize="78%"
+                    minSize="30%"
+                  >
+                    <div className="flex h-full min-h-0 flex-col">
+                      <div className="relative min-h-0 flex-1">
+                        {workspaceSurface}
+                      </div>
+
+                      {keysLoaded ? (
+                        <motion.div
+                          data-ai-input-bar
+                          initial={false}
+                          animate={{
+                            height: panelOpen ? "auto" : 0,
+                            opacity: panelOpen ? 1 : 0,
+                          }}
+                          transition={{
+                            duration: 0.18,
+                            ease: [0.16, 1, 0.3, 1],
+                          }}
+                          className="overflow-hidden"
+                          aria-hidden={!panelOpen}
+                        >
+                          {hasComposer ? (
+                            <AiInputBar />
+                          ) : (
+                            <AiInputBarConnect
+                              onAdd={() => void openSettingsWindow("models")}
+                            />
+                          )}
+                        </motion.div>
+                      ) : null}
+                    </div>
+                  </ResizablePanel>
+                );
+                const handle = (
+                  <ResizableHandle key="handle" withHandle />
+                );
+                return sidebarPosition === "right"
+                  ? [workspacePanel, handle, sidebarPanel]
+                  : [sidebarPanel, handle, workspacePanel];
+              })()}
             </ResizablePanelGroup>
           </main>
 
