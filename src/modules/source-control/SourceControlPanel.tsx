@@ -21,6 +21,7 @@ import {
 import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   AiContentGenerator02Icon,
   Alert02Icon,
@@ -133,6 +134,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   onOpenDiff,
 }: Props) {
   const scm = useSourceControlPanel(open, sourceControl, onOpenDiff);
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
   const refreshAnimationRef = useRef<number | null>(null);
   const [refreshAnimating, setRefreshAnimating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -605,7 +607,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                       </button>
                     </TooltipTrigger>
                     <TooltipContent
-                      side="left"
+                      side={sidebarPosition === "right" ? "right" : "left"}
                       className={cn(
                         SOURCE_CONTROL_TOOLTIP_CLASS,
                         "text-[10.5px]",
