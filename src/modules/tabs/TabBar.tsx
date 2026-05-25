@@ -21,7 +21,7 @@ import {
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EditorTab, Tab } from "./lib/useTabs";
 
 type Props = {
@@ -36,6 +36,7 @@ type Props = {
   onClose: (id: number) => void;
   /** Pin (promote) a preview tab to persistent on double-click. */
   onPin: (id: number) => void;
+  onRename: (id: number, title: string) => void;
   compact?: boolean;
 };
 
@@ -51,8 +52,13 @@ export function TabBar({
   onClose,
   onPin,
   compact,
+  onRename,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameInputRef = useRef<HTMLInputElement>(null);
+  const renamingIdRef = useRef<number | null>(null);
 
   // Horizontal wheel scroll without holding shift.
   useEffect(() => {
@@ -76,6 +82,41 @@ export function TabBar({
     active?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeId, tabs.length]);
 
+  
+  useEffect(() => {
+    if (renamingId !== null) {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    }
+  }, [renamingId]);
+
+  function startRename(tab: Tab) {
+    setRenamingId(tab.id);
+    renamingIdRef.current = tab.id;
+    setRenameValue(tab.title);
+  }
+
+  function commitRename() {
+    if (renamingId !== null) {
+      onRename(renamingId, renameValue);
+    }
+    renamingIdRef.current = null;
+    setRenamingId(null);
+  }
+
+  function cancelRename() {
+    renamingIdRef.current = null;
+    setRenamingId(null);
+  }
+
+  function isRenameable(tab: Tab): boolean {
+    return (
+      tab.kind === "terminal" ||
+      tab.kind === "preview" ||
+      tab.kind === "git-history"
+    );
+  }
+
   return (
     <div
       ref={scrollRef}
@@ -90,12 +131,19 @@ export function TabBar({
           <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
             {tabs.map((t) => {
               const isPreview = t.kind === "editor" && (t as EditorTab).preview;
+              const isRenaming = renamingId === t.id;
               return (
                 <TabsTrigger
                   key={t.id}
                   value={String(t.id)}
                   data-tab-id={t.id}
-                  onDoubleClick={() => isPreview && onPin(t.id)}
+                  onDoubleClick={() => {
+                    if (renamingIdRef.current === t.id) return;
+                    if (isPreview) onPin(t.id);
+                    if (isRenameable(t)) {
+                      startRename(t);
+                    }
+                  }}
                   className={cn(
                     "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
                     compact
@@ -112,11 +160,32 @@ export function TabBar({
                     )}
                   >
                     <TabIcon tab={t} />
-                    {/* Preview tabs use italic to signal the transient state,
-                        matching the visual convention from VSCode. */}
-                    <span className={cn("truncate", isPreview && "italic")}>
-                      {labelFor(t)}
-                    </span>
+                    {isRenaming ? (
+                      <input
+                        ref={renameInputRef}
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={commitRename}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            commitRename();
+                          }
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            cancelRename();
+                          }
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-24 min-w-0 bg-transparent text-xs text-foreground outline-none border-b border-foreground/40 leading-none"
+                      />
+                    ) : (
+                      <span className={cn("truncate", isPreview && "italic")}>
+                        {labelFor(t)}
+                      </span>
+                    )}
                     {t.kind === "editor" && t.dirty ? (
                       <span
                         aria-label="Unsaved changes"
@@ -275,14 +344,15 @@ function TabIcon({ tab }: { tab: Tab }) {
 }
 
 function labelFor(t: Tab): string {
-  if (t.kind === "editor") return t.title;
-  if (t.kind === "preview") return t.title;
-  if (t.kind === "markdown") return t.title;
-  if (t.kind === "ai-diff") return t.title;
-  if (t.kind === "git-diff") return t.title;
-  if (t.kind === "git-history") return t.title;
-  if (t.kind === "git-commit-file") return t.title;
-  if (!t.cwd) return t.title;
-  const parts = t.cwd.split(/[\\/]/).filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : "/";
+  // For terminal tabs, check if user has customized the title
+  if (t.kind === "terminal") {
+    // If user has customized the title, always show it
+    if (t.customTitle) return t.title;
+    // Otherwise show directory name from cwd if available
+    if (!t.cwd) return t.title;
+    const parts = t.cwd.split(/[\\/]/).filter(Boolean);
+    return parts.length ? parts[parts.length - 1] : "/";
+  }
+  // For all other tab kinds, always use the title
+  return t.title;
 }

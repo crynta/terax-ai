@@ -25,6 +25,8 @@ export type TerminalTab = {
   activeLeafId: number;
   /** AI agent cannot read buffer / context of this terminal. */
   private?: boolean;
+  /** Whether the title has been customized by the user. */
+  customTitle?: boolean;
 };
 
 export type EditorTab = {
@@ -794,6 +796,28 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     for (const lid of toDispose) disposeSession(lid);
   }, []);
 
+  
+  // Renames a tab
+  const renameTab = useCallback((id: number, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    setTabs((curr) =>
+      curr.map((t) => {
+        if (t.id !== id) return t;
+        // Only allow renaming for terminal, preview, and git-history tabs
+        if (t.kind === "terminal" || t.kind === "preview" || t.kind === "git-history") {
+          return { 
+            ...t, 
+            title: trimmed,
+            ...(t.kind === "terminal" && { customTitle: true })
+          };
+        }
+        return t;
+      }),
+    );
+  }, []);
+
+
   return {
     tabs,
     activeId,
@@ -821,5 +845,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,
+    renameTab,
   };
 }
