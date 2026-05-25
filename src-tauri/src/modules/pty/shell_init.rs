@@ -50,15 +50,16 @@ fn fish_init_script() -> &'static str {
 pub fn build_command(
     cwd: Option<String>,
     workspace: WorkspaceEnv,
+    shell_override: Option<String>,
 ) -> Result<CommandBuilder, String> {
     #[cfg(unix)]
     {
         let _ = workspace;
-        unix::build(cwd)
+        unix::build(cwd, shell_override)
     }
     #[cfg(windows)]
     {
-        windows::build(cwd, workspace)
+        windows::build(cwd, workspace, shell_override)
     }
 }
 
@@ -127,10 +128,28 @@ mod unix {
 
     impl Shell {
         pub fn detect() -> (Shell, String) {
-            let path = login_shell()
-                .or_else(|| std::env::var("SHELL").ok())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "/bin/zsh".into());
+            let shell_env = std::env::var("SHELL").ok().filter(|s| !s.is_empty());
+
+            // Detection order:
+            // 1. FISH_VERSION is exported by fish to all child processes, so its
+            //    presence means terax was launched from fish. Prefer the fish binary
+            //    from PATH in that case, falling back to $SHELL if it's already fish.
+            // 2. $SHELL — explicit user preference, and more up-to-date than getpwuid
+            //    on macOS where Homebrew fish installs often don't update /etc/passwd.
+            // 3. getpwuid login shell — system fallback.
+            // 4. /bin/zsh hardcoded last resort.
+            let path = if std::env::var("FISH_VERSION").is_ok() {
+                shell_env
+                    .clone()
+                    .filter(|s| s.contains("fish"))
+                    .or_else(which_fish)
+                    .or(shell_env)
+                    .or_else(login_shell)
+            } else {
+                shell_env.or_else(login_shell)
+            }
+            .unwrap_or_else(|| "/bin/zsh".into());
+
             let name = path.rsplit('/').next().unwrap_or("").to_string();
             let shell = match name.as_str() {
                 "zsh" => Shell::Zsh,
@@ -140,6 +159,13 @@ mod unix {
             };
             (shell, path)
         }
+    }
+
+    fn which_fish() -> Option<String> {
+        std::env::var("PATH").ok()?.split(':').find_map(|dir| {
+            let p = std::path::Path::new(dir).join("fish");
+            p.exists().then(|| p.to_string_lossy().into_owned())
+        })
     }
 
     fn login_shell() -> Option<String> {
@@ -158,8 +184,23 @@ mod unix {
         }
     }
 
-    pub fn build(cwd: Option<String>) -> Result<CommandBuilder, String> {
-        let (shell, shell_path) = Shell::detect();
+    pub fn build(cwd: Option<String>, shell_override: Option<String>) -> Result<CommandBuilder, String> {
+        let (shell, shell_path) = match shell_override {
+            Some(ref path) if !path.is_empty() && std::path::Path::new(path).exists() => {
+                let kind = match path.rsplit('/').next().unwrap_or("") {
+                    "zsh" => Shell::Zsh,
+                    "bash" => Shell::Bash,
+                    "fish" => Shell::Fish,
+                    _ => Shell::Other,
+                };
+                (kind, path.clone())
+            }
+            Some(ref path) if !path.is_empty() => {
+                log::warn!("shell override '{}' not found, falling back to auto-detect", path);
+                Shell::detect()
+            }
+            _ => Shell::detect(),
+        };
         let mut cmd = CommandBuilder::new(&shell_path);
         super::apply_common(&mut cmd, cwd);
 
@@ -310,7 +351,7 @@ mod windows {
         args: Vec<String>,
     }
 
-    pub fn build(cwd: Option<String>, workspace: WorkspaceEnv) -> Result<CommandBuilder, String> {
+    pub fn build(cwd: Option<String>, workspace: WorkspaceEnv, _shell_override: Option<String>) -> Result<CommandBuilder, String> {
         if let WorkspaceEnv::Wsl { distro } = workspace {
             return build_wsl(cwd, distro);
         }

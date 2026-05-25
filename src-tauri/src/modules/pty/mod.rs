@@ -41,6 +41,7 @@ pub async fn pty_open(
     rows: u16,
     cwd: Option<String>,
     workspace: Option<WorkspaceEnv>,
+    shell_override: Option<String>,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
@@ -50,7 +51,8 @@ pub async fn pty_open(
         e
     })?;
     let session = tauri::async_runtime::spawn_blocking(move || {
-        session::spawn(cols, rows, cwd, workspace, on_data, on_exit).map(|(s, _)| s)
+        session::spawn(cols, rows, cwd, workspace, shell_override, on_data, on_exit)
+            .map(|(s, _)| s)
     })
     .await
     .map_err(|e| {

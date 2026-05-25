@@ -26,6 +26,7 @@ import {
   setTerminalLetterSpacing,
   setTerminalFontSize,
   setTerminalScrollback,
+  setTerminalShell,
   setTerminalWebglEnabled,
   setVimMode,
   setZoomLevel,
@@ -73,6 +74,7 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const terminalShell = usePreferencesStore((s) => s.terminalShell);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
 
   useEffect(() => {
@@ -215,6 +217,18 @@ export function GeneralSection() {
           <Switch
             checked={terminalWebglEnabled}
             onCheckedChange={(v) => void setTerminalWebglEnabled(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Shell"
+          description="Full path to the shell binary (e.g. /opt/homebrew/bin/fish). Leave blank to auto-detect."
+        >
+          <input
+            type="text"
+            value={terminalShell}
+            placeholder="Auto-detect"
+            onChange={(e) => void setTerminalShell(e.target.value)}
+            className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
           />
         </SettingRow>
         <SettingRow
