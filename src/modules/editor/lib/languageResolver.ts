@@ -106,6 +106,13 @@ const loaders: Record<string, LanguageLoader> = {
     import("@codemirror/legacy-modes/mode/dockerfile").then(
       (m) => m.dockerFile,
     ),
+
+  // LaTeX / TeX
+  tex: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
+  latex: () =>
+    import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
+  sty: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
+  cls: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
 };
 
 const filenameOverrides: Record<string, LanguageLoader> = {
