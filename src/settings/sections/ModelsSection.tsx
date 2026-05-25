@@ -103,7 +103,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
   openrouter: {
     urlPlaceholder: "",
     modelPlaceholder: "anthropic/claude-sonnet-4-6, openai/gpt-5.5, …",
-    description: "Any model on OpenRouter — type its full provider/model id.",
+    description: "Any model on OpenRouter — select the provider/model id.",
     modelHint: (
       <>
         Browse ids at{" "}
@@ -183,7 +183,7 @@ export function ModelsSection() {
         return {
           baseURL: "",
           modelId: openrouterModelId,
-          setBaseURL: async () => {},
+          setBaseURL: async () => { },
           setModelId: setOpenrouterModelId,
           noBaseURL: true,
         };
@@ -738,40 +738,6 @@ function LocalProviderCard({
           </FieldRow>
         )}
 
-        <FieldRow label="Model ID">
-          <Input
-            value={modelDraft}
-            onChange={(e) => setModelDraft(e.target.value)}
-            onBlur={() => {
-              const v = modelDraft.trim();
-              if (v !== modelId) void setModelId(v);
-            }}
-            placeholder={meta.modelPlaceholder}
-            spellCheck={false}
-            className="h-8 font-mono text-[11.5px]"
-          />
-        </FieldRow>
-
-        {setContextLimit ? (
-          <FieldRow label="Context">
-            <div className="flex flex-1 items-center gap-1.5">
-              <Input
-                value={contextDraft}
-                onChange={(e) => setContextDraft(e.target.value)}
-                onBlur={() => {
-                  const v = parseInt(contextDraft);
-                  if (Number.isFinite(v) && v >= 1000) void setContextLimit(v);
-                  else setContextDraft(String(contextLimit ?? ""));
-                }}
-                placeholder="128000"
-                spellCheck={false}
-                className="h-8 w-28 font-mono text-[11.5px]"
-              />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
-            </div>
-          </FieldRow>
-        ) : null}
-
         {supportsKey ? (
           <FieldRow label="API key">
             {compatKey ? (
@@ -814,6 +780,50 @@ function LocalProviderCard({
                 </Button>
               </div>
             )}
+          </FieldRow>
+        ) : null}
+
+        <FieldRow label="Model ID">
+          {provider.id === "openrouter" ? (
+            <div className="flex flex-1 flex-col gap-1.5">
+              <OpenRouterModelPicker
+                apiKey={compatKey}
+                modelId={modelId}
+                onSelect={(id) => void setModelId(id)}
+              />
+            </div>
+          ) : (
+            <Input
+              value={modelDraft}
+              onChange={(e) => setModelDraft(e.target.value)}
+              onBlur={() => {
+                const v = modelDraft.trim();
+                if (v !== modelId) void setModelId(v);
+              }}
+              placeholder={meta.modelPlaceholder}
+              spellCheck={false}
+              className="h-8 font-mono text-[11.5px]"
+            />
+          )}
+        </FieldRow>
+
+        {setContextLimit ? (
+          <FieldRow label="Context">
+            <div className="flex flex-1 items-center gap-1.5">
+              <Input
+                value={contextDraft}
+                onChange={(e) => setContextDraft(e.target.value)}
+                onBlur={() => {
+                  const v = parseInt(contextDraft);
+                  if (Number.isFinite(v) && v >= 1000) void setContextLimit(v);
+                  else setContextDraft(String(contextLimit ?? ""));
+                }}
+                placeholder="128000"
+                spellCheck={false}
+                className="h-8 w-28 font-mono text-[11.5px]"
+              />
+              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+            </div>
           </FieldRow>
         ) : null}
 
@@ -871,6 +881,221 @@ function StatusLine({
     </span>
   );
 }
+
+
+type OpenRouterModel = {
+  id: string;
+  name: string;
+  context_length: number;
+  pricing: { prompt: string; completion: string };
+};
+
+const formatPrice = (v: string) => {
+  const n = parseFloat(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return `$${(n * 1_000_000).toFixed(2)}/M`;
+};
+
+let _cachedModels: OpenRouterModel[] | null = null;
+let _cacheKey: string | null = null; // tracks which key was used
+
+function useOpenRouterModels(apiKey: string | null | undefined) {
+  const [models, setModels] = useState<OpenRouterModel[]>(
+    _cacheKey === apiKey && _cachedModels ? _cachedModels : []
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!apiKey) return;
+    // Return cache if key hasn't changed
+    if (_cacheKey === apiKey && _cachedModels) {
+      setModels(_cachedModels);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    fetch("https://openrouter.ai/api/v1/models", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const list = data.data ?? [];
+        _cachedModels = list;
+        _cacheKey = apiKey;
+        setModels(list);
+      })
+      .catch(() => setError("Failed to fetch models"))
+      .finally(() => setLoading(false));
+  }, [apiKey]);
+
+  return { models, loading, error };
+}
+
+function isModelFree(model: OpenRouterModel): boolean {
+  return (
+    model.id.endsWith(":free") ||
+    (model.pricing.prompt === "0" && model.pricing.completion === "0")
+  );
+}
+
+function OpenRouterModelPicker({
+  apiKey,
+  modelId,
+  onSelect,
+}: {
+  apiKey: string | null | undefined;
+  modelId: string;
+  onSelect: (id: string) => void;
+}) {
+  const { models, loading, error } = useOpenRouterModels(apiKey);
+  const [search, setSearch] = useState("");
+  const [freeOnly, setFreeOnly] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return models.filter((m) => {
+      if (freeOnly && !isModelFree(m)) return false;
+      return (
+        m.id.toLowerCase().includes(q) ||
+        m.name.toLowerCase().includes(q)
+      );
+    });
+  }, [models, search, freeOnly]);
+
+  const selected = models.find((m) => m.id === modelId);
+
+  if (!apiKey) {
+    return (
+      <p className="text-[10.5px] text-muted-foreground">
+        Enter your API key above to browse models.
+      </p>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          disabled={loading}
+          className="h-8 w-full justify-between gap-2 px-2.5 text-[11.5px]"
+        >
+          <span className="flex items-center gap-2 truncate">
+            {loading ? (
+              <span className="text-muted-foreground">Loading models…</span>
+            ) : selected ? (
+              <>
+                <span className="truncate font-mono">{selected.id}</span>
+                {isModelFree(selected) && (
+                  <Badge className="h-4 shrink-0 bg-emerald-500/15 px-1.5 text-[9px] font-medium text-emerald-600 hover:bg-emerald-500/15">
+                    FREE
+                  </Badge>
+                )}
+              </>
+            ) : modelId ? (
+              <span className="truncate font-mono text-muted-foreground">
+                {modelId}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">Select a model…</span>
+            )}
+          </span>
+          <HugeiconsIcon
+            icon={ArrowDown01Icon}
+            size={11}
+            strokeWidth={2}
+            className="shrink-0 opacity-70"
+          />
+        </Button>
+      </DropdownMenuTrigger>
+
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        sideOffset={6}
+        collisionPadding={12}
+        className="w-full p-0"
+      >
+        {/* Search + free toggle */}
+        <div className="flex items-center gap-2 border-b border-border/60 px-2.5 py-2">
+          <Input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search models…"
+            className="h-7 flex-1 border-0 bg-transparent px-1 font-mono text-[11.5px] shadow-none focus-visible:ring-0"
+          />
+          <button
+            type="button"
+            onClick={() => setFreeOnly((v) => !v)}
+            className={cn(
+              "shrink-0 rounded px-2 py-0.5 text-[10px] font-medium transition-colors",
+              freeOnly
+                ? "bg-emerald-500/20 text-emerald-600"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            FREE only
+          </button>
+        </div>
+
+        {error ? (
+          <p className="px-3 py-4 text-center text-[11px] text-destructive/80">
+            {error}
+          </p>
+        ) : (
+          <div className="max-h-72 overflow-y-auto overscroll-contain">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-4 text-center text-[11px] text-muted-foreground">
+                No models match.
+              </p>
+            ) : (
+              filtered.map((m) => {
+                const free = isModelFree(m);
+                const priceIn = formatPrice(m.pricing.prompt);
+                const priceOut = formatPrice(m.pricing.completion);
+                
+                return (
+                  <DropdownMenuItem
+                    key={m.id}
+                    onSelect={() => onSelect(m.id)}
+                    className={cn(
+                      "flex items-center gap-2 px-2.5 py-1.5 text-[11.5px]",
+                      m.id === modelId && "bg-accent/50",
+                    )}
+                  >
+                    <span className="flex flex-1 flex-col gap-0.5 overflow-hidden">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate font-mono">{m.id}</span>
+                        {free && (
+                          <Badge className="h-4 shrink-0 bg-emerald-500/15 px-1.5 text-[9px] font-medium text-emerald-600 hover:bg-emerald-500/15">
+                            FREE
+                          </Badge>
+                        )}
+                      </span>
+                      <span className="truncate text-[10px] text-muted-foreground">
+                        {m.name} · {(m.context_length / 1000).toFixed(0)}K ctx
+                        {!isModelFree(m) && (
+                          <span className="ml-1">
+                            {priceIn && priceOut && (
+                              <>· {priceIn} in · {priceOut} out</>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })
+            )}
+          </div>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
