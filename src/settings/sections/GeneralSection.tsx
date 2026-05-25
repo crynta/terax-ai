@@ -21,6 +21,10 @@ import {
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
+  setPlantumlBackend,
+  setPlantumlJarPath,
+  setPlantumlJavaPath,
+  setPlantumlServerUrl,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
@@ -307,6 +311,8 @@ export function GeneralSection() {
         </SettingRow>
       </div>
 
+      <PlantUmlSection />
+
       <div className="flex flex-col gap-2">
         <Label>Startup</Label>
         <div className="flex flex-col gap-2">
@@ -330,6 +336,82 @@ export function GeneralSection() {
           </SettingRow>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PlantUmlSection() {
+  const plantumlBackend = usePreferencesStore((s) => s.plantumlBackend);
+  const plantumlServerUrl = usePreferencesStore((s) => s.plantumlServerUrl);
+  const plantumlJarPath = usePreferencesStore((s) => s.plantumlJarPath);
+  const plantumlJavaPath = usePreferencesStore((s) => s.plantumlJavaPath);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>PlantUML</Label>
+      <SettingRow
+        title="Rendering backend"
+        description="Public server requires internet. Local jar keeps diagrams private."
+      >
+        <Select
+          value={plantumlBackend}
+          onValueChange={(v) => void setPlantumlBackend(v as "public" | "local")}
+        >
+          <SelectTrigger size="sm" className="h-8 w-36 text-[12px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="public" className="text-[12px]">
+              Public server
+            </SelectItem>
+            <SelectItem value="local" className="text-[12px]">
+              Local jar
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      {plantumlBackend === "public" && (
+        <SettingRow
+          title="Server URL"
+          description="PlantUML server endpoint. Default: plantuml.com."
+        >
+          <input
+            type="text"
+            value={plantumlServerUrl}
+            placeholder="https://www.plantuml.com/plantuml/svg/"
+            onChange={(e) => void setPlantumlServerUrl(e.target.value)}
+            className="h-8 w-60 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+          />
+        </SettingRow>
+      )}
+      {plantumlBackend === "local" && (
+        <>
+          <SettingRow
+            title="Jar path"
+            description="Absolute path to plantuml.jar on your machine."
+          >
+            <input
+              type="text"
+              value={plantumlJarPath}
+              placeholder="/path/to/plantuml.jar"
+              onChange={(e) => void setPlantumlJarPath(e.target.value)}
+              className="h-8 w-60 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+            />
+          </SettingRow>
+          <SettingRow
+            title="Java path"
+            description='Path to java binary. Leave as "java" if it is on your PATH.'
+          >
+            <input
+              type="text"
+              value={plantumlJavaPath}
+              placeholder="java"
+              onChange={(e) => void setPlantumlJavaPath(e.target.value)}
+              className="h-8 w-60 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+            />
+          </SettingRow>
+        </>
+      )}
     </div>
   );
 }

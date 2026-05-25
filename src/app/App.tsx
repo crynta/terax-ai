@@ -62,6 +62,7 @@ import {
   type SearchTarget,
 } from "@/modules/header";
 import { MarkdownStack } from "@/modules/markdown";
+import { PlantUmlStack } from "@/modules/plantuml";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -171,6 +172,7 @@ export default function App() {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    newPlantUmlTab,
     openAiDiffTab,
     closeAiDiffTab,
     openGitDiffTab,
@@ -462,6 +464,7 @@ export default function App() {
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
   const isMarkdownTab = activeTab?.kind === "markdown";
+  const isPlantUmlTab = activeTab?.kind === "plantuml";
   const isAiDiffTab = activeTab?.kind === "ai-diff";
   const isGitDiffTab =
     activeTab?.kind === "git-diff" || activeTab?.kind === "git-commit-file";
@@ -994,6 +997,13 @@ export default function App() {
     [newMarkdownTab],
   );
 
+  const openPlantUmlPreview = useCallback(
+    (path: string) => {
+      newPlantUmlTab(path);
+    },
+    [newPlantUmlTab],
+  );
+
   const splitActivePaneInActiveTab = useCallback(
     (dir: "row" | "col") => {
       const t = tabsRef.current.find((x) => x.id === activeId);
@@ -1342,6 +1352,15 @@ export default function App() {
       <div
         className={cn(
           "absolute inset-0 px-3 pt-2 pb-2",
+          !isPlantUmlTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isPlantUmlTab}
+      >
+        <PlantUmlStack tabs={tabs} activeId={activeId} />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
           !isAiDiffTab && "invisible pointer-events-none",
         )}
         aria-hidden={!isAiDiffTab}
@@ -1436,6 +1455,7 @@ export default function App() {
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
                         onOpenMarkdownPreview={openMarkdownPreview}
+                        onOpenPlantUmlPreview={openPlantUmlPreview}
                       />
                     ) : (
                       <SourceControlPanel

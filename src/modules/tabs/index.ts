@@ -7,6 +7,7 @@ export {
   type EditorTab,
   type PreviewTab,
   type MarkdownTab,
+  type PlantUmlTab,
   type AiDiffTab,
   type GitDiffTab,
   type GitHistoryTab,

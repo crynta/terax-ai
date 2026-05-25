@@ -2,6 +2,7 @@ pub mod agent;
 pub mod fs;
 pub mod git;
 pub mod net;
+pub mod plantuml;
 pub mod proc;
 pub mod pty;
 pub mod secrets;

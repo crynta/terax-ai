@@ -18,6 +18,7 @@ import {
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import type { useFileTree } from "./lib/useFileTree";
+import { isPlantUmlPath } from "@/modules/plantuml";
 
 type Tree = ReturnType<typeof useFileTree>;
 
@@ -36,6 +37,7 @@ export type EntryRowProps = {
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
+  onOpenPlantUmlPreview?: (path: string) => void;
 };
 
 function isMarkdownPath(path: string): boolean {
@@ -58,6 +60,7 @@ function EntryRowImpl(props: EntryRowProps) {
     onRevealInTerminal,
     onAttachToAgent,
     onOpenMarkdownPreview,
+    onOpenPlantUmlPreview,
   } = props;
 
   const [isConfirming, setIsConfirming] = useState(false);
@@ -144,6 +147,14 @@ function EntryRowImpl(props: EntryRowProps) {
           <ContextMenuItem
             className={COMPACT_ITEM}
             onSelect={() => onOpenMarkdownPreview(path)}
+          >
+            Open Preview
+          </ContextMenuItem>
+        )}
+        {!isDir && isPlantUmlPath(path) && onOpenPlantUmlPreview && (
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            onSelect={() => onOpenPlantUmlPreview(path)}
           >
             Open Preview
           </ContextMenuItem>

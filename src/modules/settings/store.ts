@@ -85,6 +85,10 @@ export type Preferences = {
   zoomLevel: number;
   agentNotifications: boolean;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
+  plantumlBackend: "public" | "local";
+  plantumlServerUrl: string;
+  plantumlJarPath: string;
+  plantumlJavaPath: string;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -126,6 +130,10 @@ const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
+const KEY_PLANTUML_BACKEND = "plantumlBackend";
+const KEY_PLANTUML_SERVER_URL = "plantumlServerUrl";
+const KEY_PLANTUML_JAR_PATH = "plantumlJarPath";
+const KEY_PLANTUML_JAVA_PATH = "plantumlJavaPath";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -180,6 +188,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   zoomLevel: 1.0,
   agentNotifications: true,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
+  plantumlBackend: "public",
+  plantumlServerUrl: "https://www.plantuml.com/plantuml/svg/",
+  plantumlJarPath: "",
+  plantumlJavaPath: "java",
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -302,6 +314,18 @@ export async function loadPreferences(): Promise<Preferences> {
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
+    plantumlBackend:
+      get<"public" | "local">(KEY_PLANTUML_BACKEND) ??
+      DEFAULT_PREFERENCES.plantumlBackend,
+    plantumlServerUrl:
+      get<string>(KEY_PLANTUML_SERVER_URL) ??
+      DEFAULT_PREFERENCES.plantumlServerUrl,
+    plantumlJarPath:
+      get<string>(KEY_PLANTUML_JAR_PATH) ??
+      DEFAULT_PREFERENCES.plantumlJarPath,
+    plantumlJavaPath:
+      get<string>(KEY_PLANTUML_JAVA_PATH) ??
+      DEFAULT_PREFERENCES.plantumlJavaPath,
   };
 }
 
@@ -496,6 +520,24 @@ export async function resetShortcuts(): Promise<void> {
   await writePref(KEY_SHORTCUTS, DEFAULT_PREFERENCES.shortcuts);
 }
 
+export async function setPlantumlBackend(
+  value: "public" | "local",
+): Promise<void> {
+  await writePref(KEY_PLANTUML_BACKEND, value);
+}
+
+export async function setPlantumlServerUrl(value: string): Promise<void> {
+  await writePref(KEY_PLANTUML_SERVER_URL, value.trim());
+}
+
+export async function setPlantumlJarPath(value: string): Promise<void> {
+  await writePref(KEY_PLANTUML_JAR_PATH, value.trim());
+}
+
+export async function setPlantumlJavaPath(value: string): Promise<void> {
+  await writePref(KEY_PLANTUML_JAVA_PATH, value.trim() || "java");
+}
+
 export type PrefKey = keyof Preferences;
 
 /** Subscribe to changes from any window (settings → main). */
@@ -540,6 +582,10 @@ export async function onPreferencesChange(
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
     [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_PLANTUML_BACKEND]: "plantumlBackend",
+    [KEY_PLANTUML_SERVER_URL]: "plantumlServerUrl",
+    [KEY_PLANTUML_JAR_PATH]: "plantumlJarPath",
+    [KEY_PLANTUML_JAVA_PATH]: "plantumlJavaPath",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().

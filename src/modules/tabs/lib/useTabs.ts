@@ -55,6 +55,13 @@ export type MarkdownTab = {
   path: string;
 };
 
+export type PlantUmlTab = {
+  id: number;
+  kind: "plantuml";
+  title: string;
+  path: string;
+};
+
 export type AiDiffStatus = "pending" | "approved" | "rejected";
 
 export type AiDiffTab = {
@@ -105,6 +112,7 @@ export type Tab =
   | EditorTab
   | PreviewTab
   | MarkdownTab
+  | PlantUmlTab
   | AiDiffTab
   | GitDiffTab
   | GitHistoryTab
@@ -407,6 +415,24 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       const id = nextIdRef.current++;
       targetId = id;
       return [...curr, { id, kind: "markdown", title: basename(path), path }];
+    });
+    if (targetId !== null) setActiveId(targetId);
+    return targetId;
+  }, []);
+
+  const newPlantUmlTab = useCallback((path: string) => {
+    let targetId: number | null = null;
+    setTabs((curr) => {
+      const existing = curr.find(
+        (t) => t.kind === "plantuml" && t.path === path,
+      );
+      if (existing) {
+        targetId = existing.id;
+        return curr;
+      }
+      const id = nextIdRef.current++;
+      targetId = id;
+      return [...curr, { id, kind: "plantuml", title: basename(path), path }];
     });
     if (targetId !== null) setActiveId(targetId);
     return targetId;
@@ -805,6 +831,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    newPlantUmlTab,
     openAiDiffTab,
     openGitDiffTab,
     openCommitHistoryTab,
