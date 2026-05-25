@@ -1066,8 +1066,17 @@ export default function App() {
     [updateTab],
   );
 
+  const authorizedCwds = useRef(new Set<string>());
   const handleTerminalCwd = useCallback(
-    (leafId: number, cwd: string) => setLeafCwd(leafId, cwd),
+    (leafId: number, cwd: string) => {
+      setLeafCwd(leafId, cwd);
+      if (cwd && !authorizedCwds.current.has(cwd)) {
+        authorizedCwds.current.add(cwd);
+        native.workspaceAuthorize(cwd).catch(() => {
+          authorizedCwds.current.delete(cwd);
+        });
+      }
+    },
     [setLeafCwd],
   );
 

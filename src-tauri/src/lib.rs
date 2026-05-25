@@ -23,8 +23,7 @@ fn parse_launch_dir() -> Option<String> {
         if !canon.is_dir() {
             continue;
         }
-        let s = canon.to_string_lossy();
-        return Some(s.strip_prefix(r"\\?\").unwrap_or(&s).to_string());
+        return Some(crate::modules::fs::to_canon(&canon));
     }
     None
 }

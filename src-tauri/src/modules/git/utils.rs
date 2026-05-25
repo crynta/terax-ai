@@ -18,7 +18,7 @@ pub fn split_upstream(upstream: &str) -> (Option<String>, Option<String>) {
 }
 
 pub fn display_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    crate::modules::fs::to_canon(path)
 }
 
 fn normalize_git_path(path: &str) -> String {

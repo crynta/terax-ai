@@ -89,6 +89,26 @@ pub fn authorize_spawn_cwd(
     Ok(Some(canonical))
 }
 
+// User-initiated terminal spawn: canonicalize, require a real dir, and register
+// it as a root instead of rejecting paths outside existing roots.
+pub fn authorize_user_spawn_cwd(
+    registry: &WorkspaceRegistry,
+    cwd: Option<&str>,
+    workspace: &WorkspaceEnv,
+) -> Result<Option<PathBuf>, String> {
+    let Some(cwd) = cwd.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let resolved = resolve_path(cwd, workspace);
+    let canonical = std::fs::canonicalize(&resolved)
+        .map_err(|e| format!("cwd not accessible: {e}"))?;
+    if !canonical.is_dir() {
+        return Err(format!("cwd is not a directory: {}", canonical.display()));
+    }
+    registry.authorize(&canonical).map_err(|e| e.to_string())?;
+    Ok(Some(canonical))
+}
+
 pub fn bootstrap_registry(registry: &WorkspaceRegistry) {
     let _ = registry.authorize(resolve_launch_dir());
     if let Some(home) = dirs::home_dir() {
@@ -105,7 +125,7 @@ pub async fn workspace_authorize(
     let workspace = WorkspaceEnv::from_option(workspace);
     let resolved = resolve_path(&path, &workspace);
     let canonical = registry.authorize(&resolved).map_err(|e| e.to_string())?;
-    Ok(canonical.to_string_lossy().replace('\\', "/"))
+    Ok(crate::modules::fs::to_canon(&canonical))
 }
 
 #[tauri::command]
@@ -114,7 +134,7 @@ pub async fn workspace_current_dir(
 ) -> Result<String, String> {
     let launch = resolve_launch_dir();
     let canonical = registry.authorize(&launch).map_err(|e| e.to_string())?;
-    Ok(canonical.to_string_lossy().replace('\\', "/"))
+    Ok(crate::modules::fs::to_canon(&canonical))
 }
 
 // Snapshotted once at app startup so the live `current_dir()` drifting later
@@ -669,6 +689,30 @@ mod auth_tests {
         let s = missing.to_string_lossy().into_owned();
         let err = authorize_spawn_cwd(&reg, Some(&s), &WorkspaceEnv::Local)
             .expect_err("should reject missing path");
+        assert!(err.contains("cwd not accessible"), "got: {err}");
+    }
+
+    #[test]
+    fn authorize_user_spawn_cwd_registers_unauthorized_path() {
+        let dir = tempdir("userspawn");
+        let reg = WorkspaceRegistry::default();
+        let s = dir.to_string_lossy().into_owned();
+        assert!(!reg.is_authorized(&dir));
+        let resolved = authorize_user_spawn_cwd(&reg, Some(&s), &WorkspaceEnv::Local)
+            .expect("user spawn allowed anywhere")
+            .expect("returned canonical");
+        assert_eq!(resolved, dir);
+        assert!(reg.is_authorized(&dir));
+    }
+
+    #[test]
+    fn authorize_user_spawn_cwd_rejects_missing_path() {
+        let mut missing = env::temp_dir();
+        missing.push(format!("terax-user-missing-{}", std::process::id()));
+        let reg = WorkspaceRegistry::default();
+        let s = missing.to_string_lossy().into_owned();
+        let err = authorize_user_spawn_cwd(&reg, Some(&s), &WorkspaceEnv::Local)
+            .expect_err("missing path must fail");
         assert!(err.contains("cwd not accessible"), "got: {err}");
     }
 
