@@ -4,6 +4,7 @@ export {
   disposeSession,
   respawnSession,
 } from "./lib/useTerminalSession";
+export { useTerminalFileDrop } from "./lib/useTerminalFileDrop";
 export {
   hasLeaf,
   isLeaf,

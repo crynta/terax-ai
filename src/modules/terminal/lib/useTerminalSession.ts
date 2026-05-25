@@ -275,6 +275,13 @@ export function disposeSession(leafId: number): void {
   sessions.delete(leafId);
 }
 
+export function writeToLeafPty(leafId: number, data: string): boolean {
+  const s = sessions.get(leafId);
+  if (!s || s.disposed || s.shellExited || !s.pty) return false;
+  s.pty.write(data);
+  return true;
+}
+
 type Options = {
   leafId: number;
   container: React.RefObject<HTMLDivElement | null>;
