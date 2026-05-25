@@ -21,7 +21,7 @@ import {
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EditorTab, Tab } from "./lib/useTabs";
 
 type Props = {
@@ -36,6 +36,8 @@ type Props = {
   onClose: (id: number) => void;
   /** Pin (promote) a preview tab to persistent on double-click. */
   onPin: (id: number) => void;
+  /** Rename a tab. Empty string reverts to the auto-derived label. */
+  onRename: (id: number, name: string) => void;
   compact?: boolean;
 };
 
@@ -50,9 +52,23 @@ export function TabBar({
   onNewGitGraph,
   onClose,
   onPin,
+  onRename,
   compact,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editingId !== null) inputRef.current?.focus();
+  }, [editingId]);
+
+  const commitRename = () => {
+    if (editingId === null) return;
+    onRename(editingId, editValue.trim());
+    setEditingId(null);
+  };
 
   // Horizontal wheel scroll without holding shift.
   useEffect(() => {
@@ -95,7 +111,12 @@ export function TabBar({
                   key={t.id}
                   value={String(t.id)}
                   data-tab-id={t.id}
-                  onDoubleClick={() => isPreview && onPin(t.id)}
+                  onDoubleClick={(e) => {
+                    if (isPreview) { onPin(t.id); return; }
+                    e.preventDefault();
+                    setEditingId(t.id);
+                    setEditValue(labelFor(t));
+                  }}
                   onAuxClick={(e) => {
                     if (e.button === 1 && tabs.length > 1) {
                       e.preventDefault();
@@ -122,19 +143,37 @@ export function TabBar({
                     )}
                   >
                     <TabIcon tab={t} />
-                    {/* Preview tabs use italic to signal the transient state,
-                        matching the visual convention from VSCode. */}
-                    <span className={cn("truncate", isPreview && "italic")}>
-                      {labelFor(t)}
-                    </span>
-                    {t.kind === "editor" && t.dirty ? (
+                    {editingId === t.id ? (
+                      <input
+                        ref={inputRef}
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+                          if (e.key === "Escape") { e.stopPropagation(); setEditingId(null); }
+                          e.stopPropagation();
+                        }}
+                        onBlur={commitRename}
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none"
+                        style={{ width: `${Math.max(editValue.length, 3)}ch` }}
+                      />
+                    ) : (
+                      /* Preview tabs use italic to signal the transient state,
+                         matching the visual convention from VSCode. */
+                      <span className={cn("truncate", isPreview && "italic")}>
+                        {labelFor(t)}
+                      </span>
+                    )}
+                    {t.kind === "editor" && t.dirty && editingId !== t.id ? (
                       <span
                         aria-label="Unsaved changes"
                         className="size-1.5 shrink-0 rounded-full bg-foreground/70"
                       />
                     ) : null}
                   </span>
-                  {tabs.length > 1 && (
+                  {tabs.length > 1 && editingId !== t.id && (
                     <span
                       role="button"
                       aria-label="Close tab"
@@ -285,6 +324,7 @@ function TabIcon({ tab }: { tab: Tab }) {
 }
 
 function labelFor(t: Tab): string {
+  if (t.customTitle) return t.customTitle;
   if (t.kind === "editor") return t.title;
   if (t.kind === "preview") return t.title;
   if (t.kind === "markdown") return t.title;

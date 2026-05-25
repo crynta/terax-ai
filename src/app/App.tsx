@@ -1408,6 +1408,7 @@ export default function App() {
             onNewGitGraph={openGitGraphFromContext}
             onClose={handleClose}
             onPin={pinTab}
+            onRename={(id, name) => updateTab(id, { customTitle: name || undefined })}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={

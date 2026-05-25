@@ -20,6 +20,7 @@ export type TerminalTab = {
   id: number;
   kind: "terminal";
   title: string;
+  customTitle?: string;
   cwd?: string;
   paneTree: PaneNode;
   activeLeafId: number;
@@ -31,6 +32,7 @@ export type EditorTab = {
   id: number;
   kind: "editor";
   title: string;
+  customTitle?: string;
   path: string;
   dirty: boolean;
   /**
@@ -45,6 +47,7 @@ export type PreviewTab = {
   id: number;
   kind: "preview";
   title: string;
+  customTitle?: string;
   url: string;
 };
 
@@ -52,6 +55,7 @@ export type MarkdownTab = {
   id: number;
   kind: "markdown";
   title: string;
+  customTitle?: string;
   path: string;
 };
 
@@ -61,6 +65,7 @@ export type AiDiffTab = {
   id: number;
   kind: "ai-diff";
   title: string;
+  customTitle?: string;
   path: string;
   /** "" for newly created files. */
   originalContent: string;
@@ -75,6 +80,7 @@ export type GitDiffTab = {
   id: number;
   kind: "git-diff";
   title: string;
+  customTitle?: string;
   path: string;
   repoRoot: string;
   mode: "-" | "+";
@@ -85,6 +91,7 @@ export type GitHistoryTab = {
   id: number;
   kind: "git-history";
   title: string;
+  customTitle?: string;
   repoRoot: string;
 };
 
@@ -92,6 +99,7 @@ export type GitCommitFileDiffTab = {
   id: number;
   kind: "git-commit-file";
   title: string;
+  customTitle?: string;
   repoRoot: string;
   sha: string;
   shortSha: string;
@@ -112,6 +120,7 @@ export type Tab =
 
 export type TabPatch = Partial<{
   title: string;
+  customTitle: string;
   cwd: string;
   path: string;
   dirty: boolean;
@@ -580,9 +589,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setTabs((t) =>
       t.map((x) => {
         if (x.id !== id) return x;
+        // customTitle: explicit undefined in the patch clears it (revert to auto label).
+        const customTitlePatch = "customTitle" in patch
+          ? { customTitle: patch.customTitle || undefined }
+          : {};
         if (x.kind === "terminal") {
           return {
             ...x,
+            ...customTitlePatch,
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.cwd !== undefined && { cwd: patch.cwd }),
           };
@@ -590,6 +604,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         if (x.kind === "preview") {
           return {
             ...x,
+            ...customTitlePatch,
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.url !== undefined && {
               url: patch.url,
@@ -600,6 +615,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         if (x.kind === "markdown") {
           return {
             ...x,
+            ...customTitlePatch,
             ...(patch.title !== undefined && { title: patch.title }),
           };
         }
@@ -611,6 +627,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         return {
           ...x,
           ...autoPin,
+          ...customTitlePatch,
           ...(patch.title !== undefined && { title: patch.title }),
           ...(patch.dirty !== undefined && { dirty: patch.dirty }),
           ...(patch.path !== undefined && { path: patch.path }),
