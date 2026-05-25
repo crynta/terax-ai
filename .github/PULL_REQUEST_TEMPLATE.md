@@ -18,7 +18,7 @@ Examples: feat(terminal): add split panes / fix(explorer): close button alignmen
 
 - [ ] `pnpm exec tsc --noEmit` clean
 - [ ] Manual smoke-test of the affected feature
-- [ ] (If you touched `src-tauri/`) `cargo check` clean
+- [ ] (If you touched `src-tauri/`) `cargo clippy` clean
 - [ ] (If UI) tested in `pnpm tauri dev`
 
 ## Screenshots / GIFs
