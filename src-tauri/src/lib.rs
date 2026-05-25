@@ -112,6 +112,7 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
+        .manage(fs::watch::FsWatchState::default())
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
             workspace::bootstrap_registry(&registry);
@@ -137,6 +138,8 @@ pub fn run() {
             fs::mutate::fs_create_dir,
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
+            fs::watch::fs_watch_add,
+            fs::watch::fs_watch_remove,
             fs::search::fs_search,
             fs::search::fs_list_files,
             fs::grep::fs_grep,

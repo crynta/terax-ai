@@ -48,6 +48,12 @@ import { getLaunchDir } from "@/lib/launchDir";
 import { useZoom } from "@/lib/useZoom";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
+  listenFsChanged,
+  parentDir,
+  watchAdd,
+  watchRemove,
+} from "@/modules/explorer/lib/watch";
+import {
   Header,
   type SearchInlineHandle,
   type SearchTarget,
@@ -487,6 +493,39 @@ export default function App() {
     );
     return () => {
       void unlistenPromise.then((un) => un());
+    };
+  }, []);
+
+  const editorWatchRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const want = new Set<string>();
+    for (const t of tabs) if (t.kind === "editor") want.add(parentDir(t.path));
+    const prev = editorWatchRef.current;
+    const toAdd = [...want].filter((d) => !prev.has(d));
+    const toRemove = [...prev].filter((d) => !want.has(d));
+    watchAdd(toAdd);
+    watchRemove(toRemove);
+    editorWatchRef.current = want;
+  }, [tabs]);
+
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    void listenFsChanged((paths) => {
+      const changed = new Set(paths.map((p) => p.replace(/\\/g, "/")));
+      for (const t of tabsRef.current) {
+        if (t.kind !== "editor") continue;
+        if (changed.has(t.path.replace(/\\/g, "/"))) {
+          editorRefs.current.get(t.id)?.reload();
+        }
+      }
+    }).then((un) => {
+      if (alive) unlisten = un;
+      else un();
+    });
+    return () => {
+      alive = false;
+      unlisten?.();
     };
   }, []);
 

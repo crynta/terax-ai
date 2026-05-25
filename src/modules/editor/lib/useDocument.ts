@@ -22,7 +22,6 @@ type Options = {
 export function useDocument({ path, onDirtyChange }: Options) {
   const [doc, setDoc] = useState<DocumentState>({ status: "loading" });
   const [dirty, setDirty] = useState(false);
-  const [reloadCounter, setReloadCounter] = useState(0);
 
   // Track the saved buffer so we can detect changes cheaply.
   const savedRef = useRef<string>("");
@@ -75,15 +74,32 @@ export function useDocument({ path, onDirtyChange }: Options) {
     return () => {
       cancelled = true;
     };
-  }, [path, reloadCounter]);
+  }, [path]);
 
-  /** Re-read the file from disk. No-op (silent) if the buffer is dirty —
-   *  callers shouldn't clobber unsaved user edits. Returns whether reload ran. */
+  // Skipped while dirty (never clobber unsaved edits) and when disk already
+  // matches the buffer (self-save / duplicate watcher event → no re-render).
   const reload = useCallback((): boolean => {
     if (dirtyRef.current) return false;
-    setReloadCounter((n) => n + 1);
+    void invoke<ReadResult>("fs_read_file", {
+      path,
+      workspace: currentWorkspaceEnv(),
+    })
+      .then((res) => {
+        if (res.kind === "text") {
+          if (res.content === savedRef.current) return;
+          savedRef.current = res.content;
+          bufferRef.current = res.content;
+          setDirty(false);
+          setDoc({ status: "ready", content: res.content, size: res.size });
+        } else if (res.kind === "binary") {
+          setDoc({ status: "binary", size: res.size });
+        } else if (res.kind === "toolarge") {
+          setDoc({ status: "toolarge", size: res.size, limit: res.limit });
+        }
+      })
+      .catch((e) => setDoc({ status: "error", message: String(e) }));
     return true;
-  }, []);
+  }, [path]);
 
   const onChange = useCallback((next: string) => {
     bufferRef.current = next;
