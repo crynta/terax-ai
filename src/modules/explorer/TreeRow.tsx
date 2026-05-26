@@ -15,6 +15,8 @@ import {
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
+import { GitStatusBadge } from "./GitStatusBadge";
+import type { GitStatusCode } from "./lib/gitStatusUtils";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import type { useFileTree } from "./lib/useFileTree";
@@ -36,6 +38,7 @@ export type EntryRowProps = {
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
+  gitStatusCode?: GitStatusCode | null;
 };
 
 function isMarkdownPath(path: string): boolean {
@@ -58,6 +61,7 @@ function EntryRowImpl(props: EntryRowProps) {
     onRevealInTerminal,
     onAttachToAgent,
     onOpenMarkdownPreview,
+    gitStatusCode,
   } = props;
 
   const [isConfirming, setIsConfirming] = useState(false);
@@ -123,6 +127,9 @@ function EntryRowImpl(props: EntryRowProps) {
               <span className="size-4 shrink-0" />
             )}
             <span className="min-w-0 flex-1 truncate">{name}</span>
+            {gitStatusCode ? (
+              <GitStatusBadge code={gitStatusCode} isDir={isDir} />
+            ) : null}
           </button>
         )}
       </ContextMenuTrigger>

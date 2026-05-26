@@ -1534,6 +1534,7 @@ export default function App() {
                       <FileExplorer
                         ref={explorerRef}
                         rootPath={explorerRoot}
+                        gitStatus={sourceControl.status}
                         activeFilePath={explorerActiveFilePath}
                         onOpenFile={handleOpenFile}
                         onPathRenamed={handlePathRenamed}
