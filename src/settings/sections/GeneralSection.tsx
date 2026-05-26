@@ -26,8 +26,10 @@ import {
   setTerminalFontFamily,
   setTerminalLetterSpacing,
   setTerminalFontSize,
+  setTerminalShellCommand,
   setTerminalScrollback,
   setTerminalWebglEnabled,
+  setAgentShellCommand,
   setVimMode,
   setZoomLevel,
 } from "@/modules/settings/store";
@@ -39,7 +41,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 
@@ -57,6 +59,93 @@ const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const ZOOM_STEP = 0.05;
+const SHELL_PRESETS = [
+  "bash",
+  "zsh",
+  "fish",
+  "sh",
+  "cmd",
+  "powershell",
+  "pwsh",
+] as const;
+const CUSTOM_SHELL_VALUE = "__custom__";
+
+function shellPresetFromValue(value: string): string {
+  if (!value) return "auto";
+  return SHELL_PRESETS.includes(value as (typeof SHELL_PRESETS)[number])
+    ? value
+    : CUSTOM_SHELL_VALUE;
+}
+
+function shellPresetLabel(value: string): string {
+  return value === "auto" ? "Auto-detect" : value;
+}
+
+type ShellCommandFieldProps = {
+  title: string;
+  description: string;
+  value: string;
+  onChange: (value: string) => void;
+};
+
+function ShellCommandField({
+  title,
+  description,
+  value,
+  onChange,
+}: ShellCommandFieldProps) {
+  const selected = useMemo(() => shellPresetFromValue(value), [value]);
+  const [isCustom, setIsCustom] = useState(selected === CUSTOM_SHELL_VALUE);
+  useEffect(() => {
+    setIsCustom(selected === CUSTOM_SHELL_VALUE);
+  }, [selected]);
+  const selectValue = isCustom ? CUSTOM_SHELL_VALUE : selected;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <SettingRow title={title} description={description}>
+        <Select
+          value={selectValue}
+          onValueChange={(v) => {
+            setIsCustom(v === CUSTOM_SHELL_VALUE);
+            if (v === "auto") onChange("");
+            else if (v !== CUSTOM_SHELL_VALUE) onChange(v);
+          }}
+        >
+          <SelectTrigger size="sm" className="h-8 w-40 text-[12px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto" className="text-[12px]">
+              Auto-detect
+            </SelectItem>
+            {SHELL_PRESETS.map((shell) => (
+              <SelectItem
+                key={shell}
+                value={shell}
+                className="text-[12px]"
+              >
+                {shellPresetLabel(shell)}
+              </SelectItem>
+            ))}
+            <SelectItem value={CUSTOM_SHELL_VALUE} className="text-[12px]">
+              Custom
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      {isCustom && (
+        <input
+          type="text"
+          value={value}
+          placeholder="Type custom shell executable"
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 w-64 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+        />
+      )}
+    </div>
+  );
+}
 
 export function GeneralSection() {
   const { mode, setMode } = useTheme();
@@ -74,6 +163,8 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const terminalShellCommand = usePreferencesStore((s) => s.terminalShellCommand);
+  const agentShellCommand = usePreferencesStore((s) => s.agentShellCommand);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
 
@@ -292,6 +383,18 @@ export function GeneralSection() {
             </SelectContent>
           </Select>
         </SettingRow>
+        <ShellCommandField
+          title="Terminal shell executable"
+          description="Shell executable for built-in terminal PTY sessions."
+          value={terminalShellCommand}
+          onChange={(value) => void setTerminalShellCommand(value)}
+        />
+        <ShellCommandField
+          title="Agent shell executable"
+          description="Shell executable used by AI command tools."
+          value={agentShellCommand}
+          onChange={(value) => void setAgentShellCommand(value)}
+        />
       </div>
 
       <div className="flex flex-col gap-2">

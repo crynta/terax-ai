@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { native } from "../lib/native";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { checkShellCommand } from "../lib/security";
 import type { ToolContext } from "./context";
 import { currentWorkspaceEnv, workspaceScopeKey } from "@/modules/workspace";
@@ -11,20 +12,25 @@ import { currentWorkspaceEnv, workspaceScopeKey } from "@/modules/workspace";
  */
 const sessionShells = new Map<string, Promise<number>>();
 
+function getAgentShellCommand(): string {
+  return usePreferencesStore.getState().agentShellCommand.trim();
+}
+
+function agentShellSessionKey(sessionId: string): string {
+  const shell = getAgentShellCommand() || "auto";
+  return `${sessionId}:${workspaceScopeKey(currentWorkspaceEnv())}:${shell}`;
+}
+
 async function getSessionShell(
   sessionId: string,
   cwd: string | null,
 ): Promise<number> {
   let p = sessionShells.get(sessionId);
   if (!p) {
-    p = native.shellSessionOpen(cwd);
+    p = native.shellSessionOpen(cwd, getAgentShellCommand());
     sessionShells.set(sessionId, p);
   }
   return p;
-}
-
-function workspaceSessionKey(sessionId: string): string {
-  return `${sessionId}:${workspaceScopeKey(currentWorkspaceEnv())}`;
 }
 
 export function buildShellTools(ctx: ToolContext) {
@@ -44,7 +50,7 @@ export function buildShellTools(ctx: ToolContext) {
         if (!sid) return { error: "no active chat session" };
         try {
           const cwd = ctx.getCwd();
-          const shellId = await getSessionShell(workspaceSessionKey(sid), cwd);
+          const shellId = await getSessionShell(agentShellSessionKey(sid), cwd);
           const r = await native.shellSessionRun(
             shellId,
             command,
@@ -79,7 +85,11 @@ export function buildShellTools(ctx: ToolContext) {
         if (!safety.ok) return { error: safety.reason };
         const effectiveCwd = cwd ?? ctx.getCwd();
         try {
-          const handle = await native.shellBgSpawn(command, effectiveCwd);
+          const handle = await native.shellBgSpawn(
+            command,
+            effectiveCwd,
+            getAgentShellCommand(),
+          );
           return { handle, command, cwd: effectiveCwd, ok: true };
         } catch (e) {
           return { error: String(e) };

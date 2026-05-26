@@ -184,17 +184,20 @@ export const native = {
     command: string,
     cwd?: string | null,
     timeoutSecs?: number,
+    shellOverride?: string | null,
   ) =>
     invoke<CommandOutput>("shell_run_command", {
       command,
       cwd: cwd ?? null,
       timeoutSecs: timeoutSecs ?? null,
+      shellOverride: shellOverride ?? null,
       workspace: currentWorkspaceEnv(),
     }),
 
-  shellSessionOpen: (cwd?: string | null) =>
+  shellSessionOpen: (cwd?: string | null, shellOverride?: string | null) =>
     invoke<number>("shell_session_open", {
       cwd: cwd ?? null,
+      shellOverride: shellOverride ?? null,
       workspace: currentWorkspaceEnv(),
     }),
   shellSessionRun: (
@@ -219,10 +222,15 @@ export const native = {
     }),
   shellSessionClose: (id: number) =>
     invoke<void>("shell_session_close", { id }),
-  shellBgSpawn: (command: string, cwd?: string | null) =>
+  shellBgSpawn: (
+    command: string,
+    cwd?: string | null,
+    shellOverride?: string | null,
+  ) =>
     invoke<number>("shell_bg_spawn", {
       command,
       cwd: cwd ?? null,
+      shellOverride: shellOverride ?? null,
       workspace: currentWorkspaceEnv(),
     }),
   shellBgLogs: (handle: number, sinceOffset?: number) =>

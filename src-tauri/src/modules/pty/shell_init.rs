@@ -50,15 +50,17 @@ fn fish_init_script() -> &'static str {
 pub fn build_command(
     cwd: Option<String>,
     workspace: WorkspaceEnv,
+    shell_override: Option<String>,
 ) -> Result<CommandBuilder, String> {
+    let shell_override = shell_override.as_deref().map(str::trim).filter(|s| !s.is_empty());
     #[cfg(unix)]
     {
         let _ = workspace;
-        unix::build(cwd)
+        unix::build(cwd, shell_override)
     }
     #[cfg(windows)]
     {
-        windows::build(cwd, workspace)
+        windows::build(cwd, workspace, shell_override)
     }
 }
 
@@ -126,8 +128,10 @@ mod unix {
     }
 
     impl Shell {
-        pub fn detect() -> (Shell, String) {
-            let path = login_shell()
+        pub fn detect(override_path: Option<&str>) -> (Shell, String) {
+            let path = override_path
+                .map(String::from)
+                .or_else(login_shell)
                 .or_else(|| std::env::var("SHELL").ok())
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "/bin/zsh".into());
@@ -158,8 +162,8 @@ mod unix {
         }
     }
 
-    pub fn build(cwd: Option<String>) -> Result<CommandBuilder, String> {
-        let (shell, shell_path) = Shell::detect();
+    pub fn build(cwd: Option<String>, shell_override: Option<&str>) -> Result<CommandBuilder, String> {
+        let (shell, shell_path) = Shell::detect(shell_override);
         let mut cmd = CommandBuilder::new(&shell_path);
         super::apply_common(&mut cmd, cwd);
 
@@ -310,12 +314,18 @@ mod windows {
         args: Vec<String>,
     }
 
-    pub fn build(cwd: Option<String>, workspace: WorkspaceEnv) -> Result<CommandBuilder, String> {
+    pub fn build(
+        cwd: Option<String>,
+        workspace: WorkspaceEnv,
+        shell_override: Option<&str>,
+    ) -> Result<CommandBuilder, String> {
         if let WorkspaceEnv::Wsl { distro } = workspace {
-            return build_wsl(cwd, distro);
+            return build_wsl(cwd, distro, shell_override);
         }
-        let shell_path = super::windows_shell_path();
-        let shell_name = shell_path
+        let shell_path = shell_override
+            .map(String::from)
+            .unwrap_or_else(|| super::windows_shell_path().to_string_lossy().into_owned());
+        let shell_name = std::path::Path::new(&shell_path)
             .file_name()
             .and_then(|s| s.to_str())
             .map(|s| s.to_ascii_lowercase())
@@ -343,13 +353,20 @@ mod windows {
             log::info!("spawning {} without shell integration", shell_name);
         }
 
-        log::info!("spawning Windows shell: {}", shell_path.display());
+        log::info!("spawning Windows shell: {shell_path}");
         Ok(cmd)
     }
 
-    fn build_wsl(cwd: Option<String>, distro: String) -> Result<CommandBuilder, String> {
+    fn build_wsl(
+        cwd: Option<String>,
+        distro: String,
+        shell_override: Option<&str>,
+    ) -> Result<CommandBuilder, String> {
         crate::modules::workspace::validate_wsl_distro_name(&distro)?;
-        let shell_path = crate::modules::workspace::wsl_login_shell(distro.clone())?;
+        let shell_path = match shell_override {
+            Some(s) if !s.trim().is_empty() => s.to_string(),
+            _ => crate::modules::workspace::wsl_login_shell(distro.clone())?,
+        };
         let shell_kind = ShellKind::from_path(&shell_path);
         let integration = match shell_kind {
             ShellKind::Zsh => match prepare_wsl_zdotdir(&distro) {
