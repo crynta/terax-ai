@@ -11,6 +11,11 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { createCopyOnSelectHandler } from "./copyOnSelect";
 import { readClipboardImagePath } from "./imagePaste";
+import {
+  registerImageThumbnailLinks,
+  registerPastedImage,
+  resetImagePromptCounter,
+} from "./imageThumbnails";
 import { terminalWordNavigationSequence } from "./keymap";
 
 export const POOL_MAX_SIZE = 5;
@@ -198,6 +203,10 @@ function createSlot(): Slot {
   term.onData((data) => {
     const leafId = slot.currentLeafId;
     if (leafId === null) return;
+    // A bare CR is the Enter keystroke from this term (pastes never produce
+    // exactly "\r"); treat it as a submit and reset Claude's per-prompt
+    // [Image #N] correlation. See imageThumbnails.ts for the heuristic.
+    if (data === "\r") resetImagePromptCounter(leafId);
     adapter?.resolveLeaf(leafId)?.writeToPty(data);
   });
 
@@ -206,6 +215,10 @@ function createSlot(): Slot {
     copy: (text) => void navigator.clipboard.writeText(text).catch(() => {}),
   });
   term.onSelectionChange(() => copyOnSelect.notify(term.getSelection()));
+
+  // Register once per slot lifetime — slots are pool-permanent and the
+  // provider reads the current leafId at hover time.
+  registerImageThumbnailLinks(slot.term, () => slot.currentLeafId);
 
   slots.push(slot);
   return slot;
@@ -711,6 +724,9 @@ async function handleTerminalPaste(slot: Slot): Promise<void> {
   const imagePath = await readClipboardImagePath();
   if (imagePath) {
     slot.term.paste(quoteShellArg(imagePath));
+    if (slot.currentLeafId !== null) {
+      registerPastedImage(slot.currentLeafId, imagePath);
+    }
     return;
   }
   try {

@@ -3,6 +3,7 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { DormantRing } from "./dormantRing";
+import { clearLeafImages } from "./imageThumbnails";
 import {
   createShellIntegrationState,
   registerCwdHandler,
@@ -319,6 +320,9 @@ export async function respawnSession(
   s.shellExited = false;
   s.pendingExit = null;
   s.altScreenAtRelease = false;
+  // New shell — drop any clipboard-image registry from the dead one so the
+  // next [Image #N] from the new shell starts fresh.
+  clearLeafImages(leafId);
 
   const slot = getSlotForLeaf(leafId);
   if (slot) {
@@ -353,6 +357,7 @@ export function disposeSession(leafId: number): void {
   s.snapshot = null;
   s.pty?.close();
   s.pty = null;
+  clearLeafImages(leafId);
   sessions.delete(leafId);
   readyLeaves.delete(leafId);
   const waiters = readyWaiters.get(leafId);
