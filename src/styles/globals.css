@@ -142,6 +142,10 @@
   --terminal-foreground: var(--foreground);
   --terminal-cursor: var(--foreground);
   --terminal-cursor-accent: var(--background);
+  --terminal-inactive-pane-edge: rgba(255,255,255,0.08);
+  --terminal-inactive-pane-overlay: rgba(148,163,184,0.12);
+  --terminal-last-active-pane-overlay: rgba(148,163,184,0.06);
+  --terminal-inactive-pane-top-edge: rgba(255,255,255,0.06);
   --terminal-selection: var(--accent);
   --terminal-ansi-black: #18181b;
   --terminal-ansi-red: #ef4444;
