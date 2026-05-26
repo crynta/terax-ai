@@ -102,7 +102,33 @@ export function TabBar({
           <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
             {tabs.map((t) => {
               const isPreview = t.kind === "editor" && (t as EditorTab).preview;
-              const isEditing = editingId === t.id;
+
+              // While renaming, render a non-button cell so the <input> is not
+              // nested inside the trigger <button> (invalid HTML, and WebKit
+              // blocks focus/selection on inputs inside buttons).
+              if (editingId === t.id && t.kind === "terminal") {
+                return (
+                  <div
+                    key={t.id}
+                    data-tab-id={t.id}
+                    className={cn(
+                      "flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-accent text-xs text-foreground",
+                      compact ? "px-1.5" : "px-2",
+                    )}
+                  >
+                    <TabIcon tab={t} />
+                    <TabRenameInput
+                      initial={labelFor(t)}
+                      onCommit={(value) => {
+                        onRename(t.id, value);
+                        setEditingId(null);
+                      }}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  </div>
+                );
+              }
+
               const trigger = (
                 <TabsTrigger
                   key={t.id}
@@ -125,22 +151,11 @@ export function TabBar({
                     )}
                   >
                     <TabIcon tab={t} />
-                    {isEditing ? (
-                      <TabRenameInput
-                        initial={labelFor(t)}
-                        onCommit={(value) => {
-                          onRename(t.id, value);
-                          setEditingId(null);
-                        }}
-                        onCancel={() => setEditingId(null)}
-                      />
-                    ) : (
-                      /* Preview tabs use italic to signal the transient state,
-                         matching the visual convention from VSCode. */
-                      <span className={cn("truncate", isPreview && "italic")}>
-                        {labelFor(t)}
-                      </span>
-                    )}
+                    {/* Preview tabs use italic to signal the transient state,
+                        matching the visual convention from VSCode. */}
+                    <span className={cn("truncate", isPreview && "italic")}>
+                      {labelFor(t)}
+                    </span>
                     {t.kind === "editor" && t.dirty ? (
                       <span
                         aria-label="Unsaved changes"
@@ -148,7 +163,7 @@ export function TabBar({
                       />
                     ) : null}
                   </span>
-                  {tabs.length > 1 && !isEditing && (
+                  {tabs.length > 1 && (
                     <span
                       role="button"
                       aria-label="Close tab"
@@ -339,26 +354,32 @@ function TabRenameInput({
   onCancel: () => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
-  // Guards against the blur handler firing a second time after Enter/Escape
-  // already resolved the edit (Escape must not commit the default name).
+  // Guards against a trailing blur re-resolving an edit that Enter/Escape
+  // already finished (Escape must never commit).
   const done = useRef(false);
 
   useEffect(() => {
-    ref.current?.select();
+    // Focus on the next frame so it runs after the context menu restores focus
+    // to its trigger when closing; a synchronous focus would be stolen.
+    const raf = requestAnimationFrame(() => {
+      ref.current?.focus();
+      ref.current?.select();
+    });
+    return () => cancelAnimationFrame(raf);
   }, []);
 
-  const commit = (value: string) => {
+  const finish = (fn: () => void) => {
     if (done.current) return;
     done.current = true;
-    // No change to the displayed label: don't freeze the cwd-derived default
-    // into a custom title.
-    if (value.trim() === initial.trim()) onCancel();
-    else onCommit(value);
+    fn();
   };
-  const cancel = () => {
-    if (done.current) return;
-    done.current = true;
-    onCancel();
+
+  // explicit = the user pressed Enter, which pins even the unchanged label. A
+  // plain blur with no change must not freeze the cwd-derived default into a
+  // custom title.
+  const commit = (value: string, explicit: boolean) => {
+    if (!explicit && value.trim() === initial.trim()) finish(onCancel);
+    else finish(() => onCommit(value));
   };
 
   return (
@@ -370,14 +391,17 @@ function TabRenameInput({
         "w-28 min-w-0 rounded-sm bg-background px-1 text-xs text-foreground",
         "outline-none ring-1 ring-border focus:ring-ring",
       )}
-      onClick={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key === "Enter") commit(e.currentTarget.value);
-        else if (e.key === "Escape") cancel();
+        if (e.key === "Enter") commit(e.currentTarget.value, true);
+        else if (e.key === "Escape") finish(onCancel);
       }}
-      onBlur={(e) => commit(e.currentTarget.value)}
+      onBlur={(e) => {
+        // Switching windows/apps blurs the input; keep the edit open instead
+        // of resolving it on the way out.
+        if (!document.hasFocus()) return;
+        commit(e.currentTarget.value, false);
+      }}
     />
   );
 }
