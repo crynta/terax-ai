@@ -6,6 +6,7 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   AiScanIcon,
   InformationCircleIcon,
+  Mic01Icon,
   PaintBoardIcon,
   Settings01Icon,
   UserMultiple02Icon,
@@ -20,6 +21,7 @@ import { GeneralSection } from "./sections/GeneralSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { ThemesSection } from "./sections/ThemesSection";
+import { VoiceSection } from "./sections/VoiceSection";
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, component: () => JSX.Element }[] =
   [
@@ -27,6 +29,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, compo
     { id: "themes", label: "Themes", icon: PaintBoardIcon, component: ThemesSection },
     { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon, component: ShortcutsSection },
     { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
+    { id: "voice", label: "Voice", icon: Mic01Icon, component: VoiceSection },
     { id: "agents", label: "Agents", icon: UserMultiple02Icon, component: AgentsSection },
     { id: "about", label: "About", icon: InformationCircleIcon, component: AboutSection },
   ];
@@ -36,6 +39,7 @@ const VALID_TABS: SettingsTab[] = [
   "themes",
   "shortcuts",
   "models",
+  "voice",
   "agents",
   "about",
 ];

@@ -207,11 +207,31 @@ export function AiInputBar() {
     if (it) onPickItem(it);
   };
 
-  const voiceLabel = c.voice.recording
-    ? "Listening…"
-    : c.voice.transcribing
-      ? "Transcribing…"
-      : null;
+  // Stable key based on the *state*, not the text. The download text updates
+  // many times per second; using `voiceLabel` as the AnimatePresence key would
+  // remount the row on every progress tick and replay the height animation.
+  const voiceLabelKey = c.voice.isLocalLoading
+    ? "loading"
+    : c.voice.recording
+      ? "recording"
+      : c.voice.transcribing
+        ? "transcribing"
+        : null;
+
+  const voiceLabel = c.voice.isLocalLoading
+    ? (() => {
+        const s = c.voice.transcriberState;
+        if (s.kind !== "loading") return "Loading model…";
+        const total = s.total ?? 0;
+        if (total <= 0) return "Loading model…";
+        const mb = (n: number) => `${(n / (1024 * 1024)).toFixed(0)} MB`;
+        return `Downloading model · ${mb(s.loaded ?? 0)} / ${mb(total)}`;
+      })()
+    : c.voice.recording
+      ? "Listening…"
+      : c.voice.transcribing
+        ? "Transcribing…"
+        : null;
 
   return (
     <div className="shrink-0 border-t border-border/60 bg-card/40 px-3 py-2">
@@ -319,7 +339,7 @@ export function AiInputBar() {
         <AnimatePresence initial={false}>
           {voiceLabel && (
             <motion.div
-              key={voiceLabel}
+              key={voiceLabelKey ?? "voice"}
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
