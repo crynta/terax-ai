@@ -5,6 +5,8 @@ import { PaneTreeView } from "./PaneTreeView";
 import type { TerminalPaneHandle } from "./TerminalPane";
 import { leafIds } from "./lib/panes";
 
+const NOOP_RESIZE = (_tabId: number, _splitId: number, _sizes: number[]) => {};
+
 type Props = {
   tabs: Tab[];
   activeId: number;
@@ -14,6 +16,7 @@ type Props = {
   onCwd: (leafId: number, cwd: string) => void;
   onExit: (leafId: number, code: number) => void;
   onFocusLeaf: (tabId: number, leafId: number) => void;
+  onResizeSplit?: (tabId: number, splitId: number, sizes: number[]) => void;
 };
 
 type Bundle = {
@@ -31,6 +34,7 @@ export function TerminalStack({
   onCwd,
   onExit,
   onFocusLeaf,
+  onResizeSplit,
 }: Props) {
   const terminals = useMemo(
     () => tabs.filter((t) => t.kind === "terminal"),
@@ -97,6 +101,7 @@ export function TerminalStack({
               activeLeafId={t.activeLeafId}
               onFocusLeaf={(leafId) => onFocusLeaf(t.id, leafId)}
               getBundle={getBundle}
+              onResizeSplit={(splitId, sizes) => (onResizeSplit ?? NOOP_RESIZE)(t.id, splitId, sizes)}
             />
           </div>
         );

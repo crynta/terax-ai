@@ -21,6 +21,7 @@ import {
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
+  setRestoreSession,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
@@ -63,6 +64,7 @@ export function GeneralSection() {
 
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
+  const restoreSession = usePreferencesStore((s) => s.restoreSession);
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const terminalWebglEnabled = usePreferencesStore(
@@ -326,6 +328,15 @@ export function GeneralSection() {
             <Switch
               checked={restoreWindowState}
               onCheckedChange={(v) => void setRestoreWindowState(v)}
+            />
+          </SettingRow>
+          <SettingRow
+            title="Restore previous session"
+            description="Reopens your tabs and terminal panes from the last session. Saved per project directory and environment."
+          >
+            <Switch
+              checked={restoreSession}
+              onCheckedChange={(v) => void setRestoreSession(v)}
             />
           </SettingRow>
         </div>
