@@ -39,6 +39,12 @@ export type EditorTab = {
    * is replaced by the next single-click rather than accumulating.
    */
   preview: boolean;
+  /**
+   * One-shot scroll/cursor target consumed by EditorPane on the next render.
+   * Set when opened from a terminal-link click; cleared as soon as the editor
+   * applies it. Coordinates are 1-based (matching compiler output).
+   */
+  pendingSelection?: { line: number; col?: number };
 };
 
 export type PreviewTab = {
@@ -223,78 +229,118 @@ export function useTabs(initial?: Partial<TerminalTab>) {
    *   reused: if a persistent tab for the path already exists it is activated;
    *   otherwise the current preview slot is replaced with the new path.
    */
-  const openFileTab = useCallback((path: string, pin = true) => {
-    let targetId: number | null = null;
-    setTabs((curr) => {
-      if (pin) {
-        // Persistent open: find any existing editor tab, pin it if needed.
-        const existing = curr.find(
-          (t) => t.kind === "editor" && t.path === path,
-        );
-        if (existing) {
-          targetId = existing.id;
-          if ((existing as EditorTab).preview) {
-            return curr.map((t) =>
-              t.id === existing.id ? { ...t, preview: false } : t,
-            );
+  const openFileTab = useCallback(
+    (
+      path: string,
+      pin = true,
+      selection?: { line: number; col?: number },
+    ) => {
+      let targetId: number | null = null;
+      setTabs((curr) => {
+        if (pin) {
+          // Persistent open: find any existing editor tab, pin it if needed.
+          const existing = curr.find(
+            (t) => t.kind === "editor" && t.path === path,
+          );
+          if (existing) {
+            targetId = existing.id;
+            if ((existing as EditorTab).preview) {
+              return curr.map((t) =>
+                t.id === existing.id
+                  ? {
+                      ...t,
+                      preview: false,
+                      ...(selection !== undefined && {
+                        pendingSelection: selection,
+                      }),
+                    }
+                  : t,
+              );
+            }
+            if (selection !== undefined) {
+              return curr.map((t) =>
+                t.id === existing.id ? { ...t, pendingSelection: selection } : t,
+              );
+            }
+            return curr;
           }
-          return curr;
-        }
-        const id = nextIdRef.current++;
-        targetId = id;
-        return [
-          ...curr,
-          {
+          const id = nextIdRef.current++;
+          targetId = id;
+          return [
+            ...curr,
+            {
+              id,
+              kind: "editor",
+              title: basename(path),
+              path,
+              dirty: false,
+              preview: false,
+              ...(selection !== undefined && { pendingSelection: selection }),
+            } satisfies EditorTab,
+          ];
+        } else {
+          // Preview open: persistent tab for this path takes priority.
+          const persistent = curr.find(
+            (t) =>
+              t.kind === "editor" &&
+              t.path === path &&
+              !(t as EditorTab).preview,
+          );
+          if (persistent) {
+            targetId = persistent.id;
+            if (selection !== undefined) {
+              return curr.map((t) =>
+                t.id === persistent.id
+                  ? { ...t, pendingSelection: selection }
+                  : t,
+              );
+            }
+            return curr;
+          }
+          // Reuse the slot if it already shows the same path.
+          const existingPreview = curr.find(
+            (t) =>
+              t.kind === "editor" &&
+              t.path === path &&
+              (t as EditorTab).preview,
+          );
+          if (existingPreview) {
+            targetId = existingPreview.id;
+            if (selection !== undefined) {
+              return curr.map((t) =>
+                t.id === existingPreview.id
+                  ? { ...t, pendingSelection: selection }
+                  : t,
+              );
+            }
+            return curr;
+          }
+          // Replace the current preview slot, or append a new one.
+          const previewIdx = curr.findIndex(
+            (t) => t.kind === "editor" && (t as EditorTab).preview,
+          );
+          const id = nextIdRef.current++;
+          targetId = id;
+          const tab: EditorTab = {
             id,
             kind: "editor",
             title: basename(path),
             path,
             dirty: false,
-            preview: false,
-          } satisfies EditorTab,
-        ];
-      } else {
-        // Preview open: persistent tab for this path takes priority.
-        const persistent = curr.find(
-          (t) =>
-            t.kind === "editor" && t.path === path && !(t as EditorTab).preview,
-        );
-        if (persistent) {
-          targetId = persistent.id;
-          return curr;
+            preview: true,
+            ...(selection !== undefined && { pendingSelection: selection }),
+          };
+          if (previewIdx === -1) return [...curr, tab];
+          const next = [...curr];
+          next[previewIdx] = tab;
+          return next;
         }
-        // Reuse the slot if it already shows the same path.
-        const existingPreview = curr.find(
-          (t) =>
-            t.kind === "editor" && t.path === path && (t as EditorTab).preview,
-        );
-        if (existingPreview) {
-          targetId = existingPreview.id;
-          return curr;
-        }
-        // Replace the current preview slot, or append a new one.
-        const previewIdx = curr.findIndex(
-          (t) => t.kind === "editor" && (t as EditorTab).preview,
-        );
-        const id = nextIdRef.current++;
-        targetId = id;
-        const tab: EditorTab = {
-          id,
-          kind: "editor",
-          title: basename(path),
-          path,
-          dirty: false,
-          preview: true,
-        };
-        if (previewIdx === -1) return [...curr, tab];
-        const next = [...curr];
-        next[previewIdx] = tab;
-        return next;
-      }
-    });
-    if (targetId !== null) setActiveId(targetId);
-    return targetId as number | null;
-  }, []);
+      });
+      if (targetId !== null) setActiveId(targetId);
+      return targetId as number | null;
+    },
+    [],
+  );
 
   /**
    * Promotes a preview tab to a persistent one. Called on double-click of the
@@ -304,6 +350,16 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setTabs((curr) =>
       curr.map((t) =>
         t.id === id && t.kind === "editor" ? { ...t, preview: false } : t,
+      ),
+    );
+  }, []);
+
+  const clearPendingSelection = useCallback((id: number) => {
+    setTabs((curr) =>
+      curr.map((t) =>
+        t.id === id && t.kind === "editor"
+          ? { ...t, pendingSelection: undefined }
+          : t,
       ),
     );
   }, []);
@@ -803,6 +859,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     newPrivateTab,
     openFileTab,
     pinTab,
+    clearPendingSelection,
     newPreviewTab,
     newMarkdownTab,
     openAiDiffTab,

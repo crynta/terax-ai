@@ -23,6 +23,7 @@ import {
   getSlotForLeaf,
   releaseSlot,
   setSlotFocused,
+  type SlotAdapter,
 } from "./rendererPool";
 
 type Callbacks = {
@@ -140,7 +141,18 @@ configureRendererPool({
     const s = sessions.get(leafId);
     return !!s && s.visibleNow && s.focusedNow;
   },
+  getCwd(leafId) {
+    const s = sessions.get(leafId);
+    return s?.lastCwd ?? null;
+  },
+  openFile: (leafId, path, line, col) => openFileHandler(leafId, path, line, col),
 });
+
+let openFileHandler: SlotAdapter["openFile"] = async () => false;
+
+export function setTerminalOpenFileHandler(handler: SlotAdapter["openFile"]): void {
+  openFileHandler = handler;
+}
 
 function ensureSession(leafId: number, initialCwd?: string): Session {
   const existing = sessions.get(leafId);

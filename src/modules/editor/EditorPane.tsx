@@ -52,6 +52,13 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
+  /**
+   * One-shot scroll/cursor target. The pane dispatches a CodeMirror transaction
+   * to move the selection there and scroll it into view, then calls
+   * `onSelectionApplied` to clear it from the tab store.
+   */
+  pendingSelection?: { line: number; col?: number };
+  onSelectionApplied?: () => void;
 };
 
 function formatBytes(n: number): string {
@@ -61,7 +68,7 @@ function formatBytes(n: number): string {
 }
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
-  function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
+  function EditorPane({ path, onDirtyChange, onSaved, onClose, pendingSelection, onSelectionApplied }, ref) {
     const { doc, onChange, save, reload } = useDocument({ path, onDirtyChange });
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
@@ -214,6 +221,51 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         cancelled = true;
       };
     }, [path, doc.status]);
+
+    useEffect(() => {
+      if (!pendingSelection) return;
+      if (doc.status !== "ready") return;
+
+      const { line, col } = pendingSelection;
+      let cancelled = false;
+
+      // Wait for CodeMirror to finish mounting AND for its initial content
+      // transaction to settle. The view is created in an internal effect and
+      // its doc isn't populated until that effect runs; a Promise.resolve()
+      // microtask is too early in practice and reads an empty doc, which
+      // clamps targetLine to 1 and silently no-ops. Two rAFs reliably defer
+      // past mount + first paint.
+      const apply = () => {
+        if (cancelled) return;
+        const v = cmRef.current?.view;
+        if (!v || v.state.doc.lines === 0) return; // shouldn't happen but defensive
+        const totalLines = v.state.doc.lines;
+        const targetLine = Math.max(1, Math.min(line, totalLines));
+        const lineInfo = v.state.doc.line(targetLine);
+        const offset =
+          col !== undefined
+            ? Math.max(lineInfo.from, Math.min(lineInfo.to, lineInfo.from + col - 1))
+            : lineInfo.from;
+        v.dispatch({
+          selection: { anchor: offset, head: offset },
+          scrollIntoView: true,
+        });
+        v.focus();
+        onSelectionApplied?.();
+      };
+
+      let raf1 = 0;
+      let raf2 = 0;
+      raf1 = requestAnimationFrame(() => {
+        if (cancelled) return;
+        raf2 = requestAnimationFrame(apply);
+      });
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    }, [pendingSelection, doc.status, onSelectionApplied]);
 
     useImperativeHandle(
       ref,

@@ -161,6 +161,16 @@ pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat
     })
 }
 
+#[tauri::command]
+pub fn fs_exists(path: String, workspace: Option<WorkspaceEnv>) -> Result<bool, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
+    // `try_exists` distinguishes "definitely missing" from "couldn't check"
+    // (permission errors, broken filesystem). For terminal click-to-open
+    // we collapse both into "not clickable" — false is the safe default.
+    Ok(p.try_exists().unwrap_or(false))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

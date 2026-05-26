@@ -9,6 +9,7 @@ type Props = {
   onDirtyChange: (id: number, dirty: boolean) => void;
   registerHandle: (id: number, handle: EditorPaneHandle | null) => void;
   onCloseTab: (id: number) => void;
+  onSelectionApplied?: (id: number) => void;
 };
 
 export function EditorStack({
@@ -17,6 +18,7 @@ export function EditorStack({
   onDirtyChange,
   registerHandle,
   onCloseTab,
+  onSelectionApplied,
 }: Props) {
   const editors = tabs.filter((t): t is EditorTab => t.kind === "editor");
 
@@ -27,6 +29,7 @@ export function EditorStack({
   const registerRef = useRef(registerHandle);
   const dirtyRef = useRef(onDirtyChange);
   const closeRef = useRef(onCloseTab);
+  const selectionAppliedRef = useRef(onSelectionApplied);
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -36,12 +39,16 @@ export function EditorStack({
   useEffect(() => {
     closeRef.current = onCloseTab;
   }, [onCloseTab]);
+  useEffect(() => {
+    selectionAppliedRef.current = onSelectionApplied;
+  }, [onSelectionApplied]);
 
   const refCallbacks = useRef(
     new Map<number, (h: EditorPaneHandle | null) => void>(),
   );
   const dirtyCallbacks = useRef(new Map<number, (dirty: boolean) => void>());
   const closeCallbacks = useRef(new Map<number, () => void>());
+  const selectionAppliedCallbacks = useRef(new Map<number, () => void>());
 
   const getRefCallback = (id: number) => {
     let cb = refCallbacks.current.get(id);
@@ -67,6 +74,14 @@ export function EditorStack({
     }
     return cb;
   };
+  const getSelectionAppliedCallback = (id: number) => {
+    let cb = selectionAppliedCallbacks.current.get(id);
+    if (!cb) {
+      cb = () => selectionAppliedRef.current?.(id);
+      selectionAppliedCallbacks.current.set(id, cb);
+    }
+    return cb;
+  };
 
   // Drop callback entries for closed tabs to avoid unbounded growth.
   useEffect(() => {
@@ -79,6 +94,9 @@ export function EditorStack({
     }
     for (const id of closeCallbacks.current.keys()) {
       if (!live.has(id)) closeCallbacks.current.delete(id);
+    }
+    for (const id of selectionAppliedCallbacks.current.keys()) {
+      if (!live.has(id)) selectionAppliedCallbacks.current.delete(id);
     }
   }, [editors]);
 
@@ -102,6 +120,8 @@ export function EditorStack({
                 path={t.path}
                 onDirtyChange={getDirtyCallback(t.id)}
                 onClose={getCloseCallback(t.id)}
+                pendingSelection={t.pendingSelection}
+                onSelectionApplied={getSelectionAppliedCallback(t.id)}
               />
             </div>
           </div>
