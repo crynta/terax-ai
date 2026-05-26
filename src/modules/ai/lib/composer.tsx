@@ -305,6 +305,28 @@ export function AiComposerProvider({ children }: ProviderProps) {
 
     if (!sessionId) return;
     const chat = getOrCreateChat(sessionId);
+
+    // Deny any pending tool approvals before sending a follow-up.
+    // This prevents MissingToolResultsError from the AI SDK.
+    for (const m of chat.messages) {
+      if (m.role !== "assistant") continue;
+      (m as { parts: unknown[] }).parts = m.parts.map((p) => {
+        const part = p as { state?: string; approval?: { id: string } };
+        if (part.state === "approval-requested") {
+          return {
+            ...part,
+            state: "output-denied" as const,
+            approval: {
+              id: part.approval?.id ?? "unknown",
+              approved: false,
+              reason: "Superseded by follow-up prompt",
+            },
+          };
+        }
+        return part;
+      });
+    }
+
     void chat.sendMessage({ role: "user", parts } as Parameters<
       typeof chat.sendMessage
     >[0]);
