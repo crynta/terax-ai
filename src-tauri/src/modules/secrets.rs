@@ -39,7 +39,7 @@ pub struct SecretsState {
 }
 
 #[cfg(target_os = "linux")]
-fn key(service: &str, account: &str) -> String {
+pub(crate) fn key(service: &str, account: &str) -> String {
     format!("{}::{}", service, account)
 }
 
@@ -52,20 +52,31 @@ fn store_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 #[cfg(target_os = "linux")]
 fn read_store(app: &AppHandle) -> Result<HashMap<String, String>, String> {
-    let path = store_path(app)?;
+    read_store_at(&store_path(app)?)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn read_store_at(path: &std::path::Path) -> Result<HashMap<String, String>, String> {
     if !path.exists() {
         return Ok(HashMap::new());
     }
-    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    let bytes = fs::read(path).map_err(|e| e.to_string())?;
     serde_json::from_slice::<HashMap<String, String>>(&bytes).map_err(|e| e.to_string())
 }
 
 #[cfg(target_os = "linux")]
 fn write_store(app: &AppHandle, map: &HashMap<String, String>) -> Result<(), String> {
+    write_store_at(&store_path(app)?, map)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn write_store_at(
+    path: &std::path::Path,
+    map: &HashMap<String, String>,
+) -> Result<(), String> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
 
-    let path = store_path(app)?;
     let tmp = path.with_extension("json.tmp");
     let bytes = serde_json::to_vec(map).map_err(|e| e.to_string())?;
 
@@ -79,7 +90,7 @@ fn write_store(app: &AppHandle, map: &HashMap<String, String>) -> Result<(), Str
         .map_err(|e| e.to_string())?;
     f.write_all(&bytes).map_err(|e| e.to_string())?;
     f.sync_all().map_err(|e| e.to_string())?;
-    fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -181,6 +192,86 @@ pub async fn secrets_delete(
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(err) => Err(err.to_string()),
         }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::MetadataExt;
+    use tempfile::TempDir;
+
+    #[test]
+    fn key_format_is_service_double_colon_account() {
+        assert_eq!(key("openai", "alice"), "openai::alice");
+        assert_eq!(key("", ""), "::");
+    }
+
+    #[test]
+    fn read_store_at_missing_path_is_empty() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("nope.json");
+        let map = read_store_at(&p).unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn write_then_read_roundtrip() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("secrets.json");
+        let mut m = HashMap::new();
+        m.insert(key("svc", "alice"), "p1".into());
+        m.insert(key("svc", "bob"), "p2".into());
+
+        write_store_at(&p, &m).unwrap();
+        let loaded = read_store_at(&p).unwrap();
+        assert_eq!(loaded, m);
+    }
+
+    #[test]
+    fn write_uses_mode_0600() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("secrets.json");
+        write_store_at(&p, &HashMap::new()).unwrap();
+
+        let mode = fs::metadata(&p).unwrap().mode() & 0o777;
+        assert_eq!(mode, 0o600, "secrets file must be user-only readable");
+    }
+
+    #[test]
+    fn write_does_not_leave_tmp_file_on_success() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("secrets.json");
+        write_store_at(&p, &HashMap::new()).unwrap();
+
+        let tmp_path = p.with_extension("json.tmp");
+        assert!(!tmp_path.exists(), "tmp file must be renamed away on success");
+    }
+
+    #[test]
+    fn write_overwrites_existing_atomically() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("secrets.json");
+
+        let mut first = HashMap::new();
+        first.insert("a".into(), "1".into());
+        write_store_at(&p, &first).unwrap();
+
+        let mut second = HashMap::new();
+        second.insert("b".into(), "2".into());
+        write_store_at(&p, &second).unwrap();
+
+        let loaded = read_store_at(&p).unwrap();
+        assert_eq!(loaded, second);
+        assert!(!loaded.contains_key("a"));
+    }
+
+    #[test]
+    fn read_store_at_garbage_file_errors() {
+        let tmp = TempDir::new().unwrap();
+        let p = tmp.path().join("secrets.json");
+        fs::write(&p, b"not json").unwrap();
+        assert!(read_store_at(&p).is_err());
     }
 }
 
