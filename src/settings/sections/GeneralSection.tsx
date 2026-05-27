@@ -374,30 +374,22 @@ function AutoSaveDelayInput({
 }) {
   const [draft, setDraft] = useState(String(value));
 
-  // sync delay
   useEffect(() => {
     setDraft(String(value));
   }, [value]);
 
   const commit = () => {
     const n = Number(draft);
-    if (!Number.isFinite(n) || n < AUTO_SAVE_MIN) {
+    if (!Number.isFinite(n)) {
       setDraft(String(value));
       return;
     }
-    const clamped = Math.min(AUTO_SAVE_MAX, Math.max(AUTO_SAVE_MIN, Math.round(n)));
+    const clamped = Math.min(
+      AUTO_SAVE_MAX,
+      Math.max(AUTO_SAVE_MIN, Math.round(n)),
+    );
     setDraft(String(clamped));
-    onChange(clamped);
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setDraft(val);
-
-    const n = Number(val);
-    if (Number.isFinite(n) && n >= AUTO_SAVE_MIN && n <= AUTO_SAVE_MAX) {
-      onChange(Math.round(n));
-    }
+    if (clamped !== value) onChange(clamped);
   };
 
   return (
@@ -412,10 +404,12 @@ function AutoSaveDelayInput({
           max={AUTO_SAVE_MAX}
           step={AUTO_SAVE_STEP}
           value={draft}
-          onChange={handleInputChange}
+          onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
+            if (e.key === "Enter") {
+              e.currentTarget.blur();
+            }
           }}
           className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         />
