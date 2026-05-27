@@ -49,7 +49,12 @@ import {
 import { getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
-import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
+import {
+  ExplorerPanelSearch,
+  type ExplorerSearchHandle,
+  FileExplorer,
+  type FileExplorerHandle,
+} from "@/modules/explorer";
 import {
   listenFsChanged,
   parentDir,
@@ -75,6 +80,7 @@ import {
 import { SidebarRail, type SidebarViewId } from "@/modules/sidebar";
 import {
   SourceControlPanel,
+  useChildRepos,
   useSourceControl,
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
@@ -152,7 +158,12 @@ function readSidebarWidth(): number {
 function readSidebarView(): SidebarViewId {
   try {
     const stored = window.localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
-    if (stored === "explorer" || stored === "source-control") return stored;
+    if (
+      stored === "explorer" ||
+      stored === "search" ||
+      stored === "source-control"
+    )
+      return stored;
   } catch {
     // ignore
   }
@@ -212,6 +223,7 @@ export default function App() {
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   const explorerRef = useRef<FileExplorerHandle>(null);
+  const sidebarSearchRef = useRef<ExplorerSearchHandle>(null);
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
@@ -301,6 +313,14 @@ export default function App() {
     explorerReturnFocusRef.current =
       active instanceof HTMLElement && active !== document.body ? active : null;
     explorer.focus();
+  }, [persistSidebarView, sidebarView]);
+
+  const openSidebarSearch = useCallback(() => {
+    const panel = sidebarRef.current;
+    const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
+    if (panel && collapsed) panel.resize(`${sidebarWidthRef.current}px`);
+    if (sidebarView !== "search") persistSidebarView("search");
+    requestAnimationFrame(() => sidebarSearchRef.current?.focus());
   }, [persistSidebarView, sidebarView]);
 
   const [home, setHome] = useState<string | null>(null);
@@ -841,6 +861,31 @@ export default function App() {
     [openFileTab],
   );
 
+  const handleOpenSearchTextHit = useCallback(
+    (
+      path: string,
+      line: number,
+      query: string,
+      caseSensitive: boolean,
+      exactWord: boolean,
+    ) => {
+      const tabId = openFileTab(path, true);
+      if (tabId === null) return;
+      explorerRef.current?.revealPath(path);
+      const tryJump = (attempt: number) => {
+        const handle = editorRefs.current.get(tabId);
+        if (handle) {
+          handle.jumpToMatch(line, query, caseSensitive, exactWord);
+          return;
+        }
+        if (attempt >= 20) return;
+        window.setTimeout(() => tryJump(attempt + 1), 25);
+      };
+      tryJump(0);
+    },
+    [openFileTab],
+  );
+
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
       for (const t of tabs) {
@@ -937,13 +982,30 @@ export default function App() {
   );
   const sourceControlActive =
     hasOpenGitTab || sidebarView === "source-control";
+  const { repos: childRepos, isLoading: childReposLoading } = useChildRepos(
+    sourceControlContextPath,
+    true,
+  );
+  const [selectedRepoRoot, setSelectedRepoRoot] = useState<string | null>(null);
+  useEffect(() => {
+    setSelectedRepoRoot(null);
+  }, [sourceControlContextPath]);
+  useEffect(() => {
+    if (!selectedRepoRoot) return;
+    if (!childRepos.some((r) => r.repoRoot === selectedRepoRoot)) {
+      setSelectedRepoRoot(null);
+    }
+  }, [childRepos, selectedRepoRoot]);
+
+  const hasChildRepos = childRepos.length > 0;
+  const activeSourceRepoRoot = hasChildRepos ? selectedRepoRoot : null;
   // Stable per-session path so switching tabs / cd-ing in a shell does NOT
   // re-fire git IPC for the badge. The active panel resolves the current
   // context path on its own when the user actually opens git.
   const badgeContextPath = workspaceFallbackPath;
   const sourceControlPath = sourceControlActive
-    ? sourceControlContextPath
-    : badgeContextPath;
+    ? (activeSourceRepoRoot ?? (hasChildRepos ? null : sourceControlContextPath))
+    : (activeSourceRepoRoot ?? badgeContextPath);
   const sourceControl = useSourceControl(sourceControlPath, true);
 
   const toggleSourceControl = useCallback(() => {
@@ -1034,6 +1096,7 @@ export default function App() {
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
       "explorer.focus": toggleExplorerFocus,
+      "explorer.search": openSidebarSearch,
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
@@ -1055,6 +1118,7 @@ export default function App() {
       askFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
+      openSidebarSearch,
       zoomIn,
       zoomOut,
       zoomReset,
@@ -1437,10 +1501,24 @@ export default function App() {
                         onAttachToAgent={handleAttachFileToAgent}
                         onOpenMarkdownPreview={openMarkdownPreview}
                       />
+                    ) : sidebarView === "search" ? (
+                      <ExplorerPanelSearch
+                        ref={sidebarSearchRef}
+                        rootPath={explorerRoot}
+                        onOpenFile={handleOpenFile}
+                        onOpenTextHit={handleOpenSearchTextHit}
+                        onRevealPath={(path) => explorerRef.current?.revealPath(path)}
+                        onRevealInTerminal={cdInNewTab}
+                        onAttachToAgent={handleAttachFileToAgent}
+                      />
                     ) : (
                       <SourceControlPanel
                         open
                         sourceControl={sourceControl}
+                        repoChoices={childRepos}
+                        repoChoiceLoading={childReposLoading}
+                        selectedRepoRoot={selectedRepoRoot}
+                        onSelectRepoRoot={setSelectedRepoRoot}
                         onOpenDiff={openGitDiffTab}
                         onOpenGitGraph={openGitGraphFromContext}
                       />
