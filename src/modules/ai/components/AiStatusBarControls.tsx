@@ -58,6 +58,14 @@ import { toggleFavoriteModel } from "../lib/modelPrefs";
 import { useChatStore } from "../store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 
+function formatProgress(state: { loaded?: number; total?: number; kind: string }): string {
+  if (state.kind !== "loading") return "";
+  const total = state.total ?? 0;
+  if (total <= 0) return "preparing…";
+  const mb = (n: number) => `${(n / (1024 * 1024)).toFixed(0)} MB`;
+  return `${mb(state.loaded ?? 0)} / ${mb(total)}`;
+}
+
 const PROVIDER_ICON = {
   openai: ChatGptIcon,
   anthropic: ClaudeIcon,
@@ -125,26 +133,32 @@ export function AiStatusBarControls() {
       {c.voice.supported && (
         <IconBtn
           title={
-            !c.voice.hasKey
-              ? "Voice needs an OpenAI key"
-              : c.voice.recording
-                ? "Stop & transcribe"
-                : c.voice.transcribing
-                  ? "Transcribing…"
-                  : "Voice input"
+            c.voice.isLocalLoading
+              ? `Downloading model… ${formatProgress(c.voice.transcriberState)}`
+              : !c.voice.canRecord
+                ? c.voice.reasonUnavailable ?? "Voice input unavailable"
+                : c.voice.recording
+                  ? "Stop & transcribe"
+                  : c.voice.transcribing
+                    ? "Transcribing…"
+                    : "Voice input"
           }
           onClick={() =>
             c.voice.recording ? c.voice.stop() : void c.voice.start()
           }
-          disabled={c.isBusy || c.voice.transcribing || !c.voice.hasKey}
+          disabled={
+            c.isBusy ||
+            c.voice.transcribing ||
+            (!c.voice.canRecord && !c.voice.isLocalLoading)
+          }
           className={cn(
             c.voice.recording &&
-            "bg-destructive/10 text-destructive hover:bg-destructive/15",
+              "bg-destructive/10 text-destructive hover:bg-destructive/15",
           )}
         >
           {c.voice.recording ? (
             <span className="size-2 animate-pulse rounded-full bg-destructive" />
-          ) : c.voice.transcribing ? (
+          ) : c.voice.transcribing || c.voice.isLocalLoading ? (
             <Spinner className="size-3" />
           ) : (
             <HugeiconsIcon icon={Mic01Icon} size={13} strokeWidth={1.75} />

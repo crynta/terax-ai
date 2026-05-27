@@ -1,7 +1,11 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import { experimental_transcribe as transcribe } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useChatStore } from "../store/chatStore";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  createTranscriber,
+  type Transcriber,
+  type TranscriberState,
+} from "../lib/transcribers";
 
 const MIME_CANDIDATES = [
   "audio/webm;codecs=opus",
@@ -18,17 +22,7 @@ function pickMime(): string | undefined {
   return undefined;
 }
 
-async function transcribeBlob(blob: Blob, apiKey: string): Promise<string> {
-  const openai = createOpenAI({ apiKey });
-  const buf = new Uint8Array(await blob.arrayBuffer());
-  const { text } = await transcribe({
-    model: openai.transcription("whisper-1"),
-    audio: buf,
-  });
-  return text;
-}
-
-type State = "idle" | "recording" | "transcribing";
+type RecordingState = "idle" | "recording" | "transcribing";
 
 export function useWhisperRecording({
   onResult,
@@ -36,10 +30,36 @@ export function useWhisperRecording({
   onResult: (text: string) => void;
 }) {
   const apiKey = useChatStore((s) => s.apiKeys.openai);
-  const [state, setState] = useState<State>("idle");
+  const voiceProvider = usePreferencesStore((s) => s.voiceProvider);
+  const localModel = usePreferencesStore((s) => s.localWhisperModel);
+  const localLanguage = usePreferencesStore((s) => s.localWhisperLanguage);
+
+  const [state, setState] = useState<RecordingState>("idle");
+  const [transcriberState, setTranscriberState] = useState<TranscriberState>({
+    kind: "idle",
+  });
+
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const transcriberRef = useRef<Transcriber | null>(null);
+
+  // Recreate the transcriber whenever the selection changes.
+  useEffect(() => {
+    transcriberRef.current?.unload();
+    const t = createTranscriber(
+      voiceProvider === "local"
+        ? { kind: "local", model: localModel, language: localLanguage }
+        : { kind: "openai", apiKey: apiKey ?? null },
+    );
+    transcriberRef.current = t;
+    const unsub = t.subscribe(setTranscriberState);
+    return () => {
+      unsub();
+      t.unload();
+      if (transcriberRef.current === t) transcriberRef.current = null;
+    };
+  }, [voiceProvider, localModel, localLanguage, apiKey]);
 
   const supported =
     typeof navigator !== "undefined" &&
@@ -57,7 +77,13 @@ export function useWhisperRecording({
   }, []);
 
   const start = useCallback(async () => {
-    if (!supported || !apiKey || state !== "idle") return;
+    const t = transcriberRef.current;
+    if (!supported || !t || state !== "idle") return;
+    if (!t.ready()) return;
+
+    // Kick off model preload in parallel with capturing audio.
+    t.preload();
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -79,7 +105,9 @@ export function useWhisperRecording({
         }
         setState("transcribing");
         try {
-          const text = await transcribeBlob(blob, apiKey);
+          const active = transcriberRef.current;
+          if (!active) return;
+          const text = await active.transcribe(blob);
           if (text.trim()) onResult(text.trim());
         } catch (e) {
           console.error("whisper.transcribe", e);
@@ -95,7 +123,7 @@ export function useWhisperRecording({
       teardownStream();
       setState("idle");
     }
-  }, [apiKey, onResult, state, supported]);
+  }, [onResult, state, supported]);
 
   useEffect(() => {
     return () => {
@@ -104,6 +132,10 @@ export function useWhisperRecording({
     };
   }, []);
 
+  const provider = voiceProvider;
+  const reasonUnavailable =
+    transcriberRef.current?.unavailableReason() ?? null;
+
   return {
     state,
     recording: state === "recording",
@@ -111,6 +143,16 @@ export function useWhisperRecording({
     start,
     stop,
     supported,
-    hasKey: !!apiKey,
+    /** Backwards-compat alias used by current UI code paths. */
+    hasKey: provider === "openai" ? !!apiKey : true,
+    canRecord:
+      supported &&
+      (transcriberRef.current?.ready() ?? false),
+    reasonUnavailable,
+    /** The transcriber's own state (loading model / loaded / error). */
+    transcriberState,
+    provider,
+    isLocalLoading:
+      provider === "local" && transcriberState.kind === "loading",
   };
 }

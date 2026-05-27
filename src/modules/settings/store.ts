@@ -34,6 +34,16 @@ export const EDITOR_THEMES = [
 
 export type EditorThemeId = (typeof EDITOR_THEMES)[number];
 
+export const WHISPER_MODELS = [
+  { id: "onnx-community/whisper-tiny.en", label: "tiny.en", sizeMB: 75, multilingual: false },
+  { id: "onnx-community/whisper-base.en", label: "base.en", sizeMB: 140, multilingual: false },
+  { id: "onnx-community/whisper-base", label: "base", sizeMB: 140, multilingual: true },
+  { id: "onnx-community/whisper-small.en", label: "small.en", sizeMB: 460, multilingual: false },
+  { id: "onnx-community/whisper-small", label: "small", sizeMB: 460, multilingual: true },
+] as const;
+
+export type WhisperModelId = (typeof WHISPER_MODELS)[number]["id"];
+
 export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
   atomone: "Atom One",
   aura: "Aura",
@@ -85,6 +95,9 @@ export type Preferences = {
   zoomLevel: number;
   agentNotifications: boolean;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
+  voiceProvider: "openai" | "local";
+  localWhisperModel: string;
+  localWhisperLanguage: string;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -126,6 +139,9 @@ const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
+const KEY_VOICE_PROVIDER = "voiceProvider";
+const KEY_LOCAL_WHISPER_MODEL = "localWhisperModel";
+const KEY_LOCAL_WHISPER_LANGUAGE = "localWhisperLanguage";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -180,6 +196,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   zoomLevel: 1.0,
   agentNotifications: true,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
+  voiceProvider: "local",
+  localWhisperModel: "onnx-community/whisper-base",
+  localWhisperLanguage: "auto",
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -302,6 +321,15 @@ export async function loadPreferences(): Promise<Preferences> {
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
+    voiceProvider:
+      get<"openai" | "local">(KEY_VOICE_PROVIDER) ??
+      DEFAULT_PREFERENCES.voiceProvider,
+    localWhisperModel:
+      get<string>(KEY_LOCAL_WHISPER_MODEL) ??
+      DEFAULT_PREFERENCES.localWhisperModel,
+    localWhisperLanguage:
+      get<string>(KEY_LOCAL_WHISPER_LANGUAGE) ??
+      DEFAULT_PREFERENCES.localWhisperLanguage,
   };
 }
 
@@ -482,6 +510,18 @@ export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
 }
 
+export async function setVoiceProvider(value: "openai" | "local"): Promise<void> {
+  await writePref(KEY_VOICE_PROVIDER, value);
+}
+
+export async function setLocalWhisperModel(value: string): Promise<void> {
+  await writePref(KEY_LOCAL_WHISPER_MODEL, value);
+}
+
+export async function setLocalWhisperLanguage(value: string): Promise<void> {
+  await writePref(KEY_LOCAL_WHISPER_LANGUAGE, value);
+}
+
 export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
@@ -540,6 +580,9 @@ export async function onPreferencesChange(
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
     [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_VOICE_PROVIDER]: "voiceProvider",
+    [KEY_LOCAL_WHISPER_MODEL]: "localWhisperModel",
+    [KEY_LOCAL_WHISPER_LANGUAGE]: "localWhisperLanguage",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
