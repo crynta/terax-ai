@@ -33,6 +33,37 @@ export const MAX_TEXT_INLINE = 200_000;
 export const ACCEPTED_FILES =
   "image/*,.txt,.md,.json,.yaml,.yml,.toml,.sh,.zsh,.bash,.py,.js,.jsx,.ts,.tsx,.rs,.go,.java,.c,.cpp,.h,.hpp,.html,.css,.csv,.log,.env,.config,.conf,.ini,Dockerfile,.dockerfile";
 
+const ACCEPTED_TEXT_EXTENSIONS = new Set<string>(
+  ".txt,.md,.json,.yaml,.yml,.toml,.sh,.zsh,.bash,.py,.js,.jsx,.ts,.tsx,.rs,.go,.java,.c,.cpp,.h,.hpp,.html,.css,.csv,.log,.env,.config,.conf,.ini,.dockerfile"
+    .split(","),
+);
+const ACCEPTED_FILENAMES = new Set<string>(["dockerfile"]);
+
+export function isAcceptedAttachmentFile(
+  file: Pick<File, "name" | "type">,
+): boolean {
+  if (file.type.startsWith("image/")) return true;
+  if (file.type.startsWith("text/")) return true;
+  if (ACCEPTED_FILENAMES.has(file.name.toLowerCase())) return true;
+  const dotIdx = file.name.lastIndexOf(".");
+  if (dotIdx < 0) return false;
+  return ACCEPTED_TEXT_EXTENSIONS.has(file.name.slice(dotIdx).toLowerCase());
+}
+
+export function collectClipboardImageFiles(
+  items: DataTransferItemList | readonly DataTransferItem[] | null | undefined,
+): File[] {
+  if (!items || items.length === 0) return [];
+  const files: File[] = [];
+  for (const item of Array.from(items)) {
+    if (item.kind !== "file") continue;
+    if (!item.type.startsWith("image/")) continue;
+    const file = item.getAsFile();
+    if (file) files.push(file);
+  }
+  return files;
+}
+
 type Voice = ReturnType<typeof useWhisperRecording>;
 
 type ComposerCtx = {
@@ -40,7 +71,7 @@ type ComposerCtx = {
   value: string;
   setValue: React.Dispatch<React.SetStateAction<string>>;
   files: FileAttachment[];
-  addFiles: (list: FileList | null) => Promise<void>;
+  addFiles: (source: FileList | readonly File[] | null) => Promise<void>;
   /** Attach a file by absolute path — used by the file explorer's "Attach to Agent". */
   attachFileByPath: (path: string) => Promise<void>;
   removeFile: (id: string) => void;
@@ -152,10 +183,12 @@ export function AiComposerProvider({ children }: ProviderProps) {
     },
   });
 
-  const addFiles = async (list: FileList | null) => {
-    if (!list) return;
+  const addFiles = async (source: FileList | readonly File[] | null) => {
+    if (!source) return;
+    const items = Array.isArray(source) ? source.slice() : Array.from(source);
+    if (items.length === 0) return;
     const next: FileAttachment[] = [];
-    for (const f of Array.from(list)) {
+    for (const f of items) {
       const att = await readAttachment(f);
       if (att) next.push(att);
     }
@@ -357,6 +390,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
 
 async function readAttachment(file: File): Promise<FileAttachment | null> {
   const id = `${file.name}-${file.size}-${file.lastModified}`;
+  if (!isAcceptedAttachmentFile(file)) return null;
   if (file.type.startsWith("image/")) {
     const url = await readAsDataURL(file);
     return {
