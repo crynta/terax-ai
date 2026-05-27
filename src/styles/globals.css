@@ -347,3 +347,8 @@ html *::-webkit-scrollbar {
 .terax-collapsible-content[data-state="closed"] {
   animation: terax-collapsible-up 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* Zen mode sidebar collapse/expand transition */
+[data-zen-mode] [data-slot="resizable-panel"] {
+  transition: flex-basis 0.3s ease;
+}

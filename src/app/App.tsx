@@ -219,6 +219,8 @@ export default function App() {
   useEffect(() => {
     if (zenMode) {
       sidebarRef.current?.collapse();
+    } else {
+      sidebarRef.current?.expand();
     }
   }, [zenMode]);
 
@@ -1414,31 +1416,38 @@ export default function App() {
           className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground"
           data-zen-mode={zenMode || undefined}
         >
-          <div className={cn(zenMode && "hidden")}>
-            <Header
-              tabs={tabs}
-              activeId={activeId}
-              onSelect={setActiveId}
-              onNew={openNewTab}
-              onNewPrivate={openNewPrivateTab}
-              onNewPreview={() => openPreviewTab("")}
-              onNewEditor={() => setNewEditorOpen(true)}
-              onNewGitGraph={openGitGraphFromContext}
-              onClose={handleClose}
-              onPin={pinTab}
-              onToggleSidebar={toggleSidebar}
-              onSplit={splitActivePaneInActiveTab}
-              canSplit={
-                activeTerminalTab !== null &&
-                leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
-              }
-              onActivateAgent={onActivateAgent}
-              onActivateLocalAgent={onActivateLocalAgent}
-              onOpenSettings={() => void openSettingsWindow()}
-              searchTarget={searchTarget}
-              searchRef={searchInlineRef}
-            />
-          </div>
+          <AnimatePresence>
+            {!zenMode && (
+              <motion.div
+                exit={{ height: 0, opacity: 0, overflow: "hidden" }}
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+              >
+                <Header
+                  tabs={tabs}
+                  activeId={activeId}
+                  onSelect={setActiveId}
+                  onNew={openNewTab}
+                  onNewPrivate={openNewPrivateTab}
+                  onNewPreview={() => openPreviewTab("")}
+                  onNewEditor={() => setNewEditorOpen(true)}
+                  onNewGitGraph={openGitGraphFromContext}
+                  onClose={handleClose}
+                  onPin={pinTab}
+                  onToggleSidebar={toggleSidebar}
+                  onSplit={splitActivePaneInActiveTab}
+                  canSplit={
+                    activeTerminalTab !== null &&
+                    leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
+                  }
+                  onActivateAgent={onActivateAgent}
+                  onActivateLocalAgent={onActivateLocalAgent}
+                  onOpenSettings={() => void openSettingsWindow()}
+                  searchTarget={searchTarget}
+                  searchRef={searchInlineRef}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <main className="zoom-content flex min-h-0 flex-1 flex-col">
             <ResizablePanelGroup
@@ -1498,12 +1507,12 @@ export default function App() {
                       data-ai-input-bar
                       initial={false}
                       animate={{
-                        height: panelOpen ? "auto" : 0,
-                        opacity: panelOpen ? 1 : 0,
+                        height: panelOpen && !zenMode ? "auto" : 0,
+                        opacity: panelOpen && !zenMode ? 1 : 0,
                       }}
                       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                      className={cn("overflow-hidden", zenMode && "hidden")}
-                      aria-hidden={!panelOpen}
+                      className="overflow-hidden"
+                      aria-hidden={!panelOpen || zenMode}
                     >
                       {hasComposer ? (
                         <AiInputBar />
@@ -1519,20 +1528,27 @@ export default function App() {
             </ResizablePanelGroup>
           </main>
 
-          <div className={cn(zenMode && "hidden")}>
-            <StatusBar
-              cwd={activeCwd}
-              filePath={activeFilePath}
-              home={home}
-              onCd={sendCd}
-              onWorkspaceChange={switchWorkspace}
-              onOpenMini={openMini}
-              hasComposer={hasComposer}
-              privateActive={
-                activeTab?.kind === "terminal" && activeTab.private === true
-              }
-            />
-          </div>
+          <AnimatePresence>
+            {!zenMode && (
+              <motion.div
+                exit={{ height: 0, opacity: 0, overflow: "hidden" }}
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+              >
+                <StatusBar
+                  cwd={activeCwd}
+                  filePath={activeFilePath}
+                  home={home}
+                  onCd={sendCd}
+                  onWorkspaceChange={switchWorkspace}
+                  onOpenMini={openMini}
+                  hasComposer={hasComposer}
+                  privateActive={
+                    activeTab?.kind === "terminal" && activeTab.private === true
+                  }
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <AgentNotificationsBridge
             tabs={tabs}
