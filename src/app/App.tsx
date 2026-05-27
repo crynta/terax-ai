@@ -81,6 +81,7 @@ import {
 import { StatusBar } from "@/modules/statusbar";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
+  clearFocusedTerminal,
   disposeSession,
   findLeafCwd,
   hasLeaf,
@@ -777,6 +778,9 @@ export default function App() {
     };
     const onUp = (e: MouseEvent) => {
       if (isInsideAi(e.target)) return;
+      const el = e.target as HTMLElement | null;
+      const inContentArea = el?.closest?.(".xterm, .cm-editor");
+      if (!inContentArea) return;
       // Defer one tick so xterm/CodeMirror finalize the selection.
       setTimeout(() => {
         const text = captureActiveSelection();
@@ -1037,6 +1041,9 @@ export default function App() {
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
       "pane.source": toggleSourceControl,
+      "terminal.clear": () => {
+        clearFocusedTerminal();
+      },
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
@@ -1085,6 +1092,13 @@ export default function App() {
         if (!inTerminal) return false;
         const sel = captureActiveSelection();
         return !sel || !sel.trim();
+      }
+      if (id === "terminal.clear") {
+        // Only intercept ⌘K while a terminal is focused; elsewhere let the key
+        // fall through (we never preventDefault when disabled).
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        return !(target as HTMLElement | null)?.closest?.(".xterm");
       }
       return false;
     },

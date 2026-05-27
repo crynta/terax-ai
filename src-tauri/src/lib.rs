@@ -1,4 +1,4 @@
-mod modules;
+pub mod modules;
 
 use modules::{agent, fs, git, net, plantuml, pty, secrets, shell, workspace};
 use std::sync::Mutex;

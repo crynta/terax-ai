@@ -58,6 +58,10 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: cargo check
         working-directory: src-tauri
         run: cargo check --all-targets --locked
@@ -66,12 +70,12 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets --locked -- -D warnings
 
-      - name: cargo test
+      - name: cargo nextest
         working-directory: src-tauri
-        run: cargo test --locked
+        run: cargo nextest run --locked
 
   rust-platforms:
-    name: rust-check (${{ matrix.os }})
+    name: rust-test (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -86,6 +90,53 @@ jobs:
         with:
           workspaces: ./src-tauri -> target
 
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: cargo check
         working-directory: src-tauri
         run: cargo check --all-targets --locked
+
+      - name: cargo nextest
+        working-directory: src-tauri
+        run: cargo nextest run --locked --retries 2
+
+  coverage:
+    runs-on: ubuntu-22.04
+    needs: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: coverage
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov,cargo-nextest
+
+      - name: Generate coverage
+        working-directory: src-tauri
+        run: cargo llvm-cov nextest --locked --lcov --output-path lcov.info
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lcov-report
+          path: src-tauri/lcov.info
+          if-no-files-found: error

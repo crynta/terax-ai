@@ -96,6 +96,16 @@ export function TabBar({
                   value={String(t.id)}
                   data-tab-id={t.id}
                   onDoubleClick={() => isPreview && onPin(t.id)}
+                  onAuxClick={(e) => {
+                    if (e.button === 1 && tabs.length > 1) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onClose(t.id);
+                    }
+                  }}
+                  onMouseDown={(e) => {
+                    if (e.button === 1) e.preventDefault();
+                  }}
                   className={cn(
                     "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
                     compact

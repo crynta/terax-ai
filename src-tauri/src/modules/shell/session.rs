@@ -7,6 +7,7 @@ use std::time::Duration;
 use serde::Serialize;
 
 use super::run_blocking_inner;
+use crate::modules::fs::to_canon;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 pub struct ShellSession {
@@ -106,7 +107,7 @@ impl ShellSession {
                 *self.cwd.lock().unwrap() = new_cwd.clone();
             }
         }
-        let resolved_cwd = self.current_cwd().replace('\\', "/");
+        let resolved_cwd = to_canon(self.current_cwd());
 
         Ok(SessionRunOutput {
             stdout: stdout_clean,

@@ -89,6 +89,8 @@ export type Preferences = {
   plantumlServerUrl: string;
   plantumlJarPath: string;
   plantumlJavaPath: string;
+  editorAutoSave: boolean;
+  editorAutoSaveDelay: number;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -134,6 +136,8 @@ const KEY_PLANTUML_BACKEND = "plantumlBackend";
 const KEY_PLANTUML_SERVER_URL = "plantumlServerUrl";
 const KEY_PLANTUML_JAR_PATH = "plantumlJarPath";
 const KEY_PLANTUML_JAVA_PATH = "plantumlJavaPath";
+const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
+const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -192,6 +196,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   plantumlServerUrl: "https://www.plantuml.com/plantuml/svg/",
   plantumlJarPath: "",
   plantumlJavaPath: "java",
+  editorAutoSave: false,
+  editorAutoSaveDelay: 1000,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -326,6 +332,13 @@ export async function loadPreferences(): Promise<Preferences> {
     plantumlJavaPath:
       get<string>(KEY_PLANTUML_JAVA_PATH) ??
       DEFAULT_PREFERENCES.plantumlJavaPath,
+    editorAutoSave:
+      get<boolean>(KEY_EDITOR_AUTO_SAVE) ??
+      DEFAULT_PREFERENCES.editorAutoSave,
+    editorAutoSaveDelay: clampAutoSaveDelay(
+      get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
+        DEFAULT_PREFERENCES.editorAutoSaveDelay,
+    ),
   };
 }
 
@@ -506,6 +519,19 @@ export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
 }
 
+function clampAutoSaveDelay(v: number): number {
+  if (!Number.isFinite(v)) return 1000;
+  return Math.min(60000, Math.max(100, Math.round(v)));
+}
+
+export async function setEditorAutoSave(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_AUTO_SAVE, value);
+}
+
+export async function setEditorAutoSaveDelay(value: number): Promise<void> {
+  await writePref(KEY_EDITOR_AUTO_SAVE_DELAY, clampAutoSaveDelay(value));
+}
+
 export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
@@ -586,6 +612,8 @@ export async function onPreferencesChange(
     [KEY_PLANTUML_SERVER_URL]: "plantumlServerUrl",
     [KEY_PLANTUML_JAR_PATH]: "plantumlJarPath",
     [KEY_PLANTUML_JAVA_PATH]: "plantumlJavaPath",
+    [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
+    [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
