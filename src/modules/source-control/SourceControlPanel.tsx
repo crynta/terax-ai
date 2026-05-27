@@ -21,6 +21,7 @@ import {
 import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   AiContentGenerator02Icon,
   Alert02Icon,
@@ -912,7 +913,8 @@ const EntryRow = memo(function EntryRow({
   const entry = row.entry;
   const isSelected = selectedPath === entry.path;
   const fileName = basename(entry.path);
-  const iconUrl = fileIconUrl(fileName);
+  const iconTheme = usePreferencesStore((s) => s.iconTheme);
+  const iconUrl = fileIconUrl(fileName, iconTheme);
   const pathLabel = entryPathLabel(entry);
   const showDiscard = entry.unstaged;
   const isStageBusy =

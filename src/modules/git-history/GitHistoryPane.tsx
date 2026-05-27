@@ -13,6 +13,7 @@ import {
   type GitLogEntry,
 } from "@/modules/ai/lib/native";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   Copy01Icon,
   File02Icon,
@@ -982,7 +983,8 @@ const FileRow = memo(function FileRow({
 }) {
   const fileName = basename(file.path);
   const dir = dirname(file.path);
-  const iconUrl = fileIconUrl(fileName);
+  const iconTheme = usePreferencesStore((s) => s.iconTheme);
+  const iconUrl = fileIconUrl(fileName, iconTheme);
   return (
     <button
       type="button"

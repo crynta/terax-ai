@@ -29,6 +29,7 @@ import { EntryRow, PendingRow, StatusRow } from "./TreeRow";
 import { InlineInput } from "./InlineInput";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
@@ -157,6 +158,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     ref,
   ) {
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
+    const iconTheme = usePreferencesStore((s) => s.iconTheme);
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
@@ -375,7 +377,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             title={rootPath}
           >
             <img
-              src={folderIconUrl(basename(rootPath), false)}
+              src={folderIconUrl(basename(rootPath), false, iconTheme)}
               alt=""
               height={15}
               width={15}
@@ -451,8 +453,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
                     <img
                       src={
                         pendingAtRoot.kind === "dir"
-                          ? folderIconUrl("", false)
-                          : fileIconUrl("untitled")
+                          ? folderIconUrl("", false, iconTheme)
+                          : fileIconUrl("untitled", iconTheme)
                       }
                       alt=""
                       className="size-4 shrink-0 opacity-70"

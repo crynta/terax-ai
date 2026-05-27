@@ -1,12 +1,23 @@
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import type { IconThemeId } from "@/modules/settings/store";
 import {
+  ICON_THEMES,
+  ICON_THEME_LABELS,
   setBackgroundBlur,
   setBackgroundImageId,
   setBackgroundKind,
   setBackgroundOpacity,
+  setIconTheme,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
 import {
@@ -55,6 +66,7 @@ export function ThemesSection() {
   const backgroundImageId = usePreferencesStore((s) => s.backgroundImageId);
   const backgroundOpacity = usePreferencesStore((s) => s.backgroundOpacity);
   const backgroundBlur = usePreferencesStore((s) => s.backgroundBlur);
+  const iconTheme = usePreferencesStore((s) => s.iconTheme);
 
   const handleThemeFiles = async (files: FileList | null) => {
     setImportError(null);
@@ -251,6 +263,30 @@ export function ThemesSection() {
             );
           })}
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <Label>File icons</Label>
+          <Select
+            value={iconTheme}
+            onValueChange={(v) => void setIconTheme(v as IconThemeId)}
+          >
+            <SelectTrigger size="sm" className="h-7 w-32 text-[11px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ICON_THEMES.map((id) => (
+                <SelectItem key={id} value={id} className="text-[12px]">
+                  {ICON_THEME_LABELS[id]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          Icon set used in the file explorer, tabs, source control, and AI file picker.
+        </p>
       </div>
 
       <div

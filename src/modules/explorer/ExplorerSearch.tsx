@@ -72,6 +72,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   ref,
 ) {
   const showHidden = usePreferencesStore((s) => s.showHidden);
+  const iconTheme = usePreferencesStore((s) => s.iconTheme);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchHit[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -250,7 +251,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
               </div>
             ) : (
               results.map((hit, index) => {
-                const url = hit.is_dir ? null : fileIconUrl(hit.name);
+                const url = hit.is_dir ? null : fileIconUrl(hit.name, iconTheme);
                 const isSelected = index === selectedIndex;
                 return (
                   <ContextMenu key={hit.path}>

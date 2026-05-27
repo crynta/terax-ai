@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   Cancel01Icon,
   Clock01Icon,
@@ -220,8 +221,9 @@ export function TabBar({
 }
 
 function TabIcon({ tab }: { tab: Tab }) {
+  const iconTheme = usePreferencesStore((s) => s.iconTheme);
   if (tab.kind === "editor" || tab.kind === "markdown") {
-    const url = fileIconUrl(tab.title);
+    const url = fileIconUrl(tab.title, iconTheme);
     return url ? <img src={url} alt="" className="size-3.5 shrink-0" /> : null;
   }
   if (tab.kind === "preview") {

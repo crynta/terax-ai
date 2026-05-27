@@ -18,6 +18,7 @@ import {
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import type { useFileTree } from "./lib/useFileTree";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 
 type Tree = ReturnType<typeof useFileTree>;
 
@@ -61,7 +62,8 @@ function EntryRowImpl(props: EntryRowProps) {
   } = props;
 
   const [isConfirming, setIsConfirming] = useState(false);
-  const iconUrl = isDir ? folderIconUrl(name, isExpanded) : fileIconUrl(name);
+  const iconTheme = usePreferencesStore((s) => s.iconTheme);
+  const iconUrl = isDir ? folderIconUrl(name, isExpanded, iconTheme) : fileIconUrl(name, iconTheme);
   const createTarget = isDir ? path : path.slice(0, path.lastIndexOf("/")) || rootPath;
   const paddingLeft = 6 + depth * 12;
 
@@ -226,6 +228,7 @@ export type PendingRowProps = {
 };
 
 export function PendingRow({ depth, kind, onCommit, onCancel }: PendingRowProps) {
+  const iconTheme = usePreferencesStore((s) => s.iconTheme);
   return (
     <div
       className="flex h-6 w-full min-w-0 items-center gap-2 px-1.5 text-[13px]"
@@ -233,7 +236,7 @@ export function PendingRow({ depth, kind, onCommit, onCancel }: PendingRowProps)
     >
       <span className="size-3.5 shrink-0" />
       <img
-        src={kind === "dir" ? folderIconUrl("", false) : fileIconUrl("untitled")}
+        src={kind === "dir" ? folderIconUrl("", false, iconTheme) : fileIconUrl("untitled", iconTheme)}
         alt=""
         className="size-4 shrink-0 opacity-70"
       />

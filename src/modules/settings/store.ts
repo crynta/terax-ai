@@ -34,6 +34,15 @@ export const EDITOR_THEMES = [
 
 export type EditorThemeId = (typeof EDITOR_THEMES)[number];
 
+export const ICON_THEMES = ["catppuccin", "material"] as const;
+
+export type IconThemeId = (typeof ICON_THEMES)[number];
+
+export const ICON_THEME_LABELS: Record<IconThemeId, string> = {
+  catppuccin: "Catppuccin",
+  material: "Material",
+};
+
 export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
   atomone: "Atom One",
   aura: "Aura",
@@ -56,6 +65,7 @@ export type Preferences = {
   backgroundBlur: number;
   defaultModelId: ModelId;
   editorTheme: EditorThemeId;
+  iconTheme: IconThemeId;
   customInstructions: string;
   autostart: boolean;
   restoreWindowState: boolean;
@@ -98,6 +108,7 @@ const KEY_BG_OPACITY = "backgroundOpacity";
 const KEY_BG_BLUR = "backgroundBlur";
 const KEY_DEFAULT_MODEL = "defaultModelId";
 const KEY_EDITOR_THEME = "editorTheme";
+const KEY_ICON_THEME = "iconTheme";
 const KEY_CUSTOM_INSTRUCTIONS = "customInstructions";
 const KEY_AUTOSTART = "autostart";
 const KEY_RESTORE_WINDOW = "restoreWindowState";
@@ -155,6 +166,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   backgroundBlur: 0,
   defaultModelId: DEFAULT_MODEL_ID,
   editorTheme: "atomone",
+  iconTheme: "catppuccin",
   customInstructions: "",
   autostart: false,
   restoreWindowState: true,
@@ -230,6 +242,12 @@ export async function loadPreferences(): Promise<Preferences> {
     })(),
     editorTheme:
       get<EditorThemeId>(KEY_EDITOR_THEME) ?? DEFAULT_PREFERENCES.editorTheme,
+    iconTheme: ((): IconThemeId => {
+      const stored = get<string>(KEY_ICON_THEME);
+      return stored && (ICON_THEMES as readonly string[]).includes(stored)
+        ? (stored as IconThemeId)
+        : DEFAULT_PREFERENCES.iconTheme;
+    })(),
     customInstructions:
       get<string>(KEY_CUSTOM_INSTRUCTIONS) ??
       DEFAULT_PREFERENCES.customInstructions,
@@ -363,6 +381,10 @@ export async function setDefaultModel(value: ModelId): Promise<void> {
 
 export async function setEditorTheme(value: EditorThemeId): Promise<void> {
   await writePref(KEY_EDITOR_THEME, value);
+}
+
+export async function setIconTheme(value: IconThemeId): Promise<void> {
+  await writePref(KEY_ICON_THEME, value);
 }
 
 export async function setCustomInstructions(value: string): Promise<void> {
@@ -537,6 +559,7 @@ export async function onPreferencesChange(
     [KEY_BG_BLUR]: "backgroundBlur",
     [KEY_DEFAULT_MODEL]: "defaultModelId",
     [KEY_EDITOR_THEME]: "editorTheme",
+    [KEY_ICON_THEME]: "iconTheme",
     [KEY_CUSTOM_INSTRUCTIONS]: "customInstructions",
     [KEY_AUTOSTART]: "autostart",
     [KEY_RESTORE_WINDOW]: "restoreWindowState",

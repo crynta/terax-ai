@@ -2,6 +2,7 @@ import { PopoverContent } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useEffect, useRef } from "react";
 
 type Props = {
@@ -25,6 +26,7 @@ export function FilePickerContent({
 }: Props) {
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const iconTheme = usePreferencesStore((s) => s.iconTheme);
 
   useEffect(() => {
     const el = itemRefs.current[activeIndex];
@@ -80,7 +82,7 @@ export function FilePickerContent({
                   )}
                 >
                   <img
-                    src={fileIconUrl(name)}
+                    src={fileIconUrl(name, iconTheme)}
                     alt=""
                     className="size-4 shrink-0"
                   />
