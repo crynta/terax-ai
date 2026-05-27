@@ -1,6 +1,7 @@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { useIsFullscreen } from "@/lib/useIsFullscreen";
 import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -54,6 +55,7 @@ export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const init = usePreferencesStore((s) => s.init);
   const ActiveSection = TABS.find(t => t.id === active)?.component;
+  const isFullscreen = useIsFullscreen();
 
   useEffect(() => {
     void init();
@@ -82,7 +84,7 @@ export function SettingsApp() {
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
       <header
         data-tauri-drag-region
-        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
+        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${IS_MAC ? (isFullscreen ? "pr-3 pl-3" : "pr-3 pl-22") : "pr-0 pl-3"
           }`}
       >
         <Tabs

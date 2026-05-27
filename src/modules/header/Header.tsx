@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, KEY_SEP, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { useIsFullscreen } from "@/lib/useIsFullscreen";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   getBindingTokens,
@@ -79,6 +80,7 @@ export function Header({
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+  const isFullscreen = useIsFullscreen();
 
   const tokensFor = (id: ShortcutId): string => {
     const s = SHORTCUTS.find((s) => s.id === id);
@@ -119,7 +121,7 @@ export function Header({
       ref={rootRef}
       data-tauri-drag-region
       className={`flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card select-none ${
-        IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
+        IS_MAC ? (isFullscreen ? "pr-2 pl-2" : "pr-2 pl-20") : "pr-0 pl-2"
       }`}
     >
       <div className="flex shrink-0 items-center gap-0.5">
