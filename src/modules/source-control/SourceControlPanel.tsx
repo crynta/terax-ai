@@ -29,8 +29,10 @@ import {
   ArrowUp01Icon,
   CheckmarkCircle01Icon,
   Download01Icon,
+  File02Icon,
   FolderCloudIcon,
   FolderGitTwoIcon,
+  FolderTreeIcon,
   GitBranchIcon,
   Refresh01Icon,
   RemoveSquareIcon,
@@ -74,12 +76,16 @@ const ROW_HEIGHTS = {
   banner: 32,
   header: 30,
   entry: 30,
+  "tree-folder": 28,
 } as const;
+
+type ViewMode = "list" | "tree";
 
 type RowDescriptor =
   | { kind: "banner-diverged"; key: string }
   | { kind: "list-header"; key: string; count: number }
-  | { kind: "entry"; key: string; entry: SourceControlFileEntry };
+  | { kind: "entry"; key: string; entry: SourceControlFileEntry; depth: number }
+  | { kind: "tree-folder"; key: string; folderPath: string; name: string; depth: number; collapsed: boolean; count: number; checkState: CheckState };
 
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -91,6 +97,53 @@ function dirname(path: string): string {
   const index = normalized.lastIndexOf("/");
   if (index <= 0) return "";
   return normalized.slice(0, index);
+}
+
+type TreeFileNode =
+  | { kind: "folder"; path: string; name: string; depth: number; childCount: number }
+  | { kind: "file"; entry: SourceControlFileEntry; depth: number };
+
+function flattenFileTree(
+  entries: SourceControlFileEntry[],
+  collapsed: Set<string>,
+): TreeFileNode[] {
+  type Dir = { files: SourceControlFileEntry[]; subdirs: Map<string, Dir> };
+  const root: Dir = { files: [], subdirs: new Map() };
+
+  for (const entry of entries) {
+    const parts = entry.path.replace(/\\/g, "/").split("/").filter(Boolean);
+    let cur = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const seg = parts[i];
+      if (!cur.subdirs.has(seg)) cur.subdirs.set(seg, { files: [], subdirs: new Map() });
+      cur = cur.subdirs.get(seg)!;
+    }
+    cur.files.push(entry);
+  }
+
+  function countAll(dir: Dir): number {
+    let n = dir.files.length;
+    for (const sub of dir.subdirs.values()) n += countAll(sub);
+    return n;
+  }
+
+  const result: TreeFileNode[] = [];
+
+  function walk(dir: Dir, prefix: string, depth: number) {
+    const sortedDirs = [...dir.subdirs.entries()].sort(([a], [b]) => a.localeCompare(b));
+    for (const [name, subdir] of sortedDirs) {
+      const folderPath = prefix ? `${prefix}/${name}` : name;
+      result.push({ kind: "folder", path: folderPath, name, depth, childCount: countAll(subdir) });
+      if (!collapsed.has(folderPath)) walk(subdir, folderPath, depth + 1);
+    }
+    const sortedFiles = [...dir.files].sort((a, b) =>
+      basename(a.path).localeCompare(basename(b.path)),
+    );
+    for (const entry of sortedFiles) result.push({ kind: "file", entry, depth });
+  }
+
+  walk(root, "", 0);
+  return result;
 }
 
 function entryPathLabel(entry: SourceControlFileEntry): string {
@@ -126,6 +179,10 @@ function checkboxValue(state: CheckState): boolean | "indeterminate" {
   return false;
 }
 
+function pathStartsWithFolder(path: string, folderPath: string): boolean {
+  return path === folderPath || path.startsWith(`${folderPath}/`);
+}
+
 export const SourceControlPanel = memo(function SourceControlPanel({
   open,
   sourceControl,
@@ -138,6 +195,8 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     return () => {
@@ -240,23 +299,71 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     void sourceControl.runRemoteAction("pull");
   }, [sourceControl]);
 
+  const toggleFolderCollapsed = useCallback((folderPath: string) => {
+    setCollapsedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderPath)) next.delete(folderPath);
+      else next.add(folderPath);
+      return next;
+    });
+  }, []);
+
   const rows = useMemo<RowDescriptor[]>(() => {
     const result: RowDescriptor[] = [];
     if (isDiverged) {
       result.push({ kind: "banner-diverged", key: "banner-diverged" });
     }
     if (changedCount > 0) {
-      result.push({
-        kind: "list-header",
-        key: "list-header",
-        count: changedCount,
-      });
-      for (const entry of scm.fileEntries) {
-        result.push({ kind: "entry", key: entry.key, entry });
+      result.push({ kind: "list-header", key: "list-header", count: changedCount });
+      if (viewMode === "list") {
+        for (const entry of scm.fileEntries) {
+          result.push({ kind: "entry", key: entry.key, entry, depth: 0 });
+        }
+      } else {
+        for (const node of flattenFileTree(scm.fileEntries, collapsedFolders)) {
+          if (node.kind === "folder") {
+            result.push({
+              kind: "tree-folder",
+              key: `folder:${node.path}`,
+              folderPath: node.path,
+              name: node.name,
+              depth: node.depth,
+              collapsed: collapsedFolders.has(node.path),
+              count: node.childCount,
+              checkState: scm.fileEntries
+                .filter((entry) => pathStartsWithFolder(entry.path.replace(/\\/g, "/"), node.path))
+                .every((entry) => entry.checkState === "checked")
+                ? "checked"
+                : scm.fileEntries.some(
+                      (entry) =>
+                        pathStartsWithFolder(entry.path.replace(/\\/g, "/"), node.path) &&
+                        entry.checkState !== "unchecked",
+                    )
+                  ? "indeterminate"
+                  : "unchecked",
+            });
+          } else {
+            result.push({ kind: "entry", key: node.entry.key, entry: node.entry, depth: node.depth });
+          }
+        }
       }
     }
     return result;
-  }, [changedCount, isDiverged, scm.fileEntries]);
+  }, [changedCount, collapsedFolders, isDiverged, scm.fileEntries, viewMode]);
+
+  const toggleFolderStage = useCallback(
+    async (folderPath: string, state: CheckState) => {
+      const paths = scm.fileEntries
+        .filter((entry) =>
+          pathStartsWithFolder(entry.path.replace(/\\/g, "/"), folderPath),
+        )
+        .map((entry) => entry.path);
+      if (paths.length === 0) return;
+      const target = state === "checked" ? "unchecked" : "checked";
+      await scm.toggleStageFiles(paths, target);
+    },
+    [scm],
+  );
 
   const rowKeyToIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -274,7 +381,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   const focusableIndices = useMemo(() => {
     const out: number[] = [];
     rows.forEach((row, index) => {
-      if (row.kind === "entry") out.push(index);
+      if (row.kind === "entry" || row.kind === "tree-folder") out.push(index);
     });
     return out;
   }, [rows]);
@@ -288,6 +395,8 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           return ROW_HEIGHTS.banner;
         case "list-header":
           return ROW_HEIGHTS.header;
+        case "tree-folder":
+          return ROW_HEIGHTS["tree-folder"];
         case "entry":
           return ROW_HEIGHTS.entry;
       }
@@ -357,7 +466,40 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           event.preventDefault();
           moveFocus(-1);
           break;
+        case "ArrowRight": {
+          if (!focusedRowKey) break;
+          const idx = rowKeyToIndex.get(focusedRowKey);
+          if (idx === undefined) break;
+          const row = rows[idx];
+          if (row?.kind === "tree-folder" && row.collapsed) {
+            event.preventDefault();
+            toggleFolderCollapsed(row.folderPath);
+          }
+          break;
+        }
+        case "ArrowLeft": {
+          if (!focusedRowKey) break;
+          const idx = rowKeyToIndex.get(focusedRowKey);
+          if (idx === undefined) break;
+          const row = rows[idx];
+          if (row?.kind === "tree-folder" && !row.collapsed) {
+            event.preventDefault();
+            toggleFolderCollapsed(row.folderPath);
+          }
+          break;
+        }
         case "Enter": {
+          if (focusedRowKey) {
+            const idx = rowKeyToIndex.get(focusedRowKey);
+            if (idx !== undefined) {
+              const row = rows[idx];
+              if (row?.kind === "tree-folder") {
+                event.preventDefault();
+                toggleFolderCollapsed(row.folderPath);
+                break;
+              }
+            }
+          }
           const entry = focusedEntry();
           if (entry) {
             event.preventDefault();
@@ -369,6 +511,17 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         case "s":
         case "S": {
           if (meta) break;
+          if (focusedRowKey) {
+            const idx = rowKeyToIndex.get(focusedRowKey);
+            if (idx !== undefined) {
+              const row = rows[idx];
+              if (row?.kind === "tree-folder") {
+                event.preventDefault();
+                void toggleFolderStage(row.folderPath, row.checkState);
+                break;
+              }
+            }
+          }
           const entry = focusedEntry();
           if (entry) {
             event.preventDefault();
@@ -388,7 +541,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         }
       }
     },
-    [focusedEntry, handleRefresh, moveFocus, scm],
+    [focusedEntry, focusedRowKey, handleRefresh, moveFocus, rowKeyToIndex, rows, scm, toggleFolderStage],
   );
 
   if (!open) return null;
@@ -733,8 +886,12 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                             selectedPath={scm.selected?.path ?? null}
                             actionBusy={scm.actionBusy}
                             headerCheckState={scm.headerCheckState}
+                            viewMode={viewMode}
                             onFocusRow={setFocusedRowKey}
                             onToggleAll={scm.toggleAll}
+                            onToggleViewMode={() => setViewMode((m) => (m === "list" ? "tree" : "list"))}
+                            onToggleFolderCollapsed={toggleFolderCollapsed}
+                            onToggleFolderStage={toggleFolderStage}
                             onSelectFile={scm.selectFile}
                             onToggleStageFile={scm.toggleStageFile}
                             onDiscardFile={scm.requestDiscardFile}
@@ -829,8 +986,12 @@ type RowRendererProps = {
   selectedPath: string | null;
   actionBusy: string | null;
   headerCheckState: CheckState;
+  viewMode: ViewMode;
   onFocusRow: (key: string | null) => void;
   onToggleAll: () => Promise<void> | void;
+  onToggleViewMode: () => void;
+  onToggleFolderCollapsed: (folderPath: string) => void;
+  onToggleFolderStage: (folderPath: string, state: CheckState) => Promise<void>;
   onSelectFile: (entry: SourceControlFileEntry) => Promise<void>;
   onToggleStageFile: (entry: SourceControlFileEntry) => Promise<void>;
   onDiscardFile: (entry: SourceControlFileEntry) => void;
@@ -843,6 +1004,8 @@ const RowRenderer = memo(function RowRenderer(props: RowRendererProps) {
       return <DivergedBanner />;
     case "list-header":
       return <ListHeader {...props} row={row} />;
+    case "tree-folder":
+      return <TreeFolderRow {...props} row={row} />;
     case "entry":
       return <EntryRow {...props} row={row} />;
   }
@@ -871,7 +1034,9 @@ function ListHeader({
   row,
   actionBusy,
   headerCheckState,
+  viewMode,
   onToggleAll,
+  onToggleViewMode,
 }: RowRendererProps & {
   row: Extract<RowDescriptor, { kind: "list-header" }>;
 }) {
@@ -883,6 +1048,29 @@ function ListHeader({
       <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border/60 px-1 text-[9.5px] font-semibold tabular-nums text-muted-foreground">
         {row.count}
       </span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-label={viewMode === "list" ? "Switch to tree view" : "Switch to list view"}
+            onClick={onToggleViewMode}
+            className={cn(
+              "inline-flex size-5 items-center justify-center rounded transition-colors",
+              "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06]",
+              viewMode === "tree" && "text-foreground bg-foreground/[0.06]",
+            )}
+          >
+            <HugeiconsIcon
+              icon={viewMode === "list" ? FolderTreeIcon : File02Icon}
+              size={13}
+              strokeWidth={1.8}
+            />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className={cn(SOURCE_CONTROL_TOOLTIP_CLASS, "text-[10.5px]")}>
+          {viewMode === "list" ? "Tree view" : "List view"}
+        </TooltipContent>
+      </Tooltip>
       <label className="ml-auto flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-[10.5px] font-medium text-muted-foreground hover:text-foreground">
         <span>All</span>
         <Checkbox
@@ -897,11 +1085,72 @@ function ListHeader({
   );
 }
 
+function TreeFolderRow({
+  row,
+  focused,
+  actionBusy,
+  onFocusRow,
+  onToggleFolderCollapsed,
+  onToggleFolderStage,
+}: RowRendererProps & {
+  row: Extract<RowDescriptor, { kind: "tree-folder" }>;
+}) {
+  const indent = row.depth * 12;
+  return (
+    <button
+      type="button"
+      id={`scm-row-${row.key}`}
+      data-focused={focused || undefined}
+      role="option"
+      aria-selected={false}
+      aria-expanded={!row.collapsed}
+      onMouseDown={() => onFocusRow(row.key)}
+      onClick={() => onToggleFolderCollapsed(row.folderPath)}
+      style={{ paddingLeft: `${8 + indent}px` }}
+      className={cn(
+        "group flex h-7 w-full items-center gap-1.5 pr-2 text-left transition-colors duration-100",
+        focused ? "bg-accent/50" : "hover:bg-accent/25",
+      )}
+    >
+      <HugeiconsIcon
+        icon={ArrowRight01Icon}
+        size={10}
+        strokeWidth={2.2}
+        className={cn(
+          "shrink-0 text-muted-foreground/70 transition-transform duration-100",
+          !row.collapsed && "rotate-90",
+        )}
+      />
+      <HugeiconsIcon
+        icon={FolderTreeIcon}
+        size={13}
+        strokeWidth={1.75}
+        className="shrink-0 text-muted-foreground/80"
+      />
+      <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-foreground/90">
+        {row.name}
+      </span>
+      <span className="shrink-0 text-[9.5px] tabular-nums text-muted-foreground/55">
+        {row.count}
+      </span>
+      <Checkbox
+        aria-label={`Stage ${row.folderPath}`}
+        checked={checkboxValue(row.checkState)}
+        disabled={actionBusy !== null}
+        onCheckedChange={() => void onToggleFolderStage(row.folderPath, row.checkState)}
+        onClick={(event) => event.stopPropagation()}
+        className="size-3.5"
+      />
+    </button>
+  );
+}
+
 const EntryRow = memo(function EntryRow({
   row,
   focused,
   selectedPath,
   actionBusy,
+  viewMode,
   onFocusRow,
   onSelectFile,
   onToggleStageFile,
@@ -913,13 +1162,14 @@ const EntryRow = memo(function EntryRow({
   const isSelected = selectedPath === entry.path;
   const fileName = basename(entry.path);
   const iconUrl = fileIconUrl(fileName);
-  const pathLabel = entryPathLabel(entry);
+  const pathLabel = viewMode === "tree" ? null : entryPathLabel(entry);
   const showDiscard = entry.unstaged;
   const isStageBusy =
     actionBusy === `stage:${entry.path}` ||
     actionBusy === `unstage:${entry.path}`;
   const isDiscardBusy = actionBusy === `discard:${entry.path}`;
   const disabled = actionBusy !== null;
+  const indent = row.depth * 12;
 
   return (
     <div
@@ -929,8 +1179,9 @@ const EntryRow = memo(function EntryRow({
       role="option"
       aria-selected={isSelected}
       onMouseDown={() => onFocusRow(row.key)}
+      style={{ paddingLeft: `${8 + indent}px` }}
       className={cn(
-        "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-100",
+        "group relative flex h-[30px] items-center gap-2 rounded-md pr-2 transition-all duration-100",
         focused
           ? "bg-accent/60"
           : isSelected
