@@ -1457,6 +1457,7 @@ export default function App() {
                         sourceControl={sourceControl}
                         onOpenDiff={openGitDiffTab}
                         onOpenGitGraph={openGitGraphFromContext}
+                        onOpenFile={handleOpenFile}
                       />
                     )}
                   </div>
