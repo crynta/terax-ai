@@ -5,7 +5,8 @@ import {
   SearchQuery,
   setSearchQuery,
 } from "@codemirror/search";
-import { keymap } from "@codemirror/view";
+import { EditorSelection } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EDITOR_THEME_EXT } from "./lib/themes";
@@ -45,6 +46,13 @@ export type EditorPaneHandle = {
   /** Apply CodeMirror's undo/redo commands. */
   undo: () => void;
   redo: () => void;
+  jumpToLine: (line: number, column?: number) => void;
+  jumpToMatch: (
+    line: number,
+    query: string,
+    caseSensitive?: boolean,
+    exactWord?: boolean,
+  ) => void;
 };
 
 type Props = {
@@ -262,6 +270,51 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         redo: () => {
           const view = cmRef.current?.view;
           if (view) redo(view);
+        },
+        jumpToLine: (line: number, _column = 1) => {
+          const view = cmRef.current?.view;
+          if (!view) return;
+          const doc = view.state.doc;
+          const targetLine = Math.max(1, Math.min(line, doc.lines));
+          const lineInfo = doc.line(targetLine);
+          view.dispatch({
+            selection: EditorSelection.range(lineInfo.from, lineInfo.to),
+            effects: EditorView.scrollIntoView(lineInfo.from, { y: "center" }),
+          });
+          view.focus();
+        },
+        jumpToMatch: (
+          line: number,
+          query: string,
+          caseSensitive = false,
+          exactWord = false,
+        ) => {
+          const view = cmRef.current?.view;
+          if (!view) return;
+          const doc = view.state.doc;
+          const targetLine = Math.max(1, Math.min(line, doc.lines));
+          const lineInfo = doc.line(targetLine);
+          const lineText = doc.sliceString(lineInfo.from, lineInfo.to);
+          const flags = caseSensitive ? "g" : "gi";
+          const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const pat = exactWord ? `\\b${escaped}\\b` : escaped;
+          const re = new RegExp(pat, flags);
+          const m = re.exec(lineText);
+          if (!m || typeof m.index !== "number") {
+            view.dispatch({
+              selection: EditorSelection.range(lineInfo.from, lineInfo.to),
+              effects: EditorView.scrollIntoView(lineInfo.from, { y: "center" }),
+            });
+            view.focus();
+            return;
+          }
+          const from = lineInfo.from + m.index;
+          const to = from + m[0].length;
+          view.dispatch({
+            selection: EditorSelection.range(from, to),
+            effects: EditorView.scrollIntoView(from, { y: "center" }),
+          });
+          view.focus();
         },
       }),
       [path],

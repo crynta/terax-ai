@@ -1,5 +1,8 @@
 use ignore::WalkBuilder;
 use serde::Serialize;
+use globset::{Glob, GlobSet, GlobSetBuilder};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use super::to_canon;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
@@ -20,12 +23,31 @@ pub struct SearchResult {
     pub hits: Vec<SearchHit>,
     /// True if the scan stopped early (entry budget or hit cap reached).
     pub truncated: bool,
+    pub scanned: usize,
+    pub elapsed_ms: u64,
+    pub budget_exhausted: bool,
+    pub partial_reason: Option<String>,
 }
 
-/// Hard cap on entries the walker is allowed to visit before bailing. Protects
-/// against pathological roots like $HOME where there's no .gitignore and the
-/// tree is effectively unbounded.
-const MAX_SCANNED: usize = 50_000;
+fn build_globset(patterns: Option<&[String]>) -> Result<Option<GlobSet>, String> {
+    let Some(patterns) = patterns else {
+        return Ok(None);
+    };
+    if patterns.is_empty() {
+        return Ok(None);
+    }
+    let mut b = GlobSetBuilder::new();
+    for p in patterns {
+        let g = Glob::new(p).map_err(|e| format!("bad glob {p:?}: {e}"))?;
+        b.add(g);
+    }
+    let set = b.build().map_err(|e| format!("globset build: {e}"))?;
+    Ok(Some(set))
+}
+
+/// Hard cap on entries for fast mode to keep UI responsive on huge roots.
+const FAST_MAX_SCANNED: usize = 20_000;
+const FAST_TIMEOUT_MS: u64 = 250;
 
 /// Directory names pruned unconditionally — they're rarely useful in a
 /// file-explorer search and they dominate scan time when present.
@@ -42,6 +64,8 @@ const PRUNE_DIRS: &[&str] = &[
     "__pycache__",
 ];
 
+static LATEST_SEARCH_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
+
 #[tauri::command]
 pub fn fs_search(
     root: String,
@@ -49,38 +73,66 @@ pub fn fs_search(
     limit: Option<usize>,
     workspace: Option<WorkspaceEnv>,
     show_hidden: Option<bool>,
+    include_paths: Option<Vec<String>>,
+    exclude_paths: Option<Vec<String>>,
+    pass_mode: Option<String>,
+    prune_heavy: Option<bool>,
+    deep_budget_profile: Option<String>,
+    request_id: Option<u64>,
 ) -> Result<SearchResult, String> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Ok(SearchResult {
             hits: Vec::new(),
             truncated: false,
+            scanned: 0,
+            elapsed_ms: 0,
+            budget_exhausted: false,
+            partial_reason: None,
         });
     }
     let cap = limit.unwrap_or(200).min(1000);
+    let request_id = request_id.unwrap_or(0);
+    if request_id > 0 {
+        LATEST_SEARCH_REQUEST_ID.fetch_max(request_id, Ordering::Relaxed);
+    }
     let show_hidden = show_hidden.unwrap_or(false);
+    let mode = pass_mode.unwrap_or_else(|| "fast".to_string());
+    let deep = mode.eq_ignore_ascii_case("deep");
+    let deep_budget_profile = deep_budget_profile.unwrap_or_else(|| "strict".to_string());
+    let (deep_max_scanned, deep_timeout_ms): (usize, u64) =
+        if deep_budget_profile.eq_ignore_ascii_case("wide") {
+            (250_000, 3_000)
+        } else {
+            (60_000, 700)
+        };
+    let prune_heavy = prune_heavy.unwrap_or(!deep);
     let workspace = WorkspaceEnv::from_option(workspace);
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
     }
 
+    let include_set = build_globset(include_paths.as_deref())?;
+    let exclude_set = build_globset(exclude_paths.as_deref())?;
+
     let mut out: Vec<SearchHit> = Vec::with_capacity(cap.min(64));
     let mut scanned: usize = 0;
     let mut truncated = false;
+    let mut budget_exhausted = false;
+    let mut partial_reason: Option<String> = None;
+    let started = Instant::now();
 
     let walker = WalkBuilder::new(&root_path)
-        .hidden(!show_hidden)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .ignore(true)
+        .hidden(!(show_hidden || deep))
+        .git_ignore(!deep)
+        .git_global(!deep)
+        .git_exclude(!deep)
+        .ignore(!deep)
         .parents(true)
         .follow_links(false)
-        .filter_entry(|dent| {
-            // Prune known-heavy dirs even when no .gitignore is present (e.g.
-            // searching from $HOME).
-            if dent.depth() == 0 {
+        .filter_entry(move |dent| {
+            if !prune_heavy || dent.depth() == 0 {
                 return true;
             }
             match dent.file_name().to_str() {
@@ -91,13 +143,40 @@ pub fn fs_search(
         .build();
 
     for dent in walker.flatten() {
-        scanned += 1;
-        if scanned > MAX_SCANNED {
+        if request_id > 0 && LATEST_SEARCH_REQUEST_ID.load(Ordering::Relaxed) != request_id {
             truncated = true;
+            budget_exhausted = true;
+            partial_reason = Some("cancelled".to_string());
+            break;
+        }
+        scanned += 1;
+        if deep {
+            if scanned > deep_max_scanned {
+                truncated = true;
+                budget_exhausted = true;
+                partial_reason = Some("budget_scanned".to_string());
+                break;
+            }
+            if started.elapsed().as_millis() as u64 > deep_timeout_ms {
+                truncated = true;
+                budget_exhausted = true;
+                partial_reason = Some("budget_timeout".to_string());
+                break;
+            }
+        }
+        if !deep && scanned > FAST_MAX_SCANNED {
+            truncated = true;
+            partial_reason = Some("max_scanned".to_string());
+            break;
+        }
+        if !deep && started.elapsed().as_millis() as u64 > FAST_TIMEOUT_MS {
+            truncated = true;
+            partial_reason = Some("fast_timeout".to_string());
             break;
         }
         if out.len() >= cap {
             truncated = true;
+            partial_reason = Some("max_hits".to_string());
             break;
         }
         let path = dent.path();
@@ -108,7 +187,18 @@ pub fn fs_search(
             Ok(r) => to_canon(r),
             Err(_) => continue,
         };
-        if !rel.to_lowercase().contains(&q) {
+        let abs = display_path(path, &root_path, &root, &workspace);
+        if let Some(set) = include_set.as_ref() {
+            if !set.is_match(&rel) && !set.is_match(&abs) {
+                continue;
+            }
+        }
+        if let Some(set) = exclude_set.as_ref() {
+            if set.is_match(&rel) || set.is_match(&abs) {
+                continue;
+            }
+        }
+        if !rel.to_lowercase().contains(&q) && !abs.to_lowercase().contains(&q) {
             continue;
         }
         let name = path
@@ -117,7 +207,7 @@ pub fn fs_search(
             .unwrap_or_default();
         let is_dir = dent.file_type().map(|t| t.is_dir()).unwrap_or(false);
         out.push(SearchHit {
-            path: display_path(path, &root_path, &root, &workspace),
+            path: abs,
             rel,
             name,
             is_dir,
@@ -134,6 +224,10 @@ pub fn fs_search(
     Ok(SearchResult {
         hits: out,
         truncated,
+        scanned,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+        budget_exhausted,
+        partial_reason,
     })
 }
 
@@ -191,7 +285,7 @@ pub fn fs_list_files(
 
     for dent in walker.flatten() {
         scanned += 1;
-        if scanned > MAX_SCANNED {
+        if scanned > FAST_MAX_SCANNED {
             truncated = true;
             break;
         }
