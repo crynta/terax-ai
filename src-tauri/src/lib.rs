@@ -116,6 +116,7 @@ pub fn run() {
     workspace::init_launch_cwd(cli_dir.as_deref());
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Skip restoring VISIBLE — frontend calls window.show() after first
