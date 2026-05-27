@@ -86,6 +86,8 @@ export type Preferences = {
   zoomLevel: number;
   agentNotifications: boolean;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
+  editorAutoSave: boolean;
+  editorAutoSaveDelay: number;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -128,6 +130,8 @@ const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
+const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
+const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -183,6 +187,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   zoomLevel: 1.0,
   agentNotifications: true,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
+  editorAutoSave: false,
+  editorAutoSaveDelay: 1000,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -308,6 +314,13 @@ export async function loadPreferences(): Promise<Preferences> {
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
+    editorAutoSave:
+      get<boolean>(KEY_EDITOR_AUTO_SAVE) ??
+      DEFAULT_PREFERENCES.editorAutoSave,
+    editorAutoSaveDelay: clampAutoSaveDelay(
+      get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
+        DEFAULT_PREFERENCES.editorAutoSaveDelay,
+    ),
   };
 }
 
@@ -492,6 +505,19 @@ export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
 }
 
+function clampAutoSaveDelay(v: number): number {
+  if (!Number.isFinite(v)) return 1000;
+  return Math.min(60000, Math.max(100, Math.round(v)));
+}
+
+export async function setEditorAutoSave(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_AUTO_SAVE, value);
+}
+
+export async function setEditorAutoSaveDelay(value: number): Promise<void> {
+  await writePref(KEY_EDITOR_AUTO_SAVE_DELAY, clampAutoSaveDelay(value));
+}
+
 export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
@@ -551,6 +577,8 @@ export async function onPreferencesChange(
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
     [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
+    [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().

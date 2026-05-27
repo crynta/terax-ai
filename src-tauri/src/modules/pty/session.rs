@@ -290,3 +290,86 @@ pub fn spawn(
 
     Ok((session, size))
 }
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use portable_pty::CommandBuilder;
+
+    #[test]
+    fn drop_kills_child_process() {
+        let pty_system = native_pty_system();
+        let size = PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let pair = pty_system.openpty(size).expect("openpty");
+
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg("sleep 30");
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+
+        let killer = child.clone_killer();
+        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
+            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
+
+        let session = Arc::new(Session {
+            killer: Mutex::new(killer),
+            writer,
+            master: Mutex::new(pair.master),
+        });
+
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "child must be alive before drop",
+        );
+
+        drop(session);
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut exited = false;
+        while Instant::now() < deadline {
+            if child.try_wait().unwrap().is_some() {
+                exited = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(exited, "child still running 2s after Session drop");
+    }
+
+    #[test]
+    fn drop_session_succeeds_after_child_already_exited() {
+        let pty_system = native_pty_system();
+        let size = PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let pair = pty_system.openpty(size).expect("openpty");
+
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg("exit 0");
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+        let _ = child.wait();
+
+        let killer = child.clone_killer();
+        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
+            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
+
+        let session = Arc::new(Session {
+            killer: Mutex::new(killer),
+            writer,
+            master: Mutex::new(pair.master),
+        });
+
+        drop_session(session);
+    }
+}

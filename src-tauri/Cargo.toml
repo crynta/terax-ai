@@ -49,6 +49,9 @@ notify = "8.2.0"
 arboard = { version = "3.4", features = ["image-data"] }
 png = "0.17"
 
+[dev-dependencies]
+proptest = "1"
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
