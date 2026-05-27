@@ -23,6 +23,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { fileIconUrl } from "./lib/iconResolver";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
@@ -76,6 +77,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [searching, setSearching] = useState(false);
   const [truncated, setTruncated] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastKeyboardNavAt = useRef(0);
@@ -95,6 +97,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
       setSelectedIndex(0);
       setSearching(false);
       setTruncated(false);
+      setSearchError(null);
     }
   }, [open]);
 
@@ -105,9 +108,11 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
       setSelectedIndex(0);
       setSearching(false);
       setTruncated(false);
+      setSearchError(null);
       return;
     }
     setSearching(true);
+    setSearchError(null);
     let alive = true;
     const handle = setTimeout(async () => {
       try {
@@ -122,13 +127,16 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
           setResults(res.hits);
           setTruncated(res.truncated);
           setSelectedIndex(0);
+          setSearchError(null);
         }
       } catch (e) {
         if (alive) {
-          console.error("fs_search failed:", e);
+          const message = e instanceof Error ? e.message : String(e);
           setResults([]);
           setTruncated(false);
           setSelectedIndex(0);
+          setSearchError(message);
+          toast.error("Search failed", { description: message });
         }
       } finally {
         if (alive) setSearching(false);
@@ -231,6 +239,10 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
             {searching && results.length === 0 ? (
               <div className="px-3 py-2 text-[11px] text-muted-foreground">
                 Searching…
+              </div>
+            ) : searchError ? (
+              <div className="px-3 py-2 text-[11px] text-destructive">
+                Search failed: {searchError}
               </div>
             ) : results.length === 0 ? (
               <div className="px-3 py-2 text-[11px] text-muted-foreground">
