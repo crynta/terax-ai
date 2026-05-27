@@ -21,6 +21,8 @@ type Props = {
   activeLeafId: number;
   onFocusLeaf: (leafId: number) => void;
   getBundle: (leafId: number) => LeafBundle;
+  /** Called when the user finishes resizing a split. */
+  onResizeSplit: (splitId: number, sizes: number[]) => void;
 };
 
 export function PaneTreeView({
@@ -29,6 +31,7 @@ export function PaneTreeView({
   activeLeafId,
   onFocusLeaf,
   getBundle,
+  onResizeSplit,
 }: Props) {
   if (node.kind === "leaf") {
     const focused = node.id === activeLeafId;
@@ -63,17 +66,34 @@ export function PaneTreeView({
   return (
     <ResizablePanelGroup
       orientation={node.dir === "row" ? "horizontal" : "vertical"}
+      onLayoutChanged={(layout) => {
+        // If any panel is missing from the layout map (e.g. the group hasn't
+        // settled yet), bail rather than corrupting the stored sizes — a zero
+        // entry would render the pane at 0% on next restore.
+        const raw = node.children.map((child) => layout[`pane-${child.id}`]);
+        if (raw.some((v) => typeof v !== "number")) return;
+        const nums = raw as number[];
+        const total = nums.reduce((s, v) => s + v, 0);
+        if (total <= 0) return;
+        const normalized = nums.map((v) => (v / total) * 100);
+        onResizeSplit(node.id, normalized);
+      }}
     >
       {node.children.map((child, i) => (
         <Fragment key={child.id}>
           {i > 0 && <ResizableHandle />}
-          <ResizablePanel id={`pane-${child.id}`} minSize="10%">
+          <ResizablePanel
+            id={`pane-${child.id}`}
+            minSize="10%"
+            defaultSize={node.sizes?.[i] !== undefined ? `${node.sizes[i]}%` : undefined}
+          >
             <PaneTreeView
               node={child}
               tabVisible={tabVisible}
               activeLeafId={activeLeafId}
               onFocusLeaf={onFocusLeaf}
               getBundle={getBundle}
+              onResizeSplit={onResizeSplit}
             />
           </ResizablePanel>
         </Fragment>

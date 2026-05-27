@@ -78,7 +78,9 @@ import {
   useSourceControl,
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
-import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
+import { MAX_PANES_PER_TAB, sessionKey, useSessionLoad, useTabs, useWorkspaceCwd } from "@/modules/tabs";
+import { saveSession } from "@/modules/tabs/lib/sessionPersistence";
+import { serializeSession } from "@/modules/tabs/lib/sessionSerialize";
 import {
   disposeSession,
   findLeafCwd,
@@ -106,6 +108,7 @@ import {
   getWslHome,
   LOCAL_WORKSPACE,
   useWorkspaceEnvStore,
+  workspaceScopeKey,
   type WorkspaceEnv,
 } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
@@ -160,6 +163,23 @@ function readSidebarView(): SidebarViewId {
 }
 
 export default function App() {
+  const launchDir = getLaunchDir() ?? undefined;
+  const sessionLoad = useSessionLoad(launchDir);
+
+  // Note: when ready-with-no-payload-and-no-launchDir we pass `{}` rather
+  // than `undefined`. useTabs's restored-applied effect uses `initial ===
+  // undefined` as the "still loading" signal; an empty object means "ready,
+  // nothing to restore" and lets the effect mark restoredApplied so App's
+  // render gate can lift.
+  const tabsInit =
+    sessionLoad.kind === "ready"
+      ? sessionLoad.restored
+        ? { restored: sessionLoad.restored }
+        : launchDir
+          ? { cwd: launchDir }
+          : {}
+      : undefined;
+
   const {
     tabs,
     activeId,
@@ -186,7 +206,9 @@ export default function App() {
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,
-  } = useTabs(getLaunchDir() ? { cwd: getLaunchDir() } : undefined);
+    setSplitSizes,
+    restoredApplied,
+  } = useTabs(tabsInit);
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
   // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
@@ -307,6 +329,25 @@ export default function App() {
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
+
+  const currentKey = useMemo(() => {
+    if (sessionLoad.kind !== "ready") return null;
+    return sessionKey(launchDir, workspaceScopeKey(workspaceEnv));
+  }, [sessionLoad.kind, launchDir, workspaceEnv]);
+
+  const restoreSessionPref = usePreferencesStore((s) => s.restoreSession);
+
+  useEffect(() => {
+    if (!restoreSessionPref) return;
+    if (sessionLoad.kind !== "ready") return;
+    if (!currentKey) return;
+    if (!restoredApplied) return;
+    const t = setTimeout(() => {
+      void saveSession(currentKey, serializeSession(tabs, activeId));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [tabs, activeId, currentKey, restoreSessionPref, sessionLoad.kind, restoredApplied]);
+
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
   const [launchCwdResolved, setLaunchCwdResolved] = useState(false);
   const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
@@ -1132,6 +1173,13 @@ export default function App() {
     [focusPane],
   );
 
+  const onResizeSplit = useCallback(
+    (tabId: number, splitId: number, sizes: number[]) => {
+      setSplitSizes(tabId, splitId, sizes);
+    },
+    [setSplitSizes],
+  );
+
   const onActivateAgent = useCallback(
     (tabId: number, leafId: number) => {
       setActiveId(tabId);
@@ -1282,6 +1330,14 @@ export default function App() {
     newAgentTab,
   ]);
 
+  // Gate first paint until session load resolves AND the restored payload
+  // has been applied by the useEffect inside useTabs. Without the second
+  // condition there would be a one-frame flash of the default tab between
+  // the session load completing and the effect firing.
+  if (sessionLoad.kind === "loading" || !restoredApplied) {
+    return null;
+  }
+
   const workspaceSurface = (
     <div className="relative h-full min-h-0">
       <div
@@ -1299,6 +1355,7 @@ export default function App() {
           onCwd={handleTerminalCwd}
           onExit={handleLeafExit}
           onFocusLeaf={handleFocusLeaf}
+          onResizeSplit={onResizeSplit}
         />
       </div>
       <div
