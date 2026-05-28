@@ -1,46 +1,71 @@
 "use client"
-import mermaid from 'mermaid'
-import { useEffect, useRef } from 'react'
+
+import mermaid from "mermaid"
+import { useEffect, useRef, useState } from "react"
 import { useIsCodeFenceIncomplete } from "streamdown"
+
 interface MermaidProps {
     code: string
 }
+
 export function MermaidCode({ code }: MermaidProps) {
-    console.log(code)
     const containerRef = useRef<HTMLDivElement>(null)
     const isIncomplete = useIsCodeFenceIncomplete()
-    console.log(isIncomplete);
+    const [mermaidError, setMermaidError] = useState<string | null>(null)
 
     useEffect(() => {
         mermaid.initialize({
             startOnLoad: false,
             theme: "default",
-            securityLevel: "loose",
+            securityLevel: "strict",
             fontFamily: "JetBrains Mono, sans-serif",
         })
     }, [])
+
     useEffect(() => {
-        const renderCode = async () => {
-            if (!containerRef.current || !code) return;
-            if (isIncomplete) return
-            containerRef.current.innerHTML = "";
-            const div = document.createElement("div");
-            div.className = "mermaid";
-            div.textContent = code;
-            containerRef.current.appendChild(div);
-            try {
+        setMermaidError(null)
 
-                await mermaid.run({
-                    nodes: [div],
-                    suppressErrors: true,
-                });
+        if (!containerRef.current || !code) return
+        if (isIncomplete) return
 
-            } catch (e) {
-                console.warn("Mermaid render skipped (likely incomplete syntax):", e);
-            }
-        }
-        renderCode()
+        containerRef.current.innerHTML = ""
+
+        const div = document.createElement("div")
+        div.className = "mermaid"
+        div.textContent = code
+        containerRef.current.appendChild(div)
+
+        mermaid
+            .run({
+                nodes: [div],
+                suppressErrors: false,
+            })
+            .catch((err) => {
+                setMermaidError(err?.message || "Mermaid syntax error")
+            })
     }, [code, isIncomplete])
-    if (isIncomplete) return <pre>{code}</pre>;
-    return <div ref={containerRef} className="my-4 flex justify-center overflow-auto rounded-lg border bg-card p-4" />
+
+    if (isIncomplete) {
+        return <pre>{code}</pre>
+    }
+
+    if (mermaidError) {
+        return (
+            <pre className="overflow-x-auto rounded-lg border bg-muted p-3 text-xs text-foreground whitespace-pre-wrap">
+                {code}
+                {"\n\n"}
+                <span className="block border-l-2 border-destructive pl-2 text-destructive bg-destructive/10">
+                    {/* Mermaid Error */}
+                    {mermaidError}
+                </span>
+            </pre>
+        )
+    }
+
+    return (
+        <div
+            ref={containerRef}
+            className="my-4 flex justify-center overflow-auto rounded-lg border bg-card p-4"
+        />
+    )
 }

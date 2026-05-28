@@ -19,7 +19,6 @@ export function MarkdownCode({
   children?: ReactNode;
 }) {
   const match = className?.match(/language-(\w+)/);
-  console.log(match);
   if (!match) {
     return (
       <code
@@ -33,7 +32,7 @@ export function MarkdownCode({
 
   const code = String(children ?? "").replace(/\n$/, "");
   if(match[1] === "mermaid"){
-    return <MermaidCode code={code}/>
+    return <MermaidCode code={code }/>
   }
   return <ChatCodeBlock code={code} lang={match[1] ?? null} />;
 }
