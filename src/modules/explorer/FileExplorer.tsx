@@ -14,8 +14,10 @@ import {
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -23,7 +25,7 @@ import {
   useState,
 } from "react";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
-import { FileTreeNode } from "./FileTreeNode";
+import { EntryRow, PendingRow, StatusRow } from "./TreeRow";
 import { InlineInput } from "./InlineInput";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
@@ -43,15 +45,106 @@ type Props = {
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
+  onOpenMarkdownPreview?: (path: string) => void;
 };
+
+type Row =
+  | {
+      kind: "entry";
+      key: string;
+      path: string;
+      name: string;
+      isDir: boolean;
+      isExpanded: boolean;
+      depth: number;
+    }
+  | { kind: "rename"; key: string; path: string; name: string; isDir: boolean; depth: number }
+  | { kind: "pending"; key: string; depth: number; pendingKind: "file" | "dir" }
+  | { kind: "status"; key: string; depth: number; tone: "muted" | "error"; message: string };
+
+const ROW_HEIGHT = 24;
+const OVERSCAN = 8;
 
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : path;
 }
 
+function buildRows(
+  rootPath: string,
+  tree: ReturnType<typeof useFileTree>,
+): { rows: Row[]; entryIndexByPath: Map<string, number> } {
+  const rows: Row[] = [];
+  const entryIndexByPath = new Map<string, number>();
+
+  const walk = (parent: string, depth: number) => {
+    const node = tree.nodes[parent];
+    if (!node || node.status !== "loaded") return;
+    for (const entry of node.entries) {
+      const path = tree.joinPath(parent, entry.name);
+      const isDir = entry.kind === "dir";
+      const expanded = isDir && tree.expanded.has(path);
+      const isRenaming = tree.renaming === path;
+      if (isRenaming) {
+        rows.push({
+          kind: "rename",
+          key: `rename:${path}`,
+          path,
+          name: entry.name,
+          isDir,
+          depth,
+        });
+      } else {
+        entryIndexByPath.set(path, rows.length);
+        rows.push({
+          kind: "entry",
+          key: path,
+          path,
+          name: entry.name,
+          isDir,
+          isExpanded: expanded,
+          depth,
+        });
+      }
+      if (isDir && expanded) {
+        const child = tree.nodes[path];
+        if (tree.pendingCreate?.parentPath === path) {
+          rows.push({
+            kind: "pending",
+            key: `pending:${path}`,
+            depth: depth + 1,
+            pendingKind: tree.pendingCreate.kind,
+          });
+        }
+        if (child?.status === "loading") {
+          rows.push({
+            kind: "status",
+            key: `loading:${path}`,
+            depth: depth + 1,
+            tone: "muted",
+            message: "Loading…",
+          });
+        } else if (child?.status === "error") {
+          rows.push({
+            kind: "status",
+            key: `error:${path}`,
+            depth: depth + 1,
+            tone: "error",
+            message: child.message,
+          });
+        } else if (child?.status === "loaded") {
+          walk(path, depth + 1);
+        }
+      }
+    }
+  };
+
+  walk(rootPath, 0);
+  return { rows, entryIndexByPath };
+}
+
 export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
-  (
+  function FileExplorer(
     {
       rootPath,
       onOpenFile,
@@ -59,55 +152,61 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       onPathDeleted,
       onRevealInTerminal,
       onAttachToAgent,
+      onOpenMarkdownPreview,
     },
     ref,
-  ) => {
+  ) {
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
-    const listRef = useRef<HTMLDivElement>(null);
     const searchRef = useRef<ExplorerSearchHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const scrollRef = useRef<HTMLDivElement>(null);
 
-    type FlatItem = { path: string; isDir: boolean };
-    const flat = useMemo<FlatItem[]>(() => {
-      if (!rootPath) return [];
-      const out: FlatItem[] = [];
-      const walk = (parent: string) => {
-        const node = tree.nodes[parent];
-        if (!node || node.status !== "loaded") return;
-        for (const e of node.entries) {
-          const p = tree.joinPath(parent, e.name);
-          const isDir = e.kind === "dir";
-          out.push({ path: p, isDir });
-          if (isDir && tree.expanded.has(p)) walk(p);
-        }
-      };
-      walk(rootPath);
+    const { rows, entryIndexByPath } = useMemo(() => {
+      if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
+      return buildRows(rootPath, tree);
+    }, [rootPath, tree.nodes, tree.expanded, tree.renaming, tree.pendingCreate, tree]);
+
+    const entryPaths = useMemo<string[]>(() => {
+      const out: string[] = [];
+      for (const row of rows) if (row.kind === "entry") out.push(row.path);
       return out;
-    }, [rootPath, tree.nodes, tree.expanded, tree.joinPath]);
-  
+    }, [rows]);
+
     useEffect(() => {
-      if (selectedPath && !flat.some((f) => f.path === selectedPath)) {
+      if (selectedPath && !entryIndexByPath.has(selectedPath)) {
         setSelectedPath(null);
       }
-    }, [flat, selectedPath]);
+    }, [entryIndexByPath, selectedPath]);
+
+    const virtualizer = useVirtualizer({
+      count: rows.length,
+      getScrollElement: () => scrollRef.current,
+      estimateSize: () => ROW_HEIGHT,
+      overscan: OVERSCAN,
+      getItemKey: (index) => rows[index]?.key ?? index,
+    });
+
+    const scrollEntryIntoView = useCallback(
+      (path: string) => {
+        const index = entryIndexByPath.get(path);
+        if (index === undefined) return;
+        virtualizer.scrollToIndex(index, { align: "auto" });
+      },
+      [entryIndexByPath, virtualizer],
+    );
 
     useImperativeHandle(
       ref,
       () => ({
         focus: () => {
           containerRef.current?.focus();
-          if (!selectedPath && flat.length > 0) {
-            const first = flat[0].path;
+          if (!selectedPath && entryPaths.length > 0) {
+            const first = entryPaths[0];
             setSelectedPath(first);
-            requestAnimationFrame(() => {
-              const el = listRef.current?.querySelector<HTMLElement>(
-                `[data-fs-path="${CSS.escape(first)}"]`,
-              );
-              el?.scrollIntoView({ block: "nearest" });
-            });
+            requestAnimationFrame(() => scrollEntryIntoView(first));
           }
         },
         isFocused: () => {
@@ -117,7 +216,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           return active instanceof Node && c.contains(active);
         },
       }),
-      [flat, selectedPath],
+      [entryPaths, scrollEntryIntoView, selectedPath],
     );
 
     useGlobalShortcuts({
@@ -130,7 +229,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
         searchRef.current?.focus();
       },
     });
-  
+
     if (!rootPath) {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -146,11 +245,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
         </div>
       );
     }
-  
+
     const root = tree.nodes[rootPath];
     const pendingAtRoot =
       tree.pendingCreate?.parentPath === rootPath ? tree.pendingCreate : null;
-  
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (tree.renaming || tree.pendingCreate || isSearchOpen) return;
       const target = e.target as HTMLElement;
@@ -160,24 +259,16 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
         target.isContentEditable
       )
         return;
-      if (flat.length === 0) return;
-  
-      const currentIdx = selectedPath
-        ? flat.findIndex((f) => f.path === selectedPath)
-        : -1;
-  
+      if (entryPaths.length === 0) return;
+
+      const currentIdx = selectedPath ? entryPaths.indexOf(selectedPath) : -1;
       const move = (next: number) => {
-        const clamped = Math.max(0, Math.min(flat.length - 1, next));
-        const path = flat[clamped].path;
+        const clamped = Math.max(0, Math.min(entryPaths.length - 1, next));
+        const path = entryPaths[clamped];
         setSelectedPath(path);
-        requestAnimationFrame(() => {
-          const el = listRef.current?.querySelector<HTMLElement>(
-            `[data-fs-path="${CSS.escape(path)}"]`
-          );
-          el?.scrollIntoView({ block: "nearest" });
-        });
+        requestAnimationFrame(() => scrollEntryIntoView(path));
       };
-  
+
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
@@ -185,14 +276,18 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           break;
         case "ArrowUp":
           e.preventDefault();
-          move(currentIdx < 0 ? flat.length - 1 : currentIdx - 1);
+          move(currentIdx < 0 ? entryPaths.length - 1 : currentIdx - 1);
           break;
         case "ArrowRight": {
           if (currentIdx < 0) return;
           e.preventDefault();
-          const item = flat[currentIdx];
-          if (item.isDir) {
-            if (!tree.expanded.has(item.path)) tree.toggle(item.path);
+          const path = entryPaths[currentIdx];
+          const idx = entryIndexByPath.get(path);
+          if (idx === undefined) break;
+          const row = rows[idx];
+          if (row.kind !== "entry") break;
+          if (row.isDir) {
+            if (!row.isExpanded) tree.toggle(row.path);
             else move(currentIdx + 1);
           }
           break;
@@ -200,27 +295,73 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
         case "ArrowLeft": {
           if (currentIdx < 0) return;
           e.preventDefault();
-          const item = flat[currentIdx];
-          if (item.isDir && tree.expanded.has(item.path)) {
-            tree.toggle(item.path);
+          const path = entryPaths[currentIdx];
+          const idx = entryIndexByPath.get(path);
+          if (idx === undefined) break;
+          const row = rows[idx];
+          if (row.kind !== "entry") break;
+          if (row.isDir && row.isExpanded) {
+            tree.toggle(row.path);
           } else {
-            const parent = item.path.slice(0, item.path.lastIndexOf("/"));
+            const parent = row.path.slice(0, row.path.lastIndexOf("/"));
             if (parent && parent !== rootPath) setSelectedPath(parent);
           }
           break;
         }
-        case "Enter":
+        case "Enter": {
           if (currentIdx < 0) return;
           e.preventDefault();
-          {
-            const item = flat[currentIdx];
-            if (item.isDir) tree.toggle(item.path);
-            else onOpenFile(item.path);
-          }
+          const path = entryPaths[currentIdx];
+          const idx = entryIndexByPath.get(path);
+          if (idx === undefined) break;
+          const row = rows[idx];
+          if (row.kind !== "entry") break;
+          if (row.isDir) tree.toggle(row.path);
+          else onOpenFile(row.path);
           break;
+        }
       }
     };
-  
+
+    const renderRow = (row: Row) => {
+      switch (row.kind) {
+        case "entry":
+        case "rename": {
+          return (
+            <EntryRow
+              path={row.path}
+              name={row.name}
+              isDir={row.isDir}
+              isExpanded={row.kind === "entry" ? row.isExpanded : false}
+              depth={row.depth}
+              rootPath={rootPath}
+              tree={tree}
+              isSelected={selectedPath === row.path}
+              isRenaming={row.kind === "rename"}
+              onOpenFile={onOpenFile}
+              onSelectPath={setSelectedPath}
+              onRevealInTerminal={onRevealInTerminal}
+              onAttachToAgent={onAttachToAgent}
+              onOpenMarkdownPreview={onOpenMarkdownPreview}
+            />
+          );
+        }
+        case "pending":
+          return (
+            <PendingRow
+              depth={row.depth}
+              kind={row.pendingKind}
+              onCommit={tree.commitCreate}
+              onCancel={tree.cancelCreate}
+            />
+          );
+        case "status":
+          return (
+            <StatusRow depth={row.depth} message={row.message} tone={row.tone} />
+          );
+      }
+    };
+
     return (
       <div
         ref={containerRef}
@@ -230,7 +371,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       >
         <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
           <span
-            className="flex-1 flex truncate text-xs font-medium text-foreground/80"
+            className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80"
             title={rootPath}
           >
             <img
@@ -242,7 +383,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             />
             {basename(rootPath)}
           </span>
-  
+
           <Button
             variant="ghost"
             size="icon"
@@ -253,7 +394,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           >
             <HugeiconsIcon icon={Search01Icon} size={13} strokeWidth={2} />
           </Button>
-  
+
           <Button
             variant="ghost"
             size="icon"
@@ -282,7 +423,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             <HugeiconsIcon icon={Refresh01Icon} size={12} strokeWidth={2} />
           </Button>
         </div>
-  
+
         <ExplorerSearch
           ref={searchRef}
           rootPath={rootPath}
@@ -293,69 +434,82 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           onRevealInTerminal={onRevealInTerminal}
           onAttachToAgent={onAttachToAgent}
         />
-  
+
         {!isSearchActive ? (
           <ContextMenu>
             <ContextMenuTrigger asChild>
               <div
+                ref={scrollRef}
                 className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
               >
-                <div className="min-w-0 py-1" ref={listRef}>
-                  {pendingAtRoot && (
-                    <div
-                      className="flex w-full min-w-0 items-center gap-2 px-1.5 py-0.5 text-[13px]"
-                      style={{ paddingLeft: 6 }}
-                    >
-                      <span className="size-3.5 shrink-0" />
-                      <img
-                        src={
-                          pendingAtRoot.kind === "dir"
-                            ? folderIconUrl("", false)
-                            : fileIconUrl("untitled")
-                        }
-                        alt=""
-                        className="size-4 shrink-0 opacity-70"
-                      />
-                      <InlineInput
-                        initial=""
-                        placeholder={
-                          pendingAtRoot.kind === "dir" ? "New folder" : "New file"
-                        }
-                        onCommit={tree.commitCreate}
-                        onCancel={tree.cancelCreate}
-                      />
-                    </div>
-                  )}
-                  {root?.status === "loading" && (
-                    <div className="px-3 py-2 text-[11px] text-muted-foreground">
-                      Loading…
-                    </div>
-                  )}
-                  {root?.status === "error" && (
-                    <div className="px-3 py-2 text-[11px] text-destructive">
-                      {root.message}
-                    </div>
-                  )}
-                  {root?.status === "loaded" &&
-                    root.entries.map((entry) => (
-                      <FileTreeNode
-                        key={entry.name}
-                        entry={entry}
-                        parentPath={rootPath}
-                        rootPath={rootPath}
-                        depth={0}
-                        tree={tree}
-                        onOpenFile={onOpenFile}
-                        onRevealInTerminal={onRevealInTerminal}
-                        onAttachToAgent={onAttachToAgent}
-                        selectedPath={selectedPath}
-                        onSelectPath={setSelectedPath}
-                      />
-                    ))}
-                </div>
+                {pendingAtRoot ? (
+                  <div
+                    className="flex h-6 w-full min-w-0 items-center gap-2 px-1.5 text-[13px]"
+                    style={{ paddingLeft: 6 }}
+                  >
+                    <span className="size-3.5 shrink-0" />
+                    <img
+                      src={
+                        pendingAtRoot.kind === "dir"
+                          ? folderIconUrl("", false)
+                          : fileIconUrl("untitled")
+                      }
+                      alt=""
+                      className="size-4 shrink-0 opacity-70"
+                    />
+                    <InlineInput
+                      initial=""
+                      placeholder={
+                        pendingAtRoot.kind === "dir" ? "New folder" : "New file"
+                      }
+                      onCommit={tree.commitCreate}
+                      onCancel={tree.cancelCreate}
+                    />
+                  </div>
+                ) : null}
+                {root?.status === "loading" && (
+                  <div className="px-3 py-2 text-[11px] text-muted-foreground">
+                    Loading…
+                  </div>
+                )}
+                {root?.status === "error" && (
+                  <div className="px-3 py-2 text-[11px] text-destructive">
+                    {root.message}
+                  </div>
+                )}
+                {root?.status === "loaded" ? (
+                  <div
+                    style={{
+                      height: virtualizer.getTotalSize(),
+                      position: "relative",
+                      width: "100%",
+                    }}
+                  >
+                    {virtualizer.getVirtualItems().map((virtualRow) => {
+                      const row = rows[virtualRow.index];
+                      if (!row) return null;
+                      return (
+                        <div
+                          key={virtualRow.key}
+                          data-virtual-row-index={virtualRow.index}
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            width: "100%",
+                            height: virtualRow.size,
+                            transform: `translateY(${virtualRow.start}px)`,
+                          }}
+                        >
+                          {renderRow(row)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
             </ContextMenuTrigger>
-            <ContextMenuContent 
+            <ContextMenuContent
               className={COMPACT_CONTENT}
               onCloseAutoFocus={(e) => {
                 if (tree.renaming || tree.pendingCreate) e.preventDefault();
@@ -406,4 +560,5 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
         ) : null}
       </div>
     );
-});
+  },
+);

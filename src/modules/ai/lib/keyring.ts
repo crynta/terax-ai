@@ -17,9 +17,12 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   cerebras: null,
   groq: null,
   deepseek: null,
+  mistral: null,
   openrouter: null,
   "openai-compatible": null,
   lmstudio: null,
+  mlx: null,
+  ollama: null,
 };
 
 export async function getKey(provider: ProviderId): Promise<string | null> {

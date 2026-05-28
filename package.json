@@ -1,13 +1,16 @@
 {
   "name": "terax",
   "private": true,
-  "version": "0.6.6",
+  "version": "0.7.3",
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",
@@ -44,10 +47,11 @@
     "@lezer/highlight": "^1.2.3",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@replit/codemirror-vim": "^6.3.0",
-    "@tailwindcss/vite": "^4.2.3",
+    "@tanstack/react-virtual": "^3.13.24",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-autostart": "~2.5.1",
     "@tauri-apps/plugin-log": "~2.8.0",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-os": "~2.3.2",
     "@tauri-apps/plugin-process": "~2.3.1",
@@ -58,6 +62,7 @@
     "@uiw/codemirror-theme-aura": "^4.25.9",
     "@uiw/codemirror-theme-copilot": "^4.25.9",
     "@uiw/codemirror-theme-github": "^4.25.9",
+    "@uiw/codemirror-theme-gruvbox-dark": "^4.25.9",
     "@uiw/codemirror-theme-nord": "^4.25.9",
     "@uiw/codemirror-theme-tokyo-night": "^4.25.9",
     "@uiw/codemirror-theme-xcode": "^4.25.9",
@@ -78,23 +83,26 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-resizable-panels": "^4.10.0",
-    "shadcn": "^4.3.1",
+    "sonner": "^2.0.7",
     "streamdown": "^2.5.0",
     "tailwind-merge": "^3.5.0",
-    "tailwindcss": "^4.2.3",
     "tokenlens": "^1.3.1",
-    "tw-animate-css": "^1.4.0",
     "use-stick-to-bottom": "^1.1.3",
     "zod": "^4.3.6",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.2.3",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.6.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "shadcn": "^4.3.1",
+    "tailwindcss": "^4.2.3",
+    "tw-animate-css": "^1.4.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^2.1.9"
   }
 }

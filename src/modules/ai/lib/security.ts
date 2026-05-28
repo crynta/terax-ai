@@ -29,27 +29,33 @@
  */
 
 const SECRET_BASENAME_PATTERNS: RegExp[] = [
-  /^\.env(\..+)?$/i, // .env, .env.local, .env.production, etc.
-  /^.*\.pem$/i,
-  /^.*\.key$/i, // private keys
-  /^.*\.p12$/i,
-  /^.*\.pfx$/i,
-  /^.*\.asc$/i, // PGP armored keys
-  /^.*\.gpg$/i,
-  /^.*\.keystore$/i,
-  /^.*\.jks$/i,
-  /^id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$/i,
-  /^known_hosts$/i,
-  /^authorized_keys$/i,
-  /^htpasswd$/i,
-  /^\.netrc$/i,
-  /^_netrc$/i, // Windows variant
-  /^credentials$/i, // .aws/credentials, gcloud, etc.
-  /^\.pgpass$/i,
-  /^\.npmrc$/i,
-  /^\.pypirc$/i,
-  /^secrets?\.(json|ya?ml|toml|env)$/i,
-  /^service[-_]?account.*\.json$/i, // GCP service account keys
+  // Match `.env` and `.env.<suffix>` with no required tail anchor — Windows
+  // strips trailing dots/spaces at open time and NTFS exposes alternate data
+  // streams via `name:stream`, both of which would otherwise slip past a `$`
+  // anchored pattern (`.env.`, `.env::$DATA`).
+  /^\.env(\..+)?(?:[.\s:]|$)/i,
+  /^.*\.pem(?:[.\s:]|$)/i,
+  /^.*\.key(?:[.\s:]|$)/i, // private keys
+  /^.*\.p12(?:[.\s:]|$)/i,
+  /^.*\.pfx(?:[.\s:]|$)/i,
+  /^.*\.asc(?:[.\s:]|$)/i, // PGP armored keys
+  /^.*\.gpg(?:[.\s:]|$)/i,
+  /^.*\.keystore(?:[.\s:]|$)/i,
+  /^.*\.jks(?:[.\s:]|$)/i,
+  // Match `id_rsa`, `id_rsa.pub`, and common backup/copy patterns like
+  // `id_rsa.bak`, `id_rsa_old`, `id_rsa-backup`.
+  /^id_(rsa|dsa|ecdsa|ed25519)([._-].*)?(?:[.\s:]|$)/i,
+  /^known_hosts(?:[.\s:]|$)/i,
+  /^authorized_keys(?:[.\s:]|$)/i,
+  /^htpasswd(?:[.\s:]|$)/i,
+  /^\.netrc(?:[.\s:]|$)/i,
+  /^_netrc(?:[.\s:]|$)/i, // Windows variant
+  /^credentials(?:[.\s:]|$)/i, // .aws/credentials, gcloud, etc.
+  /^\.pgpass(?:[.\s:]|$)/i,
+  /^\.npmrc(?:[.\s:]|$)/i,
+  /^\.pypirc(?:[.\s:]|$)/i,
+  /^secrets?\.(json|ya?ml|toml|env)(?:[.\s:]|$)/i,
+  /^service[-_]?account.*\.json(?:[.\s:]|$)/i, // GCP service account keys
 ];
 
 /**
@@ -72,6 +78,19 @@ const PROTECTED_DIRS = [
   "/.terraform.d",
   "/library/keychains",
   "/library/cookies",
+  // System dirs holding host secrets/PII/process state. Per-PID files under
+  // /proc leak env vars and command lines from other processes; /sys exposes
+  // kernel state and hardware identifiers. /etc and /private/etc hold global
+  // config that frequently contains credentials in basenames the regex won't
+  // match (passwd, shadow, master.passwd, *.cnf, *.conf with creds).
+  "/etc",
+  "/private/etc",
+  "/proc",
+  "/sys",
+  "/var/db",
+  "/var/root",
+  "/private/var/db",
+  "/private/var/root",
   // Windows user profile equivalents (post drive-strip + lowercase).
   "/appdata/roaming/microsoft/credentials",
   "/appdata/local/microsoft/credentials",
@@ -119,6 +138,11 @@ function basename(p: string): string {
  *  - back-slashes -> forward-slashes
  *  - strip Windows drive prefix (e.g. `C:`)
  *  - strip UNC prefix `//?/`
+ *  - strip NTFS alternate-data-stream suffix (`name:stream` / `name::$DATA`)
+ *    from each path segment — Windows reads `foo:stream` as `foo` for our
+ *    purposes, so the comparison surface should too
+ *  - strip trailing dots/spaces from each segment — Windows discards these
+ *    at open time, so `.env.` and `.env ` open `.env`
  *  - collapse duplicate slashes
  *  - lowercase (so case variants match on case-insensitive filesystems)
  *  - drop trailing slash (except for root)
@@ -130,6 +154,21 @@ function comparisonForm(p: string): string {
   // Drive prefix: C:/foo → /foo. Important: do this BEFORE lowercasing so we
   // don't have to special-case "c:" vs "C:".
   s = s.replace(/^[a-zA-Z]:/, "");
+  // Strip NTFS alternate-data-stream syntax from each segment. `name:stream`
+  // and `name::$DATA` both read the same underlying file from `name`, so
+  // they must compare-equal to `name`.
+  s = s
+    .split("/")
+    .map((seg) => {
+      const colon = seg.indexOf(":");
+      return colon === -1 ? seg : seg.slice(0, colon);
+    })
+    .join("/");
+  // Strip trailing dots/spaces from each segment (Windows behavior).
+  s = s
+    .split("/")
+    .map((seg) => seg.replace(/[.\s]+$/, ""))
+    .join("/");
   // Collapse duplicate slashes (//foo → /foo). Preserve a possible leading
   // single slash.
   s = s.replace(/\/{2,}/g, "/");
@@ -236,10 +275,11 @@ export async function checkReadableCanonical(
     // Path doesn't exist yet — fine for the read tool to surface ENOENT.
     return { ok: true, canonical: path };
   }
-  if (canonical !== path) {
-    const recheck = checkReadable(canonical);
-    if (!recheck.ok) return recheck;
-  }
+  // Always recheck — even when canonicalize returns the same string, the
+  // checks themselves can have OS-specific gaps (NTFS streams, trailing
+  // dot/space) that warrant a second pass against the comparison form.
+  const recheck = checkReadable(canonical);
+  if (!recheck.ok) return recheck;
   return { ok: true, canonical };
 }
 
@@ -257,11 +297,9 @@ export async function checkWritableCanonical(
   // Try canonicalizing the target itself first.
   try {
     const canonical = await canonicalize(path);
-    if (canonical !== path) {
-      const recheck = checkWritable(canonical);
-      if (!recheck.ok) return recheck;
-      return { ok: true, canonical };
-    }
+    // Always recheck the canonical form — same rationale as checkReadableCanonical.
+    const recheck = checkWritable(canonical);
+    if (!recheck.ok) return recheck;
     return { ok: true, canonical };
   } catch {
     // Target doesn't exist — canonicalize the parent so we still catch a
@@ -288,9 +326,24 @@ export function checkShellCommand(cmd: string): SafetyResult {
   if (c.length === 0) {
     return { ok: false, reason: "Refused: empty command." };
   }
-  // Block NUL bytes in commands — never legitimate.
-  if (/\x00/.test(c)) {
-    return { ok: false, reason: "Refused: command contains NUL byte." };
+  // Block C0 controls. CR/LF would let a second statement smuggle past the
+  // approval UI, which shows the command as one logical line.
+  if (/[\x00-\x1f]/.test(c)) {
+    return {
+      ok: false,
+      reason:
+        "Refused: command contains control characters (including CR/LF). Commands must be single-line.",
+    };
+  }
+  // Block Unicode bidi-override and invisible directional marks. These let an
+  // attacker craft a command whose visual order (in the approval UI's <pre>
+  // block) differs from its logical execution order — a Trojan Source attack.
+  // Legitimate shell commands do not need RTL overrides.
+  if (/[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/.test(c)) {
+    return {
+      ok: false,
+      reason: "Refused: command contains Unicode bidirectional override characters.",
+    };
   }
   // rm -rf / (and variants with quoted /, --no-preserve-root, etc.)
   if (

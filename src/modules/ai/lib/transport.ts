@@ -48,8 +48,14 @@ type Deps = {
   getLive: () => LiveSnapshot;
   getLmstudioBaseURL?: () => string | undefined;
   getLmstudioModelId?: () => string | undefined;
+  getMlxBaseURL?: () => string | undefined;
+  getMlxModelId?: () => string | undefined;
+  getOllamaBaseURL?: () => string | undefined;
+  getOllamaModelId?: () => string | undefined;
   getOpenaiCompatibleBaseURL?: () => string | undefined;
   getOpenaiCompatibleModelId?: () => string | undefined;
+  getOpenaiCompatibleContextLimit?: () => number | undefined;
+  getOpenrouterModelId?: () => string | undefined;
   onStep?: (step: string | null) => void;
   onUsage?: (delta: AgentUsageDelta) => void;
   onCompact?: (info: { droppedCount: number }) => void;
@@ -83,8 +89,14 @@ export function createContextAwareTransport(deps: Deps) {
       onFinishMeta: deps.onFinishMeta,
       lmstudioBaseURL: deps.getLmstudioBaseURL?.(),
       lmstudioModelId: deps.getLmstudioModelId?.(),
+      mlxBaseURL: deps.getMlxBaseURL?.(),
+      mlxModelId: deps.getMlxModelId?.(),
+      ollamaBaseURL: deps.getOllamaBaseURL?.(),
+      ollamaModelId: deps.getOllamaModelId?.(),
       openaiCompatibleBaseURL: deps.getOpenaiCompatibleBaseURL?.(),
       openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
+      openaiCompatibleContextLimit: deps.getOpenaiCompatibleContextLimit?.(),
+      openrouterModelId: deps.getOpenrouterModelId?.(),
       planMode: deps.getPlanMode?.(),
       projectMemory,
       uiMessages: messagesForRun,

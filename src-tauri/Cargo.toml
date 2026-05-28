@@ -1,8 +1,9 @@
 [package]
 name = "terax"
-version = "0.6.6"
+version = "0.7.3"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
+license = "Apache-2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -35,6 +36,7 @@ tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
 reqwest = { version = "0.12", default-features = false, features = [
 	"rustls-tls",
 	"stream",
@@ -42,6 +44,11 @@ reqwest = { version = "0.12", default-features = false, features = [
 bytes = "1"
 futures-util = "0.3"
 tokio = { version = "1", default-features = false, features = ["rt"] }
+tempfile = "3"
+notify = "8.2.0"
+
+[dev-dependencies]
+proptest = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

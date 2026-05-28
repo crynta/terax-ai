@@ -3,11 +3,18 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { DormantRing } from "./dormantRing";
-import { registerCwdHandler, registerPromptTracker } from "./osc-handlers";
+import {
+  createShellIntegrationState,
+  registerCwdHandler,
+  registerPromptTracker,
+} from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 import {
   acquireSlot,
+  applyBackgroundActive,
+  applyFontFamily,
   applyFontSize,
+  applyLetterSpacing,
   applyTheme as applyPoolTheme,
   applyScrollback,
   applyWebglPreference,
@@ -43,9 +50,76 @@ type Session = {
   searchQuery: string | null;
   dormantRing: DormantRing;
   hasSlot: boolean;
+  // True if the slot was in alt-screen mode (TUI like vim, htop, dofek)
+  // at the most recent release. Read once on the next bind to trigger a
+  // SIGWINCH-driven repaint instead of replaying dormant bytes.
+  altScreenAtRelease: boolean;
 };
 
 const sessions = new Map<number, Session>();
+
+const readyLeaves = new Set<number>();
+const readyWaiters = new Map<
+  number,
+  { resolve: () => void; timer: ReturnType<typeof setTimeout> }[]
+>();
+
+function markSessionReady(leafId: number): void {
+  if (readyLeaves.has(leafId)) return;
+  readyLeaves.add(leafId);
+  const waiters = readyWaiters.get(leafId);
+  if (!waiters) return;
+  readyWaiters.delete(leafId);
+  for (const w of waiters) {
+    clearTimeout(w.timer);
+    w.resolve();
+  }
+}
+
+export function whenSessionReady(leafId: number, timeoutMs = 4000): Promise<void> {
+  if (readyLeaves.has(leafId)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const arr = readyWaiters.get(leafId);
+      const i = arr?.findIndex((w) => w.timer === timer) ?? -1;
+      if (arr && i >= 0) arr.splice(i, 1);
+      resolve();
+    }, timeoutMs);
+    const arr = readyWaiters.get(leafId) ?? [];
+    arr.push({ resolve, timer });
+    readyWaiters.set(leafId, arr);
+  });
+}
+
+export function writeToSession(leafId: number, data: string): boolean {
+  const s = sessions.get(leafId);
+  if (!s || !s.pty) return false;
+  void s.pty.write(data);
+  return true;
+}
+
+/**
+ * Clear the scrollback and screen of the currently focused terminal, keeping
+ * the active prompt line — macOS Terminal's ⌘K behaviour. Returns false when no
+ * focused terminal slot is bound (e.g. focus is in the editor or AI panel).
+ */
+export function clearFocusedTerminal(): boolean {
+  for (const [leafId, s] of sessions) {
+    if (!s.visibleNow || !s.focusedNow) continue;
+    const slot = getSlotForLeaf(leafId);
+    if (!slot) continue;
+    slot.term.clear();
+    return true;
+  }
+  return false;
+}
+
+export function leafIdForPty(ptyId: number): number | null {
+  for (const [leafId, s] of sessions) {
+    if (s.pty?.id === ptyId) return leafId;
+  }
+  return null;
+}
 
 configureRendererPool({
   resolveLeaf(leafId) {
@@ -59,6 +133,17 @@ configureRendererPool({
         s.cols = cols;
         s.rows = rows;
         s.pty?.resize(cols, rows);
+      },
+      kickPty: (cols, rows) => {
+        const pty = s.pty;
+        if (!pty || cols <= 0 || rows <= 0) return;
+        // Linux only emits SIGWINCH when the winsize ioctl actually
+        // changes dims, so bump +1 row then restore. The TUI receives
+        // (possibly two) SIGWINCHes and repaints from scratch.
+        pty
+          .resize(cols, rows + 1)
+          .then(() => pty.resize(cols, rows))
+          .catch((e) => console.warn("[terax] kickPty failed:", e));
       },
     };
   },
@@ -96,6 +181,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     searchQuery: null,
     dormantRing: new DormantRing(),
     hasSlot: false,
+    altScreenAtRelease: false,
   };
   sessions.set(leafId, session);
 
@@ -142,26 +228,35 @@ async function openPtyForSession(
 
 function bindLeafToSlot(leafId: number, s: Session): void {
   if (!s.container) return;
+  const altScreen = s.altScreenAtRelease;
+  s.altScreenAtRelease = false;
   acquireSlot({
     leafId,
     container: s.container,
     snapshot: s.snapshot,
+    altScreen,
     drainRing: (write) => s.dormantRing.drain(write),
     shellExited: s.shellExited,
     searchQuery: s.searchQuery,
     cols: s.cols,
     rows: s.rows,
-    onScopeChange: (cols, rows) => {
-      s.cols = cols;
-      s.rows = rows;
-    },
     registerOsc: (term) => {
-      const prompt = registerPromptTracker(term);
-      const cwd = registerCwdHandler(term, (next) => {
-        if (s.lastCwd === next) return;
-        s.lastCwd = next;
-        s.callbacks.onCwd?.(next);
-      });
+      // Shared in-command flag — see osc-handlers.ts. The prompt tracker
+      // flips it on OSC 133 B/C/D/A; the cwd handler reads it to ignore OSC
+      // 7 emitted by untrusted command output (remote SSH, `cat` of an
+      // attacker file, etc.).
+      const shellState = createShellIntegrationState();
+      const prompt = registerPromptTracker(term, shellState);
+      const cwd = registerCwdHandler(
+        term,
+        (next) => {
+          markSessionReady(leafId);
+          if (s.lastCwd === next) return;
+          s.lastCwd = next;
+          s.callbacks.onCwd?.(next);
+        },
+        shellState,
+      );
       return [prompt.dispose, cwd];
     },
     onSearchReady: (addon) => s.callbacks.onSearchReady?.(addon),
@@ -183,6 +278,7 @@ function unbindLeafFromSlot(leafId: number, s: Session): void {
     s.snapshot = out.snapshot;
     if (out.cols > 0) s.cols = out.cols;
     if (out.rows > 0) s.rows = out.rows;
+    s.altScreenAtRelease = out.altScreen;
   }
   s.hasSlot = false;
 }
@@ -238,6 +334,7 @@ export async function respawnSession(
   s.dormantRing = new DormantRing();
   s.shellExited = false;
   s.pendingExit = null;
+  s.altScreenAtRelease = false;
 
   const slot = getSlotForLeaf(leafId);
   if (slot) {
@@ -273,6 +370,15 @@ export function disposeSession(leafId: number): void {
   s.pty?.close();
   s.pty = null;
   sessions.delete(leafId);
+  readyLeaves.delete(leafId);
+  const waiters = readyWaiters.get(leafId);
+  if (waiters) {
+    readyWaiters.delete(leafId);
+    for (const w of waiters) {
+      clearTimeout(w.timer);
+      w.resolve();
+    }
+  }
 }
 
 type Options = {
@@ -325,6 +431,16 @@ export function useTerminalSession({
     applyFontSize(Math.max(4, Math.round(fontSize * zoomLevel)));
   }, [fontSize, zoomLevel]);
 
+  const fontFamily = usePreferencesStore((p) => p.terminalFontFamily);
+  useEffect(() => {
+    applyFontFamily(fontFamily);
+  }, [fontFamily]);
+
+  const letterSpacing = usePreferencesStore((p) => p.terminalLetterSpacing);
+  useEffect(() => {
+    applyLetterSpacing(letterSpacing);
+  }, [letterSpacing]);
+
   const scrollback = usePreferencesStore((p) => p.terminalScrollback);
   useEffect(() => {
     applyScrollback(scrollback);
@@ -334,6 +450,13 @@ export function useTerminalSession({
   useEffect(() => {
     applyWebglPreference(webglPref);
   }, [webglPref]);
+
+  const bgActive = usePreferencesStore(
+    (p) => p.backgroundKind === "image" && !!p.backgroundImageId,
+  );
+  useEffect(() => {
+    applyBackgroundActive(bgActive);
+  }, [bgActive]);
 
   useEffect(() => {
     const s = sessions.get(leafId);

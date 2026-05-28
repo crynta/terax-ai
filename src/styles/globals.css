@@ -138,7 +138,35 @@
 }
 
 :root {
+  --terminal-background: var(--background);
+  --terminal-foreground: var(--foreground);
+  --terminal-cursor: var(--foreground);
+  --terminal-cursor-accent: var(--background);
+  --terminal-selection: var(--accent);
+  --terminal-ansi-black: #18181b;
+  --terminal-ansi-red: #ef4444;
+  --terminal-ansi-green: #22c55e;
+  --terminal-ansi-yellow: #eab308;
+  --terminal-ansi-blue: #3b82f6;
+  --terminal-ansi-magenta: #a855f7;
+  --terminal-ansi-cyan: #06b6d4;
+  --terminal-ansi-white: #e4e4e7;
+  --terminal-ansi-bright-black: #52525b;
+  --terminal-ansi-bright-red: #f87171;
+  --terminal-ansi-bright-green: #4ade80;
+  --terminal-ansi-bright-yellow: #facc15;
+  --terminal-ansi-bright-blue: #60a5fa;
+  --terminal-ansi-bright-magenta: #c084fc;
+  --terminal-ansi-bright-cyan: #22d3ee;
+  --terminal-ansi-bright-white: #fafafa;
+}
+
+:root {
   --app-zoom: 1;
+}
+
+html[data-chrome="borderless"] .terax-bg-surface {
+  border-radius: 12px;
 }
 .zoom-content {
   zoom: var(--app-zoom);
@@ -208,6 +236,43 @@ html[data-chrome="borderless"] #settings-root {
   width: 0 !important;
   height: 0 !important;
   display: none !important;
+}
+
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input,
+textarea,
+[contenteditable="true"],
+.cm-editor,
+.select-text,
+.select-text * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.cm-color-swatch {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 0.35em;
+  border-radius: 3px;
+  border: 1px solid rgba(128, 128, 128, 0.4);
+  vertical-align: middle;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.cm-color-swatch-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 

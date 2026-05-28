@@ -1,0 +1,99 @@
+name: SignPath Test Sign
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: signpath-test
+  cancel-in-progress: false
+
+jobs:
+  test-sign-windows:
+    if: github.repository == 'crynta/terax-ai'
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: windows-signpath-test
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri (no release upload)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Pack Windows artifacts into zip
+        shell: pwsh
+        run: |
+          $bundleDir = "src-tauri/target/release/bundle"
+          $stagingDir = "signpath-staging"
+          New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+          Get-ChildItem -Path "$bundleDir/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue | Copy-Item -Destination $stagingDir
+          Get-ChildItem -Path "$bundleDir/msi"  -Filter "*.msi" -ErrorAction SilentlyContinue | Copy-Item -Destination $stagingDir
+          Write-Host "Staged files:"
+          Get-ChildItem $stagingDir
+          if ((Get-ChildItem $stagingDir).Count -eq 0) { throw "No artifacts found to sign" }
+          Compress-Archive -Path "$stagingDir/*" -DestinationPath "windows-unsigned.zip" -Force
+
+      - name: Upload unsigned artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unsigned
+          path: windows-unsigned.zip
+          if-no-files-found: error
+
+      - name: Submit signing request to SignPath
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: 'df665bf4-9b76-41ae-9596-1ba3a23010aa'
+          project-slug: 'terax-ai'
+          signing-policy-slug: 'test-signing'
+          artifact-configuration-slug: 'initial'
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: 'signed'
+
+      - name: Verify signatures exist
+        shell: pwsh
+        run: |
+          Expand-Archive -Path "signed/windows-unsigned.zip" -DestinationPath "signed-extracted" -Force
+          $files = Get-ChildItem "signed-extracted" -Include *.exe,*.msi -Recurse
+          if ($files.Count -eq 0) { throw "No signed files found" }
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            if ($null -eq $sig.SignerCertificate) {
+              throw "$($f.Name) is NOT signed"
+            }
+            Write-Host "OK: $($f.Name)"
+            Write-Host "    Signer: $($sig.SignerCertificate.Subject)"
+            Write-Host "    Status: $($sig.Status)"
+          }
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-signed
+          path: signed/

@@ -103,6 +103,14 @@ export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
                 src={url}
                 title="Preview"
                 className="h-full w-full border-0"
+                // sandbox grants the bare minimum for a dev preview: scripts,
+                // same-origin (cookies/storage for the previewed app), forms,
+                // popups for "open in new tab". Critically OMITS
+                // `allow-top-navigation*` — without it the iframe cannot
+                // navigate the parent Tauri webview to an attacker origin,
+                // which would otherwise expose `window.__TAURI__` IPC.
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+                referrerPolicy="no-referrer"
                 allow="clipboard-read; clipboard-write; fullscreen"
               />
             ) : (

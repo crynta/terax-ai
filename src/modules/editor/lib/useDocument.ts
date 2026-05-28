@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 
 type ReadResult =
   | { kind: "text"; content: string; size: number }
@@ -22,7 +23,9 @@ type Options = {
 export function useDocument({ path, onDirtyChange }: Options) {
   const [doc, setDoc] = useState<DocumentState>({ status: "loading" });
   const [dirty, setDirty] = useState(false);
-  const [reloadCounter, setReloadCounter] = useState(0);
+
+  const autoSave = usePreferencesStore((s) => s.editorAutoSave);
+  const autoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
 
   // Track the saved buffer so we can detect changes cheaply.
   const savedRef = useRef<string>("");
@@ -31,6 +34,30 @@ export function useDocument({ path, onDirtyChange }: Options) {
   useEffect(() => {
     dirtyRef.current = dirty;
   }, [dirty]);
+
+  const autoSaveRef = useRef({ autoSave, autoSaveDelay });
+  autoSaveRef.current = { autoSave, autoSaveDelay };
+
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearAutoSaveTimer = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  const saveNow = useCallback(async () => {
+    const content = bufferRef.current;
+    await invoke("fs_write_file", {
+      path,
+      content,
+      workspace: currentWorkspaceEnv(),
+      source: "editor",
+    });
+    savedRef.current = content;
+    setDirty(false);
+  }, [path]);
 
   // Notify parent of dirty transitions.
   const onDirtyChangeRef = useRef(onDirtyChange);
@@ -75,28 +102,58 @@ export function useDocument({ path, onDirtyChange }: Options) {
     return () => {
       cancelled = true;
     };
-  }, [path, reloadCounter]);
+  }, [path]);
 
-  /** Re-read the file from disk. No-op (silent) if the buffer is dirty —
-   *  callers shouldn't clobber unsaved user edits. Returns whether reload ran. */
+  // Skipped while dirty (never clobber unsaved edits) and when disk already
+  // matches the buffer (self-save / duplicate watcher event → no re-render).
   const reload = useCallback((): boolean => {
     if (dirtyRef.current) return false;
-    setReloadCounter((n) => n + 1);
+    void invoke<ReadResult>("fs_read_file", {
+      path,
+      workspace: currentWorkspaceEnv(),
+    })
+      .then((res) => {
+        if (res.kind === "text") {
+          if (res.content === savedRef.current) return;
+          savedRef.current = res.content;
+          bufferRef.current = res.content;
+          setDirty(false);
+          setDoc({ status: "ready", content: res.content, size: res.size });
+        } else if (res.kind === "binary") {
+          setDoc({ status: "binary", size: res.size });
+        } else if (res.kind === "toolarge") {
+          setDoc({ status: "toolarge", size: res.size, limit: res.limit });
+        }
+      })
+      .catch((e) => setDoc({ status: "error", message: String(e) }));
     return true;
-  }, []);
-
-  const onChange = useCallback((next: string) => {
-    bufferRef.current = next;
-    setDirty(next !== savedRef.current);
-  }, []);
+  }, [path]);
 
   const save = useCallback(async () => {
+    clearAutoSaveTimer();
     if (!dirty) return;
-    const content = bufferRef.current;
-    await invoke("fs_write_file", { path, content, workspace: currentWorkspaceEnv() });
-    savedRef.current = content;
-    setDirty(false);
-  }, [path, dirty]);
+    await saveNow();
+  }, [dirty, clearAutoSaveTimer, saveNow]);
+
+  const onChange = useCallback(
+    (next: string) => {
+      bufferRef.current = next;
+      const isDirty = next !== savedRef.current;
+      setDirty(isDirty);
+
+      clearAutoSaveTimer();
+
+      const { autoSave: active, autoSaveDelay: delay } = autoSaveRef.current;
+      if (active && isDirty) {
+        timeoutRef.current = setTimeout(() => {
+          saveNow().catch((e) => console.error("[autosave]", e));
+        }, delay);
+      }
+    },
+    [clearAutoSaveTimer, saveNow],
+  );
+
+  useEffect(() => clearAutoSaveTimer, [path, clearAutoSaveTimer]);
 
   return { doc, dirty, onChange, save, reload };
 }

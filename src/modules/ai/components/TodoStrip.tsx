@@ -1,4 +1,5 @@
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import {
   Tooltip,
@@ -33,19 +34,21 @@ export function TodoStrip({ sessionId }: Props) {
   const pct = Math.round((completed / todos.length) * 100);
 
   return (
-    <div className="shrink-0 border-t border-border/80 bg-muted/20 px-3 py-1.5">
-      <div className="my-1.5 flex items-center gap-2">
+    <div className="flex flex-col min-h-0 shrink-0 border-t-2 border-border/40 bg-muted/80 px-3 py-1.5 max-h-[35%] shadow-[0_-4px_12px_-8px_rgba(0,0,0,0.2)]">
+      <div className="my-1.5 flex items-center gap-2 shrink-0">
         <span className="text-[11px] font-medium text-foreground">Todos</span>
         <Progress value={pct} className="h-1 flex-1" />
         <span className="text-[11px] tabular-nums font-mono text-muted-foreground">
           {completed}/{todos.length}
         </span>
       </div>
-      <ul className="flex flex-col gap-0.5">
-        {todos.map((t) => (
-          <TodoRow key={t.id} todo={t} />
-        ))}
-      </ul>
+      <ScrollArea className="flex-1 min-h-0">
+        <ul className="flex flex-col gap-0.5">
+          {todos.map((t) => (
+            <TodoRow key={t.id} todo={t} />
+          ))}
+        </ul>
+      </ScrollArea>
     </div>
   );
 }

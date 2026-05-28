@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
@@ -7,20 +7,16 @@ use std::time::Duration;
 use serde::Serialize;
 
 use super::run_blocking_inner;
+use crate::modules::fs::to_canon;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
-/// A persistent agent shell session. Each `run` call executes through the
-/// user's login shell with the session's tracked cwd. Cwd persists across
-/// calls; environment overrides via `export` do not (this is an agent shell,
-/// not an interactive REPL — interactive tools must NOT be invoked here, use
-/// the background process API for long-running work).
 pub struct ShellSession {
     pub cwd: Mutex<String>,
     pub workspace: WorkspaceEnv,
-    /// While pristine (no `run` yet), caller-provided cwd hints reseed `cwd`.
     pub pristine: AtomicBool,
     #[allow(dead_code)]
     pub started_at_ms: u64,
+    sentinel: String,
 }
 
 #[derive(Serialize)]
@@ -33,10 +29,20 @@ pub struct SessionRunOutput {
     pub cwd_after: String,
 }
 
-/// Sentinel emitted on stdout immediately before the command exits, so we can
-/// recover the post-command cwd. Picks an unlikely literal — collisions with
-/// real command output would corrupt cwd tracking.
-const CWD_SENTINEL: &str = "__TERAX_CWD__";
+// Sentinel is randomized per session so untrusted command stdout can't spoof a
+// cwd update by emitting the marker literal.
+static SENTINEL_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn generate_sentinel() -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let counter = SENTINEL_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let pid = std::process::id() as u64;
+    let mix = nanos ^ counter.rotate_left(17) ^ pid.rotate_left(31);
+    format!("__TERAX_CWD_{:016x}_{:016x}__", mix, counter)
+}
 
 impl ShellSession {
     pub fn new(initial_cwd: String, workspace: WorkspaceEnv) -> Self {
@@ -49,6 +55,7 @@ impl ShellSession {
             workspace,
             pristine: AtomicBool::new(true),
             started_at_ms,
+            sentinel: generate_sentinel(),
         }
     }
 
@@ -78,7 +85,7 @@ impl ShellSession {
         }
         let cwd = self.current_cwd();
         let effective_workspace = workspace_hint.unwrap_or_else(|| self.workspace.clone());
-        let wrapped = wrap_with_sentinel(&trimmed, &effective_workspace);
+        let wrapped = wrap_with_sentinel(&trimmed, &effective_workspace, &self.sentinel);
 
         let (tx, rx) = mpsc::channel::<Result<super::CommandOutput, String>>();
         let cwd_for_thread = cwd.clone();
@@ -93,14 +100,14 @@ impl ShellSession {
         let raw = rx.recv().map_err(|e| e.to_string())??;
         self.pristine.store(false, Ordering::Release);
 
-        let (stdout_clean, cwd_after) = strip_cwd_sentinel(&raw.stdout, &cwd);
+        let (stdout_clean, cwd_after) = strip_cwd_sentinel(&raw.stdout, &cwd, &self.sentinel);
         if let Some(ref new_cwd) = cwd_after {
             let p = resolve_path(new_cwd, &self.workspace);
             if p.is_dir() {
                 *self.cwd.lock().unwrap() = new_cwd.clone();
             }
         }
-        let resolved_cwd = self.current_cwd().replace('\\', "/");
+        let resolved_cwd = to_canon(self.current_cwd());
 
         Ok(SessionRunOutput {
             stdout: stdout_clean,
@@ -113,35 +120,76 @@ impl ShellSession {
     }
 }
 
-fn wrap_posix_with_sentinel(command: &str) -> String {
+fn wrap_posix_with_sentinel(command: &str, sentinel: &str) -> String {
     format!(
-        "{command}\n__terax_rc=$?\nprintf '\\n%s%s\\n' '{CWD_SENTINEL}' \"$(pwd)\"\nexit $__terax_rc\n",
+        "{command}\n__terax_rc=$?\nprintf '\\n%s%s\\n' '{sentinel}' \"$(pwd)\"\nexit $__terax_rc\n",
     )
 }
 
-fn wrap_with_sentinel(command: &str, workspace: &WorkspaceEnv) -> String {
+fn wrap_with_sentinel(command: &str, workspace: &WorkspaceEnv, sentinel: &str) -> String {
     if workspace.is_wsl() {
-        return wrap_posix_with_sentinel(command);
+        return wrap_posix_with_sentinel(command, sentinel);
     }
     #[cfg(unix)]
     {
-        wrap_posix_with_sentinel(command)
+        wrap_posix_with_sentinel(command, sentinel)
     }
     #[cfg(windows)]
     {
         format!(
-        "{command}\n$__terax_rc = if ($null -ne $LASTEXITCODE) {{ $LASTEXITCODE }} elseif ($?) {{ 0 }} else {{ 1 }}\n\"`n{CWD_SENTINEL}$($PWD.Path)\"\nexit $__terax_rc\n",
+        "{command}\n$__terax_rc = if ($null -ne $LASTEXITCODE) {{ $LASTEXITCODE }} elseif ($?) {{ 0 }} else {{ 1 }}\n\"`n{sentinel}$($PWD.Path)\"\nexit $__terax_rc\n",
     )
     }
 }
 
-fn strip_cwd_sentinel(stdout: &str, _fallback: &str) -> (String, Option<String>) {
-    if let Some(idx) = stdout.rfind(CWD_SENTINEL) {
+fn strip_cwd_sentinel(stdout: &str, _fallback: &str, sentinel: &str) -> (String, Option<String>) {
+    if let Some(idx) = stdout.rfind(sentinel) {
         let before = &stdout[..idx];
-        let after = &stdout[idx + CWD_SENTINEL.len()..];
+        let after = &stdout[idx + sentinel.len()..];
         let cwd_line = after.lines().next().unwrap_or("").trim();
         let cleaned = before.trim_end_matches('\n').to_string();
         return (cleaned, Some(cwd_line.to_string()));
     }
     (stdout.to_string(), None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sentinels_are_unique_per_session() {
+        let a = ShellSession::new("/tmp".into(), WorkspaceEnv::Local);
+        let b = ShellSession::new("/tmp".into(), WorkspaceEnv::Local);
+        assert_ne!(a.sentinel, b.sentinel);
+        assert!(a.sentinel.starts_with("__TERAX_CWD_"));
+        assert!(a.sentinel.ends_with("__"));
+        assert!(a.sentinel.len() > 20);
+    }
+
+    #[test]
+    fn strip_uses_session_sentinel_only() {
+        let s = ShellSession::new("/tmp".into(), WorkspaceEnv::Local);
+        let attacker = "__TERAX_CWD_0000000000000000_0000000000000000__/evil";
+        let trailer = format!("\n{}/real\n", s.sentinel);
+        let stdout = format!("{attacker}{trailer}");
+        let (clean, cwd) = strip_cwd_sentinel(&stdout, "/fallback", &s.sentinel);
+        assert_eq!(cwd.as_deref(), Some("/real"));
+        assert!(clean.contains(attacker), "attacker payload survives in stdout");
+    }
+
+    #[test]
+    fn strip_returns_none_when_session_sentinel_absent() {
+        let s = ShellSession::new("/tmp".into(), WorkspaceEnv::Local);
+        let stdout = "some output\n__TERAX_CWD_aaaa_bbbb__/spoof\nmore\n";
+        let (_, cwd) = strip_cwd_sentinel(stdout, "/fallback", &s.sentinel);
+        assert!(cwd.is_none(), "foreign sentinel must not match");
+    }
+
+    #[test]
+    fn wrap_embeds_session_sentinel() {
+        let s = ShellSession::new("/tmp".into(), WorkspaceEnv::Local);
+        let wrapped = wrap_with_sentinel("echo hi", &WorkspaceEnv::Local, &s.sentinel);
+        assert!(wrapped.contains(&s.sentinel));
+    }
 }

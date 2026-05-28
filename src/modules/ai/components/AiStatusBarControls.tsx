@@ -13,6 +13,7 @@ import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
   Add01Icon,
   AiBookIcon,
+  AppleIcon,
   ArrowDown01Icon,
   ArrowUpIcon,
   BrainIcon,
@@ -28,9 +29,11 @@ import {
   GlobeIcon,
   GoogleGeminiIcon,
   Grok02Icon,
+  MistralIcon,
   Message01Icon,
   Mic01Icon,
   PlugIcon,
+  ServerStack01Icon,
   Search01Icon,
   Settings01Icon,
   StarIcon,
@@ -63,9 +66,12 @@ const PROVIDER_ICON = {
   cerebras: CpuIcon,
   groq: FlashIcon,
   deepseek: DeepseekIcon,
+  mistral: MistralIcon,
   openrouter: GlobeIcon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
+  mlx: AppleIcon,
+  ollama: ServerStack01Icon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
@@ -334,9 +340,9 @@ function ModelDropdown() {
           />
         </div>
 
-        <div className="flex">
+        <div className="flex max-h-104 min-h-0">
           {/* Provider sidebar — configured first, unconfigured muted, no dividers. */}
-          <div className="flex w-11 flex-col gap-0.5 border-r border-border/70 bg-muted/20 py-1.5">
+          <div className="flex w-11 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/70 bg-muted/20 py-1.5">
             <ProviderPill
               icon={AiBookIcon}
               title="All providers"
@@ -362,7 +368,7 @@ function ModelDropdown() {
           </div>
 
           {/* Models list */}
-          <div className="flex-1 overflow-y-auto py-1 max-h-[26rem]">
+          <div className="min-h-0 flex-1 overflow-y-auto py-1">
             {activeProvider !== null ? (
               <ProviderHeader providerId={activeProvider} />
             ) : null}

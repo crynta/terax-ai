@@ -1,3 +1,4 @@
+import { redo, undo } from "@codemirror/commands";
 import {
   findNext,
   findPrevious,
@@ -15,7 +16,7 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { Prec } from "@codemirror/state";
+import { Prec, type Extension } from "@codemirror/state";
 import { vim } from "@replit/codemirror-vim";
 import {
   buildSharedExtensions,
@@ -41,6 +42,9 @@ export type EditorPaneHandle = {
   getPath: () => string;
   /** Re-read the file from disk. Skips silently if the buffer is dirty. */
   reload: () => boolean;
+  /** Apply CodeMirror's undo/redo commands. */
+  undo: () => void;
+  redo: () => void;
 };
 
 type Props = {
@@ -71,7 +75,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       let cancelled = false;
       const refresh = async () => {
         const provider = usePreferencesStore.getState().autocompleteProvider;
-        if (provider === "lmstudio") {
+        if (provider === "lmstudio" || provider === "mlx" || provider === "ollama") {
           apiKeyRef.current = null;
           return;
         }
@@ -130,12 +134,28 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         inlineCompletion({
           getPrefs: () => {
             const s = usePreferencesStore.getState();
+            const p = s.autocompleteProvider;
+            const modelId =
+              p === "lmstudio"
+                ? s.lmstudioModelId
+                : p === "mlx"
+                  ? s.mlxModelId
+                  : p === "ollama"
+                    ? s.ollamaModelId
+                    : p === "openai-compatible"
+                      ? s.openaiCompatibleModelId
+                      : p === "openrouter"
+                        ? s.openrouterModelId
+                        : s.autocompleteModelId;
             return {
               enabled: s.autocompleteEnabled,
-              provider: s.autocompleteProvider,
-              modelId: s.autocompleteModelId,
+              provider: p,
+              modelId,
               apiKey: apiKeyRef.current,
               lmstudioBaseURL: s.lmstudioBaseURL,
+              mlxBaseURL: s.mlxBaseURL,
+              ollamaBaseURL: s.ollamaBaseURL,
+              openaiCompatibleBaseURL: s.openaiCompatibleBaseURL,
             };
           },
           getPath: () => pathRef.current,
@@ -172,12 +192,22 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       let cancelled = false;
       const ext = path.split(".").pop()?.toLowerCase() ?? null;
       languageRef.current = ext;
-      resolveLanguage(path).then((ext) => {
+      const resolve = async (): Promise<Extension> => {
+        if (path.toLowerCase().endsWith(".terax-theme")) {
+          const [{ json }, { colorSwatches }] = await Promise.all([
+            import("@codemirror/lang-json"),
+            import("./lib/colorSwatches"),
+          ]);
+          return [json(), colorSwatches()];
+        }
+        return (await resolveLanguage(path)) ?? [];
+      };
+      void resolve().then((extension) => {
         if (cancelled) return;
         const view = cmRef.current?.view;
         if (!view) return;
         view.dispatch({
-          effects: languageCompartment.reconfigure(ext ?? []),
+          effects: languageCompartment.reconfigure(extension),
         });
       });
       return () => {
@@ -225,6 +255,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         },
         getPath: () => path,
         reload: () => reloadRef.current(),
+        undo: () => {
+          const view = cmRef.current?.view;
+          if (view) undo(view);
+        },
+        redo: () => {
+          const view = cmRef.current?.view;
+          if (view) redo(view);
+        },
       }),
       [path],
     );

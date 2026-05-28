@@ -17,6 +17,8 @@ export type ShortcutId =
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
+  | "pane.source"
+  | "terminal.clear"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
@@ -27,15 +29,19 @@ export type ShortcutId =
   | "ai.askSelection"
   | "shortcuts.open"
   | "settings.open"
-  | "sidebar.toggle";
+  | "sidebar.toggle"
+  | "editor.undo"
+  | "editor.redo";
 
 export type ShortcutGroup =
   | "General"
   | "Tabs"
   | "Panes"
+  | "Terminal"
   | "Search"
   | "AI"
-  | "View";
+  | "View"
+  | "Editor";
 
 export type KeyBinding = {
   key: string;
@@ -119,6 +125,21 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus previous pane",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
+  },  
+  {
+    id: "pane.source",
+    label: "Toggle source panel",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
+  },
+  {
+    id: "terminal.clear",
+    label: "Clear terminal",
+    group: "Terminal",
+    // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
+    // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
+    // unbound and let users assign their own in settings.
+    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
   },
   {
     id: "tab.next",
@@ -160,7 +181,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "ai.askSelection",
     label: "Ask AI about selection",
     group: "AI",
-    defaultBindings: [{ [MOD_PROP]: true, key: "l" }],
+    defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
   },
   {
     id: "sidebar.toggle",
@@ -200,15 +221,34 @@ export const SHORTCUTS: Shortcut[] = [
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, key: "0" }],
   },
+  // Editor entries are display-only: CodeMirror's historyKeymap binds these
+  // keys natively. We register them here so the shortcuts dialog can surface
+  // them — they don't have App-level handlers, so `useGlobalShortcuts` falls
+  // through without `preventDefault`, leaving CodeMirror to handle the event.
+  // Also excluded from the customization UI in ShortcutsSection.
+  {
+    id: "editor.undo",
+    label: "Undo",
+    group: "Editor",
+    defaultBindings: [{ [MOD_PROP]: true, key: "z" }],
+  },
+  {
+    id: "editor.redo",
+    label: "Redo",
+    group: "Editor",
+    defaultBindings: [{ [MOD_PROP]: true, key: "y" }],
+  },
 ];
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
   "Panes",
+  "Terminal",
   "View",
   "Search",
   "AI",
+  "Editor",
 ];
 
 /**

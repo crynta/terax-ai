@@ -37,7 +37,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const { resolvedTheme } = useTheme();
+    const { resolvedMode, themeId, customThemes } = useTheme();
 
     const session = useTerminalSession({
       leafId,
@@ -54,7 +54,7 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       // Defer one frame so CSS-variable token resolution sees the new class.
       const id = requestAnimationFrame(() => session.applyTheme());
       return () => cancelAnimationFrame(id);
-    }, [resolvedTheme, session]);
+    }, [resolvedMode, themeId, customThemes, session]);
 
     useImperativeHandle(
       ref,

@@ -6,7 +6,11 @@ export {
   type TerminalTab,
   type EditorTab,
   type PreviewTab,
+  type MarkdownTab,
   type AiDiffTab,
+  type GitDiffTab,
+  type GitHistoryTab,
+  type GitCommitFileDiffTab,
   type AiDiffStatus,
   type TabPatch,
 } from "./lib/useTabs";

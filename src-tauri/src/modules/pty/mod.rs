@@ -1,3 +1,4 @@
+mod agent_detect;
 mod da_filter;
 #[cfg(windows)]
 mod job;
@@ -13,7 +14,7 @@ use std::thread;
 use portable_pty::PtySize;
 use tauri::ipc::{Channel, Response};
 
-use crate::modules::workspace::WorkspaceEnv;
+use crate::modules::workspace::{authorize_user_spawn_cwd, WorkspaceEnv, WorkspaceRegistry};
 use session::Session;
 
 pub struct PtyState {
@@ -33,8 +34,11 @@ impl Default for PtyState {
 }
 
 #[tauri::command]
-pub fn pty_open(
-    state: tauri::State<PtyState>,
+#[allow(clippy::too_many_arguments)]
+pub async fn pty_open(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, PtyState>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
@@ -43,12 +47,23 @@ pub fn pty_open(
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
-    let (session, _) =
-        session::spawn(cols, rows, cwd, workspace, on_data, on_exit).map_err(|e| {
-            log::error!("pty_open failed: {e}");
-            e
-        })?;
+    authorize_user_spawn_cwd(&registry, cwd.as_deref(), &workspace).map_err(|e| {
+        log::warn!("pty_open: cwd rejected: {e}");
+        e
+    })?;
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
+    let session = tauri::async_runtime::spawn_blocking(move || {
+        session::spawn(id, app, cols, rows, cwd, workspace, on_data, on_exit).map(|(s, _)| s)
+    })
+    .await
+    .map_err(|e| {
+        log::error!("pty_open join failed: {e}");
+        e.to_string()
+    })?
+    .map_err(|e| {
+        log::error!("pty_open failed: {e}");
+        e
+    })?;
     state.sessions.write().unwrap().insert(id, session);
     log::info!("pty opened id={id} cols={cols} rows={rows}");
     Ok(id)
@@ -125,17 +140,13 @@ pub fn pty_close(state: tauri::State<PtyState>, id: u32) -> Result<(), String> {
             log::debug!("pty_close: kill id={id} returned {e}");
         }
         log::info!("pty closed id={id}");
-        // Drop the Arc on a detached thread. On Windows `MasterPty`'s Drop
-        // calls `ClosePseudoConsole`, which can block until conhost finishes
-        // draining its output buffer. Doing it here would freeze the Tauri
-        // worker thread that handled this command — and on Windows that
-        // sometimes manifests as the closed pane refusing to disappear from
-        // the React tree because subsequent IPC stalls behind it.
+        // Detached: on Windows `ClosePseudoConsole` can block until conhost
+        // drains, which would freeze this Tauri worker thread and stall IPC.
         thread::Builder::new()
             .name(format!("terax-pty-drop-{id}"))
             .spawn(move || {
                 let t0 = std::time::Instant::now();
-                drop(s);
+                session::drop_session(s);
                 log::info!(
                     "pty session id={id} dropped in {}ms",
                     t0.elapsed().as_millis()
@@ -146,4 +157,28 @@ pub fn pty_close(state: tauri::State<PtyState>, id: u32) -> Result<(), String> {
         log::debug!("pty_close: unknown id={id}");
     }
     Ok(())
+}
+
+// A fresh webview load orphans the previous frontend's sessions in this still
+// running process; reap them on boot before any new tab spawns.
+#[tauri::command]
+pub fn pty_close_all(state: tauri::State<PtyState>) -> Result<usize, String> {
+    let drained: Vec<(u32, Arc<Session>)> = {
+        let mut sessions = state.sessions.write().unwrap();
+        sessions.drain().collect()
+    };
+    let count = drained.len();
+    for (id, s) in drained {
+        if let Err(e) = s.killer.lock().unwrap().kill() {
+            log::debug!("pty_close_all: kill id={id} returned {e}");
+        }
+        thread::Builder::new()
+            .name(format!("terax-pty-drop-{id}"))
+            .spawn(move || session::drop_session(s))
+            .expect("spawn pty drop thread");
+    }
+    if count > 0 {
+        log::info!("pty_close_all: reaped {count} orphaned session(s)");
+    }
+    Ok(count)
 }
