@@ -30,6 +30,7 @@ import {
   setTerminalLetterSpacing,
   setTerminalFontSize,
   setTerminalScrollback,
+  setTerminalAutoSuggestEnabled,
   setTerminalWebglEnabled,
   setVimMode,
   setZoomLevel,
@@ -82,6 +83,9 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const terminalAutoSuggestEnabled = usePreferencesStore(
+    (s) => s.terminalAutoSuggestEnabled,
+  );
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
 
@@ -240,6 +244,15 @@ export function GeneralSection() {
           <Switch
             checked={terminalWebglEnabled}
             onCheckedChange={(v) => void setTerminalWebglEnabled(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Auto-suggestions"
+          description="Show inline history-based auto-suggestions as ghost text. Press Tab to accept."
+        >
+          <Switch
+            checked={terminalAutoSuggestEnabled}
+            onCheckedChange={(v) => void setTerminalAutoSuggestEnabled(v)}
           />
         </SettingRow>
         <SettingRow

@@ -10,6 +10,7 @@ import {
   Settings01Icon,
   UserMultiple02Icon,
   KeyboardIcon,
+  MagicWand01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -19,6 +20,7 @@ import { AgentsSection } from "./sections/AgentsSection";
 import { GeneralSection } from "./sections/GeneralSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
+import { SuggestionsSection } from "./sections/SuggestionsSection";
 import { ThemesSection } from "./sections/ThemesSection";
 
 const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, component: () => JSX.Element }[] =
@@ -26,6 +28,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, compo
     { id: "general", label: "General", icon: Settings01Icon, component: GeneralSection },
     { id: "themes", label: "Themes", icon: PaintBoardIcon, component: ThemesSection },
     { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon, component: ShortcutsSection },
+    { id: "suggestions", label: "Suggestions", icon: MagicWand01Icon, component: SuggestionsSection },
     { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
     { id: "agents", label: "Agents", icon: UserMultiple02Icon, component: AgentsSection },
     { id: "about", label: "About", icon: InformationCircleIcon, component: AboutSection },
@@ -35,6 +38,7 @@ const VALID_TABS: SettingsTab[] = [
   "general",
   "themes",
   "shortcuts",
+  "suggestions",
   "models",
   "agents",
   "about",

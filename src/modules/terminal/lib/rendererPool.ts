@@ -8,6 +8,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
+import { AutoSuggestAddon } from "./AutoSuggestAddon";
 import { readClipboardText, writeClipboardText } from "./clipboard";
 import {
   terminalDeleteSequence,
@@ -42,6 +43,7 @@ export type Slot = {
   readonly fitAddon: FitAddon;
   readonly searchAddon: SearchAddon;
   readonly serializeAddon: SerializeAddon;
+  readonly autoSuggestAddon: AutoSuggestAddon;
   readonly host: HTMLDivElement;
   webglAddon: WebglAddon | null;
   webglCanvases: HTMLCanvasElement[];
@@ -132,9 +134,11 @@ function createSlot(): Slot {
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
   const serializeAddon = new SerializeAddon();
+  const autoSuggestAddon = new AutoSuggestAddon();
   term.loadAddon(fitAddon);
   term.loadAddon(searchAddon);
   term.loadAddon(serializeAddon);
+  term.loadAddon(autoSuggestAddon);
   term.loadAddon(
     new WebLinksAddon((_e, uri) => openUrl(uri).catch(console.error)),
   );
@@ -151,6 +155,7 @@ function createSlot(): Slot {
     fitAddon,
     searchAddon,
     serializeAddon,
+    autoSuggestAddon,
     host,
     webglAddon: null,
     webglCanvases: [],
@@ -235,6 +240,24 @@ function createSlot(): Slot {
       }
       event.preventDefault();
       return false;
+    }
+    // Tab — accept auto-suggestion if one is active.
+    if (
+      event.key === "Tab" &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      event.type === "keydown" &&
+      usePreferencesStore.getState().terminalAutoSuggestEnabled
+    ) {
+      const accepted = slot.autoSuggestAddon.acceptSuggestion((data) => {
+        bridge.writeToPty(data);
+      });
+      if (accepted) {
+        event.preventDefault();
+        return false;
+      }
     }
     return true;
   });
@@ -337,6 +360,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   slot.term.options.disableStdin = p.shellExited;
   slot.term.clear();
   slot.term.reset();
+  slot.autoSuggestAddon.resetInput();
 
   if (
     p.cols > 0 &&
