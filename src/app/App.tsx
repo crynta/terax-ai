@@ -1489,6 +1489,7 @@ export default function App() {
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
                         onOpenMarkdownPreview={openMarkdownPreview}
+                        onCd={sendCd}
                       />
                     ) : (
                       <SourceControlPanel
