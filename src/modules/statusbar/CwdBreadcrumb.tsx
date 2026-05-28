@@ -36,7 +36,9 @@ type Props = {
 function dirname(path: string): string {
   const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   if (i <= 0) return "/";
-  return path.slice(0, i);
+  const res = path.slice(0, i);
+  if (/^[A-Za-z]:$/.test(res)) return `${res}/`;
+  return res;
 }
 
 function basename(path: string): string {

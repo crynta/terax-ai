@@ -48,7 +48,13 @@ pub fn fs_read_dir(
             // silently drop them from the listing.
             let (meta, was_symlink) = match std::fs::metadata(entry.path()) {
                 Ok(m) => (Some(m), false),
-                Err(_) => (entry.metadata().ok(), true),
+                Err(_) => match entry.metadata() {
+                    Ok(m) => {
+                        let is_sym = m.file_type().is_symlink();
+                        (Some(m), is_sym)
+                    }
+                    Err(_) => (None, false),
+                },
             };
             let meta = meta?;
 

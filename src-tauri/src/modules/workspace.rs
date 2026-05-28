@@ -236,9 +236,16 @@ pub struct WslDistro {
 
 #[cfg(windows)]
 pub fn resolve_path(path: &str, workspace: &WorkspaceEnv) -> PathBuf {
+    let mut normalized = path.replace('\\', "/");
+    if normalized.starts_with('/') && normalized.len() >= 3 {
+        let chars: Vec<char> = normalized.chars().collect();
+        if chars[1].is_ascii_alphabetic() && chars[2] == ':' {
+            normalized = normalized[1..].to_string();
+        }
+    }
     match workspace {
-        WorkspaceEnv::Local => PathBuf::from(path),
-        WorkspaceEnv::Wsl { distro } => wsl_path_to_host(distro, path),
+        WorkspaceEnv::Local => PathBuf::from(normalized),
+        WorkspaceEnv::Wsl { distro } => wsl_path_to_host(distro, &normalized),
     }
 }
 
@@ -573,6 +580,18 @@ mod tests {
         assert_eq!(
             resolve_path(path, &WorkspaceEnv::Local),
             PathBuf::from(path)
+        );
+    }
+
+    #[test]
+    fn resolve_path_normalizes_leading_slash_on_windows() {
+        assert_eq!(
+            resolve_path("/D:/Documents", &WorkspaceEnv::Local),
+            PathBuf::from("D:/Documents")
+        );
+        assert_eq!(
+            resolve_path("/C:/", &WorkspaceEnv::Local),
+            PathBuf::from("C:/")
         );
     }
 

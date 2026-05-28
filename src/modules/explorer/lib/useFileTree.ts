@@ -32,7 +32,9 @@ export function joinPath(parent: string, name: string): string {
 export function dirname(path: string): string {
   const i = path.lastIndexOf("/");
   if (i <= 0) return "/";
-  return path.slice(0, i);
+  const res = path.slice(0, i);
+  if (/^[A-Za-z]:$/.test(res)) return `${res}/`;
+  return res;
 }
 
 const EXPANSION_CACHE_LIMIT = 8;
