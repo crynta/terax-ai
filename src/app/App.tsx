@@ -118,6 +118,22 @@ import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 
+type TuiWaitResult = "ready" | "gone" | "timeout";
+
+async function waitForClaudeTuiReady(
+  readBuf: () => string | null,
+  timeoutMs = 8000,
+): Promise<TuiWaitResult> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const buf = readBuf();
+    if (buf === null) return "gone";
+    if (buf.includes("shortcuts") || buf.includes("? for")) return "ready";
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  return "timeout";
+}
+
 function dirname(path: string | null): string | null {
   if (!path) return null;
   const normalized = path.replace(/\\/g, "/");
@@ -1264,22 +1280,43 @@ export default function App() {
         return true;
       },
       spawnManagedAgent: (prompt: string, sessionId: string) => {
-        const oneLine = prompt.replace(/\s*\r?\n\s*/g, " ").trim();
-        if (!oneLine) return null;
+        const trimmed = prompt.trim();
+        if (!trimmed) return null;
+        const oneLine = trimmed.replace(/\s*\r?\n\s*/g, " ");
         const cwd = findCwd();
         const short = oneLine.length > 32 ? `${oneLine.slice(0, 32)}…` : oneLine;
         const { tabId, leafId } = newAgentTab(cwd ?? undefined, `claude · ${short}`);
         useManagedAgentsStore
           .getState()
           .register({ leafId, tabId, sessionId, task: oneLine, cwd });
-        // Claude reads settings.json at startup, so the review-loop hooks must
-        // be in place before the command runs. Best-effort: never block spawn.
         const hooksReady = invoke("agent_enable_claude_hooks").catch(() => {});
-        void Promise.all([whenSessionReady(leafId), hooksReady]).then(() => {
-          if (writeToSession(leafId, `claude ${quoteShellArg(oneLine)}\r`)) {
-            useManagedAgentsStore.getState().setPhase(leafId, "working");
+        void (async () => {
+          await Promise.all([whenSessionReady(leafId), hooksReady]);
+          if (!writeToSession(leafId, "claude\r")) {
+            useManagedAgentsStore.getState().remove(leafId);
+            return;
           }
-        });
+          const readBuf = () => {
+            const term = terminalRefs.current.get(leafId);
+            return term ? term.getBuffer(120) : null;
+          };
+          const result = await waitForClaudeTuiReady(readBuf);
+          if (result !== "ready") {
+            if (result === "timeout") {
+              console.warn(
+                "[terax] Claude TUI did not appear in time; aborting prompt send",
+              );
+            }
+            useManagedAgentsStore.getState().remove(leafId);
+            return;
+          }
+          if (!writeToSession(leafId, `\x1b[200~${trimmed}\x1b[201~`)) {
+            useManagedAgentsStore.getState().remove(leafId);
+            return;
+          }
+          setTimeout(() => writeToSession(leafId, "\r"), 120);
+          useManagedAgentsStore.getState().setPhase(leafId, "working");
+        })();
         return { tabId, leafId };
       },
       readLeafBuffer: (leafId: number) => {
