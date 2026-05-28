@@ -1,7 +1,9 @@
 import { useTheme } from "@/modules/theme";
 import type { SearchAddon } from "@xterm/addon-search";
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { quoteShellArg } from "@/lib/shellQuote";
 import { useTerminalSession } from "./lib/useTerminalSession";
+import { useTerminalDragDrop } from "./lib/useTerminalDragDrop";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
@@ -56,6 +58,16 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       return () => cancelAnimationFrame(id);
     }, [resolvedMode, themeId, customThemes, session]);
 
+    const handleDrop = useCallback(
+      (paths: string[]) => {
+        const quoted = paths.map((p) => quoteShellArg(p)).join(" ");
+        session.write(quoted + " ");
+      },
+      [session],
+    );
+
+    const dropHovering = useTerminalDragDrop(containerRef, handleDrop);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -70,12 +82,20 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
     return (
       <div
         ref={containerRef}
-        className="zoom-exempt h-full w-full"
+        className="zoom-exempt relative h-full w-full"
         style={{
           visibility: visible ? "visible" : "hidden",
           pointerEvents: visible ? "auto" : "none",
         }}
-      />
+      >
+        {dropHovering && (
+          <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded border-2 border-dashed border-ring/70 bg-primary/10">
+            <span className="rounded-md bg-card/90 px-3 py-1.5 text-[12px] font-medium text-foreground shadow-sm">
+              Drop files here
+            </span>
+          </div>
+        )}
+      </div>
     );
   },
 );
