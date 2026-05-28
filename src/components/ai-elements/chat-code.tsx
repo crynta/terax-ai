@@ -14,6 +14,7 @@ import { createContext, memo, useContext, useEffect, useRef, useState } from "re
 
 import { Shimmer } from "./shimmer";
 import { highlight, isHighlightable, type HighlightedNode } from "./chat-code-lezer";
+import { MermaidCode } from "./mermaid-code";
 
 // True while the parent message is still streaming from the model. We hide
 // fenced-code contents during this phase: parsing partial code is wasted
@@ -39,7 +40,7 @@ const WINDOWS_SHELL = new Set([
   "batch",
 ]);
 const SHELL_LANGS = new Set([...POSIX_SHELL, ...WINDOWS_SHELL]);
-
+const DIAGRAM_LANGS = new Set(["mermaid"]);
 function shellPrompt(lang: string): string {
   if (WINDOWS_SHELL.has(lang)) return lang === "cmd" || lang === "bat" || lang === "batch" ? ">" : "PS>";
   return "$";
@@ -65,7 +66,9 @@ export function ChatCodeBlock({ code, lang }: ChatCodeBlockProps) {
   if (streaming) {
     return <GeneratingPlaceholder label={label} />;
   }
-
+  if (DIAGRAM_LANGS.has(label)) {
+    return <MermaidCode code={code} />
+  }
   if (SHELL_LANGS.has(label)) {
     return <CommandCard code={code} lang={label} />;
   }
