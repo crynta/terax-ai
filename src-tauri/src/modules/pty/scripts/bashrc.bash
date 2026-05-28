@@ -61,4 +61,8 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
 
   _terax_precmd
 fi
+
+_terax_img="${XDG_CACHE_HOME:-$HOME/.cache}/terax/shell-integration/img.sh"
+[ -f "$_terax_img" ] && . "$_terax_img"
+unset _terax_img
 :

@@ -60,3 +60,6 @@ function global:prompt {
     $global:LASTEXITCODE = $lec
     "$oscD$oscA$osc7${original}${oscB}"
 }
+
+$__teraxImg = Join-Path $env:USERPROFILE '.cache\terax\shell-integration\img.ps1'
+if (Test-Path -LiteralPath $__teraxImg) { . $__teraxImg }

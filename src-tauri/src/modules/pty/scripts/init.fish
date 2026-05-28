@@ -49,3 +49,8 @@ function __terax_preexec --on-event fish_preexec
     set -l cmd (string replace -ra '[\x00-\x1f\x7f]' ' ' -- "$argv")
     printf '\e]133;C;%s\e\\' (string sub -l 256 -- "$cmd")
 end
+
+set -l _terax_img "$HOME/.cache/terax/shell-integration/img.fish"
+if test -f "$_terax_img"
+    source "$_terax_img"
+end

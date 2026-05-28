@@ -4,6 +4,10 @@ use portable_pty::CommandBuilder;
 
 use crate::modules::workspace::{self, WorkspaceEnv};
 
+const IMG_SH: &str = include_str!("scripts/img.sh");
+const IMG_FISH: &str = include_str!("scripts/img.fish");
+const IMG_PS1: &str = include_str!("scripts/img.ps1");
+
 #[cfg(windows)]
 const BASHRC_SCRIPT: &str = include_str!("scripts/bashrc.bash");
 #[cfg(windows)]
@@ -217,6 +221,9 @@ mod unix {
         let home = dirs::home_dir().ok_or_else(|| "could not resolve home dir".to_string())?;
         let root = home.join(".cache").join("terax").join("shell-integration");
         fs::create_dir_all(&root).map_err(|e| format!("create {}: {e}", root.display()))?;
+        write_if_changed(&root.join("img.sh"), super::IMG_SH)?;
+        write_if_changed(&root.join("img.fish"), super::IMG_FISH)?;
+        write_if_changed(&root.join("img.ps1"), super::IMG_PS1)?;
         Ok(root)
     }
 
@@ -480,6 +487,7 @@ mod windows {
     }
 
     fn prepare_wsl_integration_dir(distro: &str, shell: &str) -> Result<(String, PathBuf), String> {
+        write_wsl_media_scripts(distro)?;
         let home = crate::modules::workspace::wsl_home(distro.to_string())?;
         let linux_dir = format!(
             "{}/.cache/terax/shell-integration/{shell}",
@@ -488,6 +496,20 @@ mod windows {
         let unc_dir = crate::modules::workspace::wsl_path_to_unc(distro, &linux_dir);
         fs::create_dir_all(&unc_dir).map_err(|e| format!("create {}: {e}", unc_dir.display()))?;
         Ok((linux_dir, unc_dir))
+    }
+
+    fn write_wsl_media_scripts(distro: &str) -> Result<(), String> {
+        let home = crate::modules::workspace::wsl_home(distro.to_string())?;
+        let linux_root = format!(
+            "{}/.cache/terax/shell-integration",
+            home.trim_end_matches('/')
+        );
+        let unc_root = crate::modules::workspace::wsl_path_to_unc(distro, &linux_root);
+        fs::create_dir_all(&unc_root).map_err(|e| format!("create {}: {e}", unc_root.display()))?;
+        write_if_changed(&unc_root.join("img.sh"), &normalize_script(super::IMG_SH))?;
+        write_if_changed(&unc_root.join("img.fish"), &normalize_script(super::IMG_FISH))?;
+        write_if_changed(&unc_root.join("img.ps1"), &normalize_script(super::IMG_PS1))?;
+        Ok(())
     }
 
     fn normalize_script(content: &str) -> String {
@@ -525,6 +547,7 @@ mod windows {
     }
 
     fn prepare_wsl_fish_conf_d(distro: &str) -> Result<(), String> {
+        write_wsl_media_scripts(distro)?;
         let home = crate::modules::workspace::wsl_home(distro.to_string())?;
         let linux_dir = format!("{}/.config/fish/conf.d", home.trim_end_matches('/'));
         let unc_dir = crate::modules::workspace::wsl_path_to_unc(distro, &linux_dir);
@@ -539,6 +562,9 @@ mod windows {
         let home = dirs::home_dir().ok_or_else(|| "could not resolve home dir".to_string())?;
         let root = home.join(".cache").join("terax").join("shell-integration");
         fs::create_dir_all(&root).map_err(|e| format!("create {}: {e}", root.display()))?;
+        write_if_changed(&root.join("img.sh"), super::IMG_SH)?;
+        write_if_changed(&root.join("img.fish"), super::IMG_FISH)?;
+        write_if_changed(&root.join("img.ps1"), super::IMG_PS1)?;
         Ok(root)
     }
 
