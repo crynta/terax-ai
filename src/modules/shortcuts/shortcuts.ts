@@ -150,7 +150,7 @@ export const SHORTCUTS: Shortcut[] = [
     // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
     // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
     // unbound and let users assign their own in settings.
-    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
+    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }, { ctrl: true, key: "Delete" }] : [{ ctrl: true, key: "Delete" }],
   },
   {
     id: "tab.next",
