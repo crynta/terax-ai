@@ -62,6 +62,7 @@ import {
   type SearchTarget,
 } from "@/modules/header";
 import { MarkdownStack } from "@/modules/markdown";
+import { MediaStack } from "@/modules/media";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -467,6 +468,7 @@ export default function App() {
   const isGitDiffTab =
     activeTab?.kind === "git-diff" || activeTab?.kind === "git-commit-file";
   const isGitHistoryTab = activeTab?.kind === "git-history";
+  const isMediaTab = activeTab?.kind === "media";
 
   // When an AI diff is approved (write_file applied to disk), reload any
   // open editor tabs for that path so the user sees the new content. We
@@ -1375,6 +1377,15 @@ export default function App() {
         aria-hidden={!isGitDiffTab}
       >
         <GitDiffStack tabs={tabs} activeId={activeId} />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0",
+          !isMediaTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isMediaTab}
+      >
+        <MediaStack tabs={tabs} activeId={activeId} />
       </div>
       <div
         className={cn(

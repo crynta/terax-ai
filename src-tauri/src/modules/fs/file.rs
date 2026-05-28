@@ -9,6 +9,7 @@ use tempfile::NamedTempFile;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+const MAX_MEDIA_BYTES: u64 = 200 * 1024 * 1024; // 200 MB
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 
 #[derive(Serialize)]
@@ -76,6 +77,30 @@ pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<Rea
         Ok(content) => Ok(ReadResult::Text { content, size }),
         Err(_) => Ok(ReadResult::Binary { size }),
     }
+}
+
+/// Read raw bytes from a file. Used by the media viewer to display
+/// images, video and audio via blob URLs. Tauri serialises Vec<u8> as
+/// base64 automatically.
+#[tauri::command]
+pub fn fs_read_bytes(path: String, workspace: Option<WorkspaceEnv>) -> Result<Vec<u8>, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
+    let meta = std::fs::metadata(&p).map_err(|e| {
+        log::debug!("fs_read_bytes stat({}) failed: {e}", p.display());
+        e.to_string()
+    })?;
+    if meta.len() > MAX_MEDIA_BYTES {
+        return Err(format!(
+            "file too large ({} bytes, limit is {} bytes)",
+            meta.len(),
+            MAX_MEDIA_BYTES
+        ));
+    }
+    std::fs::read(&p).map_err(|e| {
+        log::debug!("fs_read_bytes read({}) failed: {e}", p.display());
+        e.to_string()
+    })
 }
 
 #[derive(Serialize, Clone)]

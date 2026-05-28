@@ -11,15 +11,18 @@ import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  AudioWave01Icon,
   Cancel01Icon,
   Clock01Icon,
   ComputerTerminal02Icon,
   GitBranchIcon,
   GitCompareIcon,
   Globe02Icon,
+  Image01Icon,
   IncognitoIcon,
   PencilEdit02Icon,
   PlusSignIcon,
+  Video01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef } from "react";
@@ -256,6 +259,22 @@ function TabIcon({ tab }: { tab: Tab }) {
       />
     );
   }
+  if (tab.kind === "media") {
+    const icon =
+      tab.mediaKind === "video"
+        ? Video01Icon
+        : tab.mediaKind === "audio"
+          ? AudioWave01Icon
+          : Image01Icon;
+    return (
+      <HugeiconsIcon
+        icon={icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0"
+      />
+    );
+  }
   if (tab.kind === "git-diff" || tab.kind === "git-commit-file") {
     return (
       <HugeiconsIcon
@@ -294,6 +313,7 @@ function labelFor(t: Tab): string {
   if (t.kind === "git-diff") return t.title;
   if (t.kind === "git-history") return t.title;
   if (t.kind === "git-commit-file") return t.title;
+  if (t.kind === "media") return t.title;
   if (!t.cwd) return t.title;
   const parts = t.cwd.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "/";

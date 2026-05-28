@@ -12,6 +12,7 @@ import {
   type SplitDir,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
+import { detectMediaKind } from "@/modules/media/lib/mime";
 
 // Matches the renderer slot pool size — over this we'd evict an active leaf.
 export const MAX_PANES_PER_TAB = 4;
@@ -100,6 +101,14 @@ export type GitCommitFileDiffTab = {
   originalPath: string | null;
 };
 
+export type MediaTab = {
+  id: number;
+  kind: "media";
+  title: string;
+  path: string;
+  mediaKind: "image" | "video" | "audio";
+};
+
 export type Tab =
   | TerminalTab
   | EditorTab
@@ -108,7 +117,8 @@ export type Tab =
   | AiDiffTab
   | GitDiffTab
   | GitHistoryTab
-  | GitCommitFileDiffTab;
+  | GitCommitFileDiffTab
+  | MediaTab;
 
 export type TabPatch = Partial<{
   title: string;
@@ -224,8 +234,32 @@ export function useTabs(initial?: Partial<TerminalTab>) {
    *   otherwise the current preview slot is replaced with the new path.
    */
   const openFileTab = useCallback((path: string, pin = true) => {
+    const mediaKind = detectMediaKind(path);
     let targetId: number | null = null;
     setTabs((curr) => {
+      // Media files get their own tab kind (image/video/audio viewer).
+      if (mediaKind) {
+        const existing = curr.find(
+          (t) => t.kind === "media" && t.path === path,
+        );
+        if (existing) {
+          targetId = existing.id;
+          return curr;
+        }
+        const id = nextIdRef.current++;
+        targetId = id;
+        return [
+          ...curr,
+          {
+            id,
+            kind: "media",
+            title: basename(path),
+            path,
+            mediaKind,
+          } satisfies MediaTab,
+        ];
+      }
+
       if (pin) {
         // Persistent open: find any existing editor tab, pin it if needed.
         const existing = curr.find(
