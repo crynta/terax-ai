@@ -18,6 +18,7 @@ export type ShortcutId =
   | "pane.focusNext"
   | "pane.focusPrev"
   | "pane.source"
+  | "terminal.clear"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
@@ -36,6 +37,7 @@ export type ShortcutGroup =
   | "General"
   | "Tabs"
   | "Panes"
+  | "Terminal"
   | "Search"
   | "AI"
   | "View"
@@ -131,6 +133,15 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
   },
   {
+    id: "terminal.clear",
+    label: "Clear terminal",
+    group: "Terminal",
+    // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
+    // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
+    // unbound and let users assign their own in settings.
+    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
+  },
+  {
     id: "tab.next",
     label: "Next tab",
     group: "Tabs",
@@ -170,7 +181,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "ai.askSelection",
     label: "Ask AI about selection",
     group: "AI",
-    defaultBindings: [{ [MOD_PROP]: true, key: "l" }],
+    defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
   },
   {
     id: "sidebar.toggle",
@@ -233,6 +244,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
   "Panes",
+  "Terminal",
   "View",
   "Search",
   "AI",

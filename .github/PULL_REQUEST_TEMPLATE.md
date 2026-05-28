@@ -18,8 +18,12 @@ Examples: feat(terminal): add split panes / fix(explorer): close button alignmen
 
 - [ ] `pnpm exec tsc --noEmit` clean
 - [ ] Manual smoke-test of the affected feature
-- [ ] (If you touched `src-tauri/`) `cargo check` clean
+- [ ] (If you touched `src-tauri/`) `cargo test --locked` and `cargo clippy --all-targets --locked -- -D warnings` clean
+- [ ] (If you changed a `#[tauri::command]` signature) called out below so the FE caller can be updated in lockstep
 - [ ] (If UI) tested in `pnpm tauri dev`
+- [ ] Platforms tested: <!-- macOS / Linux / Windows -->
+- [ ] Shells tested (if relevant): <!-- bash / zsh / fish / pwsh / cmd -->
+
 
 ## Screenshots / GIFs
 <!-- Required for any UI change. Before / after if applicable. -->

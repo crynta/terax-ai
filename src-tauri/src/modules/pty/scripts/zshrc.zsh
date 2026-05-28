@@ -55,6 +55,16 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
     add-zsh-hook preexec _terax_preexec
   fi
 
+  # Warp/iTerm2-style word-end navigation: zsh's default `forward-word` (M-f /
+  # Option+Right) overshoots to the START of the next word; `emacs-forward-word`
+  # stops at the END of the current word, which is what nearly every other shell
+  # and GUI editor does. Only rebind when the binding is still the stock zsh
+  # default — respects any explicit remap in the user's .zshrc.
+  if (( $+widgets[emacs-forward-word] )) \
+     && [[ "$(bindkey '\ef')" == '"^[f" forward-word' ]]; then
+    bindkey '\ef' emacs-forward-word
+  fi
+
   _terax_precmd
 fi
 :
