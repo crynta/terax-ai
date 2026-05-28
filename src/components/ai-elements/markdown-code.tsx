@@ -30,5 +30,5 @@ export function MarkdownCode({
   }
 
   const code = String(children ?? "").replace(/\n$/, "");
-  return <ChatCodeBlock code={code + "asdasd=>ad"} lang={match[1] ?? null} />;
+  return <ChatCodeBlock code={code} lang={match[1] ?? null} />;
 }
