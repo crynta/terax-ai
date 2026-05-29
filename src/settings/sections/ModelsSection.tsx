@@ -46,11 +46,12 @@ import {
   ArrowUpRight01Icon,
   Cancel01Icon,
   CheckmarkCircle02Icon,
+  Reload01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
@@ -739,17 +740,29 @@ function LocalProviderCard({
         )}
 
         <FieldRow label="Model ID">
-          <Input
-            value={modelDraft}
-            onChange={(e) => setModelDraft(e.target.value)}
-            onBlur={() => {
-              const v = modelDraft.trim();
-              if (v !== modelId) void setModelId(v);
-            }}
-            placeholder={meta.modelPlaceholder}
-            spellCheck={false}
-            className="h-8 font-mono text-[11.5px]"
-          />
+          <div className="flex flex-1 gap-1.5">
+            <Input
+              value={modelDraft}
+              onChange={(e) => setModelDraft(e.target.value)}
+              onBlur={() => {
+                const v = modelDraft.trim();
+                if (v !== modelId) void setModelId(v);
+              }}
+              placeholder={meta.modelPlaceholder}
+              spellCheck={false}
+              className="h-8 flex-1 font-mono text-[11.5px]"
+            />
+            {!noBaseURL ? (
+              <ModelBrowseButton
+                baseURL={urlDraft}
+                apiKey={compatKey}
+                onSelect={(id) => {
+                  setModelDraft(id);
+                  void setModelId(id);
+                }}
+              />
+            ) : null}
+          </div>
         </FieldRow>
 
         {setContextLimit ? (
@@ -877,5 +890,120 @@ function Label({ children }: { children: React.ReactNode }) {
     <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+type FetchStatus = "idle" | "fetching" | "error";
+
+type HttpResponse = {
+  status: number;
+  headers: Record<string, string>;
+  body: number[];
+};
+
+function ModelBrowseButton({
+  baseURL,
+  apiKey,
+  onSelect,
+}: {
+  baseURL: string;
+  apiKey?: string | null;
+  onSelect: (modelId: string) => void;
+}) {
+  const [models, setModels] = useState<string[] | null>(null);
+  const [status, setStatus] = useState<FetchStatus>("idle");
+  const fetchedForURL = useRef<string | null>(null);
+
+  const fetchModels = async (url: string) => {
+    setStatus("fetching");
+    const endpoint = url.trimEnd().replace(/\/+$/, "") + "/models";
+    const headers: Record<string, string> = {};
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    try {
+      const res = await invoke<HttpResponse>("ai_http_request", {
+        url: endpoint,
+        method: "GET",
+        headers,
+        allowPrivateNetwork: true,
+      });
+      const text = new TextDecoder().decode(new Uint8Array(res.body));
+      const data = JSON.parse(text) as { data?: { id: string }[] };
+      const ids = (data.data ?? [])
+        .map((m) => m.id)
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+      setModels(ids);
+      fetchedForURL.current = url;
+      setStatus("idle");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  const handleOpen = (open: boolean) => {
+    if (!open) return;
+    if (!baseURL.trim()) return;
+    if (fetchedForURL.current !== baseURL) void fetchModels(baseURL);
+  };
+
+  return (
+    <DropdownMenu onOpenChange={handleOpen}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!baseURL.trim()}
+          className="h-8 px-3 text-[11px]"
+          title="Browse models available on this endpoint"
+        >
+          Browse
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56 p-1">
+        <div className="flex items-center justify-between px-2 pb-1 pt-0.5">
+          <span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+            Available models
+          </span>
+          <button
+            type="button"
+            onClick={() => void fetchModels(baseURL)}
+            disabled={status === "fetching"}
+            className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+            title="Refresh"
+          >
+            <HugeiconsIcon icon={Reload01Icon} size={11} strokeWidth={1.75} />
+          </button>
+        </div>
+        {status === "fetching" ? (
+          <div className="px-2 py-2 text-[11px] text-muted-foreground">
+            Fetching…
+          </div>
+        ) : status === "error" ? (
+          <div className="px-2 py-2 text-[11px] text-destructive/80">
+            Could not fetch models.
+          </div>
+        ) : models === null ? (
+          <div className="px-2 py-2 text-[11px] text-muted-foreground">
+            Enter a Base URL first.
+          </div>
+        ) : models.length === 0 ? (
+          <div className="px-2 py-2 text-[11px] text-muted-foreground">
+            No models found.
+          </div>
+        ) : (
+          <div className="max-h-64 overflow-y-auto overscroll-contain">
+            {models.map((id) => (
+              <DropdownMenuItem
+                key={id}
+                onSelect={() => onSelect(id)}
+                className="font-mono text-[11.5px]"
+              >
+                {id}
+              </DropdownMenuItem>
+            ))}
+          </div>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
