@@ -85,6 +85,7 @@ import {
   findLeafCwd,
   hasLeaf,
   leafIds,
+  pasteIntoLeaf,
   respawnSession,
   TerminalStack,
   whenSessionReady,
@@ -223,6 +224,26 @@ export default function App() {
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
+
+  // Drag-and-drop a file onto the terminal → inject its path into the focused
+  // terminal as a bracketed paste. Claude Code resolves an image path into an
+  // "[Image #N]" reference (matching Warp); a plain shell just receives the
+  // literal path. Tauri surfaces the absolute path that HTML5 drop cannot.
+  const dropRef = useRef<(paths: string[]) => void>(() => {});
+  dropRef.current = (paths) => {
+    if (!activeTerminalTab || activeLeafId === null || paths.length === 0)
+      return;
+    if (pasteIntoLeaf(activeLeafId, paths?.join(" ")))
+      terminalRefs?.current?.get(activeLeafId)?.focus();
+  };
+  useEffect(() => {
+    const un = getCurrentWebviewWindow?.()?.onDragDropEvent?.((e) => {
+      if (e?.payload?.type === "drop") dropRef?.current(e?.payload?.paths);
+    });
+    return () => {
+      void un?.then((f) => f());
+    };
+  }, []);
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const [gitHistoryHandle, setGitHistoryHandle] =
