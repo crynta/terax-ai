@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  terminalClipboardAction,
   terminalDeleteSequence,
   terminalEditorNewlineSequence,
   terminalGsdShortcutSequence,
@@ -172,6 +173,35 @@ describe("terminalGsdShortcutSequence", () => {
           code: "KeyN",
           getModifierState: (modifier) => modifier === "AltGraph",
         }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("terminalClipboardAction", () => {
+  it("lets Ctrl+Shift+V use the native paste event on non-macOS", () => {
+    expect(
+      terminalClipboardAction(
+        evt({ ctrlKey: true, shiftKey: true, key: "V", code: "KeyV" }),
+        { isMac: false },
+      ),
+    ).toBe("native-paste");
+  });
+
+  it("keeps Ctrl+Shift+C as Terax copy on non-macOS", () => {
+    expect(
+      terminalClipboardAction(
+        evt({ ctrlKey: true, shiftKey: true, key: "C", code: "KeyC" }),
+        { isMac: false },
+      ),
+    ).toBe("copy");
+  });
+
+  it("does not claim clipboard shortcuts on macOS", () => {
+    expect(
+      terminalClipboardAction(
+        evt({ ctrlKey: true, shiftKey: true, key: "V", code: "KeyV" }),
+        { isMac: true },
       ),
     ).toBeNull();
   });

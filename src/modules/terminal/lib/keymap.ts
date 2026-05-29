@@ -7,6 +7,8 @@ export type TerminalKeyEvent = Pick<
 
 export type PlatformOpts = { isMac: boolean };
 
+export type TerminalClipboardAction = "copy" | "native-paste";
+
 const SHIFT_ENTER_CSI_U = "\x1b[13;2u";
 
 export function terminalEditorNewlineSequence(
@@ -64,6 +66,18 @@ function normalizedKey(event: TerminalKeyEvent): string {
   }
   if (event.code === "BracketRight") return "]";
   return event.key.toLowerCase();
+}
+
+export function terminalClipboardAction(
+  event: TerminalKeyEvent,
+  opts: PlatformOpts,
+): TerminalClipboardAction | null {
+  if (opts.isMac || !event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) {
+    return null;
+  }
+  if (event.code === "KeyC" || event.key === "c" || event.key === "C") return "copy";
+  if (event.code === "KeyV" || event.key === "v" || event.key === "V") return "native-paste";
+  return null;
 }
 
 export function terminalWordNavigationSequence(event: TerminalKeyEvent): string | null {

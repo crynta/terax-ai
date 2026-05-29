@@ -9,6 +9,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import {
+  terminalClipboardAction,
   terminalDeleteSequence,
   terminalEditorNewlineSequence,
   terminalGsdShortcutSequence,
@@ -166,6 +167,16 @@ function createSlot(): Slot {
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
+    const clipboardAction = terminalClipboardAction(event, { isMac: IS_MAC });
+    if (clipboardAction === "native-paste") return true;
+    if (clipboardAction === "copy") {
+      if (event.type === "keydown" && slot.term.hasSelection()) {
+        const sel = slot.term.getSelection();
+        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+      }
+      event.preventDefault();
+      return false;
+    }
     const lineNavigation = terminalLineNavigationSequence(event, {
       isMac: IS_MAC,
     });
@@ -196,14 +207,6 @@ function createSlot(): Slot {
     if (editorNewlineSeq) {
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty(editorNewlineSeq);
-      return false;
-    }
-    if (isTerminalCopy(event)) {
-      if (event.type === "keydown" && slot.term.hasSelection()) {
-        const sel = slot.term.getSelection();
-        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
-      }
-      event.preventDefault();
       return false;
     }
     return true;
@@ -691,15 +694,4 @@ export function getSlotForLeaf(leafId: number): Slot | null {
 const IS_MAC =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad/.test(navigator.userAgent);
-
-function isTerminalCopy(e: KeyboardEvent): boolean {
-  return (
-    !IS_MAC &&
-    e.ctrlKey &&
-    e.shiftKey &&
-    !e.altKey &&
-    !e.metaKey &&
-    (e.code === "KeyC" || e.key === "c" || e.key === "C")
-  );
-}
 
