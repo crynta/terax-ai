@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 
 type ReadResult =
   | { kind: "text"; content: string; size: number }
@@ -23,6 +24,9 @@ export function useDocument({ path, onDirtyChange }: Options) {
   const [doc, setDoc] = useState<DocumentState>({ status: "loading" });
   const [dirty, setDirty] = useState(false);
 
+  const autoSave = usePreferencesStore((s) => s.editorAutoSave);
+  const autoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
+
   // Track the saved buffer so we can detect changes cheaply.
   const savedRef = useRef<string>("");
   const bufferRef = useRef<string>("");
@@ -30,6 +34,30 @@ export function useDocument({ path, onDirtyChange }: Options) {
   useEffect(() => {
     dirtyRef.current = dirty;
   }, [dirty]);
+
+  const autoSaveRef = useRef({ autoSave, autoSaveDelay });
+  autoSaveRef.current = { autoSave, autoSaveDelay };
+
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearAutoSaveTimer = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  const saveNow = useCallback(async () => {
+    const content = bufferRef.current;
+    await invoke("fs_write_file", {
+      path,
+      content,
+      workspace: currentWorkspaceEnv(),
+      source: "editor",
+    });
+    savedRef.current = content;
+    setDirty(false);
+  }, [path]);
 
   // Notify parent of dirty transitions.
   const onDirtyChangeRef = useRef(onDirtyChange);
@@ -101,23 +129,31 @@ export function useDocument({ path, onDirtyChange }: Options) {
     return true;
   }, [path]);
 
-  const onChange = useCallback((next: string) => {
-    bufferRef.current = next;
-    setDirty(next !== savedRef.current);
-  }, []);
-
   const save = useCallback(async () => {
+    clearAutoSaveTimer();
     if (!dirty) return;
-    const content = bufferRef.current;
-    await invoke("fs_write_file", {
-      path,
-      content,
-      workspace: currentWorkspaceEnv(),
-      source: "editor",
-    });
-    savedRef.current = content;
-    setDirty(false);
-  }, [path, dirty]);
+    await saveNow();
+  }, [dirty, clearAutoSaveTimer, saveNow]);
+
+  const onChange = useCallback(
+    (next: string) => {
+      bufferRef.current = next;
+      const isDirty = next !== savedRef.current;
+      setDirty(isDirty);
+
+      clearAutoSaveTimer();
+
+      const { autoSave: active, autoSaveDelay: delay } = autoSaveRef.current;
+      if (active && isDirty) {
+        timeoutRef.current = setTimeout(() => {
+          saveNow().catch((e) => console.error("[autosave]", e));
+        }, delay);
+      }
+    },
+    [clearAutoSaveTimer, saveNow],
+  );
+
+  useEffect(() => clearAutoSaveTimer, [path, clearAutoSaveTimer]);
 
   return { doc, dirty, onChange, save, reload };
 }

@@ -337,7 +337,7 @@ export const MODELS = [
     hint: "Fast",
     description: "Cheap and fast everyday tier.",
     capabilities: { intelligence: 4, speed: 5, cost: 5 },
-    tags: ["tools"],
+    tags: ["reasoning", "tools"],
   },
   {
     id: "deepseek-reasoner",

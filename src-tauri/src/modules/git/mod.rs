@@ -1,7 +1,7 @@
 pub mod commands;
-mod errors;
-mod operations;
-mod parser;
+pub mod errors;
+pub mod operations;
+pub mod parser;
 mod process;
-mod types;
-mod utils;
+pub mod types;
+pub mod utils;
