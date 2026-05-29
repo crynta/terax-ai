@@ -206,18 +206,6 @@ function createSlot(): Slot {
       event.preventDefault();
       return false;
     }
-    if (isTerminalPaste(event)) {
-      if (event.type === "keydown") {
-        void navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (text) slot.term.paste(text);
-          })
-          .catch(() => {});
-      }
-      event.preventDefault();
-      return false;
-    }
     return true;
   });
 
@@ -712,17 +700,6 @@ function isTerminalCopy(e: KeyboardEvent): boolean {
     !e.altKey &&
     !e.metaKey &&
     (e.code === "KeyC" || e.key === "c" || e.key === "C")
-  );
-}
-
-function isTerminalPaste(e: KeyboardEvent): boolean {
-  return (
-    !IS_MAC &&
-    e.ctrlKey &&
-    e.shiftKey &&
-    !e.altKey &&
-    !e.metaKey &&
-    (e.code === "KeyV" || e.key === "v" || e.key === "V")
   );
 }
 
