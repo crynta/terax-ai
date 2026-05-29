@@ -46,7 +46,7 @@ import {
   ArrowUpRight01Icon,
   Cancel01Icon,
   CheckmarkCircle02Icon,
-  Reload01Icon,
+  ReloadIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -971,7 +971,7 @@ function ModelBrowseButton({
             className="text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
             title="Refresh"
           >
-            <HugeiconsIcon icon={Reload01Icon} size={11} strokeWidth={1.75} />
+            <HugeiconsIcon icon={ReloadIcon} size={11} strokeWidth={1.75} />
           </button>
         </div>
         {status === "fetching" ? (
