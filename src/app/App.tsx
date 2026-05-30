@@ -62,6 +62,7 @@ import {
   type SearchTarget,
 } from "@/modules/header";
 import { MarkdownStack } from "@/modules/markdown";
+import { NotebookStack, type NotebookPaneHandle } from "@/modules/notebook";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -78,7 +79,13 @@ import {
   useSourceControl,
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
-import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
+import {
+  defaultFileViewForPath,
+  isMarkdownPreviewPath,
+  MAX_PANES_PER_TAB,
+  useTabs,
+  useWorkspaceCwd,
+} from "@/modules/tabs";
 import {
   clearFocusedTerminal,
   disposeSession,
@@ -188,6 +195,7 @@ export default function App() {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    newNotebookTab,
     openAiDiffTab,
     closeAiDiffTab,
     openGitDiffTab,
@@ -222,6 +230,7 @@ export default function App() {
   const searchInlineRef = useRef<SearchInlineHandle | null>(null);
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
+  const notebookRefs = useRef<Map<number, NotebookPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
@@ -479,6 +488,7 @@ export default function App() {
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
   const isMarkdownTab = activeTab?.kind === "markdown";
+  const isNotebookTab = activeTab?.kind === "notebook";
   const isAiDiffTab = activeTab?.kind === "ai-diff";
   const isGitDiffTab =
     activeTab?.kind === "git-diff" || activeTab?.kind === "git-commit-file";
@@ -496,9 +506,10 @@ export default function App() {
       if (appliedDiffsRef.current.has(t.approvalId)) continue;
       appliedDiffsRef.current.add(t.approvalId);
       for (const e of tabs) {
-        if (e.kind !== "editor") continue;
+        if (!("path" in e)) continue;
         if (e.path !== t.path) continue;
-        editorRefs.current.get(e.id)?.reload();
+        if (e.kind === "editor") editorRefs.current.get(e.id)?.reload();
+        if (e.kind === "notebook") notebookRefs.current.get(e.id)?.reload();
       }
     }
   }, [tabs]);
@@ -512,9 +523,10 @@ export default function App() {
         const normalizedPath = event.payload.path.replace(/\\/g, "/");
         const currentTabs = tabsRef.current;
         for (const t of currentTabs) {
-          if (t.kind !== "editor") continue;
+          if (t.kind !== "editor" && t.kind !== "notebook") continue;
           if (t.path.replace(/\\/g, "/") === normalizedPath) {
-            editorRefs.current.get(t.id)?.reload();
+            if (t.kind === "editor") editorRefs.current.get(t.id)?.reload();
+            else notebookRefs.current.get(t.id)?.reload();
           }
         }
       },
@@ -524,16 +536,20 @@ export default function App() {
     };
   }, []);
 
-  const editorWatchRef = useRef<Set<string>>(new Set());
+  const documentWatchRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const want = new Set<string>();
-    for (const t of tabs) if (t.kind === "editor") want.add(parentDir(t.path));
-    const prev = editorWatchRef.current;
+    for (const t of tabs) {
+      if (t.kind === "editor" || t.kind === "notebook") {
+        want.add(parentDir(t.path));
+      }
+    }
+    const prev = documentWatchRef.current;
     const toAdd = [...want].filter((d) => !prev.has(d));
     const toRemove = [...prev].filter((d) => !want.has(d));
     watchAdd(toAdd);
     watchRemove(toRemove);
-    editorWatchRef.current = want;
+    documentWatchRef.current = want;
   }, [tabs]);
 
   useEffect(() => {
@@ -542,9 +558,10 @@ export default function App() {
     void listenFsChanged((paths) => {
       const changed = new Set(paths.map((p) => p.replace(/\\/g, "/")));
       for (const t of tabsRef.current) {
-        if (t.kind !== "editor") continue;
+        if (t.kind !== "editor" && t.kind !== "notebook") continue;
         if (changed.has(t.path.replace(/\\/g, "/"))) {
-          editorRefs.current.get(t.id)?.reload();
+          if (t.kind === "editor") editorRefs.current.get(t.id)?.reload();
+          else notebookRefs.current.get(t.id)?.reload();
         }
       }
     }).then((un) => {
@@ -645,6 +662,7 @@ export default function App() {
       // the effect below as the pane tree changes; only the tab-id-keyed
       // handles need explicit cleanup here.
       editorRefs.current.delete(id);
+      notebookRefs.current.delete(id);
       previewRefs.current.delete(id);
       closeTab(id);
     },
@@ -674,7 +692,10 @@ export default function App() {
   const handleClose = useCallback(
     (id: number) => {
       const t = tabs.find((x) => x.id === id);
-      if (t?.kind === "editor" && t.dirty) {
+      if (
+        (t?.kind === "editor" || t?.kind === "notebook") &&
+        t.dirty
+      ) {
         setPendingCloseTab(id);
         return;
       }
@@ -854,17 +875,27 @@ export default function App() {
 
   const handleOpenFile = useCallback(
     (path: string, pin?: boolean) => {
+      if (defaultFileViewForPath(path) === "notebook") {
+        newNotebookTab(path);
+        return;
+      }
       // Explorer defaults to preview (pin=false); explicit actions like
       // context-menu "Open" pass pin=true for a persistent tab.
       openFileTab(path, pin ?? false);
     },
-    [openFileTab],
+    [newNotebookTab, openFileTab],
   );
 
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
       for (const t of tabs) {
-        if (t.kind !== "editor") continue;
+        if (
+          t.kind !== "editor" &&
+          t.kind !== "markdown" &&
+          t.kind !== "notebook"
+        ) {
+          continue;
+        }
         if (t.path === from) {
           const i = to.lastIndexOf("/");
           updateTab(t.id, { path: to, title: i === -1 ? to : to.slice(i + 1) });
@@ -897,9 +928,18 @@ export default function App() {
     (path: string) => {
       const dirty: number[] = [];
       for (const t of tabs) {
-        if (t.kind !== "editor") continue;
+        if (
+          t.kind !== "editor" &&
+          t.kind !== "markdown" &&
+          t.kind !== "notebook"
+        ) {
+          continue;
+        }
         if (t.path !== path && !t.path.startsWith(`${path}/`)) continue;
-        if (t.dirty) {
+        if (
+          (t.kind === "editor" || t.kind === "notebook") &&
+          t.dirty
+        ) {
           dirty.push(t.id);
         } else {
           disposeTab(t.id);
@@ -918,7 +958,13 @@ export default function App() {
       : null;
 
   const activeFilePath = (() => {
-    if (activeTab?.kind === "editor") return activeTab.path;
+    if (
+      activeTab?.kind === "editor" ||
+      activeTab?.kind === "markdown" ||
+      activeTab?.kind === "notebook"
+    ) {
+      return activeTab.path;
+    }
     if (activeTab?.kind === "git-diff") {
       if (/^([A-Za-z]:|\/|\\)/.test(activeTab.path)) return activeTab.path;
       const root = activeTab.repoRoot.replace(/[\\/]+$/, "");
@@ -939,7 +985,13 @@ export default function App() {
     if (activeTab?.kind === "terminal") {
       return activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath;
     }
-    if (activeTab?.kind === "editor") return dirname(activeTab.path);
+    if (
+      activeTab?.kind === "editor" ||
+      activeTab?.kind === "markdown" ||
+      activeTab?.kind === "notebook"
+    ) {
+      return dirname(activeTab.path);
+    }
     if (activeTab?.kind === "git-diff") return activeTab.repoRoot;
     if (activeTab?.kind === "git-commit-file") return activeTab.repoRoot;
     if (activeTab?.kind === "git-history") return activeTab.repoRoot;
@@ -1051,6 +1103,12 @@ export default function App() {
         clearFocusedTerminal();
       },
       "search.focus": () => searchInlineRef.current?.focus(),
+      "markdown.preview": () => {
+        const t = tabsRef.current.find((x) => x.id === activeId);
+        if (t?.kind === "editor" && isMarkdownPreviewPath(t.path)) {
+          newMarkdownTab(t.path);
+        }
+      },
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
@@ -1070,6 +1128,7 @@ export default function App() {
       openNewTab,
       openNewPrivateTab,
       openPreviewTab,
+      newMarkdownTab,
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
@@ -1106,9 +1165,13 @@ export default function App() {
           (e.target as HTMLElement | null) ?? document.activeElement;
         return !(target as HTMLElement | null)?.closest?.(".xterm");
       }
+      if (id === "markdown.preview") {
+        const t = tabsRef.current.find((x) => x.id === activeId);
+        return !(t?.kind === "editor" && isMarkdownPreviewPath(t.path));
+      }
       return false;
     },
-    [activeTab],
+    [activeId, activeTab],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
@@ -1128,6 +1191,14 @@ export default function App() {
       if (id === activeId) setActiveEditorHandle(h);
     },
     [activeId],
+  );
+
+  const registerNotebookHandle = useCallback(
+    (id: number, h: NotebookPaneHandle | null) => {
+      if (h) notebookRefs.current.set(id, h);
+      else notebookRefs.current.delete(id);
+    },
+    [],
   );
 
   const registerPreviewHandle = useCallback(
@@ -1195,6 +1266,11 @@ export default function App() {
   );
 
   const handleEditorDirty = useCallback(
+    (id: number, dirty: boolean) => updateTab(id, { dirty }),
+    [updateTab],
+  );
+
+  const handleNotebookDirty = useCallback(
     (id: number, dirty: boolean) => updateTab(id, { dirty }),
     [updateTab],
   );
@@ -1271,7 +1347,14 @@ export default function App() {
       getWorkspaceRoot: () => explorerRoot ?? launchCwd ?? home ?? null,
       getActiveFile: () => {
         const t = tabs.find((x) => x.id === activeId);
-        return t?.kind === "editor" ? t.path : null;
+        if (
+          t?.kind === "editor" ||
+          t?.kind === "markdown" ||
+          t?.kind === "notebook"
+        ) {
+          return t.path;
+        }
+        return null;
       },
       openPreview: (url: string) => {
         openPreviewTab(url);
@@ -1389,6 +1472,20 @@ export default function App() {
         aria-hidden={!isMarkdownTab}
       >
         <MarkdownStack tabs={tabs} activeId={activeId} />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0 px-3 pt-2 pb-2",
+          !isNotebookTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isNotebookTab}
+      >
+        <NotebookStack
+          tabs={tabs}
+          activeId={activeId}
+          registerHandle={registerNotebookHandle}
+          onDirtyChange={handleNotebookDirty}
+        />
       </div>
       <div
         className={cn(
@@ -1589,7 +1686,7 @@ export default function App() {
             open={newEditorOpen}
             onOpenChange={setNewEditorOpen}
             rootPath={explorerRoot ?? home}
-            onCreated={(path) => openFileTab(path)}
+            onCreated={(path) => handleOpenFile(path, true)}
           />
 
           <UpdaterDialog />

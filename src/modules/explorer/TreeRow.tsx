@@ -17,6 +17,7 @@ import {
 } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
+import { isMarkdownPreviewPath } from "@/modules/tabs";
 import type { useFileTree } from "./lib/useFileTree";
 
 type Tree = ReturnType<typeof useFileTree>;
@@ -37,10 +38,6 @@ export type EntryRowProps = {
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
 };
-
-function isMarkdownPath(path: string): boolean {
-  return /\.(md|markdown|mdx)$/i.test(path);
-}
 
 function EntryRowImpl(props: EntryRowProps) {
   const {
@@ -140,7 +137,7 @@ function EntryRowImpl(props: EntryRowProps) {
             Open
           </ContextMenuItem>
         )}
-        {!isDir && isMarkdownPath(path) && onOpenMarkdownPreview && (
+        {!isDir && isMarkdownPreviewPath(path) && onOpenMarkdownPreview && (
           <ContextMenuItem
             className={COMPACT_ITEM}
             onSelect={() => onOpenMarkdownPreview(path)}

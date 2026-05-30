@@ -7,6 +7,7 @@ export {
   type EditorTab,
   type PreviewTab,
   type MarkdownTab,
+  type NotebookTab,
   type AiDiffTab,
   type GitDiffTab,
   type GitHistoryTab,
@@ -15,3 +16,9 @@ export {
   type TabPatch,
 } from "./lib/useTabs";
 export { useWorkspaceCwd } from "./lib/useWorkspaceCwd";
+export {
+  defaultFileViewForPath,
+  isMarkdownPreviewPath,
+  isNotebookPath,
+  type DefaultFileView,
+} from "./lib/fileKinds";
