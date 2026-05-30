@@ -203,8 +203,11 @@ function createSlot(): Slot {
     }
     if (isTerminalCopy(event)) {
       if (event.type === "keydown" && slot.term.hasSelection()) {
-        const text = getSelectionText(slot.term);
-        if (text) copyTextToClipboard(text);
+        // Trigger a synthetic copy event so the capture-phase handler
+        // on slot.host writes the selection-stripped text to clipboard.
+        // This avoids navigator.clipboard.writeText() which silently fails
+        // in some WebView2 security contexts.
+        document.execCommand("copy");
       }
       event.preventDefault();
       return false;
@@ -733,12 +736,6 @@ export function getSlotForLeaf(leafId: number): Slot | null {
 const IS_MAC =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad/.test(navigator.userAgent);
-
-function copyTextToClipboard(text: string): void {
-  void navigator.clipboard.writeText(text).catch((e) => {
-    console.warn("[terax] clipboard write failed:", e);
-  });
-}
 
 function isTerminalCopy(e: KeyboardEvent): boolean {
   return (
