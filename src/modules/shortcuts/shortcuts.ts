@@ -20,6 +20,7 @@ export type ShortcutId =
   | "pane.source"
   | "terminal.clear"
   | "search.focus"
+  | "markdown.preview"
   | "explorer.search"
   | "explorer.focus"
   | "view.zoomIn"
@@ -170,6 +171,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Find in terminal",
     group: "Search",
     defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
+  },
+  {
+    id: "markdown.preview",
+    label: "Open Markdown preview",
+    group: "Editor",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "v" }],
   },
   {
     id: "ai.toggle",

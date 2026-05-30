@@ -127,7 +127,8 @@ export function TabBar({
                     <span className={cn("truncate", isPreview && "italic")}>
                       {labelFor(t)}
                     </span>
-                    {t.kind === "editor" && t.dirty ? (
+                    {((t.kind === "editor" || t.kind === "notebook") &&
+                      t.dirty) ? (
                       <span
                         aria-label="Unsaved changes"
                         className="size-1.5 shrink-0 rounded-full bg-foreground/70"
@@ -220,7 +221,11 @@ export function TabBar({
 }
 
 function TabIcon({ tab }: { tab: Tab }) {
-  if (tab.kind === "editor" || tab.kind === "markdown") {
+  if (
+    tab.kind === "editor" ||
+    tab.kind === "markdown" ||
+    tab.kind === "notebook"
+  ) {
     const url = fileIconUrl(tab.title);
     return url ? <img src={url} alt="" className="size-3.5 shrink-0" /> : null;
   }
@@ -288,6 +293,7 @@ function labelFor(t: Tab): string {
   if (t.kind === "editor") return t.title;
   if (t.kind === "preview") return t.title;
   if (t.kind === "markdown") return t.title;
+  if (t.kind === "notebook") return t.title;
   if (t.kind === "ai-diff") return t.title;
   if (t.kind === "git-diff") return t.title;
   if (t.kind === "git-history") return t.title;

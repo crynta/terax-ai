@@ -55,6 +55,14 @@ export type MarkdownTab = {
   path: string;
 };
 
+export type NotebookTab = {
+  id: number;
+  kind: "notebook";
+  title: string;
+  path: string;
+  dirty: boolean;
+};
+
 export type AiDiffStatus = "pending" | "approved" | "rejected";
 
 export type AiDiffTab = {
@@ -105,6 +113,7 @@ export type Tab =
   | EditorTab
   | PreviewTab
   | MarkdownTab
+  | NotebookTab
   | AiDiffTab
   | GitDiffTab
   | GitHistoryTab
@@ -412,6 +421,27 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return targetId;
   }, []);
 
+  const newNotebookTab = useCallback((path: string) => {
+    let targetId: number | null = null;
+    setTabs((curr) => {
+      const existing = curr.find(
+        (t) => t.kind === "notebook" && t.path === path,
+      );
+      if (existing) {
+        targetId = existing.id;
+        return curr;
+      }
+      const id = nextIdRef.current++;
+      targetId = id;
+      return [
+        ...curr,
+        { id, kind: "notebook", title: basename(path), path, dirty: false },
+      ];
+    });
+    if (targetId !== null) setActiveId(targetId);
+    return targetId;
+  }, []);
+
   const openGitDiffTab = useCallback(
     (input: {
       path: string;
@@ -601,6 +631,15 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           return {
             ...x,
             ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.path !== undefined && { path: patch.path }),
+          };
+        }
+        if (x.kind === "notebook") {
+          return {
+            ...x,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.path !== undefined && { path: patch.path }),
+            ...(patch.dirty !== undefined && { dirty: patch.dirty }),
           };
         }
         // editor tab: auto-promote from preview the moment the file becomes dirty.
@@ -805,6 +844,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    newNotebookTab,
     openAiDiffTab,
     openGitDiffTab,
     openCommitHistoryTab,
