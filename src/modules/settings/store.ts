@@ -87,6 +87,12 @@ export type Preferences = {
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
+  /**
+   * tmux-style prefix keybindings for pane splitting. `null` = "auto": follow
+   * the backend's `enabled` (whether a ~/.tmux.conf was found). `true`/`false`
+   * = explicit user override.
+   */
+  tmuxSplitKeys: boolean | null;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -130,6 +136,7 @@ const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
+const KEY_TMUX_SPLIT_KEYS = "tmuxSplitKeys";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -186,6 +193,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
+  tmuxSplitKeys: null,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -315,6 +323,9 @@ export async function loadPreferences(): Promise<Preferences> {
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
     ),
+    tmuxSplitKeys:
+      get<boolean | null>(KEY_TMUX_SPLIT_KEYS) ??
+      DEFAULT_PREFERENCES.tmuxSplitKeys,
   };
 }
 
@@ -508,6 +519,10 @@ export async function setEditorAutoSaveDelay(value: number): Promise<void> {
   await writePref(KEY_EDITOR_AUTO_SAVE_DELAY, clampAutoSaveDelay(value));
 }
 
+export async function setTmuxSplitKeys(value: boolean | null): Promise<void> {
+  await writePref(KEY_TMUX_SPLIT_KEYS, value);
+}
+
 export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
@@ -568,6 +583,7 @@ export async function onPreferencesChange(
     [KEY_SHORTCUTS]: "shortcuts",
     [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
+    [KEY_TMUX_SPLIT_KEYS]: "tmuxSplitKeys",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().

@@ -10,3 +10,4 @@ export {
   useGlobalShortcuts,
   type ShortcutHandlers,
 } from "./lib/useGlobalShortcuts";
+export { useTmuxSplit } from "./lib/useTmuxSplit";

@@ -69,6 +69,7 @@ import { onKeysChanged, setThemeId as persistThemeId } from "@/modules/settings/
 import {
   ShortcutsDialog,
   useGlobalShortcuts,
+  useTmuxSplit,
   type ShortcutHandlers,
   type ShortcutId,
 } from "@/modules/shortcuts";
@@ -1139,6 +1140,10 @@ export default function App() {
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
+
+  // Two-stroke tmux prefix-sequence splitting (e.g. Ctrl+A then \), read from
+  // the user's ~/.tmux.conf. Separate machinery from the chord shortcuts above.
+  useTmuxSplit(splitActivePaneInActiveTab);
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {
