@@ -301,6 +301,7 @@ pub(crate) fn build_oneshot_command(
     {
         let mut cmd = Command::new("/bin/sh");
         cmd.arg("-c").arg(command);
+        remove_internal_graphics_env(&mut cmd);
         Ok(cmd)
     }
     #[cfg(windows)]
@@ -320,6 +321,20 @@ pub(crate) fn build_oneshot_command(
         Ok(cmd)
     }
 }
+
+#[cfg(target_os = "linux")]
+fn remove_internal_graphics_env(cmd: &mut Command) {
+    const NV_EXPLICIT_SYNC: &str = "__NV_DISABLE_EXPLICIT_SYNC";
+    const TERAX_SET_NV_EXPLICIT_SYNC: &str = "TERAX_SET_NV_DISABLE_EXPLICIT_SYNC";
+
+    if std::env::var_os(TERAX_SET_NV_EXPLICIT_SYNC).is_some() {
+        cmd.env_remove(NV_EXPLICIT_SYNC);
+        cmd.env_remove(TERAX_SET_NV_EXPLICIT_SYNC);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn remove_internal_graphics_env(_cmd: &mut Command) {}
 
 fn drain<R: Read>(reader: &mut R) -> (Vec<u8>, bool) {
     let mut out = Vec::new();
