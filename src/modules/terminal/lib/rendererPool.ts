@@ -203,11 +203,10 @@ function createSlot(): Slot {
     }
     if (isTerminalCopy(event)) {
       if (event.type === "keydown" && slot.term.hasSelection()) {
-        // Trigger a synthetic copy event so the capture-phase handler
-        // on slot.host writes the selection-stripped text to clipboard.
-        // This avoids navigator.clipboard.writeText() which silently fails
-        // in some WebView2 security contexts.
-        document.execCommand("copy");
+        const text = getSelectionText(slot.term);
+        if (text) {
+          void navigator.clipboard.writeText(text).catch(() => {});
+        }
       }
       event.preventDefault();
       return false;
