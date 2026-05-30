@@ -24,3 +24,5 @@ dist-ssr
 *.sw?
 
 *.tsbuildinfo
+.claude/
+session.txt

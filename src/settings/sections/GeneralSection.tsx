@@ -32,9 +32,11 @@ import {
   setTerminalFontSize,
   setTerminalScrollback,
   setTerminalWebglEnabled,
+  setTmuxSplitKeys,
   setVimMode,
   setZoomLevel,
 } from "@/modules/settings/store";
+import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "@/modules/theme";
 import {
   ComputerIcon,
@@ -86,6 +88,23 @@ export function GeneralSection() {
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
+
+  // `tmuxSplitKeys` is `boolean | null` ("auto"). When auto, the effective
+  // on/off follows whether the backend found a real ~/.tmux.conf.
+  const tmuxSplitKeys = usePreferencesStore((s) => s.tmuxSplitKeys);
+  const [tmuxConfigFound, setTmuxConfigFound] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void invoke<{ enabled: boolean }>("tmux_split_bindings")
+      .then((b) => {
+        if (alive) setTmuxConfigFound(b.enabled);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const tmuxSplitEnabled = tmuxSplitKeys ?? tmuxConfigFound;
 
   useEffect(() => {
     let alive = true;
@@ -316,6 +335,15 @@ export function GeneralSection() {
               ))}
             </SelectContent>
           </Select>
+        </SettingRow>
+        <SettingRow
+          title="Use tmux keybindings for pane split"
+          description="Split panes with your ~/.tmux.conf prefix (e.g. Ctrl+A then \). Falls back to tmux defaults."
+        >
+          <Switch
+            checked={tmuxSplitEnabled}
+            onCheckedChange={(v) => void setTmuxSplitKeys(v)}
+          />
         </SettingRow>
       </div>
 
