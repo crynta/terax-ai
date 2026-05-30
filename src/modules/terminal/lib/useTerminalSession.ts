@@ -8,6 +8,7 @@ import {
   registerCwdHandler,
   registerPromptTracker,
 } from "./osc-handlers";
+import { PtyInputBuffer } from "./ptyInputBuffer";
 import { openPty, type PtySession } from "./pty-bridge";
 import {
   acquireSlot,
@@ -49,6 +50,7 @@ type Session = {
   snapshot: string | null;
   searchQuery: string | null;
   dormantRing: DormantRing;
+  input: PtyInputBuffer;
   hasSlot: boolean;
   // True if the slot was in alt-screen mode (TUI like vim, htop, dofek)
   // at the most recent release. Read once on the next bind to trigger a
@@ -93,9 +95,7 @@ export function whenSessionReady(leafId: number, timeoutMs = 4000): Promise<void
 
 export function writeToSession(leafId: number, data: string): boolean {
   const s = sessions.get(leafId);
-  if (!s || !s.pty) return false;
-  void s.pty.write(data);
-  return true;
+  return s?.input.write(data) ?? false;
 }
 
 /**
@@ -127,7 +127,7 @@ configureRendererPool({
     if (!s) return null;
     return {
       writeToPty: (data) => {
-        s.pty?.write(data);
+        s.input.write(data);
       },
       resizePty: (cols, rows) => {
         s.cols = cols;
@@ -180,6 +180,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     snapshot: null,
     searchQuery: null,
     dormantRing: new DormantRing(),
+    input: new PtyInputBuffer(),
     hasSlot: false,
     altScreenAtRelease: false,
   };
@@ -216,6 +217,7 @@ async function openPtyForSession(
       onExit: (code) => {
         s.shellExited = true;
         s.pty = null;
+        s.input.stop();
         const slot = getSlotForLeaf(leafId);
         if (slot) slot.term.options.disableStdin = true;
         if (s.callbacks.onExit) s.callbacks.onExit(code);
@@ -297,6 +299,7 @@ function attachSession(
 
   if (!s.pty && !s.ptyOpening && !s.shellExited) {
     s.ptyOpening = true;
+    s.input.startOpening();
     openPtyForSession(leafId, s, s.initialCwd)
       .then((pty) => {
         s.ptyOpening = false;
@@ -305,10 +308,12 @@ function attachSession(
           return;
         }
         s.pty = pty;
+        s.input.attach((data) => void pty.write(data));
         if (s.cols > 0 && s.rows > 0) pty.resize(s.cols, s.rows);
       })
       .catch((e) => {
         s.ptyOpening = false;
+        s.input.stop();
         console.error("[terax] openPty failed:", e);
       });
   }
@@ -330,6 +335,7 @@ export async function respawnSession(
   if (!s || s.disposed) return;
   s.pty?.close();
   s.pty = null;
+  s.input.startOpening();
   s.snapshot = null;
   s.dormantRing = new DormantRing();
   s.shellExited = false;
@@ -349,6 +355,7 @@ export async function respawnSession(
     pty = await openPtyForSession(leafId, s, cwd ?? s.initialCwd);
   } catch (e) {
     s.ptyOpening = false;
+    s.input.stop();
     console.error("[terax] respawn openPty failed:", e);
     return;
   }
@@ -358,6 +365,7 @@ export async function respawnSession(
     return;
   }
   s.pty = pty;
+  s.input.attach((data) => void pty.write(data));
   if (s.cols > 0 && s.rows > 0) pty.resize(s.cols, s.rows);
 }
 
@@ -369,6 +377,7 @@ export function disposeSession(leafId: number): void {
   s.snapshot = null;
   s.pty?.close();
   s.pty = null;
+  s.input.stop();
   sessions.delete(leafId);
   readyLeaves.delete(leafId);
   const waiters = readyWaiters.get(leafId);
@@ -473,7 +482,7 @@ export function useTerminalSession({
   }, [leafId, visible, focused]);
 
   const write = useCallback(
-    (data: string) => sessions.get(leafId)?.pty?.write(data),
+    (data: string) => sessions.get(leafId)?.input.write(data),
     [leafId],
   );
 
