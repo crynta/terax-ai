@@ -8,4 +8,5 @@ pub mod proc;
 pub mod pty;
 pub mod secrets;
 pub mod shell;
+pub mod tmux_config;
 pub mod workspace;
