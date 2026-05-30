@@ -50,6 +50,7 @@ type Props = {
   onActivateAgent: (tabId: number, leafId: number) => void;
   onActivateLocalAgent: () => void;
   onOpenSettings: () => void;
+  onNewWindow: () => void;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
 };
@@ -73,6 +74,7 @@ export function Header({
   onActivateAgent,
   onActivateLocalAgent,
   onOpenSettings,
+  onNewWindow,
   searchTarget,
   searchRef,
 }: Props) {
@@ -123,6 +125,25 @@ export function Header({
       }`}
     >
       <div className="flex shrink-0 items-center gap-0.5">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              File
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-44">
+            <DropdownMenuItem onSelect={onNewWindow}>
+              <span className="flex-1">New Window</span>
+              <span className="text-xs text-muted-foreground">
+                {tokensFor("window.new")}
+              </span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           onClick={onToggleSidebar}
           title="Toggle sidebar"
