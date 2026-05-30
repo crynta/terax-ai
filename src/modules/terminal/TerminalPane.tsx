@@ -67,15 +67,34 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       [session],
     );
 
+    const overlayColor = focused
+      ? "var(--terminal-last-active-pane-overlay)"
+      : "var(--terminal-inactive-pane-overlay)";
+
     return (
       <div
-        ref={containerRef}
-        className="zoom-exempt h-full w-full"
+        className="group/terminal-pane relative h-full w-full"
         style={{
           visibility: visible ? "visible" : "hidden",
           pointerEvents: visible ? "auto" : "none",
         }}
-      />
+      >
+        <div
+          ref={containerRef}
+          className="zoom-exempt h-full w-full"
+        />
+        <div
+          className={[
+            "pointer-events-none absolute inset-0 z-10 transition-opacity",
+            focused ? "group-focus-within/terminal-pane:hidden" : "",
+          ].join(" ")}
+          style={{
+            backgroundColor: overlayColor,
+            boxShadow:
+              "inset 0 0 0 1px var(--terminal-inactive-pane-edge), inset 0 1px 0 var(--terminal-inactive-pane-top-edge)",
+          }}
+        />
+      </div>
     );
   },
 );

@@ -5,6 +5,7 @@ import { IS_MAC, MOD_PROP } from "@/lib/platform";
  */
 
 export type ShortcutId =
+  | "terminal.clearActive"
   | "tab.new"
   | "tab.newPrivate"
   | "tab.newPreview"
@@ -74,6 +75,12 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "k" }],
   },
   {
+    id: "terminal.clearActive",
+    label: "Clear active terminal",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, key: ";" }],
+  },
+  {
     id: "tab.new",
     label: "New tab",
     group: "Tabs",
@@ -126,7 +133,7 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus previous pane",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
-  },  
+  },
   {
     id: "pane.source",
     label: "Toggle source panel",
