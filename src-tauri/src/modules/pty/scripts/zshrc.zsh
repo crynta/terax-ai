@@ -7,7 +7,13 @@
 
 {
   _terax_user_zdotdir="${TERAX_USER_ZDOTDIR:-$HOME}"
-  [ -f "$_terax_user_zdotdir/.zshrc" ] && source "$_terax_user_zdotdir/.zshrc"
+  if [ -f "$_terax_user_zdotdir/.zshrc" ]; then
+    _terax_saved_zdotdir="$ZDOTDIR"
+    ZDOTDIR="$_terax_user_zdotdir"
+    source "$_terax_user_zdotdir/.zshrc"
+    ZDOTDIR="$_terax_saved_zdotdir"
+    unset _terax_saved_zdotdir
+  fi
   unset _terax_user_zdotdir
 }
 

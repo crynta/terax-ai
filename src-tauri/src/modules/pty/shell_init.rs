@@ -262,6 +262,61 @@ mod unix {
             format!("rename {} -> {}: {e}", tmp.display(), path.display())
         })
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::process::Command;
+
+        fn zsh_available() -> bool {
+            Command::new("zsh")
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }
+
+        // Regression test for #526: when Terax's injected .zshenv sources the
+        // user's .zshenv, the user's file must observe $ZDOTDIR pointing at
+        // their real config dir, not at Terax's integration dir. Otherwise
+        // common patterns like `for f in $ZDOTDIR/conf.d/*.zsh; do …; done`
+        // glob into the wrong directory and zsh errors with `no matches found`.
+        #[test]
+        fn user_zshenv_sees_user_zdotdir() {
+            if !zsh_available() {
+                eprintln!("skipping: zsh not on PATH");
+                return;
+            }
+            let integ = tempfile::tempdir().expect("integ tempdir");
+            let user = tempfile::tempdir().expect("user tempdir");
+            fs::write(integ.path().join(".zshenv"), ZSHENV).expect("write integ .zshenv");
+            fs::write(
+                user.path().join(".zshenv"),
+                r#"if [[ "$ZDOTDIR" != "$TERAX_USER_ZDOTDIR" ]]; then
+  print -u2 "user .zshenv saw ZDOTDIR=$ZDOTDIR want=$TERAX_USER_ZDOTDIR"
+  exit 42
+fi
+"#,
+            )
+            .expect("write user .zshenv");
+
+            let status = Command::new("zsh")
+                .arg("-c")
+                .arg("exit 0")
+                .env_clear()
+                .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+                .env("HOME", user.path())
+                .env("ZDOTDIR", integ.path())
+                .env("TERAX_USER_ZDOTDIR", user.path())
+                .status()
+                .expect("spawn zsh");
+            assert!(
+                status.success(),
+                "zsh exited with {:?}; user .zshenv saw the wrong $ZDOTDIR",
+                status.code()
+            );
+        }
+    }
 }
 
 #[cfg(windows)]
