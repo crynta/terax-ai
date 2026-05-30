@@ -78,6 +78,8 @@ import {
   useSourceControl,
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
+import { USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { WindowResizeHandles } from "@/components/WindowResizeHandles";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
   clearFocusedTerminal,
@@ -1434,6 +1436,7 @@ export default function App() {
     <ThemeProvider>
       <TooltipProvider>
         <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
+          {USE_CUSTOM_WINDOW_CONTROLS && <WindowResizeHandles />}
           <Header
             tabs={tabs}
             activeId={activeId}
