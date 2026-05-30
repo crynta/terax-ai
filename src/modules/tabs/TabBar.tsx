@@ -21,7 +21,7 @@ import {
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { EditorTab, Tab } from "./lib/useTabs";
 
 type Props = {
@@ -36,6 +36,8 @@ type Props = {
   onClose: (id: number) => void;
   /** Pin (promote) a preview tab to persistent on double-click. */
   onPin: (id: number) => void;
+  /** Move a dragged tab to a new position (insertion gap index 0..tabs.length). */
+  onReorder: (fromId: number, toGapIndex: number) => void;
   compact?: boolean;
 };
 
@@ -50,9 +52,44 @@ export function TabBar({
   onNewGitGraph,
   onClose,
   onPin,
+  onReorder,
   compact,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // id of the tab being dragged, and the insertion gap (0..tabs.length) the
+  // cursor currently points at. Both null while no drag is in progress.
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [dropGap, setDropGap] = useState<number | null>(null);
+  // Pointer-event drag state kept in a ref so pointermove doesn't re-render.
+  // WKWebView (Tauri/macOS) does not reliably fire the HTML5 drag API, so tab
+  // reordering is implemented with pointer events + pointer capture instead.
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    fromId: number;
+    active: boolean;
+  } | null>(null);
+
+  // Map a cursor X to an insertion gap (0..n) by measuring the rendered tabs.
+  const gapAtX = (clientX: number) => {
+    const els = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? [],
+    );
+    for (let i = 0; i < els.length; i++) {
+      const r = els[i].getBoundingClientRect();
+      if (clientX < r.left + r.width / 2) return i;
+    }
+    return els.length;
+  };
+
+  const endDrag = (currentTarget: HTMLElement) => {
+    const st = drag.current;
+    if (st) currentTarget.releasePointerCapture?.(st.pointerId);
+    drag.current = null;
+    setDraggingId(null);
+    setDropGap(null);
+    document.body.style.userSelect = "";
+  };
 
   // Horizontal wheel scroll without holding shift.
   useEffect(() => {
@@ -88,14 +125,61 @@ export function TabBar({
           onValueChange={(v) => onSelect(Number(v))}
         >
           <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
-            {tabs.map((t) => {
+            {tabs.map((t, i) => {
               const isPreview = t.kind === "editor" && (t as EditorTab).preview;
+              const srcIndex = tabs.findIndex((x) => x.id === draggingId);
+              // Hide the marker for gaps that would leave the order unchanged
+              // (either side of the tab being dragged).
+              const showGap = (gap: number) =>
+                draggingId !== null &&
+                dropGap === gap &&
+                gap !== srcIndex &&
+                gap !== srcIndex + 1;
               return (
-                <TabsTrigger
-                  key={t.id}
-                  value={String(t.id)}
-                  data-tab-id={t.id}
-                  onDoubleClick={() => isPreview && onPin(t.id)}
+                <Fragment key={t.id}>
+                  {showGap(i) && <DropIndicator />}
+                  <TabsTrigger
+                    value={String(t.id)}
+                    data-tab-id={t.id}
+                    onPointerDown={(e) => {
+                      // Left button only; ignore grabs that start on the close
+                      // control so it can still receive the click.
+                      if (e.button !== 0) return;
+                      if (
+                        (e.target as HTMLElement).closest("[data-no-drag]")
+                      )
+                        return;
+                      drag.current = {
+                        pointerId: e.pointerId,
+                        startX: e.clientX,
+                        fromId: t.id,
+                        active: false,
+                      };
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                    }}
+                    onPointerMove={(e) => {
+                      const st = drag.current;
+                      if (!st || st.pointerId !== e.pointerId) return;
+                      if (!st.active) {
+                        // Don't start a drag until the pointer clears a small
+                        // threshold, so a plain click still selects the tab.
+                        if (Math.abs(e.clientX - st.startX) < 4) return;
+                        st.active = true;
+                        setDraggingId(st.fromId);
+                        document.body.style.userSelect = "none";
+                      }
+                      e.preventDefault();
+                      setDropGap(gapAtX(e.clientX));
+                    }}
+                    onPointerUp={(e) => {
+                      const st = drag.current;
+                      if (st?.active && dropGap !== null) {
+                        onReorder(st.fromId, dropGap);
+                      }
+                      endDrag(e.currentTarget);
+                    }}
+                    onPointerCancel={(e) => endDrag(e.currentTarget)}
+                    onDoubleClick={() => isPreview && onPin(t.id)}
                   onAuxClick={(e) => {
                     if (e.button === 1 && tabs.length > 1) {
                       e.preventDefault();
@@ -108,6 +192,7 @@ export function TabBar({
                   }}
                   className={cn(
                     "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
+                    draggingId === t.id && "opacity-50",
                     compact
                       ? "px-1.5!"
                       : tabs.length === 1
@@ -138,6 +223,7 @@ export function TabBar({
                     <span
                       role="button"
                       aria-label="Close tab"
+                      data-no-drag
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose(t.id);
@@ -151,7 +237,11 @@ export function TabBar({
                       />
                     </span>
                   )}
-                </TabsTrigger>
+                  </TabsTrigger>
+                  {i === tabs.length - 1 && showGap(tabs.length) && (
+                    <DropIndicator />
+                  )}
+                </Fragment>
               );
             })}
           </TabsList>
@@ -216,6 +306,16 @@ export function TabBar({
         </DropdownMenu>
       </div>
     </div>
+  );
+}
+
+/** Vertical line marking where a dragged tab will be inserted. */
+function DropIndicator() {
+  return (
+    <span
+      aria-hidden
+      className="my-0.5 w-0.5 shrink-0 self-stretch rounded-full bg-primary"
+    />
   );
 }
 
