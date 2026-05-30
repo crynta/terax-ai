@@ -237,6 +237,13 @@ const filenameOverrides: Record<string, LanguageLoader> = {
   ".prettierrc": jsonLoader,
 };
 
+// Any Dockerfile variant: `Dockerfile`, `Dockerfile.web`, `dockerfile.prod`,
+// `web.dockerfile` (the last is already covered by the `dockerfile` extension).
+// Pattern-based so new variants need no code change.
+function isDockerfileLike(base: string): boolean {
+  return base === "dockerfile" || base.startsWith("dockerfile.");
+}
+
 function extOf(name: string): string | null {
   const lower = name.toLowerCase();
   const dot = lower.lastIndexOf(".");
@@ -258,6 +265,7 @@ function cacheKey(filename: string): string | null {
   const lower = filename.toLowerCase();
   const base = lower.split("/").pop() ?? lower;
   if (filenameOverrides[base]) return `name:${base}`;
+  if (isDockerfileLike(base)) return "name:dockerfile";
   const ext = extOf(base);
   return ext ? `ext:${ext}` : null;
 }
@@ -277,7 +285,10 @@ export async function resolveLanguage(
 
   const lower = filename.toLowerCase();
   const base = lower.split("/").pop() ?? lower;
-  const loader = filenameOverrides[base] ?? loaders[extOf(base) ?? ""];
+  const loader =
+    filenameOverrides[base] ??
+    (isDockerfileLike(base) ? loaders.dockerfile : undefined) ??
+    loaders[extOf(base) ?? ""];
   if (!loader) {
     cache.set(key, null);
     return null;
