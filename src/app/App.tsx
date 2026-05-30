@@ -184,6 +184,7 @@ export default function App() {
     tabs,
     activeId,
     setActiveId,
+    reorderTab,
     newTab,
     newAgentTab,
     newPrivateTab,
@@ -1478,6 +1479,7 @@ export default function App() {
             onClose={handleClose}
             onPin={pinTab}
             onRename={handleRenameTab}
+            onReorder={reorderTab}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={
