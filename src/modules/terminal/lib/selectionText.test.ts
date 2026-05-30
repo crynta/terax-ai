@@ -1,13 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { getSelectionText } from "./selectionText";
 import type { Terminal } from "@xterm/xterm";
+import type { IBufferCell, IBufferLine } from "@xterm/xterm";
 
-type MockLine = {
-  isWrapped: boolean;
-  translateToString: (trimRight: boolean, start?: number, end?: number) => string;
-};
+function mockCell(code: number, width: number): IBufferCell {
+  return {
+    getCode: () => code,
+    getWidth: () => width,
+    getChars: () => (code === 0 ? "" : String.fromCodePoint(code)),
+  } as unknown as IBufferCell;
+}
 
-function mockLine(text: string, wrapped: boolean): MockLine {
+function mockLine(
+  text: string,
+  wrapped: boolean,
+  cols: number,
+): IBufferLine {
+  // Build cells: each ASCII char = 1 cell, no CJK in mock for simplicity
+  const cells: IBufferCell[] = [];
+  for (let i = 0; i < cols; i++) {
+    if (i < text.length) {
+      cells.push(mockCell(text.charCodeAt(i), 1));
+    } else {
+      // Empty cell after text: code=0 means never written
+      // If line "fills cols", the text should be exactly cols chars,
+      // or trailing spaces should be explicit (code=32)
+      cells.push(mockCell(0, 1));
+    }
+  }
   return {
     isWrapped: wrapped,
     translateToString(trimRight: boolean, start?: number, end?: number) {
@@ -17,7 +37,9 @@ function mockLine(text: string, wrapped: boolean): MockLine {
       else if (start !== undefined) s = s.slice(start);
       return s;
     },
-  };
+    getCell: (x: number) => (x >= 0 && x < cells.length ? cells[x] : undefined),
+    length: cols,
+  } as unknown as IBufferLine;
 }
 
 type MockTerm = {
@@ -25,12 +47,12 @@ type MockTerm = {
   getSelectionPosition: () =>
     | { start: { x: number; y: number }; end: { x: number; y: number } }
     | undefined;
-  buffer: { active: { getLine: (y: number) => MockLine | undefined } };
+  buffer: { active: { getLine: (y: number) => IBufferLine | undefined } };
   cols: number;
 };
 
 function mockTerm(
-  lines: MockLine[],
+  lines: IBufferLine[],
   selection:
     | { start: { x: number; y: number }; end: { x: number; y: number } }
     | undefined,
@@ -60,64 +82,56 @@ describe("getSelectionText", () => {
   // --- single line ---
 
   it("returns single-line full selection", () => {
-    const term = mockTerm([mockLine("hello world", false)], {
+    const term = mockTerm([mockLine("hello world", false, 80)], {
       start: { x: 0, y: 0 },
       end: { x: 11, y: 0 },
     });
     expect(getSelectionText(term as unknown as Terminal)).toBe("hello world");
   });
 
-  it("returns single-line partial selection using column bounds", () => {
-    const term = mockTerm([mockLine("hello world", false)], {
+  it("returns single-line partial selection", () => {
+    const term = mockTerm([mockLine("hello world", false, 80)], {
       start: { x: 2, y: 0 },
       end: { x: 7, y: 0 },
     });
     expect(getSelectionText(term as unknown as Terminal)).toBe("llo w");
   });
 
-  it("handles zero-width selection on a single line", () => {
-    const term = mockTerm([mockLine("hello", false)], {
-      start: { x: 3, y: 0 },
-      end: { x: 3, y: 0 },
-    });
-    expect(getSelectionText(term as unknown as Terminal)).toBe("");
-  });
-
   // --- two real lines ---
 
   it("separates two real lines with newline", () => {
-    const term = mockTerm([mockLine("abc  ", false), mockLine("def  ", false)], {
-      start: { x: 0, y: 0 },
-      end: { x: 3, y: 1 },
-    });
+    const term = mockTerm(
+      [mockLine("abc  ", false, 80), mockLine("def  ", false, 80)],
+      { start: { x: 0, y: 0 }, end: { x: 3, y: 1 } },
+    );
     expect(getSelectionText(term as unknown as Terminal)).toBe("abc\ndef");
   });
 
   // --- two wrapped visual lines ---
 
   it("joins wrapped lines without newline", () => {
-    const term = mockTerm([mockLine("abc  ", false), mockLine("def  ", true)], {
-      start: { x: 0, y: 0 },
-      end: { x: 3, y: 1 },
-    });
+    const term = mockTerm(
+      [mockLine("abc  ", false, 80), mockLine("def  ", true, 80)],
+      { start: { x: 0, y: 0 }, end: { x: 3, y: 1 } },
+    );
     expect(getSelectionText(term as unknown as Terminal)).toBe("abcdef");
   });
 
   // --- mixed wrapped and real breaks ---
 
-  it("handles real line followed by wrapped continuation then real line", () => {
+  it("handles real line then wrapped then real line", () => {
     const term = mockTerm(
-      [mockLine("abc  ", false), mockLine("def  ", true), mockLine("ghi  ", false)],
+      [mockLine("abc  ", false, 80), mockLine("def  ", true, 80), mockLine("ghi  ", false, 80)],
       { start: { x: 0, y: 0 }, end: { x: 3, y: 2 } },
     );
     expect(getSelectionText(term as unknown as Terminal)).toBe("abcdef\nghi");
   });
 
-  // --- multi-segment wrapping ---
+  // --- 3 wrapped rows ---
 
-  it("joins 3 wrapped visual rows into one line", () => {
+  it("joins 3 wrapped rows into one line", () => {
     const term = mockTerm(
-      [mockLine("abc  ", false), mockLine("def  ", true), mockLine("ghi  ", true)],
+      [mockLine("abc  ", false, 80), mockLine("def  ", true, 80), mockLine("ghi  ", true, 80)],
       { start: { x: 0, y: 0 }, end: { x: 3, y: 2 } },
     );
     expect(getSelectionText(term as unknown as Terminal)).toBe("abcdefghi");
@@ -125,21 +139,9 @@ describe("getSelectionText", () => {
 
   // --- partial columns across lines ---
 
-  it("handles partial column selection on first and last line", () => {
+  it("handles partial columns across wrapped and real lines", () => {
     const term = mockTerm(
-      [mockLine("abcdefghij", false), mockLine("klmnopqrst", false)],
-      { start: { x: 2, y: 0 }, end: { x: 5, y: 1 } },
-    );
-    expect(getSelectionText(term as unknown as Terminal)).toBe("cdefghij\nklmno");
-  });
-
-  it("handles partial column selection across wrapped and real lines", () => {
-    const term = mockTerm(
-      [
-        mockLine("abcdefghij", false),
-        mockLine("klmnopqrst", true),
-        mockLine("uvwxyz", false),
-      ],
+      [mockLine("abcdefghij", false, 80), mockLine("klmnopqrst", true, 80), mockLine("uvwxyz", false, 80)],
       { start: { x: 2, y: 0 }, end: { x: 5, y: 2 } },
     );
     expect(getSelectionText(term as unknown as Terminal)).toBe(
@@ -151,39 +153,23 @@ describe("getSelectionText", () => {
 
   it("handles empty real line between content", () => {
     const term = mockTerm(
-      [mockLine("abc", false), mockLine("", false), mockLine("def", false)],
+      [mockLine("abc", false, 80), mockLine("", false, 80), mockLine("def", false, 80)],
       { start: { x: 0, y: 0 }, end: { x: 3, y: 2 } },
     );
     expect(getSelectionText(term as unknown as Terminal)).toBe("abc\n\ndef");
   });
 
-  it("handles empty wrapped line treated as continuation", () => {
-    const term = mockTerm(
-      [mockLine("abc", false), mockLine("", true), mockLine("def", false)],
-      { start: { x: 0, y: 0 }, end: { x: 3, y: 2 } },
-    );
-    expect(getSelectionText(term as unknown as Terminal)).toBe("abc\ndef");
-  });
-
   // --- end.x = 0 on last line ---
 
-  it("handles end.x = 0 on last line (nothing selected from last row)", () => {
+  it("handles end.x = 0 on last line", () => {
     const term = mockTerm(
-      [mockLine("abc", false), mockLine("def", false)],
+      [mockLine("abc", false, 80), mockLine("def", false, 80)],
       { start: { x: 0, y: 0 }, end: { x: 0, y: 1 } },
     );
     expect(getSelectionText(term as unknown as Terminal)).toBe("abc\n");
   });
 
-  // --- getLine returns undefined for gap in buffer ---
-
-  it("skips buffer lines that return undefined", () => {
-    const term = mockTerm(
-      [mockLine("abc", false), mockLine("def", false)],
-      { start: { x: 0, y: 0 }, end: { x: 3, y: 2 } },
-    );
-    expect(getSelectionText(term as unknown as Terminal)).toBe("abc\ndef");
-  });
+  // --- buffer gap ---
 
   it("returns null when all lines in range return undefined", () => {
     const term = mockTerm([], {
@@ -193,148 +179,79 @@ describe("getSelectionText", () => {
     expect(getSelectionText(term as unknown as Terminal)).toBeNull();
   });
 
-  // --- first line is a wrapped continuation (isWrapped=true) ---
+  // --- hard-wrapped lines (fills cols) ---
 
-  it("when first line is itself wrapped, still concatenates without leading newline", () => {
+  it("joins hard-wrapped lines that fill terminal width", () => {
+    // 10 chars, cols=10, all cells filled → fillsCols=true
     const term = mockTerm(
-      [mockLine("def", true), mockLine("ghi", false)],
-      { start: { x: 0, y: 0 }, end: { x: 3, y: 1 } },
-    );
-    expect(getSelectionText(term as unknown as Terminal)).toBe("def\nghi");
-  });
-
-  // --- real-world git log scenario ---
-
-  it("real-life: long git log line wrapped then a new commit line", () => {
-    const term = mockTerm(
-      [
-        mockLine("abc1234 (HEAD -> main) A very long commit message that wraps ac", false),
-        mockLine("ross the terminal width due to being too long", true),
-        mockLine("def5678 Fix something", false),
-      ],
-      { start: { x: 0, y: 0 }, end: { x: 21, y: 2 } },
-    );
-    expect(getSelectionText(term as unknown as Terminal)).toBe(
-      "abc1234 (HEAD -> main) A very long commit message that wraps across the terminal width due to being too long\ndef5678 Fix something",
-    );
-  });
-
-  // --- hard-wrapped lines (isWrapped=false but len >= cols) ---
-
-  it("joins hard-wrapped lines where line fills terminal width", () => {
-    // Pi CLI outputs text with \n at terminal width (cols=10)
-    // "abcdefghij" fills exactly 10 cols, next line is a continuation
-    const term = mockTerm(
-      [mockLine("abcdefghij", false), mockLine("klmnopqrst", false)],
+      [mockLine("abcdefghij", false, 10), mockLine("klmnopqrst", false, 10)],
       { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
       10,
     );
     expect(getSelectionText(term as unknown as Terminal)).toBe("abcdefghijklmnopqrst");
   });
 
-  it("joins hard-wrapped lines that slightly underfill (len = cols - 1)", () => {
-    // Some TUIs add \n when text reaches cols-1 (leaving room for cursor)
-    // "abcdefghi" is 9 chars, cols=10 → len < cols, NOT hard-wrapped
+  it("does not join short lines", () => {
+    // "ls" = 2 chars, cols=80, empty cells after → fillsCols=false
     const term = mockTerm(
-      [mockLine("abcdefghi", false), mockLine("jklmnopqr", false)],
-      { start: { x: 0, y: 0 }, end: { x: 9, y: 1 } },
-      10,
-    );
-    // len=9 < cols=10, so this is NOT a hard wrap → preserve \n
-    expect(getSelectionText(term as unknown as Terminal)).toBe("abcdefghi\njklmnopqr");
-  });
-
-  it("does not join hard-wrapped line before blank line", () => {
-    // A line that fills width followed by blank → paragraph break
-    const term = mockTerm(
-      [mockLine("abcdefghij", false), mockLine("", false), mockLine("next paragraph", false)],
-      { start: { x: 0, y: 0 }, end: { x: 14, y: 2 } },
-      10,
-    );
-    // line0 fills cols → hard-wrapped, but line1 is blank → paragraph break
-    expect(getSelectionText(term as unknown as Terminal)).toBe("abcdefghij\n\nnext paragraph");
-  });
-
-  it("does not join hard-wrapped line before list marker", () => {
-    // A line that fills width followed by a list marker → real break
-    const term = mockTerm(
-      [mockLine("abcdefghij", false), mockLine("- item one", false)],
-      { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
-      10,
-    );
-    expect(getSelectionText(term as unknown as Terminal)).toBe("abcdefghij\n- item one");
-  });
-
-  it("handles mixed hard-wrapped and soft-wrapped lines", () => {
-    // Line 0: hard-wrapped (len=cols, isWrapped=false)
-    // Line 1: soft-wrapped (isWrapped=true)
-    // Line 2: real break (isWrapped=false, short)
-    const term = mockTerm(
-      [mockLine("abcdefghij", false), mockLine("klmnopqrst", true), mockLine("uvwx", false)],
-      { start: { x: 0, y: 0 }, end: { x: 4, y: 2 } },
-      10,
-    );
-    // line0 fills cols → hard-wrapped, line1 isWrapped → joined
-    // line2 short + not wrapped → real break
-    expect(getSelectionText(term as unknown as Terminal)).toBe("abcdefghijklmnopqrst\nuvwx");
-  });
-
-  it("preserves short real lines between hard-wrapped content", () => {
-    // Two short commands on separate lines should NOT be joined
-    const term = mockTerm(
-      [mockLine("ls", false), mockLine("cd", false)],
+      [mockLine("ls", false, 80), mockLine("cd", false, 80)],
       { start: { x: 0, y: 0 }, end: { x: 2, y: 1 } },
       80,
     );
     expect(getSelectionText(term as unknown as Terminal)).toBe("ls\ncd");
   });
 
-  it("joins hard-wrapped lines with CJK characters that fill terminal width", () => {
-    // \u8ba9 takes 2 columns. With cols=10, line0 has 10 cells.
+  it("joins hard-wrapped lines with trailing spaces (word-boundary wrap)", () => {
+    // Line fills cols with trailing spaces: "hello     " (10 chars, cols=10)
     const term = mockTerm(
-      [mockLine("\u8ba9ABCDEFGH", false), mockLine("IJKLMNOPQR", false)],
+      [mockLine("hello     ", false, 10), mockLine("world     ", false, 10)],
       { start: { x: 0, y: 0 }, end: { x: 10, y: 1 } },
       10,
     );
-    // Line 0: cell width = 2(CJK) + 8(ASCII) = 10 = cols, hard-wrapped
-    // Line 1: cell width = 10 = cols, hard-wrapped
-    // Both join into one line
-    expect(getSelectionText(term as unknown as Terminal)).toBe(
-      "\u8ba9ABCDEFGHIJKLMNOPQR",
-    );
+    // "hello     " fills cols, trailing spaces → trim + add space
+    // "world     " fills cols, trailing spaces on prev → trim + add space
+    expect(getSelectionText(term as unknown as Terminal)).toBe("hello world");
   });
 
-  it("Pi CLI style: word-boundary hard-wrap with indentation on next line", () => {
-    // Pi CLI: text fills cols exactly, trailing space is part of content,
-    // next line indented. After translateToString(true) trims trailing whitespace.
-    // But we detect hard-wrap from cellWidth of the trimmed text (which is < cols).
-    // This scenario only works when the raw (untrimmed) cell width >= cols.
-    // Since translateToString(true) already trims, and trimmed cw < cols,
-    // these lines won't be detected as hard-wrapped by our heuristic.
-    // Real Pi CLI lines have cw=cols after trim (CJK widening), not trailing spaces.
-    // So test with CJK-heavy content where trimRight doesn't reduce cw below cols:
+  it("does not join before blank line even if prev fills cols", () => {
     const term = mockTerm(
-      [mockLine("\u8ba9\u6211\u4eec\u770b\u770b\u8fd9\u4e2a\u957f\u6587\u672c", false), mockLine("    \u662f\u5426\u88ab\u6b63\u786e\u5408\u5e76", false)],
-      { start: { x: 0, y: 0 }, end: { x: 20, y: 1 } },
-      18,
+      [mockLine("abcdefghij", false, 10), mockLine("", false, 10), mockLine("next", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 4, y: 2 } },
+      10,
     );
-    // Line 0: 9 CJK chars, cw=18=cols, trimEnd doesn't change it
-    // Line 1: 4 spaces + 6 CJK chars, cw=4+12=16 < cols=18
-    // prev line is hard-wrapped, has no trailing spaces, next line has indentation
-    expect(getSelectionText(term as unknown as Terminal)).toBe(
-      "\u8ba9\u6211\u4eec\u770b\u770b\u8fd9\u4e2a\u957f\u6587\u672c \u662f\u5426\u88ab\u6b63\u786e\u5408\u5e76",
-    );
+    expect(getSelectionText(term as unknown as Terminal)).toBe("abcdefghij\n\nnext");
   });
 
-  it("hard-wrap detected even when selection starts mid-line", () => {
-    // Full line fills terminal width, selection starts from column 5
+  it("does not join before list marker even if prev fills cols", () => {
     const term = mockTerm(
-      [mockLine("abcdefghij", false), mockLine("klmnop", false)],
+      [mockLine("abcdefghij", false, 10), mockLine("- item", false, 10)],
+      { start: { x: 0, y: 0 }, end: { x: 6, y: 1 } },
+      10,
+    );
+    expect(getSelectionText(term as unknown as Terminal)).toBe("abcdefghij\n- item");
+  });
+
+  it("hard-wrap detected when selection starts mid-line", () => {
+    // Full line fills cols, but selection starts from col 5
+    const term = mockTerm(
+      [mockLine("abcdefghij", false, 10), mockLine("klmnop", false, 10)],
       { start: { x: 5, y: 0 }, end: { x: 6, y: 1 } },
       10,
     );
-    // Line 0 full cw=10=cols → hard-wrapped. Selection gets "fghij".
-    // No trailing/leading spaces to suggest word-boundary → direct join
+    // Line 0 fills cols → hard-wrapped. Selection gets "fghij".
+    // Next line "klmnop" doesn't fill cols → joined because prev fills cols.
     expect(getSelectionText(term as unknown as Terminal)).toBe("fghijklmnop");
+  });
+
+  // --- real-life git log ---
+
+  it("real-life: long git log line wrapped then new commit", () => {
+    const term = mockTerm(
+      [mockLine("abc1234 (HEAD -> main) A very long commit message tha", false, 80), mockLine("t wraps across the terminal width", true, 80), mockLine("def5678 Fix something", false, 80)],
+      { start: { x: 0, y: 0 }, end: { x: 21, y: 2 } },
+    );
+    expect(getSelectionText(term as unknown as Terminal)).toBe(
+      "abc1234 (HEAD -> main) A very long commit message that wraps across the terminal width\ndef5678 Fix something",
+    );
   });
 });

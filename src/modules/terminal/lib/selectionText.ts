@@ -1,33 +1,19 @@
-import type { Terminal } from "@xterm/xterm";
+import type { Terminal, IBufferLine } from "@xterm/xterm";
 
-export function cellWidth(s: string): number {
-  let w = 0;
-  for (let i = 0; i < s.length; i++) {
-    const cp = s.codePointAt(i)!;
-    if (
-      (cp >= 0x1100 && cp <= 0x115f) ||
-      (cp >= 0x2329 && cp <= 0x232a) ||
-      (cp >= 0x2e80 && cp <= 0x303e) ||
-      (cp >= 0x3040 && cp <= 0x3247) ||
-      (cp >= 0x3250 && cp <= 0x4dbf) ||
-      (cp >= 0x4e00 && cp <= 0x9fff) ||
-      (cp >= 0xa000 && cp <= 0xa4cf) ||
-      (cp >= 0xac00 && cp <= 0xd7a3) ||
-      (cp >= 0xf900 && cp <= 0xfaff) ||
-      (cp >= 0xfe10 && cp <= 0xfe19) ||
-      (cp >= 0xfe30 && cp <= 0xfe6f) ||
-      (cp >= 0xff01 && cp <= 0xff60) ||
-      (cp >= 0xffe0 && cp <= 0xffe6) ||
-      (cp >= 0x20000 && cp <= 0x2fffd) ||
-      (cp >= 0x30000 && cp <= 0x3fffd)
-    ) {
-      w += 2;
-      if (cp > 0xffff) i++;
-    } else {
-      w += 1;
-    }
-  }
-  return w;
+/**
+ * Check whether a buffer line fills the terminal width.
+ * Uses the cell-level API: if the last cell was written to by the program
+ * (non-null code, or a wide-character continuation cell), the line was
+ * hard-wrapped at the column boundary.
+ */
+function lineFillsCols(line: IBufferLine, cols: number): boolean {
+  if (cols <= 0) return false;
+  const cell = line.getCell(cols - 1);
+  if (!cell) return false;
+  // code=0 && width>0 → empty cell, never written to → line is short
+  // code>0 → content or space written by program → line fills width
+  // width=0 → continuation of wide char in previous cell → line fills width
+  return cell.getCode() !== 0 || cell.getWidth() === 0;
 }
 
 export function getSelectionText(term: Terminal): string | null {
@@ -38,34 +24,33 @@ export function getSelectionText(term: Terminal): string | null {
   const buf = term.buffer.active;
   const cols = term.cols;
 
-  const parts: {
-    text: string;
-    wrapped: boolean;
-    fullCw: number;
-    fullLineText: string;
-  }[] = [];
+  const parts: { text: string; wrapped: boolean; fillsCols: boolean; rawText: string }[] = [];
 
   for (let y = start.y; y <= end.y; y++) {
     const line = buf.getLine(y);
     if (!line) continue;
 
     let text: string;
+    let rawFullText: string;
     if (y === start.y && y === end.y) {
       text = line.translateToString(true, start.x, end.x);
+      rawFullText = line.translateToString(false, start.x, end.x);
     } else if (y === start.y) {
       text = line.translateToString(true, start.x);
+      rawFullText = line.translateToString(false, start.x);
     } else if (y === end.y) {
       text = line.translateToString(true, 0, end.x);
+      rawFullText = line.translateToString(false, 0, end.x);
     } else {
       text = line.translateToString(true);
+      rawFullText = line.translateToString(false);
     }
 
-    const fullLineText = line.translateToString(true);
     parts.push({
       text,
       wrapped: line.isWrapped,
-      fullCw: cellWidth(fullLineText),
-      fullLineText,
+      fillsCols: lineFillsCols(line, cols),
+      rawText: rawFullText,
     });
   }
 
@@ -77,7 +62,7 @@ export function getSelectionText(term: Terminal): string | null {
       result += parts[i].text;
     } else if (
       !parts[i - 1].wrapped &&
-      parts[i - 1].fullCw >= cols &&
+      parts[i - 1].fillsCols &&
       parts[i].text !== "" &&
       !parts[i].text.startsWith("- ") &&
       !parts[i].text.startsWith("* ") &&
@@ -85,16 +70,14 @@ export function getSelectionText(term: Terminal): string | null {
     ) {
       const trimmedPrev = result.trimEnd();
       const trimmedNext = parts[i].text.trimStart();
-      // Check full line for trailing space (word-boundary wrap implies
-      // the gap between last word and terminal boundary is spaces)
-      const fullLineTrimmed = parts[i - 1].fullLineText.trimEnd();
-      const hadTrailingSpace =
-        trimmedPrev.length < result.length ||
-        fullLineTrimmed.length < parts[i - 1].fullLineText.length;
-      const hadLeadingSpace = trimmedNext.length < parts[i].text.length;
+      // Check original texts for spaces (trimRight removes them)
+      const prevHadTrailingSpace =
+        parts[i - 1].rawText.trimEnd().length < parts[i - 1].rawText.length;
+      const currHadLeadingSpace =
+        parts[i].rawText.trimStart().length < parts[i].rawText.length;
       result =
         trimmedPrev +
-        (hadTrailingSpace || hadLeadingSpace ? " " : "") +
+        (prevHadTrailingSpace || currHadLeadingSpace ? " " : "") +
         trimmedNext;
     } else {
       result += "\n" + parts[i].text;
