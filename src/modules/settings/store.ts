@@ -20,6 +20,7 @@ export type ThemePref = "system" | "light" | "dark";
 export const DEFAULT_THEME_ID = "terax-default";
 
 export type BackgroundKind = "none" | "image";
+export type ExplorerDoubleClickAction = "open" | "rename";
 
 export const EDITOR_THEMES = [
   "atomone",
@@ -79,6 +80,7 @@ export type Preferences = {
   recentModelIds: string[];
   vimMode: boolean;
   showHidden: boolean;
+  explorerDoubleClickAction: ExplorerDoubleClickAction;
   terminalWebglEnabled: boolean;
   terminalFontFamily: string;
   terminalLetterSpacing: number;
@@ -123,6 +125,7 @@ const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
+const KEY_EXPLORER_DOUBLE_CLICK_ACTION = "explorerDoubleClickAction";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
@@ -180,6 +183,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   recentModelIds: [],
   vimMode: false,
   showHidden: false,
+  explorerDoubleClickAction: "open",
   terminalWebglEnabled: true,
   terminalFontFamily: "",
   terminalLetterSpacing: 0,
@@ -297,6 +301,9 @@ export async function loadPreferences(): Promise<Preferences> {
       get<boolean>(KEY_SHOW_HIDDEN) ??
       get<boolean>(LEGACY_KEY_SHOW_HIDDEN_DIRS) ??
       DEFAULT_PREFERENCES.showHidden,
+    explorerDoubleClickAction: parseExplorerDoubleClickAction(
+      get<string>(KEY_EXPLORER_DOUBLE_CLICK_ACTION),
+    ),
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
       DEFAULT_PREFERENCES.terminalWebglEnabled,
@@ -473,6 +480,20 @@ export async function setShowHidden(value: boolean): Promise<void> {
   await writePref(KEY_SHOW_HIDDEN, value);
 }
 
+function parseExplorerDoubleClickAction(
+  value: string | undefined,
+): ExplorerDoubleClickAction {
+  return value === "rename"
+    ? "rename"
+    : DEFAULT_PREFERENCES.explorerDoubleClickAction;
+}
+
+export async function setExplorerDoubleClickAction(
+  value: ExplorerDoubleClickAction,
+): Promise<void> {
+  await writePref(KEY_EXPLORER_DOUBLE_CLICK_ACTION, value);
+}
+
 export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
 }
@@ -579,6 +600,7 @@ export async function onPreferencesChange(
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
     [KEY_SHOW_HIDDEN]: "showHidden",
+    [KEY_EXPLORER_DOUBLE_CLICK_ACTION]: "explorerDoubleClickAction",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
     [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",

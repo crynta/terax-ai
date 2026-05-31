@@ -24,6 +24,7 @@ import {
   setAutostart,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
+  setExplorerDoubleClickAction,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
@@ -73,6 +74,9 @@ export function GeneralSection() {
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
+  const explorerDoubleClickAction = usePreferencesStore(
+    (s) => s.explorerDoubleClickAction,
+  );
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
@@ -202,6 +206,31 @@ export function GeneralSection() {
             checked={showHidden}
             onCheckedChange={(v) => void setShowHidden(v)}
           />
+        </SettingRow>
+        <SettingRow
+          title="Double-click file"
+          description="Choose whether double-clicking a file opens it permanently or starts rename."
+        >
+          <Select
+            value={explorerDoubleClickAction}
+            onValueChange={(v) =>
+              void setExplorerDoubleClickAction(
+                v === "rename" ? "rename" : "open",
+              )
+            }
+          >
+            <SelectTrigger size="sm" className="h-8 w-32 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="open" className="text-[12px]">
+                Open
+              </SelectItem>
+              <SelectItem value="rename" className="text-[12px]">
+                Rename
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </SettingRow>
       </div>
 
@@ -418,4 +447,3 @@ function AutoSaveDelayInput({
     </SettingRow>
   );
 }
-
