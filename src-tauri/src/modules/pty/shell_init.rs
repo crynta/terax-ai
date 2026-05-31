@@ -82,10 +82,16 @@ fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
     cmd.env("LANG", fallback);
 }
 
-fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
+fn apply_color_env(cmd: &mut CommandBuilder) {
+    cmd.env_remove("NO_COLOR");
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+    cmd.env("CLICOLOR", "1");
     cmd.env("TERAX_TERMINAL", "1");
+}
+
+fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
+    apply_color_env(cmd);
     ensure_utf8_locale(cmd);
 
     let resolved_cwd = cwd
@@ -100,6 +106,34 @@ fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
         cmd.cwd(cwd);
     } else {
         log::warn!("pty cwd: no usable directory, inheriting from process");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn color_env_enables_color_for_interactive_pty() {
+        let mut cmd = CommandBuilder::new("sh");
+        cmd.env("NO_COLOR", "1");
+
+        apply_color_env(&mut cmd);
+
+        assert_eq!(
+            cmd.get_env("TERM").and_then(|v| v.to_str()),
+            Some("xterm-256color")
+        );
+        assert_eq!(
+            cmd.get_env("COLORTERM").and_then(|v| v.to_str()),
+            Some("truecolor")
+        );
+        assert_eq!(cmd.get_env("CLICOLOR").and_then(|v| v.to_str()), Some("1"));
+        assert_eq!(
+            cmd.get_env("TERAX_TERMINAL").and_then(|v| v.to_str()),
+            Some("1")
+        );
+        assert!(cmd.get_env("NO_COLOR").is_none());
     }
 }
 
@@ -300,7 +334,9 @@ mod windows {
             zdotdir: String,
             user_zdotdir: Option<String>,
         },
-        Bash { rcfile: String },
+        Bash {
+            rcfile: String,
+        },
         Fish,
         None,
     }
@@ -405,9 +441,7 @@ mod windows {
         for arg in &spec.args {
             cmd.arg(arg);
         }
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("COLORTERM", "truecolor");
-        cmd.env("TERAX_TERMINAL", "1");
+        super::apply_color_env(&mut cmd);
         super::ensure_utf8_locale(&mut cmd);
         log::info!("spawning WSL shell: {distro} ({shell_path})");
         Ok(cmd)

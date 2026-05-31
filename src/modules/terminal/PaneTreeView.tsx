@@ -19,6 +19,7 @@ type Props = {
   node: PaneNode;
   tabVisible: boolean;
   activeLeafId: number;
+  dropTargetLeafId: number | null;
   onFocusLeaf: (leafId: number) => void;
   getBundle: (leafId: number) => LeafBundle;
 };
@@ -27,11 +28,13 @@ export function PaneTreeView({
   node,
   tabVisible,
   activeLeafId,
+  dropTargetLeafId,
   onFocusLeaf,
   getBundle,
 }: Props) {
   if (node.kind === "leaf") {
     const focused = node.id === activeLeafId;
+    const dropTarget = node.id === dropTargetLeafId;
     const b = getBundle(node.id);
     return (
       <div
@@ -56,6 +59,9 @@ export function PaneTreeView({
           onCwd={(_id, cwd) => b.onCwd(cwd)}
           onExit={(_id, code) => b.onExit(code)}
         />
+        {dropTarget ? (
+          <div className="pointer-events-none absolute inset-0 z-10 rounded-md border border-primary/70 bg-primary/10" />
+        ) : null}
       </div>
     );
   }
@@ -72,6 +78,7 @@ export function PaneTreeView({
               node={child}
               tabVisible={tabVisible}
               activeLeafId={activeLeafId}
+              dropTargetLeafId={dropTargetLeafId}
               onFocusLeaf={onFocusLeaf}
               getBundle={getBundle}
             />
