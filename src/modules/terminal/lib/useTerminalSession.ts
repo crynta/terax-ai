@@ -23,6 +23,8 @@ import {
   getSlotForLeaf,
   releaseSlot,
   setSlotFocused,
+  snapshotSlot,
+  capPersistSnapshot,
   type SlotAdapter,
 } from "./rendererPool";
 
@@ -170,9 +172,27 @@ export function setTerminalOpenFileHandler(handler: SlotAdapter["openFile"]): vo
   openFileHandler = handler;
 }
 
-function ensureSession(leafId: number, initialCwd?: string): Session {
+// Dim "session restored" separator appended after the replayed history so the
+// boundary between old scrollback and the live shell is visible. ANSI: dim
+// (2), reset (0). Written to the DISPLAY buffer only, never the PTY.
+function restoredSeparator(): string {
+  return "\r\n\x1b[2m──── session restored ────\x1b[0m\r\n";
+}
+
+function ensureSession(
+  leafId: number,
+  initialCwd?: string,
+  initialSnapshot?: string,
+): Session {
   const existing = sessions.get(leafId);
   if (existing) return existing;
+
+  // Seed the dormant-replay snapshot with the restored scrollback. acquireSlot
+  // writes `snapshot` to the xterm DISPLAY buffer (term.write) on first bind —
+  // NOT to the PTY — and bindLeafToSlot clears it afterwards, so the restored
+  // history is painted exactly once, above the fresh shell's first output.
+  const restored = capPersistSnapshot(initialSnapshot ?? null);
+  const seedSnapshot = restored ? restored + restoredSeparator() : null;
 
   const session: Session = {
     pty: null,
@@ -189,7 +209,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     cols: 0,
     rows: 0,
     container: null,
-    snapshot: null,
+    snapshot: seedSnapshot,
     searchQuery: null,
     dormantRing: new DormantRing(),
     hasSlot: false,
@@ -399,6 +419,8 @@ type Options = {
   visible: boolean;
   focused?: boolean;
   initialCwd?: string;
+  /** Restored scrollback (xterm serialize string); painted once on first bind. */
+  initialSnapshot?: string;
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
@@ -410,6 +432,7 @@ export function useTerminalSession({
   visible,
   focused = true,
   initialCwd,
+  initialSnapshot,
   onSearchReady,
   onExit,
   onCwd,
@@ -424,9 +447,17 @@ export function useTerminalSession({
   const initialCwdRef = useRef(initialCwd);
   initialCwdRef.current = initialCwd;
 
+  // Snapshot seeds the session only on first creation (same lifecycle as cwd).
+  const initialSnapshotRef = useRef(initialSnapshot);
+  initialSnapshotRef.current = initialSnapshot;
+
   useEffect(() => {
     let cancelled = false;
-    const s = ensureSession(leafId, initialCwdRef.current);
+    const s = ensureSession(
+      leafId,
+      initialCwdRef.current,
+      initialSnapshotRef.current,
+    );
     s.ready.then(() => {
       if (cancelled || s.disposed) return;
       const node = container.current;
@@ -534,9 +565,19 @@ export function useTerminalSession({
     applyPoolTheme();
   }, []);
 
+  // Size-capped scrollback snapshot for session persistence. Prefers the live
+  // slot; falls back to the dormant snapshot when the leaf is detached. Returns
+  // null when there's nothing meaningful to store (so the caller can omit it).
+  const getSnapshot = useCallback((): string | null => {
+    const live = snapshotSlot(leafId);
+    if (live !== null) return live;
+    const s = sessions.get(leafId);
+    return capPersistSnapshot(s?.snapshot ?? null);
+  }, [leafId]);
+
   return useMemo(
-    () => ({ write, focus, getBuffer, getSelection, applyTheme }),
-    [write, focus, getBuffer, getSelection, applyTheme],
+    () => ({ write, focus, getBuffer, getSelection, getSnapshot, applyTheme }),
+    [write, focus, getBuffer, getSelection, getSnapshot, applyTheme],
   );
 }
 

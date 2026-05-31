@@ -23,6 +23,11 @@ export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
 const PTY_RESIZE_DEBOUNCE_MS = 256;
 const SNAPSHOT_SCROLLBACK_CAP = 5_000;
+// Tighter caps for the *persisted* snapshot (session save → tauri store).
+// The dormant-replay snapshot can be larger; what we write to disk per leaf
+// must stay small since a session can have many panes.
+const PERSIST_SNAPSHOT_LINE_CAP = 2_000;
+const PERSIST_SNAPSHOT_BYTE_CAP = 256 * 1024;
 
 export type SlotAdapter = {
   resolveLeaf(leafId: number): LeafBridge | null;
@@ -559,6 +564,40 @@ function serializeSlot(slot: Slot): SerializeOutput {
     rows: slot.term.rows,
     altScreen: isAltScreen(slot),
   };
+}
+
+/**
+ * Capture a size-capped scrollback snapshot of the slot currently bound to
+ * `leafId`, for persistence. Returns null when no slot is bound (caller falls
+ * back to the dormant session snapshot) or when the buffer is empty. The cap
+ * here is tighter than the dormant-replay cap to keep the on-disk store small.
+ */
+export function snapshotSlot(leafId: number): string | null {
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (!slot) return null;
+  let snapshot: string | null = null;
+  try {
+    const cap = Math.min(
+      PERSIST_SNAPSHOT_LINE_CAP,
+      usePreferencesStore.getState().terminalScrollback,
+    );
+    snapshot = slot.serializeAddon.serialize({ scrollback: cap });
+  } catch (e) {
+    console.warn("[terax] persist snapshot failed:", e);
+    return null;
+  }
+  return capPersistSnapshot(snapshot);
+}
+
+/** Clamp a snapshot string to the persist byte cap; return null if empty. */
+export function capPersistSnapshot(snapshot: string | null): string | null {
+  if (!snapshot) return null;
+  let out = snapshot;
+  if (out.length > PERSIST_SNAPSHOT_BYTE_CAP) {
+    // Keep the tail (most recent output) — that's what the user cares about.
+    out = out.slice(out.length - PERSIST_SNAPSHOT_BYTE_CAP);
+  }
+  return out.length > 0 ? out : null;
 }
 
 function detachSlotFromLeaf(slot: Slot): void {

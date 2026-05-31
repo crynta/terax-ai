@@ -48,6 +48,11 @@ function remapPaneNode(
     leafMap.set(node.id, newId);
     const leaf: PaneNode = { kind: "leaf", id: newId };
     if (node.cwd !== null && node.cwd !== undefined) leaf.cwd = node.cwd;
+    // Display-only scrollback; optional + backward-compatible (old saves omit
+    // it). Carried onto the live leaf so the pane repaints it once on mount.
+    if (typeof node.snapshot === "string" && node.snapshot.length > 0) {
+      leaf.snapshot = node.snapshot;
+    }
     return leaf;
   }
   const split: PaneNode = {

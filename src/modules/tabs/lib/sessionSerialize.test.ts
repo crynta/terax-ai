@@ -238,4 +238,59 @@ describe("serializeSession", () => {
       paneTree: { kind: "leaf", id: 2, cwd: null },
     });
   });
+
+  it("captures per-leaf scrollback snapshots from getSnapshot", () => {
+    const tabs: Tab[] = [
+      {
+        id: 1,
+        kind: "terminal",
+        title: "shell",
+        paneTree: {
+          kind: "split",
+          id: 2,
+          dir: "row",
+          children: [
+            { kind: "leaf", id: 3 },
+            { kind: "leaf", id: 4 },
+          ],
+        },
+        activeLeafId: 3,
+      },
+    ];
+    const snapshots: Record<number, string | null> = {
+      3: "echo hi\r\nhi\r\n",
+      4: null, // empty → omitted
+    };
+    const out = withFakeNow(() =>
+      serializeSession(tabs, 1, (id) => snapshots[id] ?? null),
+    );
+    const tree = (out.tabs[0] as { paneTree: { children: unknown[] } }).paneTree;
+    expect(tree.children[0]).toEqual({
+      kind: "leaf",
+      id: 3,
+      cwd: null,
+      snapshot: "echo hi\r\nhi\r\n",
+    });
+    // Leaf 4's snapshot was null, so the field is omitted entirely.
+    expect(tree.children[1]).toEqual({ kind: "leaf", id: 4, cwd: null });
+  });
+
+  it("omits the snapshot field when no getSnapshot is provided", () => {
+    const tabs: Tab[] = [
+      {
+        id: 1,
+        kind: "terminal",
+        title: "shell",
+        paneTree: { kind: "leaf", id: 2 },
+        activeLeafId: 2,
+      },
+    ];
+    const out = withFakeNow(() => serializeSession(tabs, 1));
+    expect(out.tabs[0]).toMatchObject({
+      paneTree: { kind: "leaf", id: 2, cwd: null },
+    });
+    expect(
+      (out.tabs[0] as { paneTree: { snapshot?: string } }).paneTree.snapshot,
+    ).toBeUndefined();
+  });
 });

@@ -7,28 +7,49 @@ import {
 } from "./sessionSchema";
 import type { Tab } from "./useTabs";
 
-function serializePaneNode(node: PaneNode): SerializedPaneNode {
+/**
+ * Reads the current scrollback snapshot for a terminal leaf (xterm serialize
+ * string), already size-capped and null when empty. Supplied by the app, which
+ * owns the live terminal handles; omitted in contexts without live terminals
+ * (e.g. unit tests), in which case no snapshots are stored.
+ */
+export type GetLeafSnapshot = (leafId: number) => string | null | undefined;
+
+function serializePaneNode(
+  node: PaneNode,
+  getSnapshot?: GetLeafSnapshot,
+): SerializedPaneNode {
   if (node.kind === "leaf") {
-    return { kind: "leaf", id: node.id, cwd: node.cwd ?? null };
+    const leaf: SerializedPaneNode = {
+      kind: "leaf",
+      id: node.id,
+      cwd: node.cwd ?? null,
+    };
+    const snapshot = getSnapshot?.(node.id);
+    if (snapshot) leaf.snapshot = snapshot;
+    return leaf;
   }
   const out: SerializedPaneNode = {
     kind: "split",
     id: node.id,
     dir: node.dir,
-    children: node.children.map(serializePaneNode),
+    children: node.children.map((c) => serializePaneNode(c, getSnapshot)),
   };
   if (node.sizes) out.sizes = node.sizes;
   return out;
 }
 
-function serializeTab(tab: Tab): SerializedTab | null {
+function serializeTab(
+  tab: Tab,
+  getSnapshot?: GetLeafSnapshot,
+): SerializedTab | null {
   if (tab.kind === "terminal") {
     const serialized: SerializedTab = {
       kind: "terminal",
       id: tab.id,
       title: tab.title,
       cwd: tab.cwd ?? null,
-      paneTree: serializePaneNode(tab.paneTree),
+      paneTree: serializePaneNode(tab.paneTree, getSnapshot),
       activeLeafId: tab.activeLeafId,
     };
     if (tab.private) serialized.private = true;
@@ -45,10 +66,14 @@ function serializeTab(tab: Tab): SerializedTab | null {
   return null;
 }
 
-export function serializeSession(tabs: Tab[], activeId: number): SessionV1 {
+export function serializeSession(
+  tabs: Tab[],
+  activeId: number,
+  getSnapshot?: GetLeafSnapshot,
+): SessionV1 {
   const serialized: SerializedTab[] = [];
   for (const tab of tabs) {
-    const out = serializeTab(tab);
+    const out = serializeTab(tab, getSnapshot);
     if (out !== null) serialized.push(out);
   }
   return {

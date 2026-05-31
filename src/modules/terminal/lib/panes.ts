@@ -3,7 +3,18 @@ export type PaneId = number;
 export type SplitDir = "row" | "col";
 
 export type PaneNode =
-  | { kind: "leaf"; id: PaneId; cwd?: string }
+  | {
+      kind: "leaf";
+      id: PaneId;
+      cwd?: string;
+      /**
+       * Restored scrollback snapshot (xterm serialize string), display-only.
+       * Present only on leaves rebuilt from a saved session; consumed once
+       * when the terminal session is first created, then irrelevant. Never
+       * set on live splits/new panes.
+       */
+      snapshot?: string;
+    }
   | {
       kind: "split";
       id: PaneId;

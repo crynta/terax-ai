@@ -3,7 +3,18 @@
 export const SESSION_SCHEMA_VERSION = 1 as const;
 
 export type SerializedPaneNode =
-  | { kind: "leaf"; id: number; cwd: string | null }
+  | {
+      kind: "leaf";
+      id: number;
+      cwd: string | null;
+      /**
+       * xterm SerializeAddon scrollback snapshot (display-only). Re-rendered
+       * into the fresh terminal on restore so the user sees their prior
+       * history above the new prompt. Optional + size-capped at save time;
+       * omitted when empty. Old saves without it still load.
+       */
+      snapshot?: string;
+    }
   | {
       kind: "split";
       id: number;

@@ -158,6 +158,51 @@ describe("deserializeSession", () => {
     expect(t2.paneTree.sizes).toBeUndefined();
   });
 
+  it("carries a leaf scrollback snapshot through onto the live leaf", () => {
+    const saved: SessionV1 = {
+      version: 1,
+      updatedAt: 0,
+      activeTabId: 1,
+      tabs: [
+        {
+          kind: "terminal",
+          id: 1,
+          title: "shell",
+          cwd: null,
+          paneTree: { kind: "leaf", id: 2, cwd: "/x", snapshot: "old\r\n" },
+          activeLeafId: 2,
+        },
+      ],
+    };
+    const r = deserializeSession(saved, 100)!;
+    const t = r.tabs[0];
+    if (t.kind !== "terminal" || t.paneTree.kind !== "leaf") throw new Error();
+    expect(t.paneTree.cwd).toBe("/x");
+    expect(t.paneTree.snapshot).toBe("old\r\n");
+  });
+
+  it("loads a leaf without a snapshot (backward compatible)", () => {
+    const saved: SessionV1 = {
+      version: 1,
+      updatedAt: 0,
+      activeTabId: 1,
+      tabs: [
+        {
+          kind: "terminal",
+          id: 1,
+          title: "shell",
+          cwd: null,
+          paneTree: { kind: "leaf", id: 2, cwd: null },
+          activeLeafId: 2,
+        },
+      ],
+    };
+    const r = deserializeSession(saved, 100)!;
+    const t = r.tabs[0];
+    if (t.kind !== "terminal" || t.paneTree.kind !== "leaf") throw new Error();
+    expect(t.paneTree.snapshot).toBeUndefined();
+  });
+
   it("preserves private flag on terminal tabs", () => {
     const saved: SessionV1 = {
       version: 1,
