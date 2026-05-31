@@ -1,6 +1,8 @@
 pub mod modules;
 
-use modules::{agent, claude_usage, fs, git, net, pty, secrets, shell, workspace};
+use modules::{
+    agent, claude_usage, codex_usage, cursor_usage, fs, git, net, pty, secrets, shell, workspace,
+};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -181,6 +183,9 @@ pub fn run() {
             fs::file::fs_stat,
             fs::file::fs_canonicalize,
             claude_usage::claude_usage,
+            codex_usage::codex_usage,
+            codex_usage::agent_usage_clis,
+            cursor_usage::cursor_usage,
             fs::mutate::fs_create_file,
             fs::mutate::fs_create_dir,
             fs::mutate::fs_rename,
