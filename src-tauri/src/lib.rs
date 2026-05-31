@@ -32,6 +32,22 @@ fn parse_launch_dir() -> Option<String> {
     None
 }
 
+fn app_display_name() -> &'static str {
+    if cfg!(debug_assertions) {
+        "Terax-Dev"
+    } else {
+        "Terax"
+    }
+}
+
+fn settings_window_title() -> &'static str {
+    if cfg!(debug_assertions) {
+        "Terax-Dev Settings"
+    } else {
+        "Settings"
+    }
+}
+
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
     let url_path = match tab.as_deref() {
@@ -52,7 +68,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     }
 
     let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
-        .title("Settings")
+        .title(settings_window_title())
         .inner_size(900.0, 700.0)
         .min_inner_size(820.0, 620.0)
         .resizable(true)
@@ -137,6 +153,10 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .setup(|_app| {
+            if let Some(main) = _app.get_webview_window("main") {
+                let _ = main.set_title(app_display_name());
+            }
+
             // macOS skips parent() for the settings window, so tie its lifecycle
             // to the main window here instead. Other platforms keep parent().
             #[cfg(target_os = "macos")]

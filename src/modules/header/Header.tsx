@@ -185,6 +185,15 @@ export function Header({
 
       {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border" />}
 
+      {import.meta.env.DEV ? (
+        <span
+          data-tauri-drag-region
+          className="shrink-0 rounded-sm border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] leading-4 font-semibold text-amber-300"
+        >
+          Terax-Dev
+        </span>
+      ) : null}
+
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
         data-tauri-drag-region
