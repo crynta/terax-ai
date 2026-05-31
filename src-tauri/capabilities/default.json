@@ -4,6 +4,7 @@
   "description": "Capability for the main window",
   "windows": [
     "main",
+    "main-*",
     "settings"
   ],
   "permissions": [

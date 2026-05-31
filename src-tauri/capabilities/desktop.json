@@ -7,6 +7,7 @@
   ],
   "windows": [
     "main",
+    "main-*",
     "settings"
   ],
   "permissions": [
