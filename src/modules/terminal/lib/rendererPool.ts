@@ -73,6 +73,20 @@ export function poolSize(): number {
   return slots.length;
 }
 
+/**
+ * Bracketed-paste `text` into the terminal currently bound to `leafId`. Routes
+ * through xterm's `paste()` (→ onData → writeToPty), so apps that enabled
+ * bracketed paste (e.g. Claude Code) receive it as a real paste — letting Claude
+ * resolve a dropped image path into an "[Image #N]" reference — while a plain
+ * shell just gets the literal text without stray ESC[200~ markers.
+ */
+export function pasteIntoLeaf(leafId: number, text: string): boolean {
+  const slot = slots?.find((s) => s?.currentLeafId === leafId);
+  if (!slot) return false;
+  slot?.term?.paste(text);
+  return true;
+}
+
 function getRecycler(): HTMLDivElement {
   if (recyclerEl && recyclerEl.isConnected) return recyclerEl;
   const el = document.createElement("div");
