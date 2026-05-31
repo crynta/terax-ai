@@ -1,8 +1,8 @@
 import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SearchAddon } from "@xterm/addon-search";
+import type { Terminal } from "@xterm/xterm";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { DormantRing } from "./dormantRing";
 import {
   createShellIntegrationState,
   registerCwdHandler,
@@ -10,20 +10,38 @@ import {
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 import {
-  acquireSlot,
   applyBackgroundActive,
+  applyCursorBlinkFor,
   applyFontFamily,
   applyFontSize,
   applyLetterSpacing,
-  applyTheme as applyPoolTheme,
   applyScrollback,
+  applyScrollbackFor,
+  applyTheme as applyPoolTheme,
   applyWebglPreference,
-  configureRendererPool,
-  focusSlot,
-  getSlotForLeaf,
-  releaseSlot,
-  setSlotFocused,
-} from "./rendererPool";
+  attachView,
+  clearViewState,
+  configureEmulatorAdapter,
+  detachView,
+  disposeEmulator,
+  ensureEmulator,
+  focusLeaf,
+  getEmulator,
+  setTopLeaf,
+  WriteScheduler,
+} from "./terminalPool";
+
+// Per-leaf terminal session coordinator.
+//
+// REWRITTEN for the persistent-buffer model. Public surface unchanged:
+//   whenSessionReady / writeToSession / clearFocusedTerminal / leafIdForPty /
+//   respawnSession / disposeSession + the useTerminalSession hook returning
+//   { write, focus, getBuffer, getSelection, applyTheme }.
+//
+// The Session record no longer carries snapshot / dormantRing /
+// altScreenAtRelease / hasSlot — there is one persistent emulator per leaf
+// (terminalPool) that is ALWAYS fed PTY bytes. Visibility drives a pure view
+// attach/detach, never a buffer rebuild.
 
 type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
@@ -46,17 +64,14 @@ type Session = {
   cols: number;
   rows: number;
   container: HTMLDivElement | null;
-  snapshot: string | null;
   searchQuery: string | null;
-  dormantRing: DormantRing;
-  hasSlot: boolean;
-  // True if the slot was in alt-screen mode (TUI like vim, htop, dofek)
-  // at the most recent release. Read once on the next bind to trigger a
-  // SIGWINCH-driven repaint instead of replaying dormant bytes.
-  altScreenAtRelease: boolean;
 };
 
 const sessions = new Map<number, Session>();
+
+// One coalescer for the whole app (keyed internally by leafId). Visible leaves
+// write synchronously; hidden leaves coalesce per animation frame (F3).
+const writeScheduler = new WriteScheduler();
 
 const readyLeaves = new Set<number>();
 const readyWaiters = new Map<
@@ -101,14 +116,14 @@ export function writeToSession(leafId: number, data: string): boolean {
 /**
  * Clear the scrollback and screen of the currently focused terminal, keeping
  * the active prompt line — macOS Terminal's ⌘K behaviour. Returns false when no
- * focused terminal slot is bound (e.g. focus is in the editor or AI panel).
+ * focused terminal is bound (e.g. focus is in the editor or AI panel).
  */
 export function clearFocusedTerminal(): boolean {
   for (const [leafId, s] of sessions) {
     if (!s.visibleNow || !s.focusedNow) continue;
-    const slot = getSlotForLeaf(leafId);
-    if (!slot) continue;
-    slot.term.clear();
+    const emu = getEmulator(leafId);
+    if (!emu) continue;
+    emu.term.clear();
     return true;
   }
   return false;
@@ -121,7 +136,10 @@ export function leafIdForPty(ptyId: number): number | null {
   return null;
 }
 
-configureRendererPool({
+// Wire the terminalPool's adapter so its persistent emulators can reach the PTY
+// for this leaf (onData / resize) and query focus. No kickPty/evictLeaf — those
+// were lossy-rebuild machinery and are deleted.
+configureEmulatorAdapter({
   resolveLeaf(leafId) {
     const s = sessions.get(leafId);
     if (!s) return null;
@@ -134,23 +152,7 @@ configureRendererPool({
         s.rows = rows;
         s.pty?.resize(cols, rows);
       },
-      kickPty: (cols, rows) => {
-        const pty = s.pty;
-        if (!pty || cols <= 0 || rows <= 0) return;
-        // Linux only emits SIGWINCH when the winsize ioctl actually
-        // changes dims, so bump +1 row then restore. The TUI receives
-        // (possibly two) SIGWINCHes and repaints from scratch.
-        pty
-          .resize(cols, rows + 1)
-          .then(() => pty.resize(cols, rows))
-          .catch((e) => console.warn("[terax] kickPty failed:", e));
-      },
     };
-  },
-  evictLeaf(leafId) {
-    const s = sessions.get(leafId);
-    if (!s) return;
-    unbindLeafFromSlot(leafId, s);
   },
   isLeafFocused(leafId) {
     const s = sessions.get(leafId);
@@ -177,11 +179,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     cols: 0,
     rows: 0,
     container: null,
-    snapshot: null,
     searchQuery: null,
-    dormantRing: new DormantRing(),
-    hasSlot: false,
-    altScreenAtRelease: false,
   };
   sessions.set(leafId, session);
 
@@ -193,12 +191,48 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   return session;
 }
 
+/**
+ * PTY bytes always flow into the persistent emulator. The write scheduler
+ * decides immediate (visible) vs coalesced-per-frame (hidden) — never dropped.
+ */
 function deliverPtyBytes(leafId: number, bytes: Uint8Array): void {
   const s = sessions.get(leafId);
   if (!s) return;
-  const slot = getSlotForLeaf(leafId);
-  if (slot) slot.term.write(bytes);
-  else s.dormantRing.push(bytes);
+  const emu = ensureEmulator(leafId);
+  ensureOscHandlers(leafId, emu.term);
+  writeScheduler.deliver(leafId, emu.term, bytes, s.visibleNow);
+}
+
+/**
+ * Register the OSC 7 (cwd) + OSC 133 (prompt) handlers ONCE per emulator
+ * lifetime. Under the persistent model the emulator survives every tab switch,
+ * so re-registering on each attach (the old behavior) would leak handlers.
+ */
+function ensureOscHandlers(leafId: number, term: Terminal): void {
+  const emu = getEmulator(leafId);
+  if (!emu || emu.oscRegistered) return;
+  emu.oscRegistered = true;
+  const s = sessions.get(leafId);
+  // Shared in-command flag — see osc-handlers.ts. The prompt tracker flips it
+  // on OSC 133 B/C/D/A; the cwd handler reads it to ignore OSC 7 emitted by
+  // untrusted command output (remote SSH, `cat` of an attacker file, etc.).
+  const shellState = createShellIntegrationState();
+  const prompt = registerPromptTracker(term, shellState);
+  const cwd = registerCwdHandler(
+    term,
+    (next) => {
+      markSessionReady(leafId);
+      const sess = sessions.get(leafId);
+      if (!sess) return;
+      if (sess.lastCwd === next) return;
+      sess.lastCwd = next;
+      sess.callbacks.onCwd?.(next);
+    },
+    shellState,
+  );
+  emu.oscDisposers = [prompt.dispose, cwd];
+  // If a cwd was already known (e.g. re-entry), surface it.
+  if (s?.lastCwd != null) s.callbacks.onCwd?.(s.lastCwd);
 }
 
 async function openPtyForSession(
@@ -216,8 +250,8 @@ async function openPtyForSession(
       onExit: (code) => {
         s.shellExited = true;
         s.pty = null;
-        const slot = getSlotForLeaf(leafId);
-        if (slot) slot.term.options.disableStdin = true;
+        const emu = getEmulator(leafId);
+        if (emu) emu.term.options.disableStdin = true;
         if (s.callbacks.onExit) s.callbacks.onExit(code);
         else s.pendingExit = code;
       },
@@ -226,43 +260,29 @@ async function openPtyForSession(
   );
 }
 
-function bindLeafToSlot(leafId: number, s: Session): void {
+/**
+ * Show a leaf: ensure its persistent emulator exists, register OSC handlers
+ * once, attach the host into the visible container (xterm repaints from the
+ * live buffer), flush any coalesced background bytes, restore focus.
+ */
+function showLeaf(leafId: number, s: Session): void {
   if (!s.container) return;
-  const altScreen = s.altScreenAtRelease;
-  s.altScreenAtRelease = false;
-  acquireSlot({
-    leafId,
-    container: s.container,
-    snapshot: s.snapshot,
-    altScreen,
-    drainRing: (write) => s.dormantRing.drain(write),
-    shellExited: s.shellExited,
-    searchQuery: s.searchQuery,
-    cols: s.cols,
-    rows: s.rows,
-    registerOsc: (term) => {
-      // Shared in-command flag — see osc-handlers.ts. The prompt tracker
-      // flips it on OSC 133 B/C/D/A; the cwd handler reads it to ignore OSC
-      // 7 emitted by untrusted command output (remote SSH, `cat` of an
-      // attacker file, etc.).
-      const shellState = createShellIntegrationState();
-      const prompt = registerPromptTracker(term, shellState);
-      const cwd = registerCwdHandler(
-        term,
-        (next) => {
-          markSessionReady(leafId);
-          if (s.lastCwd === next) return;
-          s.lastCwd = next;
-          s.callbacks.onCwd?.(next);
-        },
-        shellState,
-      );
-      return [prompt.dispose, cwd];
-    },
-    onSearchReady: (addon) => s.callbacks.onSearchReady?.(addon),
-  });
-  s.snapshot = null;
-  s.hasSlot = true;
+  const emu = ensureEmulator(leafId);
+  ensureOscHandlers(leafId, emu.term);
+  emu.term.options.disableStdin = s.shellExited;
+  attachView(leafId, s.container, s.cols, s.rows, s.focusedNow);
+  // Foreground gets full scrollback pref.
+  applyScrollbackFor(emu);
+  // Drain any bytes that coalesced while the leaf was hidden so the on-show
+  // repaint reflects the very latest output.
+  writeScheduler.flush(leafId);
+  if (s.searchQuery) {
+    try {
+      emu.searchAddon.findNext(s.searchQuery);
+    } catch {}
+  }
+  applyCursorBlinkFor(leafId, s.focusedNow);
+  s.callbacks.onSearchReady?.(emu.searchAddon);
   if (s.lastCwd !== null) s.callbacks.onCwd?.(s.lastCwd);
   if (s.pendingExit !== null) {
     const code = s.pendingExit;
@@ -271,16 +291,15 @@ function bindLeafToSlot(leafId: number, s: Session): void {
   }
 }
 
-function unbindLeafFromSlot(leafId: number, s: Session): void {
-  if (!s.hasSlot) return;
-  const out = releaseSlot(leafId);
-  if (out) {
-    s.snapshot = out.snapshot;
-    if (out.cols > 0) s.cols = out.cols;
-    if (out.rows > 0) s.rows = out.rows;
-    s.altScreenAtRelease = out.altScreen;
-  }
-  s.hasSlot = false;
+/**
+ * Hide a leaf: park its host in the offscreen recycler (DOM-detach => render
+ * stops, buffer stays live). Drop background scrollback cap. The buffer is NOT
+ * serialized or cleared.
+ */
+function hideLeaf(leafId: number): void {
+  detachView(leafId);
+  const emu = getEmulator(leafId);
+  if (emu) applyScrollbackFor(emu);
 }
 
 function attachSession(
@@ -293,7 +312,12 @@ function attachSession(
   s.callbacks = callbacks;
   s.container = container;
 
-  if (s.visibleNow) bindLeafToSlot(leafId, s);
+  // Create the persistent emulator up-front so PTY bytes have somewhere to go
+  // even before the leaf is ever shown.
+  const emu = ensureEmulator(leafId);
+  ensureOscHandlers(leafId, emu.term);
+
+  if (s.visibleNow) showLeaf(leafId, s);
 
   if (!s.pty && !s.ptyOpening && !s.shellExited) {
     s.ptyOpening = true;
@@ -314,10 +338,15 @@ function attachSession(
   }
 }
 
+/**
+ * React effect cleanup: the leaf's DOM container is going away. Park the view
+ * but DO NOT dispose the emulator (the leaf still exists; it may remount). The
+ * emulator is only disposed via disposeSession on real tab close.
+ */
 function detachSession(leafId: number): void {
   const s = sessions.get(leafId);
   if (!s) return;
-  unbindLeafFromSlot(leafId, s);
+  hideLeaf(leafId);
   s.callbacks = {};
   s.container = null;
 }
@@ -330,17 +359,16 @@ export async function respawnSession(
   if (!s || s.disposed) return;
   s.pty?.close();
   s.pty = null;
-  s.snapshot = null;
-  s.dormantRing = new DormantRing();
   s.shellExited = false;
   s.pendingExit = null;
-  s.altScreenAtRelease = false;
+  writeScheduler.cancel(leafId);
 
-  const slot = getSlotForLeaf(leafId);
-  if (slot) {
-    slot.term.options.disableStdin = false;
-    slot.term.clear();
-    slot.term.reset();
+  // Respawn clears the SAME persistent emulator (it survives the respawn).
+  const emu = getEmulator(leafId);
+  if (emu) {
+    emu.term.options.disableStdin = false;
+    emu.term.clear();
+    emu.term.reset();
   }
 
   s.ptyOpening = true;
@@ -365,8 +393,12 @@ export function disposeSession(leafId: number): void {
   const s = sessions.get(leafId);
   if (!s) return;
   s.disposed = true;
-  unbindLeafFromSlot(leafId, s);
-  s.snapshot = null;
+  writeScheduler.cancel(leafId);
+  clearViewState(leafId);
+  // Real teardown on tab close: dispose the persistent emulator + free its GL
+  // context (the old code only unbound a recycled slot — this is the correct
+  // lifecycle end).
+  disposeEmulator(leafId);
   s.pty?.close();
   s.pty = null;
   sessions.delete(leafId);
@@ -417,7 +449,7 @@ export function useTerminalSession({
         onExit: (c) => cbRef.current.onExit?.(c),
         onCwd: (c) => cbRef.current.onCwd?.(c),
       });
-      if (s.visibleNow && s.focusedNow) focusSlot(leafId);
+      if (s.visibleNow && s.focusedNow) focusLeaf(leafId);
     });
     return () => {
       cancelled = true;
@@ -461,14 +493,16 @@ export function useTerminalSession({
   useEffect(() => {
     const s = sessions.get(leafId);
     if (!s) return;
+    const wasVisible = s.visibleNow;
     s.visibleNow = visible;
     s.focusedNow = focused;
     if (visible) {
-      if (s.container && !s.hasSlot) bindLeafToSlot(leafId, s);
-      setSlotFocused(leafId, focused);
-      if (focused) focusSlot(leafId);
-    } else if (s.hasSlot) {
-      unbindLeafFromSlot(leafId, s);
+      if (s.container && !wasVisible) showLeaf(leafId, s);
+      setTopLeaf(leafId, focused);
+      applyCursorBlinkFor(leafId, focused);
+      if (focused) focusLeaf(leafId);
+    } else if (wasVisible) {
+      hideLeaf(leafId);
     }
   }, [leafId, visible, focused]);
 
@@ -477,37 +511,30 @@ export function useTerminalSession({
     [leafId],
   );
 
-  const focus = useCallback(() => focusSlot(leafId), [leafId]);
+  const focus = useCallback(() => focusLeaf(leafId), [leafId]);
 
   const getBuffer = useCallback(
     (maxLines = 200): string | null => {
       const s = sessions.get(leafId);
       if (!s) return null;
-      const slot = getSlotForLeaf(leafId);
-      if (slot) {
-        const buf = slot.term.buffer.active;
-        const total = buf.length;
-        const lines: string[] = [];
-        const start = Math.max(0, total - maxLines);
-        for (let i = start; i < total; i++) {
-          lines.push(buf.getLine(i)?.translateToString(true) ?? "");
-        }
-        while (lines.length && lines[lines.length - 1] === "") lines.pop();
-        return lines.join("\n");
+      const emu = getEmulator(leafId);
+      if (!emu) return "";
+      const buf = emu.term.buffer.active;
+      const total = buf.length;
+      const lines: string[] = [];
+      const start = Math.max(0, total - maxLines);
+      for (let i = start; i < total; i++) {
+        lines.push(buf.getLine(i)?.translateToString(true) ?? "");
       }
-      if (!s.snapshot) return "";
-      const plain = stripAnsi(s.snapshot);
-      const lines = plain.split(/\r?\n/);
-      const tail = lines.slice(-maxLines);
-      while (tail.length && tail[tail.length - 1] === "") tail.pop();
-      return tail.join("\n");
+      while (lines.length && lines[lines.length - 1] === "") lines.pop();
+      return lines.join("\n");
     },
     [leafId],
   );
 
   const getSelection = useCallback((): string | null => {
-    const slot = getSlotForLeaf(leafId);
-    const sel = slot?.term.getSelection() ?? "";
+    const emu = getEmulator(leafId);
+    const sel = emu?.term.getSelection() ?? "";
     return sel.length > 0 ? sel : null;
   }, [leafId]);
 
@@ -519,11 +546,4 @@ export function useTerminalSession({
     () => ({ write, focus, getBuffer, getSelection, applyTheme }),
     [write, focus, getBuffer, getSelection, applyTheme],
   );
-}
-
-const ANSI_RE =
-  /\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][AB012]|\x1b[78=>]|\x1bc|\x1b[NOP\]X^_]/g;
-
-function stripAnsi(s: string): string {
-  return s.replace(ANSI_RE, "");
 }
