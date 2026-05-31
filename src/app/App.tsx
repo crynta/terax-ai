@@ -1215,9 +1215,13 @@ export default function App() {
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
 
-  // Two-stroke tmux prefix-sequence splitting (e.g. Ctrl+A then \), read from
-  // the user's ~/.tmux.conf. Separate machinery from the chord shortcuts above.
-  useTmuxSplit(splitActivePaneInActiveTab);
+  // Two-stroke tmux prefix-sequence splitting + pane navigation (e.g. Ctrl+A
+  // then \ to split, or h/j/k/l to switch panes), read from the user's
+  // ~/.tmux.conf. Separate machinery from the chord shortcuts above. The app
+  // only cycles panes, so left/up map to previous and right/down to next.
+  useTmuxSplit(splitActivePaneInActiveTab, (dir) =>
+    focusNextPaneInTab(activeId, dir === "left" || dir === "up" ? -1 : 1),
+  );
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {

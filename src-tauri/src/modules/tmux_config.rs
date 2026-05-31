@@ -17,6 +17,13 @@ const DEFAULT_PREFIX_KEY: &str = "b";
 const DEFAULT_SPLIT_RIGHT: &str = "%";
 /// tmux default split-down binding (`bind \" split-window -v`).
 const DEFAULT_SPLIT_DOWN: &str = "\"";
+/// tmux default pane-navigation bindings are the arrow keys
+/// (`bind Left select-pane -L`, etc). The frontend normalizes these tokens to
+/// JS `KeyboardEvent.key` names (`Left` -> `ArrowLeft`).
+const DEFAULT_FOCUS_LEFT: &str = "Left";
+const DEFAULT_FOCUS_RIGHT: &str = "Right";
+const DEFAULT_FOCUS_UP: &str = "Up";
+const DEFAULT_FOCUS_DOWN: &str = "Down";
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +43,12 @@ pub struct TmuxSplitBindings {
     pub split_right: String,
     /// E.g. "-" or "\"".
     pub split_down: String,
+    /// Pane-navigation keys (tmux `select-pane -L/-R/-U/-D`). Tokens may be
+    /// single chars (`h`) or arrow names (`Left`); the frontend normalizes.
+    pub focus_left: String,
+    pub focus_right: String,
+    pub focus_up: String,
+    pub focus_down: String,
 }
 
 /// Config file lookup order — first existing path wins.
@@ -109,19 +122,60 @@ fn split_direction(tokens: &[&str]) -> Option<SplitDir> {
     Some(SplitDir::Down)
 }
 
+enum FocusDir {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// Detect a `select-pane` command in the tokens after the key, and resolve its
+/// direction from `-L/-R/-U/-D`. Directionless `select-pane` (e.g. `-t`) is
+/// ignored.
+fn select_pane_direction(tokens: &[&str]) -> Option<FocusDir> {
+    if !tokens.iter().any(|t| *t == "select-pane" || *t == "selectp") {
+        return None;
+    }
+    if tokens.iter().any(|t| *t == "-L") {
+        return Some(FocusDir::Left);
+    }
+    if tokens.iter().any(|t| *t == "-R") {
+        return Some(FocusDir::Right);
+    }
+    if tokens.iter().any(|t| *t == "-U") {
+        return Some(FocusDir::Up);
+    }
+    if tokens.iter().any(|t| *t == "-D") {
+        return Some(FocusDir::Down);
+    }
+    None
+}
+
+/// Result of parsing a tmux config: prefix plus optional split / pane-focus
+/// keys (None when the user didn't bind that action, so the caller falls back
+/// to tmux defaults).
+#[derive(Default)]
+struct ParsedBindings {
+    split_right: Option<String>,
+    split_down: Option<String>,
+    focus_left: Option<String>,
+    focus_right: Option<String>,
+    focus_up: Option<String>,
+    focus_down: Option<String>,
+}
+
 /// Parse tmux config text. Returns the prefix plus optional split-right /
 /// split-down keys (None when the user didn't bind that direction, so the
 /// caller can fall back to tmux defaults).
 ///
 /// Factored out so the file-reading command and the unit tests share the same
 /// best-effort parser.
-fn parse_tmux_config(contents: &str) -> (PrefixKey, Option<String>, Option<String>) {
+fn parse_tmux_config(contents: &str) -> (PrefixKey, ParsedBindings) {
     let mut prefix = PrefixKey {
         ctrl: true,
         key: DEFAULT_PREFIX_KEY.to_string(),
     };
-    let mut split_right: Option<String> = None;
-    let mut split_down: Option<String> = None;
+    let mut b = ParsedBindings::default();
 
     for raw in contents.lines() {
         let line = raw.trim();
@@ -174,15 +228,23 @@ fn parse_tmux_config(contents: &str) -> (PrefixKey, Option<String>, Option<Strin
                 if let Some(dir) = split_direction(rest) {
                     match dir {
                         SplitDir::Right => {
-                            if split_right.is_none() {
-                                split_right = Some(key);
+                            if b.split_right.is_none() {
+                                b.split_right = Some(key);
                             }
                         }
                         SplitDir::Down => {
-                            if split_down.is_none() {
-                                split_down = Some(key);
+                            if b.split_down.is_none() {
+                                b.split_down = Some(key);
                             }
                         }
+                    }
+                } else if let Some(dir) = select_pane_direction(rest) {
+                    match dir {
+                        FocusDir::Left if b.focus_left.is_none() => b.focus_left = Some(key),
+                        FocusDir::Right if b.focus_right.is_none() => b.focus_right = Some(key),
+                        FocusDir::Up if b.focus_up.is_none() => b.focus_up = Some(key),
+                        FocusDir::Down if b.focus_down.is_none() => b.focus_down = Some(key),
+                        _ => {}
                     }
                 }
             }
@@ -190,30 +252,38 @@ fn parse_tmux_config(contents: &str) -> (PrefixKey, Option<String>, Option<Strin
         }
     }
 
-    (prefix, split_right, split_down)
+    (prefix, b)
 }
 
 #[tauri::command]
 pub fn tmux_split_bindings() -> TmuxSplitBindings {
     match config_path().and_then(|p| std::fs::read_to_string(p).ok()) {
         Some(contents) => {
-            let (prefix, right, down) = parse_tmux_config(&contents);
-            TmuxSplitBindings {
-                enabled: true,
-                prefix,
-                split_right: right.unwrap_or_else(|| DEFAULT_SPLIT_RIGHT.to_string()),
-                split_down: down.unwrap_or_else(|| DEFAULT_SPLIT_DOWN.to_string()),
-            }
+            let (prefix, b) = parse_tmux_config(&contents);
+            build_bindings(true, prefix, b)
         }
-        None => TmuxSplitBindings {
-            enabled: false,
-            prefix: PrefixKey {
+        None => build_bindings(
+            false,
+            PrefixKey {
                 ctrl: true,
                 key: DEFAULT_PREFIX_KEY.to_string(),
             },
-            split_right: DEFAULT_SPLIT_RIGHT.to_string(),
-            split_down: DEFAULT_SPLIT_DOWN.to_string(),
-        },
+            ParsedBindings::default(),
+        ),
+    }
+}
+
+/// Fill any unbound action with its tmux default.
+fn build_bindings(enabled: bool, prefix: PrefixKey, b: ParsedBindings) -> TmuxSplitBindings {
+    TmuxSplitBindings {
+        enabled,
+        prefix,
+        split_right: b.split_right.unwrap_or_else(|| DEFAULT_SPLIT_RIGHT.to_string()),
+        split_down: b.split_down.unwrap_or_else(|| DEFAULT_SPLIT_DOWN.to_string()),
+        focus_left: b.focus_left.unwrap_or_else(|| DEFAULT_FOCUS_LEFT.to_string()),
+        focus_right: b.focus_right.unwrap_or_else(|| DEFAULT_FOCUS_RIGHT.to_string()),
+        focus_up: b.focus_up.unwrap_or_else(|| DEFAULT_FOCUS_UP.to_string()),
+        focus_down: b.focus_down.unwrap_or_else(|| DEFAULT_FOCUS_DOWN.to_string()),
     }
 }
 
@@ -228,7 +298,7 @@ set -g prefix C-a
 bind \\\\ split-window -h
 bind - split-window -v
 ";
-        let (prefix, right, down) = parse_tmux_config(cfg);
+        let (prefix, b) = parse_tmux_config(cfg);
         assert_eq!(
             prefix,
             PrefixKey {
@@ -236,13 +306,13 @@ bind - split-window -v
                 key: "a".to_string()
             }
         );
-        assert_eq!(right.as_deref(), Some("\\"));
-        assert_eq!(down.as_deref(), Some("-"));
+        assert_eq!(b.split_right.as_deref(), Some("\\"));
+        assert_eq!(b.split_down.as_deref(), Some("-"));
     }
 
     #[test]
     fn missing_config_defaults() {
-        let (prefix, right, down) = parse_tmux_config("");
+        let (prefix, b) = parse_tmux_config("");
         assert_eq!(
             prefix,
             PrefixKey {
@@ -250,8 +320,8 @@ bind - split-window -v
                 key: "b".to_string()
             }
         );
-        assert_eq!(right, None);
-        assert_eq!(down, None);
+        assert_eq!(b.split_right, None);
+        assert_eq!(b.split_down, None);
         // The command layer fills these with tmux defaults.
         assert_eq!(DEFAULT_SPLIT_RIGHT, "%");
         assert_eq!(DEFAULT_SPLIT_DOWN, "\"");
@@ -264,10 +334,10 @@ set-option -g prefix C-x
 bind '|' split-window -h
 bind '\"' split-window -v
 ";
-        let (prefix, right, down) = parse_tmux_config(cfg);
+        let (prefix, b) = parse_tmux_config(cfg);
         assert_eq!(prefix.key, "x");
-        assert_eq!(right.as_deref(), Some("|"));
-        assert_eq!(down.as_deref(), Some("\""));
+        assert_eq!(b.split_right.as_deref(), Some("|"));
+        assert_eq!(b.split_down.as_deref(), Some("\""));
     }
 
     #[test]
@@ -276,10 +346,10 @@ bind '\"' split-window -v
 bind v splitw -h
 bind s splitw
 ";
-        let (_prefix, right, down) = parse_tmux_config(cfg);
-        assert_eq!(right.as_deref(), Some("v"));
+        let (_prefix, b) = parse_tmux_config(cfg);
+        assert_eq!(b.split_right.as_deref(), Some("v"));
         // Bare splitw defaults to a vertical (down) split.
-        assert_eq!(down.as_deref(), Some("s"));
+        assert_eq!(b.split_down.as_deref(), Some("s"));
     }
 
     #[test]
@@ -288,9 +358,9 @@ bind s splitw
 bind -n C-Right split-window -h
 bind \\\\ split-window -h
 ";
-        let (_prefix, right, _down) = parse_tmux_config(cfg);
+        let (_prefix, b) = parse_tmux_config(cfg);
         // The -n binding is skipped; the prefixed one wins.
-        assert_eq!(right.as_deref(), Some("\\"));
+        assert_eq!(b.split_right.as_deref(), Some("\\"));
     }
 
     #[test]
@@ -298,8 +368,24 @@ bind \\\\ split-window -h
         let cfg = "\
 bind -r -T prefix M split-window -v
 ";
-        let (_prefix, _right, down) = parse_tmux_config(cfg);
-        assert_eq!(down.as_deref(), Some("M"));
+        let (_prefix, b) = parse_tmux_config(cfg);
+        assert_eq!(b.split_down.as_deref(), Some("M"));
+    }
+
+    #[test]
+    fn pane_nav_hjkl() {
+        let cfg = "\
+set -g prefix C-a
+bind h select-pane -L
+bind j select-pane -D
+bind k select-pane -U
+bind l select-pane -R
+";
+        let (_prefix, b) = parse_tmux_config(cfg);
+        assert_eq!(b.focus_left.as_deref(), Some("h"));
+        assert_eq!(b.focus_down.as_deref(), Some("j"));
+        assert_eq!(b.focus_up.as_deref(), Some("k"));
+        assert_eq!(b.focus_right.as_deref(), Some("l"));
     }
 
     #[test]
@@ -308,8 +394,8 @@ bind -r -T prefix M split-window -v
 # set -g prefix C-z
 bind | split-window -h
 ";
-        let (prefix, right, _down) = parse_tmux_config(cfg);
+        let (prefix, b) = parse_tmux_config(cfg);
         assert_eq!(prefix.key, "b");
-        assert_eq!(right.as_deref(), Some("|"));
+        assert_eq!(b.split_right.as_deref(), Some("|"));
     }
 }

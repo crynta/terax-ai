@@ -11,21 +11,48 @@ type TmuxSplitBindings = {
   prefix: PrefixKey;
   splitRight: string;
   splitDown: string;
+  focusLeft: string;
+  focusRight: string;
+  focusUp: string;
+  focusDown: string;
 };
+
+export type TmuxFocusDir = "left" | "right" | "up" | "down";
 
 /** How long after the prefix we wait for the second stroke before resetting. */
 const PREFIX_TIMEOUT_MS = 1500;
 
+/** tmux arrow tokens → JS `KeyboardEvent.key` names. */
+const ARROW_KEYS: Record<string, string> = {
+  Left: "ArrowLeft",
+  Right: "ArrowRight",
+  Up: "ArrowUp",
+  Down: "ArrowDown",
+};
+
+/** Does a keydown's `key` match a tmux key token (case-insensitive, arrows normalized)? */
+function keyMatches(eventKey: string, token: string): boolean {
+  const norm = ARROW_KEYS[token] ?? token;
+  return (
+    eventKey === norm || eventKey.toLowerCase() === norm.toLowerCase()
+  );
+}
+
 /**
- * Two-stroke tmux prefix-sequence handler for pane splitting. This is
- * deliberately separate machinery from the single-chord `useGlobalShortcuts`:
- * the user presses the prefix (e.g. Ctrl+A), releases, then presses the split
- * key (e.g. `\` for split right or `-` for split down) — bindings read from
- * their own `~/.tmux.conf` by the backend.
+ * Two-stroke tmux prefix-sequence handler. Deliberately separate machinery
+ * from the single-chord `useGlobalShortcuts`: the user presses the prefix
+ * (e.g. Ctrl+A), releases, then presses a second key read from their own
+ * `~/.tmux.conf`:
+ *   - split keys (`\` / `-`) → `onSplit("row")` (right) / `onSplit("col")` (down)
+ *   - select-pane keys (`h`/`j`/`k`/`l` or arrows) → `onFocus("left"|...)`
  *
- * `onSplit("row")` = split right; `onSplit("col")` = split down.
+ * Pane focus is directional in intent; the app only supports next/prev pane
+ * cycling, so the caller maps left/up → previous, right/down → next.
  */
-export function useTmuxSplit(onSplit: (dir: "row" | "col") => void): void {
+export function useTmuxSplit(
+  onSplit: (dir: "row" | "col") => void,
+  onFocus?: (dir: TmuxFocusDir) => void,
+): void {
   // null = "auto" → follow the backend's `enabled` (whether a tmux config was
   // found). true/false = explicit user override.
   const tmuxSplitKeys = usePreferencesStore((s) => s.tmuxSplitKeys);
@@ -33,6 +60,8 @@ export function useTmuxSplit(onSplit: (dir: "row" | "col") => void): void {
   const bindingsRef = useRef<TmuxSplitBindings | null>(null);
   const onSplitRef = useRef(onSplit);
   onSplitRef.current = onSplit;
+  const onFocusRef = useRef(onFocus);
+  onFocusRef.current = onFocus;
 
   // Fetch the bindings once on mount.
   useEffect(() => {
@@ -69,19 +98,32 @@ export function useTmuxSplit(onSplit: (dir: "row" | "col") => void): void {
       if (!enabled) return;
 
       if (pending.active) {
-        // Second stroke of the sequence.
-        if (e.key === b.splitRight) {
+        // Second stroke of the sequence: split, then pane-focus.
+        const consume = () => {
+          clearPending();
+          e.preventDefault();
+          e.stopPropagation();
+        };
+        if (keyMatches(e.key, b.splitRight)) {
           onSplitRef.current("row");
-          clearPending();
-          e.preventDefault();
-          e.stopPropagation();
-        } else if (e.key === b.splitDown) {
+          consume();
+        } else if (keyMatches(e.key, b.splitDown)) {
           onSplitRef.current("col");
-          clearPending();
-          e.preventDefault();
-          e.stopPropagation();
+          consume();
+        } else if (keyMatches(e.key, b.focusLeft)) {
+          onFocusRef.current?.("left");
+          consume();
+        } else if (keyMatches(e.key, b.focusRight)) {
+          onFocusRef.current?.("right");
+          consume();
+        } else if (keyMatches(e.key, b.focusUp)) {
+          onFocusRef.current?.("up");
+          consume();
+        } else if (keyMatches(e.key, b.focusDown)) {
+          onFocusRef.current?.("down");
+          consume();
         } else {
-          // Not a split key — abandon the sequence and let the key through.
+          // Not a bound key — abandon the sequence and let the key through.
           clearPending();
         }
         return;
