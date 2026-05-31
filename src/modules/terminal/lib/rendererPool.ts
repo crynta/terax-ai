@@ -73,6 +73,15 @@ export function poolSize(): number {
   return slots.length;
 }
 
+// Bracketed paste via xterm, so an app that enabled it (Claude Code) treats a
+// dropped path as a real paste while a plain shell gets the literal text.
+export function pasteIntoLeaf(leafId: number, text: string): boolean {
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (!slot) return false;
+  slot.term.paste(text);
+  return true;
+}
+
 function getRecycler(): HTMLDivElement {
   if (recyclerEl && recyclerEl.isConnected) return recyclerEl;
   const el = document.createElement("div");

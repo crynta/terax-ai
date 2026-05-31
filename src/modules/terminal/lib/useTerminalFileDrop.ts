@@ -1,7 +1,7 @@
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect } from "react";
 import { formatDroppedPaths } from "./quoteShellPath";
-import { writeToLeafPty } from "./useTerminalSession";
+import { pasteIntoLeaf } from "./rendererPool";
 
 /** Wires native OS file drops into the terminal pane under the cursor.
  * Drops outside any terminal leaf (editor, file explorer, AI input bar,
@@ -28,7 +28,7 @@ export function useTerminalFileDrop(): void {
         const leafId = Number(leafEl.dataset.paneLeaf);
         if (!Number.isFinite(leafId)) return;
 
-        writeToLeafPty(leafId, formatDroppedPaths(paths));
+        pasteIntoLeaf(leafId, formatDroppedPaths(paths));
       })
       .then((fn) => {
         if (disposed) fn();
