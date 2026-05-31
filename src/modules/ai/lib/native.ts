@@ -250,6 +250,11 @@ export const native = {
       cwd,
       workspace: currentWorkspaceEnv(),
     }),
+  gitDiscoverRepos: (root: string) =>
+    invoke<GitRepoInfo[]>("git_discover_repos", {
+      root,
+      workspace: currentWorkspaceEnv(),
+    }),
   gitPanelSnapshot: (cwd: string) =>
     invoke<GitPanelSnapshot>("git_panel_snapshot", {
       cwd,

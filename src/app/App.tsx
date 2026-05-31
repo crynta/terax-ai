@@ -33,7 +33,7 @@ import {
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { redactSensitive } from "@/modules/ai/lib/redact";
-import { native } from "@/modules/ai/lib/native";
+import { native, type GitRepoInfo } from "@/modules/ai/lib/native";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
 import {
@@ -228,6 +228,8 @@ export default function App() {
     useState<EditorPaneHandle | null>(null);
   const [gitHistoryHandle, setGitHistoryHandle] =
     useState<GitHistorySearchHandle | null>(null);
+  const [discoveredRepos, setDiscoveredRepos] = useState<GitRepoInfo[]>([]);
+  const [selectedRepoRoot, setSelectedRepoRoot] = useState<string | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   const explorerRef = useRef<FileExplorerHandle>(null);
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -968,12 +970,59 @@ export default function App() {
   );
   const sourceControlActive =
     hasOpenGitTab || sidebarView === "source-control";
+  const refreshRepos = useCallback(() => {
+    const root = explorerRoot ?? home;
+    if (!root) {
+      setDiscoveredRepos([]);
+      return;
+    }
+    native.gitDiscoverRepos(root)
+      .then((repos) => {
+        setDiscoveredRepos(repos);
+      })
+      .catch(() => {
+        setDiscoveredRepos([]);
+      });
+  }, [explorerRoot, home]);
+
+  useEffect(() => {
+    refreshRepos();
+  }, [refreshRepos]);
+
+  useEffect(() => {
+    if (sidebarView === "source-control") {
+      refreshRepos();
+    }
+  }, [sidebarView, refreshRepos]);
+
+  const contextRepo = useMemo(() => {
+    if (!sourceControlContextPath || discoveredRepos.length === 0) return null;
+    return (
+      discoveredRepos.find(
+        (r) =>
+          sourceControlContextPath === r.repoRoot ||
+          sourceControlContextPath.startsWith(`${r.repoRoot}/`),
+      ) ?? null
+    );
+  }, [sourceControlContextPath, discoveredRepos]);
+
+  const activeRepoRoot = useMemo(() => {
+    if (contextRepo) return contextRepo.repoRoot;
+    if (selectedRepoRoot && discoveredRepos.some((r) => r.repoRoot === selectedRepoRoot)) {
+      return selectedRepoRoot;
+    }
+    if (discoveredRepos.length > 0) {
+      return discoveredRepos[0].repoRoot;
+    }
+    return null;
+  }, [contextRepo, selectedRepoRoot, discoveredRepos]);
+
   // Stable per-session path so switching tabs / cd-ing in a shell does NOT
   // re-fire git IPC for the badge. The active panel resolves the current
   // context path on its own when the user actually opens git.
   const badgeContextPath = workspaceFallbackPath;
   const sourceControlPath = sourceControlActive
-    ? sourceControlContextPath
+    ? (activeRepoRoot ?? sourceControlContextPath)
     : badgeContextPath;
   const sourceControl = useSourceControl(sourceControlPath, true);
 
@@ -1505,6 +1554,9 @@ export default function App() {
                         sourceControl={sourceControl}
                         onOpenDiff={openGitDiffTab}
                         onOpenGitGraph={openGitGraphFromContext}
+                        discoveredRepos={discoveredRepos}
+                        activeRepoRoot={activeRepoRoot}
+                        onSelectRepo={setSelectedRepoRoot}
                       />
                     )}
                   </div>
