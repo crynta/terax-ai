@@ -3,6 +3,8 @@ pub mod modules;
 use modules::{agent, fs, git, net, pty, secrets, shell, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
+#[cfg(target_os = "macos")]
+use tauri::{PhysicalPosition, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
 
 /// Drained on first read so HMR / re-mounts can't replay the launch dir.
@@ -19,7 +21,9 @@ fn parse_launch_dir() -> Option<String> {
         if arg.starts_with('-') {
             continue;
         }
-        let Ok(canon) = std::fs::canonicalize(&arg) else { continue };
+        let Ok(canon) = std::fs::canonicalize(&arg) else {
+            continue;
+        };
         if !canon.is_dir() {
             continue;
         }
@@ -36,6 +40,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     };
 
     if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.set_always_on_top(true);
         let _ = window.show();
         let _ = window.set_focus();
         if let Some(t) = tab.as_deref().filter(|s| !s.is_empty()) {
@@ -46,7 +51,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         return Ok(());
     }
 
-    let mut builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
+    let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
         .title("Settings")
         .inner_size(900.0, 700.0)
         .min_inner_size(820.0, 620.0)
@@ -57,9 +62,14 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         .always_on_top(true);
 
     // Tie lifecycle to the main window so settings minimizes/closes with it.
-    if let Some(main) = app.get_webview_window("main") {
-        builder = builder.parent(&main).map_err(|e| e.to_string())?;
-    }
+    // macOS: skip parent() — child + always_on_top leaves the settings webview
+    // behind the main window except while the parent is being dragged (#33).
+    #[cfg(not(target_os = "macos"))]
+    let builder = if let Some(main) = app.get_webview_window("main") {
+        builder.parent(&main).map_err(|e| e.to_string())?
+    } else {
+        builder
+    };
 
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -79,7 +89,24 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     {
         let _ = window.set_decorations(false);
     }
-    let _ = window;
+
+    #[cfg(target_os = "macos")]
+    if let Some(main) = app.get_webview_window("main") {
+        if let (Ok(main_pos), Ok(main_size), Ok(settings_size)) = (
+            main.outer_position(),
+            main.outer_size(),
+            window.outer_size(),
+        ) {
+            let x = main_pos.x
+                + ((main_size.width as i32).saturating_sub(settings_size.width as i32)) / 2;
+            let y = main_pos.y
+                + ((main_size.height as i32).saturating_sub(settings_size.height as i32)) / 2;
+            let _ = window.set_position(PhysicalPosition::new(x, y));
+        } else {
+            let _ = window.center();
+        }
+    }
+
     Ok(())
 }
 
@@ -109,6 +136,25 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .setup(|_app| {
+            // macOS skips parent() for the settings window, so tie its lifecycle
+            // to the main window here instead. Other platforms keep parent().
+            #[cfg(target_os = "macos")]
+            if let Some(main) = _app.get_webview_window("main") {
+                let handle = _app.handle().clone();
+                main.on_window_event(move |event| {
+                    if matches!(
+                        event,
+                        WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
+                    ) {
+                        if let Some(settings) = handle.get_webview_window("settings") {
+                            let _ = settings.close();
+                        }
+                    }
+                });
+            }
+            Ok(())
+        })
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())

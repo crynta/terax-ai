@@ -6,7 +6,9 @@ import {
 import { create } from "zustand";
 import {
   DEFAULT_MODEL_ID,
+  endpointIdFromCompatModel,
   getModel,
+  isCompatModelId,
   providerNeedsKey,
   type ModelId,
   type ProviderId,
@@ -17,7 +19,7 @@ import { useAgentsStore } from "./agentsStore";
 import { usePlanStore } from "./planStore";
 import { useTodosStore } from "./todoStore";
 import type { AgentUsage } from "../lib/agent";
-import { EMPTY_PROVIDER_KEYS, type ProviderKeys } from "../lib/keyring";
+import { EMPTY_PROVIDER_KEYS, type ProviderKeys, type CustomEndpointKeys } from "../lib/keyring";
 import {
   deleteSessionData,
   deriveTitle,
@@ -117,8 +119,11 @@ type StoreState = {
   setApiKeys: (keys: ProviderKeys) => void;
   setApiKey: (provider: ProviderId, key: string | null) => void;
 
-  selectedModelId: ModelId;
-  setSelectedModelId: (id: ModelId) => void;
+  customEndpointKeys: CustomEndpointKeys;
+  setCustomEndpointKeys: (keys: CustomEndpointKeys) => void;
+
+  selectedModelId: string;
+  setSelectedModelId: (id: string) => void;
 
   mini: MiniState;
   openMini: () => void;
@@ -270,6 +275,10 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       usePreferencesStore.getState().openaiCompatibleContextLimit,
     getOpenrouterModelId: () =>
       usePreferencesStore.getState().openrouterModelId,
+    getCustomEndpoints: () =>
+      usePreferencesStore.getState().customEndpoints,
+    getCustomEndpointKeys: () =>
+      useChatStore.getState().customEndpointKeys,
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
     },
@@ -328,6 +337,9 @@ export const useChatStore = create<StoreState>((set, get) => ({
   setApiKey: (provider, key) => {
     set({ apiKeys: { ...get().apiKeys, [provider]: key } });
   },
+
+  customEndpointKeys: {},
+  setCustomEndpointKeys: (keys) => set({ customEndpointKeys: keys }),
 
   selectedModelId: DEFAULT_MODEL_ID,
   setSelectedModelId: (id) => {
@@ -529,13 +541,20 @@ export function getAgentMeta(): AgentMeta {
 }
 
 export function getActiveProviderKey(): string | null {
-  const { selectedModelId, apiKeys } = useChatStore.getState();
-  return apiKeys[getModel(selectedModelId).provider] ?? null;
+  const { selectedModelId, apiKeys, customEndpointKeys } = useChatStore.getState();
+  if (isCompatModelId(selectedModelId)) {
+    const eid = endpointIdFromCompatModel(selectedModelId);
+    return customEndpointKeys[eid] ?? null;
+  }
+  return apiKeys[getModel(selectedModelId as ModelId).provider] ?? null;
 }
 
-export function hasKeyForModel(modelId: ModelId): boolean {
+export function hasKeyForModel(modelId: string): boolean {
   const { apiKeys } = useChatStore.getState();
-  const provider = getModel(modelId).provider;
+  if (isCompatModelId(modelId)) {
+    return true;
+  }
+  const provider = getModel(modelId as ModelId).provider;
   return providerNeedsKey(provider) ? !!apiKeys[provider] : true;
 }
 
@@ -560,7 +579,7 @@ export async function sendMessage(text: string): Promise<boolean> {
   const state = useChatStore.getState();
   const sessionId = state.activeSessionId;
   if (!sessionId) return false;
-  if (providerNeedsKey(getModel(state.selectedModelId).provider) && !getActiveProviderKey()) return false;
+  if (providerNeedsKey(getModel(state.selectedModelId as ModelId).provider) && !getActiveProviderKey()) return false;
   const c = getOrCreateChat(sessionId);
   await c.sendMessage({ text });
   return true;
