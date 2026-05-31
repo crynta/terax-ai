@@ -182,6 +182,7 @@ export default function App() {
     tabs,
     activeId,
     setActiveId,
+    reorderTab,
     newTab,
     newAgentTab,
     newPrivateTab,
@@ -1466,6 +1467,7 @@ export default function App() {
             onNewGitGraph={openGitGraphFromContext}
             onClose={handleClose}
             onPin={pinTab}
+            onReorder={reorderTab}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={
