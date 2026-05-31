@@ -1,6 +1,7 @@
 import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
+  isPersistableModelId,
   isKnownModelId,
   LMSTUDIO_DEFAULT_BASE_URL,
   MLX_DEFAULT_BASE_URL,
@@ -10,6 +11,7 @@ import {
   type AutocompleteProviderId,
   type CustomEndpoint,
   type ModelId,
+  type PiModelRecord,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -75,6 +77,10 @@ export type Preferences = {
   openaiCompatibleContextLimit: number;
   customEndpoints: CustomEndpoint[];
   openrouterModelId: string;
+  piProviderEnabled: boolean;
+  piExecutablePath: string;
+  piModelId: string;
+  piModels: PiModelRecord[];
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
@@ -118,6 +124,10 @@ const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_OPENAI_COMPAT_CONTEXT_LIMIT = "openaiCompatibleContextLimit";
 const KEY_CUSTOM_ENDPOINTS = "customEndpoints";
 const KEY_OPENROUTER_MODEL_ID = "openrouterModelId";
+const KEY_PI_PROVIDER_ENABLED = "piProviderEnabled";
+const KEY_PI_EXECUTABLE_PATH = "piExecutablePath";
+const KEY_PI_MODEL_ID = "piModelId";
+const KEY_PI_MODELS = "piModels";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
@@ -176,6 +186,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   openaiCompatibleContextLimit: 128_000,
   customEndpoints: [],
   openrouterModelId: "",
+  piProviderEnabled: false,
+  piExecutablePath: "",
+  piModelId: "",
+  piModels: [],
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
@@ -285,13 +299,21 @@ export async function loadPreferences(): Promise<Preferences> {
     openrouterModelId:
       get<string>(KEY_OPENROUTER_MODEL_ID) ??
       DEFAULT_PREFERENCES.openrouterModelId,
+    piProviderEnabled:
+      get<boolean>(KEY_PI_PROVIDER_ENABLED) ??
+      DEFAULT_PREFERENCES.piProviderEnabled,
+    piExecutablePath:
+      get<string>(KEY_PI_EXECUTABLE_PATH) ??
+      DEFAULT_PREFERENCES.piExecutablePath,
+    piModelId: get<string>(KEY_PI_MODEL_ID) ?? DEFAULT_PREFERENCES.piModelId,
+    piModels: get<PiModelRecord[]>(KEY_PI_MODELS) ?? DEFAULT_PREFERENCES.piModels,
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ??
       DEFAULT_PREFERENCES.favoriteModelIds
-    ).filter(isKnownModelId),
+    ).filter(isPersistableModelId),
     recentModelIds: (
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds
-    ).filter(isKnownModelId),
+    ).filter(isPersistableModelId),
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
     showHidden:
       get<boolean>(KEY_SHOW_HIDDEN) ??
@@ -457,6 +479,22 @@ export async function setOpenrouterModelId(value: string): Promise<void> {
   await writePref(KEY_OPENROUTER_MODEL_ID, value);
 }
 
+export async function setPiProviderEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_PI_PROVIDER_ENABLED, value);
+}
+
+export async function setPiExecutablePath(value: string): Promise<void> {
+  await writePref(KEY_PI_EXECUTABLE_PATH, value.trim());
+}
+
+export async function setPiModelId(value: string): Promise<void> {
+  await writePref(KEY_PI_MODEL_ID, value.trim());
+}
+
+export async function setPiModels(value: PiModelRecord[]): Promise<void> {
+  await writePref(KEY_PI_MODELS, value);
+}
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -575,6 +613,10 @@ export async function onPreferencesChange(
     [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
     [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
     [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
+    [KEY_PI_PROVIDER_ENABLED]: "piProviderEnabled",
+    [KEY_PI_EXECUTABLE_PATH]: "piExecutablePath",
+    [KEY_PI_MODEL_ID]: "piModelId",
+    [KEY_PI_MODELS]: "piModels",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",

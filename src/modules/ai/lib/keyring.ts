@@ -25,6 +25,7 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   lmstudio: null,
   mlx: null,
   ollama: null,
+  pi: null,
 };
 
 export async function getKey(provider: ProviderId): Promise<string | null> {

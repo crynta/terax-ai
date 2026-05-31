@@ -1,6 +1,6 @@
 pub mod modules;
 
-use modules::{agent, fs, git, net, pty, secrets, shell, workspace};
+use modules::{agent, fs, git, net, pi, pty, secrets, shell, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -157,6 +157,7 @@ pub fn run() {
         })
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
+        .manage(pi::PiState::default())
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
         .manage({
@@ -231,6 +232,10 @@ pub fn run() {
             net::lm_ping,
             net::ai_http_request,
             net::ai_http_stream,
+            pi::pi_detect,
+            pi::pi_list_models,
+            pi::pi_run,
+            pi::pi_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

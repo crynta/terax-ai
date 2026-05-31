@@ -207,6 +207,9 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "pi": {
+      throw new Error("Pi models are available in chat only.");
+    }
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);

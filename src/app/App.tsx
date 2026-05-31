@@ -431,13 +431,15 @@ export default function App() {
     (s) => s.openaiCompatibleBaseURL,
   );
   const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
+  const piModelId = usePreferencesStore((s) => s.piModelId);
   const hasLocalModel =
     (lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0) ||
     (mlxBaseURL.trim().length > 0 && mlxModelId.trim().length > 0) ||
     (ollamaBaseURL.trim().length > 0 && ollamaModelId.trim().length > 0) ||
     (openaiCompatibleBaseURL.trim().length > 0 &&
       openaiCompatibleModelId.trim().length > 0) ||
-    customEndpoints.some((e) => e.baseURL.trim().length > 0 && e.modelId.trim().length > 0);
+    customEndpoints.some((e) => e.baseURL.trim().length > 0 && e.modelId.trim().length > 0) ||
+    piModelId.trim().length > 0;
   const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
 
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);

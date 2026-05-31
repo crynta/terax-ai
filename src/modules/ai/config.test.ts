@@ -3,9 +3,12 @@ import {
   compatModelIdForEndpoint,
   endpointIdFromCompatModel,
   getModelContextLimit,
+  isPiModelId,
   isCompatModelId,
+  parsePiModelId,
   migrateLegacyCompatEndpoint,
   modelKeepsReasoning,
+  piModelId,
   resolveModel,
   type CustomEndpoint,
 } from "./config";
@@ -31,6 +34,22 @@ describe("compat model id helpers", () => {
   });
 });
 
+describe("pi model id helpers", () => {
+  it("round-trips provider and model ids", () => {
+    const id = piModelId("github-copilot", "claude-sonnet-4.6");
+    expect(isPiModelId(id)).toBe(true);
+    expect(parsePiModelId(id)).toEqual({
+      provider: "github-copilot",
+      model: "claude-sonnet-4.6",
+    });
+  });
+
+  it("rejects malformed pi model ids", () => {
+    expect(parsePiModelId("pi:missing-slash")).toBeNull();
+    expect(parsePiModelId("gpt-5.4-mini")).toBeNull();
+  });
+});
+
 describe("resolveModel", () => {
   it("resolves a compat model id against its endpoint", () => {
     const mid = compatModelIdForEndpoint(endpoint.id);
@@ -47,6 +66,23 @@ describe("resolveModel", () => {
 
   it("resolves a static model id from the registry", () => {
     expect(resolveModel("gpt-5.4-mini").provider).toBe("openai");
+  });
+
+  it("resolves a pi model id from dynamic records", () => {
+    const id = piModelId("github-copilot", "gpt-5.4-mini");
+    const info = resolveModel(id, [], [
+      {
+        provider: "github-copilot",
+        model: "gpt-5.4-mini",
+        contextTokens: 400_000,
+        maxOutputTokens: 128_000,
+        thinking: true,
+        images: true,
+      },
+    ]);
+    expect(info.provider).toBe("pi");
+    expect(info.label).toBe("gpt-5.4-mini");
+    expect(info.hint).toBe("github-copilot");
   });
 
   it("throws on an unknown static model id", () => {
