@@ -7,6 +7,8 @@ import {
 } from "@codemirror/search";
 import { keymap } from "@codemirror/view";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { Button } from "@/components/ui/button";
+import { openPath } from "@tauri-apps/plugin-opener";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EDITOR_THEME_EXT } from "./lib/themes";
 import {
@@ -283,11 +285,19 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }
     if (doc.status === "binary") {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+        <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
           <div className="text-sm text-foreground">Binary file</div>
           <div className="text-xs text-muted-foreground">
             {formatBytes(doc.size)} · preview not supported
           </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void openPath(path)}
+            className="h-8 px-3 text-[11px]"
+          >
+            Open in Default App
+          </Button>
         </div>
       );
     }

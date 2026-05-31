@@ -25,7 +25,11 @@ import {
 } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { fileIconUrl } from "./lib/iconResolver";
-import { copyToClipboard, revealInFinder } from "./lib/contextActions";
+import {
+  copyToClipboard,
+  openInDefaultApp,
+  revealInFinder,
+} from "./lib/contextActions";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { cn } from "@/lib/utils";
 
@@ -281,6 +285,14 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                           onSelect={() => onOpenFile(hit.path)}
                         >
                           Open
+                        </ContextMenuItem>
+                      )}
+                      {!hit.is_dir && (
+                        <ContextMenuItem
+                          className={COMPACT_ITEM}
+                          onSelect={() => void openInDefaultApp(hit.path)}
+                        >
+                          Open in Default App
                         </ContextMenuItem>
                       )}
                       {hit.is_dir && onRevealInTerminal && (
