@@ -120,6 +120,43 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   },
 ] as const;
 
+export type CustomEndpoint = {
+  id: string;
+  name: string;
+  baseURL: string;
+  modelId: string;
+  contextLimit: number;
+};
+
+const COMPAT_MODEL_PREFIX = "compat-";
+
+export function compatModelIdForEndpoint(endpointId: string): string {
+  return `${COMPAT_MODEL_PREFIX}${endpointId}`;
+}
+
+export function isCompatModelId(modelId: string): boolean {
+  return modelId.startsWith(COMPAT_MODEL_PREFIX);
+}
+
+export function endpointIdFromCompatModel(modelId: string): string {
+  return isCompatModelId(modelId)
+    ? modelId.slice(COMPAT_MODEL_PREFIX.length)
+    : "";
+}
+
+/** One-shot migration of the legacy single OpenAI-compatible config into the
+ *  named-endpoint list. Returns one endpoint when the old base URL + model id
+ *  were both set, else empty. `id` is supplied by the caller to stay pure. */
+export function migrateLegacyCompatEndpoint(
+  baseURL: string,
+  modelId: string,
+  contextLimit: number,
+  id: string,
+): CustomEndpoint[] {
+  if (!baseURL.trim() || !modelId.trim()) return [];
+  return [{ id, name: "Custom endpoint", baseURL, modelId, contextLimit }];
+}
+
 export function getProvider(id: ProviderId): ProviderInfo {
   const p = PROVIDERS.find((x) => x.id === id);
   if (!p) throw new Error(`Unknown provider: ${id}`);
@@ -337,7 +374,7 @@ export const MODELS = [
     hint: "Fast",
     description: "Cheap and fast everyday tier.",
     capabilities: { intelligence: 4, speed: 5, cost: 5 },
-    tags: ["tools"],
+    tags: ["reasoning", "tools"],
   },
   {
     id: "deepseek-reasoner",
@@ -489,6 +526,33 @@ export const MODELS = [
 
 export type ModelId = (typeof MODELS)[number]["id"];
 
+export function getCompatModelInfo(
+  modelId: string,
+  endpoints: readonly CustomEndpoint[],
+): ModelInfo {
+  const eid = endpointIdFromCompatModel(modelId);
+  const ep = endpoints.find((e) => e.id === eid);
+  const name = ep?.name || "Custom endpoint";
+  return {
+    id: modelId,
+    provider: "openai-compatible",
+    label: ep?.modelId || name,
+    hint: name,
+    description: ep ? `${name} — ${ep.baseURL}` : "Custom OpenAI-compatible endpoint",
+    capabilities: { intelligence: 3, speed: 3, cost: 3 },
+  };
+}
+
+export function resolveModel(
+  modelId: string,
+  endpoints: readonly CustomEndpoint[] = [],
+): ModelInfo {
+  if (isCompatModelId(modelId)) return getCompatModelInfo(modelId, endpoints);
+  const m = MODELS.find((x) => x.id === modelId);
+  if (!m) throw new Error(`Unknown model: ${modelId}`);
+  return m;
+}
+
 export function getModel(id: ModelId): ModelInfo {
   const m = MODELS.find((x) => x.id === id);
   if (!m) throw new Error(`Unknown model: ${id}`);
@@ -508,8 +572,7 @@ const FREEFORM_PROVIDERS: ReadonlySet<ProviderId> = new Set([
 ]);
 
 // Reasoning models reject tool-call turns whose reasoning was stripped; keep it.
-export function modelKeepsReasoning(id: ModelId): boolean {
-  const m = getModel(id);
+export function modelKeepsReasoning(m: ModelInfo): boolean {
   return (m.tags?.includes("reasoning") ?? false) || FREEFORM_PROVIDERS.has(m.provider);
 }
 
@@ -561,6 +624,7 @@ export function getModelContextLimit(
   compatOverride?: number,
 ): number {
   if (!modelId) return 128_000;
+  if (isCompatModelId(modelId)) return compatOverride ?? 128_000;
   if (modelId === "openai-compatible-custom" && compatOverride)
     return compatOverride;
   return MODEL_CONTEXT_LIMITS[modelId] ?? 128_000;
