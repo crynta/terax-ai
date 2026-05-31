@@ -159,6 +159,44 @@ pub fn pty_close(state: tauri::State<PtyState>, id: u32) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn pty_has_foreground_process(state: tauri::State<PtyState>, id: u32) -> Result<bool, String> {
+    let sessions = state.sessions.read().unwrap();
+    let session = sessions.get(&id).ok_or_else(|| {
+        log::warn!("pty_has_foreground_process: unknown session id={id}");
+        "no session".to_string()
+    })?;
+    let shell_pid = session.shell_pid;
+    log::debug!("pty_has_foreground_process id={id} shell_pid={shell_pid}");
+    if shell_pid == 0 {
+        return Ok(false);
+    }
+
+    #[cfg(unix)]
+    {
+        // `pgrep -P <ppid>` exits 0 when at least one child of shell_pid
+        // exists, 1 when none — reliable on macOS and Linux without needing
+        // platform-specific syscall constants.
+        let result = std::process::Command::new("pgrep")
+            .args(["-P", &shell_pid.to_string()])
+            .output();
+        match result {
+            Ok(output) => {
+                let has_children = output.status.success();
+                log::debug!("pty_has_foreground_process id={id}: pgrep exit={}, has_children={has_children}", output.status);
+                return Ok(has_children);
+            }
+            Err(e) => {
+                log::warn!("pty_has_foreground_process id={id}: pgrep failed: {e}");
+                return Ok(false);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    Ok(false)
+}
+
 // A fresh webview load orphans the previous frontend's sessions in this still
 // running process; reap them on boot before any new tab spawns.
 #[tauri::command]
