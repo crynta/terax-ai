@@ -10,6 +10,9 @@ updates:
     groups:
       npm-dev:
         dependency-type: development
+        update-types:
+          - minor
+          - patch
       npm-prod-minor-patch:
         dependency-type: production
         update-types:
