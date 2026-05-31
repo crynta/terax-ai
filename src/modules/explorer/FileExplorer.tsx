@@ -433,6 +433,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           onActiveChange={setIsSearchActive}
           onRevealInTerminal={onRevealInTerminal}
           onAttachToAgent={onAttachToAgent}
+          onOpenMarkdownPreview={onOpenMarkdownPreview}
         />
 
         {!isSearchActive ? (
