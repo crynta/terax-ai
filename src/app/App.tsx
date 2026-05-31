@@ -943,6 +943,10 @@ export default function App() {
     }
     return null;
   })();
+  const explorerActiveFilePath =
+    activeTab?.kind === "editor" || activeTab?.kind === "markdown"
+      ? activeTab.path
+      : null;
   const workspaceFallbackPath = launchCwdResolved
     ? (launchCwd ?? home ?? null)
     : null;
@@ -1492,6 +1496,7 @@ export default function App() {
                       <FileExplorer
                         ref={explorerRef}
                         rootPath={explorerRoot}
+                        activeFilePath={explorerActiveFilePath}
                         onOpenFile={handleOpenFile}
                         onPathRenamed={handlePathRenamed}
                         onPathDeleted={handlePathDeleted}
