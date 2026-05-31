@@ -4,6 +4,7 @@ export { pasteIntoLeaf } from "./lib/rendererPool";
 export {
   clearFocusedTerminal,
   disposeSession,
+  leafHasForegroundProcess,
   leafIdForPty,
   respawnSession,
   whenSessionReady,

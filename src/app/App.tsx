@@ -85,6 +85,7 @@ import {
   disposeSession,
   findLeafCwd,
   hasLeaf,
+  leafHasForegroundProcess,
   leafIds,
   pasteIntoLeaf,
   respawnSession,
@@ -345,6 +346,7 @@ export default function App() {
 
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
+  const [pendingTerminalCloseTab, setPendingTerminalCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
@@ -695,11 +697,19 @@ export default function App() {
   }, [tabs]);
 
   const handleClose = useCallback(
-    (id: number) => {
+    async (id: number) => {
       const t = tabs.find((x) => x.id === id);
       if (t?.kind === "editor" && t.dirty) {
         setPendingCloseTab(id);
         return;
+      }
+      if (t?.kind === "terminal") {
+        const leaves = leafIds(t.paneTree);
+        const checks = await Promise.all(leaves.map(leafHasForegroundProcess));
+        if (checks.some(Boolean)) {
+          setPendingTerminalCloseTab(id);
+          return;
+        }
       }
       disposeTab(id);
     },
@@ -1052,7 +1062,7 @@ export default function App() {
       closeActivePane(activeId);
       return;
     }
-    handleClose(activeId);
+    void handleClose(activeId);
   }, [activeId, closeActivePane, handleClose]);
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
@@ -1640,6 +1650,36 @@ export default function App() {
                   Cancel
                 </AlertDialogCancel>
                 <AlertDialogAction onClick={confirmClose}>
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={pendingTerminalCloseTab !== null}
+            onOpenChange={(open) => !open && setPendingTerminalCloseTab(null)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Close Terminal?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A process is running. Closing this tab will terminate it.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  onClick={() => setPendingTerminalCloseTab(null)}
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (pendingTerminalCloseTab !== null)
+                      disposeTab(pendingTerminalCloseTab);
+                    setPendingTerminalCloseTab(null);
+                  }}
+                >
                   Close Anyway
                 </AlertDialogAction>
               </AlertDialogFooter>
