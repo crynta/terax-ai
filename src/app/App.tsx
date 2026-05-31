@@ -120,6 +120,11 @@ import type { PanelImperativeHandle } from "react-resizable-panels";
 
 type TuiWaitResult = "ready" | "gone" | "timeout";
 
+function shortBranchName(branch: string): string {
+  const parts = branch.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? branch;
+}
+
 async function waitForClaudeTuiReady(
   readBuf: () => string | null,
   timeoutMs = 8000,
@@ -1288,16 +1293,41 @@ export default function App() {
         openPreviewTab(url);
         return true;
       },
-      spawnManagedAgent: (prompt: string, sessionId: string) => {
+      spawnManagedAgent: async (prompt: string, sessionId: string) => {
         const trimmed = prompt.trim();
         if (!trimmed) return null;
         const oneLine = trimmed.replace(/\s*\r?\n\s*/g, " ");
         const cwd = findCwd();
-        const short = oneLine.length > 32 ? `${oneLine.slice(0, 32)}…` : oneLine;
-        const { tabId, leafId } = newAgentTab(cwd ?? undefined, `claude · ${short}`);
+        let launchCwd = cwd;
+        let worktreeBranch: string | null = null;
+        if (usePreferencesStore.getState().agentWorktreeIsolation) {
+          if (!cwd) {
+            console.warn(
+              "[terax] agent worktree isolation needs an active workspace cwd",
+            );
+            return null;
+          }
+          try {
+            const worktree = await native.gitCreateAgentWorktree({
+              cwd,
+              task: oneLine,
+            });
+            launchCwd = worktree.path;
+            worktreeBranch = worktree.branch;
+          } catch (e) {
+            console.warn("[terax] agent worktree creation failed", e);
+            return null;
+          }
+        }
+        const short =
+          oneLine.length > 32 ? `${oneLine.slice(0, 29)}...` : oneLine;
+        const title = worktreeBranch
+          ? `claude - ${shortBranchName(worktreeBranch)}`
+          : `claude - ${short}`;
+        const { tabId, leafId } = newAgentTab(launchCwd ?? undefined, title);
         useManagedAgentsStore
           .getState()
-          .register({ leafId, tabId, sessionId, task: oneLine, cwd });
+          .register({ leafId, tabId, sessionId, task: oneLine, cwd: launchCwd });
         const hooksReady = invoke("agent_enable_claude_hooks").catch(() => {});
         void (async () => {
           await Promise.all([whenSessionReady(leafId), hooksReady]);

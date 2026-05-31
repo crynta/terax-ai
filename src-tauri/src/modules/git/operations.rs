@@ -1,5 +1,6 @@
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::modules::git::errors::{GitError, Result};
 use crate::modules::git::parser::parse_porcelain_v2;
@@ -8,12 +9,13 @@ use crate::modules::git::process::{
     read_text_file, run_git,
 };
 use crate::modules::git::types::{
-    DiscardEntry, GitCommitFileChange, GitCommitResult, GitDiffContentResult, GitDiffResult,
-    GitLogEntry, GitOutput, GitPanelSnapshot, GitPushResult, GitRepoInfo, GitStatusSnapshot,
-    TextSource, DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS,
+    AgentWorktreeResult, DiscardEntry, GitCommitFileChange, GitCommitResult, GitDiffContentResult,
+    GitDiffResult, GitLogEntry, GitOutput, GitPanelSnapshot, GitPushResult, GitRepoInfo,
+    GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS,
 };
 use crate::modules::git::utils::{
-    authorized_repo_root, canonical_dir, resolve_within_repo, split_upstream, ResolvedGitDirectory,
+    authorized_repo_root, canonical_dir, display_path, resolve_within_repo, split_upstream,
+    ResolvedGitDirectory,
 };
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
@@ -28,6 +30,88 @@ pub fn resolve_repo(
     }
     ensure_git_available(&cwd.workspace)?;
     resolve_repo_in_authorized(registry, &cwd)
+}
+
+pub fn create_agent_worktree(
+    registry: &WorkspaceRegistry,
+    cwd: &str,
+    task: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<AgentWorktreeResult> {
+    let cwd = canonical_dir(registry, cwd, workspace)?;
+    if !registry.is_authorized(&cwd.local_path) {
+        return Err(GitError::PathOutsideWorkspace(cwd.local_path));
+    }
+    ensure_git_available(&cwd.workspace)?;
+    let Some(root_line) = git_stdout_line_opt(
+        &cwd.workspace,
+        &cwd.git_path,
+        ["rev-parse", "--show-toplevel"],
+    )?
+    else {
+        return Err(GitError::command(
+            "agent worktree",
+            "current directory is not inside a git repository",
+        ));
+    };
+    let repo_root = canonical_dir(registry, &root_line, &cwd.workspace)?;
+    let _ = registry.authorize(&repo_root.local_path);
+
+    let base_branch = git_stdout_line_opt(
+        &repo_root.workspace,
+        &repo_root.git_path,
+        ["branch", "--show-current"],
+    )?
+    .filter(|branch| !branch.is_empty())
+    .unwrap_or_else(|| "HEAD".into());
+
+    let task = branch_component_or(task, "task");
+    let stamp = epoch_millis();
+    let branch = format!("terax/agent/claude/{task}-{stamp}");
+    let leaf_dir = format!("claude-{task}-{stamp}");
+    let (worktree_git_path, worktree_local_path) = worktree_destination(&repo_root, &leaf_dir)?;
+
+    if worktree_local_path.exists() {
+        return Err(GitError::command(
+            "agent worktree",
+            "worktree destination already exists",
+        ));
+    }
+    if let Some(parent) = worktree_local_path.parent() {
+        std::fs::create_dir_all(parent).map_err(GitError::Io)?;
+    }
+
+    let args: Vec<OsString> = vec![
+        "worktree".into(),
+        "add".into(),
+        "-b".into(),
+        branch.clone().into(),
+        worktree_git_path.clone().into(),
+        "HEAD".into(),
+    ];
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        args,
+        DEFAULT_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git worktree add failed")?;
+
+    let canonical_worktree = registry
+        .authorize(&worktree_local_path)
+        .map_err(GitError::Io)?;
+    let path = if repo_root.workspace.is_wsl() {
+        worktree_git_path
+    } else {
+        display_path(&canonical_worktree)
+    };
+
+    Ok(AgentWorktreeResult {
+        source_repo_root: repo_root.git_path,
+        path,
+        branch,
+        base_branch,
+    })
 }
 
 fn resolve_repo_in_authorized(
@@ -77,6 +161,80 @@ fn resolve_repo_in_authorized(
         upstream,
         is_detached: head == "HEAD",
     }))
+}
+
+fn worktree_destination(
+    repo_root: &ResolvedGitDirectory,
+    leaf_dir: &str,
+) -> Result<(String, PathBuf)> {
+    let repo_name = repo_root
+        .local_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(sanitize_branch_component)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "repo".into());
+    let local_parent = repo_root.local_path.parent().ok_or_else(|| {
+        GitError::command("agent worktree", "repository root has no parent directory")
+    })?;
+    let local_path = local_parent
+        .join(format!("{repo_name}.terax-worktrees"))
+        .join(leaf_dir);
+
+    let git_parent = git_path_parent(&repo_root.git_path).ok_or_else(|| {
+        GitError::command("agent worktree", "repository root has no parent directory")
+    })?;
+    let git_path = format!(
+        "{}/{repo_name}.terax-worktrees/{}",
+        git_parent.trim_end_matches('/'),
+        leaf_dir
+    );
+    Ok((git_path, local_path))
+}
+
+fn git_path_parent(path: &str) -> Option<&str> {
+    let trimmed = path.trim_end_matches('/');
+    trimmed.rsplit_once('/').map(|(parent, _)| parent)
+}
+
+fn sanitize_branch_component(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len().min(48));
+    let mut last_dash = false;
+    for ch in raw.chars().flat_map(char::to_lowercase) {
+        let keep = ch.is_ascii_alphanumeric();
+        if keep {
+            out.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+        if out.len() >= 48 {
+            break;
+        }
+    }
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "task".into()
+    } else {
+        trimmed
+    }
+}
+
+fn branch_component_or(raw: &str, fallback: &str) -> String {
+    let cleaned = sanitize_branch_component(raw);
+    if cleaned == "task" && raw.trim().is_empty() {
+        fallback.into()
+    } else {
+        cleaned
+    }
+}
+
+fn epoch_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
 }
 
 pub fn panel_snapshot(
@@ -313,12 +471,7 @@ pub fn unstage(
     if !looks_like_no_head(&output) {
         return ensure_success(&output, "git reset failed");
     }
-    let mut rm_args: Vec<OsString> = vec![
-        "rm".into(),
-        "--cached".into(),
-        "-r".into(),
-        "--".into(),
-    ];
+    let mut rm_args: Vec<OsString> = vec!["rm".into(), "--cached".into(), "-r".into(), "--".into()];
     for p in &resolved {
         rm_args.push(p.clone().into());
     }
@@ -1021,6 +1174,23 @@ mod tests {
     #[test]
     fn parse_shortstat_returns_zeros_when_absent() {
         assert_eq!(parse_shortstat("no stat here"), (0, 0, 0));
+    }
+
+    #[test]
+    fn sanitize_branch_component_produces_safe_slug() {
+        assert_eq!(
+            sanitize_branch_component("Fix PR comments: fetch threads!"),
+            "fix-pr-comments-fetch-threads"
+        );
+        assert_eq!(sanitize_branch_component("../weird.lock"), "weird-lock");
+        assert_eq!(sanitize_branch_component(""), "task");
+    }
+
+    #[test]
+    fn git_path_parent_uses_forward_slash_paths() {
+        assert_eq!(git_path_parent("/home/me/repo"), Some("/home/me"));
+        assert_eq!(git_path_parent("C:/Users/me/repo"), Some("C:/Users/me"));
+        assert_eq!(git_path_parent("/"), None);
     }
 
     #[test]

@@ -44,6 +44,13 @@ export type GitRepoInfo = {
   isDetached: boolean;
 };
 
+export type AgentWorktreeResult = {
+  sourceRepoRoot: string;
+  path: string;
+  branch: string;
+  baseBranch: string;
+};
+
 export type GitChangedFile = {
   path: string;
   originalPath: string | null;
@@ -248,6 +255,12 @@ export const native = {
   gitResolveRepo: (cwd: string) =>
     invoke<GitRepoInfo | null>("git_resolve_repo", {
       cwd,
+      workspace: currentWorkspaceEnv(),
+    }),
+  gitCreateAgentWorktree: (params: { cwd: string; task: string }) =>
+    invoke<AgentWorktreeResult>("git_create_agent_worktree", {
+      cwd: params.cwd,
+      task: params.task,
       workspace: currentWorkspaceEnv(),
     }),
   gitPanelSnapshot: (cwd: string) =>

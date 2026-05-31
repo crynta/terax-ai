@@ -46,7 +46,7 @@ export function buildManagedAgentTools(ctx: ToolContext) {
               "a Claude Code agent is already active in this session; use send_to_agent to give it more work",
           };
         }
-        const spawned = ctx.spawnAgent(prompt);
+        const spawned = await ctx.spawnAgent(prompt);
         if (!spawned) return { error: "could not spawn the agent" };
         return {
           ok: true,

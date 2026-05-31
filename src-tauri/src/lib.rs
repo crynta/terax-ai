@@ -191,6 +191,7 @@ pub fn run() {
             fs::grep::fs_grep,
             fs::grep::fs_glob,
             git::commands::git_resolve_repo,
+            git::commands::git_create_agent_worktree,
             git::commands::git_panel_snapshot,
             git::commands::git_status,
             git::commands::git_diff,
