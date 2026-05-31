@@ -8,6 +8,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
+import { imeReconstruct } from "./ime";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
@@ -55,6 +56,10 @@ export type Slot = {
   lastW: number;
   lastH: number;
   lastUsedAt: number;
+  // IME reconstruction state (see attachImeInput).
+  imeNative: boolean;
+  imeInputActive: boolean;
+  imeUnit: string;
 };
 
 const slots: Slot[] = [];
@@ -117,6 +122,51 @@ export function applyBackgroundActive(active: boolean): void {
   }
 }
 
+// macOS WKWebView fires no composition events for Hangul/CJK IME and delivers
+// it only as input events with isComposing always false: a syllable opens with
+// insertText, then composes through insertReplacementText. xterm forwards the
+// insertText (leaking the leading jamo) and ignores insertReplacementText
+// (dropping the composed syllable), so Hangul reaches the PTY broken. Rebuild
+// the stream from the inputType: append a new unit, or erase the previous unit
+// and resend on a replacement. Chromium webviews (Windows) fire real
+// composition events that xterm already handles, so defer to it once a
+// compositionstart is seen. Paste and drop keep xterm's own (bracketed) path.
+function attachImeInput(slot: Slot): void {
+  const ta = slot.host.querySelector(
+    ".xterm-helper-textarea",
+  ) as HTMLTextAreaElement | null;
+  if (!ta) return;
+  const write = (data: string) => {
+    const leafId = slot.currentLeafId;
+    if (leafId === null) return;
+    adapter?.resolveLeaf(leafId)?.writeToPty(data);
+  };
+  const intercepts = (type: string) =>
+    type === "insertText" ||
+    type === "insertReplacementText" ||
+    type === "insertCompositionText" ||
+    type.startsWith("delete");
+  ta.addEventListener("compositionstart", () => {
+    slot.imeNative = true;
+  });
+  ta.addEventListener(
+    "beforeinput",
+    (e) => {
+      if (intercepts((e as InputEvent).inputType)) slot.imeInputActive = true;
+    },
+    true,
+  );
+  ta.addEventListener("input", (e) => {
+    slot.imeInputActive = false;
+    if (slot.imeNative) return;
+    const ev = e as InputEvent;
+    const step = imeReconstruct(slot.imeUnit, ev.inputType, ev.data ?? "");
+    if (!step) return;
+    if (step.send) write(step.send);
+    slot.imeUnit = step.unit;
+  });
+}
+
 function createSlot(): Slot {
   const term = new Terminal(termOptions());
   const fitAddon = new FitAddon();
@@ -155,19 +205,25 @@ function createSlot(): Slot {
     lastW: 0,
     lastH: 0,
     lastUsedAt: 0,
+    imeNative: false,
+    imeInputActive: false,
+    imeUnit: "",
   };
 
   attachWebgl(slot);
+  attachImeInput(slot);
 
   term.attachCustomKeyEventHandler((event) => {
     // During IME composition the browser is assembling a multi-keystroke
-    // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
-    // Raw keydown events — including the Enter that commits a candidate —
-    // must NOT be forwarded to the PTY; xterm will receive the final
-    // composed string through its own compositionend handler instead.
-    // keyCode 229 ("Process") is what Chromium reports for every key
-    // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // character (Chinese pinyin to hanzi, Korean jamo to syllable, etc.).
+    // Returning false makes xterm's _keyDown bail out before it reaches
+    // CompositionHelper.keydown(), which corrupts the composition state
+    // machine and leaks half-formed jamo straight to the PTY. Return true
+    // so the CompositionHelper owns the composition and emits only the
+    // final committed string through onData. keyCode 229 ("Process") is
+    // what Chromium reports for keys pressed inside an active IME session
+    // before isComposing flips to true.
+    if (event.isComposing || event.keyCode === 229) return true;
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
@@ -222,6 +278,12 @@ function createSlot(): Slot {
   });
 
   term.onData((data) => {
+    // On the macOS WKWebView IME path (attachImeInput) the input event
+    // reconstructs the data itself, so xterm's own onData for that same
+    // event would double-send and leak partial jamo. Drop it while an
+    // input event is in flight, but never on the native-composition path.
+    if (slot.imeInputActive && !slot.imeNative) return;
+    if (data === "\r" || data === "\n") slot.imeUnit = "";
     const leafId = slot.currentLeafId;
     if (leafId === null) return;
     adapter?.resolveLeaf(leafId)?.writeToPty(data);
