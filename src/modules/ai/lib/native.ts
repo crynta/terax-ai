@@ -53,6 +53,9 @@ export type GitChangedFile = {
   unstaged: boolean;
   untracked: boolean;
   statusLabel: string;
+  added: number;
+  removed: number;
+  isBinary: boolean;
 };
 
 export type GitStatusSnapshot = {

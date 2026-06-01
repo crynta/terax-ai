@@ -27,6 +27,9 @@ pub struct GitChangedFile {
     pub unstaged: bool,
     pub untracked: bool,
     pub status_label: String,
+    pub added: u32,
+    pub removed: u32,
+    pub is_binary: bool,
 }
 
 #[derive(Serialize)]

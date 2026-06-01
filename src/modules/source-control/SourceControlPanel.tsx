@@ -126,6 +126,10 @@ function checkboxValue(state: CheckState): boolean | "indeterminate" {
   return false;
 }
 
+function hasChangeStats(entry: SourceControlFileEntry): boolean {
+  return entry.isBinary || entry.added > 0 || entry.removed > 0;
+}
+
 export const SourceControlPanel = memo(function SourceControlPanel({
   open,
   sourceControl,
@@ -915,6 +919,7 @@ const EntryRow = memo(function EntryRow({
   const iconUrl = fileIconUrl(fileName);
   const pathLabel = entryPathLabel(entry);
   const showDiscard = entry.unstaged;
+  const showStats = hasChangeStats(entry);
   const isStageBusy =
     actionBusy === `stage:${entry.path}` ||
     actionBusy === `unstage:${entry.path}`;
@@ -980,6 +985,32 @@ const EntryRow = memo(function EntryRow({
           ) : null}
         </div>
       </button>
+
+      {showStats ? (
+        <div
+          className="flex shrink-0 items-center gap-1 text-[10.5px] font-semibold tabular-nums leading-none"
+          title={
+            entry.isBinary
+              ? "Binary file changed"
+              : `${entry.added} additions, ${entry.removed} deletions`
+          }
+        >
+          {entry.isBinary ? (
+            <span className="rounded border border-border/60 px-1 py-0.5 text-muted-foreground">
+              bin
+            </span>
+          ) : (
+            <>
+              {entry.added > 0 ? (
+                <span className="text-emerald-500">+{entry.added}</span>
+              ) : null}
+              {entry.removed > 0 ? (
+                <span className="text-rose-500">-{entry.removed}</span>
+              ) : null}
+            </>
+          )}
+        </div>
+      ) : null}
 
       {showDiscard ? (
         <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 data-[focused=true]:opacity-100 data-[selected=true]:opacity-100">

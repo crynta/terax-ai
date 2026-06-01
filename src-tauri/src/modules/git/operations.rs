@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
@@ -8,9 +9,9 @@ use crate::modules::git::process::{
     read_text_file, run_git,
 };
 use crate::modules::git::types::{
-    DiscardEntry, GitCommitFileChange, GitCommitResult, GitDiffContentResult, GitDiffResult,
-    GitLogEntry, GitOutput, GitPanelSnapshot, GitPushResult, GitRepoInfo, GitStatusSnapshot,
-    TextSource, DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS,
+    DiscardEntry, GitChangedFile, GitCommitFileChange, GitCommitResult, GitDiffContentResult,
+    GitDiffResult, GitLogEntry, GitOutput, GitPanelSnapshot, GitPushResult, GitRepoInfo,
+    GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS, NETWORK_TIMEOUT_SECS,
 };
 use crate::modules::git::utils::{
     authorized_repo_root, canonical_dir, resolve_within_repo, split_upstream, ResolvedGitDirectory,
@@ -142,7 +143,10 @@ fn status_inner(repo_root: &ResolvedGitDirectory) -> Result<GitStatusSnapshot> {
     ensure_success(&output, "git status failed")?;
 
     let stdout = std::str::from_utf8(&output.stdout).unwrap_or("");
-    let parsed = parse_porcelain_v2(stdout);
+    let mut parsed = parse_porcelain_v2(stdout);
+    if !parsed.files.is_empty() {
+        apply_status_numstat(repo_root, &mut parsed.files)?;
+    }
 
     Ok(GitStatusSnapshot {
         repo_root: repo_root.git_path.clone(),
@@ -154,6 +158,97 @@ fn status_inner(repo_root: &ResolvedGitDirectory) -> Result<GitStatusSnapshot> {
         truncated: output.truncated,
         changed_files: parsed.files,
     })
+}
+
+#[derive(Clone, Copy, Default)]
+struct StatusNumstat {
+    added: u32,
+    removed: u32,
+    is_binary: bool,
+}
+
+fn apply_status_numstat(
+    repo_root: &ResolvedGitDirectory,
+    files: &mut [GitChangedFile],
+) -> Result<()> {
+    let mut stats: HashMap<String, StatusNumstat> = HashMap::new();
+    collect_status_numstat(repo_root, true, &mut stats)?;
+    collect_status_numstat(repo_root, false, &mut stats)?;
+
+    for file in files {
+        if let Some(stat) = stats.get(&file.path) {
+            file.added = stat.added;
+            file.removed = stat.removed;
+            file.is_binary = stat.is_binary;
+        }
+    }
+    Ok(())
+}
+
+fn collect_status_numstat(
+    repo_root: &ResolvedGitDirectory,
+    staged: bool,
+    stats: &mut HashMap<String, StatusNumstat>,
+) -> Result<()> {
+    let mut args: Vec<OsString> = vec![
+        "diff".into(),
+        "--no-ext-diff".into(),
+        "--numstat".into(),
+        "-z".into(),
+    ];
+    if staged {
+        args.push("--cached".into());
+    }
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        args,
+        DEFAULT_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git diff --numstat failed")?;
+    merge_status_numstat(stats, &output.stdout);
+    Ok(())
+}
+
+fn merge_status_numstat(stats: &mut HashMap<String, StatusNumstat>, bytes: &[u8]) {
+    let s = std::str::from_utf8(bytes).unwrap_or("");
+    let tokens: Vec<&str> = s.split('\0').filter(|t| !t.is_empty()).collect();
+    let mut idx = 0;
+    while idx < tokens.len() {
+        let header = tokens[idx];
+        idx += 1;
+        let mut cols = header.splitn(3, '\t');
+        let added_raw = cols.next().unwrap_or("0");
+        let removed_raw = cols.next().unwrap_or("0");
+        let inline_path = cols.next().unwrap_or("");
+        let is_binary = added_raw == "-" && removed_raw == "-";
+        let added: u32 = if is_binary {
+            0
+        } else {
+            added_raw.parse().unwrap_or(0)
+        };
+        let removed: u32 = if is_binary {
+            0
+        } else {
+            removed_raw.parse().unwrap_or(0)
+        };
+
+        let path = if inline_path.is_empty() {
+            idx += 1;
+            let new_path = tokens.get(idx).copied().unwrap_or("");
+            idx += 1;
+            new_path
+        } else {
+            inline_path
+        };
+        if path.is_empty() {
+            continue;
+        }
+        let entry = stats.entry(path.to_string()).or_default();
+        entry.added = entry.added.saturating_add(added);
+        entry.removed = entry.removed.saturating_add(removed);
+        entry.is_binary |= is_binary;
+    }
 }
 
 pub fn diff(

@@ -58,6 +58,9 @@ export type SourceControlFileEntry = {
   staged: boolean;
   unstaged: boolean;
   untracked: boolean;
+  added: number;
+  removed: number;
+  isBinary: boolean;
 };
 
 export type PendingDiscard = {
@@ -299,6 +302,9 @@ function optimisticUnstage(
         unstaged: true,
         untracked: false,
         statusLabel: "Deleted",
+        added: 0,
+        removed: file.removed,
+        isBinary: file.isBinary,
       });
       next.push({
         path: file.path,
@@ -309,6 +315,9 @@ function optimisticUnstage(
         unstaged: true,
         untracked: true,
         statusLabel: "Untracked",
+        added: file.added,
+        removed: 0,
+        isBinary: file.isBinary,
       });
       continue;
     }
@@ -447,6 +456,9 @@ export function useSourceControlPanel(
         staged: file.staged,
         unstaged: file.unstaged,
         untracked: file.untracked,
+        added: file.added,
+        removed: file.removed,
+        isBinary: file.isBinary,
       });
     }
     return out;
