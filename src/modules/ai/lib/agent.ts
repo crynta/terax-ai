@@ -208,13 +208,28 @@ export async function buildLanguageModel(
       break;
     }
     case "opencode-go": {
-      const { createOpenAICompatible } =
-        await import("@ai-sdk/openai-compatible");
-      built = createOpenAICompatible({
-        name: "opencode-go",
-        baseURL: "https://opencode.ai/zen/go/v1",
-        apiKey: key,
-      })(resolvedModelId);
+      // Strip the provider prefix to get the bare model id for the API.
+      const bareId = resolvedModelId.startsWith("opencode-go/")
+        ? resolvedModelId.slice("opencode-go/".length)
+        : resolvedModelId;
+      // MiniMax and Qwen models use Anthropic-compatible transport;
+      // everything else uses OpenAI-compatible.
+      const ANTHROPIC_MODEL_PREFIXES = ["minimax-", "qwen3."];
+      if (ANTHROPIC_MODEL_PREFIXES.some((p) => bareId.startsWith(p))) {
+        const { createAnthropic } = await import("@ai-sdk/anthropic");
+        built = createAnthropic({
+          apiKey: key,
+          baseURL: "https://opencode.ai/zen/go/v1",
+        })(bareId);
+      } else {
+        const { createOpenAICompatible } =
+          await import("@ai-sdk/openai-compatible");
+        built = createOpenAICompatible({
+          name: "opencode-go",
+          baseURL: "https://opencode.ai/zen/go/v1",
+          apiKey: key,
+        })(bareId);
+      }
       break;
     }
     default: {
