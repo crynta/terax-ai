@@ -32,14 +32,57 @@ import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
+import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
 
 export type FileExplorerHandle = {
   focus: () => void;
   isFocused: () => boolean;
 };
 
+// Map from absolute path to CSS color for git-changed entries
+type GitColorMap = Map<string, string>;
+
+function buildGitColorMap(status: GitStatusSnapshot | null | undefined): GitColorMap {
+  const map: GitColorMap = new Map();
+  if (!status) return map;
+  const { repoRoot, changedFiles } = status;
+
+  const GIT_COLORS: Record<string, string> = {
+    added:    "#3fb950",
+    modified: "#d29922",
+    deleted:  "#f85149",
+    renamed:  "#d29922",
+    untracked:"#3fb950",
+  };
+
+  const classify = (f: GitStatusSnapshot["changedFiles"][number]): string => {
+    if (f.untracked)                             return GIT_COLORS.untracked;
+    const s = (f.indexStatus + f.worktreeStatus).replace(/ /g, "");
+    if (s.includes("D"))                         return GIT_COLORS.deleted;
+    if (s.includes("R"))                         return GIT_COLORS.renamed;
+    if (s.includes("A"))                         return GIT_COLORS.added;
+    return GIT_COLORS.modified;
+  };
+
+  for (const f of changedFiles) {
+    const abs = `${repoRoot}/${f.path}`;
+    const color = classify(f);
+    map.set(abs, color);
+
+    // Mark every parent folder up to (but not including) repo root
+    let dir = abs.slice(0, abs.lastIndexOf("/"));
+    while (dir.length > repoRoot.length) {
+      if (!map.has(dir)) map.set(dir, color);
+      dir = dir.slice(0, dir.lastIndexOf("/"));
+    }
+  }
+
+  return map;
+}
+
 type Props = {
   rootPath: string | null;
+  gitStatus?: GitStatusSnapshot | null;
   onOpenFile: (path: string, pin?: boolean) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
@@ -147,6 +190,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
   function FileExplorer(
     {
       rootPath,
+      gitStatus,
       onOpenFile,
       onPathRenamed,
       onPathDeleted,
@@ -163,6 +207,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     const searchRef = useRef<ExplorerSearchHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    const gitColorMap = useMemo(() => buildGitColorMap(gitStatus), [gitStatus]);
 
     const { rows, entryIndexByPath } = useMemo(() => {
       if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
@@ -338,6 +384,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               tree={tree}
               isSelected={selectedPath === row.path}
               isRenaming={row.kind === "rename"}
+              gitStatusColor={gitColorMap.get(row.path)}
               onOpenFile={onOpenFile}
               onSelectPath={setSelectedPath}
               onRevealInTerminal={onRevealInTerminal}

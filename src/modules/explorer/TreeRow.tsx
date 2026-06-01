@@ -36,6 +36,7 @@ export type EntryRowProps = {
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
+  gitStatusColor?: string;
 };
 
 function isMarkdownPath(path: string): boolean {
@@ -58,6 +59,7 @@ function EntryRowImpl(props: EntryRowProps) {
     onRevealInTerminal,
     onAttachToAgent,
     onOpenMarkdownPreview,
+    gitStatusColor,
   } = props;
 
   const [isConfirming, setIsConfirming] = useState(false);
@@ -122,7 +124,12 @@ function EntryRowImpl(props: EntryRowProps) {
             ) : (
               <span className="size-4 shrink-0" />
             )}
-            <span className="min-w-0 flex-1 truncate">{name}</span>
+            <span
+              className="min-w-0 flex-1 truncate"
+              style={gitStatusColor ? { color: gitStatusColor } : undefined}
+            >
+              {name}
+            </span>
           </button>
         )}
       </ContextMenuTrigger>
