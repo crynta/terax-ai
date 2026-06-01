@@ -25,6 +25,7 @@ import {
   AiInputBarConnect,
   AiMiniWindow,
   getAllKeys,
+  getAllCustomEndpointKeys,
   hasAnyKey,
   LocalAgentNotificationsBridge,
   SelectionAskAi,
@@ -84,12 +85,14 @@ import {
   disposeSession,
   findLeafCwd,
   hasLeaf,
+  leafHasForegroundProcess,
   leafIds,
   respawnSession,
   TerminalStack,
   whenSessionReady,
   writeToSession,
   type TerminalPaneHandle,
+  useTerminalFileDrop,
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { listCustomThemes, saveCustomTheme } from "@/modules/theme/customThemes";
@@ -228,6 +231,7 @@ export default function App() {
   const [gitHistoryHandle, setGitHistoryHandle] =
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
+  useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -322,6 +326,7 @@ export default function App() {
 
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
+  const [pendingTerminalCloseTab, setPendingTerminalCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
@@ -409,6 +414,7 @@ export default function App() {
   const panelOpen = useChatStore((s) => s.panelOpen);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setApiKeys = useChatStore((s) => s.setApiKeys);
+  const setCustomEndpointKeys = useChatStore((s) => s.setCustomEndpointKeys);
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
@@ -428,14 +434,17 @@ export default function App() {
   const openaiCompatibleBaseURL = usePreferencesStore(
     (s) => s.openaiCompatibleBaseURL,
   );
+  const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
   const hasLocalModel =
     (lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0) ||
     (mlxBaseURL.trim().length > 0 && mlxModelId.trim().length > 0) ||
     (ollamaBaseURL.trim().length > 0 && ollamaModelId.trim().length > 0) ||
     (openaiCompatibleBaseURL.trim().length > 0 &&
-      openaiCompatibleModelId.trim().length > 0);
+      openaiCompatibleModelId.trim().length > 0) ||
+    customEndpoints.some((e) => e.baseURL.trim().length > 0 && e.modelId.trim().length > 0);
   const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
 
+  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -445,6 +454,13 @@ export default function App() {
         setApiKeys(keys);
         setKeysLoaded(true);
       });
+      if (!prefsHydrated) return;
+      void getAllCustomEndpointKeys(
+        usePreferencesStore.getState().customEndpoints,
+      ).then((epKeys) => {
+        if (!alive) return;
+        setCustomEndpointKeys(epKeys);
+      });
     };
     reload();
     const unlistenP = onKeysChanged(reload);
@@ -452,13 +468,12 @@ export default function App() {
       alive = false;
       void unlistenP.then((fn) => fn());
     };
-  }, [setApiKeys]);
+  }, [setApiKeys, setCustomEndpointKeys, prefsHydrated]);
 
   // Hydrate the cross-window preference store and mirror the default model
   // into chatStore so the dropdown reflects what the user picked in Settings.
   const initPrefs = usePreferencesStore((s) => s.init);
   const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
-  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   useEffect(() => {
     void initPrefs();
   }, [initPrefs]);
@@ -672,11 +687,19 @@ export default function App() {
   }, [tabs]);
 
   const handleClose = useCallback(
-    (id: number) => {
+    async (id: number) => {
       const t = tabs.find((x) => x.id === id);
       if (t?.kind === "editor" && t.dirty) {
         setPendingCloseTab(id);
         return;
+      }
+      if (t?.kind === "terminal") {
+        const leaves = leafIds(t.paneTree);
+        const checks = await Promise.all(leaves.map(leafHasForegroundProcess));
+        if (checks.some(Boolean)) {
+          setPendingTerminalCloseTab(id);
+          return;
+        }
       }
       disposeTab(id);
     },
@@ -1029,8 +1052,10 @@ export default function App() {
       closeActivePane(activeId);
       return;
     }
-    handleClose(activeId);
+    void handleClose(activeId);
   }, [activeId, closeActivePane, handleClose]);
+
+  const [zenMode, setZenMode] = useState(false);
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
@@ -1060,6 +1085,7 @@ export default function App() {
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
+      "view.zenMode": () => setZenMode((v) => !v),
       "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
       "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
     }),
@@ -1196,6 +1222,11 @@ export default function App() {
 
   const handleEditorDirty = useCallback(
     (id: number, dirty: boolean) => updateTab(id, { dirty }),
+    [updateTab],
+  );
+
+  const handleRenameTab = useCallback(
+    (id: number, title: string) => updateTab(id, { customTitle: title.trim() }),
     [updateTab],
   );
 
@@ -1434,7 +1465,8 @@ export default function App() {
     <ThemeProvider>
       <TooltipProvider>
         <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
-          <Header
+          {!zenMode && (
+            <Header
             tabs={tabs}
             activeId={activeId}
             onSelect={setActiveId}
@@ -1445,6 +1477,7 @@ export default function App() {
             onNewGitGraph={openGitGraphFromContext}
             onClose={handleClose}
             onPin={pinTab}
+            onRename={handleRenameTab}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={
@@ -1456,7 +1489,8 @@ export default function App() {
             onOpenSettings={() => void openSettingsWindow()}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
-          />
+            />
+          )}
 
           <main className="zoom-content flex min-h-0 flex-1 flex-col">
             <ResizablePanelGroup
@@ -1537,7 +1571,8 @@ export default function App() {
             </ResizablePanelGroup>
           </main>
 
-          <StatusBar
+          {!zenMode && (
+            <StatusBar
             cwd={activeCwd}
             filePath={activeFilePath}
             home={home}
@@ -1548,7 +1583,8 @@ export default function App() {
             privateActive={
               activeTab?.kind === "terminal" && activeTab.private === true
             }
-          />
+            />
+          )}
 
           <AgentNotificationsBridge
             tabs={tabs}
@@ -1614,6 +1650,36 @@ export default function App() {
                   Cancel
                 </AlertDialogCancel>
                 <AlertDialogAction onClick={confirmClose}>
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={pendingTerminalCloseTab !== null}
+            onOpenChange={(open) => !open && setPendingTerminalCloseTab(null)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Close Terminal?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A process is running. Closing this tab will terminate it.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  onClick={() => setPendingTerminalCloseTab(null)}
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (pendingTerminalCloseTab !== null)
+                      disposeTab(pendingTerminalCloseTab);
+                    setPendingTerminalCloseTab(null);
+                  }}
+                >
                   Close Anyway
                 </AlertDialogAction>
               </AlertDialogFooter>
