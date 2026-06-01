@@ -1,2 +1,3 @@
 export { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
-export { ExplorerSearch } from "./ExplorerSearch";
+export { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
+export { ExplorerPanelSearch } from "./ExplorerPanelSearch";
