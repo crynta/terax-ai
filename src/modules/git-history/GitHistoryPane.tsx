@@ -1004,24 +1004,7 @@ const FileRow = memo(function FileRow({
           </span>
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center gap-1 text-[10px] tabular-nums">
-        {file.isBinary ? (
-          <span className="text-muted-foreground/70">binary</span>
-        ) : (
-          <>
-            {file.added > 0 ? (
-              <span className="text-emerald-600 dark:text-emerald-400">
-                +{file.added}
-              </span>
-            ) : null}
-            {file.removed > 0 ? (
-              <span className="text-rose-600 dark:text-rose-400">
-                −{file.removed}
-              </span>
-            ) : null}
-          </>
-        )}
-      </div>
+      <FileChangeStats file={file} />
       <span
         className={cn(
           "inline-flex w-4 shrink-0 justify-center text-[9.5px] font-bold leading-none tabular-nums",
@@ -1034,3 +1017,39 @@ const FileRow = memo(function FileRow({
     </button>
   );
 });
+
+function FileChangeStats({ file }: { file: GitCommitFileChange }) {
+  if (file.isBinary) {
+    return (
+      <span className="w-[4.25rem] shrink-0 text-right text-[10px] tabular-nums text-muted-foreground/70">
+        binary
+      </span>
+    );
+  }
+
+  const hasStats = file.added > 0 || file.removed > 0;
+  return (
+    <span
+      className="flex w-[4.25rem] shrink-0 items-center justify-end gap-1 text-[10px] tabular-nums"
+      aria-label={`${file.added} additions, ${file.removed} deletions`}
+      title={`+${file.added} / -${file.removed}`}
+    >
+      {hasStats ? (
+        <>
+          {file.added > 0 ? (
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">
+              +{file.added}
+            </span>
+          ) : null}
+          {file.removed > 0 ? (
+            <span className="font-medium text-rose-600 dark:text-rose-400">
+              -{file.removed}
+            </span>
+          ) : null}
+        </>
+      ) : (
+        <span className="text-muted-foreground/40">+0 -0</span>
+      )}
+    </span>
+  );
+}
