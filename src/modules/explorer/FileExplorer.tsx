@@ -7,6 +7,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
+  Alert02Icon,
   FileAddIcon,
   Folder01Icon,
   FolderAddIcon,
@@ -163,7 +164,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     ref,
   ) {
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
-    const { lookup: lookupGitStatus } = useGitStatus(rootPath, gitStatus);
+    const { lookup: lookupGitStatus, truncated: gitDecorationsTruncated } =
+      useGitStatus(rootPath, gitStatus);
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
@@ -390,7 +392,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       >
         <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
           <span
-            className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80"
+            className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs font-medium text-foreground/80"
             title={rootPath}
           >
             <img
@@ -398,9 +400,23 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               alt=""
               height={15}
               width={15}
-              className="mx-1.5"
+              className="mx-1.5 shrink-0"
             />
-            {basename(rootPath)}
+            <span className="min-w-0 truncate">{basename(rootPath)}</span>
+            {gitDecorationsTruncated ? (
+              <span
+                className="inline-flex shrink-0"
+                title="Git decorations may be incomplete due to a large number of changes"
+                aria-label="Git decorations may be incomplete"
+              >
+                <HugeiconsIcon
+                  icon={Alert02Icon}
+                  size={11}
+                  strokeWidth={2}
+                  className="text-muted-foreground/70"
+                />
+              </span>
+            ) : null}
           </span>
 
           <Button

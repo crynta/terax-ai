@@ -12,9 +12,20 @@ import {
 type GitStatusState = {
   repoRoot: string | null;
   statusMap: Map<string, GitStatusCode>;
+  truncated: boolean;
 };
 
 const EMPTY_MAP = new Map<string, GitStatusCode>();
+
+function stateFromSnapshot(status: GitStatusSnapshot): GitStatusState {
+  const statusMap = buildGitStatusMap(status);
+  bubbleUpDirectoryStatuses(statusMap);
+  return {
+    repoRoot: status.repoRoot,
+    statusMap,
+    truncated: status.truncated,
+  };
+}
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/\/+$/, "");
@@ -30,6 +41,7 @@ export function useGitStatus(
   const [fetched, setFetched] = useState<GitStatusState>({
     repoRoot: null,
     statusMap: EMPTY_MAP,
+    truncated: false,
   });
   const [canonicalWorkspaceRoot, setCanonicalWorkspaceRoot] = useState<
     string | null
@@ -81,17 +93,12 @@ export function useGitStatus(
 
   const sharedState = useMemo<GitStatusState | null>(() => {
     if (!sharedCoversRoot || !sharedStatus) return null;
-    const statusMap = buildGitStatusMap(sharedStatus);
-    bubbleUpDirectoryStatuses(statusMap);
-    return {
-      repoRoot: sharedStatus.repoRoot,
-      statusMap,
-    };
+    return stateFromSnapshot(sharedStatus);
   }, [sharedCoversRoot, sharedStatus]);
 
   useEffect(() => {
     requestIdRef.current++;
-    setFetched({ repoRoot: null, statusMap: EMPTY_MAP });
+    setFetched({ repoRoot: null, statusMap: EMPTY_MAP, truncated: false });
   }, [workspaceKey]);
 
   useEffect(() => {
@@ -104,23 +111,18 @@ export function useGitStatus(
       .then((snapshot) => {
         if (requestId !== requestIdRef.current) return;
         if (!snapshot.repo || !snapshot.status) {
-          setFetched({ repoRoot: null, statusMap: EMPTY_MAP });
+          setFetched({ repoRoot: null, statusMap: EMPTY_MAP, truncated: false });
           return;
         }
-        const statusMap = buildGitStatusMap(snapshot.status);
-        bubbleUpDirectoryStatuses(statusMap);
-        setFetched({
-          repoRoot: snapshot.repo.repoRoot,
-          statusMap,
-        });
+        setFetched(stateFromSnapshot(snapshot.status));
       })
       .catch(() => {
         if (requestId !== requestIdRef.current) return;
-        setFetched({ repoRoot: null, statusMap: EMPTY_MAP });
+        setFetched({ repoRoot: null, statusMap: EMPTY_MAP, truncated: false });
       });
   }, [workspaceRoot, sharedCoversRoot, workspaceKey]);
 
-  const { repoRoot, statusMap } = sharedState ?? fetched;
+  const { repoRoot, statusMap, truncated } = sharedState ?? fetched;
 
   const lookup = useCallback(
     (path: string): GitStatusCode | null => {
@@ -130,5 +132,5 @@ export function useGitStatus(
     [repoRoot, statusMap, pathAliases],
   );
 
-  return { repoRoot, statusMap, lookup };
+  return { repoRoot, statusMap, truncated, lookup };
 }
