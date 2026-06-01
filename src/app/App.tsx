@@ -990,8 +990,26 @@ export default function App() {
   const sourceControl = useSourceControl(sourceControlPath, true);
 
   const toggleSourceControl = useCallback(() => {
+    const cannotToggleToSourceControl =
+      !sourceControl.hasRepo && sidebarView !== "source-control";
+    if (cannotToggleToSourceControl) return;
     cycleSidebarView("source-control");
-  }, [cycleSidebarView]);
+  }, [cycleSidebarView, sidebarView, sourceControl.hasRepo]);
+
+  useEffect(() => {
+    if (
+      sidebarView === "source-control" &&
+      !sourceControl.isLoading &&
+      !sourceControl.hasRepo
+    ) {
+      persistSidebarView("explorer");
+    }
+  }, [
+    persistSidebarView,
+    sidebarView,
+    sourceControl.hasRepo,
+    sourceControl.isLoading,
+  ]);
 
   const openGitGraphFromContext = useCallback(async () => {
     const known = sourceControl.hasRepo ? sourceControl.repo : null;
@@ -1535,6 +1553,7 @@ export default function App() {
                     activeView={sidebarView}
                     onSelectView={persistSidebarView}
                     changedCount={sourceControl.changedCount}
+                    hasRepo={sourceControl.hasRepo}
                   />
                 </div>
               </ResizablePanel>
