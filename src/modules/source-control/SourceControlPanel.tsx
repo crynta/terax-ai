@@ -36,6 +36,7 @@ import {
   COMPACT_CONTENT,
   COMPACT_ITEM,
 } from "@/modules/explorer/lib/menuItemClass";
+import { joinPath } from "@/modules/explorer/lib/useFileTree";
 import {
   AiContentGenerator02Icon,
   Alert02Icon,
@@ -945,7 +946,7 @@ const EntryRow = memo(function EntryRow({
   const disabled = actionBusy !== null;
 
   const absolutePath = repoRoot
-    ? `${repoRoot.replace(/\/+$/, "")}/${entry.path.replace(/\\/g, "/")}`
+    ? joinPath(repoRoot.replace(/\\/g, "/"), entry.path.replace(/\\/g, "/"))
     : null;
   const isDeleted = entry.statusCode === "D";
   const revealLabel = IS_MAC ? "Reveal in Finder" : "Reveal in File Manager";
