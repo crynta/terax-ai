@@ -226,6 +226,23 @@ html[data-chrome="borderless"] #settings-root {
   outline: none !important;
 }
 
+/*
+ * xterm sizes its hidden IME textarea to the full unwrapped preedit string.
+ * Keep the helper clipped to the terminal viewport so long pinyin cannot push
+ * the app layout, but preserve xterm's nowrap composition/textarea contract —
+ * that positioning is what keeps the Windows IME candidate window anchored at
+ * the terminal cursor.
+ */
+.xterm .xterm-helpers {
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
 .cm-editor,
 .cm-scroller {
   scrollbar-width: none !important;

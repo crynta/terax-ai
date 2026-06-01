@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   terminalDeleteSequence,
+  terminalEditorNewlineSequence,
+  terminalGsdShortcutSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
   type TerminalKeyEvent,
@@ -10,9 +12,11 @@ import {
 const evt = (partial: Partial<TerminalKeyEvent>): TerminalKeyEvent => ({
   altKey: false,
   ctrlKey: false,
+  shiftKey: false,
   metaKey: false,
   key: "",
   code: "",
+  getModifierState: () => false,
   ...partial,
 });
 
@@ -75,6 +79,99 @@ describe("terminalLineNavigationSequence", () => {
       terminalLineNavigationSequence(
         evt({ metaKey: true, altKey: true, key: "ArrowLeft", code: "ArrowLeft" }),
         { isMac: true },
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("terminalEditorNewlineSequence", () => {
+  it.each([
+    ["Shift+Enter", { shiftKey: true }],
+    ["Ctrl+Enter", { ctrlKey: true }],
+  ])("maps %s to Pi's newline shortcut sequence", (_label, partial) => {
+    expect(
+      terminalEditorNewlineSequence(
+        evt({ ...partial, key: "Enter", code: "Enter" }),
+      ),
+    ).toBe("\x1b[13;2u");
+  });
+
+  it("also maps NumpadEnter", () => {
+    expect(
+      terminalEditorNewlineSequence(
+        evt({ shiftKey: true, key: "Enter", code: "NumpadEnter" }),
+      ),
+    ).toBe("\x1b[13;2u");
+  });
+
+  it("does not map plain Enter", () => {
+    expect(
+      terminalEditorNewlineSequence(evt({ key: "Enter", code: "Enter" })),
+    ).toBeNull();
+  });
+
+  it("leaves Alt+Enter untouched", () => {
+    expect(
+      terminalEditorNewlineSequence(
+        evt({ altKey: true, key: "Enter", code: "Enter" }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("terminalGsdShortcutSequence", () => {
+  it.each([
+    ["b", "KeyB", "\x1b\x02"],
+    ["g", "KeyG", "\x1b\x07"],
+    ["n", "KeyN", "\x1b\x0e"],
+    ["p", "KeyP", "\x1b\x10"],
+    ["v", "KeyV", "\x1b\x16"],
+    ["]", "BracketRight", "\x1b\x1d"],
+  ])("maps Ctrl+Alt+%s to GSD's terminal sequence", (key, code, seq) => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({ ctrlKey: true, altKey: true, key, code }),
+      ),
+    ).toBe(seq);
+  });
+
+  it.each([
+    ["g", "KeyG", "\x1b[103;5u"],
+    ["n", "KeyN", "\x1b[110;5u"],
+  ])("maps Ctrl+Shift+%s fallback to a CSI-u sequence", (key, code, seq) => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({ ctrlKey: true, shiftKey: true, key: key.toUpperCase(), code }),
+      ),
+    ).toBe(seq);
+  });
+
+  it("does not map plain Ctrl+N", () => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({ ctrlKey: true, key: "n", code: "KeyN" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not map arbitrary Ctrl+Alt letters", () => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({ ctrlKey: true, altKey: true, key: "x", code: "KeyX" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not map AltGraph printable input as a Ctrl+Alt shortcut", () => {
+    expect(
+      terminalGsdShortcutSequence(
+        evt({
+          ctrlKey: true,
+          altKey: true,
+          key: "ń",
+          code: "KeyN",
+          getModifierState: (modifier) => modifier === "AltGraph",
+        }),
       ),
     ).toBeNull();
   });

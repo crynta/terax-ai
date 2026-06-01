@@ -1,9 +1,70 @@
 export type TerminalKeyEvent = Pick<
   KeyboardEvent,
-  "altKey" | "ctrlKey" | "metaKey" | "key" | "code"
->;
+  "altKey" | "ctrlKey" | "shiftKey" | "metaKey" | "key" | "code"
+> & {
+  getModifierState?: KeyboardEvent["getModifierState"];
+};
 
 export type PlatformOpts = { isMac: boolean };
+
+const SHIFT_ENTER_CSI_U = "\x1b[13;2u";
+
+export function terminalEditorNewlineSequence(
+  event: TerminalKeyEvent,
+): string | null {
+  const isEnter =
+    event.key === "Enter" ||
+    event.code === "Enter" ||
+    event.code === "NumpadEnter";
+  if (!isEnter || event.altKey || event.metaKey) return null;
+
+  // xterm.js collapses Shift+Enter and Ctrl+Enter to a plain carriage return.
+  // Emit an unambiguous CSI-u Shift+Enter sequence that Pi's editor treats as
+  // its newline action. Ctrl+Enter is intentionally translated to the same
+  // action for Windows users and terminals that do not expose Shift+Enter well.
+  if (event.shiftKey || event.ctrlKey) return SHIFT_ENTER_CSI_U;
+  return null;
+}
+
+export function terminalGsdShortcutSequence(
+  event: TerminalKeyEvent,
+): string | null {
+  if (event.metaKey || hasAltGraphModifier(event)) return null;
+  if (event.ctrlKey && event.altKey && !event.shiftKey) {
+    const ctrl = ctrlCharForEvent(event, new Set(["b", "g", "n", "p", "v", "]"]));
+    return ctrl ? `\x1b${ctrl}` : null;
+  }
+  if (event.ctrlKey && event.shiftKey && !event.altKey) {
+    const key = normalizedKey(event);
+    if (key !== "g" && key !== "n") return null;
+    return `\x1b[${key.charCodeAt(0)};5u`;
+  }
+  return null;
+}
+
+function hasAltGraphModifier(event: TerminalKeyEvent): boolean {
+  return event.getModifierState?.("AltGraph") ?? false;
+}
+
+function ctrlCharForEvent(
+  event: TerminalKeyEvent,
+  allowed: ReadonlySet<string>,
+): string | null {
+  const key = normalizedKey(event);
+  if (!allowed.has(key)) return null;
+  if (key === "]") return "\x1d";
+  const code = key.charCodeAt(0) - 96;
+  if (code < 1 || code > 26) return null;
+  return String.fromCharCode(code);
+}
+
+function normalizedKey(event: TerminalKeyEvent): string {
+  if (event.code.startsWith("Key") && event.code.length === 4) {
+    return event.code.slice(3).toLowerCase();
+  }
+  if (event.code === "BracketRight") return "]";
+  return event.key.toLowerCase();
+}
 
 export function terminalWordNavigationSequence(event: TerminalKeyEvent): string | null {
   if (!event.altKey || event.ctrlKey || event.metaKey) return null;

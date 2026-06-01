@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Terminal IME composition fixture</title>
+    <style>
+      body { margin: 24px; }
+      .shell {
+        width: 480px;
+        border: 1px solid #999;
+        overflow: hidden;
+      }
+      .terminal-host {
+        width: 100%;
+        height: 180px;
+      }
+      .xterm,
+      .xterm-screen {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell" data-testid="shell">
+      <div class="terminal-host" data-testid="terminal-host">
+        <div class="xterm focus" data-testid="xterm">
+          <div class="xterm-screen" data-testid="xterm-screen">
+            <div class="xterm-helpers" data-testid="xterm-helpers">
+              <textarea class="xterm-helper-textarea" data-testid="xterm-helper-textarea"></textarea>
+              <div class="composition-view active" data-testid="composition-view"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module">
+      import "@xterm/xterm/css/xterm.css";
+      import "/src/styles/globals.css";
+
+      window.__simulateXtermComposition = () => {
+        const view = document.querySelector('[data-testid="composition-view"]');
+        const textarea = document.querySelector('[data-testid="xterm-helper-textarea"]');
+        view.textContent = 'zhongwenpinyin'.repeat(48);
+        view.style.left = '240px';
+        view.style.top = '24px';
+        view.style.height = '18px';
+        view.style.lineHeight = '18px';
+        view.style.fontFamily = 'JetBrains Mono, monospace';
+        view.style.fontSize = '13px';
+
+        const bounds = view.getBoundingClientRect();
+        textarea.style.left = view.style.left;
+        textarea.style.top = view.style.top;
+        textarea.style.width = `${Math.max(bounds.width, 1)}px`;
+        textarea.style.height = `${Math.max(bounds.height, 1)}px`;
+        textarea.style.lineHeight = `${Math.max(bounds.height, 1)}px`;
+      };
+
+      window.__xtermImeMetrics = () => {
+        const shell = document.querySelector('[data-testid="shell"]');
+        const host = document.querySelector('[data-testid="terminal-host"]');
+        const helpers = document.querySelector('[data-testid="xterm-helpers"]');
+        const view = document.querySelector('[data-testid="composition-view"]');
+        const textarea = document.querySelector('[data-testid="xterm-helper-textarea"]');
+        const viewStyle = getComputedStyle(view);
+        const textareaStyle = getComputedStyle(textarea);
+        const viewRect = view.getBoundingClientRect();
+        return {
+          shellClientWidth: shell.clientWidth,
+          shellScrollWidth: shell.scrollWidth,
+          hostClientWidth: host.clientWidth,
+          hostScrollWidth: host.scrollWidth,
+          helpersClientWidth: helpers.clientWidth,
+          helpersClientHeight: helpers.clientHeight,
+          helpersScrollWidth: helpers.scrollWidth,
+          viewWidth: viewRect.width,
+          viewHeight: viewRect.height,
+          textareaWidth: textarea.getBoundingClientRect().width,
+          viewWhiteSpace: viewStyle.whiteSpace,
+          viewOverflowWrap: viewStyle.overflowWrap,
+          viewWordBreak: viewStyle.wordBreak,
+          textareaWhiteSpace: textareaStyle.whiteSpace,
+        };
+      };
+    </script>
+  </body>
+</html>

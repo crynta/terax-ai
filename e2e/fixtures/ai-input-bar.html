@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AI input layout fixture</title>
+    <script type="module">
+      import "/src/styles/globals.css";
+    </script>
+    <style>
+      body { margin: 24px; }
+      .shell { width: 360px; border: 1px solid #d4d4d8; padding: 8px; }
+      .agent-switcher { width: 96px; flex: 0 0 auto; border: 1px solid #d4d4d8; }
+    </style>
+  </head>
+  <body>
+    <div class="shell" data-testid="shell">
+      <div class="flex items-start gap-2" data-testid="composer-row">
+        <textarea
+          data-testid="composer-textarea"
+          rows="1"
+          class="max-h-40 min-w-0 flex-1 resize-none bg-transparent text-[13px] leading-relaxed outline-none placeholder:text-muted-foreground/60"
+        ></textarea>
+        <button class="agent-switcher" type="button">Agent</button>
+      </div>
+    </div>
+  </body>
+</html>

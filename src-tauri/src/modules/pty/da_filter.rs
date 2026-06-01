@@ -1,12 +1,5 @@
 const ESC: u8 = 0x1b;
 const LBRACKET: u8 = 0x5b;
-const FINAL_C: u8 = 0x63;
-const PREFIX_GT: u8 = 0x3e;
-const PREFIX_EQ: u8 = 0x3d;
-
-const DA1_REPLY: &[u8] = b"\x1b[?1;2c";
-const DA2_REPLY: &[u8] = b"\x1b[>0;276;0c";
-
 const HOLD_MAX: usize = 256;
 
 #[derive(Clone, Copy)]
@@ -33,7 +26,7 @@ impl DaFilter {
         &mut self,
         input: &[u8],
         out: &mut Vec<u8>,
-        mut respond: F,
+        _respond: F,
     ) {
         if matches!(self.state, State::Idle) && !input.contains(&ESC) {
             out.extend_from_slice(input);
@@ -68,28 +61,7 @@ impl DaFilter {
                 }
                 State::InsideCsi => {
                     self.hold.push(b);
-                    if (0x40..=0x7e).contains(&b) {
-                        if b == FINAL_C {
-                            let middle = &self.hold[2..self.hold.len() - 1];
-                            let is_response =
-                                middle.contains(&b'?') || middle.contains(&b';');
-                            let prefix = middle.first().copied().unwrap_or(0);
-                            if is_response {
-                                out.extend_from_slice(&self.hold);
-                            } else {
-                                match prefix {
-                                    PREFIX_GT => respond(DA2_REPLY),
-                                    PREFIX_EQ => {}
-                                    0 | b'0'..=b'9' => respond(DA1_REPLY),
-                                    _ => out.extend_from_slice(&self.hold),
-                                }
-                            }
-                        } else {
-                            out.extend_from_slice(&self.hold);
-                        }
-                        self.hold.clear();
-                        self.state = State::Idle;
-                    } else if self.hold.len() >= HOLD_MAX {
+                    if (0x40..=0x7e).contains(&b) || self.hold.len() >= HOLD_MAX {
                         out.extend_from_slice(&self.hold);
                         self.hold.clear();
                         self.state = State::Idle;
@@ -112,34 +84,42 @@ mod tests {
     }
 
     #[test]
-    fn da1_bare() {
+    fn device_attribute_queries_pass_through_for_frontend_ordering() {
+        let mut f = DaFilter::new();
+        let (out, replies) = run(&mut f, b"\x1b[6n\x1b[c");
+        assert_eq!(out, b"\x1b[6n\x1b[c");
+        assert!(replies.is_empty());
+    }
+
+    #[test]
+    fn da1_bare_passes_through() {
         let mut f = DaFilter::new();
         let (out, replies) = run(&mut f, b"\x1b[c");
-        assert!(out.is_empty());
-        assert_eq!(replies, vec![DA1_REPLY.to_vec()]);
+        assert_eq!(out, b"\x1b[c");
+        assert!(replies.is_empty());
     }
 
     #[test]
-    fn da1_with_zero_param() {
+    fn da1_with_zero_param_passes_through() {
         let mut f = DaFilter::new();
         let (out, replies) = run(&mut f, b"\x1b[0c");
-        assert!(out.is_empty());
-        assert_eq!(replies, vec![DA1_REPLY.to_vec()]);
+        assert_eq!(out, b"\x1b[0c");
+        assert!(replies.is_empty());
     }
 
     #[test]
-    fn da2_secondary() {
+    fn da2_secondary_passes_through() {
         let mut f = DaFilter::new();
         let (out, replies) = run(&mut f, b"\x1b[>c");
-        assert!(out.is_empty());
-        assert_eq!(replies, vec![DA2_REPLY.to_vec()]);
+        assert_eq!(out, b"\x1b[>c");
+        assert!(replies.is_empty());
     }
 
     #[test]
-    fn da3_consumed_silently() {
+    fn da3_passes_through() {
         let mut f = DaFilter::new();
         let (out, replies) = run(&mut f, b"\x1b[=c");
-        assert!(out.is_empty());
+        assert_eq!(out, b"\x1b[=c");
         assert!(replies.is_empty());
     }
 
@@ -155,8 +135,8 @@ mod tests {
     fn embedded_da_preserves_surrounding() {
         let mut f = DaFilter::new();
         let (out, replies) = run(&mut f, b"pre\x1b[0cpost");
-        assert_eq!(out, b"prepost");
-        assert_eq!(replies, vec![DA1_REPLY.to_vec()]);
+        assert_eq!(out, b"pre\x1b[0cpost");
+        assert!(replies.is_empty());
     }
 
     #[test]
@@ -173,9 +153,9 @@ mod tests {
         let (out1, r1) = run(&mut f, b"\x1b");
         let (out2, r2) = run(&mut f, b"[");
         let (out3, r3) = run(&mut f, b"c");
-        assert!(out1.is_empty() && out2.is_empty() && out3.is_empty());
-        assert!(r1.is_empty() && r2.is_empty());
-        assert_eq!(r3, vec![DA1_REPLY.to_vec()]);
+        assert!(out1.is_empty() && out2.is_empty());
+        assert_eq!(out3, b"\x1b[c");
+        assert!(r1.is_empty() && r2.is_empty() && r3.is_empty());
     }
 
     #[test]
@@ -190,8 +170,8 @@ mod tests {
     fn double_esc() {
         let mut f = DaFilter::new();
         let (out, replies) = run(&mut f, b"\x1b\x1b[c");
-        assert_eq!(out, b"\x1b");
-        assert_eq!(replies, vec![DA1_REPLY.to_vec()]);
+        assert_eq!(out, b"\x1b\x1b[c");
+        assert!(replies.is_empty());
     }
 
     #[test]

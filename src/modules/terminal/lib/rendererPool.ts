@@ -10,9 +10,12 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import {
   terminalDeleteSequence,
+  terminalEditorNewlineSequence,
+  terminalGsdShortcutSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
+import { getSelectionText } from "./selectionText";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -55,6 +58,7 @@ export type Slot = {
   lastW: number;
   lastH: number;
   lastUsedAt: number;
+  copyListener: ((e: ClipboardEvent) => void) | null;
 };
 
 const slots: Slot[] = [];
@@ -164,6 +168,7 @@ function createSlot(): Slot {
     lastW: 0,
     lastH: 0,
     lastUsedAt: 0,
+    copyListener: null,
   };
 
   attachWebgl(slot);
@@ -196,21 +201,28 @@ function createSlot(): Slot {
       if (event.type === "keydown") bridge.writeToPty(wordNavigation);
       return false;
     }
+    const gsdShortcutSeq = terminalGsdShortcutSequence(event);
+    if (gsdShortcutSeq) {
+      event.preventDefault();
+      if (event.type === "keydown") bridge.writeToPty(gsdShortcutSeq);
+      return false;
+    }
     const deleteSeq = terminalDeleteSequence(event, { isMac: IS_MAC });
     if (deleteSeq) {
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty(deleteSeq);
       return false;
     }
-    if (isShiftEnter(event)) {
+    const editorNewlineSeq = terminalEditorNewlineSequence(event);
+    if (editorNewlineSeq) {
       event.preventDefault();
-      if (event.type === "keydown") bridge.writeToPty("\x1b\r");
+      if (event.type === "keydown") bridge.writeToPty(editorNewlineSeq);
       return false;
     }
     if (isTerminalCopy(event)) {
       if (event.type === "keydown" && slot.term.hasSelection()) {
-        const sel = slot.term.getSelection();
-        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        const text = getSelectionText(slot.term);
+        if (text) copyTextToClipboard(text);
       }
       event.preventDefault();
       return false;
@@ -229,6 +241,8 @@ function createSlot(): Slot {
     }
     return true;
   });
+
+  attachCopyListener(slot);
 
   term.onData((data) => {
     const leafId = slot.currentLeafId;
@@ -362,6 +376,8 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     } catch {}
   }
   slot.oscDisposers = p.registerOsc(slot.term);
+
+  attachCopyListener(slot);
 
   setupResizeObserver(slot, p);
   slot.fitAddon.fit();
@@ -504,7 +520,29 @@ function serializeSlot(slot: Slot): SerializeOutput {
   };
 }
 
+function attachCopyListener(slot: Slot): void {
+  if (slot.copyListener) {
+    slot.host.removeEventListener("copy", slot.copyListener, true);
+  }
+  const handler = (e: ClipboardEvent) => {
+    if (!slot.term.hasSelection()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const text = getSelectionText(slot.term);
+    if (text && e.clipboardData) {
+      e.clipboardData.setData("text/plain", text);
+    }
+  };
+  slot.host.addEventListener("copy", handler, true);
+  slot.copyListener = handler;
+}
+
 function detachSlotFromLeaf(slot: Slot): void {
+  if (slot.copyListener) {
+    slot.host.removeEventListener("copy", slot.copyListener, true);
+    slot.copyListener = null;
+  }
+
   for (const d of slot.oscDisposers) {
     try {
       d();
@@ -713,6 +751,12 @@ const IS_MAC =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad/.test(navigator.userAgent);
 
+function copyTextToClipboard(text: string): void {
+  void navigator.clipboard.writeText(text).catch((e) => {
+    console.warn("[terax] clipboard write failed:", e);
+  });
+}
+
 function isTerminalCopy(e: KeyboardEvent): boolean {
   return (
     !IS_MAC &&
@@ -735,8 +779,3 @@ function isTerminalPaste(e: KeyboardEvent): boolean {
   );
 }
 
-function isShiftEnter(e: KeyboardEvent): boolean {
-  return (
-    e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
-  );
-}

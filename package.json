@@ -14,6 +14,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "test:watch": "vitest",
     "format": "biome format --write ./src",
     "format:check": "biome format ./src"
@@ -99,6 +100,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/vite": "^4.2.3",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.6.0",

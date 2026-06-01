@@ -81,6 +81,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     let builder = builder.decorations(false).transparent(true);
 
+    #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(unused_variables))]
     let window = builder.build().map_err(|e| e.to_string())?;
 
     // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the

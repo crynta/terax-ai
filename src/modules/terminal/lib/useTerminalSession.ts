@@ -10,6 +10,7 @@ import {
   registerPromptTracker,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
+import { getSelectionText } from "./selectionText";
 import {
   acquireSlot,
   applyBackgroundActive,
@@ -520,8 +521,7 @@ export function useTerminalSession({
 
   const getSelection = useCallback((): string | null => {
     const slot = getSlotForLeaf(leafId);
-    const sel = slot?.term.getSelection() ?? "";
-    return sel.length > 0 ? sel : null;
+    return slot ? getSelectionText(slot.term) : null;
   }, [leafId]);
 
   const applyTheme = useCallback(() => {
