@@ -12,6 +12,7 @@ import {
   GlobeIcon,
   MistralIcon,
   PlugIcon,
+  RocketIcon,
   ServerStack01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -27,6 +28,7 @@ const ICON_BY_PROVIDER = {
   mistral: MistralIcon,
   openrouter: GlobeIcon,
   "openai-compatible": PlugIcon,
+  "opencode-go": RocketIcon,
   lmstudio: ComputerIcon,
   mlx: AppleIcon,
   ollama: ServerStack01Icon,

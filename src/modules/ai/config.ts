@@ -11,6 +11,7 @@ export type ProviderId =
   | "mistral"
   | "openrouter"
   | "openai-compatible"
+  | "opencode-go"
   | "lmstudio"
   | "mlx"
   | "ollama";
@@ -96,6 +97,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPrefix: null,
     consoleUrl: "https://platform.openai.com/docs/api-reference",
     keyOptional: true,
+  },
+  {
+    id: "opencode-go",
+    label: "OpenCode Go",
+    keyringAccount: "opencode-go-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://opencode.ai/auth",
   },
   {
     id: "lmstudio",
@@ -493,6 +501,44 @@ export const MODELS = [
     capabilities: { intelligence: 3, speed: 3, cost: 3 },
   },
 
+  // ── OpenCode Go ───────────────────────────────────────────────────────────
+  {
+    id: "glm-5.1",
+    provider: "opencode-go",
+    label: "GLM-5.1",
+    hint: "Balanced",
+    description: "High-quality open model via OpenCode Go.",
+    capabilities: { intelligence: 4, speed: 3, cost: 3 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "kimi-k2.6",
+    provider: "opencode-go",
+    label: "Kimi K2.6",
+    hint: "Coding",
+    description: "Strong coding model via OpenCode Go.",
+    capabilities: { intelligence: 4, speed: 3, cost: 3 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "opencode-go/deepseek-v4-pro",
+    provider: "opencode-go",
+    label: "DeepSeek V4 Pro",
+    hint: "Reasoning",
+    description: "Deep reasoning via OpenCode Go.",
+    capabilities: { intelligence: 5, speed: 2, cost: 2 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "opencode-go/deepseek-v4-flash",
+    provider: "opencode-go",
+    label: "DeepSeek V4 Flash",
+    hint: "Fast",
+    description: "Fast and cheap via OpenCode Go.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["tools"],
+  },
+
   // ── LM Studio (local; model id is user-supplied at runtime) ───────────────
   {
     id: "lmstudio-local",
@@ -611,6 +657,10 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-r1-distill-llama-70b": 128_000,
   "openrouter-custom": 256_000,
   "openai-compatible-custom": 128_000,
+  "glm-5.1": 128_000,
+  "kimi-k2.6": 131_072,
+  "opencode-go/deepseek-v4-pro": 128_000,
+  "opencode-go/deepseek-v4-flash": 128_000,
   "lmstudio-local": 32_000,
   "mlx-local": 32_000,
   "ollama-local": 32_000,
