@@ -4,6 +4,8 @@ pub mod mutate;
 pub mod search;
 pub mod tree;
 pub mod watch;
+pub mod parquet_reader;
+pub mod csv_reader;
 
 use std::path::Path;
 

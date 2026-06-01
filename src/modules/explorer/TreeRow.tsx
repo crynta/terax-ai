@@ -18,6 +18,8 @@ import {
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import type { useFileTree } from "./lib/useFileTree";
+import { invoke } from "@tauri-apps/api/core";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 
 type Tree = ReturnType<typeof useFileTree>;
 
@@ -31,6 +33,10 @@ export type EntryRowProps = {
   tree: Tree;
   isSelected: boolean;
   isRenaming: boolean;
+  size?: number;
+  mtime?: number;
+  showSize?: boolean;
+  showDate?: boolean;
   onOpenFile: (path: string, pin?: boolean) => void;
   onSelectPath: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
@@ -40,6 +46,10 @@ export type EntryRowProps = {
 
 function isMarkdownPath(path: string): boolean {
   return /\.(md|markdown|mdx)$/i.test(path);
+}
+
+function isArchivePath(path: string): boolean {
+  return /\.(zip|tar\.gz|tgz)$/i.test(path);
 }
 
 function EntryRowImpl(props: EntryRowProps) {
@@ -53,6 +63,10 @@ function EntryRowImpl(props: EntryRowProps) {
     tree,
     isSelected,
     isRenaming,
+    size,
+    mtime,
+    showSize,
+    showDate,
     onOpenFile,
     onSelectPath,
     onRevealInTerminal,
@@ -64,6 +78,9 @@ function EntryRowImpl(props: EntryRowProps) {
   const iconUrl = isDir ? folderIconUrl(name, isExpanded) : fileIconUrl(name);
   const createTarget = isDir ? path : path.slice(0, path.lastIndexOf("/")) || rootPath;
   const paddingLeft = 6 + depth * 12;
+
+  const formattedSize = !isDir && size !== undefined ? formatSize(size) : "";
+  const formattedDate = mtime !== undefined && mtime > 0 ? formatDate(mtime) : "";
 
   const handleClick = () => {
     if (tree.renaming) return;
@@ -123,6 +140,16 @@ function EntryRowImpl(props: EntryRowProps) {
               <span className="size-4 shrink-0" />
             )}
             <span className="min-w-0 flex-1 truncate">{name}</span>
+            {showSize && (
+              <span className="w-16 shrink-0 text-right text-[11px] text-muted-foreground/70">
+                {formattedSize}
+              </span>
+            )}
+            {showDate && (
+              <span className="w-24 shrink-0 text-right text-[11px] text-muted-foreground/70">
+                {formattedDate}
+              </span>
+            )}
           </button>
         )}
       </ContextMenuTrigger>
@@ -162,6 +189,20 @@ function EntryRowImpl(props: EntryRowProps) {
         >
           Reveal in Finder
         </ContextMenuItem>
+        {!isDir && isArchivePath(path) && (
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            onSelect={async () => {
+              try {
+                await invoke("fs_extract", { path, workspace: currentWorkspaceEnv() });
+              } catch (e) {
+                console.error("Failed to extract:", e);
+              }
+            }}
+          >
+            Extract Here
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem
           className={COMPACT_ITEM}
@@ -267,4 +308,18 @@ export function StatusRow({
       {message}
     </div>
   );
+}
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function formatDate(ms: number): string {
+  if (!ms) return "";
+  const d = new Date(ms);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }

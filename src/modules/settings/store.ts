@@ -92,6 +92,10 @@ export type Preferences = {
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
+  explorerSortBy: "name" | "size" | "mtime";
+  explorerSortOrder: "asc" | "desc";
+  explorerShowSize: boolean;
+  explorerShowDate: boolean;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -138,6 +142,10 @@ const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
+const KEY_EXPLORER_SORT_BY = "explorerSortBy";
+const KEY_EXPLORER_SORT_ORDER = "explorerSortOrder";
+const KEY_EXPLORER_SHOW_SIZE = "explorerShowSize";
+const KEY_EXPLORER_SHOW_DATE = "explorerShowDate";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -197,6 +205,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
+  explorerSortBy: "name",
+  explorerSortOrder: "asc",
+  explorerShowSize: false,
+  explorerShowDate: false,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -342,6 +354,18 @@ export async function loadPreferences(): Promise<Preferences> {
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
     ),
+    explorerSortBy:
+      get<"name" | "size" | "mtime">(KEY_EXPLORER_SORT_BY) ??
+      DEFAULT_PREFERENCES.explorerSortBy,
+    explorerSortOrder:
+      get<"asc" | "desc">(KEY_EXPLORER_SORT_ORDER) ??
+      DEFAULT_PREFERENCES.explorerSortOrder,
+    explorerShowSize:
+      get<boolean>(KEY_EXPLORER_SHOW_SIZE) ??
+      DEFAULT_PREFERENCES.explorerShowSize,
+    explorerShowDate:
+      get<boolean>(KEY_EXPLORER_SHOW_DATE) ??
+      DEFAULT_PREFERENCES.explorerShowDate,
   };
 }
 
@@ -553,6 +577,22 @@ export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
 
+export async function setExplorerSortBy(value: "name" | "size" | "mtime"): Promise<void> {
+  await writePref(KEY_EXPLORER_SORT_BY, value);
+}
+
+export async function setExplorerSortOrder(value: "asc" | "desc"): Promise<void> {
+  await writePref(KEY_EXPLORER_SORT_ORDER, value);
+}
+
+export async function setExplorerShowSize(value: boolean): Promise<void> {
+  await writePref(KEY_EXPLORER_SHOW_SIZE, value);
+}
+
+export async function setExplorerShowDate(value: boolean): Promise<void> {
+  await writePref(KEY_EXPLORER_SHOW_DATE, value);
+}
+
 export async function setShortcuts(
   value: Record<ShortcutId, KeyBinding[]> | {},
 ): Promise<void> {
@@ -612,6 +652,10 @@ export async function onPreferencesChange(
     [KEY_SHORTCUTS]: "shortcuts",
     [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
+    [KEY_EXPLORER_SORT_BY]: "explorerSortBy",
+    [KEY_EXPLORER_SORT_ORDER]: "explorerSortOrder",
+    [KEY_EXPLORER_SHOW_SIZE]: "explorerShowSize",
+    [KEY_EXPLORER_SHOW_DATE]: "explorerShowDate",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().

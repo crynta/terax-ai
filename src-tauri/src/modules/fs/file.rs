@@ -9,6 +9,7 @@ use tempfile::NamedTempFile;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+const MAX_MEDIA_BYTES: u64 = 50 * 1024 * 1024; // 50 MB for media
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 
 #[derive(Serialize)]
@@ -76,6 +77,52 @@ pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<Rea
         Ok(content) => Ok(ReadResult::Text { content, size }),
         Err(_) => Ok(ReadResult::Binary { size }),
     }
+}
+
+/// Reads a binary file and returns its contents as a base64 data URL string.
+/// Used for rendering images and other media inline in the editor.
+#[tauri::command]
+pub fn fs_read_binary(path: String, workspace: Option<WorkspaceEnv>) -> Result<String, String> {
+    use std::io::Read;
+
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
+    let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
+
+    if meta.len() > MAX_MEDIA_BYTES {
+        return Err(format!(
+            "File too large ({} bytes). Max media size is {} bytes.",
+            meta.len(),
+            MAX_MEDIA_BYTES
+        ));
+    }
+
+    let mut file = std::fs::File::open(&p).map_err(|e| e.to_string())?;
+    let mut buf = Vec::with_capacity(meta.len() as usize);
+    file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+
+    // Determine MIME type from extension
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "pdf" => "application/pdf",
+        _ => "application/octet-stream",
+    };
+
+    Ok(format!("data:{};base64,{}", mime, b64))
 }
 
 #[derive(Serialize, Clone)]

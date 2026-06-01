@@ -1,4 +1,5 @@
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
+use std::fs::File;
 
 /// Creates a new empty file. Fails if the file already exists.
 #[tauri::command]
@@ -73,6 +74,36 @@ pub fn fs_delete(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), St
         log::warn!("fs_delete({}) failed: {e}", p.display());
         e.to_string()
     })
+}
+
+/// Extracts a supported archive (.zip, .tar.gz, .tgz) into the same directory.
+#[tauri::command]
+pub fn fs_extract(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
+    
+    if !p.exists() {
+        return Err(format!("not found: {}", p.display()));
+    }
+
+    let parent = p.parent().unwrap_or(&p).to_path_buf();
+    let file = File::open(&p).map_err(|e| e.to_string())?;
+
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let is_tar_gz = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase().ends_with(".tar.gz");
+
+    if ext == "zip" {
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+        archive.extract(&parent).map_err(|e| e.to_string())?;
+    } else if ext == "tgz" || is_tar_gz {
+        let tar = flate2::read::GzDecoder::new(file);
+        let mut archive = tar::Archive::new(tar);
+        archive.unpack(&parent).map_err(|e| e.to_string())?;
+    } else {
+        return Err("Unsupported archive format. Only .zip, .tar.gz, and .tgz are supported.".to_string());
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

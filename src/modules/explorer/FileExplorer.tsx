@@ -1,5 +1,15 @@
 import { Button } from "@/components/ui/button";
 import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -12,6 +22,7 @@ import {
   FolderAddIcon,
   Refresh01Icon,
   Search01Icon,
+  Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -32,6 +43,13 @@ import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  setExplorerShowDate,
+  setExplorerShowSize,
+  setExplorerSortBy,
+  setExplorerSortOrder,
+} from "@/modules/settings/store";
 
 export type FileExplorerHandle = {
   focus: () => void;
@@ -59,6 +77,8 @@ type Row =
       isDir: boolean;
       isExpanded: boolean;
       depth: number;
+      size: number;
+      mtime: number;
     }
   | { kind: "rename"; key: string; path: string; name: string; isDir: boolean; depth: number }
   | { kind: "pending"; key: string; depth: number; pendingKind: "file" | "dir" }
@@ -75,18 +95,45 @@ function basename(path: string): string {
 function buildRows(
   rootPath: string,
   tree: ReturnType<typeof useFileTree>,
+  filter: string,
+  sortBy: "name" | "size" | "mtime",
+  sortOrder: "asc" | "desc",
 ): { rows: Row[]; entryIndexByPath: Map<string, number> } {
   const rows: Row[] = [];
   const entryIndexByPath = new Map<string, number>();
 
-  const walk = (parent: string, depth: number) => {
+  const lowerFilter = filter.toLowerCase();
+
+  const walk = (parent: string, depth: number): boolean => {
     const node = tree.nodes[parent];
-    if (!node || node.status !== "loaded") return;
-    for (const entry of node.entries) {
+    if (!node || node.status !== "loaded") return false;
+
+    const entries = [...node.entries];
+    entries.sort((a, b) => {
+      if (a.kind === "dir" && b.kind !== "dir") return -1;
+      if (b.kind === "dir" && a.kind !== "dir") return 1;
+      let cmp = 0;
+      if (sortBy === "name") {
+        cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+      } else if (sortBy === "size") {
+        cmp = a.size - b.size;
+      } else if (sortBy === "mtime") {
+        cmp = a.mtime - b.mtime;
+      }
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+
+    let anyMatched = false;
+
+    for (const entry of entries) {
       const path = tree.joinPath(parent, entry.name);
       const isDir = entry.kind === "dir";
       const expanded = isDir && tree.expanded.has(path);
       const isRenaming = tree.renaming === path;
+
+      const matchesName = !lowerFilter || entry.name.toLowerCase().includes(lowerFilter);
+      const startIndex = rows.length;
+
       if (isRenaming) {
         rows.push({
           kind: "rename",
@@ -106,8 +153,13 @@ function buildRows(
           isDir,
           isExpanded: expanded,
           depth,
+          size: entry.size,
+          mtime: entry.mtime,
         });
       }
+
+      let childMatched = false;
+
       if (isDir && expanded) {
         const child = tree.nodes[path];
         if (tree.pendingCreate?.parentPath === path) {
@@ -135,10 +187,19 @@ function buildRows(
             message: child.message,
           });
         } else if (child?.status === "loaded") {
-          walk(path, depth + 1);
+          childMatched = walk(path, depth + 1);
         }
       }
+
+      if (lowerFilter && !matchesName && !childMatched && !isRenaming) {
+        while (rows.length > startIndex) rows.pop();
+        entryIndexByPath.delete(path);
+      } else {
+        anyMatched = true;
+      }
     }
+
+    return anyMatched;
   };
 
   walk(rootPath, 0);
@@ -163,14 +224,20 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
+    const [filterQuery, setFilterQuery] = useState("");
     const searchRef = useRef<ExplorerSearchHandle>(null);
+    
+    const explorerSortBy = usePreferencesStore((s) => s.explorerSortBy);
+    const explorerSortOrder = usePreferencesStore((s) => s.explorerSortOrder);
+    const explorerShowSize = usePreferencesStore((s) => s.explorerShowSize);
+    const explorerShowDate = usePreferencesStore((s) => s.explorerShowDate);
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const { rows, entryIndexByPath } = useMemo(() => {
       if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
-      return buildRows(rootPath, tree);
-    }, [rootPath, tree.nodes, tree.expanded, tree.renaming, tree.pendingCreate, tree]);
+      return buildRows(rootPath, tree, filterQuery, explorerSortBy, explorerSortOrder);
+    }, [rootPath, tree.nodes, tree.expanded, tree.renaming, tree.pendingCreate, tree, filterQuery, explorerSortBy, explorerSortOrder]);
 
     const entryPaths = useMemo<string[]>(() => {
       const out: string[] = [];
@@ -352,6 +419,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               isDir={row.isDir}
               isExpanded={row.kind === "entry" ? row.isExpanded : false}
               depth={row.depth}
+              size={row.kind === "entry" ? row.size : undefined}
+              mtime={row.kind === "entry" ? row.mtime : undefined}
+              showSize={explorerShowSize}
+              showDate={explorerShowDate}
               rootPath={rootPath}
               tree={tree}
               isSelected={selectedPath === row.path}
@@ -402,6 +473,14 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             {basename(rootPath)}
           </span>
 
+          <input
+            type="text"
+            className="h-6 w-24 flex-1 rounded bg-transparent px-1.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 hover:bg-accent/40 focus:bg-accent/50 focus:ring-1 focus:ring-ring"
+            placeholder="Filter..."
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+          />
+
           <Button
             variant="ghost"
             size="icon"
@@ -431,6 +510,42 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           >
             <HugeiconsIcon icon={FolderAddIcon} size={13} strokeWidth={2} />
           </Button>
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 text-muted-foreground hover:text-foreground"
+                title="View Options"
+              >
+                <HugeiconsIcon icon={Settings01Icon} size={13} strokeWidth={2} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className={COMPACT_CONTENT}>
+              <DropdownMenuLabel className="text-xs px-2 py-1">Sort By</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={explorerSortBy} onValueChange={(v) => setExplorerSortBy(v as any)}>
+                <DropdownMenuRadioItem className={COMPACT_ITEM} value="name">Name</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem className={COMPACT_ITEM} value="size">Size</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem className={COMPACT_ITEM} value="mtime">Modified Date</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs px-2 py-1">Sort Order</DropdownMenuLabel>
+              <DropdownMenuRadioGroup value={explorerSortOrder} onValueChange={(v) => setExplorerSortOrder(v as any)}>
+                <DropdownMenuRadioItem className={COMPACT_ITEM} value="asc">Ascending</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem className={COMPACT_ITEM} value="desc">Descending</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-xs px-2 py-1">Columns</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem className={COMPACT_ITEM} checked={explorerShowSize} onCheckedChange={setExplorerShowSize}>
+                Show Size
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem className={COMPACT_ITEM} checked={explorerShowDate} onCheckedChange={setExplorerShowDate}>
+                Show Date
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             variant="ghost"
             size="icon"

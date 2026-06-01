@@ -47,6 +47,13 @@ tokio = { version = "1", default-features = false, features = ["rt"] }
 tempfile = "3"
 notify = "8.2.0"
 tauri-plugin-clipboard-manager = "2"
+zip = "8.6.0"
+flate2 = "1.1.9"
+tar = "0.4.46"
+base64 = "0.22.1"
+parquet = { version = "58.3.0", features = ["default"] }
+arrow = { version = "58.3.0", features = ["default"] }
+csv = "1.4.0"
 
 [dev-dependencies]
 proptest = "1"

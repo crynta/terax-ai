@@ -2,6 +2,13 @@ import { cn } from "@/lib/utils";
 import type { EditorTab, Tab } from "@/modules/tabs";
 import { useEffect, useRef } from "react";
 import { EditorPane, type EditorPaneHandle } from "./EditorPane";
+import { MediaPane } from "./MediaPane";
+import { CsvPane } from "./CsvPane";
+import { ParquetPane } from "./ParquetPane";
+
+const isImage = (path: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(path);
+const isCsv = (path: string) => /\.(csv|tsv)$/i.test(path);
+const isParquet = (path: string) => /\.parquet$/i.test(path);
 
 type Props = {
   tabs: Tab[];
@@ -97,12 +104,18 @@ export function EditorStack({
             aria-hidden={!visible}
           >
             <div className="h-full overflow-hidden rounded-md border border-border/60 bg-background">
-              <EditorPane
-                ref={getRefCallback(t.id)}
-                path={t.path}
-                onDirtyChange={getDirtyCallback(t.id)}
-                onClose={getCloseCallback(t.id)}
-              />
+              {isImage(t.path) ? (
+                <MediaPane path={t.path} />
+              ) : isParquet(t.path) ? (
+                <ParquetPane path={t.path} />
+              ) : (
+                <EditorPane
+                  ref={getRefCallback(t.id)}
+                  path={t.path}
+                  onDirtyChange={getDirtyCallback(t.id)}
+                  onClose={getCloseCallback(t.id)}
+                />
+              )}
             </div>
           </div>
         );
