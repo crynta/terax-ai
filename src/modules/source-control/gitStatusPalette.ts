@@ -21,16 +21,16 @@ export function gitStatusAccentClass(code: string): string {
 export function gitStatusTextClass(code: string): string {
   switch (code.trim().toUpperCase()) {
     case "A":
-      return "text-emerald-600 dark:text-emerald-400";
+      return "text-emerald-500/85";
     case "U":
-      return "text-teal-600 dark:text-teal-400";
+      return "text-teal-500/85";
     case "M":
-      return "text-amber-600 dark:text-amber-400";
+      return "text-amber-500/85";
     case "D":
-      return "text-rose-600 dark:text-rose-400";
+      return "text-rose-500/85";
     case "R":
     case "C":
-      return "text-sky-600 dark:text-sky-300";
+      return "text-sky-500/85";
     default:
       return "text-muted-foreground";
   }
