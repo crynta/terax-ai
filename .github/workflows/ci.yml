@@ -14,11 +14,9 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v6
-        with:
-          version: 10
 
       - uses: actions/setup-node@v6
         with:
@@ -26,6 +24,10 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Audit (advisory)
+        run: pnpm audit --prod --audit-level high
+        continue-on-error: true
 
       - name: Type-check
         run: pnpm exec tsc --noEmit
@@ -39,7 +41,7 @@ jobs:
   rust:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Linux build dependencies
         run: |
@@ -82,7 +84,7 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -106,7 +108,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Linux build dependencies
         run: |
@@ -135,7 +137,7 @@ jobs:
         run: cargo llvm-cov nextest --locked --lcov --output-path lcov.info
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lcov-report
           path: src-tauri/lcov.info

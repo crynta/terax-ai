@@ -16,7 +16,7 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v6
         with:
@@ -60,14 +60,14 @@ jobs:
 
       - name: Upload unsigned artifact
         id: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-unsigned
           path: signpath-staging/
           if-no-files-found: error
 
       - name: Submit signing request to SignPath
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: 'df665bf4-9b76-41ae-9596-1ba3a23010aa'
@@ -96,7 +96,7 @@ jobs:
           }
 
       - name: Upload signed artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-signed
           path: signed/
