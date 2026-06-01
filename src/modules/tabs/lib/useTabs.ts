@@ -41,6 +41,7 @@ export type EditorTab = {
    * is replaced by the next single-click rather than accumulating.
    */
   preview: boolean;
+  customTitle?: string;
 };
 
 export type PreviewTab = {
@@ -48,6 +49,7 @@ export type PreviewTab = {
   kind: "preview";
   title: string;
   url: string;
+  customTitle?: string;
 };
 
 export type MarkdownTab = {
@@ -55,6 +57,7 @@ export type MarkdownTab = {
   kind: "markdown";
   title: string;
   path: string;
+  customTitle?: string;
 };
 
 export type AiDiffStatus = "pending" | "approved" | "rejected";
@@ -71,6 +74,7 @@ export type AiDiffTab = {
   approvalId: string;
   status: AiDiffStatus;
   isNewFile: boolean;
+  customTitle?: string;
 };
 
 export type GitDiffTab = {
@@ -81,6 +85,7 @@ export type GitDiffTab = {
   repoRoot: string;
   mode: "-" | "+";
   originalPath: string | null;
+  customTitle?: string;
 };
 
 export type GitHistoryTab = {
@@ -88,6 +93,7 @@ export type GitHistoryTab = {
   kind: "git-history";
   title: string;
   repoRoot: string;
+  customTitle?: string;
 };
 
 export type GitCommitFileDiffTab = {
@@ -100,6 +106,7 @@ export type GitCommitFileDiffTab = {
   subject: string;
   path: string;
   originalPath: string | null;
+  customTitle?: string;
 };
 
 export type Tab =
@@ -602,12 +609,18 @@ export function useTabs(initial?: Partial<TerminalTab>) {
               url: patch.url,
               title: patch.title ?? titleFromUrl(patch.url),
             }),
+            ...(patch.customTitle !== undefined && {
+              customTitle: patch.customTitle === "" ? undefined : patch.customTitle,
+            }),
           };
         }
         if (x.kind === "markdown") {
           return {
             ...x,
             ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.customTitle !== undefined && {
+              customTitle: patch.customTitle === "" ? undefined : patch.customTitle,
+            }),
           };
         }
         // editor tab: auto-promote from preview the moment the file becomes dirty.
@@ -621,6 +634,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           ...(patch.title !== undefined && { title: patch.title }),
           ...(patch.dirty !== undefined && { dirty: patch.dirty }),
           ...(patch.path !== undefined && { path: patch.path }),
+          ...(patch.customTitle !== undefined && {
+            customTitle: patch.customTitle === "" ? undefined : patch.customTitle,
+          }),
         };
       }),
     );

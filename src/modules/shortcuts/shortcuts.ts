@@ -20,6 +20,7 @@ export type ShortcutId =
   | "pane.source"
   | "terminal.clear"
   | "search.focus"
+  | "search.quickOpen"
   | "explorer.search"
   | "explorer.focus"
   | "view.zoomIn"
@@ -89,7 +90,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "tab.newPreview",
     label: "New preview tab",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
+    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "p" }],
   },
   {
     id: "tab.newEditor",
@@ -140,7 +141,7 @@ export const SHORTCUTS: Shortcut[] = [
     // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
     // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
     // unbound and let users assign their own in settings.
-    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
+    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [{ ctrl: true, shift: true, key: "k" }],
   },
   {
     id: "tab.next",
@@ -171,6 +172,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Find in terminal",
     group: "Search",
     defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
+  },
+  {
+    id: "search.quickOpen",
+    label: "Quick Open file search",
+    group: "Search",
+    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
   },
   {
     id: "ai.toggle",

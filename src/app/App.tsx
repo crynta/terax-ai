@@ -19,6 +19,7 @@ import { AgentNotificationsBridge } from "@/modules/agents";
 import { firePendingReviewForSession } from "@/modules/agents/lib/review";
 import { useManagedAgentsStore } from "@/modules/agents/store/managedAgentsStore";
 import { Toaster } from "@/components/ui/sonner";
+import { QuickOpenDialog } from "@/modules/header/QuickOpenDialog";
 import {
   AgentRunBridge,
   AiInputBar,
@@ -406,6 +407,7 @@ export default function App() {
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const openMini = useChatStore((s) => s.openMini);
@@ -1082,6 +1084,7 @@ export default function App() {
         clearFocusedTerminal();
       },
       "search.focus": () => searchInlineRef.current?.focus(),
+      "search.quickOpen": () => setQuickOpenOpen((v) => !v),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
@@ -1737,6 +1740,13 @@ export default function App() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+
+          <QuickOpenDialog
+            open={quickOpenOpen}
+            onOpenChange={setQuickOpenOpen}
+            rootPath={explorerRoot}
+            onOpenFile={openFileTab}
+          />
         </div>
       </TooltipProvider>
     </ThemeProvider>

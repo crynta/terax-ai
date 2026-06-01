@@ -189,7 +189,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   zoomLevel: 1.0,
   agentNotifications: true,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
-  editorAutoSave: false,
+  editorAutoSave: true,
   editorAutoSaveDelay: 1000,
 };
 
