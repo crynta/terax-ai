@@ -86,6 +86,7 @@ fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERAX_TERMINAL", "1");
+    remove_internal_graphics_env(cmd);
     ensure_utf8_locale(cmd);
 
     let resolved_cwd = cwd
@@ -102,6 +103,20 @@ fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
         log::warn!("pty cwd: no usable directory, inheriting from process");
     }
 }
+
+#[cfg(target_os = "linux")]
+fn remove_internal_graphics_env(cmd: &mut CommandBuilder) {
+    const NV_EXPLICIT_SYNC: &str = "__NV_DISABLE_EXPLICIT_SYNC";
+    const TERAX_SET_NV_EXPLICIT_SYNC: &str = "TERAX_SET_NV_DISABLE_EXPLICIT_SYNC";
+
+    if std::env::var_os(TERAX_SET_NV_EXPLICIT_SYNC).is_some() {
+        cmd.env_remove(NV_EXPLICIT_SYNC);
+        cmd.env_remove(TERAX_SET_NV_EXPLICIT_SYNC);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn remove_internal_graphics_env(_cmd: &mut CommandBuilder) {}
 
 #[cfg(unix)]
 mod unix {

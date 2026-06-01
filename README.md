@@ -104,7 +104,7 @@ Latest installers are on the [Releases](https://github.com/crynta/terax-ai/relea
 ### Linux notes
 
 - **Arch / AUR:** `yay -S terax-bin` (or `paru`, etc.). Tracks the latest release.
-- **AppImage:** needs FUSE. Without it: `./Terax_*.AppImage --appimage-extract-and-run`. On Wayland with rendering glitches, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`. Otherwise the `.deb` / `.rpm` packages link against the system GTK stack and tend to be smoother.
+- **AppImage:** needs FUSE. Without it: `./Terax_*.AppImage --appimage-extract-and-run`. On NVIDIA + Wayland, Terax applies a WebKitGTK explicit-sync workaround that keeps DMABUF rendering enabled for lower terminal latency. Otherwise the `.deb` / `.rpm` packages link against the system GTK stack and tend to be smoother.
 
 ## Configure AI
 
