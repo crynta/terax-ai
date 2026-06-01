@@ -27,6 +27,9 @@ import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
 
 initVimGlobals();
 import { resolveLanguage } from "./lib/languageResolver";
+import { gitGutterExtension, parseUnifiedDiff, setGitChanges } from "./lib/gitGutter";
+import { fetchWorkingDiff } from "./lib/diffCache";
+import { native } from "@/modules/ai/lib/native";
 import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { getKey } from "@/modules/ai/lib/keyring";
@@ -130,6 +133,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           close: () => onCloseRef.current?.(),
         })),
         ...buildSharedExtensions(),
+        gitGutterExtension(),
         languageCompartment.of([]),
         inlineCompletion({
           getPrefs: () => {
@@ -210,6 +214,32 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           effects: languageCompartment.reconfigure(extension),
         });
       });
+      return () => {
+        cancelled = true;
+      };
+    }, [path, doc.status]);
+
+    useEffect(() => {
+      if (doc.status !== "ready") return;
+      let cancelled = false;
+      const dir = path.includes("/") ? path.split("/").slice(0, -1).join("/") : ".";
+      void (async () => {
+        try {
+          const repoInfo = await native.gitResolveRepo(dir);
+          if (cancelled || !repoInfo) return;
+          const relPath = path.startsWith(repoInfo.repoRoot + "/")
+            ? path.slice(repoInfo.repoRoot.length + 1)
+            : path;
+          const diff = await fetchWorkingDiff(repoInfo.repoRoot, relPath, "-", null);
+          if (cancelled) return;
+          const changes = parseUnifiedDiff(diff.fallbackPatch);
+          const view = cmRef.current?.view;
+          if (view) view.dispatch({ effects: setGitChanges.of(changes) });
+        } catch {
+          const view = cmRef.current?.view;
+          if (view && !cancelled) view.dispatch({ effects: setGitChanges.of([]) });
+        }
+      })();
       return () => {
         cancelled = true;
       };
