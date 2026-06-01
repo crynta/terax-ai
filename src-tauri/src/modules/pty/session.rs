@@ -25,10 +25,14 @@ const READ_BUF: usize = 16 * 1024;
 // Dropping a partial prefix would slice a CSI sequence in half and corrupt
 // xterm's screen state. 4 MiB is ~1000 full 80x24 screens.
 const MAX_PENDING: usize = 4 * 1024 * 1024;
-// Hard reset (ESC c) + dim notice. Written verbatim into the stream when
-// we're forced to discard backlog.
+// CAN (0x18) + dim notice. Written verbatim into the stream when we're
+// forced to discard backlog. CAN aborts any half-received escape sequence
+// in xterm's parser; the whole pending buffer is already dropped above so
+// no CSI is sliced. We deliberately avoid a \x1bc (RIS) hard reset here:
+// RIS wiped the user's scrollback and terminal modes on every overflow.
+// See #660.
 const OVERFLOW_NOTICE: &[u8] =
-    b"\x1bc\x1b[2m[terax: dropped output due to backpressure]\x1b[0m\r\n";
+    b"\x18\x1b[0m\r\n\x1b[2m[terax: dropped output due to backpressure]\x1b[0m\r\n";
 
 pub struct Session {
     // Field drop order is intentional. Rust drops fields top-to-bottom:
@@ -300,6 +304,19 @@ pub fn spawn(
 mod tests {
     use super::*;
     use portable_pty::CommandBuilder;
+
+    #[test]
+    fn overflow_notice_has_no_hard_reset() {
+        // A \x1bc (RIS) hard reset in the backpressure notice wiped the
+        // user's scrollback and terminal modes on every overflow. The
+        // notice must only abort a half-received escape sequence with CAN
+        // (0x18) and reset SGR — never RIS. See #660.
+        assert!(
+            !OVERFLOW_NOTICE.windows(2).any(|w| w == b"\x1bc"),
+            "overflow notice must not contain a RIS hard reset",
+        );
+        assert_eq!(OVERFLOW_NOTICE[0], 0x18, "notice must lead with CAN");
+    }
 
     #[test]
     fn drop_kills_child_process() {

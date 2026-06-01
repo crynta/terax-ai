@@ -1,8 +1,14 @@
 const DEFAULT_BYTE_CAP = 256 * 1024;
 const DEFAULT_CHUNK_CAP = 256;
 
+// CAN (0x18) aborts any half-received escape sequence in xterm's parser
+// without touching the screen, scrollback, or modes. The previous \x1bc
+// (RIS, full hard reset) wiped the scrollback that bindSlot had just
+// restored from the serialized snapshot, so resuming a hibernated inline
+// TUI (Claude Code, Codex — they render in the normal buffer, not the
+// alt-screen) lost all history and could no longer be scrolled. See #660.
 const OVERFLOW_NOTICE = new TextEncoder().encode(
-  "\x1bc\x1b[2m[terax: dropped output during hibernation]\x1b[0m\r\n",
+  "\x18\x1b[0m\r\n\x1b[2m[terax: dropped output during hibernation]\x1b[0m\r\n",
 );
 
 export class DormantRing {
