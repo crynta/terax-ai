@@ -243,10 +243,7 @@ pub fn run() {
             if let Some(main) = _app.get_webview_window("main") {
                 let handle = _app.handle().clone();
                 main.on_window_event(move |event| {
-                    if matches!(
-                        event,
-                        WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
-                    ) {
+                    if matches!(event, WindowEvent::Destroyed) {
                         if let Some(settings) = handle.get_webview_window("settings") {
                             let _ = settings.close();
                         }

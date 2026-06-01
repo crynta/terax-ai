@@ -117,6 +117,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -350,6 +351,7 @@ export default function App() {
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const [pendingTerminalCloseTab, setPendingTerminalCloseTab] = useState<number | null>(null);
+  const [pendingWindowClose, setPendingWindowClose] = useState(false);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
@@ -708,6 +710,30 @@ export default function App() {
     for (const k of [...searchAddons.current.keys()])
       if (!live.has(k)) searchAddons.current.delete(k);
   }, [tabs]);
+
+  useEffect(() => {
+    const w = getCurrentWindow();
+    let unlisten: (() => void) | undefined;
+    void w
+      .onCloseRequested(async (event) => {
+        event.preventDefault();
+        const allLeaves = tabsRef.current
+          .filter((t) => t.kind === "terminal")
+          .flatMap((t) => leafIds(t.paneTree));
+        const checks = await Promise.all(allLeaves.map(leafHasForegroundProcess));
+        if (checks.some(Boolean)) {
+          setPendingWindowClose(true);
+        } else {
+          await w.destroy();
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => {
+      unlisten?.();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClose = useCallback(
     async (id: number) => {
@@ -1704,6 +1730,33 @@ export default function App() {
                     if (pendingTerminalCloseTab !== null)
                       disposeTab(pendingTerminalCloseTab);
                     setPendingTerminalCloseTab(null);
+                  }}
+                >
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={pendingWindowClose}
+            onOpenChange={(open) => !open && setPendingWindowClose(false)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Close Window?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A process is running. Closing this window will terminate it.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setPendingWindowClose(false)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    setPendingWindowClose(false);
+                    await getCurrentWindow().destroy();
                   }}
                 >
                   Close Anyway
