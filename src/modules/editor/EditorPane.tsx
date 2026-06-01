@@ -49,6 +49,7 @@ export type EditorPaneHandle = {
 
 type Props = {
   path: string;
+  isActive?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
@@ -61,10 +62,18 @@ function formatBytes(n: number): string {
 }
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
-  function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
+  function EditorPane({ path, isActive, onDirtyChange, onSaved, onClose }, ref) {
     const { doc, onChange, save, reload } = useDocument({ path, onDirtyChange });
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
+
+    const prevActiveRef = useRef(isActive);
+    useEffect(() => {
+      if (isActive && !prevActiveRef.current) {
+        reloadRef.current();
+      }
+      prevActiveRef.current = isActive;
+    }, [isActive]);
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const editorThemeId = usePreferencesStore((s) => s.editorTheme);
     const vimMode = usePreferencesStore((s) => s.vimMode);
