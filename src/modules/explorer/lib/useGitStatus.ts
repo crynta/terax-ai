@@ -16,6 +16,10 @@ type GitStatusState = {
 
 const EMPTY_MAP = new Map<string, GitStatusCode>();
 
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
 export function useGitStatus(
   workspaceRoot: string | null,
   sharedStatus?: GitStatusSnapshot | null,
@@ -27,11 +31,53 @@ export function useGitStatus(
     repoRoot: null,
     statusMap: EMPTY_MAP,
   });
+  const [canonicalWorkspaceRoot, setCanonicalWorkspaceRoot] = useState<
+    string | null
+  >(null);
+
+  const pathAliases = useMemo(() => {
+    const roots = [workspaceRoot, canonicalWorkspaceRoot];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const root of roots) {
+      if (!root) continue;
+      const norm = normalizePath(root);
+      if (seen.has(norm)) continue;
+      seen.add(norm);
+      out.push(root);
+    }
+    return out;
+  }, [workspaceRoot, canonicalWorkspaceRoot]);
+
+  useEffect(() => {
+    if (!workspaceRoot) {
+      setCanonicalWorkspaceRoot(null);
+      return;
+    }
+    let cancelled = false;
+    void native
+      .canonicalize(workspaceRoot)
+      .then((canonical) => {
+        if (cancelled) return;
+        setCanonicalWorkspaceRoot(canonical);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCanonicalWorkspaceRoot(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceRoot, workspaceKey]);
 
   const sharedCoversRoot =
     !!workspaceRoot &&
     !!sharedStatus &&
-    repoCoversPath(sharedStatus.repoRoot, workspaceRoot);
+    (repoCoversPath(sharedStatus.repoRoot, workspaceRoot, pathAliases) ||
+      pathAliases.some(
+        (alias) =>
+          normalizePath(alias) === normalizePath(sharedStatus.repoRoot),
+      ));
 
   const sharedState = useMemo<GitStatusState | null>(() => {
     if (!sharedCoversRoot || !sharedStatus) return null;
@@ -79,9 +125,9 @@ export function useGitStatus(
   const lookup = useCallback(
     (path: string): GitStatusCode | null => {
       if (!repoRoot) return null;
-      return lookupGitStatus(statusMap, repoRoot, path);
+      return lookupGitStatus(statusMap, repoRoot, path, pathAliases);
     },
-    [repoRoot, statusMap],
+    [repoRoot, statusMap, pathAliases],
   );
 
   return { repoRoot, statusMap, lookup };

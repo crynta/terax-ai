@@ -77,24 +77,42 @@ export function bubbleUpDirectoryStatuses(
   }
 }
 
+function uniqueRoots(roots: Array<string | null | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const root of roots) {
+    if (!root) continue;
+    const norm = normalizePath(root);
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    out.push(root);
+  }
+  return out;
+}
+
 export function repoCoversPath(
   repoRoot: string,
   path: string | null,
+  alternateRoots: string[] = [],
 ): boolean {
   if (!path) return false;
-  const repo = normalizePath(repoRoot);
-  const target = normalizePath(path);
-  return target === repo || target.startsWith(`${repo}/`);
+  return uniqueRoots([repoRoot, ...alternateRoots]).some((root) => {
+    const repo = normalizePath(root);
+    const target = normalizePath(path);
+    return target === repo || target.startsWith(`${repo}/`);
+  });
 }
 
 export function repoRelativePath(
-  repoRoot: string,
   absolutePath: string,
+  roots: string[],
 ): string | null {
-  const repo = normalizePath(repoRoot);
   const abs = normalizePath(absolutePath);
-  if (abs === repo) return "";
-  if (abs.startsWith(`${repo}/`)) return abs.slice(repo.length + 1);
+  for (const root of uniqueRoots(roots)) {
+    const repo = normalizePath(root);
+    if (abs === repo) return "";
+    if (abs.startsWith(`${repo}/`)) return abs.slice(repo.length + 1);
+  }
   return null;
 }
 
@@ -102,8 +120,9 @@ export function lookupGitStatus(
   map: Map<string, GitStatusCode>,
   repoRoot: string,
   absolutePath: string,
+  alternateRoots: string[] = [],
 ): GitStatusCode | null {
-  const rel = repoRelativePath(repoRoot, absolutePath);
+  const rel = repoRelativePath(absolutePath, [repoRoot, ...alternateRoots]);
   if (rel === null) return null;
   return map.get(rel) ?? null;
 }

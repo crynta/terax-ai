@@ -213,6 +213,35 @@ describe("lookupGitStatus", () => {
     expect(lookupGitStatus(map, repoRoot, "/repo/src")).toBe("M");
   });
 
+  it("looks up paths via symlink alias roots", () => {
+    const canonicalRepo = "D:/open-source/terax-ai-forked";
+    const symlinkRoot = "D:/terax-link";
+    map = buildGitStatusMap(
+      snapshot(
+        [
+          changedFile({
+            path: "src/app.ts",
+            worktreeStatus: "M",
+            unstaged: true,
+          }),
+        ],
+        canonicalRepo,
+      ),
+    );
+    bubbleUpDirectoryStatuses(map);
+    expect(
+      lookupGitStatus(map, canonicalRepo, `${symlinkRoot}/src/app.ts`, [
+        symlinkRoot,
+      ]),
+    ).toBe("M");
+    expect(
+      repoCoversPath(canonicalRepo, symlinkRoot, [symlinkRoot, canonicalRepo]),
+    ).toBe(true);
+    expect(
+      repoRelativePath(`${symlinkRoot}/src/app.ts`, [canonicalRepo, symlinkRoot]),
+    ).toBe("src/app.ts");
+  });
+
   it("handles trailing slashes and backslashes", () => {
     map = buildGitStatusMap(
       snapshot(
@@ -222,7 +251,7 @@ describe("lookupGitStatus", () => {
     );
     bubbleUpDirectoryStatuses(map);
     expect(repoCoversPath("/repo/", "/repo/sub")).toBe(true);
-    expect(repoRelativePath("\\repo\\", "\\repo\\a.ts")).toBe("a.ts");
+    expect(repoRelativePath("\\repo\\a.ts", ["\\repo\\"])).toBe("a.ts");
     expect(lookupGitStatus(map, "/repo/", "\\repo\\a.ts")).toBe("U");
   });
 });
