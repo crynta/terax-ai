@@ -10,6 +10,7 @@ export {
   whenSessionReady,
   writeToSession,
 } from "./lib/useTerminalSession";
+export { useTerminalFileDrop } from "./lib/useTerminalFileDrop";
 export {
   findLeafCwd,
   hasLeaf,
