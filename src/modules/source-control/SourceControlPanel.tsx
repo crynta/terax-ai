@@ -90,7 +90,9 @@ function dirname(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   const index = normalized.lastIndexOf("/");
   if (index <= 0) return "";
-  return normalized.slice(0, index);
+  const res = normalized.slice(0, index);
+  if (/^[A-Za-z]:$/.test(res)) return `${res}/`;
+  return res;
 }
 
 function entryPathLabel(entry: SourceControlFileEntry): string {

@@ -141,7 +141,9 @@ function dirname(path: string | null): string | null {
   const normalized = path.replace(/\\/g, "/");
   const idx = normalized.lastIndexOf("/");
   if (idx <= 0) return normalized;
-  return normalized.slice(0, idx);
+  const res = normalized.slice(0, idx);
+  if (/^[A-Za-z]:$/.test(res)) return `${res}/`;
+  return res;
 }
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
@@ -1536,6 +1538,7 @@ export default function App() {
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
                         onOpenMarkdownPreview={openMarkdownPreview}
+                        onCd={sendCd}
                       />
                     ) : (
                       <SourceControlPanel

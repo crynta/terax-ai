@@ -48,7 +48,13 @@ pub fn fs_read_dir(
             // silently drop them from the listing.
             let (meta, was_symlink) = match std::fs::metadata(entry.path()) {
                 Ok(m) => (Some(m), false),
-                Err(_) => (entry.metadata().ok(), true),
+                Err(_) => match entry.metadata() {
+                    Ok(m) => {
+                        let is_sym = m.file_type().is_symlink();
+                        (Some(m), is_sym)
+                    }
+                    Err(_) => (None, false),
+                },
             };
             let meta = meta?;
 
@@ -127,4 +133,23 @@ pub fn list_subdirs(
 
     dirs.sort_by_key(|a| a.to_lowercase());
     Ok(dirs)
+}
+
+#[tauri::command]
+pub fn fs_list_drives() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        let mut drives = Vec::new();
+        for letter in b'A'..=b'Z' {
+            let drive = format!("{}:\\", letter as char);
+            if std::path::Path::new(&drive).exists() {
+                drives.push(format!("{}:/", letter as char));
+            }
+        }
+        drives
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
 }

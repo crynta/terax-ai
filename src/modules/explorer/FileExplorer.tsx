@@ -7,12 +7,20 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   FileAddIcon,
   Folder01Icon,
   FolderAddIcon,
   Refresh01Icon,
   Search01Icon,
+  ArrowDown01Icon,
 } from "@hugeicons/core-free-icons";
+import { invoke } from "@tauri-apps/api/core";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -46,6 +54,7 @@ type Props = {
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
+  onCd?: (path: string) => void;
 };
 
 type Row =
@@ -153,6 +162,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       onRevealInTerminal,
       onAttachToAgent,
       onOpenMarkdownPreview,
+      onCd,
     },
     ref,
   ) {
@@ -160,6 +170,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
+    const [drives, setDrives] = useState<string[]>([]);
+
+    useEffect(() => {
+      invoke<string[]>("fs_list_drives")
+        .then(setDrives)
+        .catch(() => {});
+    }, []);
     const searchRef = useRef<ExplorerSearchHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -370,19 +387,52 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
         onKeyDown={handleKeyDown}
       >
         <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
-          <span
-            className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80"
-            title={rootPath}
-          >
-            <img
-              src={folderIconUrl(basename(rootPath), false)}
-              alt=""
-              height={15}
-              width={15}
-              className="mx-1.5"
-            />
-            {basename(rootPath)}
-          </span>
+          {drives.length > 1 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80 hover:bg-accent/40 rounded px-1.5 py-0.5 cursor-pointer outline-none min-w-0"
+                  title={rootPath}
+                >
+                  <img
+                    src={folderIconUrl(basename(rootPath), false)}
+                    alt=""
+                    height={15}
+                    width={15}
+                    className="mr-1.5 shrink-0"
+                  />
+                  <span className="truncate mr-1">{basename(rootPath)}</span>
+                  <HugeiconsIcon icon={ArrowDown01Icon} size={11} className="opacity-60 shrink-0" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="min-w-[120px]">
+                {drives.map((drv) => (
+                  <DropdownMenuItem
+                    key={drv}
+                    onSelect={() => onCd?.(drv)}
+                    className="gap-1.5 cursor-pointer"
+                  >
+                    <HugeiconsIcon icon={Folder01Icon} size={12} className="text-muted-foreground" />
+                    {drv}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <span
+              className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80 px-1.5"
+              title={rootPath}
+            >
+              <img
+                src={folderIconUrl(basename(rootPath), false)}
+                alt=""
+                height={15}
+                width={15}
+                className="mr-1.5 shrink-0"
+              />
+              <span className="truncate">{basename(rootPath)}</span>
+            </span>
+          )}
 
           <Button
             variant="ghost"

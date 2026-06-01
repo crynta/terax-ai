@@ -177,6 +177,7 @@ pub fn run() {
             pty::pty_has_foreground_process,
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
+            fs::tree::fs_list_drives,
             fs::file::fs_read_file,
             fs::file::fs_write_file,
             fs::file::fs_stat,
