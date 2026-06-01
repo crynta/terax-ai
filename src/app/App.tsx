@@ -1055,6 +1055,8 @@ export default function App() {
     void handleClose(activeId);
   }, [activeId, closeActivePane, handleClose]);
 
+  const [zenMode, setZenMode] = useState(false);
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "tab.new": openNewTab,
@@ -1083,6 +1085,7 @@ export default function App() {
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
+      "view.zenMode": () => setZenMode((v) => !v),
       "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
       "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
     }),
@@ -1462,7 +1465,8 @@ export default function App() {
     <ThemeProvider>
       <TooltipProvider>
         <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
-          <Header
+          {!zenMode && (
+            <Header
             tabs={tabs}
             activeId={activeId}
             onSelect={setActiveId}
@@ -1485,7 +1489,8 @@ export default function App() {
             onOpenSettings={() => void openSettingsWindow()}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
-          />
+            />
+          )}
 
           <main className="zoom-content flex min-h-0 flex-1 flex-col">
             <ResizablePanelGroup
@@ -1566,7 +1571,8 @@ export default function App() {
             </ResizablePanelGroup>
           </main>
 
-          <StatusBar
+          {!zenMode && (
+            <StatusBar
             cwd={activeCwd}
             filePath={activeFilePath}
             home={home}
@@ -1577,7 +1583,8 @@ export default function App() {
             privateActive={
               activeTab?.kind === "terminal" && activeTab.private === true
             }
-          />
+            />
+          )}
 
           <AgentNotificationsBridge
             tabs={tabs}
