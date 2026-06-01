@@ -14,6 +14,9 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { CwdBreadcrumb } from "./CwdBreadcrumb";
 import { WorkspaceEnvSelector } from "./WorkspaceEnvSelector";
 import type { WorkspaceEnv } from "@/modules/workspace";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { setEditorAutoSave } from "@/modules/settings/store";
+import { cn } from "@/lib/utils";
 
 type Props = {
   cwd: string | null;
@@ -39,6 +42,7 @@ export function StatusBar({
 }: Props) {
   const panelOpen = useChatStore((s) => s.panelOpen);
   const openPanel = useChatStore((s) => s.openPanel);
+  const autoSave = usePreferencesStore((s) => s.editorAutoSave);
 
   return (
     <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/60 px-3 text-[11px]">
@@ -61,6 +65,19 @@ export function StatusBar({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        <button
+          onClick={() => void setEditorAutoSave(!autoSave)}
+          className={cn(
+            "flex h-5 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors hover:bg-accent hover:text-foreground cursor-pointer select-none",
+            autoSave
+              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+              : "bg-muted text-muted-foreground border border-transparent"
+          )}
+          title="Click to toggle Editor Auto Save on/off"
+        >
+          <span className={cn("size-1 rounded-full", autoSave ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground/50")} />
+          <span>Auto Save: {autoSave ? "ON" : "OFF"}</span>
+        </button>
         <AgentStatusPill onClick={onOpenMini} />
         {panelOpen && hasComposer ? (
           <AiStatusBarControls />

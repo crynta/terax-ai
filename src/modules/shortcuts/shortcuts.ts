@@ -20,6 +20,7 @@ export type ShortcutId =
   | "pane.source"
   | "terminal.clear"
   | "search.focus"
+  | "search.quickOpen"
   | "explorer.search"
   | "explorer.focus"
   | "view.zoomIn"
@@ -89,7 +90,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "tab.newPreview",
     label: "New preview tab",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
+    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "p" }],
   },
   {
     id: "tab.newEditor",
@@ -171,6 +172,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Find in terminal",
     group: "Search",
     defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
+  },
+  {
+    id: "search.quickOpen",
+    label: "Quick Open file search",
+    group: "Search",
+    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
   },
   {
     id: "ai.toggle",

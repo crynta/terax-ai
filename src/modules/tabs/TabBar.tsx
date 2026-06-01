@@ -106,7 +106,7 @@ export function TabBar({
               // While renaming, render a non-button cell so the <input> is not
               // nested inside the trigger <button> (invalid HTML, and WebKit
               // blocks focus/selection on inputs inside buttons).
-              if (editingId === t.id && t.kind === "terminal") {
+              if (editingId === t.id) {
                 return (
                   <div
                     key={t.id}
@@ -134,7 +134,13 @@ export function TabBar({
                   key={t.id}
                   value={String(t.id)}
                   data-tab-id={t.id}
-                  onDoubleClick={() => isPreview && onPin(t.id)}
+                  onDoubleClick={() => {
+                    if (isPreview) {
+                      onPin(t.id);
+                    } else {
+                      setEditingId(t.id);
+                    }
+                  }}
                   onAuxClick={(e) => {
                     if (e.button === 1 && tabs.length > 1) {
                       e.preventDefault();
@@ -192,8 +198,6 @@ export function TabBar({
                   )}
                 </TabsTrigger>
               );
-
-              if (t.kind !== "terminal") return trigger;
 
               return (
                 <ContextMenu key={t.id}>
