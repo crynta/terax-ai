@@ -103,6 +103,12 @@ export type GitLogEntry = {
   deletions: number;
 };
 
+export type GitChildRepoSummary = {
+  repoRoot: string;
+  name: string;
+  branch: string | null;
+};
+
 export type GitCommitFileChange = {
   path: string;
   originalPath: string | null;
@@ -355,6 +361,11 @@ export const native = {
     invoke<string | null>("git_remote_url", {
       repoRoot,
       name: name ?? null,
+      workspace: currentWorkspaceEnv(),
+    }),
+  gitListChildRepos: (contextPath: string) =>
+    invoke<GitChildRepoSummary[]>("git_list_child_repos", {
+      contextPath,
       workspace: currentWorkspaceEnv(),
     }),
 };

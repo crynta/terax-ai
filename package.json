@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:mac": "sh scripts/build-mac.sh",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",

@@ -47,6 +47,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import type { GitChildRepoSummary } from "@/modules/ai/lib/native";
 import type { SourceControlSummary } from "./useSourceControl";
 import {
   useSourceControlPanel,
@@ -57,6 +58,10 @@ import {
 type Props = {
   open: boolean;
   sourceControl: SourceControlSummary;
+  repoChoices?: GitChildRepoSummary[];
+  repoChoiceLoading?: boolean;
+  selectedRepoRoot?: string | null;
+  onSelectRepoRoot?: (repoRoot: string | null) => void;
   onOpenGitGraph?: () => void;
   onOpenDiff: (input: {
     path: string;
