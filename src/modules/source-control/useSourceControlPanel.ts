@@ -6,7 +6,7 @@ import {
   type GitStatusSnapshot,
 } from "@/modules/ai/lib/native";
 import { useChatStore } from "@/modules/ai/store/chatStore";
-import { getModel, providerNeedsKey } from "@/modules/ai/config";
+import { providerNeedsKey, resolveModel } from "@/modules/ai/config";
 import {
   invalidateDiff,
   invalidateRepoDiffs,
@@ -369,7 +369,7 @@ export function useSourceControlPanel(
   const selectedModelId = useChatStore((state) => state.selectedModelId);
   const agentStatus = useChatStore((state) => state.agentMeta.status);
   const hasApiKeyForSelected = useChatStore((state) => {
-    const model = getModel(state.selectedModelId);
+    const model = resolveModel(state.selectedModelId);
     return !providerNeedsKey(model.provider) || !!state.apiKeys[model.provider];
   });
   const lmstudioModelId = usePreferencesStore((state) => state.lmstudioModelId);
@@ -380,6 +380,9 @@ export function useSourceControlPanel(
   );
   const openaiCompatibleModelId = usePreferencesStore(
     (state) => state.openaiCompatibleModelId,
+  );
+  const openrouterModelId = usePreferencesStore(
+    (state) => state.openrouterModelId,
   );
   const [panelState, setPanelState] = useState<PanelState>("closed");
   const [repo, setRepo] = useState<GitRepoInfo | null>(null);
@@ -459,7 +462,7 @@ export function useSourceControlPanel(
 
   const allClean = stagedEntries.length === 0 && unstagedEntries.length === 0;
   const canPush = !!status?.upstream && status.behind === 0;
-  const selectedModel = getModel(selectedModelId);
+  const selectedModel = resolveModel(selectedModelId);
   const aiBusy = agentStatus !== "idle" && agentStatus !== "error";
   const anyActionBusy = localActionBusy !== null || summary.busyAction !== null;
   const aiUnavailableReason = useMemo(() => {
@@ -484,6 +487,9 @@ export function useSourceControlPanel(
     ) {
       return "Connect an AI provider to generate commit messages";
     }
+    if (selectedModel.id === "openrouter-custom" && !openrouterModelId.trim()) {
+      return "Connect an AI provider to generate commit messages";
+    }
     return null;
   }, [
     hasApiKeyForSelected,
@@ -492,6 +498,7 @@ export function useSourceControlPanel(
     ollamaModelId,
     openaiCompatibleBaseURL,
     openaiCompatibleModelId,
+    openrouterModelId,
     selectedModel,
     stagedEntries.length,
   ]);
@@ -875,6 +882,7 @@ export function useSourceControlPanel(
           ollamaModelId,
           openaiCompatibleBaseURL,
           openaiCompatibleModelId,
+          openrouterModelId,
         },
       );
       const result = await generateText({
@@ -915,6 +923,7 @@ export function useSourceControlPanel(
     ollamaModelId,
     openaiCompatibleBaseURL,
     openaiCompatibleModelId,
+    openrouterModelId,
     repo,
     selectedModelId,
     stagedEntries,

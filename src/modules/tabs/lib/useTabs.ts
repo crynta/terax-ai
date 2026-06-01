@@ -25,6 +25,8 @@ export type TerminalTab = {
   activeLeafId: number;
   /** AI agent cannot read buffer / context of this terminal. */
   private?: boolean;
+  /** User-set label that overrides the cwd-derived name. Survives cd. */
+  customTitle?: string;
 };
 
 export type EditorTab = {
@@ -116,6 +118,8 @@ export type TabPatch = Partial<{
   path: string;
   dirty: boolean;
   url: string;
+  /** Empty string resets a terminal tab to its cwd-derived name. */
+  customTitle: string;
 }>;
 
 function basename(path: string): string {
@@ -172,6 +176,27 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setActiveId(tabId);
     return tabId;
   }, []);
+
+  const newAgentTab = useCallback(
+    (cwd: string | undefined, title: string) => {
+      const tabId = nextIdRef.current++;
+      const leafId = nextIdRef.current++;
+      setTabs((t) => [
+        ...t,
+        {
+          id: tabId,
+          kind: "terminal",
+          title,
+          cwd,
+          paneTree: { kind: "leaf", id: leafId, cwd },
+          activeLeafId: leafId,
+        },
+      ]);
+      setActiveId(tabId);
+      return { tabId, leafId };
+    },
+    [],
+  );
 
   const newPrivateTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
@@ -564,6 +589,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             ...x,
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.cwd !== undefined && { cwd: patch.cwd }),
+            ...(patch.customTitle !== undefined && {
+              customTitle: patch.customTitle === "" ? undefined : patch.customTitle,
+            }),
           };
         }
         if (x.kind === "preview") {
@@ -778,6 +806,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     activeId,
     setActiveId,
     newTab,
+    newAgentTab,
     newPrivateTab,
     openFileTab,
     pinTab,

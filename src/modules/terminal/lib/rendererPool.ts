@@ -8,7 +8,11 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
-import { terminalWordNavigationSequence } from "./keymap";
+import {
+  terminalDeleteSequence,
+  terminalLineNavigationSequence,
+  terminalWordNavigationSequence,
+} from "./keymap";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -69,6 +73,15 @@ export function poolSize(): number {
   return slots.length;
 }
 
+// Bracketed paste via xterm, so an app that enabled it (Claude Code) treats a
+// dropped path as a real paste while a plain shell gets the literal text.
+export function pasteIntoLeaf(leafId: number, text: string): boolean {
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (!slot) return false;
+  slot.term.paste(text);
+  return true;
+}
+
 function getRecycler(): HTMLDivElement {
   if (recyclerEl && recyclerEl.isConnected) return recyclerEl;
   const el = document.createElement("div");
@@ -83,7 +96,9 @@ function getRecycler(): HTMLDivElement {
 const MCR_BG_ACTIVE = 4.5;
 const MCR_BG_INACTIVE = 1;
 
-function bgActive(prefs: ReturnType<typeof usePreferencesStore.getState>): boolean {
+function bgActive(
+  prefs: ReturnType<typeof usePreferencesStore.getState>,
+): boolean {
   return prefs.backgroundKind === "image" && !!prefs.backgroundImageId;
 }
 
@@ -154,19 +169,37 @@ function createSlot(): Slot {
   attachWebgl(slot);
 
   term.attachCustomKeyEventHandler((event) => {
+    // During IME composition the browser is assembling a multi-keystroke
+    // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
+    // Raw keydown events — including the Enter that commits a candidate —
+    // must NOT be forwarded to the PTY; xterm will receive the final
+    // composed string through its own compositionend handler instead.
+    // keyCode 229 ("Process") is what Chromium reports for every key
+    // pressed inside an active IME session when isComposing is not yet set.
+    if (event.isComposing || event.keyCode === 229) return false;
+
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
+    const lineNavigation = terminalLineNavigationSequence(event, {
+      isMac: IS_MAC,
+    });
+    if (lineNavigation) {
+      event.preventDefault();
+      if (event.type === "keydown") bridge.writeToPty(lineNavigation);
+      return false;
+    }
     const wordNavigation = terminalWordNavigationSequence(event);
     if (wordNavigation) {
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty(wordNavigation);
       return false;
     }
-    if (isCtrlBackspace(event)) {
+    const deleteSeq = terminalDeleteSequence(event, { isMac: IS_MAC });
+    if (deleteSeq) {
       event.preventDefault();
-      if (event.type === "keydown") bridge.writeToPty("\x17");
+      if (event.type === "keydown") bridge.writeToPty(deleteSeq);
       return false;
     }
     if (isShiftEnter(event)) {
@@ -187,7 +220,7 @@ function createSlot(): Slot {
         void navigator.clipboard
           .readText()
           .then((text) => {
-            if (text) bridge.writeToPty(text);
+            if (text) slot.term.paste(text);
           })
           .catch(() => {});
       }
@@ -280,6 +313,8 @@ export function acquireSlot(params: AcquireParams): Slot {
 }
 
 function bindSlot(slot: Slot, p: AcquireParams): void {
+  const stale =
+    !slot.webglAddon || performance.now() - slot.lastUsedAt > SLOT_STALE_MS;
   slot.currentLeafId = p.leafId;
   slot.lastUsedAt = performance.now();
 
@@ -351,16 +386,22 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     adapter?.resolveLeaf(p.leafId)?.kickPty(slot.term.cols, slot.term.rows);
   }
 
-  scheduleUnhide(slot);
+  scheduleUnhide(slot, stale);
 
   p.onSearchReady(slot.searchAddon);
 }
 
-function scheduleUnhide(slot: Slot): void {
+function scheduleUnhide(slot: Slot, stale: boolean): void {
   slot.unhideRaf = requestAnimationFrame(() => {
     slot.unhideRaf = requestAnimationFrame(() => {
       slot.unhideRaf = null;
       slot.host.style.visibility = "";
+      if (stale) {
+        if (!slot.webglAddon) attachWebgl(slot);
+        try {
+          slot.term.refresh(0, slot.term.rows - 1);
+        } catch {}
+      }
       const leafId = slot.currentLeafId;
       if (leafId !== null && adapter?.isLeafFocused(leafId)) {
         slot.term.focus();
@@ -490,6 +531,9 @@ function detachSlotFromLeaf(slot: Slot): void {
 }
 
 const WEBGL_RECOVERY_DELAY_MS = 250;
+// Below this a re-shown slot is fresh enough to trust; above it, repaint on
+// unhide to defeat silent GPU/context staleness.
+const SLOT_STALE_MS = 10_000;
 
 function attachWebgl(slot: Slot): void {
   if (slot.webglAddon || !slot.term.element) return;
@@ -516,6 +560,11 @@ function attachWebgl(slot: Slot): void {
         if (slot.webglAddon) return;
         if (!usePreferencesStore.getState().terminalWebglEnabled) return;
         attachWebgl(slot);
+        if (slot.webglAddon) {
+          try {
+            slot.term.refresh(0, slot.term.rows - 1);
+          } catch {}
+        }
       }, WEBGL_RECOVERY_DELAY_MS);
     });
     slot.term.loadAddon(webgl);
@@ -661,7 +710,8 @@ export function getSlotForLeaf(leafId: number): Slot | null {
 }
 
 const IS_MAC =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 function isTerminalCopy(e: KeyboardEvent): boolean {
   return (
@@ -683,13 +733,6 @@ function isTerminalPaste(e: KeyboardEvent): boolean {
     !e.metaKey &&
     (e.code === "KeyV" || e.key === "v" || e.key === "V")
   );
-}
-
-function isCtrlBackspace(e: KeyboardEvent): boolean {
-  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  const isMac = /Mac|iPhone|iPad/.test(ua);
-  const mod = isMac ? e.metaKey : e.ctrlKey;
-  return mod && (e.key === "Backspace" || e.code === "Backspace");
 }
 
 function isShiftEnter(e: KeyboardEvent): boolean {

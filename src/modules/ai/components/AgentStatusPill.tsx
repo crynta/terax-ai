@@ -1,9 +1,6 @@
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import {
-  AlertCircleIcon,
-  ShieldUserIcon,
-} from "@hugeicons/core-free-icons";
+import { AlertCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
 import { useChatStore, type AgentMeta } from "../store/chatStore";
@@ -15,6 +12,8 @@ type Props = {
 export function AgentStatusPill({ onClick }: Props) {
   const meta = useChatStore((s) => s.agentMeta);
 
+  // awaiting-approval is surfaced by the notification + auto-opened mini window.
+  if (meta.status === "awaiting-approval") return null;
   if (meta.status === "idle" && !meta.error) return null;
 
   const { tone, icon, label } = describe(meta);
@@ -47,19 +46,6 @@ function describe(meta: AgentMeta): {
   icon: React.ReactNode;
   label: string;
 } {
-  if (meta.status === "awaiting-approval") {
-    return {
-      tone:
-        "border-yellow-500/40 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-500/15",
-      icon: (
-        <HugeiconsIcon icon={ShieldUserIcon} size={12} strokeWidth={1.75} />
-      ),
-      label:
-        meta.approvalsPending > 1
-          ? `${meta.approvalsPending} approvals needed`
-          : "Approval needed",
-    };
-  }
   if (meta.status === "error") {
     return {
       tone:

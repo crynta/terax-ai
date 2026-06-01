@@ -15,13 +15,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { AgentNotificationsBridge } from "@/modules/agents";
+import { firePendingReviewForSession } from "@/modules/agents/lib/review";
+import { useManagedAgentsStore } from "@/modules/agents/store/managedAgentsStore";
+import { Toaster } from "@/components/ui/sonner";
 import {
   AgentRunBridge,
   AiInputBar,
   AiInputBarConnect,
   AiMiniWindow,
   getAllKeys,
+  getAllCustomEndpointKeys,
   hasAnyKey,
+  LocalAgentNotificationsBridge,
   SelectionAskAi,
   useChatStore,
 } from "@/modules/ai";
@@ -42,8 +48,15 @@ import {
   type GitHistorySearchHandle,
 } from "@/modules/git-history";
 import { getLaunchDir } from "@/lib/launchDir";
+import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
+import {
+  listenFsChanged,
+  parentDir,
+  watchAdd,
+  watchRemove,
+} from "@/modules/explorer/lib/watch";
 import {
   Header,
   type SearchInlineHandle,
@@ -68,13 +81,18 @@ import {
 import { StatusBar } from "@/modules/statusbar";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
+  clearFocusedTerminal,
   disposeSession,
   findLeafCwd,
   hasLeaf,
+  leafHasForegroundProcess,
   leafIds,
   respawnSession,
   TerminalStack,
+  whenSessionReady,
+  writeToSession,
   type TerminalPaneHandle,
+  useTerminalFileDrop,
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
 import { listCustomThemes, saveCustomTheme } from "@/modules/theme/customThemes";
@@ -101,6 +119,22 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
+
+type TuiWaitResult = "ready" | "gone" | "timeout";
+
+async function waitForClaudeTuiReady(
+  readBuf: () => string | null,
+  timeoutMs = 8000,
+): Promise<TuiWaitResult> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const buf = readBuf();
+    if (buf === null) return "gone";
+    if (buf.includes("shortcuts") || buf.includes("? for")) return "ready";
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  return "timeout";
+}
 
 function dirname(path: string | null): string | null {
   if (!path) return null;
@@ -151,6 +185,7 @@ export default function App() {
     activeId,
     setActiveId,
     newTab,
+    newAgentTab,
     newPrivateTab,
     openFileTab,
     pinTab,
@@ -196,6 +231,7 @@ export default function App() {
   const [gitHistoryHandle, setGitHistoryHandle] =
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
+  useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
 
@@ -290,6 +326,7 @@ export default function App() {
 
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
+  const [pendingTerminalCloseTab, setPendingTerminalCloseTab] = useState<number | null>(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
@@ -370,15 +407,21 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
   const openPanel = useChatStore((s) => s.openPanel);
   const panelOpen = useChatStore((s) => s.panelOpen);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setApiKeys = useChatStore((s) => s.setApiKeys);
+  const setCustomEndpointKeys = useChatStore((s) => s.setCustomEndpointKeys);
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
+
+  useEffect(() => {
+    if (activeSessionId) firePendingReviewForSession(activeSessionId);
+  }, [activeSessionId]);
   const lmstudioModelId = usePreferencesStore((s) => s.lmstudioModelId);
   const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
   const mlxModelId = usePreferencesStore((s) => s.mlxModelId);
@@ -391,14 +434,17 @@ export default function App() {
   const openaiCompatibleBaseURL = usePreferencesStore(
     (s) => s.openaiCompatibleBaseURL,
   );
+  const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
   const hasLocalModel =
     (lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0) ||
     (mlxBaseURL.trim().length > 0 && mlxModelId.trim().length > 0) ||
     (ollamaBaseURL.trim().length > 0 && ollamaModelId.trim().length > 0) ||
     (openaiCompatibleBaseURL.trim().length > 0 &&
-      openaiCompatibleModelId.trim().length > 0);
+      openaiCompatibleModelId.trim().length > 0) ||
+    customEndpoints.some((e) => e.baseURL.trim().length > 0 && e.modelId.trim().length > 0);
   const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
 
+  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -408,6 +454,13 @@ export default function App() {
         setApiKeys(keys);
         setKeysLoaded(true);
       });
+      if (!prefsHydrated) return;
+      void getAllCustomEndpointKeys(
+        usePreferencesStore.getState().customEndpoints,
+      ).then((epKeys) => {
+        if (!alive) return;
+        setCustomEndpointKeys(epKeys);
+      });
     };
     reload();
     const unlistenP = onKeysChanged(reload);
@@ -415,13 +468,12 @@ export default function App() {
       alive = false;
       void unlistenP.then((fn) => fn());
     };
-  }, [setApiKeys]);
+  }, [setApiKeys, setCustomEndpointKeys, prefsHydrated]);
 
   // Hydrate the cross-window preference store and mirror the default model
   // into chatStore so the dropdown reflects what the user picked in Settings.
   const initPrefs = usePreferencesStore((s) => s.init);
   const prefDefaultModel = usePreferencesStore((s) => s.defaultModelId);
-  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   useEffect(() => {
     void initPrefs();
   }, [initPrefs]);
@@ -484,6 +536,39 @@ export default function App() {
     );
     return () => {
       void unlistenPromise.then((un) => un());
+    };
+  }, []);
+
+  const editorWatchRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const want = new Set<string>();
+    for (const t of tabs) if (t.kind === "editor") want.add(parentDir(t.path));
+    const prev = editorWatchRef.current;
+    const toAdd = [...want].filter((d) => !prev.has(d));
+    const toRemove = [...prev].filter((d) => !want.has(d));
+    watchAdd(toAdd);
+    watchRemove(toRemove);
+    editorWatchRef.current = want;
+  }, [tabs]);
+
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    void listenFsChanged((paths) => {
+      const changed = new Set(paths.map((p) => p.replace(/\\/g, "/")));
+      for (const t of tabsRef.current) {
+        if (t.kind !== "editor") continue;
+        if (changed.has(t.path.replace(/\\/g, "/"))) {
+          editorRefs.current.get(t.id)?.reload();
+        }
+      }
+    }).then((un) => {
+      if (alive) unlisten = un;
+      else un();
+    });
+    return () => {
+      alive = false;
+      unlisten?.();
     };
   }, []);
 
@@ -602,11 +687,19 @@ export default function App() {
   }, [tabs]);
 
   const handleClose = useCallback(
-    (id: number) => {
+    async (id: number) => {
       const t = tabs.find((x) => x.id === id);
       if (t?.kind === "editor" && t.dirty) {
         setPendingCloseTab(id);
         return;
+      }
+      if (t?.kind === "terminal") {
+        const leaves = leafIds(t.paneTree);
+        const checks = await Promise.all(leaves.map(leafHasForegroundProcess));
+        if (checks.some(Boolean)) {
+          setPendingTerminalCloseTab(id);
+          return;
+        }
       }
       disposeTab(id);
     },
@@ -721,6 +814,9 @@ export default function App() {
     };
     const onUp = (e: MouseEvent) => {
       if (isInsideAi(e.target)) return;
+      const el = e.target as HTMLElement | null;
+      const inContentArea = el?.closest?.(".xterm, .cm-editor");
+      if (!inContentArea) return;
       // Defer one tick so xterm/CodeMirror finalize the selection.
       setTimeout(() => {
         const text = captureActiveSelection();
@@ -758,10 +854,7 @@ export default function App() {
       if (activeLeafId === null) return;
       const term = terminalRefs.current.get(activeLeafId);
       if (!term) return;
-      const quoted = path.includes(" ")
-        ? `'${path.replace(/'/g, `'\\''`)}'`
-        : path;
-      term.write(`cd ${quoted}\r`);
+      term.write(`cd ${quoteShellArg(path)}\r`);
       term.focus();
     },
     [activeLeafId],
@@ -775,10 +868,7 @@ export default function App() {
         if (!tab || tab.kind !== "terminal") return;
         const t = terminalRefs.current.get(tab.activeLeafId);
         if (!t) return;
-        const quoted = path.includes(" ")
-          ? `'${path.replace(/'/g, `'\\''`)}'`
-          : path;
-        t.write(`cd ${quoted}\r`);
+        t.write(`cd ${quoteShellArg(path)}\r`);
         t.focus();
       }, 80);
     },
@@ -962,8 +1052,10 @@ export default function App() {
       closeActivePane(activeId);
       return;
     }
-    handleClose(activeId);
+    void handleClose(activeId);
   }, [activeId, closeActivePane, handleClose]);
+
+  const [zenMode, setZenMode] = useState(false);
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
@@ -980,6 +1072,9 @@ export default function App() {
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
       "pane.source": toggleSourceControl,
+      "terminal.clear": () => {
+        clearFocusedTerminal();
+      },
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
@@ -990,6 +1085,7 @@ export default function App() {
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
+      "view.zenMode": () => setZenMode((v) => !v),
       "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
       "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
     }),
@@ -1028,6 +1124,13 @@ export default function App() {
         if (!inTerminal) return false;
         const sel = captureActiveSelection();
         return !sel || !sel.trim();
+      }
+      if (id === "terminal.clear") {
+        // Only intercept ⌘K while a terminal is focused; elsewhere let the key
+        // fall through (we never preventDefault when disabled).
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        return !(target as HTMLElement | null)?.closest?.(".xterm");
       }
       return false;
     },
@@ -1085,6 +1188,19 @@ export default function App() {
     [focusPane],
   );
 
+  const onActivateAgent = useCallback(
+    (tabId: number, leafId: number) => {
+      setActiveId(tabId);
+      focusPane(tabId, leafId);
+    },
+    [setActiveId, focusPane],
+  );
+
+  const onActivateLocalAgent = useCallback(() => {
+    openPanel();
+    focusInput(null);
+  }, [openPanel, focusInput]);
+
   const handleLeafExit = useCallback(
     (leafId: number, _code: number) => {
       const all = tabsRef.current;
@@ -1106,6 +1222,11 @@ export default function App() {
 
   const handleEditorDirty = useCallback(
     (id: number, dirty: boolean) => updateTab(id, { dirty }),
+    [updateTab],
+  );
+
+  const handleRenameTab = useCallback(
+    (id: number, title: string) => updateTab(id, { customTitle: title.trim() }),
     [updateTab],
   );
 
@@ -1187,8 +1308,61 @@ export default function App() {
         openPreviewTab(url);
         return true;
       },
+      spawnManagedAgent: (prompt: string, sessionId: string) => {
+        const trimmed = prompt.trim();
+        if (!trimmed) return null;
+        const oneLine = trimmed.replace(/\s*\r?\n\s*/g, " ");
+        const cwd = findCwd();
+        const short = oneLine.length > 32 ? `${oneLine.slice(0, 32)}…` : oneLine;
+        const { tabId, leafId } = newAgentTab(cwd ?? undefined, `claude · ${short}`);
+        useManagedAgentsStore
+          .getState()
+          .register({ leafId, tabId, sessionId, task: oneLine, cwd });
+        const hooksReady = invoke("agent_enable_claude_hooks").catch(() => {});
+        void (async () => {
+          await Promise.all([whenSessionReady(leafId), hooksReady]);
+          if (!writeToSession(leafId, "claude\r")) {
+            useManagedAgentsStore.getState().remove(leafId);
+            return;
+          }
+          const readBuf = () => {
+            const term = terminalRefs.current.get(leafId);
+            return term ? term.getBuffer(120) : null;
+          };
+          const result = await waitForClaudeTuiReady(readBuf);
+          if (result !== "ready") {
+            if (result === "timeout") {
+              console.warn(
+                "[terax] Claude TUI did not appear in time; aborting prompt send",
+              );
+            }
+            useManagedAgentsStore.getState().remove(leafId);
+            return;
+          }
+          if (!writeToSession(leafId, `\x1b[200~${trimmed}\x1b[201~`)) {
+            useManagedAgentsStore.getState().remove(leafId);
+            return;
+          }
+          setTimeout(() => writeToSession(leafId, "\r"), 120);
+          useManagedAgentsStore.getState().setPhase(leafId, "working");
+        })();
+        return { tabId, leafId };
+      },
+      readLeafBuffer: (leafId: number) => {
+        const buf = terminalRefs.current.get(leafId)?.getBuffer(300);
+        return buf ? redactSensitive(buf) : null;
+      },
     });
-  }, [setLive, activeId, tabs, explorerRoot, launchCwd, home, openPreviewTab]);
+  }, [
+    setLive,
+    activeId,
+    tabs,
+    explorerRoot,
+    launchCwd,
+    home,
+    openPreviewTab,
+    newAgentTab,
+  ]);
 
   const workspaceSurface = (
     <div className="relative h-full min-h-0">
@@ -1291,7 +1465,8 @@ export default function App() {
     <ThemeProvider>
       <TooltipProvider>
         <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
-          <Header
+          {!zenMode && (
+            <Header
             tabs={tabs}
             activeId={activeId}
             onSelect={setActiveId}
@@ -1302,17 +1477,20 @@ export default function App() {
             onNewGitGraph={openGitGraphFromContext}
             onClose={handleClose}
             onPin={pinTab}
+            onRename={handleRenameTab}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={
               activeTerminalTab !== null &&
               leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
             }
-            onOpenShortcuts={() => setShortcutsOpen(true)}
+            onActivateAgent={onActivateAgent}
+            onActivateLocalAgent={onActivateLocalAgent}
             onOpenSettings={() => void openSettingsWindow()}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
-          />
+            />
+          )}
 
           <main className="zoom-content flex min-h-0 flex-1 flex-col">
             <ResizablePanelGroup
@@ -1393,7 +1571,8 @@ export default function App() {
             </ResizablePanelGroup>
           </main>
 
-          <StatusBar
+          {!zenMode && (
+            <StatusBar
             cwd={activeCwd}
             filePath={activeFilePath}
             home={home}
@@ -1404,13 +1583,24 @@ export default function App() {
             privateActive={
               activeTab?.kind === "terminal" && activeTab.private === true
             }
+            />
+          )}
+
+          <AgentNotificationsBridge
+            tabs={tabs}
+            activeId={activeId}
+            onActivate={onActivateAgent}
           />
+          <Toaster position="bottom-right" />
 
           {hasComposer ? (
-            <AgentRunBridge
-              openAiDiffTab={openAiDiffTab}
-              closeAiDiffTab={closeAiDiffTab}
-            />
+            <>
+              <AgentRunBridge
+                openAiDiffTab={openAiDiffTab}
+                closeAiDiffTab={closeAiDiffTab}
+              />
+              <LocalAgentNotificationsBridge />
+            </>
           ) : null}
 
           <AnimatePresence>
@@ -1460,6 +1650,36 @@ export default function App() {
                   Cancel
                 </AlertDialogCancel>
                 <AlertDialogAction onClick={confirmClose}>
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={pendingTerminalCloseTab !== null}
+            onOpenChange={(open) => !open && setPendingTerminalCloseTab(null)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Close Terminal?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A process is running. Closing this tab will terminate it.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  onClick={() => setPendingTerminalCloseTab(null)}
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (pendingTerminalCloseTab !== null)
+                      disposeTab(pendingTerminalCloseTab);
+                    setPendingTerminalCloseTab(null);
+                  }}
+                >
                   Close Anyway
                 </AlertDialogAction>
               </AlertDialogFooter>

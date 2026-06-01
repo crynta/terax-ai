@@ -37,7 +37,10 @@ impl WorkspaceRegistry {
     pub fn canonicalize_cached<P: AsRef<Path>>(&self, path: P) -> std::io::Result<PathBuf> {
         let key = path.as_ref().to_path_buf();
         {
-            let cache = self.canonical_cache.lock().expect("canonical cache poisoned");
+            let cache = self
+                .canonical_cache
+                .lock()
+                .expect("canonical cache poisoned");
             if let Some(entry) = cache.get(&key) {
                 if entry.inserted_at.elapsed() < CANONICAL_TTL {
                     return Ok(entry.canonical.clone());
@@ -45,7 +48,10 @@ impl WorkspaceRegistry {
             }
         }
         let canonical = std::fs::canonicalize(&key)?;
-        let mut cache = self.canonical_cache.lock().expect("canonical cache poisoned");
+        let mut cache = self
+            .canonical_cache
+            .lock()
+            .expect("canonical cache poisoned");
         if cache.len() >= CANONICAL_CACHE_CAP {
             cache.retain(|_, entry| entry.inserted_at.elapsed() < CANONICAL_TTL);
             if cache.len() >= CANONICAL_CACHE_CAP {
@@ -61,7 +67,6 @@ impl WorkspaceRegistry {
         );
         Ok(canonical)
     }
-
 }
 
 // `None` means "use bootstrapped default". `Some` is canonicalized to defeat
@@ -75,8 +80,8 @@ pub fn authorize_spawn_cwd(
         return Ok(None);
     };
     let resolved = resolve_path(cwd, workspace);
-    let canonical = std::fs::canonicalize(&resolved)
-        .map_err(|e| format!("cwd not accessible: {e}"))?;
+    let canonical =
+        std::fs::canonicalize(&resolved).map_err(|e| format!("cwd not accessible: {e}"))?;
     if !canonical.is_dir() {
         return Err(format!("cwd is not a directory: {}", canonical.display()));
     }
@@ -100,8 +105,8 @@ pub fn authorize_user_spawn_cwd(
         return Ok(None);
     };
     let resolved = resolve_path(cwd, workspace);
-    let canonical = std::fs::canonicalize(&resolved)
-        .map_err(|e| format!("cwd not accessible: {e}"))?;
+    let canonical =
+        std::fs::canonicalize(&resolved).map_err(|e| format!("cwd not accessible: {e}"))?;
     if !canonical.is_dir() {
         return Err(format!("cwd is not a directory: {}", canonical.display()));
     }
@@ -141,12 +146,18 @@ pub async fn workspace_current_dir(
 // (file dialogs, plugin chdir) can't shift the value seen by IPC or spawn.
 static LAUNCH_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
 
-pub fn init_launch_cwd() {
-    LAUNCH_CWD.get_or_init(|| {
-        std::env::current_dir()
-            .ok()
-            .filter(|p| is_usable_launch_dir(p))
-    });
+pub fn init_launch_cwd(cli_dir: Option<&str>) {
+    LAUNCH_CWD.get_or_init(|| resolve_launch_cwd(cli_dir, std::env::current_dir().ok()));
+}
+
+fn resolve_launch_cwd(cli_dir: Option<&str>, env_cwd: Option<PathBuf>) -> Option<PathBuf> {
+    if let Some(dir) = cli_dir {
+        let p = PathBuf::from(dir);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    env_cwd.filter(|p| is_usable_launch_dir(p))
 }
 
 pub fn launch_cwd_snapshot() -> Option<PathBuf> {
@@ -157,7 +168,10 @@ fn resolve_launch_dir() -> PathBuf {
     if let Some(cwd) = launch_cwd_snapshot() {
         return cwd;
     }
-    if let Some(cwd) = std::env::current_dir().ok().filter(|p| is_usable_launch_dir(p)) {
+    if let Some(cwd) = std::env::current_dir()
+        .ok()
+        .filter(|p| is_usable_launch_dir(p))
+    {
         return cwd;
     }
     dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
@@ -360,7 +374,11 @@ pub(crate) fn wsl_exec_capture(
 ) -> Result<String, String> {
     validate_wsl_distro_name(distro)?;
     let mut cmd = std::process::Command::new("wsl.exe");
-    cmd.arg("-d").arg(distro).arg("--exec").arg(program).args(args);
+    cmd.arg("-d")
+        .arg(distro)
+        .arg("--exec")
+        .arg(program)
+        .args(args);
     crate::modules::proc::hide_console(&mut cmd);
     let out = cmd.output().map_err(|e| e.to_string())?;
     if !out.status.success() {
@@ -731,5 +749,27 @@ mod auth_tests {
         let err = authorize_spawn_cwd(&reg, Some(&s), &WorkspaceEnv::Local)
             .expect_err("symlink-escape must be rejected");
         assert!(err.contains("outside"), "got: {err}");
+    }
+
+    #[test]
+    fn resolve_launch_cwd_prefers_cli_dir_over_env() {
+        let cli = tempdir("cli");
+        let env = tempdir("env");
+        let s = cli.to_string_lossy().into_owned();
+        let resolved = resolve_launch_cwd(Some(&s), Some(env.clone()));
+        assert_eq!(resolved.as_deref(), Some(cli.as_path()));
+    }
+
+    #[test]
+    fn resolve_launch_cwd_falls_back_to_env_when_cli_missing() {
+        let env = tempdir("envonly");
+        assert_eq!(resolve_launch_cwd(None, Some(env.clone())), Some(env));
+    }
+
+    #[test]
+    fn resolve_launch_cwd_ignores_nonexistent_cli_dir() {
+        let env = tempdir("envfb");
+        let resolved = resolve_launch_cwd(Some("/no/such/terax/dir"), Some(env.clone()));
+        assert_eq!(resolved, Some(env));
     }
 }

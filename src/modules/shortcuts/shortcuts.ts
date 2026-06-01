@@ -18,12 +18,14 @@ export type ShortcutId =
   | "pane.focusNext"
   | "pane.focusPrev"
   | "pane.source"
+  | "terminal.clear"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
   | "view.zoomIn"
   | "view.zoomOut"
   | "view.zoomReset"
+  | "view.zenMode"
   | "ai.toggle"
   | "ai.askSelection"
   | "shortcuts.open"
@@ -36,6 +38,7 @@ export type ShortcutGroup =
   | "General"
   | "Tabs"
   | "Panes"
+  | "Terminal"
   | "Search"
   | "AI"
   | "View"
@@ -131,6 +134,15 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
   },
   {
+    id: "terminal.clear",
+    label: "Clear terminal",
+    group: "Terminal",
+    // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
+    // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
+    // unbound and let users assign their own in settings.
+    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
+  },
+  {
     id: "tab.next",
     label: "Next tab",
     group: "Tabs",
@@ -170,7 +182,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "ai.askSelection",
     label: "Ask AI about selection",
     group: "AI",
-    defaultBindings: [{ [MOD_PROP]: true, key: "l" }],
+    defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
   },
   {
     id: "sidebar.toggle",
@@ -210,6 +222,12 @@ export const SHORTCUTS: Shortcut[] = [
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, key: "0" }],
   },
+  {
+    id: "view.zenMode",
+    label: "Toggle zen mode",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "z" }],
+  },
   // Editor entries are display-only: CodeMirror's historyKeymap binds these
   // keys natively. We register them here so the shortcuts dialog can surface
   // them — they don't have App-level handlers, so `useGlobalShortcuts` falls
@@ -233,6 +251,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
   "Panes",
+  "Terminal",
   "View",
   "Search",
   "AI",

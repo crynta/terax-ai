@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -57,6 +58,69 @@ type Session = {
 };
 
 const sessions = new Map<number, Session>();
+
+const readyLeaves = new Set<number>();
+const readyWaiters = new Map<
+  number,
+  { resolve: () => void; timer: ReturnType<typeof setTimeout> }[]
+>();
+
+function markSessionReady(leafId: number): void {
+  if (readyLeaves.has(leafId)) return;
+  readyLeaves.add(leafId);
+  const waiters = readyWaiters.get(leafId);
+  if (!waiters) return;
+  readyWaiters.delete(leafId);
+  for (const w of waiters) {
+    clearTimeout(w.timer);
+    w.resolve();
+  }
+}
+
+export function whenSessionReady(leafId: number, timeoutMs = 4000): Promise<void> {
+  if (readyLeaves.has(leafId)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const arr = readyWaiters.get(leafId);
+      const i = arr?.findIndex((w) => w.timer === timer) ?? -1;
+      if (arr && i >= 0) arr.splice(i, 1);
+      resolve();
+    }, timeoutMs);
+    const arr = readyWaiters.get(leafId) ?? [];
+    arr.push({ resolve, timer });
+    readyWaiters.set(leafId, arr);
+  });
+}
+
+export function writeToSession(leafId: number, data: string): boolean {
+  const s = sessions.get(leafId);
+  if (!s || !s.pty) return false;
+  void s.pty.write(data);
+  return true;
+}
+
+/**
+ * Clear the scrollback and screen of the currently focused terminal, keeping
+ * the active prompt line — macOS Terminal's ⌘K behaviour. Returns false when no
+ * focused terminal slot is bound (e.g. focus is in the editor or AI panel).
+ */
+export function clearFocusedTerminal(): boolean {
+  for (const [leafId, s] of sessions) {
+    if (!s.visibleNow || !s.focusedNow) continue;
+    const slot = getSlotForLeaf(leafId);
+    if (!slot) continue;
+    slot.term.clear();
+    return true;
+  }
+  return false;
+}
+
+export function leafIdForPty(ptyId: number): number | null {
+  for (const [leafId, s] of sessions) {
+    if (s.pty?.id === ptyId) return leafId;
+  }
+  return null;
+}
 
 configureRendererPool({
   resolveLeaf(leafId) {
@@ -187,6 +251,7 @@ function bindLeafToSlot(leafId: number, s: Session): void {
       const cwd = registerCwdHandler(
         term,
         (next) => {
+          markSessionReady(leafId);
           if (s.lastCwd === next) return;
           s.lastCwd = next;
           s.callbacks.onCwd?.(next);
@@ -297,6 +362,18 @@ export async function respawnSession(
   if (s.cols > 0 && s.rows > 0) pty.resize(s.cols, s.rows);
 }
 
+export async function leafHasForegroundProcess(leafId: number): Promise<boolean> {
+  const s = sessions.get(leafId);
+  if (!s?.pty || s.shellExited) return false;
+  try {
+    const result = await invoke<boolean>("pty_has_foreground_process", { id: s.pty.id });
+    return result;
+  } catch (e) {
+    console.error("[terax] pty_has_foreground_process failed for leaf", leafId, e);
+    return false;
+  }
+}
+
 export function disposeSession(leafId: number): void {
   const s = sessions.get(leafId);
   if (!s) return;
@@ -306,6 +383,15 @@ export function disposeSession(leafId: number): void {
   s.pty?.close();
   s.pty = null;
   sessions.delete(leafId);
+  readyLeaves.delete(leafId);
+  const waiters = readyWaiters.get(leafId);
+  if (waiters) {
+    readyWaiters.delete(leafId);
+    for (const w of waiters) {
+      clearTimeout(w.timer);
+      w.resolve();
+    }
+  }
 }
 
 type Options = {
