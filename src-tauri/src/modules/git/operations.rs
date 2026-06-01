@@ -30,6 +30,62 @@ pub fn resolve_repo(
     resolve_repo_in_authorized(registry, &cwd)
 }
 
+pub fn discover_repos(
+    registry: &WorkspaceRegistry,
+    root: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<Vec<GitRepoInfo>> {
+    let root_dir = canonical_dir(registry, root, workspace)?;
+    if !registry.is_authorized(&root_dir.local_path) {
+        return Err(GitError::PathOutsideWorkspace(root_dir.local_path));
+    }
+    ensure_git_available(&root_dir.workspace)?;
+
+    let mut repos = Vec::new();
+    let mut to_visit = vec![(root_dir.local_path.clone(), 0)];
+
+    while let Some((dir, depth)) = to_visit.pop() {
+        let git_entry = dir.join(".git");
+        if git_entry.exists() {
+            let git_path_str = super::utils::display_path(&dir);
+            if let Ok(resolved) = canonical_dir(registry, &git_path_str, &root_dir.workspace) {
+                if let Ok(Some(repo_info)) = resolve_repo_in_authorized(registry, &resolved) {
+                    if !repos.iter().any(|r: &GitRepoInfo| r.repo_root == repo_info.repo_root) {
+                        repos.push(repo_info);
+                    }
+                }
+            }
+        }
+
+        if depth < 3 {
+            if let Ok(entries) = std::fs::read_dir(&dir) {
+                for entry in entries.filter_map(std::result::Result::ok) {
+                    if let Ok(ft) = entry.file_type() {
+                        if ft.is_dir() && !ft.is_symlink() {
+                            let path = entry.path();
+                            let name = entry.file_name();
+                            let name_str = name.to_string_lossy();
+                            if name_str != ".git"
+                                && name_str != "node_modules"
+                                && name_str != "target"
+                                && name_str != "dist"
+                                && name_str != "build"
+                                && !name_str.starts_with('.')
+                            {
+                                to_visit.push((path, depth + 1));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    repos.sort_by(|a, b| a.repo_root.cmp(&b.repo_root));
+    Ok(repos)
+}
+
+
 fn resolve_repo_in_authorized(
     registry: &WorkspaceRegistry,
     cwd: &ResolvedGitDirectory,

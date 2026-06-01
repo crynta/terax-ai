@@ -53,6 +53,14 @@ import {
   type CheckState,
   type SourceControlFileEntry,
 } from "./useSourceControlPanel";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
+import type { GitRepoInfo } from "@/modules/ai/lib/native";
 
 type Props = {
   open: boolean;
@@ -65,7 +73,11 @@ type Props = {
     originalPath: string | null;
     title?: string;
   }) => void;
+  discoveredRepos?: GitRepoInfo[];
+  activeRepoRoot?: string | null;
+  onSelectRepo?: (repoRoot: string) => void;
 };
+
 
 const SOURCE_CONTROL_TOOLTIP_CLASS =
   "border border-border/70 bg-zinc-950 text-zinc-100 shadow-lg shadow-black/30 dark:border-border/60 dark:bg-zinc-950 dark:text-zinc-100";
@@ -131,6 +143,9 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   sourceControl,
   onOpenGitGraph,
   onOpenDiff,
+  discoveredRepos = [],
+  activeRepoRoot = null,
+  onSelectRepo,
 }: Props) {
   const scm = useSourceControlPanel(open, sourceControl, onOpenDiff);
   const refreshAnimationRef = useRef<number | null>(null);
@@ -401,15 +416,59 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       <aside className="flex h-full min-w-0 flex-col bg-card/80 backdrop-blur [contain:layout_style]">
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3 pb-2.5 pt-3">
           <div className="flex min-w-0 items-center gap-1.5">
-            <div className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground transition-colors hover:bg-foreground/10">
-              <HugeiconsIcon
-                icon={FolderGitTwoIcon}
-                size={12}
-                strokeWidth={1.9}
-                className="shrink-0 text-muted-foreground"
-              />
-              <span className="max-w-[140px] truncate">{repoLabel}</span>
-            </div>
+            {discoveredRepos && discoveredRepos.length > 1 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground transition-colors hover:bg-foreground/10 cursor-pointer border-0 outline-none">
+                    <HugeiconsIcon
+                      icon={FolderGitTwoIcon}
+                      size={12}
+                      strokeWidth={1.9}
+                      className="shrink-0 text-muted-foreground"
+                    />
+                    <span className="max-w-[120px] truncate">{repoLabel}</span>
+                    <span className="text-[9px] text-muted-foreground/80 font-normal">▼</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-64 max-w-sm p-1 bg-popover text-popover-foreground border border-border shadow-md rounded-md z-50">
+                  <DropdownMenuLabel className="px-2 py-1 text-[10px] tracking-wide text-muted-foreground uppercase">
+                    Repositories
+                  </DropdownMenuLabel>
+                  {discoveredRepos.map((r) => {
+                    const isSelected = r.repoRoot === activeRepoRoot;
+                    return (
+                      <DropdownMenuItem
+                        key={r.repoRoot}
+                        onClick={() => onSelectRepo?.(r.repoRoot)}
+                        className={cn(
+                          "flex flex-col items-start px-2 py-1.5 text-[11px] rounded-sm cursor-pointer transition-colors focus:bg-accent focus:text-accent-foreground",
+                          isSelected && "bg-accent/50 text-accent-foreground font-semibold"
+                        )}
+                      >
+                        <div className="flex w-full items-center justify-between gap-2">
+                          <span className="truncate font-medium">{basename(r.repoRoot)}</span>
+                          <span className="text-[10px] text-muted-foreground/80">{r.branch}</span>
+                        </div>
+                        <span className="w-full truncate text-[9.5px] text-muted-foreground/60 mt-0.5">
+                          {r.repoRoot}
+                        </span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <div className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground transition-colors hover:bg-foreground/10">
+                <HugeiconsIcon
+                  icon={FolderGitTwoIcon}
+                  size={12}
+                  strokeWidth={1.9}
+                  className="shrink-0 text-muted-foreground"
+                />
+                <span className="max-w-[140px] truncate">{repoLabel}</span>
+              </div>
+            )}
+
             {scm.status && (scm.status.ahead > 0 || scm.status.behind > 0) ? (
               <div className="flex shrink-0 items-center gap-0.5 text-[10px] font-semibold tabular-nums leading-none text-muted-foreground">
                 {scm.status.ahead > 0 ? (
