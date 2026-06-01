@@ -44,6 +44,8 @@ pub struct Session {
     //      is dead and conhost has nothing left to drain.
     #[cfg(windows)]
     _job: Option<super::job::PtyJob>,
+    /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
+    pub shell_pid: u32,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
@@ -130,6 +132,8 @@ pub fn spawn(
     ));
     guard.disarm();
 
+    let shell_pid = child.process_id().unwrap_or(0);
+
     #[cfg(windows)]
     let job = match child.process_id() {
         Some(pid) => match super::job::PtyJob::create_for(pid) {
@@ -145,6 +149,7 @@ pub fn spawn(
     let session = Arc::new(Session {
         #[cfg(windows)]
         _job: job,
+        shell_pid,
         killer: Mutex::new(killer),
         writer: writer.clone(),
         master: Mutex::new(pair.master),
@@ -318,6 +323,7 @@ mod tests {
             Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
 
         let session = Arc::new(Session {
+            shell_pid: child.process_id().unwrap_or(0),
             killer: Mutex::new(killer),
             writer,
             master: Mutex::new(pair.master),
@@ -365,6 +371,7 @@ mod tests {
             Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
 
         let session = Arc::new(Session {
+            shell_pid: 0,
             killer: Mutex::new(killer),
             writer,
             master: Mutex::new(pair.master),
