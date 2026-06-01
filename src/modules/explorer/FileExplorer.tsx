@@ -10,6 +10,7 @@ import {
   FileAddIcon,
   Folder01Icon,
   FolderAddIcon,
+  FolderOpenIcon,
   Refresh01Icon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
@@ -40,6 +41,7 @@ export type FileExplorerHandle = {
 
 type Props = {
   rootPath: string | null;
+  onOpenFolder?: () => void;
   onOpenFile: (path: string, pin?: boolean) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
@@ -147,6 +149,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
   function FileExplorer(
     {
       rootPath,
+      onOpenFolder,
       onOpenFile,
       onPathRenamed,
       onPathDeleted,
@@ -242,6 +245,21 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           <div className="text-xs text-muted-foreground">
             No current directory
           </div>
+          {onOpenFolder ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-1 h-7 gap-1.5 text-xs"
+              onClick={onOpenFolder}
+            >
+              <HugeiconsIcon
+                icon={FolderOpenIcon}
+                size={13}
+                strokeWidth={2}
+              />
+              Open Folder
+            </Button>
+          ) : null}
         </div>
       );
     }
@@ -383,6 +401,19 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             />
             {basename(rootPath)}
           </span>
+
+          {onOpenFolder ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6 text-muted-foreground hover:text-foreground"
+              onClick={onOpenFolder}
+              title="Open folder"
+              aria-label="Open folder"
+            >
+              <HugeiconsIcon icon={FolderOpenIcon} size={13} strokeWidth={2} />
+            </Button>
+          ) : null}
 
           <Button
             variant="ghost"

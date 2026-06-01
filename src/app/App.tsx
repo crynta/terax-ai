@@ -111,6 +111,7 @@ import {
   type WorkspaceEnv,
 } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -837,6 +838,17 @@ export default function App() {
     newPrivateTab(inheritedCwdForNewTab());
   }, [newPrivateTab, inheritedCwdForNewTab]);
 
+  // Native folder picker → open the chosen directory in a fresh terminal tab.
+  // On macOS the open panel also grants the (non-sandboxed) packaged app TCC
+  // access to external volumes under /Volumes, which are otherwise unreadable.
+  const openFolder = useCallback(async () => {
+    const selected = await openFolderDialog({
+      directory: true,
+      multiple: false,
+    });
+    if (typeof selected === "string") newTab(selected);
+  }, [newTab]);
+
   const sendCd = useCallback(
     (path: string) => {
       if (activeLeafId === null) return;
@@ -1066,6 +1078,7 @@ export default function App() {
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
       "settings.open": () => void openSettingsWindow(),
+      "folder.open": () => void openFolder(),
       "sidebar.toggle": toggleSidebar,
       "explorer.focus": toggleExplorerFocus,
       "view.zoomIn": zoomIn,
@@ -1080,6 +1093,7 @@ export default function App() {
       handleCloseTabOrPane,
       openNewTab,
       openNewPrivateTab,
+      openFolder,
       openPreviewTab,
       selectByIndex,
       splitActivePaneInActiveTab,
@@ -1492,6 +1506,7 @@ export default function App() {
                       <FileExplorer
                         ref={explorerRef}
                         rootPath={explorerRoot}
+                        onOpenFolder={openFolder}
                         onOpenFile={handleOpenFile}
                         onPathRenamed={handlePathRenamed}
                         onPathDeleted={handlePathDeleted}
