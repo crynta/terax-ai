@@ -3,11 +3,9 @@ import type { EditorTab, Tab } from "@/modules/tabs";
 import { useEffect, useRef } from "react";
 import { EditorPane, type EditorPaneHandle } from "./EditorPane";
 import { MediaPane } from "./MediaPane";
-import { CsvPane } from "./CsvPane";
 import { ParquetPane } from "./ParquetPane";
 
 const isImage = (path: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(path);
-const isCsv = (path: string) => /\.(csv|tsv)$/i.test(path);
 const isParquet = (path: string) => /\.parquet$/i.test(path);
 
 type Props = {
