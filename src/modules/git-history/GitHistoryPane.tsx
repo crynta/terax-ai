@@ -13,6 +13,7 @@ import {
   type GitLogEntry,
 } from "@/modules/ai/lib/native";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { gitStatusTextClass } from "@/modules/source-control/gitStatusPalette";
 import {
   Copy01Icon,
   File02Icon,
@@ -158,21 +159,6 @@ function compactDate(secs: number): string {
   return `${month} ${day} ${d.getFullYear()}`;
 }
 
-function statusTone(code: string): string {
-  switch (code.toUpperCase()) {
-    case "A":
-      return "text-emerald-600 dark:text-emerald-400";
-    case "M":
-      return "text-amber-600 dark:text-amber-300";
-    case "D":
-      return "text-rose-600 dark:text-rose-400";
-    case "R":
-    case "C":
-      return "text-sky-600 dark:text-sky-300";
-    default:
-      return "text-muted-foreground";
-  }
-}
 
 function highlight(text: string, query: string): ReactNode {
   if (!query) return text;
@@ -1024,8 +1010,8 @@ const FileRow = memo(function FileRow({
       </div>
       <span
         className={cn(
-          "inline-flex w-4 shrink-0 justify-center text-[9.5px] font-bold leading-none tabular-nums",
-          statusTone(file.status),
+          "inline-flex w-4 shrink-0 justify-center text-[10px] font-semibold tabular-nums leading-none",
+          gitStatusTextClass(file.status),
         )}
         title={file.statusLabel}
       >

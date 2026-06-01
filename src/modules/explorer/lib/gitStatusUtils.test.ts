@@ -106,6 +106,20 @@ describe("statusCodeForFile", () => {
       ),
     ).toBe("D");
   });
+
+  it("returns R for renamed files", () => {
+    expect(
+      statusCodeForFile(
+        changedFile({
+          path: "new.ts",
+          originalPath: "old.ts",
+          indexStatus: "R",
+          worktreeStatus: " ",
+          staged: true,
+        }),
+      ),
+    ).toBe("R");
+  });
 });
 
 describe("bubbleUpDirectoryStatuses", () => {

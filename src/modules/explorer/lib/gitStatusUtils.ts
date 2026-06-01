@@ -1,11 +1,12 @@
 import type { GitChangedFile, GitStatusSnapshot } from "@/modules/ai/lib/native";
 
-export type GitStatusCode = "M" | "A" | "D" | "U";
+export type GitStatusCode = "M" | "A" | "D" | "U" | "R";
 
 const PRIORITY: Record<GitStatusCode, number> = {
   U: 5,
   D: 4,
   M: 3,
+  R: 3,
   A: 2,
 };
 
@@ -25,9 +26,8 @@ function normalizeStatusCode(status: string): GitStatusCode {
     case "D":
       return "D";
     case "R":
-      return "M";
     case "C":
-      return "A";
+      return "R";
     case "U":
       return "U";
     default:
