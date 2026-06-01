@@ -200,8 +200,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       [entryIndexByPath, virtualizer],
     );
 
+    const lastSyncedActivePathRef = useRef<string | null>(null);
     useEffect(() => {
-      if (!activeFilePath || !entryIndexByPath.has(activeFilePath)) return;
+      if (!activeFilePath || activeFilePath === lastSyncedActivePathRef.current) {
+        return;
+      }
+      if (!entryIndexByPath.has(activeFilePath)) return;
+      lastSyncedActivePathRef.current = activeFilePath;
       setSelectedPath(activeFilePath);
       requestAnimationFrame(() => scrollEntryIntoView(activeFilePath));
     }, [activeFilePath, entryIndexByPath, scrollEntryIntoView]);
