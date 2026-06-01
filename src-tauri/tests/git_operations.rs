@@ -412,7 +412,8 @@ fn commit_files_reports_added_and_modified() {
     fx.run_git(&["add", "a.txt", "b.txt"]);
     fx.run_git(&["commit", "-q", "-m", "seed"]);
     fx.write_file("a.txt", "alpha2\n");
-    fx.run_git(&["add", "a.txt"]);
+    fx.write_file("c.txt", "one\ntwo\n");
+    fx.run_git(&["add", "a.txt", "c.txt"]);
     fx.run_git(&["commit", "-q", "-m", "modify"]);
 
     let entries =
@@ -421,10 +422,21 @@ fn commit_files_reports_added_and_modified() {
 
     let files =
         operations::commit_files(&fx.registry, &fx.repo_str(), head, &fx.workspace).unwrap();
-    assert_eq!(files.len(), 1);
-    assert_eq!(files[0].path, "a.txt");
-    assert_eq!(files[0].status, "M");
-    assert_eq!(files[0].status_label, "Modified");
+    assert_eq!(files.len(), 2);
+
+    let modified = files.iter().find(|f| f.path == "a.txt").unwrap();
+    assert_eq!(modified.status, "M");
+    assert_eq!(modified.status_label, "Modified");
+    assert_eq!(modified.added, 1);
+    assert_eq!(modified.removed, 1);
+    assert!(!modified.is_binary);
+
+    let added = files.iter().find(|f| f.path == "c.txt").unwrap();
+    assert_eq!(added.status, "A");
+    assert_eq!(added.status_label, "Added");
+    assert_eq!(added.added, 2);
+    assert_eq!(added.removed, 0);
+    assert!(!added.is_binary);
 }
 
 #[test]
