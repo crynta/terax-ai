@@ -14,7 +14,9 @@ export type ToolContext = {
   /** Open a new preview tab (in-app iframe) at the given URL. */
   openPreview: (url: string) => boolean;
   /** Spawn a Claude Code agent in a new terminal tab, bound to this session. */
-  spawnAgent: (prompt: string) => { tabId: number; leafId: number } | null;
+  spawnAgent: (
+    prompt: string,
+  ) => Promise<{ tabId: number; leafId: number } | null>;
   /** Read the terminal scrollback tail of a managed agent's leaf. */
   readAgentOutput: (leafId: number) => string | null;
   readCache: Map<string, { size: number; hash: number }>;

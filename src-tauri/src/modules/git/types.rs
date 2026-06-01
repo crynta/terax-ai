@@ -18,6 +18,15 @@ pub struct GitRepoInfo {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentWorktreeResult {
+    pub source_repo_root: String,
+    pub path: String,
+    pub branch: String,
+    pub base_branch: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitChangedFile {
     pub path: String,
     pub original_path: Option<String>,

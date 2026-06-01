@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { AGENT_ICONS } from "@/modules/ai/components/AgentSwitcher";
@@ -26,7 +27,10 @@ import {
   useSnippetsStore,
 } from "@/modules/ai/store/snippetsStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { setCustomInstructions } from "@/modules/settings/store";
+import {
+  setAgentWorktreeIsolation,
+  setCustomInstructions,
+} from "@/modules/settings/store";
 import {
   Add01Icon,
   CheckmarkCircle02Icon,
@@ -37,6 +41,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
+import { SettingRow } from "../components/SettingRow";
 
 const ICON_OPTIONS: AgentIconId[] = [
   "coder",
@@ -49,6 +54,9 @@ const ICON_OPTIONS: AgentIconId[] = [
 
 export function AgentsSection() {
   const customInstructions = usePreferencesStore((s) => s.customInstructions);
+  const agentWorktreeIsolation = usePreferencesStore(
+    (s) => s.agentWorktreeIsolation,
+  );
   const customAgents = useAgentsStore((s) => s.customAgents);
   const activeAgentId = useAgentsStore((s) => s.activeId);
   const setActiveAgentId = useAgentsStore((s) => s.setActiveId);
@@ -77,6 +85,19 @@ export function AgentsSection() {
       />
 
       <CustomInstructionsBlock value={customInstructions} />
+
+      <section className="flex flex-col gap-2">
+        <Label>Runtime</Label>
+        <SettingRow
+          title="Isolated worktrees"
+          description="Start each Claude Code run in a fresh git worktree and branch so the main checkout stays untouched."
+        >
+          <Switch
+            checked={agentWorktreeIsolation}
+            onCheckedChange={(v) => void setAgentWorktreeIsolation(v)}
+          />
+        </SettingRow>
+      </section>
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between">

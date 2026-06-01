@@ -2,8 +2,8 @@ use tauri::{AppHandle, Manager};
 
 use crate::modules::git::operations;
 use crate::modules::git::types::{
-    DiscardEntry, GitCommitFileChange, GitCommitResult, GitDiffContentResult, GitDiffResult,
-    GitLogEntry, GitPanelSnapshot, GitPushResult, GitRepoInfo, GitStatusSnapshot,
+    AgentWorktreeResult, DiscardEntry, GitCommitFileChange, GitCommitResult, GitDiffContentResult,
+    GitDiffResult, GitLogEntry, GitPanelSnapshot, GitPushResult, GitRepoInfo, GitStatusSnapshot,
 };
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
@@ -29,6 +29,20 @@ pub async fn git_resolve_repo(
     let workspace = WorkspaceEnv::from_option(workspace);
     blocking(app, move |r| {
         operations::resolve_repo(r, &cwd, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_create_agent_worktree(
+    cwd: String,
+    task: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<AgentWorktreeResult, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::create_agent_worktree(r, &cwd, &task, &workspace).map_err(Into::into)
     })
     .await
 }

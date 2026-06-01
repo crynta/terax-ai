@@ -46,7 +46,7 @@ type Live = {
   spawnManagedAgent: (
     prompt: string,
     sessionId: string,
-  ) => { tabId: number; leafId: number } | null;
+  ) => Promise<{ tabId: number; leafId: number } | null>;
   readLeafBuffer: (leafId: number) => string | null;
 };
 
@@ -169,7 +169,7 @@ const NOOP_LIVE: Live = {
   getWorkspaceRoot: () => null,
   getActiveFile: () => null,
   openPreview: () => false,
-  spawnManagedAgent: () => null,
+  spawnManagedAgent: async () => null,
   readLeafBuffer: () => null,
 };
 
