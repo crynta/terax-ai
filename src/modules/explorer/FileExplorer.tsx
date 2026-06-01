@@ -1,3 +1,16 @@
+import { open } from "@tauri-apps/plugin-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  useWorkspaceStore,
+  type WorkspaceInfo,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -12,6 +25,7 @@ import {
   FolderAddIcon,
   Refresh01Icon,
   Search01Icon,
+  ArrowDown01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -46,6 +60,7 @@ type Props = {
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
+  onOpenWorkspaceFolder?: (path: string, env?: WorkspaceEnv) => void;
 };
 
 type Row =
@@ -153,10 +168,39 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       onRevealInTerminal,
       onAttachToAgent,
       onOpenMarkdownPreview,
+      onOpenWorkspaceFolder,
     },
     ref,
   ) {
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
+    const recentWorkspaces = useWorkspaceStore((s) => s.recentWorkspaces);
+
+    const handleSelectFolder = async () => {
+      if (!onOpenWorkspaceFolder) return;
+      try {
+        const selected = await open({
+          directory: true,
+          multiple: false,
+          title: "Select Workspace Folder",
+        });
+        if (selected && typeof selected === "string") {
+          onOpenWorkspaceFolder(selected);
+        }
+      } catch (e) {
+        console.error("Failed to select folder:", e);
+      }
+    };
+
+    const handleOpenRecent = (w: WorkspaceInfo) => {
+      if (onOpenWorkspaceFolder) {
+        onOpenWorkspaceFolder(w.path, w.env);
+      }
+    };
+
+    const handleClearHistory = () => {
+      void useWorkspaceStore.getState().clearHistory();
+    };
+
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
@@ -370,19 +414,64 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
         onKeyDown={handleKeyDown}
       >
         <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
-          <span
-            className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80"
-            title={rootPath}
-          >
-            <img
-              src={folderIconUrl(basename(rootPath), false)}
-              alt=""
-              height={15}
-              width={15}
-              className="mx-1.5"
-            />
-            {basename(rootPath)}
-          </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex flex-1 items-center justify-between min-w-0 rounded-sm px-1 py-0.5 hover:bg-accent text-left text-xs font-semibold text-foreground/80 outline-none focus:outline-none focus:bg-accent focus:text-foreground cursor-pointer"
+                title={rootPath || "Choose Workspace"}
+              >
+                <span className="flex items-center min-w-0 truncate">
+                  <img
+                    src={folderIconUrl(rootPath ? basename(rootPath) : "", false)}
+                    alt=""
+                    height={15}
+                    width={15}
+                    className="mx-1.5 shrink-0"
+                  />
+                  <span className="truncate">
+                    {rootPath ? basename(rootPath) : "Choose Workspace"}
+                  </span>
+                </span>
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={12}
+                  className="ml-1 shrink-0 opacity-60"
+                />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuItem onSelect={handleSelectFolder} className="cursor-pointer">
+                Open Folder...
+              </DropdownMenuItem>
+              {recentWorkspaces.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Recent Workspaces
+                  </div>
+                  {recentWorkspaces.map((w) => (
+                    <DropdownMenuItem
+                      key={w.path}
+                      onSelect={() => handleOpenRecent(w)}
+                      className="flex flex-col items-start py-1.5 cursor-pointer"
+                    >
+                      <span className="font-medium text-xs leading-none">
+                        {w.name}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground truncate w-full mt-0.5">
+                        {w.path}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={handleClearHistory} className="text-destructive focus:text-destructive cursor-pointer">
+                    Clear History
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Button
             variant="ghost"

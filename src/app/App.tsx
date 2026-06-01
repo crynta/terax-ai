@@ -110,6 +110,7 @@ import {
   getWslHome,
   LOCAL_WORKSPACE,
   useWorkspaceEnvStore,
+  useWorkspaceStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
@@ -205,7 +206,7 @@ export default function App() {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
-    resetWorkspace,
+    setWorkspaceLayout,
   } = useTabs(getLaunchDir() ? { cwd: getLaunchDir() } : undefined);
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
@@ -348,6 +349,61 @@ export default function App() {
       .catch(() => setHome(null));
   }, []);
 
+  const workspaceStoreInit = useWorkspaceStore((s) => s.init);
+  const activeWorkspacePath = useWorkspaceStore((s) => s.activeWorkspacePath);
+  const workspaceLayouts = useWorkspaceStore((s) => s.layouts);
+  const workspaceStoreHydrated = useWorkspaceStore((s) => s.hydrated);
+  const saveLayout = useWorkspaceStore((s) => s.saveLayout);
+
+  const openWorkspaceFolder = useCallback(
+    async (path: string, env: WorkspaceEnv = workspaceEnv) => {
+      const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
+      if (dirty) {
+        window.alert("Save or close unsaved editor tabs before switching workspace.");
+        return;
+      }
+
+      if (activeWorkspacePath) {
+        await saveLayout(activeWorkspacePath, { tabs: tabsRef.current, activeId });
+      }
+
+      for (const id of liveLeavesRef.current) disposeSession(id);
+      searchAddons.current.clear();
+      terminalRefs.current.clear();
+      editorRefs.current.clear();
+      previewRefs.current.clear();
+      setActiveSearchAddon(null);
+      setActiveEditorHandle(null);
+
+      if (
+        env.kind !== workspaceEnv.kind ||
+        (env.kind === "wsl" && workspaceEnv.kind === "wsl" && env.distro !== workspaceEnv.distro)
+      ) {
+        setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
+      }
+
+      const cleanPath = path.replace(/\\/g, "/");
+      await useWorkspaceStore.getState().openWorkspace(cleanPath, env);
+      setHome(cleanPath);
+      setLaunchCwd(cleanPath);
+
+      if (cleanPath) {
+        try {
+          await native.workspaceAuthorize(cleanPath);
+        } catch {
+          // ignore
+        }
+      }
+
+      const nextLayouts = useWorkspaceStore.getState().layouts;
+      const savedLayout = nextLayouts[cleanPath];
+      setWorkspaceLayout(savedLayout ?? null, cleanPath);
+
+      void useChatStore.getState().hydrateSessions(true);
+    },
+    [activeWorkspacePath, workspaceEnv, setWorkspaceEnv, saveLayout, activeId, setWorkspaceLayout],
+  );
+
   const switchWorkspace = useCallback(
     async (env: WorkspaceEnv) => {
       if (
@@ -357,12 +413,6 @@ export default function App() {
       ) {
         return;
       }
-      const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
-      if (dirty) {
-        window.alert("Save or close unsaved editor tabs before switching workspace.");
-        return;
-      }
-
       let nextHome: string | null = null;
       try {
         if (env.kind === "wsl") {
@@ -375,27 +425,61 @@ export default function App() {
         return;
       }
 
-      for (const id of liveLeavesRef.current) disposeSession(id);
-      searchAddons.current.clear();
-      terminalRefs.current.clear();
-      editorRefs.current.clear();
-      previewRefs.current.clear();
-      setActiveSearchAddon(null);
-      setActiveEditorHandle(null);
-      setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
-      setHome(nextHome);
-      setLaunchCwd(nextHome);
       if (nextHome) {
-        try {
-          await native.workspaceAuthorize(nextHome);
-        } catch {
-          // Non-fatal — git panel will surface "not authorized" if needed.
-        }
+        await openWorkspaceFolder(nextHome, env);
       }
-      resetWorkspace(nextHome ?? undefined);
     },
-    [workspaceEnv, setWorkspaceEnv, resetWorkspace],
+    [workspaceEnv, openWorkspaceFolder],
   );
+
+  useEffect(() => {
+    if (launchCwdResolved && home && !workspaceStoreHydrated) {
+      const defaultPath = getLaunchDir() || launchCwd || home;
+      void workspaceStoreInit(defaultPath, workspaceEnv);
+    }
+  }, [launchCwdResolved, home, launchCwd, workspaceStoreInit, workspaceEnv, workspaceStoreHydrated]);
+
+  const initialLayoutLoaded = useRef(false);
+  useEffect(() => {
+    if (workspaceStoreHydrated && activeWorkspacePath && !initialLayoutLoaded.current) {
+      initialLayoutLoaded.current = true;
+      const cleanPath = activeWorkspacePath.replace(/\\/g, "/");
+      const savedLayout = workspaceLayouts[cleanPath];
+
+      const recent = useWorkspaceStore.getState().recentWorkspaces.find(
+        (w) => w.path.replace(/\\/g, "/") === cleanPath,
+      );
+      if (
+        recent &&
+        (recent.env.kind !== workspaceEnv.kind ||
+          (recent.env.kind === "wsl" &&
+            workspaceEnv.kind === "wsl" &&
+            recent.env.distro !== workspaceEnv.distro))
+      ) {
+        setWorkspaceEnv(recent.env);
+      }
+
+      setHome(cleanPath);
+      setLaunchCwd(cleanPath);
+      setWorkspaceLayout(savedLayout ?? null, cleanPath);
+      void useChatStore.getState().hydrateSessions(true);
+    }
+  }, [
+    workspaceStoreHydrated,
+    activeWorkspacePath,
+    workspaceLayouts,
+    setWorkspaceLayout,
+    setWorkspaceEnv,
+    workspaceEnv,
+  ]);
+
+  useEffect(() => {
+    if (!workspaceStoreHydrated || !activeWorkspacePath) return;
+    const timer = setTimeout(() => {
+      void saveLayout(activeWorkspacePath, { tabs, activeId });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [tabs, activeId, activeWorkspacePath, workspaceStoreHydrated, saveLayout]);
   useEffect(() => {
     native
       .workspaceCurrentDir()
@@ -1521,6 +1605,7 @@ export default function App() {
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
                         onOpenMarkdownPreview={openMarkdownPreview}
+                        onOpenWorkspaceFolder={openWorkspaceFolder}
                       />
                     ) : (
                       <SourceControlPanel

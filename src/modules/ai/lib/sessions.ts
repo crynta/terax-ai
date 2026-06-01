@@ -6,6 +6,7 @@ export type SessionMeta = {
   title: string;
   createdAt: number;
   updatedAt: number;
+  workspacePath?: string;
 };
 
 const STORE_PATH = "terax-ai-sessions.json";

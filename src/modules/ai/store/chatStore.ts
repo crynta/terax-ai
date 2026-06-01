@@ -14,6 +14,7 @@ import {
   type ProviderId,
 } from "../config";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useWorkspaceStore } from "@/modules/workspace";
 import { BUILTIN_AGENTS } from "../lib/agents";
 import { useAgentsStore } from "./agentsStore";
 import { usePlanStore } from "./planStore";
@@ -152,7 +153,7 @@ type StoreState = {
   sessionsHydrated: boolean;
   sessions: SessionMeta[];
   activeSessionId: string | null;
-  hydrateSessions: () => Promise<void>;
+  hydrateSessions: (force?: boolean) => Promise<void>;
   newSession: () => string;
   switchSession: (id: string) => void;
   deleteSession: (id: string) => void;
@@ -397,18 +398,30 @@ export const useChatStore = create<StoreState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
 
-  hydrateSessions: async () => {
-    if (get().sessionsHydrated) return;
-    const { sessions } = await loadAll();
+  hydrateSessions: async (force = false) => {
+    if (get().sessionsHydrated && !force) return;
+    const { sessions, activeId: savedActiveId } = await loadAll();
+    const activeWorkspace = useWorkspaceStore.getState().activeWorkspacePath;
+    const cleanWorkspace = activeWorkspace ? activeWorkspace.replace(/\\/g, "/") : "";
 
-    // Reuse the most recent untitled "New chat" session if one exists from
-    // the previous run — no point stacking empty placeholder sessions every
-    // launch. Otherwise prepend a fresh one.
-    const reusable = sessions[0]?.title === "New chat" ? sessions[0] : null;
-    let nextSessions: SessionMeta[];
+    const otherWorkspaceSessions = sessions.filter(
+      (s) => (s.workspacePath ? s.workspacePath.replace(/\\/g, "/") : "") !== cleanWorkspace
+    );
+    const thisWorkspaceSessions = sessions.filter(
+      (s) => (s.workspacePath ? s.workspacePath.replace(/\\/g, "/") : "") === cleanWorkspace
+    );
+
+    let activeSession = thisWorkspaceSessions.find((s) => s.id === savedActiveId);
+    const reusable = thisWorkspaceSessions[0]?.title === "New chat" ? thisWorkspaceSessions[0] : null;
+
+    let nextThisSessions: SessionMeta[];
     let freshId: string;
-    if (reusable) {
-      nextSessions = sessions;
+
+    if (activeSession) {
+      nextThisSessions = thisWorkspaceSessions;
+      freshId = activeSession.id;
+    } else if (reusable) {
+      nextThisSessions = thisWorkspaceSessions;
       freshId = reusable.id;
     } else {
       freshId = newSessionId();
@@ -417,14 +430,15 @@ export const useChatStore = create<StoreState>((set, get) => ({
         title: "New chat",
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        workspacePath: cleanWorkspace || undefined,
       };
-      nextSessions = [fresh, ...sessions];
-      void saveSessionsList(nextSessions);
+      nextThisSessions = [fresh, ...thisWorkspaceSessions];
+      void saveSessionsList([...otherWorkspaceSessions, ...nextThisSessions]);
     }
     void saveActiveId(freshId);
 
     set({
-      sessions: nextSessions,
+      sessions: nextThisSessions,
       activeSessionId: freshId,
       sessionsHydrated: true,
     });
@@ -432,15 +446,25 @@ export const useChatStore = create<StoreState>((set, get) => ({
 
   newSession: () => {
     const id = newSessionId();
+    const activeWorkspace = useWorkspaceStore.getState().activeWorkspacePath;
+    const cleanWorkspace = activeWorkspace ? activeWorkspace.replace(/\\/g, "/") : "";
+
     const meta: SessionMeta = {
       id,
       title: "New chat",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      workspacePath: cleanWorkspace || undefined,
     };
     const next = [meta, ...get().sessions];
     set({ sessions: next, activeSessionId: id, agentMeta: IDLE_META });
-    void saveSessionsList(next);
+
+    void loadAll().then(({ sessions }) => {
+      const other = sessions.filter(
+        (s) => (s.workspacePath ? s.workspacePath.replace(/\\/g, "/") : "") !== cleanWorkspace
+      );
+      void saveSessionsList([...other, ...next]);
+    });
     void saveActiveId(id);
     return id;
   },
@@ -449,8 +473,6 @@ export const useChatStore = create<StoreState>((set, get) => ({
     if (get().activeSessionId === id) return;
     if (!get().sessions.some((s) => s.id === id)) return;
 
-    // Lazily seed the chat with persisted messages the first time we open
-    // this session. Subsequent switches reuse the cached Chat instance.
     const flip = () => {
       set({ activeSessionId: id, agentMeta: IDLE_META });
       void saveActiveId(id);
@@ -466,6 +488,9 @@ export const useChatStore = create<StoreState>((set, get) => ({
   },
 
   deleteSession: (id) => {
+    const activeWorkspace = useWorkspaceStore.getState().activeWorkspacePath;
+    const cleanWorkspace = activeWorkspace ? activeWorkspace.replace(/\\/g, "/") : "";
+
     const remaining = get().sessions.filter((s) => s.id !== id);
     chats.get(id)?.stop();
     chats.delete(id);
@@ -478,24 +503,32 @@ export const useChatStore = create<StoreState>((set, get) => ({
     void deleteSessionData(id);
     void useTodosStore.getState().clearSession(id);
 
-    if (remaining.length === 0) {
-      const fresh: SessionMeta = {
-        id: newSessionId(),
-        title: "New chat",
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      set({ sessions: [fresh], activeSessionId: fresh.id });
-      void saveSessionsList([fresh]);
-      void saveActiveId(fresh.id);
-      return;
-    }
+    void loadAll().then(({ sessions }) => {
+      const other = sessions.filter(
+        (s) => (s.workspacePath ? s.workspacePath.replace(/\\/g, "/") : "") !== cleanWorkspace
+      );
+      if (remaining.length === 0) {
+        const fresh: SessionMeta = {
+          id: newSessionId(),
+          title: "New chat",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          workspacePath: cleanWorkspace || undefined,
+        };
+        set({ sessions: [fresh], activeSessionId: fresh.id });
+        void saveSessionsList([...other, fresh]);
+        void saveActiveId(fresh.id);
+        return;
+      }
+      void saveSessionsList([...other, ...remaining]);
+    });
 
-    const wasActive = get().activeSessionId === id;
-    const nextActive = wasActive ? remaining[0].id : get().activeSessionId;
-    set({ sessions: remaining, activeSessionId: nextActive });
-    void saveSessionsList(remaining);
-    if (wasActive) void saveActiveId(nextActive);
+    if (remaining.length > 0) {
+      const wasActive = get().activeSessionId === id;
+      const nextActive = wasActive ? remaining[0].id : get().activeSessionId;
+      set({ sessions: remaining, activeSessionId: nextActive });
+      if (wasActive) void saveActiveId(nextActive);
+    }
   },
 
   renameSession: (id, title) => {
@@ -503,11 +536,19 @@ export const useChatStore = create<StoreState>((set, get) => ({
       s.id === id ? { ...s, title, updatedAt: Date.now() } : s,
     );
     set({ sessions: next });
-    void saveSessionsList(next);
+
+    const activeWorkspace = useWorkspaceStore.getState().activeWorkspacePath;
+    const cleanWorkspace = activeWorkspace ? activeWorkspace.replace(/\\/g, "/") : "";
+
+    void loadAll().then(({ sessions }) => {
+      const other = sessions.filter(
+        (s) => (s.workspacePath ? s.workspacePath.replace(/\\/g, "/") : "") !== cleanWorkspace
+      );
+      void saveSessionsList([...other, ...next]);
+    });
   },
 
   persistMessages: (id, messages) => {
-    // Debounce the message-blob write so streaming doesn't pound the store.
     const existing = pendingPersist.get(id);
     if (existing) clearTimeout(existing.timer);
     const timer = setTimeout(() => {
@@ -518,9 +559,6 @@ export const useChatStore = create<StoreState>((set, get) => ({
     }, PERSIST_DEBOUNCE_MS);
     pendingPersist.set(id, { latest: messages, timer });
 
-    // Update zustand session list only when the derived title actually
-    // changes — otherwise we'd rewrite the sessions array (and trigger
-    // re-renders + a store write) on every token.
     const sessions = get().sessions;
     const meta = sessions.find((s) => s.id === id);
     if (!meta) return;
@@ -532,7 +570,16 @@ export const useChatStore = create<StoreState>((set, get) => ({
       s.id === id ? { ...s, title: nextTitle, updatedAt: Date.now() } : s,
     );
     set({ sessions: next });
-    void saveSessionsList(next);
+
+    const activeWorkspace = useWorkspaceStore.getState().activeWorkspacePath;
+    const cleanWorkspace = activeWorkspace ? activeWorkspace.replace(/\\/g, "/") : "";
+
+    void loadAll().then(({ sessions: allSessions }) => {
+      const other = allSessions.filter(
+        (s) => (s.workspacePath ? s.workspacePath.replace(/\\/g, "/") : "") !== cleanWorkspace
+      );
+      void saveSessionsList([...other, ...next]);
+    });
   },
 }));
 

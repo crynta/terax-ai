@@ -801,6 +801,55 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     for (const lid of toDispose) disposeSession(lid);
   }, []);
 
+  const setWorkspaceLayout = useCallback(
+    (
+      layout: { tabs: Tab[]; activeId: number } | null,
+      defaultCwd?: string,
+    ) => {
+      let toDispose: number[] = [];
+      setTabs((curr) => {
+        toDispose = curr.flatMap((t) =>
+          t.kind === "terminal" ? leafIds(t.paneTree) : [],
+        );
+
+        if (layout && layout.tabs.length > 0) {
+          let maxId = 0;
+          for (const t of layout.tabs) {
+            if (t.id > maxId) maxId = t.id;
+            if (t.kind === "terminal") {
+              const leaves = leafIds(t.paneTree);
+              for (const lid of leaves) {
+                if (lid > maxId) maxId = lid;
+              }
+            }
+          }
+          nextIdRef.current = maxId + 1;
+          setActiveId(layout.activeId);
+          return layout.tabs;
+        } else {
+          const tabId = nextIdRef.current++;
+          const leafId = nextIdRef.current++;
+          setActiveId(tabId);
+          return [
+            {
+              id: tabId,
+              kind: "terminal",
+              title: "shell",
+              cwd: defaultCwd,
+              paneTree: { kind: "leaf", id: leafId, cwd: defaultCwd },
+              activeLeafId: leafId,
+            },
+          ];
+        }
+      });
+
+      setTimeout(() => {
+        for (const lid of toDispose) disposeSession(lid);
+      }, 100);
+    },
+    [],
+  );
+
   return {
     tabs,
     activeId,
@@ -828,5 +877,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,
+    setWorkspaceLayout,
   };
 }
