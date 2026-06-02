@@ -703,19 +703,19 @@ mod tests {
         assert_eq!(
             resolved.workspace_root,
             Some(crate::modules::fs::to_canon(
-                &std::fs::canonicalize(root.path()).unwrap()
+                std::fs::canonicalize(root.path()).unwrap()
             ))
         );
         assert_eq!(
             resolved.active_terminal_cwd,
             Some(crate::modules::fs::to_canon(
-                &std::fs::canonicalize(&src).unwrap()
+                std::fs::canonicalize(&src).unwrap()
             ))
         );
         assert_eq!(
             resolved.active_file,
             Some(crate::modules::fs::to_canon(
-                &std::fs::canonicalize(&file).unwrap()
+                std::fs::canonicalize(&file).unwrap()
             ))
         );
         assert!(resolved.active_terminal_private);

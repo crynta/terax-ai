@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_NODE_RUNTIME_VERSION,
   nodeBinaryRelativePath,
   nodeDistributionArchiveName,
   nodeDistributionName,
+  parseNodeShasums,
+  selectedSource,
 } from "./build-node-runtime.mjs";
 
 describe("build-node-runtime", () => {
@@ -51,5 +54,23 @@ describe("build-node-runtime", () => {
         arch: "x64",
       }),
     ).toBe("node-v22.13.1-win-x64.zip");
+  });
+
+  it("uses pinned downloads in CI and local copies for local builds", () => {
+    expect(DEFAULT_NODE_RUNTIME_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(selectedSource([], { CI: "true" })).toBe("download");
+    expect(selectedSource([], {})).toBe("local");
+    expect(selectedSource(["--local"], { CI: "true" })).toBe("local");
+    expect(selectedSource(["--download"], {})).toBe("download");
+  });
+
+  it("parses the official Node SHASUMS256 manifest for archive verification", () => {
+    expect(
+      parseNodeShasums(
+        `abc123  node-v${DEFAULT_NODE_RUNTIME_VERSION}-darwin-arm64.tar.gz\n` +
+          `def456  node-v${DEFAULT_NODE_RUNTIME_VERSION}-win-x64.zip\n`,
+        `node-v${DEFAULT_NODE_RUNTIME_VERSION}-win-x64.zip`,
+      ),
+    ).toBe("def456");
   });
 });

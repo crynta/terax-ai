@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import {
   chmod,
   cp,
   mkdir,
+  readFile,
   rename,
   rm,
   stat,
@@ -17,6 +19,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 export const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const nodeRuntimeDir = join(repoRoot, "sidecars", "node");
 export const nodeRuntimeDistDir = join(nodeRuntimeDir, "dist");
+export const DEFAULT_NODE_RUNTIME_VERSION = "24.16.0";
 const tempDir = join(nodeRuntimeDir, `.dist-tmp-${process.pid}-${Date.now()}`);
 
 export function nodeBinaryRelativePath(platform = process.platform) {
@@ -59,6 +62,51 @@ export function nodeDistributionArchiveName(options = {}) {
   const platform = options.platform ?? process.platform;
   const name = nodeDistributionName({ ...options, platform });
   return `${name}.${platform === "win32" ? "zip" : "tar.gz"}`;
+}
+
+function nodeDistributionBaseUrl(version) {
+  return `https://nodejs.org/dist/v${version}`;
+}
+
+export function parseNodeShasums(contents, archiveName) {
+  for (const line of contents.split(/\r?\n/)) {
+    const match = line.trim().match(/^([a-fA-F0-9]{6,})\s+(.+)$/);
+    if (match?.[2] === archiveName) {
+      return match[1].toLowerCase();
+    }
+  }
+  throw new Error(`Node SHASUMS256.txt did not contain ${archiveName}`);
+}
+
+async function sha256File(path) {
+  return createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex");
+}
+
+async function downloadText(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download ${url}: ${response.status} ${response.statusText}`,
+    );
+  }
+  return response.text();
+}
+
+async function verifyDownloadedArchive({ archivePath, archiveName, version }) {
+  const shasumsUrl = `${nodeDistributionBaseUrl(version)}/SHASUMS256.txt`;
+  const expected = parseNodeShasums(
+    await downloadText(shasumsUrl),
+    archiveName,
+  );
+  const actual = await sha256File(archivePath);
+  if (actual !== expected) {
+    throw new Error(
+      `Node runtime archive checksum mismatch for ${archiveName}: expected ${expected}, got ${actual}`,
+    );
+  }
+  return { sha256: actual, shasumsUrl };
 }
 
 function run(command, args, options = {}) {
@@ -148,11 +196,23 @@ async function buildDownloadedNode(version) {
     platform: process.platform,
   });
   const archivePath = join(tempDir, archiveName);
-  const url = `https://nodejs.org/dist/v${version}/${archiveName}`;
+  const url = `${nodeDistributionBaseUrl(version)}/${archiveName}`;
 
   await downloadFile(url, archivePath);
+  const verification = await verifyDownloadedArchive({
+    archivePath,
+    archiveName,
+    version,
+  });
   await extractDownloadedNode({ archivePath, distributionName });
-  return { strategy: "download", source: url, nodeVersion: version };
+  return {
+    strategy: "download",
+    source: url,
+    archiveName,
+    archiveSha256: verification.sha256,
+    shasumsUrl: verification.shasumsUrl,
+    nodeVersion: version,
+  };
 }
 
 async function buildLocalNode() {
@@ -173,25 +233,37 @@ async function assertRuntimeFile(relativePath) {
   }
 }
 
-function selectedSource(argv = process.argv.slice(2)) {
+export function selectedSource(
+  argv = process.argv.slice(2),
+  env = process.env,
+) {
   if (argv.includes("--download")) {
     return "download";
   }
   if (argv.includes("--local")) {
     return "local";
   }
-  return process.env.TERAX_NODE_RUNTIME_SOURCE ?? "local";
+  if (env.TERAX_NODE_RUNTIME_SOURCE) {
+    return env.TERAX_NODE_RUNTIME_SOURCE;
+  }
+  return env.CI === "true" ? "download" : "local";
 }
 
 export async function buildNodeRuntime(argv = process.argv.slice(2)) {
   const source = selectedSource(argv);
   const version =
-    process.env.TERAX_NODE_RUNTIME_VERSION ?? process.version.slice(1);
+    process.env.TERAX_NODE_RUNTIME_VERSION ?? DEFAULT_NODE_RUNTIME_VERSION;
 
   await rm(tempDir, { recursive: true, force: true });
   await mkdir(tempDir, { recursive: true });
 
   try {
+    if (!["download", "local"].includes(source)) {
+      throw new Error(
+        `Unsupported TERAX_NODE_RUNTIME_SOURCE: ${source}. Use "download" or "local".`,
+      );
+    }
+
     const manifest =
       source === "download"
         ? await buildDownloadedNode(version)
