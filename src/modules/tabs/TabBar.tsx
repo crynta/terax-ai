@@ -285,7 +285,10 @@ export function TabBar({
                 t.kind === "terminal" ? (
                   <ContextMenu>
                     <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
-                    <ContextMenuContent className="min-w-36">
+                    <ContextMenuContent
+                      className="min-w-36"
+                      onCloseAutoFocus={(e) => e.preventDefault()}
+                    >
                       <ContextMenuItem onSelect={() => setEditingId(t.id)}>
                         <HugeiconsIcon
                           icon={PencilEdit02Icon}
