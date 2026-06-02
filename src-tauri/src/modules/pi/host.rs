@@ -60,7 +60,7 @@ pub struct PiHost {
 impl PiHost {
     pub fn spawn(resource_dir: Option<&Path>) -> Result<Self, String> {
         let host_path = resolve_host_path(resource_dir)?;
-        let mut child = Command::new(node_binary())
+        let mut child = Command::new(node_binary(resource_dir))
             .arg(host_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -164,8 +164,34 @@ impl Drop for PiHost {
     }
 }
 
-fn node_binary() -> String {
-    env::var("TERAX_NODE_BINARY").unwrap_or_else(|_| "node".to_string())
+fn node_binary(resource_dir: Option<&Path>) -> PathBuf {
+    if let Ok(path) = env::var("TERAX_NODE_BINARY") {
+        if !path.is_empty() {
+            return PathBuf::from(path);
+        }
+    }
+
+    for candidate in node_binary_candidates(resource_dir) {
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+
+    PathBuf::from("node")
+}
+
+fn node_binary_candidates(resource_dir: Option<&Path>) -> Vec<PathBuf> {
+    resource_dir
+        .map(|dir| vec![dir.join(bundled_node_relative_path())])
+        .unwrap_or_default()
+}
+
+fn bundled_node_relative_path() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from("sidecars/node/node.exe")
+    } else {
+        PathBuf::from("sidecars/node/bin/node")
+    }
 }
 
 fn resolve_host_path(resource_dir: Option<&Path>) -> Result<PathBuf, String> {
@@ -221,6 +247,17 @@ mod tests {
         assert_eq!(
             candidates.first(),
             Some(&resource_dir.join("sidecars/pi-host/host.js"))
+        );
+    }
+
+    #[test]
+    fn bundled_node_candidate_uses_resource_dir() {
+        let resource_dir = PathBuf::from("resources-root");
+        let candidates = node_binary_candidates(Some(&resource_dir));
+
+        assert_eq!(
+            candidates.first(),
+            Some(&resource_dir.join(bundled_node_relative_path()))
         );
     }
 

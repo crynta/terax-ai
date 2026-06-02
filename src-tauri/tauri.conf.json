@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build:sidecars && pnpm build",
     "frontendDist": "../dist",
     "removeUnusedCommands": true
   },
@@ -70,9 +70,7 @@
     },
     "category": "DeveloperTool",
     "resources": {
-      "../sidecars/pi-host/host.js": "sidecars/pi-host/host.js",
-      "../sidecars/pi-host/package.json": "sidecars/pi-host/package.json",
-      "../sidecars/pi-host/protocol.js": "sidecars/pi-host/protocol.js"
+      "../sidecars/pi-host/dist": "sidecars/pi-host"
     },
     "shortDescription": "AI-native terminal emulator",
     "longDescription": "Terax — an open-source AI-native terminal emulator with multi-tab, file explorer, code editor, web preview, voice input, and AI agents."

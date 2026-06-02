@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:sidecars": "node scripts/build-pi-host-bundle.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",

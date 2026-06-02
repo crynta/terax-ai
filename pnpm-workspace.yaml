@@ -3,6 +3,7 @@ packages:
 
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
+verifyDepsBeforeRun: false
 allowBuilds:
   "@google/genai": true
   esbuild: true

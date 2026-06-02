@@ -9,7 +9,11 @@ lerna-debug.log*
 
 node_modules
 dist
+!sidecars/pi-host/dist/
+sidecars/pi-host/dist/*
+!sidecars/pi-host/dist/.gitkeep
 dist-ssr
+sidecars/pi-host/.dist-tmp-*
 *.local
 
 # Editor directories and files
