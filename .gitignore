@@ -9,10 +9,14 @@ lerna-debug.log*
 
 node_modules
 dist
+!sidecars/node/dist/
+sidecars/node/dist/*
+!sidecars/node/dist/.gitkeep
 !sidecars/pi-host/dist/
 sidecars/pi-host/dist/*
 !sidecars/pi-host/dist/.gitkeep
 dist-ssr
+sidecars/node/.dist-tmp-*
 sidecars/pi-host/.dist-tmp-*
 *.local
 

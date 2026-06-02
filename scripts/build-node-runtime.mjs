@@ -1,0 +1,231 @@
+import { spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
+import {
+  chmod,
+  cp,
+  mkdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { Readable } from "node:stream";
+import { finished } from "node:stream/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+export const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
+export const nodeRuntimeDir = join(repoRoot, "sidecars", "node");
+export const nodeRuntimeDistDir = join(nodeRuntimeDir, "dist");
+const tempDir = join(nodeRuntimeDir, `.dist-tmp-${process.pid}-${Date.now()}`);
+
+export function nodeBinaryRelativePath(platform = process.platform) {
+  return platform === "win32" ? "node.exe" : join("bin", "node");
+}
+
+export function nodeDistributionPlatform(platform = process.platform) {
+  switch (platform) {
+    case "darwin":
+      return "darwin";
+    case "linux":
+      return "linux";
+    case "win32":
+      return "win";
+    default:
+      throw new Error(`Unsupported Node runtime platform: ${platform}`);
+  }
+}
+
+export function nodeDistributionArch(arch = process.arch) {
+  switch (arch) {
+    case "arm64":
+      return "arm64";
+    case "x64":
+      return "x64";
+    default:
+      throw new Error(`Unsupported Node runtime architecture: ${arch}`);
+  }
+}
+
+export function nodeDistributionName({
+  version = process.version.slice(1),
+  platform = process.platform,
+  arch = process.arch,
+} = {}) {
+  return `node-v${version}-${nodeDistributionPlatform(platform)}-${nodeDistributionArch(arch)}`;
+}
+
+export function nodeDistributionArchiveName(options = {}) {
+  const platform = options.platform ?? process.platform;
+  const name = nodeDistributionName({ ...options, platform });
+  return `${name}.${platform === "win32" ? "zip" : "tar.gz"}`;
+}
+
+function run(command, args, options = {}) {
+  return new Promise((resolveRun, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd ?? repoRoot,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    });
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolveRun();
+      } else {
+        reject(new Error(`${command} ${args.join(" ")} exited with ${code}`));
+      }
+    });
+  });
+}
+
+async function pathExists(path) {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function copyLocalNode({ source, target }) {
+  const sourceStat = await stat(source);
+  if (!sourceStat.isFile()) {
+    throw new Error(`Node runtime source is not a file: ${source}`);
+  }
+
+  await mkdir(dirname(target), { recursive: true });
+  await cp(source, target);
+  if (process.platform !== "win32") {
+    await chmod(target, 0o755);
+  }
+}
+
+async function downloadFile(url, destination) {
+  const response = await fetch(url);
+  if (!response.ok || response.body === null) {
+    throw new Error(
+      `Failed to download ${url}: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  await mkdir(dirname(destination), { recursive: true });
+  await finished(
+    Readable.fromWeb(response.body).pipe(createWriteStream(destination)),
+  );
+}
+
+async function extractDownloadedNode({ archivePath, distributionName }) {
+  if (process.platform === "win32") {
+    await run("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Expand-Archive -LiteralPath '${archivePath}' -DestinationPath '${tempDir}' -Force`,
+    ]);
+    const extractedNode = join(tempDir, distributionName, "node.exe");
+    await copyLocalNode({
+      source: extractedNode,
+      target: join(tempDir, nodeBinaryRelativePath("win32")),
+    });
+    return;
+  }
+
+  await run("tar", ["-xzf", archivePath, "-C", tempDir]);
+  const extractedNode = join(tempDir, distributionName, "bin", "node");
+  await copyLocalNode({
+    source: extractedNode,
+    target: join(tempDir, nodeBinaryRelativePath()),
+  });
+  await rm(archivePath, { force: true });
+  await rm(join(tempDir, distributionName), { recursive: true, force: true });
+}
+
+async function buildDownloadedNode(version) {
+  const distributionName = nodeDistributionName({ version });
+  const archiveName = nodeDistributionArchiveName({
+    version,
+    platform: process.platform,
+  });
+  const archivePath = join(tempDir, archiveName);
+  const url = `https://nodejs.org/dist/v${version}/${archiveName}`;
+
+  await downloadFile(url, archivePath);
+  await extractDownloadedNode({ archivePath, distributionName });
+  return { strategy: "download", source: url, nodeVersion: version };
+}
+
+async function buildLocalNode() {
+  const source = process.env.TERAX_NODE_BINARY || process.execPath;
+  const target = join(tempDir, nodeBinaryRelativePath());
+  await copyLocalNode({ source, target });
+  return {
+    strategy: "copy-local",
+    source,
+    nodeVersion: process.version.slice(1),
+  };
+}
+
+async function assertRuntimeFile(relativePath) {
+  const path = join(tempDir, relativePath);
+  if (!(await pathExists(path))) {
+    throw new Error(`Node runtime bundle missing ${relativePath}`);
+  }
+}
+
+function selectedSource(argv = process.argv.slice(2)) {
+  if (argv.includes("--download")) {
+    return "download";
+  }
+  if (argv.includes("--local")) {
+    return "local";
+  }
+  return process.env.TERAX_NODE_RUNTIME_SOURCE ?? "local";
+}
+
+export async function buildNodeRuntime(argv = process.argv.slice(2)) {
+  const source = selectedSource(argv);
+  const version =
+    process.env.TERAX_NODE_RUNTIME_VERSION ?? process.version.slice(1);
+
+  await rm(tempDir, { recursive: true, force: true });
+  await mkdir(tempDir, { recursive: true });
+
+  try {
+    const manifest =
+      source === "download"
+        ? await buildDownloadedNode(version)
+        : await buildLocalNode();
+
+    await assertRuntimeFile(nodeBinaryRelativePath());
+    await writeFile(join(tempDir, ".gitkeep"), "");
+    await writeFile(
+      join(tempDir, "runtime-manifest.json"),
+      `${JSON.stringify(
+        {
+          name: "@terax/node-runtime",
+          generatedAt: new Date().toISOString(),
+          platform: process.platform,
+          arch: process.arch,
+          executable: nodeBinaryRelativePath(),
+          ...manifest,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    await rm(nodeRuntimeDistDir, { recursive: true, force: true });
+    await rename(tempDir, nodeRuntimeDistDir);
+  } catch (error) {
+    await rm(tempDir, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  await buildNodeRuntime();
+}

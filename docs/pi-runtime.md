@@ -6,15 +6,18 @@ Terax keeps the app shell, editor, terminal, git, files, and SQLite surfaces Tau
 
 The chosen strategy is a stock Node process with a self-contained Pi host dependency tree:
 
-1. `sidecars/pi-host` is deployed as a production-only package during Tauri builds.
-2. Tauri bundles the generated `sidecars/pi-host/dist` directory as an app resource.
-3. Rust launches `sidecars/pi-host/host.js` over newline-delimited JSON-RPC stdio.
-4. Node resolution order is:
+1. `sidecars/node` stages a real Node executable during sidecar builds.
+2. `sidecars/pi-host` is deployed as a production-only package during Tauri builds.
+3. Tauri bundles the generated `sidecars/node/dist` and `sidecars/pi-host/dist` directories as app resources.
+4. Rust launches `sidecars/pi-host/host.js` over newline-delimited JSON-RPC stdio.
+5. Node resolution order is:
    - `TERAX_NODE_BINARY` override,
-   - a future bundled Node resource at `sidecars/node/...`,
-   - `node` on `PATH` for development.
+   - bundled Node resource at `sidecars/node/...`,
+   - `node` on `PATH` for development fallback.
 
-This keeps Pi code outside the frontend bundle and avoids giving the Node sidecar ownership of Terax-native responsibilities. The next distribution hardening step is to add a platform Node resource in CI/release packaging; the Rust launcher already prefers that location when present.
+`pnpm build:sidecars` builds both generated resource directories. By default, `scripts/build-node-runtime.mjs` copies the current `process.execPath` into the bundled runtime path for deterministic local smoke tests. Release CI can set `TERAX_NODE_RUNTIME_SOURCE=download` (or pass `--download`) plus `TERAX_NODE_RUNTIME_VERSION=<version>` to stage an official Node distribution from nodejs.org.
+
+This keeps Pi code outside the frontend bundle and avoids giving the Node sidecar ownership of Terax-native responsibilities.
 
 ## Current sidecar boundary
 

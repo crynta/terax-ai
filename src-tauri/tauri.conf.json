@@ -70,6 +70,7 @@
     },
     "category": "DeveloperTool",
     "resources": {
+      "../sidecars/node/dist": "sidecars/node",
       "../sidecars/pi-host/dist": "sidecars/pi-host"
     },
     "shortDescription": "AI-native terminal emulator",
