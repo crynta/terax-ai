@@ -195,7 +195,13 @@ export const SHORTCUTS: Shortcut[] = [
     id: "sidebar.toggle",
     label: "Toggle file explorer",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, key: "b" }],
+    // Plain Mod+B toggles the sidebar everywhere EXCEPT a focused terminal,
+    // where it's handed to the shell / Claude Code (its "run in background"
+    // key). Mod+Shift+B always toggles, including from inside a terminal.
+    defaultBindings: [
+      { [MOD_PROP]: true, key: "b" },
+      { [MOD_PROP]: true, shift: true, key: "b" },
+    ],
   },
   {
     id: "explorer.focus",

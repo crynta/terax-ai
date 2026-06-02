@@ -139,6 +139,7 @@ export function TabBar({
           <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
             {tabs.map((t, i) => {
               const isPreview = t.kind === "editor" && (t as EditorTab).preview;
+              const isActive = t.id === activeId;
 
               const srcIndex = tabs.findIndex((x) => x.id === draggingId);
               // Hide the marker for gaps that would leave the order unchanged
