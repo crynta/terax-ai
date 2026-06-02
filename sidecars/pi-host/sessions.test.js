@@ -127,6 +127,11 @@ describe("Pi host session protocol", () => {
           payload: expect.objectContaining({ text: expect.any(String) }),
         }),
         expect.objectContaining({
+          type: "session.output.text",
+          sessionId: "pi-1",
+          payload: { text: "hello from real Pi SDK" },
+        }),
+        expect.objectContaining({
           type: "session.status",
           sessionId: "pi-1",
           payload: { status: "idle" },

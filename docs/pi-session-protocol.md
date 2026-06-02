@@ -39,6 +39,7 @@ type PiSessionEvent = {
     | "session.input"
     | "session.status"
     | "session.output.delta"
+    | "session.output.text"
     | "session.error";
   sessionId: string;
   createdAt: string; // ISO timestamp
@@ -94,7 +95,7 @@ Result:
 { accepted: boolean; session: PiSession; events: PiSessionEvent[] }
 ```
 
-Accepts the prompt, starts `AgentSession.prompt()` asynchronously, and returns immediately with `accepted: true`, `session.input`, and `session.status` (`running`) events. Output deltas, completion status, and errors are delivered later as `session.event` notifications and Tauri `pi:session-event` events.
+Accepts the prompt, starts `AgentSession.prompt()` asynchronously, and returns immediately with `accepted: true`, `session.input`, and `session.status` (`running`) events. Output deltas, exact final output text, completion status, and errors are delivered later as `session.event` notifications and Tauri `pi:session-event` events.
 
 ### `sessions.stop`
 

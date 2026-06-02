@@ -86,6 +86,20 @@ function joinDeltaText(current: string | null, delta: string): string {
   return `${current} ${delta}`;
 }
 
+function createAssistantItem(
+  event: PiSessionEvent,
+  text: string,
+): PiTranscriptItem {
+  return {
+    id: event.id,
+    kind: "assistant",
+    label: "Pi",
+    text,
+    eventIds: [event.id],
+    createdAt: event.createdAt,
+  };
+}
+
 function appendAssistantDelta(
   transcript: PiTranscriptItem[],
   event: PiSessionEvent,
@@ -103,14 +117,27 @@ function appendAssistantDelta(
     return;
   }
 
-  transcript.push({
-    id: event.id,
-    kind: "assistant",
-    label: "Pi",
-    text,
-    eventIds: [event.id],
-    createdAt: event.createdAt,
-  });
+  transcript.push(createAssistantItem(event, text));
+}
+
+function applyAssistantFinalText(
+  transcript: PiTranscriptItem[],
+  event: PiSessionEvent,
+): void {
+  const text = eventText(event);
+  if (text === null) {
+    return;
+  }
+
+  const previous = transcript[transcript.length - 1];
+  if (previous?.kind === "assistant") {
+    previous.text = text;
+    previous.eventIds.push(event.id);
+    previous.createdAt = event.createdAt;
+    return;
+  }
+
+  transcript.push(createAssistantItem(event, text));
 }
 
 function transcriptItemForEvent(
@@ -171,6 +198,10 @@ export function buildPiSessionTranscript(
   for (const event of chronologicalEvents(events)) {
     if (event.type === "session.output.delta") {
       appendAssistantDelta(transcript, event);
+      continue;
+    }
+    if (event.type === "session.output.text") {
+      applyAssistantFinalText(transcript, event);
       continue;
     }
 

@@ -172,16 +172,23 @@ async function createTestFauxOptions(pi) {
 }
 
 function mapAgentSessionEvent(event, sessionId) {
-  if (
-    event.type !== "message_update" ||
-    event.assistantMessageEvent?.type !== "text_delta"
-  ) {
+  if (event.type !== "message_update") {
     return null;
   }
 
-  return publishEvent("session.output.delta", sessionId, {
-    text: event.assistantMessageEvent.delta,
-  });
+  if (event.assistantMessageEvent?.type === "text_delta") {
+    return publishEvent("session.output.delta", sessionId, {
+      text: event.assistantMessageEvent.delta,
+    });
+  }
+
+  if (event.assistantMessageEvent?.type === "text_end") {
+    return publishEvent("session.output.text", sessionId, {
+      text: event.assistantMessageEvent.content,
+    });
+  }
+
+  return null;
 }
 
 async function createAgentSessionRecord({ id, title, createdAt }) {

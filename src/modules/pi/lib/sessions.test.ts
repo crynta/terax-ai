@@ -70,6 +70,28 @@ describe("buildPiSessionTranscript", () => {
       }),
     ]);
   });
+
+  it("uses final output text to preserve paths and subword chunks", () => {
+    expect(
+      buildPiSessionTranscript([
+        event("evt-6", "session.output.text", {
+          text: "Current working directory:\n\n`/Users/mehmetcanbudak/Projects/terax-pi/src-tauri`",
+        }),
+        event("evt-5", "session.output.delta", { text: "tauri`" }),
+        event("evt-4", "session.output.delta", { text: "src-" }),
+        event("evt-3", "session.output.delta", { text: "/" }),
+        event("evt-2", "session.output.delta", { text: "Projects" }),
+        event("evt-1", "session.output.delta", { text: "/Users" }),
+      ]),
+    ).toEqual([
+      expect.objectContaining({
+        kind: "assistant",
+        label: "Pi",
+        text: "Current working directory:\n\n`/Users/mehmetcanbudak/Projects/terax-pi/src-tauri`",
+        eventIds: ["evt-1", "evt-2", "evt-3", "evt-4", "evt-5", "evt-6"],
+      }),
+    ]);
+  });
 });
 
 describe("applyPiSessionEvents", () => {

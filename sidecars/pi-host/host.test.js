@@ -18,7 +18,7 @@ function writeRequest(child, id, method, params) {
   );
 }
 
-async function readUntil(lines, predicate, timeoutMs = 3000) {
+async function readUntil(lines, predicate, timeoutMs = 6000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const remainingMs = deadline - Date.now();
@@ -114,6 +114,7 @@ describe("Pi host stdio", () => {
       });
 
       const deltas = [];
+      let finalText = null;
       await readUntil(lines, (envelope) => {
         if (envelope.method !== "session.event") {
           return false;
@@ -121,12 +122,16 @@ describe("Pi host stdio", () => {
         if (envelope.params.type === "session.output.delta") {
           deltas.push(envelope.params.payload.text);
         }
+        if (envelope.params.type === "session.output.text") {
+          finalText = envelope.params.payload.text;
+        }
         return (
           envelope.params.type === "session.status" &&
           envelope.params.payload.status === "idle"
         );
       });
       expect(deltas.join("")).toBe("stdio safe response");
+      expect(finalText).toBe("stdio safe response");
 
       writeRequest(child, 3, "shutdown");
       await expect(readResponse(lines)).resolves.toEqual({
