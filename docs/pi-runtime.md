@@ -26,3 +26,5 @@ The sidecar currently supports read-only capability probing:
 - `shutdown`
 
 `info` imports the Pi packages and returns package name, version, load status, export count, and error text. It does not create sessions or touch workspace files.
+
+The Rust host manager applies a request timeout, captures a bounded stderr tail for diagnostics, cleans up timed-out children, and clears stale hosts so explicit starts can respawn a fresh sidecar.

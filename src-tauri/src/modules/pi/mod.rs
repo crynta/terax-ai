@@ -84,9 +84,27 @@ impl PiState {
         if host.is_none() {
             *host = Some(PiHost::spawn(resource_dir)?);
         }
-        host.as_mut()
+
+        let status = host
+            .as_mut()
             .ok_or_else(|| "Pi host was not initialized".to_string())?
-            .status()
+            .status();
+
+        match status {
+            Ok(snapshot) => Ok(snapshot),
+            Err(first_error) => {
+                *host = None;
+                *host = Some(PiHost::spawn(resource_dir)?);
+                host.as_mut()
+                    .ok_or_else(|| "Pi host was not initialized".to_string())?
+                    .status()
+                    .map_err(|second_error| {
+                        format!(
+                            "Pi host restart failed after error ({first_error}): {second_error}"
+                        )
+                    })
+            }
+        }
     }
 
     pub fn info(&self) -> Result<PiHostInfo, String> {
@@ -101,9 +119,17 @@ impl PiState {
         if host.is_none() {
             *host = Some(PiHost::spawn(resource_dir)?);
         }
-        host.as_mut()
+        match host
+            .as_mut()
             .ok_or_else(|| "Pi host was not initialized".to_string())?
             .info()
+        {
+            Ok(info) => Ok(info),
+            Err(error) => {
+                *host = None;
+                Err(error)
+            }
+        }
     }
 
     pub fn stop(&self) -> Result<PiRuntimeSnapshot, String> {

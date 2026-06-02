@@ -1,7 +1,8 @@
 use std::env;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -10,6 +11,9 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::{PiHostInfo, PiPhase, PiRuntimeSnapshot};
+
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const STDERR_TAIL_LIMIT: usize = 4096;
 
 #[derive(Deserialize)]
 struct HostResponse<T> {
@@ -50,37 +54,94 @@ impl From<HostStatus> for PiRuntimeSnapshot {
     }
 }
 
+#[derive(Clone, Default)]
+struct StderrTail {
+    inner: Arc<Mutex<String>>,
+}
+
+impl StderrTail {
+    fn push_lossy(&self, bytes: &[u8]) {
+        let mut tail = match self.inner.lock() {
+            Ok(tail) => tail,
+            Err(_) => return,
+        };
+        tail.push_str(&String::from_utf8_lossy(bytes));
+        if tail.len() <= STDERR_TAIL_LIMIT {
+            return;
+        }
+
+        let min_start = tail.len() - STDERR_TAIL_LIMIT;
+        let start = tail
+            .char_indices()
+            .map(|(index, _)| index)
+            .find(|index| *index >= min_start)
+            .unwrap_or(tail.len());
+        tail.drain(..start);
+    }
+
+    fn snapshot(&self) -> String {
+        self.inner
+            .lock()
+            .map(|tail| tail.trim().to_string())
+            .unwrap_or_default()
+    }
+}
+
 pub struct PiHost {
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    responses: mpsc::Receiver<Result<String, String>>,
+    stderr_tail: StderrTail,
+    request_timeout: Duration,
     next_id: u64,
 }
 
 impl PiHost {
     pub fn spawn(resource_dir: Option<&Path>) -> Result<Self, String> {
         let host_path = resolve_host_path(resource_dir)?;
-        let mut child = Command::new(node_binary(resource_dir))
+        Self::spawn_inner(
+            node_binary(resource_dir),
+            host_path,
+            DEFAULT_REQUEST_TIMEOUT,
+        )
+    }
+
+    fn spawn_inner(
+        node_binary: PathBuf,
+        host_path: PathBuf,
+        request_timeout: Duration,
+    ) -> Result<Self, String> {
+        let mut child = Command::new(node_binary)
             .arg(host_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("failed to start Pi host: {e}"))?;
 
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "Pi host stdin unavailable".to_string())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "Pi host stdout unavailable".to_string())?;
+        let stdin = child.stdin.take().ok_or_else(|| {
+            let _ = child.kill();
+            "Pi host stdin unavailable".to_string()
+        })?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            let _ = child.kill();
+            "Pi host stdout unavailable".to_string()
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            let _ = child.kill();
+            "Pi host stderr unavailable".to_string()
+        })?;
+
+        let stderr_tail = StderrTail::default();
+        spawn_stderr_reader(stderr, stderr_tail.clone());
+        let responses = spawn_stdout_reader(stdout);
 
         let mut host = Self {
             child,
             stdin,
-            stdout: BufReader::new(stdout),
+            responses,
+            stderr_tail,
+            request_timeout,
             next_id: 1,
         };
         let ping: PingResult = host.call("ping")?;
@@ -108,6 +169,8 @@ impl PiHost {
     }
 
     fn call<T: DeserializeOwned>(&mut self, method: &str) -> Result<T, String> {
+        self.ensure_running()?;
+
         let id = self.next_id;
         self.next_id = self.next_id.checked_add(1).unwrap_or(1);
         let request = json!({
@@ -120,28 +183,53 @@ impl PiHost {
             .write_all(request.as_bytes())
             .and_then(|_| self.stdin.write_all(b"\n"))
             .and_then(|_| self.stdin.flush())
-            .map_err(|e| format!("Pi host write failed: {e}"))?;
+            .map_err(|e| self.with_stderr(format!("Pi host write failed: {e}")))?;
 
-        let mut line = String::new();
-        let read = self
-            .stdout
-            .read_line(&mut line)
-            .map_err(|e| format!("Pi host read failed: {e}"))?;
-        if read == 0 {
-            return Err("Pi host closed stdout".to_string());
-        }
+        let line = match self.responses.recv_timeout(self.request_timeout) {
+            Ok(Ok(line)) => line,
+            Ok(Err(error)) => return Err(self.with_stderr(error)),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let _ = self.child.kill();
+                return Err(self.with_stderr(format!(
+                    "Pi host request `{method}` timed out after {}ms",
+                    self.request_timeout.as_millis()
+                )));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(self.with_stderr("Pi host response reader stopped".to_string()));
+            }
+        };
 
         let response: HostResponse<T> = serde_json::from_str(line.trim_end())
-            .map_err(|e| format!("Pi host response was not valid JSON: {e}"))?;
+            .map_err(|e| self.with_stderr(format!("Pi host response was not valid JSON: {e}")))?;
         if response.jsonrpc != "2.0" || response.id != id {
-            return Err("Pi host response id mismatch".to_string());
+            return Err(self.with_stderr("Pi host response id mismatch".to_string()));
         }
         if let Some(error) = response.error {
-            return Err(format!("Pi host error {}: {}", error.code, error.message));
+            return Err(
+                self.with_stderr(format!("Pi host error {}: {}", error.code, error.message))
+            );
         }
         response
             .result
-            .ok_or_else(|| "Pi host response had no result".to_string())
+            .ok_or_else(|| self.with_stderr("Pi host response had no result".to_string()))
+    }
+
+    fn ensure_running(&mut self) -> Result<(), String> {
+        match self.child.try_wait() {
+            Ok(Some(status)) => Err(self.with_stderr(format!("Pi host exited with {status}"))),
+            Ok(None) => Ok(()),
+            Err(error) => Err(self.with_stderr(format!("Pi host status check failed: {error}"))),
+        }
+    }
+
+    fn with_stderr(&self, message: String) -> String {
+        let stderr = self.stderr_tail.snapshot();
+        if stderr.is_empty() {
+            message
+        } else {
+            format!("{message}; stderr: {stderr}")
+        }
     }
 
     fn wait_or_kill(&mut self) {
@@ -162,6 +250,45 @@ impl Drop for PiHost {
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
+}
+
+fn spawn_stdout_reader(stdout: ChildStdout) -> mpsc::Receiver<Result<String, String>> {
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        loop {
+            let mut line = String::new();
+            match reader.read_line(&mut line) {
+                Ok(0) => {
+                    let _ = tx.send(Err("Pi host closed stdout".to_string()));
+                    break;
+                }
+                Ok(_) => {
+                    if tx.send(Ok(line)).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = tx.send(Err(format!("Pi host read failed: {error}")));
+                    break;
+                }
+            }
+        }
+    });
+    rx
+}
+
+fn spawn_stderr_reader(mut stderr: ChildStderr, tail: StderrTail) {
+    thread::spawn(move || {
+        let mut buffer = [0; 1024];
+        loop {
+            match stderr.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(read) => tail.push_lossy(&buffer[..read]),
+                Err(_) => break,
+            }
+        }
+    });
 }
 
 fn node_binary(resource_dir: Option<&Path>) -> PathBuf {
@@ -237,6 +364,10 @@ fn host_path_candidates(resource_dir: Option<&Path>) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
     use super::*;
 
     #[test]
@@ -267,5 +398,25 @@ mod tests {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
         assert!(candidates.contains(&manifest_dir.join("..").join("sidecars/pi-host/host.js")));
+    }
+
+    #[test]
+    fn startup_timeout_includes_captured_stderr() {
+        let temp = tempdir().unwrap();
+        let script = temp.path().join("host.js");
+        fs::write(
+            &script,
+            "process.stderr.write('pi host boot note\\n'); setInterval(() => {}, 1000);",
+        )
+        .unwrap();
+
+        let error =
+            match PiHost::spawn_inner(PathBuf::from("node"), script, Duration::from_millis(100)) {
+                Ok(_) => panic!("host should time out during ping"),
+                Err(error) => error,
+            };
+
+        assert!(error.contains("timed out"), "{error}");
+        assert!(error.contains("pi host boot note"), "{error}");
     }
 }
