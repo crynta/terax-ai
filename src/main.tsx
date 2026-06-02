@@ -10,11 +10,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import ReactDOM from "react-dom/client";
 import App from "./app/App";
 import { initLaunchDir } from "./lib/launchDir";
-import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
+import { initWindowChrome } from "./lib/windowChrome";
 
-if (USE_CUSTOM_WINDOW_CONTROLS) {
-  document.documentElement.dataset.chrome = "borderless";
-}
+initWindowChrome();
 
 // Reap PTY sessions orphaned by a prior webview load before any tab spawns.
 await invoke("pty_close_all").catch(() => {});
