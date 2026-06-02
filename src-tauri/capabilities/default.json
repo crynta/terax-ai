@@ -16,6 +16,7 @@
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-show",
     "core:window:allow-set-focus",
+    "core:window:allow-set-title",
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "opener:default",
