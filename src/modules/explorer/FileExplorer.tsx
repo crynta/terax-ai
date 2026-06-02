@@ -39,6 +39,7 @@ import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
 export type FileExplorerHandle = {
   focus: () => void;
   isFocused: () => boolean;
+  focusSearch: () => void;
 };
 
 type Props = {
@@ -234,6 +235,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           if (!c) return false;
           const active = document.activeElement;
           return active instanceof Node && c.contains(active);
+        },
+        focusSearch: () => {
+          setIsSearchOpen(true);
+          searchRef.current?.focus();
         },
       }),
       [entryPaths, scrollEntryIntoView, selectedPath],

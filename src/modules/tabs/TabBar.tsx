@@ -102,6 +102,7 @@ export function TabBar({
           <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
             {tabs.map((t) => {
               const isPreview = t.kind === "editor" && (t as EditorTab).preview;
+              const isActive = t.id === activeId;
 
               // While renaming, render a non-button cell so the <input> is not
               // nested inside the trigger <button> (invalid HTML, and WebKit
@@ -146,7 +147,10 @@ export function TabBar({
                     if (e.button === 1) e.preventDefault();
                   }}
                   className={cn(
-                    "group h-7 shrink-0 gap-1.5 rounded-md text-xs text-muted-foreground transition-colors data-[state=active]:bg-accent data-[state=active]:text-foreground hover:text-foreground/80 justify-between",
+                    "group h-7 shrink-0 gap-1.5 rounded-md text-xs transition-colors hover:text-foreground/80 justify-between",
+                    isActive
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground",
                     compact
                       ? "px-1.5!"
                       : tabs.length === 1
@@ -198,7 +202,10 @@ export function TabBar({
               return (
                 <ContextMenu key={t.id}>
                   <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
-                  <ContextMenuContent className="min-w-36">
+                  <ContextMenuContent
+                    className="min-w-36"
+                    onCloseAutoFocus={(e) => e.preventDefault()}
+                  >
                     <ContextMenuItem onSelect={() => setEditingId(t.id)}>
                       <HugeiconsIcon
                         icon={PencilEdit02Icon}

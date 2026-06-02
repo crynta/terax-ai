@@ -52,6 +52,10 @@ import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
+  CommandPalette,
+  createCommandPaletteActions,
+} from "@/modules/command-palette";
+import {
   listenFsChanged,
   parentDir,
   watchAdd,
@@ -406,6 +410,7 @@ export default function App() {
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const openMini = useChatStore((s) => s.openMini);
@@ -1065,6 +1070,7 @@ export default function App() {
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
+      "commandPalette.open": () => setCommandPaletteOpen(true),
       "tab.new": openNewTab,
       "tab.newPrivate": openNewPrivateTab,
       "tab.newPreview": () => openPreviewTab(""),
@@ -1278,6 +1284,52 @@ export default function App() {
     activeEditorHandle,
     gitHistoryHandle,
   ]);
+
+  const commandPaletteActions = useMemo(
+    () =>
+      createCommandPaletteActions({
+        tabs,
+        activeId,
+        searchTarget,
+        explorerRoot,
+        home,
+        openNewTab,
+        openNewPrivate: openNewPrivateTab,
+        openNewEditor: () => setNewEditorOpen(true),
+        openNewPreview: () => openPreviewTab(""),
+        closeActiveTabOrPane: handleCloseTabOrPane,
+        nextTab: () => cycleTab(1),
+        previousTab: () => cycleTab(-1),
+        splitPaneRight: () => splitActivePaneInActiveTab("row"),
+        splitPaneDown: () => splitActivePaneInActiveTab("col"),
+        focusNextPane: () => focusNextPaneInTab(activeId, 1),
+        focusPreviousPane: () => focusNextPaneInTab(activeId, -1),
+        focusSearch: () => searchInlineRef.current?.focus(),
+        focusExplorerSearch: () => explorerRef.current?.focusSearch(),
+        toggleSidebar,
+        toggleAi: togglePanelAndFocus,
+        askAiSelection: askFromSelection,
+        openSettings: () => void openSettingsWindow(),
+        openShortcuts: () => setShortcutsOpen(true),
+      }),
+    [
+      tabs,
+      activeId,
+      searchTarget,
+      explorerRoot,
+      home,
+      openNewTab,
+      openNewPrivateTab,
+      openPreviewTab,
+      handleCloseTabOrPane,
+      cycleTab,
+      splitActivePaneInActiveTab,
+      focusNextPaneInTab,
+      toggleSidebar,
+      togglePanelAndFocus,
+      askFromSelection,
+    ],
+  );
 
   const activeCwd = activeTerminalLeafCwd;
 
@@ -1637,6 +1689,14 @@ export default function App() {
               />
             ) : null}
           </AnimatePresence>
+
+          <CommandPalette
+            open={commandPaletteOpen}
+            onOpenChange={setCommandPaletteOpen}
+            actions={commandPaletteActions}
+            workspaceRoot={explorerRoot}
+            onOpenFile={handleOpenFile}
+          />
 
           <ShortcutsDialog
             open={shortcutsOpen}
