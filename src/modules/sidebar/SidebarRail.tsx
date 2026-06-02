@@ -1,7 +1,12 @@
-import { cn } from "@/lib/utils";
-import { FolderGitTwoIcon, FolderTreeIcon } from "@hugeicons/core-free-icons";
+import {
+  AiChat02Icon,
+  FolderGitTwoIcon,
+  FolderTreeIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { cn } from "@/lib/utils";
 import type { SidebarViewId } from "./types";
+import { SIDEBAR_VIEW_ITEMS } from "./views";
 
 export const SIDEBAR_RAIL_HEIGHT = 36;
 
@@ -18,16 +23,18 @@ type Props = {
   changedCount: number;
 };
 
+const sidebarViewIcons: Record<SidebarViewId, RailItem["icon"]> = {
+  explorer: FolderTreeIcon,
+  "source-control": FolderGitTwoIcon,
+  pi: AiChat02Icon,
+};
+
 export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
-  const items: RailItem[] = [
-    { id: "explorer", label: "Files", icon: FolderTreeIcon },
-    {
-      id: "source-control",
-      label: "Source Control",
-      icon: FolderGitTwoIcon,
-      badge: changedCount,
-    },
-  ];
+  const items: RailItem[] = SIDEBAR_VIEW_ITEMS.map((item) => ({
+    ...item,
+    icon: sidebarViewIcons[item.id],
+    ...(item.id === "source-control" ? { badge: changedCount } : {}),
+  }));
 
   return (
     <div

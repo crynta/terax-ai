@@ -67,6 +67,7 @@ import {
   type SearchTarget,
 } from "@/modules/header";
 import { MarkdownStack } from "@/modules/markdown";
+import { PiPanel } from "@/modules/pi";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -77,7 +78,11 @@ import {
   type ShortcutHandlers,
   type ShortcutId,
 } from "@/modules/shortcuts";
-import { SidebarRail, type SidebarViewId } from "@/modules/sidebar";
+import {
+  isSidebarViewId,
+  SidebarRail,
+  type SidebarViewId,
+} from "@/modules/sidebar";
 import {
   SourceControlPanel,
   useSourceControl,
@@ -176,7 +181,7 @@ function readSidebarWidth(): number {
 function readSidebarView(): SidebarViewId {
   try {
     const stored = window.localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
-    if (stored === "explorer" || stored === "source-control") return stored;
+    if (isSidebarViewId(stored)) return stored;
   } catch {
     // ignore
   }
@@ -1594,7 +1599,7 @@ export default function App() {
                         onAttachToAgent={handleAttachFileToAgent}
                         onOpenMarkdownPreview={openMarkdownPreview}
                       />
-                    ) : (
+                    ) : sidebarView === "source-control" ? (
                       <SourceControlPanel
                         open
                         sourceControl={sourceControl}
@@ -1602,6 +1607,8 @@ export default function App() {
                         onOpenGitGraph={openGitGraphFromContext}
                         onOpenFile={handleOpenFile}
                       />
+                    ) : (
+                      <PiPanel />
                     )}
                   </div>
                   <SidebarRail
