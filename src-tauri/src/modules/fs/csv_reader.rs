@@ -17,13 +17,13 @@ fn detect_delimiter(line: &str) -> u8 {
     let semi_count = line.chars().filter(|&c| c == ';').count();
     let pipe_count = line.chars().filter(|&c| c == '|').count();
 
-    let mut counts = vec![
+    let mut counts = [
         (b'\t', tab_count),
         (b',', comma_count),
         (b';', semi_count),
         (b'|', pipe_count),
     ];
-    counts.sort_by(|a, b| b.1.cmp(&a.1));
+    counts.sort_by_key(|b| std::cmp::Reverse(b.1));
 
     if counts[0].1 > 0 {
         counts[0].0
