@@ -7,10 +7,13 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const bundledNode =
-  process.platform === "win32"
+  process.env.TERAX_PI_HOST_SMOKE_NODE ??
+  (process.platform === "win32"
     ? join(repoRoot, "sidecars", "node", "dist", "node.exe")
-    : join(repoRoot, "sidecars", "node", "dist", "bin", "node");
-const bundledHost = join(repoRoot, "sidecars", "pi-host", "dist", "host.js");
+    : join(repoRoot, "sidecars", "node", "dist", "bin", "node"));
+const bundledHost =
+  process.env.TERAX_PI_HOST_SMOKE_HOST ??
+  join(repoRoot, "sidecars", "pi-host", "dist", "host.js");
 
 async function assertFile(path) {
   const entry = await stat(path);
@@ -36,22 +39,29 @@ function readEnvelope(lines) {
   });
 }
 
-function writeRequest(child, id, method) {
-  child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method })}\n`);
+function writeRequest(child, id, method, params) {
+  child.stdin.write(
+    `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`,
+  );
 }
 
-async function request(child, lines, id, method) {
-  writeRequest(child, id, method);
-  const response = await readEnvelope(lines);
-  if (response.id !== id) {
-    throw new Error(
-      `Expected response id ${id}, received ${JSON.stringify(response)}`,
-    );
+async function request(child, lines, id, method, params) {
+  writeRequest(child, id, method, params);
+  while (true) {
+    const response = await readEnvelope(lines);
+    if (response.id !== id) {
+      if (response.method === "session.event") {
+        continue;
+      }
+      throw new Error(
+        `Expected response id ${id}, received ${JSON.stringify(response)}`,
+      );
+    }
+    if (response.error) {
+      throw new Error(`Pi host error: ${response.error.message}`);
+    }
+    return response.result;
   }
-  if (response.error) {
-    throw new Error(`Pi host error: ${response.error.message}`);
-  }
-  return response.result;
 }
 
 await assertFile(bundledNode);
@@ -67,6 +77,7 @@ const child = spawn(bundledNode, [bundledHost], {
     TMPDIR: process.env.TMPDIR ?? tmpdir(),
     TEMP: process.env.TEMP ?? tmpdir(),
     TMP: process.env.TMP ?? tmpdir(),
+    TERAX_PI_HOST_TEST_FAUX_RESPONSE: "smoke ok",
   },
   stdio: ["pipe", "pipe", "pipe"],
 });
@@ -104,7 +115,21 @@ try {
     throw new Error(`Unexpected tool mode: ${diagnostics.config.toolMode}`);
   }
 
-  await request(child, lines, 3, "shutdown");
+  const created = await request(child, lines, 3, "sessions.create", {
+    title: "Smoke",
+  });
+  if (created.session?.status !== "idle") {
+    throw new Error(`Unexpected created session: ${JSON.stringify(created)}`);
+  }
+  const sent = await request(child, lines, 4, "sessions.send", {
+    sessionId: created.session.id,
+    prompt: "Reply with the smoke fixture.",
+  });
+  if (sent.accepted !== true || sent.session?.status !== "running") {
+    throw new Error(`Unexpected send result: ${JSON.stringify(sent)}`);
+  }
+
+  await request(child, lines, 5, "shutdown");
   await new Promise((resolve) => child.once("exit", resolve));
   if (child.exitCode !== 0) {
     throw new Error(`Pi host exited with ${child.exitCode}; stderr: ${stderr}`);

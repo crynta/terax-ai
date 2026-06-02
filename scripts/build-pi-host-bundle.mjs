@@ -51,6 +51,7 @@ try {
     "deploy",
     "--prod",
     "--legacy",
+    "--config.node-linker=hoisted",
     tempDir,
   ]);
 
@@ -72,7 +73,7 @@ try {
       {
         name: "@terax/pi-host",
         generatedAt: new Date().toISOString(),
-        strategy: "pnpm deploy --prod --legacy",
+        strategy: "pnpm deploy --prod --legacy --config.node-linker=hoisted",
       },
       null,
       2,
