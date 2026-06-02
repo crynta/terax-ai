@@ -5,7 +5,14 @@ const ST_FINAL: u8 = b'\\';
 
 const OSC_MAX: usize = 2048;
 
-const DEFAULT_AGENTS: &[&str] = &["claude", "codex"];
+// Agent binary names to detect in shell preexec. Populated from the
+// universal agent registry so every registered agent is caught.
+fn default_agents() -> Vec<String> {
+    crate::modules::agents::registry::all_agent_bins()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect()
+}
 
 // OSC 777 marker our Claude Code hooks emit via `terminalSequence`.
 const TERAX_MARKER: &[u8] = b"notify;Terax;";
@@ -64,7 +71,7 @@ pub struct AgentDetector {
 
 impl AgentDetector {
     pub fn new() -> Self {
-        Self::with_agents(DEFAULT_AGENTS.iter().map(|s| s.to_string()).collect())
+        Self::with_agents(default_agents())
     }
 
     pub fn with_agents(agents: Vec<String>) -> Self {
@@ -160,21 +167,32 @@ impl AgentDetector {
     }
 
     fn handle_osc777<F: FnMut(Transition)>(&mut self, pt: &[u8], emit: &mut F) {
-        if let Some(event) = pt.strip_prefix(TERAX_MARKER) {
-            // Self-arms so notifications work even when no shell preexec fired
-            // (bash, Windows, tmux, wrappers).
+        // Parse: notify;Terax;[<agent_id>;]<event>
+        // Legacy: notify;Terax;working  → agent=claude, event=working
+        // New:    notify;Terax;opencode;finished → agent=opencode, event=finished
+        if let Some(body) = pt.strip_prefix(TERAX_MARKER) {
+            let (agent_id, event) = if let Some(semi) = body.iter().position(|&c| c == b';') {
+                let (id_part, ev_part) = body.split_at(semi);
+                let id = std::str::from_utf8(id_part).unwrap_or("claude");
+                let ev = std::str::from_utf8(&ev_part[1..]).unwrap_or("");
+                (id, ev)
+            } else {
+                let ev = std::str::from_utf8(body).unwrap_or("");
+                ("claude", ev) // legacy: default to claude
+            };
+
             match event {
-                b"working" => {
-                    self.ensure_armed(emit);
+                "working" => {
+                    self.ensure_armed(agent_id, emit);
                     self.set_working(emit);
                 }
-                b"attention" => {
-                    self.ensure_armed(emit);
+                "attention" => {
+                    self.ensure_armed(agent_id, emit);
                     self.status = Status::Waiting;
                     emit(Transition::Attention);
                 }
-                b"finished" => {
-                    self.ensure_armed(emit);
+                "finished" => {
+                    self.ensure_armed(agent_id, emit);
                     self.status = Status::Waiting;
                     emit(Transition::Finished);
                 }
@@ -206,11 +224,16 @@ impl AgentDetector {
         }
     }
 
-    fn ensure_armed<F: FnMut(Transition)>(&mut self, emit: &mut F) {
+    fn ensure_armed<F: FnMut(Transition)>(&mut self, agent_id: &str, emit: &mut F) {
         if !self.armed {
             self.armed = true;
             self.status = Status::Working;
-            emit(Transition::Started { agent: "claude".into() });
+            // Look up the agent name from registry for the UI label.
+            // Fall back to the agent_id if not found (legacy/new agent not yet registered).
+            let agent_name = crate::modules::agents::registry::get_agent(agent_id)
+                .map(|a| a.name.to_string())
+                .unwrap_or_else(|| agent_id.to_string());
+            emit(Transition::Started { agent: agent_name });
         }
     }
 
@@ -321,7 +344,7 @@ mod tests {
         let mut d = AgentDetector::new();
         assert_eq!(
             run(&mut d, &osc("777;notify;Terax;attention")),
-            vec![started("claude"), Transition::Attention]
+            vec![started("Claude Code"), Transition::Attention]
         );
     }
 
@@ -384,5 +407,38 @@ mod tests {
         seq.extend_from_slice(&[ESC, ST_FINAL]);
         assert!(run(&mut d, &seq).is_empty());
         assert_eq!(run(&mut d, &osc("777;notify;Terax;attention")), vec![Transition::Attention]);
+    }
+
+    #[test]
+    fn per_agent_osc777_arms_with_correct_agent_name() {
+        let mut d = AgentDetector::new();
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;opencode;working")),
+            vec![started("OpenCode")]
+        );
+        let mut d2 = AgentDetector::new();
+        assert_eq!(
+            run(&mut d2, &osc("777;notify;Terax;pi;attention")),
+            vec![started("Pi"), Transition::Attention]
+        );
+    }
+
+    #[test]
+    fn per_agent_osc777_finished_transitions_correctly() {
+        let mut d = AgentDetector::new();
+        run(&mut d, &osc("777;notify;Terax;cursor-agent;working"));
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;cursor-agent;finished")),
+            vec![Transition::Finished]
+        );
+    }
+
+    #[test]
+    fn legacy_osc777_still_defaults_to_claude() {
+        let mut d = AgentDetector::new();
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;working")),
+            vec![started("Claude Code")]
+        );
     }
 }

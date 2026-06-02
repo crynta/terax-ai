@@ -39,7 +39,7 @@ fn is_empty_group(group: &Value) -> bool {
         .is_none_or(|hs| hs.is_empty())
 }
 
-fn merge_hooks(mut root: Value) -> Value {
+pub fn merge_hooks(mut root: Value) -> Value {
     if !root.is_object() {
         root = json!({});
     }

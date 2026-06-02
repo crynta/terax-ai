@@ -227,6 +227,12 @@ mod unix {
         write_if_changed(&dir.join(".zprofile"), ZPROFILE)?;
         write_if_changed(&dir.join(".zshrc"), ZSHRC)?;
         write_if_changed(&dir.join(".zlogin"), ZLOGIN)?;
+        // Append agent wrappers after user hooks are sourced (at end of .zshrc).
+        let zshrc = dir.join(".zshrc");
+        crate::modules::agents::registry::append_wrappers_to_script(
+            &zshrc,
+            crate::modules::agents::registry::ShellKind::Zsh,
+        )?;
         Ok(dir)
     }
 
@@ -235,6 +241,11 @@ mod unix {
         fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
         let rc = dir.join("bashrc");
         write_if_changed(&rc, BASHRC)?;
+        // Append agent wrappers after user hooks (at end of bashrc).
+        crate::modules::agents::registry::append_wrappers_to_script(
+            &rc,
+            crate::modules::agents::registry::ShellKind::Bash,
+        )?;
         Ok(rc)
     }
 
@@ -242,7 +253,13 @@ mod unix {
         let home = dirs::home_dir().ok_or_else(|| "could not resolve home dir".to_string())?;
         let dir = home.join(".config").join("fish").join("conf.d");
         fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-        write_if_changed(&dir.join("terax.fish"), FISH_INIT)?;
+        let fish_file = dir.join("terax.fish");
+        write_if_changed(&fish_file, FISH_INIT)?;
+        // Append agent wrappers after user hooks (at end of terax.fish).
+        crate::modules::agents::registry::append_wrappers_to_script(
+            &fish_file,
+            crate::modules::agents::registry::ShellKind::Fish,
+        )?;
         Ok(())
     }
 
@@ -547,6 +564,11 @@ mod windows {
         fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
         let file = dir.join("profile.ps1");
         write_if_changed(&file, PROFILE_PS1)?;
+        // Append agent wrappers after user hooks (at end of profile.ps1).
+        crate::modules::agents::registry::append_wrappers_to_script(
+            &file,
+            crate::modules::agents::registry::ShellKind::PowerShell,
+        )?;
         Ok(file)
     }
 
