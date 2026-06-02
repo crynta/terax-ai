@@ -94,10 +94,12 @@ The themes below frame every scope decision.
 ## Planned
 
 ### Coming next
-
-- [ ] SSH support (PTY auth and known_hosts first; SFTP and port forwarding later)
+- [ ] IOS/Android/HarmonyOS Support Tablet/Phone Redesign Frontend
+- [ ] IOS/Android/HarmonyOS Fixing/adding Backend
+- [ ] Support remote control (exmple connect PC <--> Android/IOS)
+- [X] SSH support (PTY auth and known_hosts first; SFTP and port forwarding later)
 - [ ] Inline terminal auto-suggestions (history-based first; AI-powered opt-in later)
-- [ ] Themes and customizations (terminal themes, UI accents, keybindings, layout)
+- [X] Themes and customizations (terminal themes, UI accents, keybindings, layout)
 - [ ] AI autocomplete improvements in editor (project-aware context, lower latency)
 - [ ] Drag and drop in terminal (files as quoted paths, AI panel as context)
 - [ ] AI agent meta-orchestration (Terax agent spawning and managing external coding agents like Claude Code / OpenCode)
