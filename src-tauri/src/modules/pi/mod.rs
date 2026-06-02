@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 mod host;
+mod store;
 
 use host::{PiHost, PiSessionEventSink};
 
@@ -66,10 +67,12 @@ pub struct PiSessionEvent {
     pub payload: serde_json::Value,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PiSessionsList {
     pub sessions: Vec<PiSession>,
+    #[serde(default)]
+    pub events: Vec<PiSessionEvent>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -313,7 +316,11 @@ fn resource_dir(app: &AppHandle) -> Option<PathBuf> {
 
 fn session_event_sink(app: &AppHandle) -> PiSessionEventSink {
     let app = app.clone();
+    let history_path = store::history_path(&app).ok();
     Arc::new(move |event| {
+        if let Some(path) = history_path.as_deref() {
+            let _ = store::record_event_at_path(path, &event);
+        }
         let _ = app.emit(PI_SESSION_EVENT_NAME, event);
     })
 }
@@ -351,6 +358,11 @@ pub async fn pi_host_info(
 }
 
 #[tauri::command]
+pub async fn pi_sessions_history(app: AppHandle) -> Result<PiSessionsList, String> {
+    store::load(&app)
+}
+
+#[tauri::command]
 pub async fn pi_sessions_list(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
@@ -367,11 +379,13 @@ pub async fn pi_session_create(
     state: tauri::State<'_, PiState>,
     title: Option<String>,
 ) -> Result<PiSessionCreateResult, String> {
-    state.session_create_with_resource_dir_and_event_sink(
+    let result = state.session_create_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
         title,
-    )
+    )?;
+    store::record_session_result(&app, &result.session, &result.events)?;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -381,12 +395,14 @@ pub async fn pi_session_send(
     session_id: String,
     prompt: String,
 ) -> Result<PiSessionSendResult, String> {
-    state.session_send_with_resource_dir_and_event_sink(
+    let result = state.session_send_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
         session_id,
         prompt,
-    )
+    )?;
+    store::record_session_result(&app, &result.session, &result.events)?;
+    Ok(result)
 }
 
 #[tauri::command]
@@ -395,9 +411,11 @@ pub async fn pi_session_stop(
     state: tauri::State<'_, PiState>,
     session_id: String,
 ) -> Result<PiSessionStopResult, String> {
-    state.session_stop_with_resource_dir_and_event_sink(
+    let result = state.session_stop_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
         session_id,
-    )
+    )?;
+    store::record_session_result(&app, &result.session, &result.events)?;
+    Ok(result)
 }

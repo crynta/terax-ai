@@ -19,6 +19,7 @@ export type PiSessionEvent = {
 
 export type PiSessionsList = {
   sessions: PiSession[];
+  events: PiSessionEvent[];
 };
 
 export type PiSessionCreateResult = {

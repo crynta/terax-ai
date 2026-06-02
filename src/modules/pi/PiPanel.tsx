@@ -160,24 +160,40 @@ export function PiPanel() {
     }
   }, []);
 
-  const refreshSessions = useCallback(async () => {
-    try {
-      const result = await piNative.sessionsList();
+  const applySessionList = useCallback(
+    (result: { sessions: PiSession[]; events: PiSessionEvent[] }) => {
       setSessions(result.sessions);
+      applySessionEvents(result.events);
       setSelectedSessionId((current) =>
         current !== null &&
         result.sessions.some((session) => session.id === current)
           ? current
           : (result.sessions[0]?.id ?? null),
       );
+    },
+    [applySessionEvents],
+  );
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      applySessionList(await piNative.sessionsList());
     } catch (error) {
       setRuntimeState(toErrorState(error));
     }
-  }, []);
+  }, [applySessionList]);
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      applySessionList(await piNative.sessionsHistory());
+    } catch {
+      // History is best-effort; runtime status errors remain more actionable.
+    }
+  }, [applySessionList]);
 
   useEffect(() => {
     void refreshStatus();
-  }, [refreshStatus]);
+    void refreshHistory();
+  }, [refreshHistory, refreshStatus]);
 
   useEffect(() => {
     let alive = true;

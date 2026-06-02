@@ -193,6 +193,7 @@ export async function resetSessionsForTests() {
 export function listSessions() {
   return {
     sessions: Array.from(sessions.values()).map(sessionSnapshot),
+    events: [],
   };
 }
 

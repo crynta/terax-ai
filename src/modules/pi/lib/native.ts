@@ -12,6 +12,7 @@ export const piNative = {
   start: () => invoke<PiRuntimeState>("pi_start"),
   stop: () => invoke<PiRuntimeState>("pi_stop"),
   hostInfo: () => invoke<PiHostInfo>("pi_host_info"),
+  sessionsHistory: () => invoke<PiSessionsList>("pi_sessions_history"),
   sessionsList: () => invoke<PiSessionsList>("pi_sessions_list"),
   sessionCreate: (title?: string) =>
     invoke<PiSessionCreateResult>("pi_session_create", {

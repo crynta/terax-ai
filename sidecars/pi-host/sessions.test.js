@@ -41,7 +41,7 @@ describe("Pi host session protocol", () => {
     expect(result.response).toEqual({
       jsonrpc: "2.0",
       id: 1,
-      result: { sessions: [] },
+      result: { sessions: [], events: [] },
     });
   });
 
