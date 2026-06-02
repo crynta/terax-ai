@@ -13,6 +13,7 @@
     "build": "tsc && vite build",
     "build:node-runtime": "node scripts/build-node-runtime.mjs",
     "build:sidecars": "pnpm build:node-runtime && node scripts/build-pi-host-bundle.mjs",
+    "smoke:pi-host": "node scripts/smoke-pi-host-bundle.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",

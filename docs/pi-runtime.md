@@ -15,7 +15,7 @@ The chosen strategy is a stock Node process with a self-contained Pi host depend
    - bundled Node resource at `sidecars/node/...`,
    - `node` on `PATH` for development fallback.
 
-`pnpm build:sidecars` builds both generated resource directories. By default, `scripts/build-node-runtime.mjs` copies the current `process.execPath` into the bundled runtime path for deterministic local smoke tests. Release CI can set `TERAX_NODE_RUNTIME_SOURCE=download` (or pass `--download`) plus `TERAX_NODE_RUNTIME_VERSION=<version>` to stage an official Node distribution from nodejs.org.
+`pnpm build:sidecars` builds both generated resource directories. By default, `scripts/build-node-runtime.mjs` copies the current `process.execPath` into the bundled runtime path for deterministic local smoke tests. Release CI can set `TERAX_NODE_RUNTIME_SOURCE=download` (or pass `--download`) plus `TERAX_NODE_RUNTIME_VERSION=<version>` to stage an official Node distribution from nodejs.org. `pnpm smoke:pi-host` then runs the generated host with the generated Node executable from a temporary cwd and verifies Pi packages load from the bundled dependency tree.
 
 This keeps Pi code outside the frontend bundle and avoids giving the Node sidecar ownership of Terax-native responsibilities.
 
