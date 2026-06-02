@@ -12,6 +12,12 @@ function readResponse(lines) {
   });
 }
 
+function writeRequest(child, id, method, params) {
+  child.stdin.write(
+    `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`,
+  );
+}
+
 describe("Pi host stdio", () => {
   it("exchanges JSON-RPC messages over newline-delimited stdio", async () => {
     const child = spawn(process.execPath, [HOST_PATH], {
@@ -20,9 +26,7 @@ describe("Pi host stdio", () => {
     const lines = createInterface({ input: child.stdout });
 
     try {
-      child.stdin.write(
-        `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "status" })}\n`,
-      );
+      writeRequest(child, 1, "status");
       await expect(readResponse(lines)).resolves.toMatchObject({
         jsonrpc: "2.0",
         id: 1,
@@ -38,9 +42,7 @@ describe("Pi host stdio", () => {
         },
       });
 
-      child.stdin.write(
-        `${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "info" })}\n`,
-      );
+      writeRequest(child, 2, "info");
       const info = await readResponse(lines);
       expect(info).toMatchObject({
         jsonrpc: "2.0",
@@ -54,9 +56,56 @@ describe("Pi host stdio", () => {
         PI_PACKAGE_NAMES,
       );
 
-      child.stdin.write(
-        `${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "shutdown" })}\n`,
-      );
+      writeRequest(child, 3, "shutdown");
+      await expect(readResponse(lines)).resolves.toEqual({
+        jsonrpc: "2.0",
+        id: 3,
+        result: { ok: true },
+      });
+      await new Promise((resolve) => child.once("exit", resolve));
+      expect(child.exitCode).toBe(0);
+    } finally {
+      lines.close();
+      child.kill();
+    }
+  });
+
+  it("keeps Pi SDK stdout writes off the JSON-RPC stream", async () => {
+    const child = spawn(process.execPath, [HOST_PATH], {
+      env: {
+        ...process.env,
+        TERAX_PI_HOST_TEST_FAUX_RESPONSE: "stdio safe response",
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const lines = createInterface({ input: child.stdout });
+
+    try {
+      writeRequest(child, 1, "sessions.create", { title: "stdio" });
+      await expect(readResponse(lines)).resolves.toMatchObject({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { session: { id: "pi-1", status: "idle" } },
+      });
+
+      writeRequest(child, 2, "sessions.send", {
+        sessionId: "pi-1",
+        prompt: "hello",
+      });
+      const sent = await readResponse(lines);
+      expect(sent).toMatchObject({
+        jsonrpc: "2.0",
+        id: 2,
+        result: { accepted: true, session: { status: "idle" } },
+      });
+      expect(
+        sent.result.events
+          .filter((event) => event.type === "session.output.delta")
+          .map((event) => event.payload.text)
+          .join(""),
+      ).toBe("stdio safe response");
+
+      writeRequest(child, 3, "shutdown");
       await expect(readResponse(lines)).resolves.toEqual({
         jsonrpc: "2.0",
         id: 3,

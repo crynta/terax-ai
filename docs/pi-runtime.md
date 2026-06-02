@@ -21,7 +21,7 @@ This keeps Pi code outside the frontend bundle and avoids giving the Node sideca
 
 ## Current sidecar boundary
 
-The sidecar currently supports read-only capability probing and in-memory session protocol stubs:
+The sidecar currently supports read-only capability probing and real no-tools Pi SDK sessions:
 
 - `ping`
 - `status`
@@ -36,6 +36,8 @@ See [`pi-session-protocol.md`](./pi-session-protocol.md) for the session contrac
 
 `info` imports the Pi packages and returns package name, version, load status, export count, and error text. It does not create sessions or touch workspace files.
 
-Boundary tests enforce that the sidecar package depends only on `@earendil-works/pi-*` packages and rejects Terax-owned method families such as terminal/PTY, shell, git, files, and editor calls with JSON-RPC `Method not found`.
+`sessions.create` creates an actual `AgentSession` from `@earendil-works/pi-coding-agent`, but passes `noTools: "all"` and an in-memory `SessionManager`. This keeps the first real prompt path model-only until Rust-owned tool bridges are designed deliberately.
+
+Boundary tests enforce that the sidecar package depends only on `@earendil-works/pi-*` packages, rejects Terax-owned method families such as terminal/PTY, shell, git, files, and editor calls with JSON-RPC `Method not found`, and keeps incidental Pi SDK stdout off the JSON-RPC stdout stream.
 
 The Rust host manager applies a request timeout, captures a bounded stderr tail for diagnostics, cleans up timed-out children, and clears stale hosts so explicit starts can respawn a fresh sidecar.

@@ -10,12 +10,12 @@ fn default_state_is_disconnected() {
 }
 
 #[test]
-fn start_marks_host_stub_ready() {
+fn start_marks_host_ready() {
     let state = PiState::default();
     let snapshot = state.start().unwrap();
 
     assert_eq!(snapshot.phase, PiPhase::Ready);
-    assert_eq!(snapshot.detail.as_deref(), Some("Pi host stub"));
+    assert_eq!(snapshot.detail.as_deref(), Some("Pi host ready"));
     state.stop().unwrap();
 }
 
@@ -26,7 +26,7 @@ fn snapshot_serializes_to_frontend_state_shape() {
     let value = serde_json::to_value(snapshot).unwrap();
 
     assert_eq!(value["phase"], "ready");
-    assert_eq!(value["detail"], "Pi host stub");
+    assert_eq!(value["detail"], "Pi host ready");
     state.stop().unwrap();
 }
 
@@ -48,6 +48,7 @@ fn host_info_reports_stub_capabilities() {
 
 #[test]
 fn sessions_can_be_created_sent_and_stopped() {
+    std::env::set_var("TERAX_PI_HOST_TEST_FAUX_RESPONSE", "hello from Rust");
     let state = PiState::default();
 
     let created = state
@@ -62,8 +63,11 @@ fn sessions_can_be_created_sent_and_stopped() {
         .session_send_with_resource_dir(None, "pi-1".to_string(), "hello".to_string())
         .unwrap();
     assert!(sent.accepted);
-    assert_eq!(sent.session.status, "running");
+    assert_eq!(sent.session.status, "idle");
     assert_eq!(sent.session.last_prompt.as_deref(), Some("hello"));
+    assert!(sent.events.iter().any(|event| {
+        event.event_type == "session.output.delta" && event.payload["text"].is_string()
+    }));
 
     let stopped = state
         .session_stop_with_resource_dir(None, "pi-1".to_string())
@@ -74,6 +78,7 @@ fn sessions_can_be_created_sent_and_stopped() {
     assert_eq!(sessions.sessions.len(), 1);
     assert_eq!(sessions.sessions[0].status, "stopped");
     state.stop().unwrap();
+    std::env::remove_var("TERAX_PI_HOST_TEST_FAUX_RESPONSE");
 }
 
 #[test]

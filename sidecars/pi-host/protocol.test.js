@@ -27,7 +27,7 @@ describe("Pi host protocol", () => {
       id: 2,
       result: {
         phase: "ready",
-        detail: "Pi host stub",
+        detail: "Pi host ready",
         hostVersion: "0.1.0",
         piSdkLoaded: true,
       },

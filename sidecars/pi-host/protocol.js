@@ -226,14 +226,14 @@ async function info() {
 async function status() {
   return {
     phase: "ready",
-    detail: "Pi host stub",
+    detail: "Pi host ready",
     ...(await info()),
   };
 }
 
-function sessionResponse(id, handler, params) {
+async function sessionResponse(id, handler, params) {
   try {
-    return successResponse(id, handler(params));
+    return successResponse(id, await handler(params));
   } catch (error) {
     if (error instanceof SessionProtocolError) {
       return errorResponse(id, error.code, error.message);
@@ -246,9 +246,9 @@ function sessionResponse(id, handler, params) {
   }
 }
 
-export function resetProtocolForTests() {
+export async function resetProtocolForTests() {
   packageProbePromise = undefined;
-  resetSessionsForTests();
+  await resetSessionsForTests();
 }
 
 function isRequest(value) {
@@ -306,20 +306,33 @@ export async function handleJsonRpcLine(line) {
       };
     case "sessions.create":
       return {
-        response: sessionResponse(request.id, createSession, request.params),
+        response: await sessionResponse(
+          request.id,
+          createSession,
+          request.params,
+        ),
         shutdown: false,
       };
     case "sessions.send":
       return {
-        response: sessionResponse(request.id, sendToSession, request.params),
+        response: await sessionResponse(
+          request.id,
+          sendToSession,
+          request.params,
+        ),
         shutdown: false,
       };
     case "sessions.stop":
       return {
-        response: sessionResponse(request.id, stopSession, request.params),
+        response: await sessionResponse(
+          request.id,
+          stopSession,
+          request.params,
+        ),
         shutdown: false,
       };
     case "shutdown":
+      await resetSessionsForTests();
       return {
         response: successResponse(request.id, { ok: true }),
         shutdown: true,

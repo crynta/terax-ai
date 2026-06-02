@@ -2,6 +2,12 @@
 
 The Rust Pi host manager talks to the Node Pi host over newline-delimited JSON-RPC 2.0 on stdio. The protocol keeps Terax-owned capabilities out of the Node sidecar; session methods only manage Pi session state and prompt delivery.
 
+## Runtime ownership
+
+`sessions.create` now creates a real `@earendil-works/pi-coding-agent` `AgentSession` with `noTools: "all"` and an in-memory `SessionManager`. This proves prompt execution can flow through the Pi SDK without allowing the Node sidecar to own Terax files, shell, terminal, git, editor, or SQLite responsibilities.
+
+Until the live event bridge is added, `sessions.send` waits for `AgentSession.prompt()` to finish and returns the collected output/status events in the JSON-RPC response. The next protocol milestone will forward the same event envelope asynchronously while a run is in progress.
+
 ## Session shape
 
 ```ts
@@ -19,7 +25,7 @@ type PiSession = {
 
 ## Event envelope
 
-Events are returned in method responses for the current stub. The same envelope is intended for the future async Tauri event bridge.
+Events are returned in method responses for the current batched protocol. The same envelope is intended for the async Tauri event bridge.
 
 ```ts
 type PiSessionEvent = {
@@ -62,7 +68,7 @@ Result:
 { session: PiSession; events: PiSessionEvent[] }
 ```
 
-Creates an idle in-memory session. It does not start a real Pi runtime session yet.
+Creates an idle Pi SDK `AgentSession` owned by the sidecar.
 
 ### `sessions.send`
 
@@ -75,10 +81,10 @@ Params:
 Result:
 
 ```ts
-{ accepted: true; session: PiSession; events: PiSessionEvent[] }
+{ accepted: boolean; session: PiSession; events: PiSessionEvent[] }
 ```
 
-For the stub protocol this records the prompt, marks the session `running`, and returns `session.input` plus `session.status` events. The real Pi integration will use the same method to send prompts into the runtime.
+Sends the prompt through `AgentSession.prompt()`. On success, output deltas are returned as `session.output.delta`, and the session returns to `idle`. If Pi rejects or fails the prompt, the response is still a method result with `accepted: false`, a `session.error` event, and `status: "error"`.
 
 ### `sessions.stop`
 
@@ -94,9 +100,10 @@ Result:
 { session: PiSession; events: PiSessionEvent[] }
 ```
 
-Marks a session `stopped` and emits a `session.status` event.
+Aborts a running Pi session when possible, disposes the SDK session, marks it `stopped`, and emits a `session.status` event.
 
 ## Errors
 
 - JSON-RPC `-32602`: invalid params.
 - JSON-RPC `-32004`: session not found.
+- JSON-RPC `-32005`: session is stopped.
