@@ -73,6 +73,8 @@ describe("Pi host protocol", () => {
           sessionStorage: "rust-app-data-json",
           apiKeys: expect.arrayContaining([
             { name: "ANTHROPIC_API_KEY", configured: expect.any(Boolean) },
+            { name: "DEEPSEEK_API_KEY", configured: expect.any(Boolean) },
+            { name: "MISTRAL_API_KEY", configured: expect.any(Boolean) },
           ]),
         },
       },

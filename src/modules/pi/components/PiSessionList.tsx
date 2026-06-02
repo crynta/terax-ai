@@ -1,5 +1,6 @@
 import { AiChat02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import type { KeyboardEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +46,48 @@ export function PiSessionList({
   onCreateSession,
   onSelectSession,
 }: PiSessionListProps) {
+  const selectedIndex = Math.max(
+    0,
+    sessions.findIndex((session) => session.id === selectedSessionId),
+  );
+
+  const selectSessionAt = (index: number, target: HTMLElement) => {
+    const nextSession = sessions[index];
+    if (!nextSession) return;
+    onSelectSession(nextSession.id);
+    requestAnimationFrame(() => {
+      const options = target
+        .closest('[role="listbox"]')
+        ?.querySelectorAll<HTMLElement>("[data-pi-session-option]");
+      options?.[index]?.focus();
+    });
+  };
+
+  const onSessionKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    const lastIndex = sessions.length - 1;
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        selectSessionAt(Math.min(index + 1, lastIndex), event.currentTarget);
+        break;
+      case "ArrowUp":
+        event.preventDefault();
+        selectSessionAt(Math.max(index - 1, 0), event.currentTarget);
+        break;
+      case "Home":
+        event.preventDefault();
+        selectSessionAt(0, event.currentTarget);
+        break;
+      case "End":
+        event.preventDefault();
+        selectSessionAt(lastIndex, event.currentTarget);
+        break;
+    }
+  };
+
   return (
     <div className="flex min-h-0 shrink-0 flex-col border-b border-border/35">
       <div className="flex h-7 shrink-0 items-center gap-2 px-3">
@@ -103,7 +146,7 @@ export function PiSessionList({
           aria-label="Pi sessions"
           className="flex max-h-44 min-h-0 flex-col gap-1 overflow-y-auto px-2 pb-2"
         >
-          {sessions.map((session) => {
+          {sessions.map((session, index) => {
             const selected = selectedSessionId === session.id;
             const cwdLabel = pathBasename(session.cwd) ?? "No workspace";
             return (
@@ -112,6 +155,8 @@ export function PiSessionList({
                 type="button"
                 role="option"
                 aria-selected={selected}
+                data-pi-session-option
+                tabIndex={selected || index === selectedIndex ? 0 : -1}
                 className={cn(
                   "flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-left outline-none transition-colors",
                   "focus-visible:ring-2 focus-visible:ring-primary/30",
@@ -120,6 +165,7 @@ export function PiSessionList({
                     : "border-border/35 bg-background/70 text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
                 )}
                 onClick={() => onSelectSession(session.id)}
+                onKeyDown={(event) => onSessionKeyDown(event, index)}
               >
                 <span
                   aria-hidden

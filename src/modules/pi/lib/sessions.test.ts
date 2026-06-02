@@ -3,7 +3,10 @@ import type { PiSession, PiSessionEvent } from "./sessions";
 import {
   applyPiSessionEvents,
   buildPiSessionTranscript,
+  isPiSessionSendable,
+  markPiSessionsStopped,
   mergePiSessionEvents,
+  mergePiSessionSnapshots,
   upsertPiSession,
 } from "./sessions";
 
@@ -93,6 +96,14 @@ describe("buildPiSessionTranscript", () => {
       }),
     ]);
   });
+
+  it("ignores empty streaming deltas", () => {
+    expect(
+      buildPiSessionTranscript([
+        event("evt-1", "session.output.delta", { text: "" }),
+      ]),
+    ).toEqual([]);
+  });
 });
 
 describe("applyPiSessionEvents", () => {
@@ -128,6 +139,48 @@ describe("mergePiSessionEvents", () => {
     expect(merged.find((next) => next.id === "evt-2")?.payload.text).toBe(
       "replacement",
     );
+  });
+});
+
+describe("mergePiSessionSnapshots", () => {
+  it("preserves history-only sessions as stopped when the live host has no record", () => {
+    expect(
+      mergePiSessionSnapshots([session("pi-1", "idle")], [], {
+        missingStatus: "stopped",
+      }),
+    ).toEqual([session("pi-1", "stopped")]);
+  });
+
+  it("keeps live sessions first and appends stopped history-only sessions", () => {
+    expect(
+      mergePiSessionSnapshots(
+        [session("pi-1", "idle"), session("pi-2", "idle")],
+        [session("pi-2", "running"), session("pi-3", "idle")],
+        { missingStatus: "stopped" },
+      ),
+    ).toEqual([
+      session("pi-2", "running"),
+      session("pi-3", "idle"),
+      session("pi-1", "stopped"),
+    ]);
+  });
+});
+
+describe("markPiSessionsStopped", () => {
+  it("marks visible history sessions as stopped when the runtime shuts down", () => {
+    expect(markPiSessionsStopped([session("pi-1", "running")])).toEqual([
+      session("pi-1", "stopped"),
+    ]);
+  });
+});
+
+describe("isPiSessionSendable", () => {
+  it("only allows idle live sessions to accept prompts", () => {
+    expect(isPiSessionSendable(session("pi-1", "idle"))).toBe(true);
+    expect(isPiSessionSendable(session("pi-1", "running"))).toBe(false);
+    expect(isPiSessionSendable(session("pi-1", "stopped"))).toBe(false);
+    expect(isPiSessionSendable(session("pi-1", "error"))).toBe(false);
+    expect(isPiSessionSendable(null)).toBe(false);
   });
 });
 

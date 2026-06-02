@@ -1,5 +1,8 @@
 import { createRuntimeProviderOptions } from "./provider-config.js";
-import { SessionProtocolError } from "./session-errors.js";
+import {
+  friendlySessionErrorMessage,
+  SessionProtocolError,
+} from "./session-errors.js";
 
 export { SessionProtocolError } from "./session-errors.js";
 
@@ -418,7 +421,7 @@ async function runPrompt(session, prompt, context) {
       return;
     }
     const failedAt = isoNow();
-    const message = error instanceof Error ? error.message : String(error);
+    const message = friendlySessionErrorMessage(error);
     session.status = "error";
     session.updatedAt = failedAt;
     publishEvent("session.error", session.id, { message }, failedAt);

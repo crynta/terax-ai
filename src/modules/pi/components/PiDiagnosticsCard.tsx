@@ -221,16 +221,22 @@ export function PiDiagnosticsCard({
       </div>
 
       <div className="grid grid-cols-2 gap-1.5 text-[10px] text-muted-foreground">
-        <span className="truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1">
+        <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 tabular-nums">
           Packages {view.loadedPackageCount}/{view.packageCount}
         </span>
-        <span className="truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 text-right">
-          Keys {view.configuredApiKeyCount}/{view.apiKeyCount}
+        <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 text-right">
+          Provider {view.providerLabel}
         </span>
-        <span className="truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1">
+        <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1">
           Model {view.modelLabel}
         </span>
-        <span className="truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 text-right">
+        <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 text-right">
+          Key {view.providerKeyLabel}
+        </span>
+        <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 tabular-nums">
+          Sessions {view.sessionCount}
+        </span>
+        <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 text-right">
           Tools {view.toolMode}
         </span>
       </div>

@@ -10,6 +10,8 @@ import {
 } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { providerNeedsKey, providerSupportsKey } from "@/modules/ai/config";
+import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
 import { statusToneDotClass } from "@/modules/pi/components/classes";
 import { PiComposer } from "@/modules/pi/components/PiComposer";
 import { PiContextBar } from "@/modules/pi/components/PiContextBar";
@@ -17,7 +19,10 @@ import { PiDiagnosticsCard } from "@/modules/pi/components/PiDiagnosticsCard";
 import { PiRuntimeCard } from "@/modules/pi/components/PiRuntimeCard";
 import { PiSessionList } from "@/modules/pi/components/PiSessionList";
 import { PiTranscript } from "@/modules/pi/components/PiTranscript";
-import { buildPiDiagnosticsView } from "@/modules/pi/lib/diagnostics";
+import {
+  buildPiDiagnosticsView,
+  type PiProviderKeyStatus,
+} from "@/modules/pi/lib/diagnostics";
 import { piNative } from "@/modules/pi/lib/native";
 import {
   type PiProviderPrefs,
@@ -31,7 +36,10 @@ import type {
 import {
   applyPiSessionEvents,
   buildPiSessionTranscript,
+  isPiSessionSendable,
+  markPiSessionsStopped,
   mergePiSessionEvents,
+  mergePiSessionSnapshots,
   upsertPiSession,
 } from "@/modules/pi/lib/sessions";
 import {
@@ -42,6 +50,7 @@ import {
 import { buildPiContextPreview } from "@/modules/pi/lib/view";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { onKeysChanged } from "@/modules/settings/store";
 
 const INITIAL_PI_STATE: PiRuntimeState = {
   phase: "disconnected",
@@ -75,6 +84,7 @@ export function PiPanel({
   const [runtimeState, setRuntimeState] = useState(INITIAL_PI_STATE);
   const [diagnostics, setDiagnostics] = useState<PiDiagnostics | null>(null);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [isDiagnosticsRefreshing, setIsDiagnosticsRefreshing] = useState(false);
   const [sessions, setSessions] = useState<PiSession[]>([]);
   const [sessionEvents, setSessionEvents] = useState<PiSessionEvent[]>([]);
@@ -83,6 +93,10 @@ export function PiPanel({
   );
   const [prompt, setPrompt] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const [providerKeyStatus, setProviderKeyStatus] = useState<
+    PiProviderKeyStatus | undefined
+  >(undefined);
+  const [keyRefreshToken, setKeyRefreshToken] = useState(0);
   const piModelId = usePreferencesStore((state) => state.piModelId);
   const lmstudioBaseURL = usePreferencesStore((state) => state.lmstudioBaseURL);
   const lmstudioModelId = usePreferencesStore((state) => state.lmstudioModelId);
@@ -145,6 +159,7 @@ export function PiPanel({
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
     [selectedSessionId, sessions],
   );
+  const selectedSessionSendable = isPiSessionSendable(selectedSession);
   const selectedEvents = useMemo(
     () =>
       selectedSessionId === null
@@ -182,12 +197,74 @@ export function PiPanel({
       buildPiDiagnosticsView({
         diagnostics,
         diagnosticsError,
+        historyError,
         provider: piProvider,
+        providerKeyStatus,
         runtimeState,
         workspaceRoot,
       }),
-    [diagnostics, diagnosticsError, piProvider, runtimeState, workspaceRoot],
+    [
+      diagnostics,
+      diagnosticsError,
+      historyError,
+      piProvider,
+      providerKeyStatus,
+      runtimeState,
+      workspaceRoot,
+    ],
   );
+
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    onKeysChanged(() => setKeyRefreshToken((current) => current + 1))
+      .then((nextUnlisten) => {
+        if (alive) {
+          unlisten = nextUnlisten;
+        } else {
+          nextUnlisten();
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function refreshProviderKeyStatus() {
+      if (!piProvider.ok) {
+        setProviderKeyStatus(undefined);
+        return;
+      }
+
+      const provider = piProvider.config.provider;
+      const supported = providerSupportsKey(provider);
+      const required = providerNeedsKey(provider);
+      if (!supported) {
+        setProviderKeyStatus({ configured: null, required, supported });
+        return;
+      }
+
+      setProviderKeyStatus({ configured: null, required, supported });
+      const key = piProvider.config.customEndpointId
+        ? await getCustomEndpointKey(piProvider.config.customEndpointId)
+        : await getKey(provider);
+      if (alive) {
+        setProviderKeyStatus({ configured: key !== null, required, supported });
+      }
+    }
+
+    void refreshProviderKeyStatus();
+
+    return () => {
+      alive = false;
+    };
+  }, [keyRefreshToken, piProvider]);
 
   const applySessionEvents = useCallback((events: PiSessionEvent[]) => {
     if (events.length === 0) {
@@ -216,33 +293,49 @@ export function PiPanel({
     }
   }, []);
 
-  const applySessionList = useCallback(
+  const applyHistoryList = useCallback(
     (result: { sessions: PiSession[]; events: PiSessionEvent[] }) => {
-      setSessions(result.sessions);
-      applySessionEvents(result.events);
-      setSelectedSessionId((current) =>
-        current !== null &&
-        result.sessions.some((session) => session.id === current)
-          ? current
-          : (result.sessions[0]?.id ?? null),
+      setSessionEvents((current) =>
+        mergePiSessionEvents(current, result.events),
+      );
+      setSessions(applyPiSessionEvents(result.sessions, result.events));
+    },
+    [],
+  );
+
+  const applyLiveSessionList = useCallback(
+    (result: { sessions: PiSession[]; events: PiSessionEvent[] }) => {
+      setSessionEvents((current) =>
+        mergePiSessionEvents(current, result.events),
+      );
+      setSessions((current) =>
+        applyPiSessionEvents(
+          mergePiSessionSnapshots(current, result.sessions, {
+            missingStatus: "stopped",
+          }),
+          result.events,
+        ),
       );
     },
-    [applySessionEvents],
+    [],
   );
 
   const refreshSessions = useCallback(async () => {
     try {
-      applySessionList(await piNative.sessionsList());
+      applyLiveSessionList(await piNative.sessionsList());
     } catch (error) {
       setRuntimeState(toErrorState(error));
     }
-  }, [applySessionList]);
+  }, [applyLiveSessionList]);
 
   const refreshHistory = useCallback(async () => {
     try {
-      applySessionList(await piNative.sessionsHistory());
-    } catch {}
-  }, [applySessionList]);
+      applyHistoryList(await piNative.sessionsHistory());
+      setHistoryError(null);
+    } catch (error) {
+      setHistoryError(`History load failed: ${errorMessage(error)}`);
+    }
+  }, [applyHistoryList]);
 
   const refreshDiagnostics = useCallback(async () => {
     try {
@@ -259,6 +352,7 @@ export function PiPanel({
     try {
       const nextState = await piNative.status();
       setRuntimeState(nextState);
+      await refreshHistory();
       if (nextState.phase === "ready") {
         await refreshSessions();
         await refreshDiagnostics();
@@ -273,12 +367,20 @@ export function PiPanel({
     } finally {
       setIsDiagnosticsRefreshing(false);
     }
-  }, [refreshDiagnostics, refreshSessions]);
+  }, [refreshDiagnostics, refreshHistory, refreshSessions]);
 
   useEffect(() => {
     void refreshStatus();
     void refreshHistory();
   }, [refreshHistory, refreshStatus]);
+
+  useEffect(() => {
+    setSelectedSessionId((current) =>
+      current !== null && sessions.some((session) => session.id === current)
+        ? current
+        : (sessions[0]?.id ?? null),
+    );
+  }, [sessions]);
 
   useEffect(() => {
     let alive = true;
@@ -308,6 +410,7 @@ export function PiPanel({
     setRuntimeState({ phase: "starting", detail: "Starting Pi" });
     try {
       setRuntimeState(await piNative.start());
+      await refreshHistory();
       await refreshSessions();
       await refreshDiagnostics();
     } catch (error) {
@@ -315,15 +418,13 @@ export function PiPanel({
     } finally {
       setIsBusy(false);
     }
-  }, [refreshDiagnostics, refreshSessions]);
+  }, [refreshDiagnostics, refreshHistory, refreshSessions]);
 
   const stopRuntime = useCallback(async () => {
     setIsBusy(true);
     try {
       setRuntimeState(await piNative.stop());
-      setSessions([]);
-      setSessionEvents([]);
-      setSelectedSessionId(null);
+      setSessions((current) => markPiSessionsStopped(current));
       setDiagnostics(null);
       setDiagnosticsError(null);
     } catch (error) {
@@ -339,11 +440,10 @@ export function PiPanel({
     setRuntimeState({ phase: "starting", detail: "Restarting Pi" });
     try {
       await piNative.stop();
-      setSessions([]);
-      setSessionEvents([]);
-      setSelectedSessionId(null);
+      setSessions((current) => markPiSessionsStopped(current));
       setDiagnostics(null);
       setRuntimeState(await piNative.start());
+      await refreshHistory();
       await refreshSessions();
       await refreshDiagnostics();
     } catch (error) {
@@ -351,7 +451,7 @@ export function PiPanel({
     } finally {
       setIsBusy(false);
     }
-  }, [refreshDiagnostics, refreshSessions]);
+  }, [refreshDiagnostics, refreshHistory, refreshSessions]);
 
   const createSession = useCallback(async () => {
     if (!piProvider.ok) {
@@ -379,7 +479,7 @@ export function PiPanel({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       const text = prompt.trim();
-      if (selectedSession === null || text === "") {
+      if (selectedSession === null || !selectedSessionSendable || text === "") {
         return;
       }
 
@@ -398,7 +498,13 @@ export function PiPanel({
         setIsBusy(false);
       }
     },
-    [applySessionUpdate, prompt, promptContext, selectedSession],
+    [
+      applySessionUpdate,
+      prompt,
+      promptContext,
+      selectedSessionSendable,
+      selectedSession,
+    ],
   );
 
   const stopSelectedSession = useCallback(async () => {
@@ -489,7 +595,7 @@ export function PiPanel({
         />
 
         <PiComposer
-          disabled={!runtimeReady || selectedSession === null || isBusy}
+          disabled={!runtimeReady || !selectedSessionSendable || isBusy}
           isBusy={isBusy}
           prompt={prompt}
           runtimeReady={runtimeReady}

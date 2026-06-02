@@ -7,6 +7,7 @@ export type PiDiagnosticsIssue = {
   id:
     | "api-keys-missing"
     | "diagnostics-unavailable"
+    | "history-unavailable"
     | "packages-unavailable"
     | "provider-unavailable"
     | "runtime-connecting"
@@ -20,6 +21,12 @@ export type PiDiagnosticsIssue = {
   tone: "default" | "destructive" | "muted";
 };
 
+export type PiProviderKeyStatus = {
+  configured: boolean | null;
+  required: boolean;
+  supported: boolean;
+};
+
 export type PiDiagnosticsView = {
   apiKeyCount: number;
   configuredApiKeyCount: number;
@@ -29,6 +36,7 @@ export type PiDiagnosticsView = {
   modelLabel: string;
   nodeLabel: string;
   packageCount: number;
+  providerKeyLabel: string;
   providerLabel: string;
   sessionCount: number;
   storageLabel: string;
@@ -38,10 +46,25 @@ export type PiDiagnosticsView = {
 type BuildPiDiagnosticsViewInput = {
   diagnostics: PiDiagnostics | null;
   diagnosticsError: string | null;
+  historyError?: string | null;
   provider?: PiProviderResolution;
+  providerKeyStatus?: PiProviderKeyStatus;
   runtimeState: PiRuntimeState;
   workspaceRoot: string | null;
 };
+
+function providerKeyLabel(
+  provider: PiProviderResolution | undefined,
+  status: PiProviderKeyStatus | undefined,
+): string {
+  if (provider && !provider.ok) return "Needs setup";
+  if (!provider) return "Unavailable";
+  if (!status) return "Checking";
+  if (!status.supported) return "Not required";
+  if (status.configured === null) return "Checking";
+  if (status.configured) return "Configured";
+  return status.required ? "Missing" : "Optional";
+}
 
 function packageIssueDescription(diagnostics: PiDiagnostics): string {
   const failed = diagnostics.piPackages.filter((pkg) => !pkg.loaded);
@@ -90,7 +113,9 @@ function runtimeIssue(state: PiRuntimeState): PiDiagnosticsIssue | null {
 export function buildPiDiagnosticsView({
   diagnostics,
   diagnosticsError,
+  historyError,
   provider,
+  providerKeyStatus,
   runtimeState,
   workspaceRoot,
 }: BuildPiDiagnosticsViewInput): PiDiagnosticsView {
@@ -127,6 +152,16 @@ export function buildPiDiagnosticsView({
       tone: "destructive",
     });
   }
+  if (historyError) {
+    issues.push({
+      id: "history-unavailable",
+      title: "Session history failed to load",
+      description: historyError,
+      action: "refresh",
+      actionLabel: "Refresh",
+      tone: "destructive",
+    });
+  }
   if (runtimeState.phase === "ready" && diagnosticsError) {
     issues.push({
       id: "diagnostics-unavailable",
@@ -159,17 +194,22 @@ export function buildPiDiagnosticsView({
         tone: "destructive",
       });
     }
-    if (apiKeyCount > 0 && configuredApiKeyCount === 0) {
-      issues.push({
-        id: "api-keys-missing",
-        title: "No provider key configured",
-        description:
-          "Add a provider key in Settings > Models before running real Pi prompts.",
-        action: "open-settings",
-        actionLabel: "Settings",
-        tone: "destructive",
-      });
-    }
+  }
+
+  if (
+    provider?.ok &&
+    providerKeyStatus?.supported &&
+    providerKeyStatus.required &&
+    providerKeyStatus.configured === false
+  ) {
+    issues.push({
+      id: "api-keys-missing",
+      title: `${provider.providerLabel} key missing`,
+      description: `Add an ${provider.providerLabel} API key in Settings > Models before running Pi prompts.`,
+      action: "open-settings",
+      actionLabel: "Settings",
+      tone: "destructive",
+    });
   }
 
   return {
@@ -183,6 +223,7 @@ export function buildPiDiagnosticsView({
       ? `${diagnostics.node.version} ${diagnostics.node.platform}/${diagnostics.node.arch}`
       : "Unavailable",
     packageCount,
+    providerKeyLabel: providerKeyLabel(provider, providerKeyStatus),
     providerLabel: provider?.providerLabel ?? "Pi",
     sessionCount: diagnostics?.sessions.length ?? 0,
     storageLabel: diagnostics?.config.sessionStorage ?? "Unavailable",

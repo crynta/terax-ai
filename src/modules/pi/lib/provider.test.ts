@@ -4,6 +4,7 @@ import {
   DEFAULT_MODEL_ID,
 } from "@/modules/ai/config";
 import {
+  nextPiModelIdAfterCustomEndpointRemoval,
   type PiProviderPrefs,
   resolvePiProviderConfig,
 } from "@/modules/pi/lib/provider";
@@ -105,5 +106,35 @@ describe("resolvePiProviderConfig", () => {
       modelLabel: "Ollama",
       error: "Ollama needs a model id in Settings > Models.",
     });
+  });
+});
+
+describe("nextPiModelIdAfterCustomEndpointRemoval", () => {
+  it("falls back when the removed endpoint was selected for Pi", () => {
+    expect(
+      nextPiModelIdAfterCustomEndpointRemoval(
+        compatModelIdForEndpoint("deleted"),
+        "deleted",
+        [
+          {
+            id: "remaining",
+            name: "Gateway",
+            baseURL: "https://gateway.example.com/v1",
+            modelId: "qwen3-max",
+            contextLimit: 128_000,
+          },
+        ],
+      ),
+    ).toBe(compatModelIdForEndpoint("remaining"));
+  });
+
+  it("keeps the current Pi model when another endpoint is removed", () => {
+    expect(
+      nextPiModelIdAfterCustomEndpointRemoval(
+        "claude-sonnet-4-6",
+        "deleted",
+        [],
+      ),
+    ).toBe("claude-sonnet-4-6");
   });
 });

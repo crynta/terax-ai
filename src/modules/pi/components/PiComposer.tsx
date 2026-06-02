@@ -20,6 +20,15 @@ function composerHint(
 ): string {
   if (!runtimeReady) return "Start Pi to send prompts.";
   if (selectedSession === null) return "Create or select a session.";
+  if (selectedSession.status === "running") {
+    return "Pi is responding. Stop it before sending another prompt.";
+  }
+  if (selectedSession.status === "stopped") {
+    return "Create a new session to send more prompts.";
+  }
+  if (selectedSession.status === "error") {
+    return "Create a new session or restart Pi before sending.";
+  }
   return "Enter to send, Shift Enter for a new line.";
 }
 

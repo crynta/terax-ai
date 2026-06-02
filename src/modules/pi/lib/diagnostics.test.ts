@@ -37,6 +37,31 @@ function diagnostics(patch: Partial<PiDiagnostics> = {}): PiDiagnostics {
   };
 }
 
+const anthropicProvider = {
+  ok: true,
+  provider: "anthropic",
+  providerLabel: "Anthropic",
+  modelLabel: "Claude Sonnet 4.6",
+  config: {
+    provider: "anthropic",
+    modelId: "claude-sonnet-4-6",
+    sourceModelId: "claude-sonnet-4-6",
+  },
+} as const;
+
+const lmstudioProvider = {
+  ok: true,
+  provider: "lmstudio",
+  providerLabel: "LM Studio",
+  modelLabel: "qwen2.5-coder",
+  config: {
+    provider: "lmstudio",
+    modelId: "qwen2.5-coder",
+    sourceModelId: "lmstudio-local",
+    baseUrl: "http://localhost:1234/v1",
+  },
+} as const;
+
 describe("buildPiDiagnosticsView", () => {
   it("reports a healthy ready runtime", () => {
     const view = buildPiDiagnosticsView({
@@ -79,7 +104,26 @@ describe("buildPiDiagnosticsView", () => {
     ]);
   });
 
-  it("surfaces missing provider keys as a settings action", () => {
+  it("surfaces history load failures even before the runtime is started", () => {
+    const view = buildPiDiagnosticsView({
+      diagnostics: null,
+      diagnosticsError: null,
+      historyError: "History load failed: corrupt JSON",
+      runtimeState: runtimeState("disconnected"),
+      workspaceRoot: "/tmp/project",
+    });
+
+    expect(view.issues).toContainEqual(
+      expect.objectContaining({
+        id: "history-unavailable",
+        action: "refresh",
+        description: "History load failed: corrupt JSON",
+        tone: "destructive",
+      }),
+    );
+  });
+
+  it("surfaces the selected provider key status as a settings action", () => {
     const view = buildPiDiagnosticsView({
       diagnostics: diagnostics({
         config: {
@@ -89,16 +133,57 @@ describe("buildPiDiagnosticsView", () => {
         },
       }),
       diagnosticsError: null,
+      provider: anthropicProvider,
+      providerKeyStatus: {
+        configured: false,
+        required: true,
+        supported: true,
+      },
       runtimeState: runtimeState("ready"),
       workspaceRoot: "/tmp/project",
     });
 
+    expect(view).toEqual(
+      expect.objectContaining({
+        providerLabel: "Anthropic",
+        modelLabel: "Claude Sonnet 4.6",
+        providerKeyLabel: "Missing",
+      }),
+    );
     expect(view.issues).toContainEqual(
       expect.objectContaining({
         id: "api-keys-missing",
         action: "open-settings",
+        description:
+          "Add an Anthropic API key in Settings > Models before running Pi prompts.",
         tone: "destructive",
       }),
+    );
+  });
+
+  it("does not treat generic sidecar env key counts as the selected provider key", () => {
+    const view = buildPiDiagnosticsView({
+      diagnostics: diagnostics({
+        config: {
+          toolMode: "noTools",
+          sessionStorage: "rust-app-data-json",
+          apiKeys: [{ name: "ANTHROPIC_API_KEY", configured: false }],
+        },
+      }),
+      diagnosticsError: null,
+      provider: lmstudioProvider,
+      providerKeyStatus: {
+        configured: null,
+        required: false,
+        supported: false,
+      },
+      runtimeState: runtimeState("ready"),
+      workspaceRoot: "/tmp/project",
+    });
+
+    expect(view.providerKeyLabel).toBe("Not required");
+    expect(view.issues).not.toContainEqual(
+      expect.objectContaining({ id: "api-keys-missing" }),
     );
   });
 

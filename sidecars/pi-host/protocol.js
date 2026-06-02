@@ -243,6 +243,8 @@ const API_KEY_ENV_NAMES = [
   "GROQ_API_KEY",
   "XAI_API_KEY",
   "CEREBRAS_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "MISTRAL_API_KEY",
 ];
 
 function envStatus(name) {

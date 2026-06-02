@@ -1,5 +1,6 @@
 import {
   type CustomEndpoint,
+  compatModelIdForEndpoint,
   DEFAULT_MODEL_ID,
   endpointIdFromCompatModel,
   getProvider,
@@ -134,6 +135,20 @@ function resolveCustomEndpoint(
     baseUrl,
     contextLimit: endpoint.contextLimit,
   });
+}
+
+export function nextPiModelIdAfterCustomEndpointRemoval(
+  currentPiModelId: string,
+  removedEndpointId: string,
+  remainingEndpoints: readonly CustomEndpoint[],
+): string {
+  if (currentPiModelId !== compatModelIdForEndpoint(removedEndpointId)) {
+    return currentPiModelId;
+  }
+  const nextEndpoint = remainingEndpoints[0];
+  return nextEndpoint
+    ? compatModelIdForEndpoint(nextEndpoint.id)
+    : DEFAULT_MODEL_ID;
 }
 
 export function resolvePiProviderConfig(

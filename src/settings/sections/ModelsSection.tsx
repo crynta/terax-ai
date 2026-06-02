@@ -47,6 +47,7 @@ import {
 } from "@/modules/ai/lib/keyring";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import {
+  nextPiModelIdAfterCustomEndpointRemoval,
   type PiProviderPrefs,
   resolvePiProviderConfig,
 } from "@/modules/pi/lib/provider";
@@ -236,6 +237,14 @@ export function ModelsSection() {
           ? compatModelIdForEndpoint(remaining[0].id)
           : DEFAULT_MODEL_ID,
       );
+    }
+    const nextPiModelId = nextPiModelIdAfterCustomEndpointRemoval(
+      piModelId,
+      id,
+      remaining,
+    );
+    if (nextPiModelId !== piModelId) {
+      await setPiModelId(nextPiModelId);
     }
 
     await setCustomEndpoints(remaining);

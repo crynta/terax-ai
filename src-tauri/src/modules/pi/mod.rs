@@ -794,6 +794,10 @@ pub fn pi_sessions_list(
     )
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri injects app state beside serialized session create arguments"
+)]
 #[tauri::command]
 pub fn pi_session_create(
     app: AppHandle,

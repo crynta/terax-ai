@@ -122,7 +122,7 @@ function appendAssistantDelta(
   event: PiSessionEvent,
 ): void {
   const text = eventText(event);
-  if (text === null) {
+  if (text === null || text.length === 0) {
     return;
   }
 
@@ -250,6 +250,34 @@ export function mergePiSessionEvents(
   return Array.from(byId.values())
     .sort((a, b) => eventSortKey(b) - eventSortKey(a))
     .slice(0, limit);
+}
+
+export function isPiSessionSendable(
+  session: PiSession | null | undefined,
+): boolean {
+  return session?.status === "idle";
+}
+
+export function markPiSessionsStopped(sessions: PiSession[]): PiSession[] {
+  return sessions.map((session) =>
+    session.status === "stopped" ? session : { ...session, status: "stopped" },
+  );
+}
+
+export function mergePiSessionSnapshots(
+  current: PiSession[],
+  live: PiSession[],
+  options: { missingStatus?: PiSessionStatus } = {},
+): PiSession[] {
+  const liveIds = new Set(live.map((session) => session.id));
+  const historyOnly = current
+    .filter((session) => !liveIds.has(session.id))
+    .map((session) =>
+      options.missingStatus === undefined
+        ? session
+        : { ...session, status: options.missingStatus },
+    );
+  return [...live, ...historyOnly];
 }
 
 export function applyPiSessionEvents(

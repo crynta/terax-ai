@@ -57,7 +57,9 @@ function UserMessage({ item }: { item: PiTranscriptItem }) {
     <Message from="user">
       <MessageContent className="text-[12px] leading-relaxed">
         {item.text ? (
-          <p className="whitespace-pre-wrap wrap-break-word">{item.text}</p>
+          <p className="select-text whitespace-pre-wrap break-words">
+            {item.text}
+          </p>
         ) : null}
       </MessageContent>
     </Message>
@@ -73,7 +75,7 @@ function AssistantMessage({ item }: { item: PiTranscriptItem }) {
           <span>Pi</span>
         </div>
         {item.text ? (
-          <p className="whitespace-pre-wrap wrap-break-word text-foreground">
+          <p className="select-text whitespace-pre-wrap break-words text-foreground">
             {item.text}
           </p>
         ) : null}
