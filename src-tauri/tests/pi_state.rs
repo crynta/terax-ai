@@ -47,6 +47,36 @@ fn host_info_reports_stub_capabilities() {
 }
 
 #[test]
+fn sessions_can_be_created_sent_and_stopped() {
+    let state = PiState::default();
+
+    let created = state
+        .session_create_with_resource_dir(None, Some("Test Pi".to_string()))
+        .unwrap();
+    assert_eq!(created.session.id, "pi-1");
+    assert_eq!(created.session.title, "Test Pi");
+    assert_eq!(created.session.status, "idle");
+    assert_eq!(created.events[0].event_type, "session.created");
+
+    let sent = state
+        .session_send_with_resource_dir(None, "pi-1".to_string(), "hello".to_string())
+        .unwrap();
+    assert!(sent.accepted);
+    assert_eq!(sent.session.status, "running");
+    assert_eq!(sent.session.last_prompt.as_deref(), Some("hello"));
+
+    let stopped = state
+        .session_stop_with_resource_dir(None, "pi-1".to_string())
+        .unwrap();
+    assert_eq!(stopped.session.status, "stopped");
+
+    let sessions = state.sessions_list_with_resource_dir(None).unwrap();
+    assert_eq!(sessions.sessions.len(), 1);
+    assert_eq!(sessions.sessions[0].status, "stopped");
+    state.stop().unwrap();
+}
+
+#[test]
 fn stop_resets_to_disconnected() {
     let state = PiState::default();
     state.start().unwrap();

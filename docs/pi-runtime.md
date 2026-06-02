@@ -33,4 +33,6 @@ See [`pi-session-protocol.md`](./pi-session-protocol.md) for the session contrac
 
 `info` imports the Pi packages and returns package name, version, load status, export count, and error text. It does not create sessions or touch workspace files.
 
+Boundary tests enforce that the sidecar package depends only on `@earendil-works/pi-*` packages and rejects Terax-owned method families such as terminal/PTY, shell, git, files, and editor calls with JSON-RPC `Method not found`.
+
 The Rust host manager applies a request timeout, captures a bounded stderr tail for diagnostics, cleans up timed-out children, and clears stale hosts so explicit starts can respawn a fresh sidecar.

@@ -15,4 +15,14 @@ describe("Pi host package", () => {
       "package.json",
     ]);
   });
+
+  it("keeps Node dependencies scoped to Pi packages", async () => {
+    const manifest = JSON.parse(await readFile(PACKAGE_PATH, "utf8"));
+    const dependencyNames = Object.keys(manifest.dependencies ?? {});
+
+    expect(dependencyNames.length).toBeGreaterThan(0);
+    expect(dependencyNames).toEqual(
+      dependencyNames.filter((name) => name.startsWith("@earendil-works/pi-")),
+    );
+  });
 });

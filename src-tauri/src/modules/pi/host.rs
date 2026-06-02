@@ -8,9 +8,12 @@ use std::time::Duration;
 
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
 
-use super::{PiHostInfo, PiPhase, PiRuntimeSnapshot};
+use super::{
+    PiHostInfo, PiPhase, PiRuntimeSnapshot, PiSessionCreateResult, PiSessionSendResult,
+    PiSessionStopResult, PiSessionsList,
+};
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const STDERR_TAIL_LIMIT: usize = 4096;
@@ -160,6 +163,32 @@ impl PiHost {
         self.call("info")
     }
 
+    pub fn sessions_list(&mut self) -> Result<PiSessionsList, String> {
+        self.call("sessions.list")
+    }
+
+    pub fn session_create(
+        &mut self,
+        title: Option<String>,
+    ) -> Result<PiSessionCreateResult, String> {
+        self.call_with_params("sessions.create", json!({ "title": title }))
+    }
+
+    pub fn session_send(
+        &mut self,
+        session_id: String,
+        prompt: String,
+    ) -> Result<PiSessionSendResult, String> {
+        self.call_with_params(
+            "sessions.send",
+            json!({ "sessionId": session_id, "prompt": prompt }),
+        )
+    }
+
+    pub fn session_stop(&mut self, session_id: String) -> Result<PiSessionStopResult, String> {
+        self.call_with_params("sessions.stop", json!({ "sessionId": session_id }))
+    }
+
     pub fn shutdown(mut self) {
         let result = self.call::<ShutdownResult>("shutdown");
         if !matches!(result, Ok(ShutdownResult { ok: true })) {
@@ -169,15 +198,34 @@ impl PiHost {
     }
 
     fn call<T: DeserializeOwned>(&mut self, method: &str) -> Result<T, String> {
+        self.call_json(method, None)
+    }
+
+    fn call_with_params<T: DeserializeOwned>(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<T, String> {
+        self.call_json(method, Some(params))
+    }
+
+    fn call_json<T: DeserializeOwned>(
+        &mut self,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<T, String> {
         self.ensure_running()?;
 
         let id = self.next_id;
         self.next_id = self.next_id.checked_add(1).unwrap_or(1);
-        let request = json!({
+        let mut request = json!({
             "jsonrpc": "2.0",
             "id": id,
             "method": method,
         });
+        if let Some(params) = params {
+            request["params"] = params;
+        }
         let request = serde_json::to_string(&request).map_err(|e| e.to_string())?;
         self.stdin
             .write_all(request.as_bytes())

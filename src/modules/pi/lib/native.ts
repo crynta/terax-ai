@@ -1,4 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
+import type {
+  PiSessionCreateResult,
+  PiSessionSendResult,
+  PiSessionStopResult,
+  PiSessionsList,
+} from "./sessions";
 import type { PiHostInfo, PiRuntimeState } from "./status";
 
 export const piNative = {
@@ -6,4 +12,13 @@ export const piNative = {
   start: () => invoke<PiRuntimeState>("pi_start"),
   stop: () => invoke<PiRuntimeState>("pi_stop"),
   hostInfo: () => invoke<PiHostInfo>("pi_host_info"),
+  sessionsList: () => invoke<PiSessionsList>("pi_sessions_list"),
+  sessionCreate: (title?: string) =>
+    invoke<PiSessionCreateResult>("pi_session_create", {
+      title: title ?? null,
+    }),
+  sessionSend: (sessionId: string, prompt: string) =>
+    invoke<PiSessionSendResult>("pi_session_send", { sessionId, prompt }),
+  sessionStop: (sessionId: string) =>
+    invoke<PiSessionStopResult>("pi_session_stop", { sessionId }),
 };

@@ -85,4 +85,23 @@ describe("Pi host protocol", () => {
       error: { code: -32601, message: "Method not found" },
     });
   });
+
+  it.each([
+    "terminal.open",
+    "pty.open",
+    "shell.run",
+    "git.status",
+    "fs.readFile",
+    "editor.open",
+  ])("does not expose Terax-owned %s capability", async (method) => {
+    const result = await handleJsonRpcLine(
+      JSON.stringify({ jsonrpc: "2.0", id: 6, method }),
+    );
+
+    expect(result.response).toEqual({
+      jsonrpc: "2.0",
+      id: 6,
+      error: { code: -32601, message: "Method not found" },
+    });
+  });
 });

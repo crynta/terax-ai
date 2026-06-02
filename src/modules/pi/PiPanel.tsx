@@ -1,9 +1,17 @@
 import { AiChat02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useCallback, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { piNative } from "./lib/native";
+import type { PiSession, PiSessionEvent } from "./lib/sessions";
+import { upsertPiSession } from "./lib/sessions";
 import {
   getPiStatusView,
   type PiRuntimeState,
@@ -28,6 +36,19 @@ function statusDotClass(tone: PiStatusView["tone"]): string {
   }
 }
 
+function sessionDotClass(status: PiSession["status"]): string {
+  switch (status) {
+    case "running":
+      return "bg-sky-500/80";
+    case "idle":
+      return "bg-emerald-500/75";
+    case "stopped":
+      return "bg-muted-foreground/35";
+    case "error":
+      return "bg-destructive";
+  }
+}
+
 function toErrorState(error: unknown): PiRuntimeState {
   return {
     phase: "error",
@@ -35,14 +56,75 @@ function toErrorState(error: unknown): PiRuntimeState {
   };
 }
 
+function formatEventLabel(event: PiSessionEvent): string {
+  switch (event.type) {
+    case "session.created":
+      return "Created";
+    case "session.input":
+      return "Prompt sent";
+    case "session.status":
+      return `Status: ${String(event.payload.status ?? "updated")}`;
+    case "session.output.delta":
+      return "Output";
+    case "session.error":
+      return "Error";
+    default:
+      return event.type;
+  }
+}
+
 export function PiPanel() {
   const [runtimeState, setRuntimeState] = useState(INITIAL_PI_STATE);
+  const [sessions, setSessions] = useState<PiSession[]>([]);
+  const [sessionEvents, setSessionEvents] = useState<PiSessionEvent[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+    null,
+  );
+  const [prompt, setPrompt] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const status = getPiStatusView(runtimeState);
+  const runtimeReady = runtimeState.phase === "ready";
+  const selectedSession = useMemo(
+    () => sessions.find((session) => session.id === selectedSessionId) ?? null,
+    [selectedSessionId, sessions],
+  );
+  const selectedEvents = useMemo(
+    () =>
+      selectedSessionId === null
+        ? []
+        : sessionEvents.filter(
+            (event) => event.sessionId === selectedSessionId,
+          ),
+    [selectedSessionId, sessionEvents],
+  );
+
+  const applySessionUpdate = useCallback(
+    (session: PiSession, events: PiSessionEvent[]) => {
+      setSessions((current) => upsertPiSession(current, session));
+      setSessionEvents((current) => [...events, ...current].slice(0, 50));
+      setSelectedSessionId(session.id);
+    },
+    [],
+  );
 
   const refreshStatus = useCallback(async () => {
     try {
       setRuntimeState(await piNative.status());
+    } catch (error) {
+      setRuntimeState(toErrorState(error));
+    }
+  }, []);
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      const result = await piNative.sessionsList();
+      setSessions(result.sessions);
+      setSelectedSessionId((current) =>
+        current !== null &&
+        result.sessions.some((session) => session.id === current)
+          ? current
+          : (result.sessions[0]?.id ?? null),
+      );
     } catch (error) {
       setRuntimeState(toErrorState(error));
     }
@@ -57,6 +139,21 @@ export function PiPanel() {
     setRuntimeState({ phase: "starting", detail: "Starting Pi" });
     try {
       setRuntimeState(await piNative.start());
+      await refreshSessions();
+    } catch (error) {
+      setRuntimeState(toErrorState(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }, [refreshSessions]);
+
+  const stopRuntime = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      setRuntimeState(await piNative.stop());
+      setSessions([]);
+      setSessionEvents([]);
+      setSelectedSessionId(null);
     } catch (error) {
       setRuntimeState(toErrorState(error));
     } finally {
@@ -64,16 +161,73 @@ export function PiPanel() {
     }
   }, []);
 
-  const stopRuntime = useCallback(async () => {
+  const restartRuntime = useCallback(async () => {
     setIsBusy(true);
+    setRuntimeState({ phase: "starting", detail: "Restarting Pi" });
     try {
-      setRuntimeState(await piNative.stop());
+      await piNative.stop();
+      setSessions([]);
+      setSessionEvents([]);
+      setSelectedSessionId(null);
+      setRuntimeState(await piNative.start());
+      await refreshSessions();
     } catch (error) {
       setRuntimeState(toErrorState(error));
     } finally {
       setIsBusy(false);
     }
-  }, []);
+  }, [refreshSessions]);
+
+  const createSession = useCallback(async () => {
+    setIsBusy(true);
+    try {
+      const result = await piNative.sessionCreate();
+      applySessionUpdate(result.session, result.events);
+      await refreshStatus();
+    } catch (error) {
+      setRuntimeState(toErrorState(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }, [applySessionUpdate, refreshStatus]);
+
+  const sendPrompt = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const text = prompt.trim();
+      if (selectedSession === null || text === "") {
+        return;
+      }
+
+      setIsBusy(true);
+      try {
+        const result = await piNative.sessionSend(selectedSession.id, text);
+        applySessionUpdate(result.session, result.events);
+        setPrompt("");
+      } catch (error) {
+        setRuntimeState(toErrorState(error));
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [applySessionUpdate, prompt, selectedSession],
+  );
+
+  const stopSelectedSession = useCallback(async () => {
+    if (selectedSession === null) {
+      return;
+    }
+
+    setIsBusy(true);
+    try {
+      const result = await piNative.sessionStop(selectedSession.id);
+      applySessionUpdate(result.session, result.events);
+    } catch (error) {
+      setRuntimeState(toErrorState(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }, [applySessionUpdate, selectedSession]);
 
   return (
     <aside
@@ -116,10 +270,10 @@ export function PiPanel() {
             {runtimeState.detail ??
               "Connect the Pi runtime to show active sessions in this sidebar."}
           </p>
-          <div className="mt-2 flex items-center gap-1.5">
+          <div className="mt-2 grid grid-cols-3 gap-1.5">
             <Button
               size="xs"
-              className="h-6 flex-1"
+              className="h-6"
               disabled={!status.canStart || isBusy}
               onClick={() => void startRuntime()}
             >
@@ -128,11 +282,20 @@ export function PiPanel() {
             <Button
               size="xs"
               variant="outline"
-              className="h-6 flex-1"
+              className="h-6"
               disabled={!status.canStop || isBusy}
               onClick={() => void stopRuntime()}
             >
               Stop
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              className="h-6"
+              disabled={isBusy}
+              onClick={() => void restartRuntime()}
+            >
+              Restart
             </Button>
           </div>
         </div>
@@ -144,21 +307,150 @@ export function PiPanel() {
             Sessions
           </span>
           <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border/60 px-1 text-[9.5px] font-semibold tabular-nums text-muted-foreground">
-            0
+            {sessions.length}
           </span>
+          <Button
+            size="xs"
+            variant="ghost"
+            className="ml-auto h-5 rounded-md px-1.5 text-[10px]"
+            disabled={!runtimeReady || isBusy}
+            onClick={() => void createSession()}
+          >
+            New
+          </Button>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 px-4 text-center">
-          <div className="flex size-8 items-center justify-center rounded-full border border-border/55 text-muted-foreground">
-            <HugeiconsIcon icon={AiChat02Icon} size={16} strokeWidth={1.6} />
+        {sessions.length === 0 ? (
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1.5 px-4 text-center">
+            <div className="flex size-8 items-center justify-center rounded-full border border-border/55 text-muted-foreground">
+              <HugeiconsIcon icon={AiChat02Icon} size={16} strokeWidth={1.6} />
+            </div>
+            <div className="text-[12px] font-medium text-foreground">
+              No Pi sessions
+            </div>
+            <div className="max-w-52 text-[10.5px] leading-snug text-muted-foreground">
+              Create a session to exercise the Pi protocol stub.
+            </div>
           </div>
-          <div className="text-[12px] font-medium text-foreground">
-            No Pi sessions
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 shrink-0 space-y-1 overflow-y-auto border-b border-border/35 px-2 pb-2">
+              {sessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  className={cn(
+                    "flex w-full min-w-0 items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
+                    selectedSessionId === session.id
+                      ? "border-primary/35 bg-primary/10"
+                      : "border-border/35 bg-background/75 hover:bg-muted/60",
+                  )}
+                  onClick={() => setSelectedSessionId(session.id)}
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      sessionDotClass(session.status),
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[11.5px] font-medium text-foreground">
+                      {session.title}
+                    </span>
+                    <span className="block truncate text-[10px] capitalize text-muted-foreground">
+                      {session.status}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex min-h-0 flex-1 flex-col px-2 py-2">
+              <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border/40 bg-background/70">
+                <div className="flex h-7 shrink-0 items-center gap-2 border-b border-border/35 px-2">
+                  <span className="truncate text-[11px] font-medium text-foreground">
+                    {selectedSession?.title ?? "Session"}
+                  </span>
+                  <span className="ml-auto text-[10px] capitalize text-muted-foreground">
+                    {selectedSession?.status ?? "idle"}
+                  </span>
+                </div>
+                <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
+                  {selectedEvents.length === 0 ? (
+                    <div className="py-4 text-center text-[10.5px] text-muted-foreground">
+                      No session events yet.
+                    </div>
+                  ) : (
+                    selectedEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        className="rounded-md border border-border/35 bg-card/60 px-2 py-1"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-[10.5px] font-medium text-foreground">
+                            {formatEventLabel(event)}
+                          </span>
+                          <span className="ml-auto shrink-0 text-[9.5px] text-muted-foreground">
+                            {event.id}
+                          </span>
+                        </div>
+                        {typeof event.payload.text === "string" ? (
+                          <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-muted-foreground">
+                            {event.payload.text}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <form
+              className="shrink-0 border-t border-border/35 p-2"
+              onSubmit={(event) => void sendPrompt(event)}
+            >
+              <textarea
+                className="min-h-14 w-full resize-none rounded-md border border-border/45 bg-background px-2 py-1.5 text-[11px] leading-snug text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-primary/45 focus:ring-2 focus:ring-primary/15"
+                value={prompt}
+                placeholder="Send a prompt to the selected Pi session…"
+                disabled={!runtimeReady || selectedSession === null || isBusy}
+                onChange={(event) => setPrompt(event.target.value)}
+              />
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <Button
+                  type="submit"
+                  size="xs"
+                  className="h-6 flex-1"
+                  disabled={
+                    !runtimeReady ||
+                    selectedSession === null ||
+                    prompt.trim() === "" ||
+                    isBusy
+                  }
+                >
+                  Send
+                </Button>
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  className="h-6 flex-1"
+                  disabled={
+                    !runtimeReady ||
+                    selectedSession === null ||
+                    selectedSession.status === "stopped" ||
+                    isBusy
+                  }
+                  onClick={() => void stopSelectedSession()}
+                >
+                  Stop
+                </Button>
+              </div>
+            </form>
           </div>
-          <div className="max-w-52 text-[10.5px] leading-snug text-muted-foreground">
-            New sessions will appear here when the runtime is connected.
-          </div>
-        </div>
+        )}
       </div>
     </aside>
   );

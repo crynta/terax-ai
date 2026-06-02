@@ -42,6 +42,56 @@ pub struct PiPackageInfo {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSession {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_prompt: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionEvent {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub session_id: String,
+    pub created_at: String,
+    pub payload: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionsList {
+    pub sessions: Vec<PiSession>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionCreateResult {
+    pub session: PiSession,
+    pub events: Vec<PiSessionEvent>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionSendResult {
+    pub accepted: bool,
+    pub session: PiSession,
+    pub events: Vec<PiSessionEvent>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionStopResult {
+    pub session: PiSession,
+    pub events: Vec<PiSessionEvent>,
+}
+
 impl Default for PiRuntimeSnapshot {
     fn default() -> Self {
         Self {
@@ -57,6 +107,27 @@ pub struct PiState {
 }
 
 impl PiState {
+    fn with_host<R>(
+        &self,
+        resource_dir: Option<&Path>,
+        action: impl FnOnce(&mut PiHost) -> Result<R, String>,
+    ) -> Result<R, String> {
+        let mut host = self.host.lock().map_err(|e| e.to_string())?;
+        if host.is_none() {
+            *host = Some(PiHost::spawn(resource_dir)?);
+        }
+        match action(
+            host.as_mut()
+                .ok_or_else(|| "Pi host was not initialized".to_string())?,
+        ) {
+            Ok(result) => Ok(result),
+            Err(error) => {
+                *host = None;
+                Err(error)
+            }
+        }
+    }
+
     pub fn snapshot(&self) -> Result<PiRuntimeSnapshot, String> {
         let mut guard = self.host.lock().map_err(|e| e.to_string())?;
         let Some(host) = guard.as_mut() else {
@@ -115,21 +186,39 @@ impl PiState {
         &self,
         resource_dir: Option<&Path>,
     ) -> Result<PiHostInfo, String> {
-        let mut host = self.host.lock().map_err(|e| e.to_string())?;
-        if host.is_none() {
-            *host = Some(PiHost::spawn(resource_dir)?);
-        }
-        match host
-            .as_mut()
-            .ok_or_else(|| "Pi host was not initialized".to_string())?
-            .info()
-        {
-            Ok(info) => Ok(info),
-            Err(error) => {
-                *host = None;
-                Err(error)
-            }
-        }
+        self.with_host(resource_dir, PiHost::info)
+    }
+
+    pub fn sessions_list_with_resource_dir(
+        &self,
+        resource_dir: Option<&Path>,
+    ) -> Result<PiSessionsList, String> {
+        self.with_host(resource_dir, PiHost::sessions_list)
+    }
+
+    pub fn session_create_with_resource_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        title: Option<String>,
+    ) -> Result<PiSessionCreateResult, String> {
+        self.with_host(resource_dir, |host| host.session_create(title))
+    }
+
+    pub fn session_send_with_resource_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        session_id: String,
+        prompt: String,
+    ) -> Result<PiSessionSendResult, String> {
+        self.with_host(resource_dir, |host| host.session_send(session_id, prompt))
+    }
+
+    pub fn session_stop_with_resource_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        session_id: String,
+    ) -> Result<PiSessionStopResult, String> {
+        self.with_host(resource_dir, |host| host.session_stop(session_id))
     }
 
     pub fn stop(&self) -> Result<PiRuntimeSnapshot, String> {
@@ -176,4 +265,40 @@ pub async fn pi_host_info(
     state: tauri::State<'_, PiState>,
 ) -> Result<PiHostInfo, String> {
     state.info_with_resource_dir(resource_dir(&app).as_deref())
+}
+
+#[tauri::command]
+pub async fn pi_sessions_list(
+    app: AppHandle,
+    state: tauri::State<'_, PiState>,
+) -> Result<PiSessionsList, String> {
+    state.sessions_list_with_resource_dir(resource_dir(&app).as_deref())
+}
+
+#[tauri::command]
+pub async fn pi_session_create(
+    app: AppHandle,
+    state: tauri::State<'_, PiState>,
+    title: Option<String>,
+) -> Result<PiSessionCreateResult, String> {
+    state.session_create_with_resource_dir(resource_dir(&app).as_deref(), title)
+}
+
+#[tauri::command]
+pub async fn pi_session_send(
+    app: AppHandle,
+    state: tauri::State<'_, PiState>,
+    session_id: String,
+    prompt: String,
+) -> Result<PiSessionSendResult, String> {
+    state.session_send_with_resource_dir(resource_dir(&app).as_deref(), session_id, prompt)
+}
+
+#[tauri::command]
+pub async fn pi_session_stop(
+    app: AppHandle,
+    state: tauri::State<'_, PiState>,
+    session_id: String,
+) -> Result<PiSessionStopResult, String> {
+    state.session_stop_with_resource_dir(resource_dir(&app).as_deref(), session_id)
 }
