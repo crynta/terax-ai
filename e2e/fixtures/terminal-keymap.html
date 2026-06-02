@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Terminal keymap fixture</title>
+    <style>
+      body { font-family: sans-serif; margin: 24px; }
+      #terminal { width: 480px; height: 180px; border: 1px solid #999; padding: 12px; outline: none; }
+      #terminal:focus { border-color: #2563eb; }
+      pre { min-height: 24px; }
+    </style>
+  </head>
+  <body>
+    <div id="terminal" tabindex="0" role="textbox" aria-label="terminal input">Terminal key target</div>
+    <pre id="sequence"></pre>
+    <script type="module">
+      import {
+        terminalEditorNewlineSequence,
+        terminalGsdShortcutSequence,
+      } from "/src/modules/terminal/lib/keymap.ts";
+
+      const target = document.getElementById("terminal");
+      const output = document.getElementById("sequence");
+      window.__lastSequence = null;
+
+      function toHex(seq) {
+        return Array.from(seq, (ch) => ch.charCodeAt(0).toString(16).padStart(2, "0")).join(" ");
+      }
+
+      target.addEventListener("keydown", (event) => {
+        const seq = terminalEditorNewlineSequence(event) ?? terminalGsdShortcutSequence(event);
+        if (!seq) return;
+        event.preventDefault();
+        window.__lastSequence = { raw: seq, hex: toHex(seq) };
+        output.textContent = window.__lastSequence.hex;
+      });
+
+      target.focus();
+    </script>
+  </body>
+</html>
