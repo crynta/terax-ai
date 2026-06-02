@@ -52,6 +52,10 @@ import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
+  CommandPalette,
+  createCommandPaletteActions,
+} from "@/modules/command-palette";
+import {
   listenFsChanged,
   parentDir,
   watchAdd,
@@ -79,7 +83,7 @@ import {
   useSourceControl,
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
-import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
+import { MAX_PANES_PER_TAB, useTabs, useWindowTitle, useWorkspaceCwd } from "@/modules/tabs";
 import {
   clearFocusedTerminal,
   disposeSession,
@@ -406,6 +410,7 @@ export default function App() {
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const miniOpen = useChatStore((s) => s.mini.open);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const openMini = useChatStore((s) => s.openMini);
@@ -638,6 +643,8 @@ export default function App() {
     tabs,
     launchCwd ?? home,
   );
+
+  useWindowTitle(activeTab, explorerRoot);
 
   useEffect(() => {
     setActiveSearchAddon(
@@ -955,6 +962,10 @@ export default function App() {
     }
     return null;
   })();
+  const explorerActiveFilePath =
+    activeTab?.kind === "editor" || activeTab?.kind === "markdown"
+      ? activeTab.path
+      : null;
   const workspaceFallbackPath = launchCwdResolved
     ? (launchCwd ?? home ?? null)
     : null;
@@ -1059,6 +1070,7 @@ export default function App() {
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
+      "commandPalette.open": () => setCommandPaletteOpen(true),
       "tab.new": openNewTab,
       "tab.newPrivate": openNewPrivateTab,
       "tab.newPreview": () => openPreviewTab(""),
@@ -1131,6 +1143,19 @@ export default function App() {
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
         return !(target as HTMLElement | null)?.closest?.(".xterm");
+      }
+      if (id === "sidebar.toggle") {
+        // Ctrl+B is also Claude Code's "run in background" key. While a terminal
+        // is focused, let Ctrl+B reach the shell/Claude instead of toggling the
+        // sidebar. Ctrl+Shift+B (second binding) still toggles it from anywhere.
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
+          ".xterm",
+        );
+        // Only defer the plain (no-shift) Ctrl/⌘+B binding; the Shift variant
+        // is the always-on toggle and is never claimed by the terminal.
+        return inTerminal && !e.shiftKey;
       }
       return false;
     },
@@ -1259,6 +1284,52 @@ export default function App() {
     activeEditorHandle,
     gitHistoryHandle,
   ]);
+
+  const commandPaletteActions = useMemo(
+    () =>
+      createCommandPaletteActions({
+        tabs,
+        activeId,
+        searchTarget,
+        explorerRoot,
+        home,
+        openNewTab,
+        openNewPrivate: openNewPrivateTab,
+        openNewEditor: () => setNewEditorOpen(true),
+        openNewPreview: () => openPreviewTab(""),
+        closeActiveTabOrPane: handleCloseTabOrPane,
+        nextTab: () => cycleTab(1),
+        previousTab: () => cycleTab(-1),
+        splitPaneRight: () => splitActivePaneInActiveTab("row"),
+        splitPaneDown: () => splitActivePaneInActiveTab("col"),
+        focusNextPane: () => focusNextPaneInTab(activeId, 1),
+        focusPreviousPane: () => focusNextPaneInTab(activeId, -1),
+        focusSearch: () => searchInlineRef.current?.focus(),
+        focusExplorerSearch: () => explorerRef.current?.focusSearch(),
+        toggleSidebar,
+        toggleAi: togglePanelAndFocus,
+        askAiSelection: askFromSelection,
+        openSettings: () => void openSettingsWindow(),
+        openShortcuts: () => setShortcutsOpen(true),
+      }),
+    [
+      tabs,
+      activeId,
+      searchTarget,
+      explorerRoot,
+      home,
+      openNewTab,
+      openNewPrivateTab,
+      openPreviewTab,
+      handleCloseTabOrPane,
+      cycleTab,
+      splitActivePaneInActiveTab,
+      focusNextPaneInTab,
+      toggleSidebar,
+      togglePanelAndFocus,
+      askFromSelection,
+    ],
+  );
 
   const activeCwd = activeTerminalLeafCwd;
 
@@ -1515,6 +1586,7 @@ export default function App() {
                       <FileExplorer
                         ref={explorerRef}
                         rootPath={explorerRoot}
+                        activeFilePath={explorerActiveFilePath}
                         onOpenFile={handleOpenFile}
                         onPathRenamed={handlePathRenamed}
                         onPathDeleted={handlePathDeleted}
@@ -1528,6 +1600,7 @@ export default function App() {
                         sourceControl={sourceControl}
                         onOpenDiff={openGitDiffTab}
                         onOpenGitGraph={openGitGraphFromContext}
+                        onOpenFile={handleOpenFile}
                       />
                     )}
                   </div>
@@ -1615,6 +1688,14 @@ export default function App() {
               />
             ) : null}
           </AnimatePresence>
+
+          <CommandPalette
+            open={commandPaletteOpen}
+            onOpenChange={setCommandPaletteOpen}
+            actions={commandPaletteActions}
+            workspaceRoot={explorerRoot}
+            onOpenFile={handleOpenFile}
+          />
 
           <ShortcutsDialog
             open={shortcutsOpen}
