@@ -13,7 +13,8 @@ export type ProviderId =
   | "openai-compatible"
   | "lmstudio"
   | "mlx"
-  | "ollama";
+  | "ollama"
+  | "pi";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -118,6 +119,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPrefix: null,
     consoleUrl: "https://ollama.com/download",
   },
+  {
+    id: "pi",
+    label: "Pi",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://github.com/earendil-works/pi",
+  },
 ] as const;
 
 export type CustomEndpoint = {
@@ -129,6 +137,7 @@ export type CustomEndpoint = {
 };
 
 const COMPAT_MODEL_PREFIX = "compat-";
+const PI_MODEL_PREFIX = "pi:";
 
 export function compatModelIdForEndpoint(endpointId: string): string {
   return `${COMPAT_MODEL_PREFIX}${endpointId}`;
@@ -142,6 +151,36 @@ export function endpointIdFromCompatModel(modelId: string): string {
   return isCompatModelId(modelId)
     ? modelId.slice(COMPAT_MODEL_PREFIX.length)
     : "";
+}
+
+export type PiModelRecord = {
+  provider: string;
+  model: string;
+  contextTokens: number | null;
+  maxOutputTokens: number | null;
+  thinking: boolean;
+  images: boolean;
+};
+
+export function piModelId(provider: string, model: string): string {
+  return `${PI_MODEL_PREFIX}${provider}/${model}`;
+}
+
+export function isPiModelId(modelId: string): boolean {
+  return modelId.startsWith(PI_MODEL_PREFIX);
+}
+
+export function parsePiModelId(
+  modelId: string,
+): { provider: string; model: string } | null {
+  if (!isPiModelId(modelId)) return null;
+  const raw = modelId.slice(PI_MODEL_PREFIX.length);
+  const slash = raw.indexOf("/");
+  if (slash <= 0 || slash === raw.length - 1) return null;
+  return {
+    provider: raw.slice(0, slash),
+    model: raw.slice(slash + 1),
+  };
 }
 
 /** One-shot migration of the legacy single OpenAI-compatible config into the
@@ -543,11 +582,38 @@ export function getCompatModelInfo(
   };
 }
 
+export function getPiModelInfo(
+  modelId: string,
+  models: readonly PiModelRecord[] = [],
+): ModelInfo {
+  const parsed = parsePiModelId(modelId);
+  const found = parsed
+    ? models.find((m) => m.provider === parsed.provider && m.model === parsed.model)
+    : null;
+  const provider = found?.provider ?? parsed?.provider ?? "pi";
+  const model = found?.model ?? parsed?.model ?? modelId.replace(PI_MODEL_PREFIX, "");
+  return {
+    id: modelId,
+    provider: "pi",
+    label: model,
+    hint: provider,
+    description: `Pi ${provider}/${model}`,
+    capabilities: {
+      intelligence: found?.thinking ? 4 : 3,
+      speed: 3,
+      cost: 3,
+    },
+    tags: found?.thinking ? ["tools", "coding", "reasoning"] : ["tools", "coding"],
+  };
+}
+
 export function resolveModel(
   modelId: string,
   endpoints: readonly CustomEndpoint[] = [],
+  piModels: readonly PiModelRecord[] = [],
 ): ModelInfo {
   if (isCompatModelId(modelId)) return getCompatModelInfo(modelId, endpoints);
+  if (isPiModelId(modelId)) return getPiModelInfo(modelId, piModels);
   const m = MODELS.find((x) => x.id === modelId);
   if (!m) throw new Error(`Unknown model: ${modelId}`);
   return m;
@@ -563,12 +629,17 @@ export function isKnownModelId(id: string): id is ModelId {
   return MODELS.some((x) => x.id === id);
 }
 
+export function isPersistableModelId(id: string): boolean {
+  return isKnownModelId(id) || isCompatModelId(id) || isPiModelId(id);
+}
+
 const FREEFORM_PROVIDERS: ReadonlySet<ProviderId> = new Set([
   "openrouter",
   "openai-compatible",
   "lmstudio",
   "mlx",
   "ollama",
+  "pi",
 ]);
 
 // Reasoning models reject tool-call turns whose reasoning was stripped; keep it.
@@ -681,6 +752,7 @@ export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
   "mlx",
   "ollama",
   "openai-compatible",
+  "pi",
 ] as const;
 
 export function providerNeedsKey(id: ProviderId): boolean {

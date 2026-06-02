@@ -18,9 +18,12 @@ import {
   getAutocompleteEligibleModels,
   getModel,
   getProvider,
+  getPiModelInfo,
   providerNeedsKey,
+  piModelId,
   type CustomEndpoint,
   type ModelId,
+  type PiModelRecord,
   type ProviderId,
   type ProviderInfo,
 } from "@/modules/ai/config";
@@ -53,6 +56,10 @@ import {
   setOpenaiCompatibleContextLimit,
   setOpenaiCompatibleModelId,
   setOpenrouterModelId,
+  setPiExecutablePath,
+  setPiModelId,
+  setPiModels,
+  setPiProviderEnabled,
   setRecentModelIds,
 } from "@/modules/settings/store";
 import {
@@ -62,6 +69,7 @@ import {
   Cancel01Icon,
   CheckmarkCircle02Icon,
   ChevronDown,
+  RefreshIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -72,6 +80,12 @@ import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
 
 type KeysMap = Record<ProviderId, string | null>;
+type PiDetectResult = {
+  installed: boolean;
+  path: string | null;
+  version: string | null;
+  error: string | null;
+};
 
 const isLocalProvider = (id: ProviderId): boolean => !providerNeedsKey(id);
 
@@ -148,6 +162,16 @@ export function ModelsSection() {
   );
   const openrouterModelId = usePreferencesStore((s) => s.openrouterModelId);
   const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
+  const piProviderEnabled = usePreferencesStore((s) => s.piProviderEnabled);
+  const piExecutablePath = usePreferencesStore((s) => s.piExecutablePath);
+  const piConfiguredModelId = usePreferencesStore((s) => s.piModelId);
+  const piModels = usePreferencesStore((s) => s.piModels);
+  const [piLiveModels, setPiLiveModels] = useState<PiModelRecord[]>([]);
+  const [piDetect, setPiDetect] = useState<PiDetectResult | null>(null);
+  const [piError, setPiError] = useState<string | null>(null);
+  const [piRefreshStatus, setPiRefreshStatus] = useState<string | null>(null);
+  const [piBusy, setPiBusy] = useState(false);
+  const visiblePiModels = piModels.length > 0 ? piModels : piLiveModels;
 
   useEffect(() => {
     void getAllKeys().then(setKeys);
@@ -156,6 +180,60 @@ export function ModelsSection() {
   useEffect(() => {
     void getAllCustomEndpointKeys(customEndpoints).then(setEpKeys);
   }, [customEndpoints]);
+
+  const refreshPi = async (
+    refreshModels: boolean,
+    executablePathOverride = piExecutablePath,
+  ) => {
+    setPiBusy(true);
+    setPiError(null);
+    setPiRefreshStatus(refreshModels ? "Refreshing models..." : null);
+    try {
+      const detected = await invoke<PiDetectResult>("pi_detect", {
+        executablePath: executablePathOverride || null,
+      });
+      setPiDetect(detected);
+      if (!detected.installed || !refreshModels) {
+        setPiRefreshStatus(null);
+        return;
+      }
+      const models = await invoke<PiModelRecord[]>("pi_list_models", {
+        executablePath: executablePathOverride || null,
+      });
+      setPiLiveModels(models);
+      usePreferencesStore.setState({ piModels: models });
+      await setPiModels(models);
+      setPiRefreshStatus(
+        models.length > 0
+          ? `Loaded ${models.length} models`
+          : "Pi returned no models",
+      );
+      const selectedStillExists =
+        piConfiguredModelId &&
+        models.some(
+          (m) => piModelId(m.provider, m.model) === piConfiguredModelId,
+        );
+      if (!selectedStillExists && models[0]) {
+        const nextId = piModelId(models[0].provider, models[0].model);
+        usePreferencesStore.setState({ piModelId: nextId });
+        await setPiModelId(nextId);
+      }
+    } catch (e) {
+      setPiError(e instanceof Error ? e.message : String(e));
+      setPiRefreshStatus(null);
+    } finally {
+      setPiBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshPi(
+      piProviderEnabled ||
+        piExecutablePath.trim().length > 0 ||
+        piConfiguredModelId.trim().length > 0,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [piExecutablePath, piProviderEnabled]);
 
   const onSaveKey = async (provider: ProviderId, value: string) => {
     await setKey(provider, value);
@@ -282,6 +360,8 @@ export function ModelsSection() {
   };
 
   const isConfigured = (id: ProviderId): boolean => {
+    if (id === "pi")
+      return !!piDetect?.installed && !!piConfiguredModelId.trim();
     if (id === "openrouter")
       return !!keys?.[id] && !!openrouterModelId.trim();
     if (!isLocalProvider(id)) return !!keys?.[id];
@@ -300,6 +380,9 @@ export function ModelsSection() {
     PROVIDERS.filter((p) => isConfigured(p.id)).map((p) => p.id),
   );
   const visibleIds = new Set<ProviderId>(configuredIds);
+  if (piProviderEnabled || piExecutablePath.trim() || visiblePiModels.length > 0) {
+    visibleIds.add("pi");
+  }
   for (const id of adding) visibleIds.add(id);
   const visibleProviders = PROVIDERS.filter(
     (p) => p.id !== "openai-compatible" && visibleIds.has(p.id),
@@ -309,7 +392,19 @@ export function ModelsSection() {
   );
 
   const removeProvider = (id: ProviderId) => {
-    if (id === "openrouter") {
+    if (id === "pi") {
+      usePreferencesStore.setState({
+        piProviderEnabled: false,
+        piExecutablePath: "",
+        piModelId: "",
+        piModels: [],
+      });
+      setPiLiveModels([]);
+      void setPiProviderEnabled(false);
+      void setPiExecutablePath("");
+      void setPiModelId("");
+      void setPiModels([]);
+    } else if (id === "openrouter") {
       void setOpenrouterModelId("");
       void onClearKey(id);
     } else if (isLocalProvider(id)) {
@@ -331,6 +426,11 @@ export function ModelsSection() {
 
   const addProvider = (id: ProviderId) => {
     setAdding((prev) => new Set(prev).add(id));
+    if (id === "pi") {
+      usePreferencesStore.setState({ piProviderEnabled: true });
+      void setPiProviderEnabled(true);
+      void refreshPi(true);
+    }
   };
 
   return (
@@ -353,6 +453,9 @@ export function ModelsSection() {
             providers={addableProviders}
             onAdd={addProvider}
             onAddCompat={addCustomEndpoint}
+            disabledIds={new Set<ProviderId>(
+              piDetect?.installed === false ? ["pi"] : [],
+            )}
           />
         </div>
 
@@ -368,7 +471,24 @@ export function ModelsSection() {
         ) : (
           <div className="flex flex-col gap-2">
             {visibleProviders.map((p) =>
-              p.id === "openrouter" ? (
+              p.id === "pi" ? (
+                <PiProviderCard
+                  key={p.id}
+                  provider={p}
+                  detected={piDetect}
+                  error={piError}
+                  refreshStatus={piRefreshStatus}
+                  busy={piBusy}
+                  executablePath={piExecutablePath}
+                  models={visiblePiModels}
+                  selectedModelId={piConfiguredModelId}
+                  configured={configuredIds.has(p.id)}
+                  onDetect={(path) => refreshPi(true, path)}
+                  onSetExecutablePath={setPiExecutablePath}
+                  onSetModelId={setPiModelId}
+                  onRemove={() => removeProvider(p.id)}
+                />
+              ) : p.id === "openrouter" ? (
                 <LocalProviderCard
                   key={p.id}
                   provider={p}
@@ -430,14 +550,209 @@ type LocalConfig = {
   noBaseURL?: boolean;
 };
 
+function PiProviderCard({
+  provider,
+  detected,
+  error,
+  refreshStatus,
+  busy,
+  executablePath,
+  models,
+  selectedModelId,
+  configured,
+  onDetect,
+  onSetExecutablePath,
+  onSetModelId,
+  onRemove,
+}: {
+  provider: ProviderInfo;
+  detected: PiDetectResult | null;
+  error: string | null;
+  refreshStatus: string | null;
+  busy: boolean;
+  executablePath: string;
+  models: readonly PiModelRecord[];
+  selectedModelId: string;
+  configured: boolean;
+  onDetect: (executablePath?: string) => void;
+  onSetExecutablePath: (v: string) => Promise<void>;
+  onSetModelId: (v: string) => Promise<void>;
+  onRemove: () => void;
+}) {
+  const [pathDraft, setPathDraft] = useState(executablePath);
+  const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
+  useEffect(() => setPathDraft(executablePath), [executablePath]);
+
+  const selected = models.find(
+    (m) => piModelId(m.provider, m.model) === selectedModelId,
+  );
+  const selectedInfo = selected
+    ? getPiModelInfo(selectedModelId, models)
+    : null;
+  const savePath = async (): Promise<string> => {
+    const v = pathDraft.trim();
+    if (v !== executablePath) await onSetExecutablePath(v);
+    return v;
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <ProviderIcon provider={provider.id} size={15} />
+        <span className="text-[12.5px] font-medium">{provider.label}</span>
+        {configured ? (
+          <Badge
+            variant="outline"
+            className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
+          >
+            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            Connected
+          </Badge>
+        ) : null}
+        {detected?.version ? (
+          <span className="truncate text-[10.5px] text-muted-foreground">
+            {detected.version}
+          </span>
+        ) : null}
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={onRemove}
+          title="Remove provider"
+          className="ml-auto size-7 text-muted-foreground hover:text-destructive"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+        </Button>
+      </div>
+
+      <span className="text-[10.5px] leading-relaxed text-muted-foreground">
+        Use Pi's local coding-agent harness, auth, subscriptions, tools, and
+        session history from Terax chat.
+      </span>
+
+      <FieldRow label="Executable">
+        <div className="flex flex-1 gap-1.5">
+          <Input
+            value={pathDraft}
+            onChange={(e) => setPathDraft(e.target.value)}
+            onBlur={() => void savePath()}
+            placeholder="pi from PATH"
+            spellCheck={false}
+            className="h-8 flex-1 font-mono text-[11.5px]"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              void savePath().then((path) => onDetect(path));
+            }}
+            disabled={busy}
+            className="h-8 gap-1.5 px-3 text-[11px]"
+          >
+            <HugeiconsIcon icon={RefreshIcon} size={12} strokeWidth={1.75} />
+            Refresh
+          </Button>
+        </div>
+      </FieldRow>
+
+      {detected?.path ? (
+        <p className="truncate pl-19 font-mono text-[10.5px] text-muted-foreground">
+          {detected.path}
+        </p>
+      ) : null}
+
+      {detected?.installed === false ? (
+        <p className="pl-19 text-[10.5px] text-amber-600 dark:text-amber-400">
+          {detected.error ?? "Pi was not found. Install Pi or set the executable path."}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="pl-19 text-[10.5px] text-amber-600 dark:text-amber-400">
+          {error}
+        </p>
+      ) : null}
+      {!error && refreshStatus ? (
+        <p className="pl-19 text-[10.5px] text-muted-foreground">
+          {refreshStatus}
+        </p>
+      ) : null}
+
+      <FieldRow label="Model">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              disabled={!detected?.installed || models.length === 0}
+              className="h-8 flex-1 justify-between gap-2 px-2.5 text-[11.5px]"
+            >
+              <span className="flex min-w-0 items-center gap-2 truncate">
+                <ProviderIcon provider="pi" size={12} />
+                <span className="truncate">
+                  {selectedInfo?.label ??
+                    (busy ? "Refreshing models..." : "Click Refresh to load models")}
+                </span>
+                {selectedInfo ? (
+                  <span className="text-muted-foreground">
+                    · {selectedInfo.hint}
+                  </span>
+                ) : null}
+              </span>
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                size={11}
+                strokeWidth={2}
+                className="opacity-70"
+              />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            collisionPadding={12}
+            className="max-h-72 min-w-80 overflow-y-auto"
+          >
+            {models.map((model) => {
+              const id = piModelId(model.provider, model.model);
+              const info = getPiModelInfo(id, models);
+              return (
+                <DropdownMenuItem
+                  key={id}
+                  onSelect={() => {
+                    void onSetModelId(id);
+                    setSelectedModelId(id);
+                  }}
+                  className={cn(
+                    "flex items-start gap-2 text-[11.5px]",
+                    id === selectedModelId && "bg-accent/50",
+                  )}
+                >
+                  <span className="flex flex-1 flex-col">
+                    <span>{info.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {info.hint}
+                      {model.thinking ? " · reasoning" : ""}
+                      {model.images ? " · images" : ""}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </FieldRow>
+    </div>
+  );
+}
+
 function AddProviderMenu({
   providers,
   onAdd,
   onAddCompat,
+  disabledIds,
 }: {
   providers: readonly ProviderInfo[];
   onAdd: (id: ProviderId) => void;
   onAddCompat: () => void;
+  disabledIds: ReadonlySet<ProviderId>;
 }) {
   const cloud = providers.filter((p) => !isLocalProvider(p.id));
   const local = providers.filter((p) => isLocalProvider(p.id) && p.id !== "openai-compatible");
@@ -469,7 +784,12 @@ function AddProviderMenu({
           Local & custom
         </DropdownMenuLabel>
         {local.map((p) => (
-          <ProviderMenuItem key={p.id} provider={p} onAdd={onAdd} />
+          <ProviderMenuItem
+            key={p.id}
+            provider={p}
+            disabled={disabledIds.has(p.id)}
+            onAdd={onAdd}
+          />
         ))}
         <DropdownMenuItem
           onSelect={() => onAddCompat()}
@@ -485,18 +805,26 @@ function AddProviderMenu({
 
 function ProviderMenuItem({
   provider,
+  disabled,
   onAdd,
 }: {
   provider: ProviderInfo;
+  disabled?: boolean;
   onAdd: (id: ProviderId) => void;
 }) {
   return (
     <DropdownMenuItem
+      disabled={disabled}
       onSelect={() => onAdd(provider.id)}
       className="flex items-center gap-2 text-[12px]"
     >
       <ProviderIcon provider={provider.id} size={13} />
       <span>{provider.label}</span>
+      {disabled ? (
+        <span className="ml-auto text-[10px] text-muted-foreground">
+          not found
+        </span>
+      ) : null}
     </DropdownMenuItem>
   );
 }

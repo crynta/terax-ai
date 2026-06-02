@@ -38,6 +38,7 @@ import {
   Settings01Icon,
   StarIcon,
   StopCircleIcon,
+  TerminalIcon,
   Tick01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -46,9 +47,12 @@ import { useMemo, useRef, useState } from "react";
 import {
   compatModelIdForEndpoint,
   getCompatModelInfo,
+  getPiModelInfo,
   getModel,
   isCompatModelId,
+  isPiModelId,
   MODELS,
+  piModelId,
   providerNeedsKey,
   PROVIDERS,
   type ModelCapabilities,
@@ -75,6 +79,7 @@ const PROVIDER_ICON = {
   lmstudio: ComputerIcon,
   mlx: AppleIcon,
   ollama: ServerStack01Icon,
+  pi: TerminalIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
@@ -216,9 +221,12 @@ function ModelDropdown() {
   const favoriteIds = usePreferencesStore((s) => s.favoriteModelIds);
   const recentIds = usePreferencesStore((s) => s.recentModelIds);
   const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
+  const piModels = usePreferencesStore((s) => s.piModels);
   const current = isCompatModelId(selected)
     ? getCompatModelInfo(selected, customEndpoints)
-    : getModel(selected as ModelId);
+    : isPiModelId(selected)
+      ? getPiModelInfo(selected, piModels)
+      : getModel(selected as ModelId);
   const [search, setSearch] = useState("");
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("all");
@@ -238,20 +246,29 @@ function ModelDropdown() {
     );
   }, [customEndpoints]);
 
+  const piModelInfos = useMemo(
+    () => piModels.map((m) => getPiModelInfo(piModelId(m.provider, m.model), piModels)),
+    [piModels],
+  );
+
   const sortedProviders = useMemo(() => {
     const configured: (typeof PROVIDERS)[number][] = [];
     const unconfigured: (typeof PROVIDERS)[number][] = [];
     for (const p of PROVIDERS) {
       if (p.id === "openai-compatible") continue;
-      (hasKeyFor(p.id) ? configured : unconfigured).push(p);
+      if (p.id === "pi") {
+        (piModelInfos.length > 0 ? configured : unconfigured).push(p);
+      } else {
+        (hasKeyFor(p.id) ? configured : unconfigured).push(p);
+      }
     }
     return { configured, unconfigured };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKeys]);
+  }, [apiKeys, piModelInfos.length]);
 
   const allModels = useMemo(
-    () => [...MODELS, ...epModelInfos],
-    [epModelInfos],
+    () => [...MODELS, ...epModelInfos, ...piModelInfos],
+    [epModelInfos, piModelInfos],
   );
 
   const COMPAT_PROVIDER_ID = "__compat__";
@@ -413,6 +430,7 @@ function ModelDropdown() {
             ) : null}
             {activeProvider !== null &&
             activeProvider !== COMPAT_PROVIDER_ID &&
+            activeProvider !== "pi" &&
             !hasKeyFor(activeProvider as ProviderId) ? (
               <ProviderConfigureCTA providerId={activeProvider as ProviderId} />
             ) : null}
@@ -432,12 +450,13 @@ function ModelDropdown() {
                   selected={m.id === selected}
                   hasKey={
                     isCompatModelId(m.id) ||
+                    isPiModelId(m.id) ||
                     hasKeyFor(m.provider)
                   }
                   favorite={favoriteIds.includes(m.id)}
                   showProviderIcon={activeProvider === null}
                   onPick={() => {
-                    if (!isCompatModelId(m.id) && !hasKeyFor(m.provider)) {
+                    if (!isCompatModelId(m.id) && !isPiModelId(m.id) && !hasKeyFor(m.provider)) {
                       void openSettingsWindow("models");
                       return;
                     }

@@ -6,7 +6,7 @@ import {
   type GitStatusSnapshot,
 } from "@/modules/ai/lib/native";
 import { useChatStore } from "@/modules/ai/store/chatStore";
-import { providerNeedsKey, resolveModel } from "@/modules/ai/config";
+import { isPiModelId, providerNeedsKey, resolveModel } from "@/modules/ai/config";
 import {
   invalidateDiff,
   invalidateRepoDiffs,
@@ -369,6 +369,7 @@ export function useSourceControlPanel(
   const selectedModelId = useChatStore((state) => state.selectedModelId);
   const agentStatus = useChatStore((state) => state.agentMeta.status);
   const hasApiKeyForSelected = useChatStore((state) => {
+    if (isPiModelId(state.selectedModelId)) return false;
     const model = resolveModel(state.selectedModelId);
     return !providerNeedsKey(model.provider) || !!state.apiKeys[model.provider];
   });
@@ -470,7 +471,9 @@ export function useSourceControlPanel(
       return "Stage changes to generate a commit message";
     }
     if (!hasApiKeyForSelected) {
-      return "Connect an AI provider to generate commit messages";
+      return isPiModelId(selectedModelId)
+        ? "Pi is available in chat, not commit-message generation"
+        : "Connect an AI provider to generate commit messages";
     }
     if (selectedModel.id === "lmstudio-local" && !lmstudioModelId.trim()) {
       return "Connect an AI provider to generate commit messages";
@@ -500,6 +503,7 @@ export function useSourceControlPanel(
     openaiCompatibleModelId,
     openrouterModelId,
     selectedModel,
+    selectedModelId,
     stagedEntries.length,
   ]);
   const canGenerateCommitMessage =

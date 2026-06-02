@@ -9,6 +9,7 @@ import {
   endpointIdFromCompatModel,
   getModel,
   isCompatModelId,
+  isPiModelId,
   providerNeedsKey,
   type ModelId,
   type ProviderId,
@@ -32,6 +33,7 @@ import {
   type SessionMeta,
 } from "../lib/sessions";
 import { pushRecentModel } from "../lib/modelPrefs";
+import { createPiTransport } from "../lib/piTransport";
 import { createContextAwareTransport } from "../lib/transport";
 import type { ToolContext } from "../tools/tools";
 
@@ -239,7 +241,7 @@ function makeChat(sessionId: string): Chat<UIMessage> {
     getSessionId: () => sessionId,
   };
 
-  const transport = createContextAwareTransport({
+  const teraxTransport = createContextAwareTransport({
     getKeys: () => useChatStore.getState().apiKeys,
     toolContext,
     getModelId: () => useChatStore.getState().selectedModelId,
@@ -303,6 +305,34 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       });
     },
   }) as unknown as ChatTransport<UIMessage>;
+  const piTransport = createPiTransport({
+    getModelId: () => useChatStore.getState().selectedModelId,
+    getPiExecutablePath: () => usePreferencesStore.getState().piExecutablePath,
+    getCustomInstructions: () =>
+      usePreferencesStore.getState().customInstructions,
+    getLive: () => {
+      const live = useChatStore.getState().live;
+      return {
+        cwd: live.getCwd(),
+        terminalPrivate: live.isActiveTerminalPrivate(),
+        workspaceRoot: live.getWorkspaceRoot(),
+        activeFile: live.getActiveFile(),
+      };
+    },
+    onStep: (step) => {
+      useChatStore.getState().patchAgentMeta({ step });
+    },
+  });
+  const transport: ChatTransport<UIMessage> = {
+    sendMessages: (options) =>
+      isPiModelId(useChatStore.getState().selectedModelId)
+        ? piTransport.sendMessages(options)
+        : teraxTransport.sendMessages(options),
+    reconnectToStream: (options) =>
+      isPiModelId(useChatStore.getState().selectedModelId)
+        ? piTransport.reconnectToStream(options)
+        : teraxTransport.reconnectToStream(options),
+  };
 
   const initialMessages = seedMessages.get(sessionId);
   seedMessages.delete(sessionId);
@@ -546,6 +576,7 @@ export function getActiveProviderKey(): string | null {
     const eid = endpointIdFromCompatModel(selectedModelId);
     return customEndpointKeys[eid] ?? null;
   }
+  if (isPiModelId(selectedModelId)) return null;
   return apiKeys[getModel(selectedModelId as ModelId).provider] ?? null;
 }
 
@@ -554,6 +585,7 @@ export function hasKeyForModel(modelId: string): boolean {
   if (isCompatModelId(modelId)) {
     return true;
   }
+  if (isPiModelId(modelId)) return true;
   const provider = getModel(modelId as ModelId).provider;
   return providerNeedsKey(provider) ? !!apiKeys[provider] : true;
 }
@@ -579,7 +611,11 @@ export async function sendMessage(text: string): Promise<boolean> {
   const state = useChatStore.getState();
   const sessionId = state.activeSessionId;
   if (!sessionId) return false;
-  if (providerNeedsKey(getModel(state.selectedModelId as ModelId).provider) && !getActiveProviderKey()) return false;
+  if (
+    !isPiModelId(state.selectedModelId) &&
+    providerNeedsKey(getModel(state.selectedModelId as ModelId).provider) &&
+    !getActiveProviderKey()
+  ) return false;
   const c = getOrCreateChat(sessionId);
   await c.sendMessage({ text });
   return true;

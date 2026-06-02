@@ -29,7 +29,14 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
 import { useEffect, useMemo } from "react";
-import { estimateCost, getModel, getModelContextLimit, type ModelId } from "../config";
+import {
+  estimateCost,
+  getModel,
+  getModelContextLimit,
+  getPiModelInfo,
+  isPiModelId,
+  type ModelId,
+} from "../config";
 import type { ResizeDir } from "../lib/miniWindowGeometry";
 import type { SessionMeta } from "../lib/sessions";
 import { useMiniWindowGeometry } from "../lib/useMiniWindowGeometry";
@@ -338,6 +345,7 @@ function formatTokens(n: number): string {
 
 function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const modelId = useChatStore((s) => s.selectedModelId);
+  const piModels = usePreferencesStore((s) => s.piModels);
   const tokens = useChatStore((s) => s.agentMeta.tokens);
   const lastInput = useChatStore((s) => s.agentMeta.lastInputTokens);
   const lastCached = useChatStore((s) => s.agentMeta.lastCachedTokens);
@@ -350,11 +358,14 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const max = getModelContextLimit(modelId, openaiCompatibleContextLimit);
   const modelLabel = useMemo(() => {
     try {
+      if (isPiModelId(modelId)) {
+        return getPiModelInfo(modelId, piModels).label;
+      }
       return getModel(modelId as ModelId).label;
     } catch {
       return modelId;
     }
-  }, [modelId]);
+  }, [modelId, piModels]);
   const cost = estimateCost(modelId, tokens);
   const cacheRate =
     tokens.inputTokens > 0
