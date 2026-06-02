@@ -33,7 +33,8 @@ export type ShortcutId =
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
-  | "editor.redo";
+  | "editor.redo"
+  | "search.workspace";
 
 export type ShortcutGroup =
   | "General"
@@ -168,10 +169,16 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
   },
   {
+    id: "search.workspace",
+    label: "Search in workspace",
+    group: "Search",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "f" }],
+  },
+  {
     id: "explorer.search",
     label: "Search files",
     group: "Search",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "f" }],
+    defaultBindings: [{ ctrl: true, shift: true, key: "f" }],
   },
   {
     id: "search.focus",
