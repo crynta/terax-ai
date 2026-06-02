@@ -68,6 +68,7 @@ import {
 } from "@/modules/header";
 import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
+import { openNewWindow } from "@/lib/openNewWindow";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged, setThemeId as persistThemeId } from "@/modules/settings/store";
@@ -91,6 +92,7 @@ import {
   hasLeaf,
   leafHasForegroundProcess,
   leafIds,
+  pasteIntoLeaf,
   respawnSession,
   TerminalStack,
   whenSessionReady,
@@ -119,6 +121,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -188,6 +191,7 @@ export default function App() {
     tabs,
     activeId,
     setActiveId,
+    reorderTab,
     newTab,
     newAgentTab,
     newPrivateTab,
@@ -230,6 +234,26 @@ export default function App() {
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
+
+  // Drag-and-drop a file onto the terminal → inject its path into the focused
+  // terminal as a bracketed paste. Claude Code resolves an image path into an
+  // "[Image #N]" reference (matching Warp); a plain shell just receives the
+  // literal path. Tauri surfaces the absolute path that HTML5 drop cannot.
+  const dropRef = useRef<(paths: string[]) => void>(() => {});
+  dropRef.current = (paths) => {
+    if (!activeTerminalTab || activeLeafId === null || paths.length === 0)
+      return;
+    if (pasteIntoLeaf(activeLeafId, paths?.join(" ")))
+      terminalRefs?.current?.get(activeLeafId)?.focus();
+  };
+  useEffect(() => {
+    const un = getCurrentWebviewWindow?.()?.onDragDropEvent?.((e) => {
+      if (e?.payload?.type === "drop") dropRef?.current(e?.payload?.paths);
+    });
+    return () => {
+      void un?.then((f) => f());
+    };
+  }, []);
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const [gitHistoryHandle, setGitHistoryHandle] =
@@ -331,6 +355,7 @@ export default function App() {
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const [pendingTerminalCloseTab, setPendingTerminalCloseTab] = useState<number | null>(null);
+  const [pendingWindowClose, setPendingWindowClose] = useState(false);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
@@ -692,6 +717,30 @@ export default function App() {
     for (const k of [...searchAddons.current.keys()])
       if (!live.has(k)) searchAddons.current.delete(k);
   }, [tabs]);
+
+  useEffect(() => {
+    const w = getCurrentWindow();
+    let unlisten: (() => void) | undefined;
+    void w
+      .onCloseRequested(async (event) => {
+        event.preventDefault();
+        const allLeaves = tabsRef.current
+          .filter((t) => t.kind === "terminal")
+          .flatMap((t) => leafIds(t.paneTree));
+        const checks = await Promise.all(allLeaves.map(leafHasForegroundProcess));
+        if (checks.some(Boolean)) {
+          setPendingWindowClose(true);
+        } else {
+          await w.destroy();
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      });
+    return () => {
+      unlisten?.();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClose = useCallback(
     async (id: number) => {
@@ -1070,6 +1119,7 @@ export default function App() {
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
+      "window.new": () => void openNewWindow(),
       "commandPalette.open": () => setCommandPaletteOpen(true),
       "tab.new": openNewTab,
       "tab.newPrivate": openNewPrivateTab,
@@ -1549,6 +1599,7 @@ export default function App() {
             onClose={handleClose}
             onPin={pinTab}
             onRename={handleRenameTab}
+            onReorder={reorderTab}
             onToggleSidebar={toggleSidebar}
             onSplit={splitActivePaneInActiveTab}
             canSplit={
@@ -1558,6 +1609,7 @@ export default function App() {
             onActivateAgent={onActivateAgent}
             onActivateLocalAgent={onActivateLocalAgent}
             onOpenSettings={() => void openSettingsWindow()}
+            onNewWindow={() => void openNewWindow()}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
             />
@@ -1759,6 +1811,33 @@ export default function App() {
                     if (pendingTerminalCloseTab !== null)
                       disposeTab(pendingTerminalCloseTab);
                     setPendingTerminalCloseTab(null);
+                  }}
+                >
+                  Close Anyway
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={pendingWindowClose}
+            onOpenChange={(open) => !open && setPendingWindowClose(false)}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Close Window?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A process is running. Closing this window will terminate it.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setPendingWindowClose(false)}>
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={async () => {
+                    setPendingWindowClose(false);
+                    await getCurrentWindow().destroy();
                   }}
                 >
                   Close Anyway

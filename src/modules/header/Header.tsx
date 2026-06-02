@@ -45,6 +45,8 @@ type Props = {
   onPin: (id: number) => void;
   /** Set a terminal tab's custom label; empty string resets to default. */
   onRename: (id: number, title: string) => void;
+  /** Move a dragged tab to a new position (insertion gap index). */
+  onReorder: (fromId: number, toGapIndex: number) => void;
   onToggleSidebar: () => void;
   onSplit: (dir: "row" | "col") => void;
   /** Active tab is a terminal and below the per-tab pane cap. */
@@ -52,6 +54,7 @@ type Props = {
   onActivateAgent: (tabId: number, leafId: number) => void;
   onActivateLocalAgent: () => void;
   onOpenSettings: () => void;
+  onNewWindow: () => void;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
 };
@@ -70,12 +73,14 @@ export function Header({
   onClose,
   onPin,
   onRename,
+  onReorder,
   onToggleSidebar,
   onSplit,
   canSplit,
   onActivateAgent,
   onActivateLocalAgent,
   onOpenSettings,
+  onNewWindow,
   searchTarget,
   searchRef,
 }: Props) {
@@ -126,6 +131,25 @@ export function Header({
       }`}
     >
       <div className="flex shrink-0 items-center gap-0.5">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 shrink-0 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              File
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-44">
+            <DropdownMenuItem onSelect={onNewWindow}>
+              <span className="flex-1">New Window</span>
+              <span className="text-xs text-muted-foreground">
+                {tokensFor("window.new")}
+              </span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Button
           onClick={onToggleSidebar}
           title="Toggle sidebar"
@@ -204,6 +228,7 @@ export function Header({
           onClose={onClose}
           onPin={onPin}
           onRename={onRename}
+          onReorder={onReorder}
           compact={compact}
         />
         <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
