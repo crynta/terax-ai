@@ -29,11 +29,24 @@ describe("Pi host stdio", () => {
       });
 
       child.stdin.write(
-        `${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "shutdown" })}\n`,
+        `${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "info" })}\n`,
       );
       await expect(readResponse(lines)).resolves.toEqual({
         jsonrpc: "2.0",
         id: 2,
+        result: {
+          hostVersion: "0.1.0",
+          piSdkLoaded: false,
+          piPackages: [],
+        },
+      });
+
+      child.stdin.write(
+        `${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "shutdown" })}\n`,
+      );
+      await expect(readResponse(lines)).resolves.toEqual({
+        jsonrpc: "2.0",
+        id: 3,
         result: { ok: true },
       });
       await new Promise((resolve) => child.once("exit", resolve));

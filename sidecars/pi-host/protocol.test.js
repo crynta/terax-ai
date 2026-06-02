@@ -26,31 +26,48 @@ describe("Pi host protocol", () => {
         detail: "Pi host stub",
         hostVersion: "0.1.0",
         piSdkLoaded: false,
+        piPackages: [],
+      },
+    });
+  });
+
+  it("reports host info", () => {
+    const result = handleJsonRpcLine(
+      JSON.stringify({ jsonrpc: "2.0", id: 3, method: "info" }),
+    );
+
+    expect(result.response).toEqual({
+      jsonrpc: "2.0",
+      id: 3,
+      result: {
+        hostVersion: "0.1.0",
+        piSdkLoaded: false,
+        piPackages: [],
       },
     });
   });
 
   it("marks shutdown requests", () => {
     const result = handleJsonRpcLine(
-      JSON.stringify({ jsonrpc: "2.0", id: 3, method: "shutdown" }),
+      JSON.stringify({ jsonrpc: "2.0", id: 4, method: "shutdown" }),
     );
 
     expect(result.shutdown).toBe(true);
     expect(result.response).toEqual({
       jsonrpc: "2.0",
-      id: 3,
+      id: 4,
       result: { ok: true },
     });
   });
 
   it("rejects unknown methods", () => {
     const result = handleJsonRpcLine(
-      JSON.stringify({ jsonrpc: "2.0", id: 4, method: "missing" }),
+      JSON.stringify({ jsonrpc: "2.0", id: 5, method: "missing" }),
     );
 
     expect(result.response).toEqual({
       jsonrpc: "2.0",
-      id: 4,
+      id: 5,
       error: { code: -32601, message: "Method not found" },
     });
   });

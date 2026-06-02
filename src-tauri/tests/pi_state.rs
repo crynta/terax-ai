@@ -31,6 +31,17 @@ fn snapshot_serializes_to_frontend_state_shape() {
 }
 
 #[test]
+fn host_info_reports_stub_capabilities() {
+    let state = PiState::default();
+    let info = state.info().unwrap();
+
+    assert_eq!(info.host_version, "0.1.0");
+    assert!(!info.pi_sdk_loaded);
+    assert!(info.pi_packages.is_empty());
+    state.stop().unwrap();
+}
+
+#[test]
 fn stop_resets_to_disconnected() {
     let state = PiState::default();
     state.start().unwrap();

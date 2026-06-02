@@ -22,12 +22,19 @@ function successResponse(id, result) {
   };
 }
 
+function info() {
+  return {
+    hostVersion: HOST_VERSION,
+    piSdkLoaded: false,
+    piPackages: [],
+  };
+}
+
 function status() {
   return {
     phase: "ready",
     detail: "Pi host stub",
-    hostVersion: HOST_VERSION,
-    piSdkLoaded: false,
+    ...info(),
   };
 }
 
@@ -72,6 +79,11 @@ export function handleJsonRpcLine(line) {
     case "status":
       return {
         response: successResponse(request.id, status()),
+        shutdown: false,
+      };
+    case "info":
+      return {
+        response: successResponse(request.id, info()),
         shutdown: false,
       };
     case "shutdown":

@@ -1,6 +1,6 @@
 use std::env;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::{PiPhase, PiRuntimeSnapshot};
+use super::{PiHostInfo, PiPhase, PiRuntimeSnapshot};
 
 #[derive(Deserialize)]
 struct HostResponse<T> {
@@ -58,8 +58,8 @@ pub struct PiHost {
 }
 
 impl PiHost {
-    pub fn spawn() -> Result<Self, String> {
-        let host_path = resolve_host_path()?;
+    pub fn spawn(resource_dir: Option<&Path>) -> Result<Self, String> {
+        let host_path = resolve_host_path(resource_dir)?;
         let mut child = Command::new(node_binary())
             .arg(host_path)
             .stdin(Stdio::piped())
@@ -93,6 +93,10 @@ impl PiHost {
     pub fn status(&mut self) -> Result<PiRuntimeSnapshot, String> {
         let status: HostStatus = self.call("status")?;
         Ok(status.into())
+    }
+
+    pub fn info(&mut self) -> Result<PiHostInfo, String> {
+        self.call("info")
     }
 
     pub fn shutdown(mut self) {
@@ -164,7 +168,7 @@ fn node_binary() -> String {
     env::var("TERAX_NODE_BINARY").unwrap_or_else(|_| "node".to_string())
 }
 
-fn resolve_host_path() -> Result<PathBuf, String> {
+fn resolve_host_path(resource_dir: Option<&Path>) -> Result<PathBuf, String> {
     if let Ok(path) = env::var("TERAX_PI_HOST_PATH") {
         let path = PathBuf::from(path);
         if path.is_file() {
@@ -176,7 +180,7 @@ fn resolve_host_path() -> Result<PathBuf, String> {
         ));
     }
 
-    for candidate in host_path_candidates() {
+    for candidate in host_path_candidates(resource_dir) {
         if candidate.is_file() {
             return Ok(candidate);
         }
@@ -185,9 +189,13 @@ fn resolve_host_path() -> Result<PathBuf, String> {
     Err("could not find sidecars/pi-host/host.js".to_string())
 }
 
-fn host_path_candidates() -> Vec<PathBuf> {
+fn host_path_candidates(resource_dir: Option<&Path>) -> Vec<PathBuf> {
     let relative = PathBuf::from("sidecars/pi-host/host.js");
     let mut candidates = Vec::new();
+
+    if let Some(resource_dir) = resource_dir {
+        candidates.push(resource_dir.join(&relative));
+    }
 
     if let Ok(cwd) = env::current_dir() {
         candidates.push(cwd.join(&relative));
@@ -199,4 +207,28 @@ fn host_path_candidates() -> Vec<PathBuf> {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     candidates.push(manifest_dir.join("..").join(relative));
     candidates
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_resource_candidate_is_first() {
+        let resource_dir = PathBuf::from("resources-root");
+        let candidates = host_path_candidates(Some(&resource_dir));
+
+        assert_eq!(
+            candidates.first(),
+            Some(&resource_dir.join("sidecars/pi-host/host.js"))
+        );
+    }
+
+    #[test]
+    fn dev_candidates_include_repo_root_from_manifest_dir() {
+        let candidates = host_path_candidates(None);
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+
+        assert!(candidates.contains(&manifest_dir.join("..").join("sidecars/pi-host/host.js")));
+    }
 }

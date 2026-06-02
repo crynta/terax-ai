@@ -179,6 +179,7 @@ pub fn run() {
             pi::pi_status,
             pi::pi_start,
             pi::pi_stop,
+            pi::pi_host_info,
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
             fs::file::fs_read_file,

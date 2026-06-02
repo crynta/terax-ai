@@ -5,6 +5,12 @@ export type PiRuntimeState = {
   detail: string | null;
 };
 
+export type PiHostInfo = {
+  hostVersion: string;
+  piSdkLoaded: boolean;
+  piPackages: string[];
+};
+
 export type PiStatusView = {
   label: string;
   tone: "muted" | "progress" | "success" | "error";
