@@ -60,6 +60,7 @@ try {
 
   await assertBundleFile("host.js");
   await assertBundleFile("protocol.js");
+  await assertBundleFile("sessions.js");
   await assertBundleFile("package.json");
   await assertBundleFile(
     "node_modules/@earendil-works/pi-coding-agent/package.json",

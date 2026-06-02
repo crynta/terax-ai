@@ -13,6 +13,7 @@
   "files": [
     "host.js",
     "protocol.js",
+    "sessions.js",
     "package.json"
   ]
 }

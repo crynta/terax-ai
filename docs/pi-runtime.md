@@ -18,12 +18,18 @@ This keeps Pi code outside the frontend bundle and avoids giving the Node sideca
 
 ## Current sidecar boundary
 
-The sidecar currently supports read-only capability probing:
+The sidecar currently supports read-only capability probing and in-memory session protocol stubs:
 
 - `ping`
 - `status`
 - `info`
+- `sessions.list`
+- `sessions.create`
+- `sessions.send`
+- `sessions.stop`
 - `shutdown`
+
+See [`pi-session-protocol.md`](./pi-session-protocol.md) for the session contract and event envelope.
 
 `info` imports the Pi packages and returns package name, version, load status, export count, and error text. It does not create sessions or touch workspace files.
 

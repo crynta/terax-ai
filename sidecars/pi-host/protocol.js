@@ -1,6 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  createSession,
+  listSessions,
+  resetSessionsForTests,
+  SessionProtocolError,
+  sendToSession,
+  stopSession,
+} from "./sessions.js";
 
 export const HOST_VERSION = "0.1.0";
 
@@ -15,6 +23,7 @@ const ERROR_CODES = {
   parseError: -32700,
   invalidRequest: -32600,
   methodNotFound: -32601,
+  internalError: -32603,
 };
 
 let packageProbePromise;
@@ -222,6 +231,26 @@ async function status() {
   };
 }
 
+function sessionResponse(id, handler, params) {
+  try {
+    return successResponse(id, handler(params));
+  } catch (error) {
+    if (error instanceof SessionProtocolError) {
+      return errorResponse(id, error.code, error.message);
+    }
+    return errorResponse(
+      id,
+      ERROR_CODES.internalError,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
+export function resetProtocolForTests() {
+  packageProbePromise = undefined;
+  resetSessionsForTests();
+}
+
 function isRequest(value) {
   return (
     value !== null &&
@@ -268,6 +297,26 @@ export async function handleJsonRpcLine(line) {
     case "info":
       return {
         response: successResponse(request.id, await info()),
+        shutdown: false,
+      };
+    case "sessions.list":
+      return {
+        response: successResponse(request.id, listSessions()),
+        shutdown: false,
+      };
+    case "sessions.create":
+      return {
+        response: sessionResponse(request.id, createSession, request.params),
+        shutdown: false,
+      };
+    case "sessions.send":
+      return {
+        response: sessionResponse(request.id, sendToSession, request.params),
+        shutdown: false,
+      };
+    case "sessions.stop":
+      return {
+        response: sessionResponse(request.id, stopSession, request.params),
         shutdown: false,
       };
     case "shutdown":
