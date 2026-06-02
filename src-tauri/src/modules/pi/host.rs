@@ -17,6 +17,28 @@ use super::{
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const STDERR_TAIL_LIMIT: usize = 4096;
+const HOST_ENV_ALLOWLIST: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "SHELL",
+    "PI_CODING_AGENT_DIR",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GOOGLE_GENERATIVE_AI_API_KEY",
+    "GEMINI_API_KEY",
+    "GROQ_API_KEY",
+    "XAI_API_KEY",
+    "CEREBRAS_API_KEY",
+    "TERAX_PI_NODE_MODULES",
+    "TERAX_PI_HOST_TEST_FAUX_RESPONSE",
+    "TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND",
+];
 
 pub type PiSessionEventSink = Arc<dyn Fn(PiSessionEvent) + Send + Sync + 'static>;
 
@@ -128,11 +150,15 @@ impl PiHost {
         request_timeout: Duration,
         event_sink: Option<PiSessionEventSink>,
     ) -> Result<Self, String> {
-        let mut child = Command::new(node_binary)
+        let mut command = Command::new(node_binary);
+        command
             .arg(host_path)
+            .env_clear()
+            .envs(host_environment())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command
             .spawn()
             .map_err(|e| format!("failed to start Pi host: {e}"))?;
 
@@ -375,6 +401,17 @@ fn spawn_stderr_reader(mut stderr: ChildStderr, tail: StderrTail) {
     });
 }
 
+fn host_environment() -> Vec<(String, String)> {
+    HOST_ENV_ALLOWLIST
+        .iter()
+        .filter_map(|name| {
+            env::var(name)
+                .ok()
+                .map(|value| ((*name).to_string(), value))
+        })
+        .collect()
+}
+
 fn node_binary(resource_dir: Option<&Path>) -> PathBuf {
     if let Ok(path) = env::var("TERAX_NODE_BINARY") {
         if !path.is_empty() {
@@ -482,6 +519,23 @@ mod tests {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
         assert!(candidates.contains(&manifest_dir.join("..").join("sidecars/pi-host/host.js")));
+    }
+
+    #[test]
+    fn host_environment_uses_allowlist() {
+        std::env::set_var("ANTHROPIC_API_KEY", "allowed-secret");
+        std::env::set_var("TERAX_SHOULD_NOT_LEAK", "blocked-secret");
+        let environment = host_environment();
+
+        assert!(environment
+            .iter()
+            .any(|(name, value)| name == "ANTHROPIC_API_KEY" && value == "allowed-secret"));
+        assert!(!environment
+            .iter()
+            .any(|(name, _)| name == "TERAX_SHOULD_NOT_LEAK"));
+
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::remove_var("TERAX_SHOULD_NOT_LEAK");
     }
 
     #[test]

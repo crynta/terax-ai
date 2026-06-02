@@ -117,3 +117,4 @@ Aborts a running Pi session with `AgentSession.abort()` when possible, disposes 
 - JSON-RPC `-32602`: invalid params.
 - JSON-RPC `-32004`: session not found.
 - JSON-RPC `-32005`: session is stopped.
+- JSON-RPC `-32006`: resource limit exceeded.

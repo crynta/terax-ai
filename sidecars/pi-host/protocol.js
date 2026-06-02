@@ -19,6 +19,18 @@ export const PI_PACKAGE_NAMES = [
   "@earendil-works/pi-tui",
 ];
 
+export const ALLOWED_METHODS = [
+  "ping",
+  "status",
+  "info",
+  "diagnostics",
+  "sessions.list",
+  "sessions.create",
+  "sessions.send",
+  "sessions.stop",
+  "shutdown",
+];
+
 const ERROR_CODES = {
   parseError: -32700,
   invalidRequest: -32600,
@@ -320,6 +332,17 @@ export async function handleJsonRpcLine(line) {
         request?.id ?? null,
         ERROR_CODES.invalidRequest,
         "Invalid request",
+      ),
+      shutdown: false,
+    };
+  }
+
+  if (!ALLOWED_METHODS.includes(request.method)) {
+    return {
+      response: errorResponse(
+        request.id,
+        ERROR_CODES.methodNotFound,
+        "Method not found",
       ),
       shutdown: false,
     };

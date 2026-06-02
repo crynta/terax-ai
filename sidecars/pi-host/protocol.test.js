@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { handleJsonRpcLine, PI_PACKAGE_NAMES } from "./protocol.js";
+import {
+  ALLOWED_METHODS,
+  handleJsonRpcLine,
+  PI_PACKAGE_NAMES,
+} from "./protocol.js";
 
 function packageNames(result) {
   return result.response.result.piPackages.map((pkg) => pkg.name);
@@ -114,6 +118,20 @@ describe("Pi host protocol", () => {
       id: 5,
       error: { code: -32601, message: "Method not found" },
     });
+  });
+
+  it("keeps the JSON-RPC method allowlist Pi-scoped", () => {
+    expect(ALLOWED_METHODS).toEqual([
+      "ping",
+      "status",
+      "info",
+      "diagnostics",
+      "sessions.list",
+      "sessions.create",
+      "sessions.send",
+      "sessions.stop",
+      "shutdown",
+    ]);
   });
 
   it.each([

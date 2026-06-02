@@ -188,6 +188,23 @@ describe("Pi host session protocol", () => {
     ).toBe(false);
   });
 
+  it("rejects prompts over the resource limit", async () => {
+    await request(12, "sessions.create", { title: "Limits" });
+    const result = await request(13, "sessions.send", {
+      sessionId: "pi-1",
+      prompt: "x".repeat(20_001),
+    });
+
+    expect(result.response).toEqual({
+      jsonrpc: "2.0",
+      id: 13,
+      error: {
+        code: -32006,
+        message: "sessions.send prompt must be at most 20000 characters",
+      },
+    });
+  });
+
   it("rejects sends to missing sessions", async () => {
     const result = await request(9, "sessions.send", {
       sessionId: "missing",

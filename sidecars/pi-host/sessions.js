@@ -9,6 +9,9 @@ export class SessionProtocolError extends Error {
 const INVALID_PARAMS = -32602;
 const SESSION_NOT_FOUND = -32004;
 const SESSION_STOPPED = -32005;
+const RESOURCE_LIMIT = -32006;
+const MAX_SESSIONS = 20;
+const MAX_PROMPT_CHARS = 20_000;
 
 let nextSessionNumber = 1;
 let nextEventNumber = 1;
@@ -77,6 +80,24 @@ function requiredString(params, key, method) {
     );
   }
   return value.trim();
+}
+
+function assertPromptWithinLimit(prompt) {
+  if (prompt.length > MAX_PROMPT_CHARS) {
+    throw new SessionProtocolError(
+      RESOURCE_LIMIT,
+      `sessions.send prompt must be at most ${MAX_PROMPT_CHARS} characters`,
+    );
+  }
+}
+
+function assertSessionCapacity() {
+  if (sessions.size >= MAX_SESSIONS) {
+    throw new SessionProtocolError(
+      RESOURCE_LIMIT,
+      `Pi host supports at most ${MAX_SESSIONS} sessions`,
+    );
+  }
 }
 
 function findSession(sessionId) {
@@ -206,6 +227,7 @@ export function listSessions() {
 
 export async function createSession(params) {
   const options = assertParamsObject(params, "sessions.create");
+  assertSessionCapacity();
   const createdAt = isoNow();
   const id = `pi-${nextSessionNumber}`;
   nextSessionNumber += 1;
@@ -262,6 +284,7 @@ export async function sendToSession(params) {
   const options = assertParamsObject(params, "sessions.send");
   const sessionId = requiredString(options, "sessionId", "sessions.send");
   const prompt = requiredString(options, "prompt", "sessions.send");
+  assertPromptWithinLimit(prompt);
   const session = findSession(sessionId);
   assertSendableSession(session);
   const updatedAt = isoNow();
