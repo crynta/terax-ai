@@ -124,7 +124,14 @@ async function createTestFauxOptions(pi) {
   }
 
   const ai = await import("@earendil-works/pi-ai");
-  const registration = ai.registerFauxProvider();
+  const tokensPerSecond = Number(
+    process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND,
+  );
+  const registration = ai.registerFauxProvider(
+    Number.isFinite(tokensPerSecond) && tokensPerSecond > 0
+      ? { tokensPerSecond }
+      : undefined,
+  );
   registration.setResponses([ai.fauxAssistantMessage([ai.fauxText(text)])]);
 
   const authStorage =

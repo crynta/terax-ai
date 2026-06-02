@@ -104,7 +104,7 @@ Result:
 { session: PiSession; events: PiSessionEvent[] }
 ```
 
-Aborts a running Pi session when possible, disposes the SDK session, marks it `stopped`, and emits a `session.status` event.
+Aborts a running Pi session with `AgentSession.abort()` when possible, disposes the SDK session, marks it `stopped`, and emits a `session.status` event. Late prompt completion/error callbacks are ignored after the session is stopped.
 
 ## Errors
 

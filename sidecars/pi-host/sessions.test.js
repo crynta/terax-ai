@@ -33,6 +33,7 @@ describe("Pi host session protocol", () => {
     await resetProtocolForTests();
     setSessionEventSink(null);
     delete process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE;
+    delete process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND;
   });
 
   it("lists no sessions before one is created", async () => {
@@ -163,6 +164,28 @@ describe("Pi host session protocol", () => {
     expect(list.response.result.sessions).toEqual([
       expect.objectContaining({ id: "pi-1", status: "stopped" }),
     ]);
+  });
+
+  it("aborts active Pi runs when stopping a running session", async () => {
+    process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE = "slow ".repeat(80);
+    process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND = "1";
+    await request(9, "sessions.create", { title: "Abort me" });
+    const sent = await request(10, "sessions.send", {
+      sessionId: "pi-1",
+      prompt: "go slowly",
+    });
+
+    expect(sent.response.result.session.status).toBe("running");
+    const stop = await request(11, "sessions.stop", { sessionId: "pi-1" });
+    expect(stop.response.result.session.status).toBe("stopped");
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(
+      liveEvents.some(
+        (event) =>
+          event.type === "session.status" && event.payload.status === "idle",
+      ),
+    ).toBe(false);
   });
 
   it("rejects sends to missing sessions", async () => {

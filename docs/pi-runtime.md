@@ -42,6 +42,8 @@ See [`pi-session-protocol.md`](./pi-session-protocol.md) for the session contrac
 
 Session metadata and event history are persisted by Rust under the app data directory in `pi-sessions.json`. The Node sidecar still keeps SDK `AgentSession` objects in memory only; after app restart, the sidebar restores persisted history without granting persistence ownership to Node.
 
+`sessions.stop` aborts active runs via `AgentSession.abort()`, disposes the SDK session, and ignores late completion callbacks after the session is marked stopped.
+
 Boundary tests enforce that the sidecar package depends only on `@earendil-works/pi-*` packages, rejects Terax-owned method families such as terminal/PTY, shell, git, files, and editor calls with JSON-RPC `Method not found`, and keeps incidental Pi SDK stdout off the JSON-RPC stdout stream.
 
 The Rust host manager applies a request timeout, captures a bounded stderr tail for diagnostics, cleans up timed-out children, and clears stale hosts so explicit starts can respawn a fresh sidecar.
