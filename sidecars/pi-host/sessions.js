@@ -12,6 +12,7 @@ const SESSION_STOPPED = -32005;
 
 let nextSessionNumber = 1;
 let nextEventNumber = 1;
+let sessionEventSink = () => {};
 const sessions = new Map();
 
 function isoNow() {
@@ -23,7 +24,6 @@ function sessionSnapshot(session) {
     agentSession: _agentSession,
     unsubscribe: _unsubscribe,
     cleanup: _cleanup,
-    liveEvents: _liveEvents,
     ...snapshot
   } = session;
   return { ...snapshot };
@@ -43,6 +43,16 @@ function pushEvent(type, sessionId, payload, createdAt) {
   const event = sessionEvent(type, sessionId, payload, createdAt);
   nextEventNumber += 1;
   return event;
+}
+
+function publishEvent(type, sessionId, payload, createdAt) {
+  const event = pushEvent(type, sessionId, payload, createdAt);
+  sessionEventSink(event);
+  return event;
+}
+
+export function setSessionEventSink(sink) {
+  sessionEventSink = typeof sink === "function" ? sink : () => {};
 }
 
 function assertParamsObject(params, method) {
@@ -141,7 +151,7 @@ function mapAgentSessionEvent(event, sessionId) {
     return null;
   }
 
-  return pushEvent("session.output.delta", sessionId, {
+  return publishEvent("session.output.delta", sessionId, {
     text: event.assistantMessageEvent.delta,
   });
 }
@@ -154,12 +164,8 @@ async function createAgentSessionRecord({ id, title, createdAt }) {
     noTools: "all",
     sessionManager: pi.SessionManager.inMemory(),
   });
-  const liveEvents = [];
   const unsubscribe = agentSession.subscribe((event) => {
-    const mapped = mapAgentSessionEvent(event, id);
-    if (mapped !== null) {
-      liveEvents.push(mapped);
-    }
+    mapAgentSessionEvent(event, id);
   });
 
   return {
@@ -172,7 +178,6 @@ async function createAgentSessionRecord({ id, title, createdAt }) {
     agentSession,
     unsubscribe,
     cleanup: testFaux.cleanup,
-    liveEvents,
   };
 }
 
@@ -212,6 +217,39 @@ export async function createSession(params) {
   };
 }
 
+async function runPrompt(session, prompt) {
+  try {
+    await session.agentSession.prompt(prompt);
+    if (session.status === "stopped") {
+      return;
+    }
+    const doneAt = isoNow();
+    session.status = "idle";
+    session.updatedAt = doneAt;
+    publishEvent(
+      "session.status",
+      session.id,
+      { status: session.status },
+      doneAt,
+    );
+  } catch (error) {
+    if (session.status === "stopped") {
+      return;
+    }
+    const failedAt = isoNow();
+    const message = error instanceof Error ? error.message : String(error);
+    session.status = "error";
+    session.updatedAt = failedAt;
+    publishEvent("session.error", session.id, { message }, failedAt);
+    publishEvent(
+      "session.status",
+      session.id,
+      { status: session.status },
+      failedAt,
+    );
+  }
+}
+
 export async function sendToSession(params) {
   const options = assertParamsObject(params, "sessions.send");
   const sessionId = requiredString(options, "sessionId", "sessions.send");
@@ -223,7 +261,6 @@ export async function sendToSession(params) {
   session.status = "running";
   session.updatedAt = updatedAt;
   session.lastPrompt = prompt;
-  session.liveEvents.length = 0;
 
   const events = [
     pushEvent("session.input", sessionId, { text: prompt }, updatedAt),
@@ -235,48 +272,15 @@ export async function sendToSession(params) {
     ),
   ];
 
-  try {
-    await session.agentSession.prompt(prompt);
-    const doneAt = isoNow();
-    session.status = "idle";
-    session.updatedAt = doneAt;
-    events.push(...session.liveEvents);
-    events.push(
-      pushEvent(
-        "session.status",
-        sessionId,
-        { status: session.status },
-        doneAt,
-      ),
-    );
-    return {
-      accepted: true,
-      session: sessionSnapshot(session),
-      events,
-    };
-  } catch (error) {
-    const failedAt = isoNow();
-    const message = error instanceof Error ? error.message : String(error);
-    session.status = "error";
-    session.updatedAt = failedAt;
-    events.push(...session.liveEvents);
-    events.push(pushEvent("session.error", sessionId, { message }, failedAt));
-    events.push(
-      pushEvent(
-        "session.status",
-        sessionId,
-        { status: session.status },
-        failedAt,
-      ),
-    );
-    return {
-      accepted: false,
-      session: sessionSnapshot(session),
-      events,
-    };
-  } finally {
-    session.liveEvents.length = 0;
-  }
+  setImmediate(() => {
+    void runPrompt(session, prompt);
+  });
+
+  return {
+    accepted: true,
+    session: sessionSnapshot(session),
+    events,
+  };
 }
 
 export async function stopSession(params) {

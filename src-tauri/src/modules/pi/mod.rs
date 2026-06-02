@@ -1,12 +1,14 @@
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 mod host;
 
-use host::PiHost;
+use host::{PiHost, PiSessionEventSink};
+
+pub const PI_SESSION_EVENT_NAME: &str = "pi:session-event";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,9 +114,18 @@ impl PiState {
         resource_dir: Option<&Path>,
         action: impl FnOnce(&mut PiHost) -> Result<R, String>,
     ) -> Result<R, String> {
+        self.with_host_event_sink(resource_dir, None, action)
+    }
+
+    fn with_host_event_sink<R>(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        action: impl FnOnce(&mut PiHost) -> Result<R, String>,
+    ) -> Result<R, String> {
         let mut host = self.host.lock().map_err(|e| e.to_string())?;
         if host.is_none() {
-            *host = Some(PiHost::spawn(resource_dir)?);
+            *host = Some(PiHost::spawn_with_event_sink(resource_dir, event_sink)?);
         }
         match action(
             host.as_mut()
@@ -151,9 +162,20 @@ impl PiState {
         &self,
         resource_dir: Option<&Path>,
     ) -> Result<PiRuntimeSnapshot, String> {
+        self.start_with_resource_dir_and_event_sink(resource_dir, None)
+    }
+
+    pub fn start_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+    ) -> Result<PiRuntimeSnapshot, String> {
         let mut host = self.host.lock().map_err(|e| e.to_string())?;
         if host.is_none() {
-            *host = Some(PiHost::spawn(resource_dir)?);
+            *host = Some(PiHost::spawn_with_event_sink(
+                resource_dir,
+                event_sink.clone(),
+            )?);
         }
 
         let status = host
@@ -165,7 +187,7 @@ impl PiState {
             Ok(snapshot) => Ok(snapshot),
             Err(first_error) => {
                 *host = None;
-                *host = Some(PiHost::spawn(resource_dir)?);
+                *host = Some(PiHost::spawn_with_event_sink(resource_dir, event_sink)?);
                 host.as_mut()
                     .ok_or_else(|| "Pi host was not initialized".to_string())?
                     .status()
@@ -189,11 +211,27 @@ impl PiState {
         self.with_host(resource_dir, PiHost::info)
     }
 
+    pub fn info_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+    ) -> Result<PiHostInfo, String> {
+        self.with_host_event_sink(resource_dir, event_sink, PiHost::info)
+    }
+
     pub fn sessions_list_with_resource_dir(
         &self,
         resource_dir: Option<&Path>,
     ) -> Result<PiSessionsList, String> {
         self.with_host(resource_dir, PiHost::sessions_list)
+    }
+
+    pub fn sessions_list_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+    ) -> Result<PiSessionsList, String> {
+        self.with_host_event_sink(resource_dir, event_sink, PiHost::sessions_list)
     }
 
     pub fn session_create_with_resource_dir(
@@ -202,6 +240,15 @@ impl PiState {
         title: Option<String>,
     ) -> Result<PiSessionCreateResult, String> {
         self.with_host(resource_dir, |host| host.session_create(title))
+    }
+
+    pub fn session_create_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        title: Option<String>,
+    ) -> Result<PiSessionCreateResult, String> {
+        self.with_host_event_sink(resource_dir, event_sink, |host| host.session_create(title))
     }
 
     pub fn session_send_with_resource_dir(
@@ -213,12 +260,35 @@ impl PiState {
         self.with_host(resource_dir, |host| host.session_send(session_id, prompt))
     }
 
+    pub fn session_send_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        session_id: String,
+        prompt: String,
+    ) -> Result<PiSessionSendResult, String> {
+        self.with_host_event_sink(resource_dir, event_sink, |host| {
+            host.session_send(session_id, prompt)
+        })
+    }
+
     pub fn session_stop_with_resource_dir(
         &self,
         resource_dir: Option<&Path>,
         session_id: String,
     ) -> Result<PiSessionStopResult, String> {
         self.with_host(resource_dir, |host| host.session_stop(session_id))
+    }
+
+    pub fn session_stop_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        session_id: String,
+    ) -> Result<PiSessionStopResult, String> {
+        self.with_host_event_sink(resource_dir, event_sink, |host| {
+            host.session_stop(session_id)
+        })
     }
 
     pub fn stop(&self) -> Result<PiRuntimeSnapshot, String> {
@@ -241,6 +311,13 @@ fn resource_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().resource_dir().ok()
 }
 
+fn session_event_sink(app: &AppHandle) -> PiSessionEventSink {
+    let app = app.clone();
+    Arc::new(move |event| {
+        let _ = app.emit(PI_SESSION_EVENT_NAME, event);
+    })
+}
+
 #[tauri::command]
 pub async fn pi_status(state: tauri::State<'_, PiState>) -> Result<PiRuntimeSnapshot, String> {
     state.snapshot()
@@ -251,7 +328,10 @@ pub async fn pi_start(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
 ) -> Result<PiRuntimeSnapshot, String> {
-    state.start_with_resource_dir(resource_dir(&app).as_deref())
+    state.start_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+    )
 }
 
 #[tauri::command]
@@ -264,7 +344,10 @@ pub async fn pi_host_info(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
 ) -> Result<PiHostInfo, String> {
-    state.info_with_resource_dir(resource_dir(&app).as_deref())
+    state.info_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+    )
 }
 
 #[tauri::command]
@@ -272,7 +355,10 @@ pub async fn pi_sessions_list(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
 ) -> Result<PiSessionsList, String> {
-    state.sessions_list_with_resource_dir(resource_dir(&app).as_deref())
+    state.sessions_list_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+    )
 }
 
 #[tauri::command]
@@ -281,7 +367,11 @@ pub async fn pi_session_create(
     state: tauri::State<'_, PiState>,
     title: Option<String>,
 ) -> Result<PiSessionCreateResult, String> {
-    state.session_create_with_resource_dir(resource_dir(&app).as_deref(), title)
+    state.session_create_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+        title,
+    )
 }
 
 #[tauri::command]
@@ -291,7 +381,12 @@ pub async fn pi_session_send(
     session_id: String,
     prompt: String,
 ) -> Result<PiSessionSendResult, String> {
-    state.session_send_with_resource_dir(resource_dir(&app).as_deref(), session_id, prompt)
+    state.session_send_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+        session_id,
+        prompt,
+    )
 }
 
 #[tauri::command]
@@ -300,5 +395,9 @@ pub async fn pi_session_stop(
     state: tauri::State<'_, PiState>,
     session_id: String,
 ) -> Result<PiSessionStopResult, String> {
-    state.session_stop_with_resource_dir(resource_dir(&app).as_deref(), session_id)
+    state.session_stop_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+        session_id,
+    )
 }

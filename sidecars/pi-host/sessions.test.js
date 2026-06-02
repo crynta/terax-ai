@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleJsonRpcLine, resetProtocolForTests } from "./protocol.js";
+import { setSessionEventSink } from "./sessions.js";
 
 async function request(id, method, params) {
   return handleJsonRpcLine(
@@ -7,14 +8,30 @@ async function request(id, method, params) {
   );
 }
 
+async function waitFor(check, timeoutMs = 3000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (check()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Timed out waiting for live session event");
+}
+
+let liveEvents = [];
+
 describe("Pi host session protocol", () => {
   beforeEach(async () => {
+    liveEvents = [];
     process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE = "hello from real Pi SDK";
+    setSessionEventSink((event) => liveEvents.push(event));
     await resetProtocolForTests();
   });
 
   afterEach(async () => {
     await resetProtocolForTests();
+    setSessionEventSink(null);
     delete process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE;
   });
 
@@ -76,12 +93,12 @@ describe("Pi host session protocol", () => {
         accepted: true,
         session: {
           id: "pi-1",
-          status: "idle",
+          status: "running",
           lastPrompt: "hello Pi",
         },
       },
     });
-    expect(result.response.result.events.slice(0, 2)).toEqual([
+    expect(result.response.result.events).toEqual([
       expect.objectContaining({
         id: "evt-2",
         type: "session.input",
@@ -95,7 +112,13 @@ describe("Pi host session protocol", () => {
         payload: { status: "running" },
       }),
     ]);
-    expect(result.response.result.events).toEqual(
+    await waitFor(() =>
+      liveEvents.some(
+        (event) =>
+          event.type === "session.status" && event.payload.status === "idle",
+      ),
+    );
+    expect(liveEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "session.output.delta",
@@ -110,7 +133,7 @@ describe("Pi host session protocol", () => {
       ]),
     );
     expect(
-      result.response.result.events
+      liveEvents
         .filter((event) => event.type === "session.output.delta")
         .map((event) => event.payload.text)
         .join(""),

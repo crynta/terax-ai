@@ -38,6 +38,8 @@ See [`pi-session-protocol.md`](./pi-session-protocol.md) for the session contrac
 
 `sessions.create` creates an actual `AgentSession` from `@earendil-works/pi-coding-agent`, but passes `noTools: "all"` and an in-memory `SessionManager`. This keeps the first real prompt path model-only until Rust-owned tool bridges are designed deliberately.
 
+`sessions.send` returns after the prompt is accepted. The sidecar streams later output/status/error envelopes as JSON-RPC `session.event` notifications; Rust filters those out of the response stream and emits frontend `pi:session-event` events.
+
 Boundary tests enforce that the sidecar package depends only on `@earendil-works/pi-*` packages, rejects Terax-owned method families such as terminal/PTY, shell, git, files, and editor calls with JSON-RPC `Method not found`, and keeps incidental Pi SDK stdout off the JSON-RPC stdout stream.
 
 The Rust host manager applies a request timeout, captures a bounded stderr tail for diagnostics, cleans up timed-out children, and clears stale hosts so explicit starts can respawn a fresh sidecar.

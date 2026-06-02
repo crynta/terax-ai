@@ -18,6 +18,26 @@ function writeRequest(child, id, method, params) {
   );
 }
 
+async function readUntil(lines, predicate, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const remainingMs = deadline - Date.now();
+    const envelope = await Promise.race([
+      readResponse(lines),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Timed out waiting for host envelope")),
+          remainingMs,
+        ),
+      ),
+    ]);
+    if (predicate(envelope)) {
+      return envelope;
+    }
+  }
+  throw new Error("Timed out waiting for host envelope");
+}
+
 describe("Pi host stdio", () => {
   it("exchanges JSON-RPC messages over newline-delimited stdio", async () => {
     const child = spawn(process.execPath, [HOST_PATH], {
@@ -96,14 +116,23 @@ describe("Pi host stdio", () => {
       expect(sent).toMatchObject({
         jsonrpc: "2.0",
         id: 2,
-        result: { accepted: true, session: { status: "idle" } },
+        result: { accepted: true, session: { status: "running" } },
       });
-      expect(
-        sent.result.events
-          .filter((event) => event.type === "session.output.delta")
-          .map((event) => event.payload.text)
-          .join(""),
-      ).toBe("stdio safe response");
+
+      const deltas = [];
+      await readUntil(lines, (envelope) => {
+        if (envelope.method !== "session.event") {
+          return false;
+        }
+        if (envelope.params.type === "session.output.delta") {
+          deltas.push(envelope.params.payload.text);
+        }
+        return (
+          envelope.params.type === "session.status" &&
+          envelope.params.payload.status === "idle"
+        );
+      });
+      expect(deltas.join("")).toBe("stdio safe response");
 
       writeRequest(child, 3, "shutdown");
       await expect(readResponse(lines)).resolves.toEqual({

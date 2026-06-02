@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 import { handleJsonRpcLine } from "./protocol.js";
+import { setSessionEventSink } from "./sessions.js";
 
 const writeProtocolStdout = process.stdout.write.bind(process.stdout);
 const writeIncidentalStdoutToStderr = process.stderr.write.bind(process.stderr);
@@ -14,9 +15,11 @@ const lines = createInterface({
   crlfDelay: Infinity,
 });
 
-function writeResponse(response) {
+let protocolWriteQueue = Promise.resolve();
+
+function writeProtocolEnvelope(envelope) {
   return new Promise((resolve, reject) => {
-    writeProtocolStdout(`${JSON.stringify(response)}\n`, (error) => {
+    writeProtocolStdout(`${JSON.stringify(envelope)}\n`, (error) => {
       if (error) {
         reject(error);
       } else {
@@ -26,16 +29,36 @@ function writeResponse(response) {
   });
 }
 
+function enqueueProtocolEnvelope(envelope) {
+  protocolWriteQueue = protocolWriteQueue
+    .then(() => writeProtocolEnvelope(envelope))
+    .catch((error) => {
+      writeIncidentalStdoutToStderr(
+        `Pi host protocol write failed: ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    });
+  return protocolWriteQueue;
+}
+
+setSessionEventSink((event) => {
+  void enqueueProtocolEnvelope({
+    jsonrpc: "2.0",
+    method: "session.event",
+    params: event,
+  });
+});
+
 for await (const line of lines) {
   if (line.trim() === "") {
     continue;
   }
 
   const result = await handleJsonRpcLine(line);
-  await writeResponse(result.response);
+  await enqueueProtocolEnvelope(result.response);
 
   if (result.shutdown) {
     lines.close();
+    await protocolWriteQueue;
     process.exit(0);
   }
 }

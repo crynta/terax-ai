@@ -11,12 +11,14 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{
-    PiHostInfo, PiPhase, PiRuntimeSnapshot, PiSessionCreateResult, PiSessionSendResult,
-    PiSessionStopResult, PiSessionsList,
+    PiHostInfo, PiPhase, PiRuntimeSnapshot, PiSessionCreateResult, PiSessionEvent,
+    PiSessionSendResult, PiSessionStopResult, PiSessionsList,
 };
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const STDERR_TAIL_LIMIT: usize = 4096;
+
+pub type PiSessionEventSink = Arc<dyn Fn(PiSessionEvent) + Send + Sync + 'static>;
 
 #[derive(Deserialize)]
 struct HostResponse<T> {
@@ -30,6 +32,13 @@ struct HostResponse<T> {
 struct HostError {
     code: i64,
     message: String,
+}
+
+#[derive(Deserialize)]
+struct HostNotification {
+    jsonrpc: String,
+    method: String,
+    params: PiSessionEvent,
 }
 
 #[derive(Deserialize)]
@@ -100,12 +109,16 @@ pub struct PiHost {
 }
 
 impl PiHost {
-    pub fn spawn(resource_dir: Option<&Path>) -> Result<Self, String> {
+    pub fn spawn_with_event_sink(
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+    ) -> Result<Self, String> {
         let host_path = resolve_host_path(resource_dir)?;
         Self::spawn_inner(
             node_binary(resource_dir),
             host_path,
             DEFAULT_REQUEST_TIMEOUT,
+            event_sink,
         )
     }
 
@@ -113,6 +126,7 @@ impl PiHost {
         node_binary: PathBuf,
         host_path: PathBuf,
         request_timeout: Duration,
+        event_sink: Option<PiSessionEventSink>,
     ) -> Result<Self, String> {
         let mut child = Command::new(node_binary)
             .arg(host_path)
@@ -137,7 +151,7 @@ impl PiHost {
 
         let stderr_tail = StderrTail::default();
         spawn_stderr_reader(stderr, stderr_tail.clone());
-        let responses = spawn_stdout_reader(stdout);
+        let responses = spawn_stdout_reader(stdout, event_sink);
 
         let mut host = Self {
             child,
@@ -300,7 +314,19 @@ impl Drop for PiHost {
     }
 }
 
-fn spawn_stdout_reader(stdout: ChildStdout) -> mpsc::Receiver<Result<String, String>> {
+fn session_event_notification(line: &str) -> Option<PiSessionEvent> {
+    let notification = serde_json::from_str::<HostNotification>(line.trim_end()).ok()?;
+    if notification.jsonrpc == "2.0" && notification.method == "session.event" {
+        Some(notification.params)
+    } else {
+        None
+    }
+}
+
+fn spawn_stdout_reader(
+    stdout: ChildStdout,
+    event_sink: Option<PiSessionEventSink>,
+) -> mpsc::Receiver<Result<String, String>> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
@@ -312,6 +338,12 @@ fn spawn_stdout_reader(stdout: ChildStdout) -> mpsc::Receiver<Result<String, Str
                     break;
                 }
                 Ok(_) => {
+                    if let Some(event) = session_event_notification(&line) {
+                        if let Some(event_sink) = event_sink.as_ref() {
+                            event_sink(event);
+                        }
+                        continue;
+                    }
                     if tx.send(Ok(line)).is_err() {
                         break;
                     }
@@ -449,6 +481,27 @@ mod tests {
     }
 
     #[test]
+    fn session_event_notification_parses_event_envelope() {
+        let event = session_event_notification(
+            r#"{"jsonrpc":"2.0","method":"session.event","params":{"id":"evt-1","type":"session.output.delta","sessionId":"pi-1","createdAt":"2026-01-01T00:00:00.000Z","payload":{"text":"hi"}}}"#,
+        )
+        .unwrap();
+
+        assert_eq!(event.id, "evt-1");
+        assert_eq!(event.event_type, "session.output.delta");
+        assert_eq!(event.session_id, "pi-1");
+        assert_eq!(event.payload["text"], "hi");
+    }
+
+    #[test]
+    fn session_event_notification_ignores_responses() {
+        assert!(
+            session_event_notification(r#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#)
+                .is_none()
+        );
+    }
+
+    #[test]
     fn startup_timeout_includes_captured_stderr() {
         let temp = tempdir().unwrap();
         let script = temp.path().join("host.js");
@@ -458,11 +511,15 @@ mod tests {
         )
         .unwrap();
 
-        let error =
-            match PiHost::spawn_inner(PathBuf::from("node"), script, Duration::from_millis(100)) {
-                Ok(_) => panic!("host should time out during ping"),
-                Err(error) => error,
-            };
+        let error = match PiHost::spawn_inner(
+            PathBuf::from("node"),
+            script,
+            Duration::from_millis(100),
+            None,
+        ) {
+            Ok(_) => panic!("host should time out during ping"),
+            Err(error) => error,
+        };
 
         assert!(error.contains("timed out"), "{error}");
         assert!(error.contains("pi host boot note"), "{error}");

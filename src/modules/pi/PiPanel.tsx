@@ -1,5 +1,6 @@
 import { AiChat02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { listen } from "@tauri-apps/api/event";
 import {
   type FormEvent,
   useCallback,
@@ -98,13 +99,57 @@ export function PiPanel() {
     [selectedSessionId, sessionEvents],
   );
 
+  const applySessionEvents = useCallback((events: PiSessionEvent[]) => {
+    if (events.length === 0) {
+      return;
+    }
+
+    setSessionEvents((current) => {
+      const next: PiSessionEvent[] = [];
+      const seen = new Set<string>();
+      for (const event of [...events, ...current]) {
+        if (seen.has(event.id)) {
+          continue;
+        }
+        seen.add(event.id);
+        next.push(event);
+      }
+      return next.slice(0, 100);
+    });
+
+    setSessions((current) =>
+      current.map((session) => {
+        let next = session;
+        for (const event of events) {
+          if (event.sessionId !== session.id) {
+            continue;
+          }
+          if (
+            event.type === "session.status" &&
+            typeof event.payload.status === "string"
+          ) {
+            next = {
+              ...next,
+              status: event.payload.status as PiSession["status"],
+              updatedAt: event.createdAt,
+            };
+          }
+          if (event.type === "session.error") {
+            next = { ...next, status: "error", updatedAt: event.createdAt };
+          }
+        }
+        return next;
+      }),
+    );
+  }, []);
+
   const applySessionUpdate = useCallback(
     (session: PiSession, events: PiSessionEvent[]) => {
       setSessions((current) => upsertPiSession(current, session));
-      setSessionEvents((current) => [...events, ...current].slice(0, 50));
+      applySessionEvents(events);
       setSelectedSessionId(session.id);
     },
-    [],
+    [applySessionEvents],
   );
 
   const refreshStatus = useCallback(async () => {
@@ -133,6 +178,27 @@ export function PiPanel() {
   useEffect(() => {
     void refreshStatus();
   }, [refreshStatus]);
+
+  useEffect(() => {
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+    listen<PiSessionEvent>("pi:session-event", (event) => {
+      applySessionEvents([event.payload]);
+    })
+      .then((nextUnlisten) => {
+        if (alive) {
+          unlisten = nextUnlisten;
+        } else {
+          nextUnlisten();
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, [applySessionEvents]);
 
   const startRuntime = useCallback(async () => {
     setIsBusy(true);

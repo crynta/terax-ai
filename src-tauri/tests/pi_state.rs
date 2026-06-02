@@ -63,10 +63,10 @@ fn sessions_can_be_created_sent_and_stopped() {
         .session_send_with_resource_dir(None, "pi-1".to_string(), "hello".to_string())
         .unwrap();
     assert!(sent.accepted);
-    assert_eq!(sent.session.status, "idle");
+    assert_eq!(sent.session.status, "running");
     assert_eq!(sent.session.last_prompt.as_deref(), Some("hello"));
     assert!(sent.events.iter().any(|event| {
-        event.event_type == "session.output.delta" && event.payload["text"].is_string()
+        event.event_type == "session.status" && event.payload["status"] == "running"
     }));
 
     let stopped = state

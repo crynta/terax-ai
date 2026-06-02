@@ -6,7 +6,7 @@ The Rust Pi host manager talks to the Node Pi host over newline-delimited JSON-R
 
 `sessions.create` now creates a real `@earendil-works/pi-coding-agent` `AgentSession` with `noTools: "all"` and an in-memory `SessionManager`. This proves prompt execution can flow through the Pi SDK without allowing the Node sidecar to own Terax files, shell, terminal, git, editor, or SQLite responsibilities.
 
-Until the live event bridge is added, `sessions.send` waits for `AgentSession.prompt()` to finish and returns the collected output/status events in the JSON-RPC response. The next protocol milestone will forward the same event envelope asynchronously while a run is in progress.
+`sessions.send` accepts a prompt immediately, returns the initial `session.input` and `running` status events, then streams output/status/error events asynchronously as JSON-RPC notifications on stdout. Rust filters those notifications out of the response stream and forwards them to the frontend as Tauri `pi:session-event` events.
 
 ## Session shape
 
@@ -25,7 +25,11 @@ type PiSession = {
 
 ## Event envelope
 
-Events are returned in method responses for the current batched protocol. The same envelope is intended for the async Tauri event bridge.
+Events use the same envelope in both method responses and live JSON-RPC notifications:
+
+```json
+{"jsonrpc":"2.0","method":"session.event","params":{...PiSessionEvent}}
+```
 
 ```ts
 type PiSessionEvent = {
@@ -84,7 +88,7 @@ Result:
 { accepted: boolean; session: PiSession; events: PiSessionEvent[] }
 ```
 
-Sends the prompt through `AgentSession.prompt()`. On success, output deltas are returned as `session.output.delta`, and the session returns to `idle`. If Pi rejects or fails the prompt, the response is still a method result with `accepted: false`, a `session.error` event, and `status: "error"`.
+Accepts the prompt, starts `AgentSession.prompt()` asynchronously, and returns immediately with `accepted: true`, `session.input`, and `session.status` (`running`) events. Output deltas, completion status, and errors are delivered later as `session.event` notifications and Tauri `pi:session-event` events.
 
 ### `sessions.stop`
 
