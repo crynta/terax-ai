@@ -1,3 +1,4 @@
+import type { PiProviderResolution } from "@/modules/pi/lib/provider";
 import type { PiDiagnostics, PiRuntimeState } from "@/modules/pi/lib/status";
 
 export type PiDiagnosticsAction = "open-settings" | "refresh" | "start-runtime";
@@ -7,6 +8,7 @@ export type PiDiagnosticsIssue = {
     | "api-keys-missing"
     | "diagnostics-unavailable"
     | "packages-unavailable"
+    | "provider-unavailable"
     | "runtime-connecting"
     | "runtime-error"
     | "runtime-offline"
@@ -24,8 +26,10 @@ export type PiDiagnosticsView = {
   healthy: boolean;
   issues: PiDiagnosticsIssue[];
   loadedPackageCount: number;
+  modelLabel: string;
   nodeLabel: string;
   packageCount: number;
+  providerLabel: string;
   sessionCount: number;
   storageLabel: string;
   toolMode: string;
@@ -34,6 +38,7 @@ export type PiDiagnosticsView = {
 type BuildPiDiagnosticsViewInput = {
   diagnostics: PiDiagnostics | null;
   diagnosticsError: string | null;
+  provider?: PiProviderResolution;
   runtimeState: PiRuntimeState;
   workspaceRoot: string | null;
 };
@@ -85,6 +90,7 @@ function runtimeIssue(state: PiRuntimeState): PiDiagnosticsIssue | null {
 export function buildPiDiagnosticsView({
   diagnostics,
   diagnosticsError,
+  provider,
   runtimeState,
   workspaceRoot,
 }: BuildPiDiagnosticsViewInput): PiDiagnosticsView {
@@ -109,6 +115,16 @@ export function buildPiDiagnosticsView({
       action: null,
       actionLabel: null,
       tone: "muted",
+    });
+  }
+  if (provider && !provider.ok) {
+    issues.push({
+      id: "provider-unavailable",
+      title: "Pi model needs setup",
+      description: provider.error,
+      action: "open-settings",
+      actionLabel: "Settings",
+      tone: "destructive",
     });
   }
   if (runtimeState.phase === "ready" && diagnosticsError) {
@@ -162,10 +178,12 @@ export function buildPiDiagnosticsView({
     healthy: issues.length === 0,
     issues,
     loadedPackageCount,
+    modelLabel: provider?.modelLabel ?? "Default",
     nodeLabel: diagnostics
       ? `${diagnostics.node.version} ${diagnostics.node.platform}/${diagnostics.node.arch}`
       : "Unavailable",
     packageCount,
+    providerLabel: provider?.providerLabel ?? "Pi",
     sessionCount: diagnostics?.sessions.length ?? 0,
     storageLabel: diagnostics?.config.sessionStorage ?? "Unavailable",
     toolMode: diagnostics?.config.toolMode ?? "Unavailable",

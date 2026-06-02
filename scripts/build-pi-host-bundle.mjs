@@ -66,6 +66,8 @@ try {
 
   await assertBundleFile("host.js");
   await assertBundleFile("protocol.js");
+  await assertBundleFile("provider-config.js");
+  await assertBundleFile("session-errors.js");
   await assertBundleFile("sessions.js");
   await assertBundleFile("package.json");
   await assertBundleFile(

@@ -1,19 +1,19 @@
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { LazyStore } from "@tauri-apps/plugin-store";
 import {
+  type AutocompleteProviderId,
+  type CustomEndpoint,
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
   isKnownModelId,
   LMSTUDIO_DEFAULT_BASE_URL,
   MLX_DEFAULT_BASE_URL,
-  OLLAMA_DEFAULT_BASE_URL,
-  migrateLegacyCompatEndpoint,
-  OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
-  type AutocompleteProviderId,
-  type CustomEndpoint,
   type ModelId,
+  migrateLegacyCompatEndpoint,
+  OLLAMA_DEFAULT_BASE_URL,
+  OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
-import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { LazyStore } from "@tauri-apps/plugin-store";
 
 export type ThemePref = "system" | "light" | "dark";
 
@@ -57,6 +57,7 @@ export type Preferences = {
   backgroundOpacity: number;
   backgroundBlur: number;
   defaultModelId: ModelId;
+  piModelId: string;
   editorTheme: EditorThemeId;
   customInstructions: string;
   autostart: boolean;
@@ -100,6 +101,7 @@ const KEY_BG_IMAGE_ID = "backgroundImageId";
 const KEY_BG_OPACITY = "backgroundOpacity";
 const KEY_BG_BLUR = "backgroundBlur";
 const KEY_DEFAULT_MODEL = "defaultModelId";
+const KEY_PI_MODEL = "piModelId";
 const KEY_EDITOR_THEME = "editorTheme";
 const KEY_CUSTOM_INSTRUCTIONS = "customInstructions";
 const KEY_AUTOSTART = "autostart";
@@ -158,6 +160,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   backgroundOpacity: 0.5,
   backgroundBlur: 0,
   defaultModelId: DEFAULT_MODEL_ID,
+  piModelId: DEFAULT_MODEL_ID,
   editorTheme: "atomone",
   customInstructions: "",
   autostart: false,
@@ -233,6 +236,7 @@ export async function loadPreferences(): Promise<Preferences> {
         ? stored
         : DEFAULT_PREFERENCES.defaultModelId;
     })(),
+    piModelId: get<string>(KEY_PI_MODEL) ?? DEFAULT_PREFERENCES.piModelId,
     editorTheme:
       get<EditorThemeId>(KEY_EDITOR_THEME) ?? DEFAULT_PREFERENCES.editorTheme,
     customInstructions:
@@ -255,10 +259,8 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_LMSTUDIO_BASE_URL) ?? DEFAULT_PREFERENCES.lmstudioBaseURL,
     lmstudioModelId:
       get<string>(KEY_LMSTUDIO_MODEL_ID) ?? DEFAULT_PREFERENCES.lmstudioModelId,
-    mlxBaseURL:
-      get<string>(KEY_MLX_BASE_URL) ?? DEFAULT_PREFERENCES.mlxBaseURL,
-    mlxModelId:
-      get<string>(KEY_MLX_MODEL_ID) ?? DEFAULT_PREFERENCES.mlxModelId,
+    mlxBaseURL: get<string>(KEY_MLX_BASE_URL) ?? DEFAULT_PREFERENCES.mlxBaseURL,
+    mlxModelId: get<string>(KEY_MLX_MODEL_ID) ?? DEFAULT_PREFERENCES.mlxModelId,
     ollamaBaseURL:
       get<string>(KEY_OLLAMA_BASE_URL) ?? DEFAULT_PREFERENCES.ollamaBaseURL,
     ollamaModelId:
@@ -286,8 +288,7 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_OPENROUTER_MODEL_ID) ??
       DEFAULT_PREFERENCES.openrouterModelId,
     favoriteModelIds: (
-      get<string[]>(KEY_FAVORITE_MODELS) ??
-      DEFAULT_PREFERENCES.favoriteModelIds
+      get<string[]>(KEY_FAVORITE_MODELS) ?? DEFAULT_PREFERENCES.favoriteModelIds
     ).filter(isKnownModelId),
     recentModelIds: (
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds
@@ -324,8 +325,7 @@ export async function loadPreferences(): Promise<Preferences> {
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
     editorAutoSave:
-      get<boolean>(KEY_EDITOR_AUTO_SAVE) ??
-      DEFAULT_PREFERENCES.editorAutoSave,
+      get<boolean>(KEY_EDITOR_AUTO_SAVE) ?? DEFAULT_PREFERENCES.editorAutoSave,
     editorAutoSaveDelay: clampAutoSaveDelay(
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
@@ -359,7 +359,9 @@ export async function setBackgroundKind(value: BackgroundKind): Promise<void> {
   await writePref(KEY_BG_KIND, value);
 }
 
-export async function setBackgroundImageId(value: string | null): Promise<void> {
+export async function setBackgroundImageId(
+  value: string | null,
+): Promise<void> {
   await writePref(KEY_BG_IMAGE_ID, value);
 }
 
@@ -371,9 +373,12 @@ export async function setBackgroundBlur(value: number): Promise<void> {
   await writePref(KEY_BG_BLUR, clampBlur(value));
 }
 
-
 export async function setDefaultModel(value: ModelId): Promise<void> {
   await writePref(KEY_DEFAULT_MODEL, value);
+}
+
+export async function setPiModelId(value: string): Promise<void> {
+  await writePref(KEY_PI_MODEL, value);
 }
 
 export async function setEditorTheme(value: EditorThemeId): Promise<void> {
@@ -482,7 +487,9 @@ export async function setTerminalFontFamily(value: string): Promise<void> {
 }
 
 export async function setTerminalLetterSpacing(value: number): Promise<void> {
-  const clamped = Number.isFinite(value) ? Math.max(-10, Math.min(10, Math.round(value))) : 0;
+  const clamped = Number.isFinite(value)
+    ? Math.max(-10, Math.min(10, Math.round(value)))
+    : 0;
   await writePref(KEY_TERMINAL_LETTER_SPACING, clamped);
 }
 
@@ -557,6 +564,7 @@ export async function onPreferencesChange(
     [KEY_BG_OPACITY]: "backgroundOpacity",
     [KEY_BG_BLUR]: "backgroundBlur",
     [KEY_DEFAULT_MODEL]: "defaultModelId",
+    [KEY_PI_MODEL]: "piModelId",
     [KEY_EDITOR_THEME]: "editorTheme",
     [KEY_CUSTOM_INSTRUCTIONS]: "customInstructions",
     [KEY_AUTOSTART]: "autostart",

@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::modules::secrets::{self, SecretsState};
 use crate::modules::workspace::{self, WorkspaceEnv, WorkspaceRegistry};
 
 mod host;
@@ -152,6 +153,38 @@ pub struct PiPromptContext {
     pub active_file: Option<String>,
     #[serde(default)]
     pub active_terminal_private: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiProviderConfig {
+    pub provider: String,
+    pub model_id: String,
+    #[serde(default)]
+    pub source_model_id: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub context_limit: Option<u32>,
+    #[serde(default)]
+    pub custom_endpoint_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PiResolvedProviderConfig {
+    pub provider: String,
+    pub model_id: String,
+    #[serde(default)]
+    pub source_model_id: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub context_limit: Option<u32>,
+    #[serde(default)]
+    pub custom_endpoint_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -332,7 +365,19 @@ impl PiState {
         title: Option<String>,
         cwd: Option<String>,
     ) -> Result<PiSessionCreateResult, String> {
-        self.with_host(resource_dir, |host| host.session_create(title, cwd))
+        self.session_create_with_resource_dir_and_provider(resource_dir, title, cwd, None)
+    }
+
+    fn session_create_with_resource_dir_and_provider(
+        &self,
+        resource_dir: Option<&Path>,
+        title: Option<String>,
+        cwd: Option<String>,
+        provider_config: Option<PiResolvedProviderConfig>,
+    ) -> Result<PiSessionCreateResult, String> {
+        self.with_host(resource_dir, |host| {
+            host.session_create(title, cwd, provider_config)
+        })
     }
 
     pub fn session_create_with_resource_dir_and_event_sink(
@@ -342,8 +387,25 @@ impl PiState {
         title: Option<String>,
         cwd: Option<String>,
     ) -> Result<PiSessionCreateResult, String> {
+        self.session_create_with_resource_dir_and_event_sink_and_provider(
+            resource_dir,
+            event_sink,
+            title,
+            cwd,
+            None,
+        )
+    }
+
+    fn session_create_with_resource_dir_and_event_sink_and_provider(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        title: Option<String>,
+        cwd: Option<String>,
+        provider_config: Option<PiResolvedProviderConfig>,
+    ) -> Result<PiSessionCreateResult, String> {
         self.with_host_event_sink(resource_dir, event_sink, |host| {
-            host.session_create(title, cwd)
+            host.session_create(title, cwd, provider_config)
         })
     }
 
@@ -512,6 +574,167 @@ fn resolve_prompt_context(
     }
 }
 
+const KEYRING_SERVICE: &str = "terax-ai";
+const MIN_CONTEXT_LIMIT: u32 = 1_000;
+const SUPPORTED_PROVIDERS: &[&str] = &[
+    "openai",
+    "anthropic",
+    "google",
+    "xai",
+    "cerebras",
+    "groq",
+    "deepseek",
+    "mistral",
+    "openrouter",
+    "openai-compatible",
+    "lmstudio",
+    "mlx",
+    "ollama",
+];
+
+fn provider_label(provider: &str) -> &str {
+    match provider {
+        "openai" => "OpenAI",
+        "anthropic" => "Anthropic",
+        "google" => "Google",
+        "xai" => "xAI",
+        "cerebras" => "Cerebras",
+        "groq" => "Groq",
+        "deepseek" => "DeepSeek",
+        "mistral" => "Mistral",
+        "openrouter" => "OpenRouter",
+        "openai-compatible" => "OpenAI Compatible",
+        "lmstudio" => "LM Studio",
+        "mlx" => "MLX",
+        "ollama" => "Ollama",
+        _ => "provider",
+    }
+}
+
+fn provider_requires_key(provider: &str) -> bool {
+    !matches!(provider, "lmstudio" | "mlx" | "ollama" | "openai-compatible")
+}
+
+fn provider_key_account(config: &PiResolvedProviderConfig) -> Option<String> {
+    if config.provider == "openai-compatible" {
+        return Some(match config.custom_endpoint_id.as_deref() {
+            Some(endpoint_id) => format!("compat-{endpoint_id}-api-key"),
+            None => "openai-compatible-api-key".to_string(),
+        });
+    }
+
+    match config.provider.as_str() {
+        "openai" => Some("openai-api-key".to_string()),
+        "anthropic" => Some("anthropic-api-key".to_string()),
+        "google" => Some("google-api-key".to_string()),
+        "xai" => Some("xai-api-key".to_string()),
+        "cerebras" => Some("cerebras-api-key".to_string()),
+        "groq" => Some("groq-api-key".to_string()),
+        "deepseek" => Some("deepseek-api-key".to_string()),
+        "mistral" => Some("mistral-api-key".to_string()),
+        "openrouter" => Some("openrouter-api-key".to_string()),
+        _ => None,
+    }
+}
+
+fn normalize_required_config_string(value: String, name: &str) -> Result<String, String> {
+    let trimmed = value.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(format!("providerConfig.{name} must be a non-empty string"));
+    }
+    if trimmed.contains('\r') || trimmed.contains('\n') {
+        return Err(format!("providerConfig.{name} must not contain newlines"));
+    }
+    Ok(trimmed)
+}
+
+fn normalize_optional_config_string(
+    value: Option<String>,
+    name: &str,
+) -> Result<Option<String>, String> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let trimmed = value.trim().to_string();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    if trimmed.contains('\r') || trimmed.contains('\n') {
+        return Err(format!("providerConfig.{name} must not contain newlines"));
+    }
+    Ok(Some(trimmed))
+}
+
+fn normalize_base_url(value: Option<String>) -> Result<Option<String>, String> {
+    let Some(base_url) = normalize_optional_config_string(value, "baseUrl")? else {
+        return Ok(None);
+    };
+    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+        return Err("providerConfig.baseUrl must start with http:// or https://".to_string());
+    }
+    Ok(Some(base_url))
+}
+
+fn normalize_provider_config(
+    config: Option<PiProviderConfig>,
+) -> Result<Option<PiResolvedProviderConfig>, String> {
+    let Some(config) = config else {
+        return Ok(None);
+    };
+    let provider = normalize_required_config_string(config.provider, "provider")?;
+    if !SUPPORTED_PROVIDERS.contains(&provider.as_str()) {
+        return Err(format!("providerConfig.provider is not supported: {provider}"));
+    }
+    if let Some(limit) = config.context_limit {
+        if limit < MIN_CONTEXT_LIMIT {
+            return Err(format!(
+                "providerConfig.contextLimit must be at least {MIN_CONTEXT_LIMIT}"
+            ));
+        }
+    }
+
+    Ok(Some(PiResolvedProviderConfig {
+        provider,
+        model_id: normalize_required_config_string(config.model_id, "modelId")?,
+        source_model_id: normalize_optional_config_string(
+            config.source_model_id,
+            "sourceModelId",
+        )?,
+        base_url: normalize_base_url(config.base_url)?,
+        context_limit: config.context_limit,
+        custom_endpoint_id: normalize_optional_config_string(
+            config.custom_endpoint_id,
+            "customEndpointId",
+        )?,
+        api_key: None,
+    }))
+}
+
+fn resolve_provider_config(
+    app: &AppHandle,
+    secrets_state: &SecretsState,
+    config: Option<PiProviderConfig>,
+) -> Result<Option<PiResolvedProviderConfig>, String> {
+    let Some(mut config) = normalize_provider_config(config)? else {
+        return Ok(None);
+    };
+
+    if let Some(account) = provider_key_account(&config) {
+        let api_key = secrets::get_secret_value(app, secrets_state, KEYRING_SERVICE, &account)?
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        if api_key.is_none() && provider_requires_key(&config.provider) {
+            return Err(format!(
+                "No API key configured for {}. Open Settings > Models.",
+                provider_label(&config.provider)
+            ));
+        }
+        config.api_key = api_key;
+    }
+
+    Ok(Some(config))
+}
+
 #[tauri::command]
 pub fn pi_status(state: tauri::State<'_, PiState>) -> Result<PiRuntimeSnapshot, String> {
     state.snapshot()
@@ -576,17 +799,21 @@ pub fn pi_session_create(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
     registry: tauri::State<'_, WorkspaceRegistry>,
+    secrets_state: tauri::State<'_, SecretsState>,
     title: Option<String>,
     cwd: Option<String>,
+    provider_config: Option<PiProviderConfig>,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<PiSessionCreateResult, String> {
     let workspace_env = WorkspaceEnv::from_option(workspace);
     let cwd = resolve_session_cwd(&registry, cwd.as_deref(), &workspace_env)?;
-    let result = state.session_create_with_resource_dir_and_event_sink(
+    let provider_config = resolve_provider_config(&app, &secrets_state, provider_config)?;
+    let result = state.session_create_with_resource_dir_and_event_sink_and_provider(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
         title,
         Some(cwd),
+        provider_config,
     )?;
     store::record_session_result(&app, &result.session, &result.events)?;
     Ok(result)
@@ -741,5 +968,65 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("outside the authorized workspace"));
+    }
+
+    #[test]
+    fn normalize_provider_config_trims_runtime_fields() {
+        let resolved = normalize_provider_config(Some(PiProviderConfig {
+            provider: " anthropic ".to_string(),
+            model_id: " claude-sonnet-4-6 ".to_string(),
+            source_model_id: Some(" claude-sonnet-4-6 ".to_string()),
+            base_url: None,
+            context_limit: None,
+            custom_endpoint_id: None,
+        }))
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(resolved.provider, "anthropic");
+        assert_eq!(resolved.model_id, "claude-sonnet-4-6");
+        assert_eq!(resolved.source_model_id.as_deref(), Some("claude-sonnet-4-6"));
+    }
+
+    #[test]
+    fn normalize_provider_config_rejects_invalid_base_url() {
+        let error = normalize_provider_config(Some(PiProviderConfig {
+            provider: "openai-compatible".to_string(),
+            model_id: "qwen3-max".to_string(),
+            source_model_id: None,
+            base_url: Some("file:///tmp/model".to_string()),
+            context_limit: Some(128_000),
+            custom_endpoint_id: Some("abc123".to_string()),
+        }))
+        .unwrap_err();
+
+        assert_eq!(error, "providerConfig.baseUrl must start with http:// or https://");
+    }
+
+    #[test]
+    fn provider_key_account_uses_existing_keyring_accounts() {
+        let cloud = normalize_provider_config(Some(PiProviderConfig {
+            provider: "anthropic".to_string(),
+            model_id: "claude-sonnet-4-6".to_string(),
+            source_model_id: None,
+            base_url: None,
+            context_limit: None,
+            custom_endpoint_id: None,
+        }))
+        .unwrap()
+        .unwrap();
+        let custom = normalize_provider_config(Some(PiProviderConfig {
+            provider: "openai-compatible".to_string(),
+            model_id: "qwen3-max".to_string(),
+            source_model_id: None,
+            base_url: Some("https://gateway.example.com/v1".to_string()),
+            context_limit: Some(128_000),
+            custom_endpoint_id: Some("abc123".to_string()),
+        }))
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(provider_key_account(&cloud).as_deref(), Some("anthropic-api-key"));
+        assert_eq!(provider_key_account(&custom).as_deref(), Some("compat-abc123-api-key"));
     }
 }

@@ -1,10 +1,7 @@
-export class SessionProtocolError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = "SessionProtocolError";
-    this.code = code;
-  }
-}
+import { createRuntimeProviderOptions } from "./provider-config.js";
+import { SessionProtocolError } from "./session-errors.js";
+
+export { SessionProtocolError } from "./session-errors.js";
 
 const INVALID_PARAMS = -32602;
 const SESSION_NOT_FOUND = -32004;
@@ -315,10 +312,20 @@ function mapAgentSessionEvent(event, sessionId) {
   return null;
 }
 
-async function createAgentSessionRecord({ id, title, cwd, createdAt }) {
+async function createAgentSessionRecord({
+  id,
+  title,
+  cwd,
+  createdAt,
+  providerConfig,
+}) {
   const pi = await import("@earendil-works/pi-coding-agent");
   const testFaux = await createTestFauxOptions(pi);
+  const providerOptions = testFaux.cleanup
+    ? {}
+    : await createRuntimeProviderOptions(pi, providerConfig);
   const { session: agentSession } = await pi.createAgentSession({
+    ...providerOptions,
     ...testFaux.options,
     cwd,
     noTools: "all",
@@ -371,7 +378,13 @@ export async function createSession(params) {
       : `Pi Session ${id.replace("pi-", "")}`;
   const cwd =
     optionalString(options, "cwd", "sessions.create") ?? process.cwd();
-  const session = await createAgentSessionRecord({ id, title, cwd, createdAt });
+  const session = await createAgentSessionRecord({
+    id,
+    title,
+    cwd,
+    createdAt,
+    providerConfig: options.providerConfig,
+  });
   sessions.set(id, session);
 
   const snapshot = sessionSnapshot(session);

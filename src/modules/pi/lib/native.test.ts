@@ -21,6 +21,7 @@ describe("piNative", () => {
     expect(invoke).toHaveBeenCalledWith("pi_session_create", {
       title: "Plan",
       cwd: "/Users/me/project",
+      providerConfig: null,
       workspace: { kind: "local" },
     });
   });

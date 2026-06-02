@@ -112,6 +112,29 @@ fn entry(service: &str, account: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(service, account).map_err(|e| e.to_string())
 }
 
+pub(crate) fn get_secret_value(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| m.get(&key).cloned())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        match e.get_password() {
+            Ok(v) => Ok(Some(v)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn secrets_get(
     app: AppHandle,
@@ -119,22 +142,7 @@ pub async fn secrets_get(
     service: String,
     account: String,
 ) -> Result<Option<String>, String> {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = state; // capture
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| m.get(&key).cloned())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        match e.get_password() {
-            Ok(v) => Ok(Some(v)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(err) => Err(err.to_string()),
-        }
-    }
+    get_secret_value(&app, &state, &service, &account)
 }
 
 #[tauri::command]

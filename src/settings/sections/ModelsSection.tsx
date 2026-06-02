@@ -1,3 +1,15 @@
+import {
+  Add01Icon,
+  ArrowDown01Icon,
+  ArrowUpRight01Icon,
+  Cancel01Icon,
+  CheckmarkCircle02Icon,
+  ChevronDown,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,29 +23,33 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
-  DEFAULT_MODEL_ID,
-  MODELS,
-  PROVIDERS,
+  type CustomEndpoint,
   compatModelIdForEndpoint,
+  DEFAULT_MODEL_ID,
   getAutocompleteEligibleModels,
   getModel,
   getProvider,
-  providerNeedsKey,
-  type CustomEndpoint,
+  MODELS,
   type ModelId,
+  PROVIDERS,
   type ProviderId,
   type ProviderInfo,
+  providerNeedsKey,
 } from "@/modules/ai/config";
 import {
-  clearKey,
-  clearCustomEndpointKey,
-  getAllKeys,
-  getAllCustomEndpointKeys,
-  setKey,
-  setCustomEndpointKey,
   type CustomEndpointKeys,
+  clearCustomEndpointKey,
+  clearKey,
+  getAllCustomEndpointKeys,
+  getAllKeys,
+  setCustomEndpointKey,
+  setKey,
 } from "@/modules/ai/lib/keyring";
 import { useChatStore } from "@/modules/ai/store/chatStore";
+import {
+  type PiProviderPrefs,
+  resolvePiProviderConfig,
+} from "@/modules/pi/lib/provider";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   emitKeysChanged,
@@ -53,20 +69,9 @@ import {
   setOpenaiCompatibleContextLimit,
   setOpenaiCompatibleModelId,
   setOpenrouterModelId,
+  setPiModelId,
   setRecentModelIds,
 } from "@/modules/settings/store";
-import {
-  Add01Icon,
-  ArrowDown01Icon,
-  ArrowUpRight01Icon,
-  Cancel01Icon,
-  CheckmarkCircle02Icon,
-  ChevronDown,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useMemo, useState } from "react";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
@@ -100,9 +105,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     modelPlaceholder: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
     description:
       "Apple-silicon inference via mlx_lm.server (pip install mlx-lm).",
-    modelHint: (
-      <>The Hugging Face repo path you launched mlx_lm.server with.</>
-    ),
+    modelHint: <>The Hugging Face repo path you launched mlx_lm.server with.</>,
   },
   ollama: {
     urlPlaceholder: "http://localhost:11434/v1",
@@ -122,8 +125,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     description: "Any model on OpenRouter — type its full provider/model id.",
     modelHint: (
       <>
-        Browse ids at{" "}
-        <span className="font-mono">openrouter.ai/models</span>.
+        Browse ids at <span className="font-mono">openrouter.ai/models</span>.
       </>
     ),
   },
@@ -135,6 +137,7 @@ export function ModelsSection() {
   const [adding, setAdding] = useState<Set<ProviderId>>(new Set());
 
   const defaultModel = usePreferencesStore((s) => s.defaultModelId);
+  const piModelId = usePreferencesStore((s) => s.piModelId);
   const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
   const lmstudioModelId = usePreferencesStore((s) => s.lmstudioModelId);
   const mlxBaseURL = usePreferencesStore((s) => s.mlxBaseURL);
@@ -229,12 +232,45 @@ export function ModelsSection() {
     const { selectedModelId, setSelectedModelId } = useChatStore.getState();
     if (selectedModelId === deadModelId) {
       setSelectedModelId(
-        remaining[0] ? compatModelIdForEndpoint(remaining[0].id) : DEFAULT_MODEL_ID,
+        remaining[0]
+          ? compatModelIdForEndpoint(remaining[0].id)
+          : DEFAULT_MODEL_ID,
       );
     }
 
     await setCustomEndpoints(remaining);
   };
+
+  const piProviderPrefs = useMemo<PiProviderPrefs>(
+    () => ({
+      piModelId,
+      lmstudioBaseURL,
+      lmstudioModelId,
+      mlxBaseURL,
+      mlxModelId,
+      ollamaBaseURL,
+      ollamaModelId,
+      openaiCompatibleBaseURL: compatBaseURL,
+      openaiCompatibleModelId: compatModelId,
+      openaiCompatibleContextLimit: compatContextLimit,
+      openrouterModelId,
+      customEndpoints,
+    }),
+    [
+      compatBaseURL,
+      compatContextLimit,
+      compatModelId,
+      customEndpoints,
+      lmstudioBaseURL,
+      lmstudioModelId,
+      mlxBaseURL,
+      mlxModelId,
+      ollamaBaseURL,
+      ollamaModelId,
+      openrouterModelId,
+      piModelId,
+    ],
+  );
 
   const localConfig = (id: ProviderId): LocalConfig | null => {
     switch (id) {
@@ -282,8 +318,7 @@ export function ModelsSection() {
   };
 
   const isConfigured = (id: ProviderId): boolean => {
-    if (id === "openrouter")
-      return !!keys?.[id] && !!openrouterModelId.trim();
+    if (id === "openrouter") return !!keys?.[id] && !!openrouterModelId.trim();
     if (!isLocalProvider(id)) return !!keys?.[id];
     const cfg = localConfig(id);
     if (!cfg) return false;
@@ -342,6 +377,7 @@ export function ModelsSection() {
 
       <DefaultsBlock
         defaultModel={defaultModel}
+        piProviderPrefs={piProviderPrefs}
         configuredIds={configuredIds}
         keys={keys}
       />
@@ -440,7 +476,9 @@ function AddProviderMenu({
   onAddCompat: () => void;
 }) {
   const cloud = providers.filter((p) => !isLocalProvider(p.id));
-  const local = providers.filter((p) => isLocalProvider(p.id) && p.id !== "openai-compatible");
+  const local = providers.filter(
+    (p) => isLocalProvider(p.id) && p.id !== "openai-compatible",
+  );
 
   return (
     <DropdownMenu>
@@ -503,10 +541,12 @@ function ProviderMenuItem({
 
 function DefaultsBlock({
   defaultModel,
+  piProviderPrefs,
   configuredIds,
   keys,
 }: {
   defaultModel: ModelId;
+  piProviderPrefs: PiProviderPrefs;
   configuredIds: Set<ProviderId>;
   keys: KeysMap;
 }) {
@@ -518,6 +558,12 @@ function DefaultsBlock({
           <DefaultModelPicker
             defaultModel={defaultModel}
             configuredIds={configuredIds}
+          />
+        </FieldRow>
+        <FieldRow label="Pi model">
+          <PiModelPicker
+            configuredIds={configuredIds}
+            prefs={piProviderPrefs}
           />
         </FieldRow>
         <AutocompleteRow keys={keys} configuredIds={configuredIds} />
@@ -594,6 +640,131 @@ function DefaultModelPicker({
               </div>
             );
           })}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function PiModelPicker({
+  configuredIds,
+  prefs,
+}: {
+  configuredIds: Set<ProviderId>;
+  prefs: PiProviderPrefs;
+}) {
+  const current = resolvePiProviderConfig(prefs);
+  const hasAny =
+    configuredIds.size > 0 ||
+    prefs.customEndpoints.some(
+      (endpoint) => endpoint.baseURL.trim() && endpoint.modelId.trim(),
+    );
+  const currentProvider = current.provider ?? "openai";
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          disabled={!hasAny}
+          className={cn(
+            "h-8 flex-1 justify-between gap-2 px-2.5 text-[11.5px]",
+            !current.ok && "border-destructive/45",
+          )}
+        >
+          <span className="flex items-center gap-2 truncate">
+            <ProviderIcon provider={currentProvider} size={13} />
+            <span className="truncate">{current.modelLabel}</span>
+            <span className="text-muted-foreground">
+              · {current.ok ? current.providerLabel : "Needs setup"}
+            </span>
+          </span>
+          <HugeiconsIcon
+            icon={ArrowDown01Icon}
+            size={11}
+            strokeWidth={2}
+            className="opacity-70"
+          />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        sideOffset={6}
+        collisionPadding={12}
+        className="min-w-70 p-1"
+      >
+        <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
+          {PROVIDERS.filter((provider) => configuredIds.has(provider.id)).map(
+            (provider) => {
+              const models = MODELS.filter(
+                (model) => model.provider === provider.id,
+              );
+              if (models.length === 0) return null;
+              return (
+                <div key={provider.id} className="px-1 pt-1.5 first:pt-1">
+                  <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                    <ProviderIcon provider={provider.id} size={11} />
+                    <span>{provider.label}</span>
+                  </div>
+                  {models.map((model) => (
+                    <DropdownMenuItem
+                      key={model.id}
+                      onSelect={() => void setPiModelId(model.id)}
+                      className={cn(
+                        "flex items-start gap-2 text-[12px]",
+                        model.id === prefs.piModelId && "bg-accent/50",
+                      )}
+                    >
+                      <span className="flex flex-1 flex-col">
+                        <span>{model.label}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {model.description}
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                </div>
+              );
+            },
+          )}
+          {prefs.customEndpoints.length > 0 ? (
+            <div className="px-1 pt-1.5 first:pt-1">
+              <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                <ProviderIcon provider="openai-compatible" size={11} />
+                <span>Custom endpoints</span>
+              </div>
+              {prefs.customEndpoints.map((endpoint) => {
+                const ready =
+                  endpoint.baseURL.trim() && endpoint.modelId.trim();
+                const id = compatModelIdForEndpoint(endpoint.id);
+                return (
+                  <DropdownMenuItem
+                    key={endpoint.id}
+                    disabled={!ready}
+                    onSelect={() => ready && void setPiModelId(id)}
+                    className={cn(
+                      "flex items-start gap-2 text-[12px]",
+                      id === prefs.piModelId && "bg-accent/50",
+                    )}
+                  >
+                    <span className="flex flex-1 flex-col">
+                      <span>
+                        {endpoint.name.trim() ||
+                          endpoint.modelId ||
+                          "Custom endpoint"}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {ready
+                          ? endpoint.baseURL
+                          : "Add a base URL and model id"}
+                      </span>
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -798,7 +969,11 @@ function LocalProviderCard({
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
             Connected
           </Badge>
         ) : null}
@@ -808,7 +983,11 @@ function LocalProviderCard({
           className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
           Docs
-          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
+          <HugeiconsIcon
+            icon={ArrowUpRight01Icon}
+            size={11}
+            strokeWidth={1.75}
+          />
         </button>
         <Button
           size="icon"
@@ -882,7 +1061,9 @@ function LocalProviderCard({
                 spellCheck={false}
                 className="h-8 w-28 font-mono text-[11.5px]"
               />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
             </div>
           </FieldRow>
         ) : null}
@@ -901,7 +1082,11 @@ function LocalProviderCard({
                   title="Remove key"
                   className="size-7 text-muted-foreground hover:text-destructive"
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
                 </Button>
               </div>
             ) : (
@@ -979,8 +1164,7 @@ function CustomEndpointCard({
     [endpoint.contextLimit],
   );
 
-  const configured =
-    !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
+  const configured = !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
 
   const test = async () => {
     setTestStatus("testing");
@@ -1022,7 +1206,11 @@ function CustomEndpointCard({
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
             Connected
           </Badge>
         ) : null}
@@ -1110,7 +1298,9 @@ function CustomEndpointCard({
                 spellCheck={false}
                 className="h-8 w-28 font-mono text-[11.5px]"
               />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
             </div>
           </FieldRow>
 
@@ -1127,7 +1317,11 @@ function CustomEndpointCard({
                   title="Remove key"
                   className="size-7 text-muted-foreground hover:text-destructive"
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
                 </Button>
               </div>
             ) : (

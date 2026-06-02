@@ -142,4 +142,35 @@ describe("buildPiDiagnosticsView", () => {
       expect.objectContaining({ id: "workspace-missing", action: null }),
     );
   });
+
+  it("surfaces incomplete Pi provider setup as a settings action", () => {
+    const view = buildPiDiagnosticsView({
+      diagnostics: diagnostics(),
+      diagnosticsError: null,
+      provider: {
+        ok: false,
+        provider: "ollama",
+        providerLabel: "Ollama",
+        modelLabel: "Ollama",
+        error: "Ollama needs a model id in Settings > Models.",
+        config: null,
+      },
+      runtimeState: runtimeState("ready"),
+      workspaceRoot: "/tmp/project",
+    });
+
+    expect(view).toEqual(
+      expect.objectContaining({
+        providerLabel: "Ollama",
+        modelLabel: "Ollama",
+      }),
+    );
+    expect(view.issues).toContainEqual(
+      expect.objectContaining({
+        id: "provider-unavailable",
+        action: "open-settings",
+        tone: "destructive",
+      }),
+    );
+  });
 });

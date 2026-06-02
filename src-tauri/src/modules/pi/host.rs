@@ -13,8 +13,9 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{
-    PiDiagnostics, PiHostInfo, PiPhase, PiPromptContext, PiRuntimeSnapshot, PiSessionCreateResult,
-    PiSessionEvent, PiSessionSendResult, PiSessionStopResult, PiSessionsList,
+    PiDiagnostics, PiHostInfo, PiPhase, PiPromptContext, PiResolvedProviderConfig,
+    PiRuntimeSnapshot, PiSessionCreateResult, PiSessionEvent, PiSessionSendResult,
+    PiSessionStopResult, PiSessionsList,
 };
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -291,8 +292,12 @@ impl PiHost {
         &self,
         title: Option<String>,
         cwd: Option<String>,
+        provider_config: Option<PiResolvedProviderConfig>,
     ) -> Result<PiSessionCreateResult, HostCallError> {
-        self.call_with_params("sessions.create", json!({ "title": title, "cwd": cwd }))
+        self.call_with_params(
+            "sessions.create",
+            json!({ "title": title, "cwd": cwd, "providerConfig": provider_config }),
+        )
     }
 
     pub fn session_send(

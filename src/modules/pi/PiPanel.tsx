@@ -19,6 +19,10 @@ import { PiSessionList } from "@/modules/pi/components/PiSessionList";
 import { PiTranscript } from "@/modules/pi/components/PiTranscript";
 import { buildPiDiagnosticsView } from "@/modules/pi/lib/diagnostics";
 import { piNative } from "@/modules/pi/lib/native";
+import {
+  type PiProviderPrefs,
+  resolvePiProviderConfig,
+} from "@/modules/pi/lib/provider";
 import type {
   PiPromptContext,
   PiSession,
@@ -37,6 +41,7 @@ import {
 } from "@/modules/pi/lib/status";
 import { buildPiContextPreview } from "@/modules/pi/lib/view";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 
 const INITIAL_PI_STATE: PiRuntimeState = {
   phase: "disconnected",
@@ -78,9 +83,64 @@ export function PiPanel({
   );
   const [prompt, setPrompt] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const piModelId = usePreferencesStore((state) => state.piModelId);
+  const lmstudioBaseURL = usePreferencesStore((state) => state.lmstudioBaseURL);
+  const lmstudioModelId = usePreferencesStore((state) => state.lmstudioModelId);
+  const mlxBaseURL = usePreferencesStore((state) => state.mlxBaseURL);
+  const mlxModelId = usePreferencesStore((state) => state.mlxModelId);
+  const ollamaBaseURL = usePreferencesStore((state) => state.ollamaBaseURL);
+  const ollamaModelId = usePreferencesStore((state) => state.ollamaModelId);
+  const openaiCompatibleBaseURL = usePreferencesStore(
+    (state) => state.openaiCompatibleBaseURL,
+  );
+  const openaiCompatibleModelId = usePreferencesStore(
+    (state) => state.openaiCompatibleModelId,
+  );
+  const openaiCompatibleContextLimit = usePreferencesStore(
+    (state) => state.openaiCompatibleContextLimit,
+  );
+  const openrouterModelId = usePreferencesStore(
+    (state) => state.openrouterModelId,
+  );
+  const customEndpoints = usePreferencesStore((state) => state.customEndpoints);
   const status = getPiStatusView(runtimeState);
   const runtimeReady = runtimeState.phase === "ready";
-  const canCreateSession = runtimeReady && workspaceRoot !== null;
+  const piProviderPrefs = useMemo<PiProviderPrefs>(
+    () => ({
+      piModelId,
+      lmstudioBaseURL,
+      lmstudioModelId,
+      mlxBaseURL,
+      mlxModelId,
+      ollamaBaseURL,
+      ollamaModelId,
+      openaiCompatibleBaseURL,
+      openaiCompatibleModelId,
+      openaiCompatibleContextLimit,
+      openrouterModelId,
+      customEndpoints,
+    }),
+    [
+      customEndpoints,
+      lmstudioBaseURL,
+      lmstudioModelId,
+      mlxBaseURL,
+      mlxModelId,
+      ollamaBaseURL,
+      ollamaModelId,
+      openaiCompatibleBaseURL,
+      openaiCompatibleContextLimit,
+      openaiCompatibleModelId,
+      openrouterModelId,
+      piModelId,
+    ],
+  );
+  const piProvider = useMemo(
+    () => resolvePiProviderConfig(piProviderPrefs),
+    [piProviderPrefs],
+  );
+  const canCreateSession =
+    runtimeReady && workspaceRoot !== null && piProvider.ok;
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
     [selectedSessionId, sessions],
@@ -122,10 +182,11 @@ export function PiPanel({
       buildPiDiagnosticsView({
         diagnostics,
         diagnosticsError,
+        provider: piProvider,
         runtimeState,
         workspaceRoot,
       }),
-    [diagnostics, diagnosticsError, runtimeState, workspaceRoot],
+    [diagnostics, diagnosticsError, piProvider, runtimeState, workspaceRoot],
   );
 
   const applySessionEvents = useCallback((events: PiSessionEvent[]) => {
@@ -293,9 +354,18 @@ export function PiPanel({
   }, [refreshDiagnostics, refreshSessions]);
 
   const createSession = useCallback(async () => {
+    if (!piProvider.ok) {
+      setDiagnosticsError(piProvider.error);
+      return;
+    }
+
     setIsBusy(true);
     try {
-      const result = await piNative.sessionCreate(undefined, workspaceRoot);
+      const result = await piNative.sessionCreate(
+        undefined,
+        workspaceRoot,
+        piProvider.config,
+      );
       applySessionUpdate(result.session, result.events);
       await refreshStatus();
     } catch (error) {
@@ -303,7 +373,7 @@ export function PiPanel({
     } finally {
       setIsBusy(false);
     }
-  }, [applySessionUpdate, refreshStatus, workspaceRoot]);
+  }, [applySessionUpdate, piProvider, refreshStatus, workspaceRoot]);
 
   const sendPrompt = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {

@@ -11,6 +11,8 @@ describe("Pi host package", () => {
     expect(manifest.files).toEqual([
       "host.js",
       "protocol.js",
+      "provider-config.js",
+      "session-errors.js",
       "sessions.js",
       "package.json",
     ]);

@@ -228,7 +228,7 @@ export function PiDiagnosticsCard({
           Keys {view.configuredApiKeyCount}/{view.apiKeyCount}
         </span>
         <span className="truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1">
-          Sessions {view.sessionCount}
+          Model {view.modelLabel}
         </span>
         <span className="truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 text-right">
           Tools {view.toolMode}
