@@ -22,17 +22,40 @@ function getFilename(p: string): string {
 
 export function ImageViewer({ path, size }: Props) {
   const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(null);
+
   const imgRef = useRef<HTMLImageElement>(null);
+  const dragStartRef = useRef({ x: 0, y: 0 });
 
   const handleZoomIn = () => setScale((s) => Math.min(5, s + 0.25));
   const handleZoomOut = () => setScale((s) => Math.max(0.25, s - 0.25));
-  const handleZoomReset = () => setScale(1);
+  const handleZoomReset = () => {
+    setScale(1);
+    setPosition({ x: 0, y: 0 });
+  };
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const { naturalWidth, naturalHeight } = e.currentTarget;
     setDimensions({ width: naturalWidth, height: naturalHeight });
   };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // Only left click
+    setIsDragging(true);
+    dragStartRef.current = { x: e.clientX - position.x, y: e.clientY - position.y };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDragging) return;
+    const nextX = e.clientX - dragStartRef.current.x;
+    const nextY = e.clientY - dragStartRef.current.y;
+    setPosition({ x: nextX, y: nextY });
+  };
+
+  const handleMouseUp = () => setIsDragging(false);
+  const handleMouseLeave = () => setIsDragging(false);
 
   const filename = getFilename(path);
   const src = convertFileSrc(path);
@@ -40,9 +63,13 @@ export function ImageViewer({ path, size }: Props) {
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-muted/20 select-none">
       {/* Viewport container */}
-      <div className="relative flex-1 overflow-auto flex items-center justify-center p-8 min-h-0">
+      <div className="relative flex-1 overflow-hidden flex items-center justify-center min-h-0">
         <div
-          className="relative rounded-lg border border-border/40 overflow-hidden shadow-sm flex items-center justify-center bg-neutral-100 dark:bg-neutral-900"
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
+          className="relative h-full w-full flex items-center justify-center bg-neutral-100 dark:bg-neutral-900 cursor-grab active:cursor-grabbing"
           style={{
             backgroundImage: "conic-gradient(rgba(128,128,128,0.08) 25%, transparent 0 50%, rgba(128,128,128,0.08) 0 75%, transparent 0)",
             backgroundSize: "16px 16px",
@@ -53,16 +80,16 @@ export function ImageViewer({ path, size }: Props) {
             src={src}
             alt={filename}
             onLoad={handleImageLoad}
-            className="max-h-[75vh] max-w-[85vw] object-contain transition-transform duration-200 ease-out origin-center select-none"
+            className="max-h-[85vh] max-w-[85vw] object-contain select-none pointer-events-none transition-transform duration-75 ease-out origin-center"
             style={{
-              transform: `scale(${scale})`,
+              transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
             }}
           />
         </div>
       </div>
 
       {/* Floating premium glassmorphic control bar */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 px-4 py-2.5 rounded-full border border-border/45 bg-background/70 backdrop-blur-md shadow-lg transition-all duration-200 hover:bg-background/80 hover:shadow-xl">
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 px-4 py-2.5 rounded-full border border-border/45 bg-background/70 backdrop-blur-md shadow-lg transition-all duration-200 hover:bg-background/80 hover:shadow-xl z-10">
         <div className="flex items-center gap-2 border-r border-border/40 pr-3">
           <HugeiconsIcon
             icon={Image01Icon}
@@ -71,7 +98,10 @@ export function ImageViewer({ path, size }: Props) {
             className="text-muted-foreground shrink-0"
           />
           <div className="flex flex-col min-w-0 max-w-[160px]">
-            <span className="text-[11px] font-medium text-foreground truncate leading-tight">
+            <span
+              title={filename}
+              className="text-[11px] font-medium text-foreground truncate leading-tight cursor-help"
+            >
               {filename}
             </span>
             <span className="text-[9.5px] text-muted-foreground leading-none mt-0.5">
