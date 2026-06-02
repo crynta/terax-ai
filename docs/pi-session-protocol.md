@@ -48,6 +48,12 @@ type PiSessionEvent = {
 
 ## Methods
 
+### `diagnostics`
+
+Params: none.
+
+Result includes host/package status, Node runtime metadata, no-tools mode, session storage mode, and API-key presence booleans. It never returns secret values.
+
 ### `sessions.list`
 
 Params: none.

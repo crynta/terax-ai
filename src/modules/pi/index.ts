@@ -8,6 +8,7 @@ export type {
   PiSessionsList,
 } from "./lib/sessions";
 export type {
+  PiDiagnostics,
   PiHostInfo,
   PiPackageInfo,
   PiPhase,

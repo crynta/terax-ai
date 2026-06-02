@@ -19,6 +19,23 @@ export type PiHostInfo = {
   piPackages: PiPackageInfo[];
 };
 
+export type PiDiagnostics = PiHostInfo & {
+  node: {
+    version: string;
+    execPath: string;
+    platform: string;
+    arch: string;
+    pid: number;
+    cwd: string;
+  };
+  config: {
+    toolMode: string;
+    sessionStorage: string;
+    apiKeys: Array<{ name: string; configured: boolean }>;
+  };
+  sessions: Array<{ id: string; title: string; status: string }>;
+};
+
 export type PiStatusView = {
   label: string;
   tone: "muted" | "progress" | "success" | "error";

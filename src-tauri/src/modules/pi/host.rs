@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{
-    PiHostInfo, PiPhase, PiRuntimeSnapshot, PiSessionCreateResult, PiSessionEvent,
+    PiDiagnostics, PiHostInfo, PiPhase, PiRuntimeSnapshot, PiSessionCreateResult, PiSessionEvent,
     PiSessionSendResult, PiSessionStopResult, PiSessionsList,
 };
 
@@ -175,6 +175,10 @@ impl PiHost {
 
     pub fn info(&mut self) -> Result<PiHostInfo, String> {
         self.call("info")
+    }
+
+    pub fn diagnostics(&mut self) -> Result<PiDiagnostics, String> {
+        self.call("diagnostics")
     }
 
     pub fn sessions_list(&mut self) -> Result<PiSessionsList, String> {

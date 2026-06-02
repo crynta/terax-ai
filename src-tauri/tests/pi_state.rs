@@ -47,6 +47,24 @@ fn host_info_reports_stub_capabilities() {
 }
 
 #[test]
+fn diagnostics_report_non_secret_runtime_state() {
+    let state = PiState::default();
+    let diagnostics = state
+        .diagnostics_with_resource_dir_and_event_sink(None, None)
+        .unwrap();
+
+    assert_eq!(diagnostics.host_version, "0.1.0");
+    assert!(diagnostics.pi_sdk_loaded);
+    assert_eq!(diagnostics.config.tool_mode, "noTools");
+    assert!(diagnostics
+        .config
+        .api_keys
+        .iter()
+        .any(|key| key.name == "ANTHROPIC_API_KEY"));
+    state.stop().unwrap();
+}
+
+#[test]
 fn sessions_can_be_created_sent_and_stopped() {
     std::env::set_var("TERAX_PI_HOST_TEST_FAUX_RESPONSE", "hello from Rust");
     let state = PiState::default();

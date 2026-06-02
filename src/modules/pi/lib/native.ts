@@ -5,13 +5,14 @@ import type {
   PiSessionStopResult,
   PiSessionsList,
 } from "./sessions";
-import type { PiHostInfo, PiRuntimeState } from "./status";
+import type { PiDiagnostics, PiHostInfo, PiRuntimeState } from "./status";
 
 export const piNative = {
   status: () => invoke<PiRuntimeState>("pi_status"),
   start: () => invoke<PiRuntimeState>("pi_start"),
   stop: () => invoke<PiRuntimeState>("pi_stop"),
   hostInfo: () => invoke<PiHostInfo>("pi_host_info"),
+  diagnostics: () => invoke<PiDiagnostics>("pi_diagnostics"),
   sessionsHistory: () => invoke<PiSessionsList>("pi_sessions_history"),
   sessionsList: () => invoke<PiSessionsList>("pi_sessions_list"),
   sessionCreate: (title?: string) =>

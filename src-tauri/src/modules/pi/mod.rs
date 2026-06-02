@@ -35,6 +35,51 @@ pub struct PiHostInfo {
     pub pi_packages: Vec<PiPackageInfo>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiDiagnostics {
+    pub host_version: String,
+    pub pi_sdk_loaded: bool,
+    pub pi_packages: Vec<PiPackageInfo>,
+    pub node: PiNodeDiagnostics,
+    pub config: PiConfigDiagnostics,
+    pub sessions: Vec<PiDiagnosticSession>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiNodeDiagnostics {
+    pub version: String,
+    pub exec_path: String,
+    pub platform: String,
+    pub arch: String,
+    pub pid: u32,
+    pub cwd: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiConfigDiagnostics {
+    pub tool_mode: String,
+    pub session_storage: String,
+    pub api_keys: Vec<PiEnvVarStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiEnvVarStatus {
+    pub name: String,
+    pub configured: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiDiagnosticSession {
+    pub id: String,
+    pub title: String,
+    pub status: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PiPackageInfo {
@@ -222,6 +267,14 @@ impl PiState {
         self.with_host_event_sink(resource_dir, event_sink, PiHost::info)
     }
 
+    pub fn diagnostics_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+    ) -> Result<PiDiagnostics, String> {
+        self.with_host_event_sink(resource_dir, event_sink, PiHost::diagnostics)
+    }
+
     pub fn sessions_list_with_resource_dir(
         &self,
         resource_dir: Option<&Path>,
@@ -352,6 +405,17 @@ pub async fn pi_host_info(
     state: tauri::State<'_, PiState>,
 ) -> Result<PiHostInfo, String> {
     state.info_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+    )
+}
+
+#[tauri::command]
+pub async fn pi_diagnostics(
+    app: AppHandle,
+    state: tauri::State<'_, PiState>,
+) -> Result<PiDiagnostics, String> {
+    state.diagnostics_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
     )

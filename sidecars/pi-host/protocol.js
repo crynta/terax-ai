@@ -223,11 +223,53 @@ async function info() {
   };
 }
 
+const API_KEY_ENV_NAMES = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GOOGLE_GENERATIVE_AI_API_KEY",
+  "GEMINI_API_KEY",
+  "GROQ_API_KEY",
+  "XAI_API_KEY",
+  "CEREBRAS_API_KEY",
+];
+
+function envStatus(name) {
+  return {
+    name,
+    configured:
+      typeof process.env[name] === "string" && process.env[name].trim() !== "",
+  };
+}
+
 async function status() {
   return {
     phase: "ready",
     detail: "Pi host ready",
     ...(await info()),
+  };
+}
+
+async function diagnostics() {
+  return {
+    ...(await info()),
+    node: {
+      version: process.version,
+      execPath: process.execPath,
+      platform: process.platform,
+      arch: process.arch,
+      pid: process.pid,
+      cwd: process.cwd(),
+    },
+    config: {
+      toolMode: "noTools",
+      sessionStorage: "rust-app-data-json",
+      apiKeys: API_KEY_ENV_NAMES.map(envStatus),
+    },
+    sessions: listSessions().sessions.map((session) => ({
+      id: session.id,
+      title: session.title,
+      status: session.status,
+    })),
   };
 }
 
@@ -297,6 +339,11 @@ export async function handleJsonRpcLine(line) {
     case "info":
       return {
         response: successResponse(request.id, await info()),
+        shutdown: false,
+      };
+    case "diagnostics":
+      return {
+        response: successResponse(request.id, await diagnostics()),
         shutdown: false,
       };
     case "sessions.list":

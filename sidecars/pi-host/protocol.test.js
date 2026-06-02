@@ -61,6 +61,36 @@ describe("Pi host protocol", () => {
     expect(packageNames(result)).toEqual(PI_PACKAGE_NAMES);
   });
 
+  it("reports non-secret diagnostics", async () => {
+    const result = await handleJsonRpcLine(
+      JSON.stringify({ jsonrpc: "2.0", id: 40, method: "diagnostics" }),
+    );
+
+    expect(result.response).toMatchObject({
+      jsonrpc: "2.0",
+      id: 40,
+      result: {
+        hostVersion: "0.1.0",
+        piSdkLoaded: true,
+        node: {
+          version: process.version,
+          platform: process.platform,
+          arch: process.arch,
+        },
+        config: {
+          toolMode: "noTools",
+          sessionStorage: "rust-app-data-json",
+          apiKeys: expect.arrayContaining([
+            { name: "ANTHROPIC_API_KEY", configured: expect.any(Boolean) },
+          ]),
+        },
+      },
+    });
+    expect(JSON.stringify(result.response.result.config.apiKeys)).not.toContain(
+      process.env.ANTHROPIC_API_KEY ?? "not-a-real-secret-value",
+    );
+  });
+
   it("marks shutdown requests", async () => {
     const result = await handleJsonRpcLine(
       JSON.stringify({ jsonrpc: "2.0", id: 4, method: "shutdown" }),

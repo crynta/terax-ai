@@ -15,6 +15,7 @@ import type { PiSession, PiSessionEvent } from "./lib/sessions";
 import { upsertPiSession } from "./lib/sessions";
 import {
   getPiStatusView,
+  type PiDiagnostics,
   type PiRuntimeState,
   type PiStatusView,
 } from "./lib/status";
@@ -76,6 +77,7 @@ function formatEventLabel(event: PiSessionEvent): string {
 
 export function PiPanel() {
   const [runtimeState, setRuntimeState] = useState(INITIAL_PI_STATE);
+  const [diagnostics, setDiagnostics] = useState<PiDiagnostics | null>(null);
   const [sessions, setSessions] = useState<PiSession[]>([]);
   const [sessionEvents, setSessionEvents] = useState<PiSessionEvent[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
@@ -98,6 +100,10 @@ export function PiPanel() {
           ),
     [selectedSessionId, sessionEvents],
   );
+  const loadedPackageCount =
+    diagnostics?.piPackages.filter((pkg) => pkg.loaded).length ?? 0;
+  const configuredApiKeyCount =
+    diagnostics?.config.apiKeys.filter((key) => key.configured).length ?? 0;
 
   const applySessionEvents = useCallback((events: PiSessionEvent[]) => {
     if (events.length === 0) {
@@ -190,6 +196,14 @@ export function PiPanel() {
     }
   }, [applySessionList]);
 
+  const refreshDiagnostics = useCallback(async () => {
+    try {
+      setDiagnostics(await piNative.diagnostics());
+    } catch {
+      setDiagnostics(null);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshStatus();
     void refreshHistory();
@@ -222,12 +236,13 @@ export function PiPanel() {
     try {
       setRuntimeState(await piNative.start());
       await refreshSessions();
+      await refreshDiagnostics();
     } catch (error) {
       setRuntimeState(toErrorState(error));
     } finally {
       setIsBusy(false);
     }
-  }, [refreshSessions]);
+  }, [refreshDiagnostics, refreshSessions]);
 
   const stopRuntime = useCallback(async () => {
     setIsBusy(true);
@@ -236,6 +251,7 @@ export function PiPanel() {
       setSessions([]);
       setSessionEvents([]);
       setSelectedSessionId(null);
+      setDiagnostics(null);
     } catch (error) {
       setRuntimeState(toErrorState(error));
     } finally {
@@ -253,12 +269,13 @@ export function PiPanel() {
       setSelectedSessionId(null);
       setRuntimeState(await piNative.start());
       await refreshSessions();
+      await refreshDiagnostics();
     } catch (error) {
       setRuntimeState(toErrorState(error));
     } finally {
       setIsBusy(false);
     }
-  }, [refreshSessions]);
+  }, [refreshDiagnostics, refreshSessions]);
 
   const createSession = useCallback(async () => {
     setIsBusy(true);
@@ -380,6 +397,24 @@ export function PiPanel() {
               Restart
             </Button>
           </div>
+          {diagnostics ? (
+            <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 border-t border-border/35 pt-2 text-[10px] leading-none text-muted-foreground">
+              <span className="truncate">Node {diagnostics.node.version}</span>
+              <span className="truncate text-right">
+                PID {diagnostics.node.pid}
+              </span>
+              <span className="truncate">
+                Pi packages {loadedPackageCount}/{diagnostics.piPackages.length}
+              </span>
+              <span className="truncate text-right">
+                API keys {configuredApiKeyCount}/
+                {diagnostics.config.apiKeys.length}
+              </span>
+              <span className="col-span-2 truncate">
+                Tools: {diagnostics.config.toolMode}
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
 

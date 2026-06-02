@@ -180,6 +180,7 @@ pub fn run() {
             pi::pi_start,
             pi::pi_stop,
             pi::pi_host_info,
+            pi::pi_diagnostics,
             pi::pi_sessions_history,
             pi::pi_sessions_list,
             pi::pi_session_create,

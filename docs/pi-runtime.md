@@ -26,6 +26,7 @@ The sidecar currently supports read-only capability probing and real no-tools Pi
 - `ping`
 - `status`
 - `info`
+- `diagnostics`
 - `sessions.list`
 - `sessions.create`
 - `sessions.send`
