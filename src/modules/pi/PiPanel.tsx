@@ -13,9 +13,11 @@ import { cn } from "@/lib/utils";
 import { statusToneDotClass } from "@/modules/pi/components/classes";
 import { PiComposer } from "@/modules/pi/components/PiComposer";
 import { PiContextBar } from "@/modules/pi/components/PiContextBar";
+import { PiDiagnosticsCard } from "@/modules/pi/components/PiDiagnosticsCard";
 import { PiRuntimeCard } from "@/modules/pi/components/PiRuntimeCard";
 import { PiSessionList } from "@/modules/pi/components/PiSessionList";
 import { PiTranscript } from "@/modules/pi/components/PiTranscript";
+import { buildPiDiagnosticsView } from "@/modules/pi/lib/diagnostics";
 import { piNative } from "@/modules/pi/lib/native";
 import type {
   PiPromptContext,
@@ -34,16 +36,21 @@ import {
   type PiRuntimeState,
 } from "@/modules/pi/lib/status";
 import { buildPiContextPreview } from "@/modules/pi/lib/view";
+import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 
 const INITIAL_PI_STATE: PiRuntimeState = {
   phase: "disconnected",
   detail: null,
 };
 
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function toErrorState(error: unknown): PiRuntimeState {
   return {
     phase: "error",
-    detail: error instanceof Error ? error.message : String(error),
+    detail: errorMessage(error),
   };
 }
 
@@ -62,6 +69,8 @@ export function PiPanel({
 }: PiPanelProps) {
   const [runtimeState, setRuntimeState] = useState(INITIAL_PI_STATE);
   const [diagnostics, setDiagnostics] = useState<PiDiagnostics | null>(null);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  const [isDiagnosticsRefreshing, setIsDiagnosticsRefreshing] = useState(false);
   const [sessions, setSessions] = useState<PiSession[]>([]);
   const [sessionEvents, setSessionEvents] = useState<PiSessionEvent[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
@@ -107,6 +116,16 @@ export function PiPanel({
   const contextPreview = useMemo(
     () => buildPiContextPreview(promptContext, selectedSession?.cwd),
     [promptContext, selectedSession?.cwd],
+  );
+  const diagnosticsView = useMemo(
+    () =>
+      buildPiDiagnosticsView({
+        diagnostics,
+        diagnosticsError,
+        runtimeState,
+        workspaceRoot,
+      }),
+    [diagnostics, diagnosticsError, runtimeState, workspaceRoot],
   );
 
   const applySessionEvents = useCallback((events: PiSessionEvent[]) => {
@@ -167,10 +186,33 @@ export function PiPanel({
   const refreshDiagnostics = useCallback(async () => {
     try {
       setDiagnostics(await piNative.diagnostics());
-    } catch {
+      setDiagnosticsError(null);
+    } catch (error) {
       setDiagnostics(null);
+      setDiagnosticsError(errorMessage(error));
     }
   }, []);
+
+  const refreshPanelDiagnostics = useCallback(async () => {
+    setIsDiagnosticsRefreshing(true);
+    try {
+      const nextState = await piNative.status();
+      setRuntimeState(nextState);
+      if (nextState.phase === "ready") {
+        await refreshSessions();
+        await refreshDiagnostics();
+      } else {
+        setDiagnostics(null);
+        setDiagnosticsError(null);
+      }
+    } catch (error) {
+      setRuntimeState(toErrorState(error));
+      setDiagnostics(null);
+      setDiagnosticsError(errorMessage(error));
+    } finally {
+      setIsDiagnosticsRefreshing(false);
+    }
+  }, [refreshDiagnostics, refreshSessions]);
 
   useEffect(() => {
     void refreshStatus();
@@ -200,6 +242,8 @@ export function PiPanel({
 
   const startRuntime = useCallback(async () => {
     setIsBusy(true);
+    setDiagnostics(null);
+    setDiagnosticsError(null);
     setRuntimeState({ phase: "starting", detail: "Starting Pi" });
     try {
       setRuntimeState(await piNative.start());
@@ -220,6 +264,7 @@ export function PiPanel({
       setSessionEvents([]);
       setSelectedSessionId(null);
       setDiagnostics(null);
+      setDiagnosticsError(null);
     } catch (error) {
       setRuntimeState(toErrorState(error));
     } finally {
@@ -229,12 +274,14 @@ export function PiPanel({
 
   const restartRuntime = useCallback(async () => {
     setIsBusy(true);
+    setDiagnosticsError(null);
     setRuntimeState({ phase: "starting", detail: "Restarting Pi" });
     try {
       await piNative.stop();
       setSessions([]);
       setSessionEvents([]);
       setSelectedSessionId(null);
+      setDiagnostics(null);
       setRuntimeState(await piNative.start());
       await refreshSessions();
       await refreshDiagnostics();
@@ -300,6 +347,10 @@ export function PiPanel({
     }
   }, [applySessionUpdate, selectedSession]);
 
+  const openModelSettings = useCallback(() => {
+    void openSettingsWindow("models");
+  }, []);
+
   return (
     <aside
       aria-label="Pi sessions"
@@ -331,13 +382,21 @@ export function PiPanel({
       </header>
 
       <PiRuntimeCard
-        diagnostics={diagnostics}
         isBusy={isBusy}
         runtimeState={runtimeState}
         status={status}
         onStart={() => void startRuntime()}
         onStop={() => void stopRuntime()}
         onRestart={() => void restartRuntime()}
+      />
+
+      <PiDiagnosticsCard
+        disabled={isBusy || isDiagnosticsRefreshing}
+        isRefreshing={isDiagnosticsRefreshing}
+        view={diagnosticsView}
+        onOpenSettings={openModelSettings}
+        onRefresh={() => void refreshPanelDiagnostics()}
+        onStartRuntime={() => void startRuntime()}
       />
 
       <PiContextBar items={contextPreview} />

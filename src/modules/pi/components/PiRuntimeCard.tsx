@@ -6,14 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { statusToneDotClass } from "@/modules/pi/components/classes";
-import type {
-  PiDiagnostics,
-  PiRuntimeState,
-  PiStatusView,
-} from "@/modules/pi/lib/status";
+import type { PiRuntimeState, PiStatusView } from "@/modules/pi/lib/status";
 
 type PiRuntimeCardProps = {
-  diagnostics: PiDiagnostics | null;
   isBusy: boolean;
   runtimeState: PiRuntimeState;
   status: PiStatusView;
@@ -23,7 +18,6 @@ type PiRuntimeCardProps = {
 };
 
 export function PiRuntimeCard({
-  diagnostics,
   isBusy,
   runtimeState,
   status,
@@ -31,10 +25,6 @@ export function PiRuntimeCard({
   onStop,
   onRestart,
 }: PiRuntimeCardProps) {
-  const loadedPackageCount =
-    diagnostics?.piPackages.filter((pkg) => pkg.loaded).length ?? 0;
-  const configuredApiKeyCount =
-    diagnostics?.config.apiKeys.filter((key) => key.configured).length ?? 0;
   const detail =
     runtimeState.detail ??
     "Connect the Pi runtime to show active sessions in this sidebar.";
@@ -116,39 +106,6 @@ export function PiRuntimeCard({
             Restart
           </Button>
         </div>
-
-        {diagnostics ? (
-          <div className="flex flex-col gap-1 border-t border-border/35 pt-2">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <Badge
-                variant="secondary"
-                className="h-5 min-w-0 max-w-full px-1.5 text-[10px]"
-              >
-                <span className="truncate">
-                  Node {diagnostics.node.version}
-                </span>
-              </Badge>
-              <Badge
-                variant="outline"
-                className="h-5 px-1.5 text-[10px] text-muted-foreground"
-              >
-                PID {diagnostics.node.pid}
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 text-[10px] text-muted-foreground">
-              <span className="truncate rounded-md border border-border/35 bg-card/60 px-1.5 py-1">
-                Pi packages {loadedPackageCount}/{diagnostics.piPackages.length}
-              </span>
-              <span className="truncate rounded-md border border-border/35 bg-card/60 px-1.5 py-1 text-right">
-                API keys {configuredApiKeyCount}/
-                {diagnostics.config.apiKeys.length}
-              </span>
-              <span className="col-span-2 truncate rounded-md border border-border/35 bg-card/60 px-1.5 py-1">
-                Tools: {diagnostics.config.toolMode}
-              </span>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );
