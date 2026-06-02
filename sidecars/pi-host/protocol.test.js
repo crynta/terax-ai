@@ -21,32 +21,19 @@ describe("Pi host protocol", () => {
     });
   });
 
-  it("reports stub status with loaded Pi packages", async () => {
+  it("reports lightweight runtime status without probing Pi packages", async () => {
     const result = await handleJsonRpcLine(
       JSON.stringify({ jsonrpc: "2.0", id: 2, method: "status" }),
     );
 
-    expect(result.response).toMatchObject({
+    expect(result.response).toEqual({
       jsonrpc: "2.0",
       id: 2,
       result: {
         phase: "ready",
         detail: "Pi host ready",
-        hostVersion: "0.1.0",
-        piSdkLoaded: true,
       },
     });
-    expect(packageNames(result)).toEqual(PI_PACKAGE_NAMES);
-    expect(result.response.result.piPackages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: "@earendil-works/pi-coding-agent",
-          version: expect.stringMatching(/^0\./),
-          loaded: true,
-          error: null,
-        }),
-      ]),
-    );
   });
 
   it("reports host info", async () => {

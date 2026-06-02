@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { PiSession, PiSessionEvent } from "./sessions";
-import { buildPiSessionTranscript, upsertPiSession } from "./sessions";
+import {
+  applyPiSessionEvents,
+  buildPiSessionTranscript,
+  upsertPiSession,
+} from "./sessions";
 
 function session(id: string, status: PiSession["status"]): PiSession {
   return {
@@ -65,6 +69,20 @@ describe("buildPiSessionTranscript", () => {
         ],
       }),
     ]);
+  });
+});
+
+describe("applyPiSessionEvents", () => {
+  it("uses the latest chronological status when restored events are newest-first", () => {
+    expect(
+      applyPiSessionEvents(
+        [session("pi-1", "running")],
+        [
+          event("evt-11", "session.status", { status: "idle" }),
+          event("evt-3", "session.status", { status: "running" }),
+        ],
+      ),
+    ).toEqual([session("pi-1", "idle")]);
   });
 });
 

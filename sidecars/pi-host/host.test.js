@@ -47,18 +47,12 @@ describe("Pi host stdio", () => {
 
     try {
       writeRequest(child, 1, "status");
-      await expect(readResponse(lines)).resolves.toMatchObject({
+      await expect(readResponse(lines)).resolves.toEqual({
         jsonrpc: "2.0",
         id: 1,
         result: {
           phase: "ready",
-          piSdkLoaded: true,
-          piPackages: expect.arrayContaining([
-            expect.objectContaining({
-              name: "@earendil-works/pi-coding-agent",
-              loaded: true,
-            }),
-          ]),
+          detail: "Pi host ready",
         },
       });
 

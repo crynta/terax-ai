@@ -59,6 +59,19 @@ function eventText(event: PiSessionEvent): string | null {
   return typeof event.payload.text === "string" ? event.payload.text : null;
 }
 
+function isPiSessionStatus(value: unknown): value is PiSessionStatus {
+  return (
+    value === "idle" ||
+    value === "running" ||
+    value === "stopped" ||
+    value === "error"
+  );
+}
+
+function chronologicalEvents(events: PiSessionEvent[]): PiSessionEvent[] {
+  return [...events].sort((a, b) => eventSortKey(a) - eventSortKey(b));
+}
+
 function joinDeltaText(current: string | null, delta: string): string {
   if (current === null || current.length === 0) {
     return delta;
@@ -155,9 +168,7 @@ export function buildPiSessionTranscript(
   events: PiSessionEvent[],
 ): PiTranscriptItem[] {
   const transcript: PiTranscriptItem[] = [];
-  for (const event of [...events].sort(
-    (a, b) => eventSortKey(a) - eventSortKey(b),
-  )) {
+  for (const event of chronologicalEvents(events)) {
     if (event.type === "session.output.delta") {
       appendAssistantDelta(transcript, event);
       continue;
@@ -169,6 +180,34 @@ export function buildPiSessionTranscript(
     }
   }
   return transcript;
+}
+
+export function applyPiSessionEvents(
+  sessions: PiSession[],
+  events: PiSessionEvent[],
+): PiSession[] {
+  return sessions.map((session) => {
+    let next = session;
+    for (const event of chronologicalEvents(events)) {
+      if (event.sessionId !== session.id) {
+        continue;
+      }
+      if (
+        event.type === "session.status" &&
+        isPiSessionStatus(event.payload.status)
+      ) {
+        next = {
+          ...next,
+          status: event.payload.status,
+          updatedAt: event.createdAt,
+        };
+      }
+      if (event.type === "session.error") {
+        next = { ...next, status: "error", updatedAt: event.createdAt };
+      }
+    }
+    return next;
+  });
 }
 
 export function upsertPiSession(

@@ -253,11 +253,10 @@ function envStatus(name) {
   };
 }
 
-async function status() {
+function status() {
   return {
     phase: "ready",
     detail: "Pi host ready",
-    ...(await info()),
   };
 }
 

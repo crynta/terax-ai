@@ -12,7 +12,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { piNative } from "./lib/native";
 import type { PiSession, PiSessionEvent } from "./lib/sessions";
-import { buildPiSessionTranscript, upsertPiSession } from "./lib/sessions";
+import {
+  applyPiSessionEvents,
+  buildPiSessionTranscript,
+  upsertPiSession,
+} from "./lib/sessions";
 import {
   getPiStatusView,
   type PiDiagnostics,
@@ -123,30 +127,7 @@ export function PiPanel() {
       return next.slice(0, 100);
     });
 
-    setSessions((current) =>
-      current.map((session) => {
-        let next = session;
-        for (const event of events) {
-          if (event.sessionId !== session.id) {
-            continue;
-          }
-          if (
-            event.type === "session.status" &&
-            typeof event.payload.status === "string"
-          ) {
-            next = {
-              ...next,
-              status: event.payload.status as PiSession["status"],
-              updatedAt: event.createdAt,
-            };
-          }
-          if (event.type === "session.error") {
-            next = { ...next, status: "error", updatedAt: event.createdAt };
-          }
-        }
-        return next;
-      }),
-    );
+    setSessions((current) => applyPiSessionEvents(current, events));
   }, []);
 
   const applySessionUpdate = useCallback(

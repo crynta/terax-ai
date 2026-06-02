@@ -12,8 +12,9 @@ The chosen strategy is a stock Node process with a self-contained Pi host depend
 4. Rust launches `sidecars/pi-host/host.js` over newline-delimited JSON-RPC stdio.
 5. Node resolution order is:
    - `TERAX_NODE_BINARY` override,
-   - bundled Node resource at `sidecars/node/...`,
-   - `node` on `PATH` for development fallback.
+   - bundled Node resource at `sidecars/node/...` when `node --version` succeeds,
+   - generated development Node at `sidecars/node/dist/...` when available,
+   - `node` on `PATH` for fallback.
 
 `pnpm build:sidecars` builds both generated resource directories. By default, `scripts/build-node-runtime.mjs` copies the current `process.execPath` into the bundled runtime path for deterministic local smoke tests. Release CI can set `TERAX_NODE_RUNTIME_SOURCE=download` (or pass `--download`) plus `TERAX_NODE_RUNTIME_VERSION=<version>` to stage an official Node distribution from nodejs.org. The Pi host bundle uses hoisted PNPM deployment so Tauri resource copying does not drop package-resolution symlinks. `pnpm smoke:pi-host` then runs the generated host with the generated Node executable from a temporary cwd, verifies Pi packages load from the bundled dependency tree, and creates/sends a faux Pi session.
 
@@ -35,7 +36,7 @@ The sidecar currently supports read-only capability probing and real no-tools Pi
 
 See [`pi-session-protocol.md`](./pi-session-protocol.md) for the session contract and event envelope.
 
-`info` imports the Pi packages and returns package name, version, load status, export count, and error text. It does not create sessions or touch workspace files.
+`status` is intentionally lightweight so the Start button does not block on cold Pi package imports. `info` imports the Pi packages and returns package name, version, load status, export count, and error text. It does not create sessions or touch workspace files.
 
 `sessions.create` creates an actual `AgentSession` from `@earendil-works/pi-coding-agent`, but passes `noTools: "all"` and an in-memory `SessionManager`. This keeps the first real prompt path model-only until Rust-owned tool bridges are designed deliberately.
 

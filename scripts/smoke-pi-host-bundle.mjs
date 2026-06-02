@@ -89,11 +89,13 @@ child.stderr.on("data", (chunk) => {
 
 try {
   const status = await request(child, lines, 1, "status");
-  if (status.phase !== "ready" || status.piSdkLoaded !== true) {
+  if (status.phase !== "ready") {
     throw new Error(`Unexpected Pi host status: ${JSON.stringify(status)}`);
   }
+
+  const diagnostics = await request(child, lines, 2, "diagnostics");
   if (
-    !status.piPackages.some(
+    !diagnostics.piPackages.some(
       (pkg) => pkg.name === "@earendil-works/pi-coding-agent" && pkg.loaded,
     )
   ) {
@@ -101,8 +103,6 @@ try {
       "Bundled Pi host did not load @earendil-works/pi-coding-agent",
     );
   }
-
-  const diagnostics = await request(child, lines, 2, "diagnostics");
   if (
     typeof diagnostics.node.version !== "string" ||
     !diagnostics.node.version.startsWith("v")

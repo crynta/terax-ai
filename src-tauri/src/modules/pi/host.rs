@@ -419,19 +419,43 @@ fn node_binary(resource_dir: Option<&Path>) -> PathBuf {
         }
     }
 
-    for candidate in node_binary_candidates(resource_dir) {
-        if candidate.is_file() {
-            return candidate;
-        }
-    }
+    select_usable_node_binary(node_binary_candidates(resource_dir))
+        .unwrap_or_else(|| PathBuf::from("node"))
+}
 
-    PathBuf::from("node")
+fn select_usable_node_binary(candidates: Vec<PathBuf>) -> Option<PathBuf> {
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file() && is_usable_node_binary(candidate))
+}
+
+fn is_usable_node_binary(candidate: &Path) -> bool {
+    Command::new(candidate)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 fn node_binary_candidates(resource_dir: Option<&Path>) -> Vec<PathBuf> {
-    resource_dir
-        .map(|dir| vec![dir.join(bundled_node_relative_path())])
-        .unwrap_or_default()
+    let mut candidates = Vec::new();
+
+    if let Some(resource_dir) = resource_dir {
+        candidates.push(resource_dir.join(bundled_node_relative_path()));
+    }
+
+    if let Ok(cwd) = env::current_dir() {
+        candidates.push(cwd.join(generated_node_relative_path()));
+        if let Some(parent) = cwd.parent() {
+            candidates.push(parent.join(generated_node_relative_path()));
+        }
+    }
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    candidates.push(manifest_dir.join("..").join(generated_node_relative_path()));
+    candidates
 }
 
 fn bundled_node_relative_path() -> PathBuf {
@@ -439,6 +463,14 @@ fn bundled_node_relative_path() -> PathBuf {
         PathBuf::from("sidecars/node/node.exe")
     } else {
         PathBuf::from("sidecars/node/bin/node")
+    }
+}
+
+fn generated_node_relative_path() -> PathBuf {
+    if cfg!(windows) {
+        PathBuf::from("sidecars/node/dist/node.exe")
+    } else {
+        PathBuf::from("sidecars/node/dist/bin/node")
     }
 }
 
@@ -510,6 +542,30 @@ mod tests {
         assert_eq!(
             candidates.first(),
             Some(&resource_dir.join(bundled_node_relative_path()))
+        );
+        assert!(candidates.contains(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join(generated_node_relative_path())
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn select_usable_node_binary_skips_broken_candidates() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempdir().unwrap();
+        let broken = temp.path().join("broken-node");
+        let working = temp.path().join("working-node");
+        fs::write(&broken, "#!/bin/sh\nexit 1\n").unwrap();
+        fs::write(&working, "#!/bin/sh\necho v0.0.0\n").unwrap();
+        fs::set_permissions(&broken, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&working, fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert_eq!(
+            select_usable_node_binary(vec![broken, working.clone()]),
+            Some(working)
         );
     }
 
