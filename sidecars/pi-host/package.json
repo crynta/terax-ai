@@ -1,0 +1,7 @@
+{
+  "name": "@terax/pi-host",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Stdio stub for Terax Pi runtime"
+}
