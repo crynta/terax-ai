@@ -38,6 +38,139 @@ export type PiSessionStopResult = {
   events: PiSessionEvent[];
 };
 
+export type PiTranscriptItem = {
+  id: string;
+  kind: "assistant" | "error" | "system" | "user";
+  label: string;
+  text: string | null;
+  eventIds: string[];
+  createdAt: string;
+};
+
+function eventSortKey(event: PiSessionEvent): number {
+  const numericId = Number(event.id.match(/\d+$/)?.[0]);
+  if (Number.isFinite(numericId)) {
+    return numericId;
+  }
+  return Date.parse(event.createdAt);
+}
+
+function eventText(event: PiSessionEvent): string | null {
+  return typeof event.payload.text === "string" ? event.payload.text : null;
+}
+
+function joinDeltaText(current: string | null, delta: string): string {
+  if (current === null || current.length === 0) {
+    return delta;
+  }
+  if (
+    /^\s/.test(delta) ||
+    /^[!%),.:;?\]}]/.test(delta) ||
+    /[\s([{]$/.test(current)
+  ) {
+    return `${current}${delta}`;
+  }
+  return `${current} ${delta}`;
+}
+
+function appendAssistantDelta(
+  transcript: PiTranscriptItem[],
+  event: PiSessionEvent,
+): void {
+  const text = eventText(event);
+  if (text === null) {
+    return;
+  }
+
+  const previous = transcript[transcript.length - 1];
+  if (previous?.kind === "assistant") {
+    previous.text = joinDeltaText(previous.text, text);
+    previous.eventIds.push(event.id);
+    previous.createdAt = event.createdAt;
+    return;
+  }
+
+  transcript.push({
+    id: event.id,
+    kind: "assistant",
+    label: "Pi",
+    text,
+    eventIds: [event.id],
+    createdAt: event.createdAt,
+  });
+}
+
+function transcriptItemForEvent(
+  event: PiSessionEvent,
+): PiTranscriptItem | null {
+  switch (event.type) {
+    case "session.created":
+      return {
+        id: event.id,
+        kind: "system",
+        label: "Created",
+        text: null,
+        eventIds: [event.id],
+        createdAt: event.createdAt,
+      };
+    case "session.input":
+      return {
+        id: event.id,
+        kind: "user",
+        label: "Prompt",
+        text: eventText(event),
+        eventIds: [event.id],
+        createdAt: event.createdAt,
+      };
+    case "session.status":
+      return {
+        id: event.id,
+        kind: "system",
+        label: "Status",
+        text:
+          typeof event.payload.status === "string"
+            ? event.payload.status
+            : "updated",
+        eventIds: [event.id],
+        createdAt: event.createdAt,
+      };
+    case "session.error":
+      return {
+        id: event.id,
+        kind: "error",
+        label: "Error",
+        text:
+          typeof event.payload.message === "string"
+            ? event.payload.message
+            : "Unknown error",
+        eventIds: [event.id],
+        createdAt: event.createdAt,
+      };
+    default:
+      return null;
+  }
+}
+
+export function buildPiSessionTranscript(
+  events: PiSessionEvent[],
+): PiTranscriptItem[] {
+  const transcript: PiTranscriptItem[] = [];
+  for (const event of [...events].sort(
+    (a, b) => eventSortKey(a) - eventSortKey(b),
+  )) {
+    if (event.type === "session.output.delta") {
+      appendAssistantDelta(transcript, event);
+      continue;
+    }
+
+    const item = transcriptItemForEvent(event);
+    if (item !== null) {
+      transcript.push(item);
+    }
+  }
+  return transcript;
+}
+
 export function upsertPiSession(
   sessions: PiSession[],
   nextSession: PiSession,

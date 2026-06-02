@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { PiSession } from "./sessions";
-import { upsertPiSession } from "./sessions";
+import type { PiSession, PiSessionEvent } from "./sessions";
+import { buildPiSessionTranscript, upsertPiSession } from "./sessions";
 
 function session(id: string, status: PiSession["status"]): PiSession {
   return {
@@ -12,6 +12,61 @@ function session(id: string, status: PiSession["status"]): PiSession {
     lastPrompt: null,
   };
 }
+
+function event(
+  id: string,
+  type: string,
+  payload: PiSessionEvent["payload"],
+): PiSessionEvent {
+  return {
+    id,
+    type,
+    sessionId: "pi-1",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    payload,
+  };
+}
+
+describe("buildPiSessionTranscript", () => {
+  it("orders events chronologically and coalesces output deltas", () => {
+    expect(
+      buildPiSessionTranscript([
+        event("evt-10", "session.output.delta", { text: "?" }),
+        event("evt-9", "session.output.delta", { text: "help" }),
+        event("evt-8", "session.output.delta", { text: "I" }),
+        event("evt-7", "session.output.delta", { text: "can" }),
+        event("evt-6", "session.output.delta", { text: "How" }),
+        event("evt-5", "session.output.delta", { text: "!" }),
+        event("evt-4", "session.output.delta", { text: "Hey" }),
+        event("evt-3", "session.status", { status: "running" }),
+        event("evt-2", "session.input", { text: "Hey" }),
+        event("evt-1", "session.created", {}),
+      ]),
+    ).toEqual([
+      expect.objectContaining({ kind: "system", label: "Created" }),
+      expect.objectContaining({ kind: "user", label: "Prompt", text: "Hey" }),
+      expect.objectContaining({
+        kind: "system",
+        label: "Status",
+        text: "running",
+      }),
+      expect.objectContaining({
+        kind: "assistant",
+        label: "Pi",
+        text: "Hey! How can I help?",
+        eventIds: [
+          "evt-4",
+          "evt-5",
+          "evt-6",
+          "evt-7",
+          "evt-8",
+          "evt-9",
+          "evt-10",
+        ],
+      }),
+    ]);
+  });
+});
 
 describe("upsertPiSession", () => {
   it("prepends new sessions", () => {

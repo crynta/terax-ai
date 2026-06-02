@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { piNative } from "./lib/native";
 import type { PiSession, PiSessionEvent } from "./lib/sessions";
-import { upsertPiSession } from "./lib/sessions";
+import { buildPiSessionTranscript, upsertPiSession } from "./lib/sessions";
 import {
   getPiStatusView,
   type PiDiagnostics,
@@ -58,20 +58,16 @@ function toErrorState(error: unknown): PiRuntimeState {
   };
 }
 
-function formatEventLabel(event: PiSessionEvent): string {
-  switch (event.type) {
-    case "session.created":
-      return "Created";
-    case "session.input":
-      return "Prompt sent";
-    case "session.status":
-      return `Status: ${String(event.payload.status ?? "updated")}`;
-    case "session.output.delta":
-      return "Output";
-    case "session.error":
-      return "Error";
-    default:
-      return event.type;
+function transcriptItemClass(kind: "assistant" | "error" | "system" | "user") {
+  switch (kind) {
+    case "assistant":
+      return "border-emerald-500/20 bg-emerald-500/5";
+    case "user":
+      return "border-primary/25 bg-primary/10";
+    case "error":
+      return "border-destructive/35 bg-destructive/10";
+    case "system":
+      return "border-border/35 bg-card/60";
   }
 }
 
@@ -99,6 +95,10 @@ export function PiPanel() {
             (event) => event.sessionId === selectedSessionId,
           ),
     [selectedSessionId, sessionEvents],
+  );
+  const selectedTranscript = useMemo(
+    () => buildPiSessionTranscript(selectedEvents),
+    [selectedEvents],
   );
   const loadedPackageCount =
     diagnostics?.piPackages.filter((pkg) => pkg.loaded).length ?? 0;
@@ -494,27 +494,30 @@ export function PiPanel() {
                   </span>
                 </div>
                 <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">
-                  {selectedEvents.length === 0 ? (
+                  {selectedTranscript.length === 0 ? (
                     <div className="py-4 text-center text-[10.5px] text-muted-foreground">
                       No session events yet.
                     </div>
                   ) : (
-                    selectedEvents.map((event) => (
+                    selectedTranscript.map((item) => (
                       <div
-                        key={event.id}
-                        className="rounded-md border border-border/35 bg-card/60 px-2 py-1"
+                        key={item.id}
+                        className={cn(
+                          "rounded-md border px-2 py-1",
+                          transcriptItemClass(item.kind),
+                        )}
                       >
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="truncate text-[10.5px] font-medium text-foreground">
-                            {formatEventLabel(event)}
+                            {item.label}
                           </span>
                           <span className="ml-auto shrink-0 text-[9.5px] text-muted-foreground">
-                            {event.id}
+                            {item.eventIds[item.eventIds.length - 1]}
                           </span>
                         </div>
-                        {typeof event.payload.text === "string" ? (
-                          <p className="mt-0.5 line-clamp-2 text-[10px] leading-snug text-muted-foreground">
-                            {event.payload.text}
+                        {item.text !== null ? (
+                          <p className="mt-0.5 whitespace-pre-wrap text-[10px] leading-snug text-muted-foreground">
+                            {item.text}
                           </p>
                         ) : null}
                       </div>
