@@ -1,11 +1,16 @@
 pub mod modules;
 
 use modules::{agent, fs, git, net, pty, secrets, shell, workspace};
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
 use tauri::{PhysicalPosition, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
+
+// Monotonic counter for new-window labels ("main-2", "main-3", …).
+// Starts at 2 so the primary window's label "main" is never shadowed.
+static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(2);
 
 /// Drained on first read so HMR / re-mounts can't replay the launch dir.
 #[derive(Default)]
@@ -30,6 +35,53 @@ fn parse_launch_dir() -> Option<String> {
         return Some(crate::modules::fs::to_canon(&canon));
     }
     None
+}
+
+#[tauri::command]
+async fn open_new_window(app: tauri::AppHandle) -> Result<(), String> {
+    let idx = WINDOW_COUNTER.fetch_add(1, AtomicOrdering::Relaxed);
+    let label = format!("main-{idx}");
+
+    let builder =
+        WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html".into()))
+            .title("Terax")
+            .inner_size(800.0, 600.0)
+            .min_inner_size(420.0, 280.0)
+            .resizable(true)
+            .visible(false);
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    let builder = builder.decorations(false).transparent(true);
+
+    let window = builder.build().map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = window.set_decorations(false);
+    }
+    let _ = window;
+
+    // Belt-and-suspenders: show the window from Rust after a short delay.
+    // The frontend (main.tsx) also calls show() after 50ms, but in Tauri v2
+    // dynamically-created windows may not have __TAURI_INTERNALS__ injected in
+    // time for getCurrentWindow().show() to target the right window.
+    let app_clone = app.clone();
+    std::thread::Builder::new()
+        .name(format!("terax-show-{label}"))
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            if let Some(w) = app_clone.get_webview_window(&label) {
+                let _ = w.show();
+            }
+        })
+        .ok();
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -110,6 +162,54 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn build_app_menu(
+    app: &tauri::AppHandle,
+) -> Result<tauri::menu::Menu<tauri::Wry>, tauri::Error> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+    let terax_sub = Submenu::with_items(
+        app,
+        "Terax",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None::<&str>, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "settings", "Settings\u{2026}", true, Some("Cmd+,"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None::<&str>)?,
+        ],
+    )?;
+
+    let file_sub = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[
+            &MenuItem::with_id(app, "new_window", "New Window", true, Some("Cmd+N"))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None::<&str>)?,
+        ],
+    )?;
+
+    let edit_sub = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None::<&str>)?,
+            &PredefinedMenuItem::redo(app, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None::<&str>)?,
+            &PredefinedMenuItem::copy(app, None::<&str>)?,
+            &PredefinedMenuItem::paste(app, None::<&str>)?,
+            &PredefinedMenuItem::select_all(app, None::<&str>)?,
+        ],
+    )?;
+
+    Menu::with_items(app, &[&terax_sub, &file_sub, &edit_sub])
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let cli_dir = parse_launch_dir();
@@ -168,6 +268,38 @@ pub fn run() {
             registry
         })
         .manage(LaunchDir(Mutex::new(cli_dir)))
+        .setup(|app| {
+            #[cfg(target_os = "macos")]
+            {
+                let menu = build_app_menu(&app.handle())?;
+                app.set_menu(menu)?;
+                // Register listener on the app handle — the correct scope for
+                // app-level menu events on macOS per Tauri v2 examples.
+                let handle = app.handle().clone();
+                app.on_menu_event(move |_app, event| {
+                    match event.id().0.as_str() {
+                        "new_window" => {
+                            let h = handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(e) = open_new_window(h).await {
+                                    log::error!("new_window menu: {e}");
+                                }
+                            });
+                        }
+                        "settings" => {
+                            let h = handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(e) = open_settings_window(h, None).await {
+                                    log::error!("settings menu: {e}");
+                                }
+                            });
+                        }
+                        _ => {}
+                    }
+                });
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -222,6 +354,7 @@ pub fn run() {
             workspace::workspace_authorize,
             workspace::workspace_current_dir,
             get_launch_dir,
+            open_new_window,
             open_settings_window,
             agent::agent_enable_claude_hooks,
             agent::agent_claude_hooks_status,

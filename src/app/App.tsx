@@ -68,6 +68,7 @@ import {
 } from "@/modules/header";
 import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
+import { openNewWindow } from "@/lib/openNewWindow";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged, setThemeId as persistThemeId } from "@/modules/settings/store";
@@ -1070,6 +1071,7 @@ export default function App() {
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
+      "window.new": () => void openNewWindow(),
       "commandPalette.open": () => setCommandPaletteOpen(true),
       "tab.new": openNewTab,
       "tab.newPrivate": openNewPrivateTab,
@@ -1558,6 +1560,7 @@ export default function App() {
             onActivateAgent={onActivateAgent}
             onActivateLocalAgent={onActivateLocalAgent}
             onOpenSettings={() => void openSettingsWindow()}
+            onNewWindow={() => void openNewWindow()}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
             />
