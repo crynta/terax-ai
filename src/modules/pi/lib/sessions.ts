@@ -3,6 +3,7 @@ export type PiSessionStatus = "idle" | "running" | "stopped" | "error";
 export type PiSession = {
   id: string;
   title: string;
+  cwd?: string | null;
   status: PiSessionStatus;
   createdAt: string;
   updatedAt: string;
@@ -47,12 +48,15 @@ export type PiTranscriptItem = {
   createdAt: string;
 };
 
+const DEFAULT_EVENT_LIMIT = 500;
+
 function eventSortKey(event: PiSessionEvent): number {
   const numericId = Number(event.id.match(/\d+$/)?.[0]);
   if (Number.isFinite(numericId)) {
     return numericId;
   }
-  return Date.parse(event.createdAt);
+  const timestamp = Date.parse(event.createdAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function eventText(event: PiSessionEvent): string | null {
@@ -69,7 +73,13 @@ function isPiSessionStatus(value: unknown): value is PiSessionStatus {
 }
 
 function chronologicalEvents(events: PiSessionEvent[]): PiSessionEvent[] {
-  return [...events].sort((a, b) => eventSortKey(a) - eventSortKey(b));
+  return events
+    .map((event, index) => ({ event, index }))
+    .sort((a, b) => {
+      const order = eventSortKey(a.event) - eventSortKey(b.event);
+      return order === 0 ? a.index - b.index : order;
+    })
+    .map(({ event }) => event);
 }
 
 function joinDeltaText(current: string | null, delta: string): string {
@@ -211,6 +221,28 @@ export function buildPiSessionTranscript(
     }
   }
   return transcript;
+}
+
+export function mergePiSessionEvents(
+  current: PiSessionEvent[],
+  incoming: PiSessionEvent[],
+  limit = DEFAULT_EVENT_LIMIT,
+): PiSessionEvent[] {
+  if (limit <= 0) {
+    return [];
+  }
+
+  const byId = new Map<string, PiSessionEvent>();
+  for (const event of current) {
+    byId.set(event.id, event);
+  }
+  for (const event of incoming) {
+    byId.set(event.id, event);
+  }
+
+  return Array.from(byId.values())
+    .sort((a, b) => eventSortKey(b) - eventSortKey(a))
+    .slice(0, limit);
 }
 
 export function applyPiSessionEvents(

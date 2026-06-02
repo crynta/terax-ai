@@ -16,6 +16,7 @@ type PiSessionStatus = "idle" | "running" | "stopped" | "error";
 type PiSession = {
   id: `pi-${number}`;
   title: string;
+  cwd?: string;
   status: PiSessionStatus;
   createdAt: string; // ISO timestamp
   updatedAt: string; // ISO timestamp
@@ -70,7 +71,7 @@ Result:
 Params:
 
 ```ts
-{ title?: string }
+{ title?: string; cwd?: string }
 ```
 
 Result:
@@ -79,7 +80,7 @@ Result:
 { session: PiSession; events: PiSessionEvent[] }
 ```
 
-Creates an idle Pi SDK `AgentSession` owned by the sidecar.
+Creates an idle Pi SDK `AgentSession` owned by the sidecar. `cwd` scopes Pi project context and must be a non-empty string when provided. Terax's Tauri command requires `cwd`, canonicalizes and validates it against the authorized workspace, then forwards only that canonical path to the Node sidecar.
 
 ### `sessions.send`
 
@@ -119,3 +120,4 @@ Aborts a running Pi session with `AgentSession.abort()` when possible, disposes 
 - JSON-RPC `-32004`: session not found.
 - JSON-RPC `-32005`: session is stopped.
 - JSON-RPC `-32006`: resource limit exceeded.
+- JSON-RPC `-32007`: session is already running.

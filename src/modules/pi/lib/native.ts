@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 import type {
   PiSessionCreateResult,
   PiSessionSendResult,
@@ -15,9 +16,11 @@ export const piNative = {
   diagnostics: () => invoke<PiDiagnostics>("pi_diagnostics"),
   sessionsHistory: () => invoke<PiSessionsList>("pi_sessions_history"),
   sessionsList: () => invoke<PiSessionsList>("pi_sessions_list"),
-  sessionCreate: (title?: string) =>
+  sessionCreate: (title?: string, cwd?: string | null) =>
     invoke<PiSessionCreateResult>("pi_session_create", {
       title: title ?? null,
+      cwd: cwd ?? null,
+      workspace: currentWorkspaceEnv(),
     }),
   sessionSend: (sessionId: string, prompt: string) =>
     invoke<PiSessionSendResult>("pi_session_send", { sessionId, prompt }),

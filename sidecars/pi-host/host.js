@@ -8,7 +8,21 @@ const writeIncidentalStdoutToStderr = process.stderr.write.bind(process.stderr);
 // The Pi SDK may write terminal notifications or diagnostics to stdout. Keep
 // JSON-RPC stdout framed by redirecting incidental process.stdout writes to
 // stderr and using the captured writer only for protocol envelopes below.
-process.stdout.write = (...args) => writeIncidentalStdoutToStderr(...args);
+process.stdout.write = (chunk, encoding, callback) =>
+  writeIncidentalStdoutToStderr(chunk, encoding, callback);
+
+process.on("unhandledRejection", (error) => {
+  writeIncidentalStdoutToStderr(
+    `Pi host unhandled rejection: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+  );
+  process.exit(1);
+});
+
+process.stdout.on("error", (error) => {
+  if (error?.code === "EPIPE") {
+    process.exit(0);
+  }
+});
 
 const lines = createInterface({
   input: process.stdin,

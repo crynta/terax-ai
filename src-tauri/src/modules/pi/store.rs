@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
 
 use tauri::{AppHandle, Manager};
 
@@ -7,6 +8,12 @@ use super::{PiSession, PiSessionEvent, PiSessionsList};
 
 const HISTORY_FILE_NAME: &str = "pi-sessions.json";
 const MAX_EVENTS: usize = 500;
+
+static HISTORY_LOCK: Mutex<()> = Mutex::new(());
+
+fn history_lock() -> Result<MutexGuard<'static, ()>, String> {
+    HISTORY_LOCK.lock().map_err(|e| e.to_string())
+}
 
 pub fn history_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app
@@ -17,7 +24,9 @@ pub fn history_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 pub fn load(app: &AppHandle) -> Result<PiSessionsList, String> {
-    load_from_path(&history_path(app)?)
+    let path = history_path(app)?;
+    let _guard = history_lock()?;
+    load_from_path(&path)
 }
 
 pub fn record_session_result(
@@ -29,6 +38,7 @@ pub fn record_session_result(
 }
 
 pub fn record_event_at_path(path: &Path, event: &PiSessionEvent) -> Result<(), String> {
+    let _guard = history_lock()?;
     let mut history = load_from_path(path)?;
     apply_event_to_sessions(&mut history.sessions, event);
     append_events(&mut history.events, std::slice::from_ref(event));
@@ -40,6 +50,7 @@ fn record_session_result_at_path(
     session: &PiSession,
     events: &[PiSessionEvent],
 ) -> Result<(), String> {
+    let _guard = history_lock()?;
     let mut history = load_from_path(path)?;
     upsert_session(&mut history.sessions, session.clone());
     for event in events {
@@ -113,6 +124,7 @@ mod tests {
         PiSession {
             id: id.to_string(),
             title: id.to_string(),
+            cwd: None,
             status: status.to_string(),
             created_at: "2026-01-01T00:00:00.000Z".to_string(),
             updated_at: "2026-01-01T00:00:00.000Z".to_string(),

@@ -214,8 +214,9 @@ impl PiHost {
     pub fn session_create(
         &mut self,
         title: Option<String>,
+        cwd: Option<String>,
     ) -> Result<PiSessionCreateResult, String> {
-        self.call_with_params("sessions.create", json!({ "title": title }))
+        self.call_with_params("sessions.create", json!({ "title": title, "cwd": cwd }))
     }
 
     pub fn session_send(

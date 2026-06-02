@@ -20,10 +20,30 @@ async function waitFor(check, timeoutMs = 3000) {
 }
 
 let liveEvents = [];
+let restoreStdout = () => {};
+
+function suppressPiTerminalNotifications() {
+  const originalWrite = process.stdout.write;
+  process.stdout.write = function (chunk, encoding, callback) {
+    const text = Buffer.isBuffer(chunk)
+      ? chunk.toString("utf8")
+      : String(chunk);
+    if (text.includes("\u001b]777;notify;π;")) {
+      const done = typeof encoding === "function" ? encoding : callback;
+      done?.();
+      return true;
+    }
+    return originalWrite.call(process.stdout, chunk, encoding, callback);
+  };
+  return () => {
+    process.stdout.write = originalWrite;
+  };
+}
 
 describe("Pi host session protocol", () => {
   beforeEach(async () => {
     liveEvents = [];
+    restoreStdout = suppressPiTerminalNotifications();
     process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE = "hello from real Pi SDK";
     setSessionEventSink((event) => liveEvents.push(event));
     await resetProtocolForTests();
@@ -34,6 +54,8 @@ describe("Pi host session protocol", () => {
     setSessionEventSink(null);
     delete process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE;
     delete process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND;
+    restoreStdout();
+    restoreStdout = () => {};
   });
 
   it("lists no sessions before one is created", async () => {
@@ -46,8 +68,9 @@ describe("Pi host session protocol", () => {
     });
   });
 
-  it("creates real Pi AgentSessions and emits a typed created event", async () => {
-    const result = await request(2, "sessions.create", { title: "Plan" });
+  it("creates real Pi AgentSessions with an explicit cwd", async () => {
+    const cwd = process.cwd();
+    const result = await request(2, "sessions.create", { title: "Plan", cwd });
 
     expect(result.response).toMatchObject({
       jsonrpc: "2.0",
@@ -56,6 +79,7 @@ describe("Pi host session protocol", () => {
         session: {
           id: "pi-1",
           title: "Plan",
+          cwd,
           status: "idle",
           lastPrompt: null,
         },
@@ -68,6 +92,7 @@ describe("Pi host session protocol", () => {
               session: {
                 id: "pi-1",
                 title: "Plan",
+                cwd,
                 status: "idle",
               },
             },
@@ -78,6 +103,22 @@ describe("Pi host session protocol", () => {
     expect(result.response.result.session.createdAt).toEqual(
       expect.any(String),
     );
+  });
+
+  it("rejects empty session cwd values", async () => {
+    const result = await request(21, "sessions.create", {
+      title: "Bad cwd",
+      cwd: "   ",
+    });
+
+    expect(result.response).toEqual({
+      jsonrpc: "2.0",
+      id: 21,
+      error: {
+        code: -32602,
+        message: "sessions.create cwd must be a non-empty string",
+      },
+    });
   });
 
   it("runs prompts through the Pi SDK and returns output events", async () => {
@@ -171,17 +212,39 @@ describe("Pi host session protocol", () => {
     ]);
   });
 
+  it("rejects a second prompt while a session is already running", async () => {
+    process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE = "slow ".repeat(80);
+    process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND = "1";
+    await request(9, "sessions.create", { title: "Busy" });
+    const first = await request(10, "sessions.send", {
+      sessionId: "pi-1",
+      prompt: "go slowly",
+    });
+
+    expect(first.response.result.session.status).toBe("running");
+    const second = await request(11, "sessions.send", {
+      sessionId: "pi-1",
+      prompt: "overlap",
+    });
+
+    expect(second.response).toEqual({
+      jsonrpc: "2.0",
+      id: 11,
+      error: { code: -32007, message: "Pi session is already running: pi-1" },
+    });
+  });
+
   it("aborts active Pi runs when stopping a running session", async () => {
     process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE = "slow ".repeat(80);
     process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND = "1";
-    await request(9, "sessions.create", { title: "Abort me" });
-    const sent = await request(10, "sessions.send", {
+    await request(12, "sessions.create", { title: "Abort me" });
+    const sent = await request(13, "sessions.send", {
       sessionId: "pi-1",
       prompt: "go slowly",
     });
 
     expect(sent.response.result.session.status).toBe("running");
-    const stop = await request(11, "sessions.stop", { sessionId: "pi-1" });
+    const stop = await request(14, "sessions.stop", { sessionId: "pi-1" });
     expect(stop.response.result.session.status).toBe("stopped");
 
     await new Promise((resolve) => setTimeout(resolve, 50));

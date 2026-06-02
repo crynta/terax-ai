@@ -3,6 +3,7 @@ import type { PiSession, PiSessionEvent } from "./sessions";
 import {
   applyPiSessionEvents,
   buildPiSessionTranscript,
+  mergePiSessionEvents,
   upsertPiSession,
 } from "./sessions";
 
@@ -105,6 +106,28 @@ describe("applyPiSessionEvents", () => {
         ],
       ),
     ).toEqual([session("pi-1", "idle")]);
+  });
+});
+
+describe("mergePiSessionEvents", () => {
+  it("deduplicates events and evicts oldest entries by event order", () => {
+    const merged = mergePiSessionEvents(
+      [
+        event("evt-1", "session.output.delta", { text: "old" }),
+        event("evt-2", "session.output.delta", { text: "duplicate" }),
+        event("evt-3", "session.output.delta", { text: "keep" }),
+      ],
+      [
+        event("evt-2", "session.output.delta", { text: "replacement" }),
+        event("evt-4", "session.output.delta", { text: "new" }),
+      ],
+      3,
+    );
+
+    expect(merged.map((next) => next.id)).toEqual(["evt-4", "evt-3", "evt-2"]);
+    expect(merged.find((next) => next.id === "evt-2")?.payload.text).toBe(
+      "replacement",
+    );
   });
 });
 

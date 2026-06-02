@@ -280,6 +280,7 @@ async function diagnostics() {
       id: session.id,
       title: session.title,
       status: session.status,
+      cwd: session.cwd ?? null,
     })),
   };
 }

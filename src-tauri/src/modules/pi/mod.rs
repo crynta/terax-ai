@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::modules::workspace::{self, WorkspaceEnv, WorkspaceRegistry};
+
 mod host;
 mod store;
 
@@ -78,6 +80,8 @@ pub struct PiDiagnosticSession {
     pub id: String,
     pub title: String,
     pub status: String,
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -95,6 +99,8 @@ pub struct PiPackageInfo {
 pub struct PiSession {
     pub id: String,
     pub title: String,
+    #[serde(default)]
+    pub cwd: Option<String>,
     pub status: String,
     pub created_at: String,
     pub updated_at: String,
@@ -294,8 +300,9 @@ impl PiState {
         &self,
         resource_dir: Option<&Path>,
         title: Option<String>,
+        cwd: Option<String>,
     ) -> Result<PiSessionCreateResult, String> {
-        self.with_host(resource_dir, |host| host.session_create(title))
+        self.with_host(resource_dir, |host| host.session_create(title, cwd))
     }
 
     pub fn session_create_with_resource_dir_and_event_sink(
@@ -303,8 +310,11 @@ impl PiState {
         resource_dir: Option<&Path>,
         event_sink: Option<PiSessionEventSink>,
         title: Option<String>,
+        cwd: Option<String>,
     ) -> Result<PiSessionCreateResult, String> {
-        self.with_host_event_sink(resource_dir, event_sink, |host| host.session_create(title))
+        self.with_host_event_sink(resource_dir, event_sink, |host| {
+            host.session_create(title, cwd)
+        })
     }
 
     pub fn session_send_with_resource_dir(
@@ -378,13 +388,24 @@ fn session_event_sink(app: &AppHandle) -> PiSessionEventSink {
     })
 }
 
+fn resolve_session_cwd(
+    registry: &WorkspaceRegistry,
+    cwd: Option<&str>,
+    workspace_env: &WorkspaceEnv,
+) -> Result<String, String> {
+    let Some(resolved) = workspace::authorize_spawn_cwd(registry, cwd, workspace_env)? else {
+        return Err("Pi session requires an authorized workspace cwd".to_string());
+    };
+    Ok(crate::modules::fs::to_canon(&resolved))
+}
+
 #[tauri::command]
-pub async fn pi_status(state: tauri::State<'_, PiState>) -> Result<PiRuntimeSnapshot, String> {
+pub fn pi_status(state: tauri::State<'_, PiState>) -> Result<PiRuntimeSnapshot, String> {
     state.snapshot()
 }
 
 #[tauri::command]
-pub async fn pi_start(
+pub fn pi_start(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
 ) -> Result<PiRuntimeSnapshot, String> {
@@ -395,12 +416,12 @@ pub async fn pi_start(
 }
 
 #[tauri::command]
-pub async fn pi_stop(state: tauri::State<'_, PiState>) -> Result<PiRuntimeSnapshot, String> {
+pub fn pi_stop(state: tauri::State<'_, PiState>) -> Result<PiRuntimeSnapshot, String> {
     state.stop()
 }
 
 #[tauri::command]
-pub async fn pi_host_info(
+pub fn pi_host_info(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
 ) -> Result<PiHostInfo, String> {
@@ -411,7 +432,7 @@ pub async fn pi_host_info(
 }
 
 #[tauri::command]
-pub async fn pi_diagnostics(
+pub fn pi_diagnostics(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
 ) -> Result<PiDiagnostics, String> {
@@ -422,12 +443,12 @@ pub async fn pi_diagnostics(
 }
 
 #[tauri::command]
-pub async fn pi_sessions_history(app: AppHandle) -> Result<PiSessionsList, String> {
+pub fn pi_sessions_history(app: AppHandle) -> Result<PiSessionsList, String> {
     store::load(&app)
 }
 
 #[tauri::command]
-pub async fn pi_sessions_list(
+pub fn pi_sessions_list(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
 ) -> Result<PiSessionsList, String> {
@@ -438,22 +459,28 @@ pub async fn pi_sessions_list(
 }
 
 #[tauri::command]
-pub async fn pi_session_create(
+pub fn pi_session_create(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
     title: Option<String>,
+    cwd: Option<String>,
+    workspace: Option<WorkspaceEnv>,
 ) -> Result<PiSessionCreateResult, String> {
+    let workspace_env = WorkspaceEnv::from_option(workspace);
+    let cwd = resolve_session_cwd(&registry, cwd.as_deref(), &workspace_env)?;
     let result = state.session_create_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
         title,
+        Some(cwd),
     )?;
     store::record_session_result(&app, &result.session, &result.events)?;
     Ok(result)
 }
 
 #[tauri::command]
-pub async fn pi_session_send(
+pub fn pi_session_send(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
     session_id: String,
@@ -470,7 +497,7 @@ pub async fn pi_session_send(
 }
 
 #[tauri::command]
-pub async fn pi_session_stop(
+pub fn pi_session_stop(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
     session_id: String,
@@ -482,4 +509,52 @@ pub async fn pi_session_stop(
     )?;
     store::record_session_result(&app, &result.session, &result.events)?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_session_cwd_canonicalizes_authorized_roots() {
+        let registry = WorkspaceRegistry::default();
+        let root = tempfile::tempdir().unwrap();
+        registry.authorize(root.path()).unwrap();
+        let nested = root.path().join("nested");
+        std::fs::create_dir(&nested).unwrap();
+
+        let resolved = resolve_session_cwd(
+            &registry,
+            Some(nested.to_str().unwrap()),
+            &WorkspaceEnv::Local,
+        )
+        .unwrap();
+
+        let canonical_nested = std::fs::canonicalize(&nested).unwrap();
+        assert_eq!(resolved, crate::modules::fs::to_canon(&canonical_nested));
+    }
+
+    #[test]
+    fn resolve_session_cwd_rejects_missing_cwd() {
+        let registry = WorkspaceRegistry::default();
+
+        let error = resolve_session_cwd(&registry, None, &WorkspaceEnv::Local).unwrap_err();
+
+        assert_eq!(error, "Pi session requires an authorized workspace cwd");
+    }
+
+    #[test]
+    fn resolve_session_cwd_rejects_unauthorized_paths() {
+        let registry = WorkspaceRegistry::default();
+        let root = tempfile::tempdir().unwrap();
+
+        let error = resolve_session_cwd(
+            &registry,
+            Some(root.path().to_str().unwrap()),
+            &WorkspaceEnv::Local,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("outside the authorized workspace"));
+    }
 }

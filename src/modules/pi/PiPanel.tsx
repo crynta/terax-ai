@@ -15,6 +15,7 @@ import type { PiSession, PiSessionEvent } from "./lib/sessions";
 import {
   applyPiSessionEvents,
   buildPiSessionTranscript,
+  mergePiSessionEvents,
   upsertPiSession,
 } from "./lib/sessions";
 import {
@@ -75,7 +76,11 @@ function transcriptItemClass(kind: "assistant" | "error" | "system" | "user") {
   }
 }
 
-export function PiPanel() {
+type PiPanelProps = {
+  workspaceRoot?: string | null;
+};
+
+export function PiPanel({ workspaceRoot = null }: PiPanelProps) {
   const [runtimeState, setRuntimeState] = useState(INITIAL_PI_STATE);
   const [diagnostics, setDiagnostics] = useState<PiDiagnostics | null>(null);
   const [sessions, setSessions] = useState<PiSession[]>([]);
@@ -87,6 +92,7 @@ export function PiPanel() {
   const [isBusy, setIsBusy] = useState(false);
   const status = getPiStatusView(runtimeState);
   const runtimeReady = runtimeState.phase === "ready";
+  const canCreateSession = runtimeReady && workspaceRoot !== null;
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selectedSessionId) ?? null,
     [selectedSessionId, sessions],
@@ -114,18 +120,7 @@ export function PiPanel() {
       return;
     }
 
-    setSessionEvents((current) => {
-      const next: PiSessionEvent[] = [];
-      const seen = new Set<string>();
-      for (const event of [...events, ...current]) {
-        if (seen.has(event.id)) {
-          continue;
-        }
-        seen.add(event.id);
-        next.push(event);
-      }
-      return next.slice(0, 100);
-    });
+    setSessionEvents((current) => mergePiSessionEvents(current, events));
 
     setSessions((current) => applyPiSessionEvents(current, events));
   }, []);
@@ -261,7 +256,7 @@ export function PiPanel() {
   const createSession = useCallback(async () => {
     setIsBusy(true);
     try {
-      const result = await piNative.sessionCreate();
+      const result = await piNative.sessionCreate(undefined, workspaceRoot);
       applySessionUpdate(result.session, result.events);
       await refreshStatus();
     } catch (error) {
@@ -269,7 +264,7 @@ export function PiPanel() {
     } finally {
       setIsBusy(false);
     }
-  }, [applySessionUpdate, refreshStatus]);
+  }, [applySessionUpdate, refreshStatus, workspaceRoot]);
 
   const sendPrompt = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -372,7 +367,7 @@ export function PiPanel() {
               size="xs"
               variant="outline"
               className="h-6"
-              disabled={isBusy}
+              disabled={(!status.canStart && !status.canStop) || isBusy}
               onClick={() => void restartRuntime()}
             >
               Restart
@@ -411,7 +406,7 @@ export function PiPanel() {
             size="xs"
             variant="ghost"
             className="ml-auto h-5 rounded-md px-1.5 text-[10px]"
-            disabled={!runtimeReady || isBusy}
+            disabled={!canCreateSession || isBusy}
             onClick={() => void createSession()}
           >
             New
@@ -432,11 +427,17 @@ export function PiPanel() {
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 shrink-0 space-y-1 overflow-y-auto border-b border-border/35 px-2 pb-2">
+            <div
+              role="listbox"
+              aria-label="Pi sessions"
+              className="min-h-0 shrink-0 space-y-1 overflow-y-auto border-b border-border/35 px-2 pb-2"
+            >
               {sessions.map((session) => (
                 <button
                   key={session.id}
                   type="button"
+                  role="option"
+                  aria-selected={selectedSessionId === session.id}
                   className={cn(
                     "flex w-full min-w-0 items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
                     selectedSessionId === session.id
@@ -513,11 +514,18 @@ export function PiPanel() {
               onSubmit={(event) => void sendPrompt(event)}
             >
               <textarea
+                aria-label="Pi prompt"
                 className="min-h-14 w-full resize-none rounded-md border border-border/45 bg-background px-2 py-1.5 text-[11px] leading-snug text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-primary/45 focus:ring-2 focus:ring-primary/15"
                 value={prompt}
                 placeholder="Send a prompt to the selected Pi session…"
                 disabled={!runtimeReady || selectedSession === null || isBusy}
                 onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
               />
               <div className="mt-1.5 flex items-center gap-1.5">
                 <Button

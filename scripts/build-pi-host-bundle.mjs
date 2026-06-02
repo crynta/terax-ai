@@ -55,7 +55,12 @@ try {
     tempDir,
   ]);
 
-  for (const testFile of ["host.test.js", "protocol.test.js"]) {
+  for (const testFile of [
+    "host.test.js",
+    "protocol.test.js",
+    "sessions.test.js",
+    "package.test.js",
+  ]) {
     await rm(join(tempDir, testFile), { force: true });
   }
 

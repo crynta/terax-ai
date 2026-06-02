@@ -38,7 +38,7 @@ See [`pi-session-protocol.md`](./pi-session-protocol.md) for the session contrac
 
 `status` is intentionally lightweight so the Start button does not block on cold Pi package imports. `info` imports the Pi packages and returns package name, version, load status, export count, and error text. It does not create sessions or touch workspace files.
 
-`sessions.create` creates an actual `AgentSession` from `@earendil-works/pi-coding-agent`, but passes `noTools: "all"` and an in-memory `SessionManager`. This keeps the first real prompt path model-only until Rust-owned tool bridges are designed deliberately.
+`sessions.create` creates an actual `AgentSession` from `@earendil-works/pi-coding-agent`, passes the Rust-validated Terax workspace cwd into `createAgentSession({ cwd })`, and keeps `noTools: "all"` with an in-memory `SessionManager`. This keeps the first real prompt path model-only until Rust-owned tool bridges are designed deliberately, while project-local Pi context resolves from the user workspace instead of the Tauri/sidecar process cwd.
 
 `sessions.send` returns after the prompt is accepted. The sidecar streams later output/status/error envelopes as JSON-RPC `session.event` notifications; Rust filters those out of the response stream and emits frontend `pi:session-event` events.
 

@@ -22,21 +22,55 @@ async function assertFile(path) {
   }
 }
 
-function readEnvelope(lines) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("Timed out waiting for Pi host response")),
-      15_000,
-    );
-    lines.once("line", (line) => {
-      clearTimeout(timer);
-      try {
-        resolve(JSON.parse(line));
-      } catch (error) {
-        reject(error);
+function createEnvelopeReader(input) {
+  const lines = createInterface({ input });
+  const queue = [];
+  const waiters = [];
+
+  lines.on("line", (line) => {
+    let envelope;
+    try {
+      envelope = JSON.parse(line);
+    } catch (error) {
+      const waiter = waiters.shift();
+      if (waiter) {
+        clearTimeout(waiter.timer);
+        waiter.reject(error);
       }
-    });
+      return;
+    }
+
+    const waiter = waiters.shift();
+    if (waiter) {
+      clearTimeout(waiter.timer);
+      waiter.resolve(envelope);
+    } else {
+      queue.push(envelope);
+    }
   });
+
+  return {
+    close: () => lines.close(),
+    read: (timeoutMs = 15_000) => {
+      if (queue.length > 0) {
+        return Promise.resolve(queue.shift());
+      }
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          reject,
+          resolve,
+          timer: setTimeout(() => {
+            const index = waiters.indexOf(waiter);
+            if (index >= 0) {
+              waiters.splice(index, 1);
+            }
+            reject(new Error("Timed out waiting for Pi host response"));
+          }, timeoutMs),
+        };
+        waiters.push(waiter);
+      });
+    },
+  };
 }
 
 function writeRequest(child, id, method, params) {
@@ -45,10 +79,10 @@ function writeRequest(child, id, method, params) {
   );
 }
 
-async function request(child, lines, id, method, params) {
+async function request(child, reader, id, method, params) {
   writeRequest(child, id, method, params);
   while (true) {
-    const response = await readEnvelope(lines);
+    const response = await reader.read();
     if (response.id !== id) {
       if (response.method === "session.event") {
         continue;
@@ -81,7 +115,7 @@ const child = spawn(bundledNode, [bundledHost], {
   },
   stdio: ["pipe", "pipe", "pipe"],
 });
-const lines = createInterface({ input: child.stdout });
+const lines = createEnvelopeReader(child.stdout);
 let stderr = "";
 child.stderr.on("data", (chunk) => {
   stderr += String(chunk);
@@ -117,8 +151,9 @@ try {
 
   const created = await request(child, lines, 3, "sessions.create", {
     title: "Smoke",
+    cwd,
   });
-  if (created.session?.status !== "idle") {
+  if (created.session?.status !== "idle" || created.session?.cwd !== cwd) {
     throw new Error(`Unexpected created session: ${JSON.stringify(created)}`);
   }
   const sent = await request(child, lines, 4, "sessions.send", {

@@ -1607,9 +1607,11 @@ export default function App() {
                         onOpenGitGraph={openGitGraphFromContext}
                         onOpenFile={handleOpenFile}
                       />
-                    ) : (
-                      <PiPanel />
-                    )}
+                    ) : sidebarView === "pi" ? (
+                      <PiPanel
+                        workspaceRoot={explorerRoot ?? workspaceFallbackPath}
+                      />
+                    ) : null}
                   </div>
                   <SidebarRail
                     activeView={sidebarView}

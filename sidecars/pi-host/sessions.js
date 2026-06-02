@@ -10,6 +10,7 @@ const INVALID_PARAMS = -32602;
 const SESSION_NOT_FOUND = -32004;
 const SESSION_STOPPED = -32005;
 const RESOURCE_LIMIT = -32006;
+const SESSION_BUSY = -32007;
 const MAX_SESSIONS = 20;
 const MAX_PROMPT_CHARS = 20_000;
 
@@ -82,6 +83,20 @@ function requiredString(params, key, method) {
   return value.trim();
 }
 
+function optionalString(params, key, method) {
+  const value = params[key];
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new SessionProtocolError(
+      INVALID_PARAMS,
+      `${method} ${key} must be a non-empty string`,
+    );
+  }
+  return value.trim();
+}
+
 function assertPromptWithinLimit(prompt) {
   if (prompt.length > MAX_PROMPT_CHARS) {
     throw new SessionProtocolError(
@@ -116,6 +131,12 @@ function assertSendableSession(session) {
     throw new SessionProtocolError(
       SESSION_STOPPED,
       `Pi session is stopped: ${session.id}`,
+    );
+  }
+  if (session.status === "running") {
+    throw new SessionProtocolError(
+      SESSION_BUSY,
+      `Pi session is already running: ${session.id}`,
     );
   }
 }
@@ -191,11 +212,12 @@ function mapAgentSessionEvent(event, sessionId) {
   return null;
 }
 
-async function createAgentSessionRecord({ id, title, createdAt }) {
+async function createAgentSessionRecord({ id, title, cwd, createdAt }) {
   const pi = await import("@earendil-works/pi-coding-agent");
   const testFaux = await createTestFauxOptions(pi);
   const { session: agentSession } = await pi.createAgentSession({
     ...testFaux.options,
+    cwd,
     noTools: "all",
     sessionManager: pi.SessionManager.inMemory(),
   });
@@ -206,6 +228,7 @@ async function createAgentSessionRecord({ id, title, createdAt }) {
   return {
     id,
     title,
+    cwd,
     status: "idle",
     createdAt,
     updatedAt: createdAt,
@@ -218,6 +241,7 @@ async function createAgentSessionRecord({ id, title, createdAt }) {
 
 export async function resetSessionsForTests() {
   for (const session of sessions.values()) {
+    session.status = "stopped";
     disposeSession(session);
   }
   nextSessionNumber = 1;
@@ -242,7 +266,9 @@ export async function createSession(params) {
     typeof options.title === "string" && options.title.trim() !== ""
       ? options.title.trim()
       : `Pi Session ${id.replace("pi-", "")}`;
-  const session = await createAgentSessionRecord({ id, title, createdAt });
+  const cwd =
+    optionalString(options, "cwd", "sessions.create") ?? process.cwd();
+  const session = await createAgentSessionRecord({ id, title, cwd, createdAt });
   sessions.set(id, session);
 
   const snapshot = sessionSnapshot(session);

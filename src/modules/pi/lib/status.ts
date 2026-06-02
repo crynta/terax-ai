@@ -33,7 +33,12 @@ export type PiDiagnostics = PiHostInfo & {
     sessionStorage: string;
     apiKeys: Array<{ name: string; configured: boolean }>;
   };
-  sessions: Array<{ id: string; title: string; status: string }>;
+  sessions: Array<{
+    id: string;
+    title: string;
+    status: string;
+    cwd?: string | null;
+  }>;
 };
 
 export type PiStatusView = {

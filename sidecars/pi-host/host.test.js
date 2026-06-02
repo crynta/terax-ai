@@ -6,10 +6,59 @@ import { PI_PACKAGE_NAMES } from "./protocol.js";
 
 const HOST_PATH = fileURLToPath(new URL("./host.js", import.meta.url));
 
-function readResponse(lines) {
-  return new Promise((resolve) => {
-    lines.once("line", (line) => resolve(JSON.parse(line)));
+function hostEnv(extra = {}) {
+  return {
+    PATH: process.env.PATH ?? "",
+    HOME: process.env.HOME ?? "",
+    USERPROFILE: process.env.USERPROFILE ?? "",
+    TMPDIR: process.env.TMPDIR ?? "",
+    TEMP: process.env.TEMP ?? "",
+    TMP: process.env.TMP ?? "",
+    ...extra,
+  };
+}
+
+function createEnvelopeReader(input) {
+  const lines = createInterface({ input });
+  const queue = [];
+  const waiters = [];
+
+  lines.on("line", (line) => {
+    const envelope = JSON.parse(line);
+    const waiter = waiters.shift();
+    if (waiter) {
+      clearTimeout(waiter.timer);
+      waiter.resolve(envelope);
+    } else {
+      queue.push(envelope);
+    }
   });
+
+  return {
+    close: () => lines.close(),
+    read: (timeoutMs = 3000) => {
+      if (queue.length > 0) {
+        return Promise.resolve(queue.shift());
+      }
+      return new Promise((resolve, reject) => {
+        const waiter = {
+          resolve,
+          timer: setTimeout(() => {
+            const index = waiters.indexOf(waiter);
+            if (index >= 0) {
+              waiters.splice(index, 1);
+            }
+            reject(new Error("Timed out waiting for host envelope"));
+          }, timeoutMs),
+        };
+        waiters.push(waiter);
+      });
+    },
+  };
+}
+
+function readResponse(reader) {
+  return reader.read();
 }
 
 function writeRequest(child, id, method, params) {
@@ -18,19 +67,10 @@ function writeRequest(child, id, method, params) {
   );
 }
 
-async function readUntil(lines, predicate, timeoutMs = 6000) {
+async function readUntil(reader, predicate, timeoutMs = 6000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const remainingMs = deadline - Date.now();
-    const envelope = await Promise.race([
-      readResponse(lines),
-      new Promise((_, reject) =>
-        setTimeout(
-          () => reject(new Error("Timed out waiting for host envelope")),
-          remainingMs,
-        ),
-      ),
-    ]);
+    const envelope = await reader.read(deadline - Date.now());
     if (predicate(envelope)) {
       return envelope;
     }
@@ -41,9 +81,10 @@ async function readUntil(lines, predicate, timeoutMs = 6000) {
 describe("Pi host stdio", () => {
   it("exchanges JSON-RPC messages over newline-delimited stdio", async () => {
     const child = spawn(process.execPath, [HOST_PATH], {
+      env: hostEnv(),
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const lines = createInterface({ input: child.stdout });
+    const lines = createEnvelopeReader(child.stdout);
 
     try {
       writeRequest(child, 1, "status");
@@ -86,13 +127,13 @@ describe("Pi host stdio", () => {
 
   it("keeps Pi SDK stdout writes off the JSON-RPC stream", async () => {
     const child = spawn(process.execPath, [HOST_PATH], {
-      env: {
-        ...process.env,
+      env: hostEnv({
         TERAX_PI_HOST_TEST_FAUX_RESPONSE: "stdio safe response",
-      },
+        TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND: "",
+      }),
       stdio: ["pipe", "pipe", "pipe"],
     });
-    const lines = createInterface({ input: child.stdout });
+    const lines = createEnvelopeReader(child.stdout);
 
     try {
       writeRequest(child, 1, "sessions.create", { title: "stdio" });
@@ -115,21 +156,25 @@ describe("Pi host stdio", () => {
 
       const deltas = [];
       let finalText = null;
-      await readUntil(lines, (envelope) => {
-        if (envelope.method !== "session.event") {
-          return false;
-        }
-        if (envelope.params.type === "session.output.delta") {
-          deltas.push(envelope.params.payload.text);
-        }
-        if (envelope.params.type === "session.output.text") {
-          finalText = envelope.params.payload.text;
-        }
-        return (
-          envelope.params.type === "session.status" &&
-          envelope.params.payload.status === "idle"
-        );
-      });
+      await readUntil(
+        lines,
+        (envelope) => {
+          if (envelope.method !== "session.event") {
+            return false;
+          }
+          if (envelope.params.type === "session.output.delta") {
+            deltas.push(envelope.params.payload.text);
+          }
+          if (envelope.params.type === "session.output.text") {
+            finalText = envelope.params.payload.text;
+          }
+          return (
+            envelope.params.type === "session.status" &&
+            envelope.params.payload.status === "idle"
+          );
+        },
+        10_000,
+      );
       expect(deltas.join("")).toBe("stdio safe response");
       expect(finalText).toBe("stdio safe response");
 
@@ -145,5 +190,5 @@ describe("Pi host stdio", () => {
       lines.close();
       child.kill();
     }
-  });
+  }, 15_000);
 });

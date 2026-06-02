@@ -68,12 +68,15 @@ fn diagnostics_report_non_secret_runtime_state() {
 fn sessions_can_be_created_sent_and_stopped() {
     std::env::set_var("TERAX_PI_HOST_TEST_FAUX_RESPONSE", "hello from Rust");
     let state = PiState::default();
+    let temp = tempfile::tempdir().unwrap();
+    let cwd = terax_lib::modules::fs::to_canon(temp.path());
 
     let created = state
-        .session_create_with_resource_dir(None, Some("Test Pi".to_string()))
+        .session_create_with_resource_dir(None, Some("Test Pi".to_string()), Some(cwd.clone()))
         .unwrap();
     assert_eq!(created.session.id, "pi-1");
     assert_eq!(created.session.title, "Test Pi");
+    assert_eq!(created.session.cwd.as_deref(), Some(cwd.as_str()));
     assert_eq!(created.session.status, "idle");
     assert_eq!(created.events[0].event_type, "session.created");
 
