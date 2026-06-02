@@ -45,6 +45,8 @@ export type EditorPaneHandle = {
   /** Apply CodeMirror's undo/redo commands. */
   undo: () => void;
   redo: () => void;
+  /** Scroll to a specific line number and set cursor. */
+  goToLine: (line: number) => void;
 };
 
 type Props = {
@@ -262,6 +264,17 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         redo: () => {
           const view = cmRef.current?.view;
           if (view) redo(view);
+        },
+        goToLine: (line: number) => {
+          const view = cmRef.current?.view;
+          if (!view) return;
+          const clamped = Math.max(1, Math.min(line, view.state.doc.lines));
+          const lineBlock = view.state.doc.line(clamped);
+          view.dispatch({
+            selection: { anchor: lineBlock.from, head: lineBlock.from },
+            scrollIntoView: true,
+          });
+          view.focus();
         },
       }),
       [path],

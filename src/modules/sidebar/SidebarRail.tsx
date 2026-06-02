@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { FolderGitTwoIcon, FolderTreeIcon } from "@hugeicons/core-free-icons";
+import { FolderGitTwoIcon, FolderTreeIcon, SearchCodeIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { SidebarViewId } from "./types";
 
@@ -27,6 +27,7 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
       icon: FolderGitTwoIcon,
       badge: changedCount,
     },
+    { id: "search", label: "Search", icon: SearchCodeIcon },
   ];
 
   return (

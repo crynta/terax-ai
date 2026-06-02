@@ -78,6 +78,7 @@ import {
   type ShortcutId,
 } from "@/modules/shortcuts";
 import { SidebarRail, type SidebarViewId } from "@/modules/sidebar";
+import { SearchPanel } from "@/modules/search";
 import {
   SourceControlPanel,
   useSourceControl,
@@ -891,6 +892,18 @@ export default function App() {
     [openFileTab],
   );
 
+  const handleGoToLine = useCallback((path: string, line: number) => {
+    // Wait for the editor tab to mount, then scroll to the line.
+    setTimeout(() => {
+      for (const [, h] of editorRefs.current.entries()) {
+        if (h.getPath() === path) {
+          h.goToLine(line);
+          return;
+        }
+      }
+    }, 100);
+  }, []);
+
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
       for (const t of tabs) {
@@ -1088,6 +1101,7 @@ export default function App() {
         clearFocusedTerminal();
       },
       "search.focus": () => searchInlineRef.current?.focus(),
+      "search.workspace": () => cycleSidebarView("search"),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "shortcuts.open": () => setShortcutsOpen((v) => !v),
@@ -1111,6 +1125,7 @@ export default function App() {
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
+      cycleSidebarView,
       toggleSourceControl,
       togglePanelAndFocus,
       askFromSelection,
@@ -1594,13 +1609,19 @@ export default function App() {
                         onAttachToAgent={handleAttachFileToAgent}
                         onOpenMarkdownPreview={openMarkdownPreview}
                       />
-                    ) : (
+                    ) : sidebarView === "source-control" ? (
                       <SourceControlPanel
                         open
                         sourceControl={sourceControl}
                         onOpenDiff={openGitDiffTab}
                         onOpenGitGraph={openGitGraphFromContext}
                         onOpenFile={handleOpenFile}
+                      />
+                    ) : (
+                      <SearchPanel
+                        rootPath={explorerRoot}
+                        onOpenFile={handleOpenFile}
+                        onGoToLine={handleGoToLine}
                       />
                     )}
                   </div>
