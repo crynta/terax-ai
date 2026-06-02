@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleJsonRpcLine, resetProtocolForTests } from "./protocol.js";
-import { setSessionEventSink } from "./sessions.js";
+import { formatPromptWithContext, setSessionEventSink } from "./sessions.js";
 
 async function request(id, method, params) {
   return handleJsonRpcLine(
@@ -39,6 +39,20 @@ function suppressPiTerminalNotifications() {
     process.stdout.write = originalWrite;
   };
 }
+
+describe("formatPromptWithContext", () => {
+  it("prepends Terax env context without changing the user prompt", () => {
+    expect(
+      formatPromptWithContext({ cwd: "/Users/me/project" }, "Where am I?", {
+        activeTerminalCwd: "/Users/me/project/src",
+        activeFile: "/Users/me/project/src/App.tsx",
+        activeTerminalPrivate: true,
+      }),
+    ).toBe(
+      `<env>\nworkspace_root: /Users/me/project\nactive_terminal_cwd: /Users/me/project/src\nactive_file: /Users/me/project/src/App.tsx\nactive_terminal_mode: private\n</env>\n\nWhere am I?`,
+    );
+  });
+});
 
 describe("Pi host session protocol", () => {
   beforeEach(async () => {
@@ -122,10 +136,15 @@ describe("Pi host session protocol", () => {
   });
 
   it("runs prompts through the Pi SDK and returns output events", async () => {
-    await request(3, "sessions.create", { title: "Run" });
+    const cwd = process.cwd();
+    await request(3, "sessions.create", { title: "Run", cwd });
     const result = await request(4, "sessions.send", {
       sessionId: "pi-1",
       prompt: "hello Pi",
+      context: {
+        activeTerminalCwd: `${cwd}/src`,
+        activeFile: `${cwd}/src/App.tsx`,
+      },
     });
 
     expect(result.response).toMatchObject({
@@ -145,7 +164,14 @@ describe("Pi host session protocol", () => {
         id: "evt-2",
         type: "session.input",
         sessionId: "pi-1",
-        payload: { text: "hello Pi" },
+        payload: {
+          text: "hello Pi",
+          context: {
+            workspaceRoot: cwd,
+            activeTerminalCwd: `${cwd}/src`,
+            activeFile: `${cwd}/src/App.tsx`,
+          },
+        },
       }),
       expect.objectContaining({
         id: "evt-3",

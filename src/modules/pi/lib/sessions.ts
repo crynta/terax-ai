@@ -10,6 +10,13 @@ export type PiSession = {
   lastPrompt: string | null;
 };
 
+export type PiPromptContext = {
+  workspaceRoot?: string | null;
+  activeTerminalCwd?: string | null;
+  activeFile?: string | null;
+  activeTerminalPrivate?: boolean;
+};
+
 export type PiSessionEvent = {
   id: string;
   type: string;

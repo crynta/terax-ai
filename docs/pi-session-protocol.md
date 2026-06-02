@@ -4,9 +4,9 @@ The Rust Pi host manager talks to the Node Pi host over newline-delimited JSON-R
 
 ## Runtime ownership
 
-`sessions.create` now creates a real `@earendil-works/pi-coding-agent` `AgentSession` with `noTools: "all"` and an in-memory `SessionManager`. This proves prompt execution can flow through the Pi SDK without allowing the Node sidecar to own Terax files, shell, terminal, git, editor, or SQLite responsibilities.
+`sessions.create` now creates a real `@earendil-works/pi-coding-agent` `AgentSession` with `noTools: "all"`, an in-memory `SessionManager`, and a stable workspace-root `cwd`. This proves prompt execution can flow through the Pi SDK without allowing the Node sidecar to own Terax files, shell, terminal, git, editor, or SQLite responsibilities.
 
-`sessions.send` accepts a prompt immediately, returns the initial `session.input` and `running` status events, then streams output/status/error events asynchronously as JSON-RPC notifications on stdout. Rust filters those notifications out of the response stream and forwards them to the frontend as Tauri `pi:session-event` events.
+`sessions.send` accepts a prompt immediately, returns the initial `session.input` and `running` status events, then streams output/status/error events asynchronously as JSON-RPC notifications on stdout. Rust validates the optional per-turn Terax context before forwarding it, and the sidecar prepends that context as an `<env>` block only for the SDK prompt. The visible/persisted user prompt remains unchanged. Rust filters notifications out of the response stream and forwards them to the frontend as Tauri `pi:session-event` events.
 
 ## Session shape
 
@@ -48,6 +48,35 @@ type PiSessionEvent = {
 };
 ```
 
+## Prompt context
+
+Pi uses two cwd concepts:
+
+1. Session `cwd`: stable workspace root for Pi SDK project discovery.
+2. Prompt `context`: validated per-turn Terax UI state for answering questions like "where am I?".
+
+```ts
+type PiPromptContext = {
+  workspaceRoot?: string;
+  activeTerminalCwd?: string;
+  activeFile?: string;
+  activeTerminalPrivate?: boolean;
+};
+```
+
+When present, the sidecar sends this to the SDK as:
+
+```text
+<env>
+workspace_root: /project
+active_terminal_cwd: /project/src
+active_file: /project/src/App.tsx
+active_terminal_mode: private
+</env>
+
+<user prompt>
+```
+
 ## Methods
 
 ### `diagnostics`
@@ -87,7 +116,7 @@ Creates an idle Pi SDK `AgentSession` owned by the sidecar. `cwd` scopes Pi proj
 Params:
 
 ```ts
-{ sessionId: string; prompt: string }
+{ sessionId: string; prompt: string; context?: PiPromptContext }
 ```
 
 Result:

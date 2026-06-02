@@ -1610,6 +1610,16 @@ export default function App() {
                     ) : sidebarView === "pi" ? (
                       <PiPanel
                         workspaceRoot={explorerRoot ?? workspaceFallbackPath}
+                        activeCwd={
+                          activeTerminalLeafCwd ??
+                          explorerRoot ??
+                          workspaceFallbackPath
+                        }
+                        activeFile={activeFilePath}
+                        activeTerminalPrivate={
+                          activeTab?.kind === "terminal" &&
+                          activeTab.private === true
+                        }
                       />
                     ) : null}
                   </div>

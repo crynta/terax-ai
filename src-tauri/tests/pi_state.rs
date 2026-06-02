@@ -81,7 +81,7 @@ fn sessions_can_be_created_sent_and_stopped() {
     assert_eq!(created.events[0].event_type, "session.created");
 
     let sent = state
-        .session_send_with_resource_dir(None, "pi-1".to_string(), "hello".to_string())
+        .session_send_with_resource_dir(None, "pi-1".to_string(), "hello".to_string(), None)
         .unwrap();
     assert!(sent.accepted);
     assert_eq!(sent.session.status, "running");

@@ -97,6 +97,109 @@ function optionalString(params, key, method) {
   return value.trim();
 }
 
+function optionalContextString(params, key, method) {
+  const value = optionalString(params, key, method);
+  if (value === undefined) {
+    return undefined;
+  }
+  if (/\r|\n/.test(value)) {
+    throw new SessionProtocolError(
+      INVALID_PARAMS,
+      `${method} ${key} must not contain newlines`,
+    );
+  }
+  return value;
+}
+
+function assertBoolean(params, key, method) {
+  const value = params[key];
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value !== "boolean") {
+    throw new SessionProtocolError(
+      INVALID_PARAMS,
+      `${method} ${key} must be a boolean`,
+    );
+  }
+  return value;
+}
+
+function compactContext(context) {
+  if (context === undefined) {
+    return undefined;
+  }
+  const result = {};
+  for (const [key, value] of Object.entries(context)) {
+    if (value === undefined || value === null || value === false) {
+      continue;
+    }
+    result[key] = value;
+  }
+  return Object.keys(result).length === 0 ? undefined : result;
+}
+
+function normalizePromptContext(rawContext, method) {
+  if (rawContext === undefined || rawContext === null) {
+    return undefined;
+  }
+  if (typeof rawContext !== "object" || Array.isArray(rawContext)) {
+    throw new SessionProtocolError(
+      INVALID_PARAMS,
+      `${method} context must be an object`,
+    );
+  }
+  return compactContext({
+    workspaceRoot: optionalContextString(rawContext, "workspaceRoot", method),
+    activeTerminalCwd: optionalContextString(
+      rawContext,
+      "activeTerminalCwd",
+      method,
+    ),
+    activeFile: optionalContextString(rawContext, "activeFile", method),
+    activeTerminalPrivate: assertBoolean(
+      rawContext,
+      "activeTerminalPrivate",
+      method,
+    ),
+  });
+}
+
+function contextWithWorkspace(session, context) {
+  return compactContext({
+    workspaceRoot: context?.workspaceRoot ?? session.cwd,
+    activeTerminalCwd: context?.activeTerminalCwd,
+    activeFile: context?.activeFile,
+    activeTerminalPrivate: context?.activeTerminalPrivate === true,
+  });
+}
+
+export function formatPromptWithContext(session, prompt, context) {
+  const promptContext = contextWithWorkspace(session, context);
+  if (promptContext === undefined) {
+    return prompt;
+  }
+
+  const lines = [];
+  if (promptContext.workspaceRoot) {
+    lines.push(`workspace_root: ${promptContext.workspaceRoot}`);
+  }
+  if (promptContext.activeTerminalCwd) {
+    lines.push(`active_terminal_cwd: ${promptContext.activeTerminalCwd}`);
+  }
+  if (promptContext.activeFile) {
+    lines.push(`active_file: ${promptContext.activeFile}`);
+  }
+  if (promptContext.activeTerminalPrivate) {
+    lines.push("active_terminal_mode: private");
+  }
+
+  if (lines.length === 0) {
+    return prompt;
+  }
+  return `<env>\n${lines.join("\n")}\n</env>\n\n${prompt}`;
+}
+
 function assertPromptWithinLimit(prompt) {
   if (prompt.length > MAX_PROMPT_CHARS) {
     throw new SessionProtocolError(
@@ -280,9 +383,11 @@ export async function createSession(params) {
   };
 }
 
-async function runPrompt(session, prompt) {
+async function runPrompt(session, prompt, context) {
   try {
-    await session.agentSession.prompt(prompt);
+    await session.agentSession.prompt(
+      formatPromptWithContext(session, prompt, context),
+    );
     if (session.status === "stopped") {
       return;
     }
@@ -317,9 +422,11 @@ export async function sendToSession(params) {
   const options = assertParamsObject(params, "sessions.send");
   const sessionId = requiredString(options, "sessionId", "sessions.send");
   const prompt = requiredString(options, "prompt", "sessions.send");
+  const context = normalizePromptContext(options.context, "sessions.send");
   assertPromptWithinLimit(prompt);
   const session = findSession(sessionId);
   assertSendableSession(session);
+  const promptContext = contextWithWorkspace(session, context);
   const updatedAt = isoNow();
 
   session.status = "running";
@@ -327,7 +434,14 @@ export async function sendToSession(params) {
   session.lastPrompt = prompt;
 
   const events = [
-    pushEvent("session.input", sessionId, { text: prompt }, updatedAt),
+    pushEvent(
+      "session.input",
+      sessionId,
+      promptContext === undefined
+        ? { text: prompt }
+        : { text: prompt, context: promptContext },
+      updatedAt,
+    ),
     pushEvent(
       "session.status",
       sessionId,
@@ -337,7 +451,7 @@ export async function sendToSession(params) {
   ];
 
   setImmediate(() => {
-    void runPrompt(session, prompt);
+    void runPrompt(session, prompt, promptContext);
   });
 
   return {

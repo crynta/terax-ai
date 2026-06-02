@@ -9,7 +9,7 @@ use crate::modules::workspace::{self, WorkspaceEnv, WorkspaceRegistry};
 mod host;
 mod store;
 
-use host::{PiHost, PiSessionEventSink};
+use host::{HostCallError, PiHost, PiSessionEventSink};
 
 pub const PI_SESSION_EVENT_NAME: &str = "pi:session-event";
 
@@ -141,6 +141,19 @@ pub struct PiSessionSendResult {
     pub events: Vec<PiSessionEvent>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiPromptContext {
+    #[serde(default)]
+    pub workspace_root: Option<String>,
+    #[serde(default)]
+    pub active_terminal_cwd: Option<String>,
+    #[serde(default)]
+    pub active_file: Option<String>,
+    #[serde(default)]
+    pub active_terminal_private: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PiSessionStopResult {
@@ -159,14 +172,42 @@ impl Default for PiRuntimeSnapshot {
 
 #[derive(Default)]
 pub struct PiState {
-    host: Mutex<Option<PiHost>>,
+    host: Mutex<Option<Arc<PiHost>>>,
 }
 
 impl PiState {
+    fn host_handle(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+    ) -> Result<Arc<PiHost>, String> {
+        let mut host = self.host.lock().map_err(|e| e.to_string())?;
+        if host.is_none() {
+            *host = Some(Arc::new(PiHost::spawn_with_event_sink(
+                resource_dir,
+                event_sink,
+            )?));
+        }
+        host.as_ref()
+            .cloned()
+            .ok_or_else(|| "Pi host was not initialized".to_string())
+    }
+
+    fn clear_host_if_same(&self, expected: &Arc<PiHost>) -> Result<(), String> {
+        let mut host = self.host.lock().map_err(|e| e.to_string())?;
+        if host
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, expected))
+        {
+            *host = None;
+        }
+        Ok(())
+    }
+
     fn with_host<R>(
         &self,
         resource_dir: Option<&Path>,
-        action: impl FnOnce(&mut PiHost) -> Result<R, String>,
+        action: impl FnOnce(&PiHost) -> Result<R, HostCallError>,
     ) -> Result<R, String> {
         self.with_host_event_sink(resource_dir, None, action)
     }
@@ -175,35 +216,37 @@ impl PiState {
         &self,
         resource_dir: Option<&Path>,
         event_sink: Option<PiSessionEventSink>,
-        action: impl FnOnce(&mut PiHost) -> Result<R, String>,
+        action: impl FnOnce(&PiHost) -> Result<R, HostCallError>,
     ) -> Result<R, String> {
-        let mut host = self.host.lock().map_err(|e| e.to_string())?;
-        if host.is_none() {
-            *host = Some(PiHost::spawn_with_event_sink(resource_dir, event_sink)?);
-        }
-        match action(
-            host.as_mut()
-                .ok_or_else(|| "Pi host was not initialized".to_string())?,
-        ) {
+        let host = self.host_handle(resource_dir, event_sink)?;
+        match action(&host) {
             Ok(result) => Ok(result),
             Err(error) => {
-                *host = None;
-                Err(error)
+                let clear = error.is_transport();
+                let message = error.message();
+                if clear {
+                    let _ = self.clear_host_if_same(&host);
+                }
+                Err(message)
             }
         }
     }
 
     pub fn snapshot(&self) -> Result<PiRuntimeSnapshot, String> {
-        let mut guard = self.host.lock().map_err(|e| e.to_string())?;
-        let Some(host) = guard.as_mut() else {
-            return Ok(PiRuntimeSnapshot::default());
+        let host = {
+            let guard = self.host.lock().map_err(|e| e.to_string())?;
+            let Some(host) = guard.as_ref() else {
+                return Ok(PiRuntimeSnapshot::default());
+            };
+            Arc::clone(host)
         };
 
         match host.status() {
             Ok(snapshot) => Ok(snapshot),
             Err(error) => {
-                *guard = None;
-                Ok(error_snapshot(error))
+                let message = error.message();
+                let _ = self.clear_host_if_same(&host);
+                Ok(error_snapshot(message))
             }
         }
     }
@@ -224,32 +267,19 @@ impl PiState {
         resource_dir: Option<&Path>,
         event_sink: Option<PiSessionEventSink>,
     ) -> Result<PiRuntimeSnapshot, String> {
-        let mut host = self.host.lock().map_err(|e| e.to_string())?;
-        if host.is_none() {
-            *host = Some(PiHost::spawn_with_event_sink(
-                resource_dir,
-                event_sink.clone(),
-            )?);
-        }
-
-        let status = host
-            .as_mut()
-            .ok_or_else(|| "Pi host was not initialized".to_string())?
-            .status();
-
-        match status {
+        let host = self.host_handle(resource_dir, event_sink.clone())?;
+        match host.status() {
             Ok(snapshot) => Ok(snapshot),
             Err(first_error) => {
-                *host = None;
-                *host = Some(PiHost::spawn_with_event_sink(resource_dir, event_sink)?);
-                host.as_mut()
-                    .ok_or_else(|| "Pi host was not initialized".to_string())?
-                    .status()
-                    .map_err(|second_error| {
-                        format!(
-                            "Pi host restart failed after error ({first_error}): {second_error}"
-                        )
-                    })
+                let first_message = first_error.message();
+                let _ = self.clear_host_if_same(&host);
+                let host = self.host_handle(resource_dir, event_sink)?;
+                host.status().map_err(|second_error| {
+                    format!(
+                        "Pi host restart failed after error ({first_message}): {}",
+                        second_error.message()
+                    )
+                })
             }
         }
     }
@@ -322,8 +352,11 @@ impl PiState {
         resource_dir: Option<&Path>,
         session_id: String,
         prompt: String,
+        context: Option<PiPromptContext>,
     ) -> Result<PiSessionSendResult, String> {
-        self.with_host(resource_dir, |host| host.session_send(session_id, prompt))
+        self.with_host(resource_dir, |host| {
+            host.session_send(session_id, prompt, context)
+        })
     }
 
     pub fn session_send_with_resource_dir_and_event_sink(
@@ -332,9 +365,10 @@ impl PiState {
         event_sink: Option<PiSessionEventSink>,
         session_id: String,
         prompt: String,
+        context: Option<PiPromptContext>,
     ) -> Result<PiSessionSendResult, String> {
         self.with_host_event_sink(resource_dir, event_sink, |host| {
-            host.session_send(session_id, prompt)
+            host.session_send(session_id, prompt, context)
         })
     }
 
@@ -397,6 +431,85 @@ fn resolve_session_cwd(
         return Err("Pi session requires an authorized workspace cwd".to_string());
     };
     Ok(crate::modules::fs::to_canon(&resolved))
+}
+
+fn resolve_context_dir(
+    registry: &WorkspaceRegistry,
+    value: Option<&str>,
+    workspace_env: &WorkspaceEnv,
+    label: &str,
+) -> Result<Option<String>, String> {
+    let Some(raw) = value.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let resolved = workspace::authorize_spawn_cwd(registry, Some(raw), workspace_env)
+        .map_err(|error| format!("{label} is invalid: {error}"))?;
+    Ok(resolved.as_deref().map(crate::modules::fs::to_canon))
+}
+
+fn resolve_context_file(
+    registry: &WorkspaceRegistry,
+    value: Option<&str>,
+    workspace_env: &WorkspaceEnv,
+    label: &str,
+) -> Result<Option<String>, String> {
+    let Some(raw) = value.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let resolved = workspace::resolve_path(raw, workspace_env);
+    let canonical = std::fs::canonicalize(&resolved)
+        .map_err(|error| format!("{label} is not accessible: {error}"))?;
+    if !canonical.is_file() {
+        return Err(format!("{label} is not a file: {}", canonical.display()));
+    }
+    if !registry.is_authorized(&canonical) {
+        return Err(format!(
+            "{label} is outside the authorized workspace: {}",
+            canonical.display()
+        ));
+    }
+    Ok(Some(crate::modules::fs::to_canon(&canonical)))
+}
+
+fn resolve_prompt_context(
+    registry: &WorkspaceRegistry,
+    context: Option<PiPromptContext>,
+    workspace_env: &WorkspaceEnv,
+) -> Result<Option<PiPromptContext>, String> {
+    let Some(context) = context else {
+        return Ok(None);
+    };
+    let resolved = PiPromptContext {
+        workspace_root: resolve_context_dir(
+            registry,
+            context.workspace_root.as_deref(),
+            workspace_env,
+            "workspace_root",
+        )?,
+        active_terminal_cwd: resolve_context_dir(
+            registry,
+            context.active_terminal_cwd.as_deref(),
+            workspace_env,
+            "active_terminal_cwd",
+        )?,
+        active_file: resolve_context_file(
+            registry,
+            context.active_file.as_deref(),
+            workspace_env,
+            "active_file",
+        )?,
+        active_terminal_private: context.active_terminal_private,
+    };
+
+    if resolved.workspace_root.is_none()
+        && resolved.active_terminal_cwd.is_none()
+        && resolved.active_file.is_none()
+        && !resolved.active_terminal_private
+    {
+        Ok(None)
+    } else {
+        Ok(Some(resolved))
+    }
 }
 
 #[tauri::command]
@@ -483,14 +596,20 @@ pub fn pi_session_create(
 pub fn pi_session_send(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
     session_id: String,
     prompt: String,
+    context: Option<PiPromptContext>,
+    workspace: Option<WorkspaceEnv>,
 ) -> Result<PiSessionSendResult, String> {
+    let workspace_env = WorkspaceEnv::from_option(workspace);
+    let context = resolve_prompt_context(&registry, context, &workspace_env)?;
     let result = state.session_send_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
         session_id,
         prompt,
+        context,
     )?;
     store::record_session_result(&app, &result.session, &result.events)?;
     Ok(result)
@@ -551,6 +670,72 @@ mod tests {
         let error = resolve_session_cwd(
             &registry,
             Some(root.path().to_str().unwrap()),
+            &WorkspaceEnv::Local,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("outside the authorized workspace"));
+    }
+
+    #[test]
+    fn resolve_prompt_context_canonicalizes_authorized_paths() {
+        let registry = WorkspaceRegistry::default();
+        let root = tempfile::tempdir().unwrap();
+        registry.authorize(root.path()).unwrap();
+        let src = root.path().join("src");
+        std::fs::create_dir(&src).unwrap();
+        let file = src.join("App.tsx");
+        std::fs::write(&file, "export default null;\n").unwrap();
+
+        let resolved = resolve_prompt_context(
+            &registry,
+            Some(PiPromptContext {
+                workspace_root: Some(root.path().to_str().unwrap().to_string()),
+                active_terminal_cwd: Some(src.to_str().unwrap().to_string()),
+                active_file: Some(file.to_str().unwrap().to_string()),
+                active_terminal_private: true,
+            }),
+            &WorkspaceEnv::Local,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            resolved.workspace_root,
+            Some(crate::modules::fs::to_canon(
+                &std::fs::canonicalize(root.path()).unwrap()
+            ))
+        );
+        assert_eq!(
+            resolved.active_terminal_cwd,
+            Some(crate::modules::fs::to_canon(
+                &std::fs::canonicalize(&src).unwrap()
+            ))
+        );
+        assert_eq!(
+            resolved.active_file,
+            Some(crate::modules::fs::to_canon(
+                &std::fs::canonicalize(&file).unwrap()
+            ))
+        );
+        assert!(resolved.active_terminal_private);
+    }
+
+    #[test]
+    fn resolve_prompt_context_rejects_unauthorized_paths() {
+        let registry = WorkspaceRegistry::default();
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("outside.ts");
+        std::fs::write(&file, "export default null;\n").unwrap();
+
+        let error = resolve_prompt_context(
+            &registry,
+            Some(PiPromptContext {
+                workspace_root: Some(root.path().to_str().unwrap().to_string()),
+                active_terminal_cwd: None,
+                active_file: Some(file.to_str().unwrap().to_string()),
+                active_terminal_private: false,
+            }),
             &WorkspaceEnv::Local,
         )
         .unwrap_err();

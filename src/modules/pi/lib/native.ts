@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import type {
+  PiPromptContext,
   PiSessionCreateResult,
   PiSessionSendResult,
   PiSessionStopResult,
@@ -22,8 +23,17 @@ export const piNative = {
       cwd: cwd ?? null,
       workspace: currentWorkspaceEnv(),
     }),
-  sessionSend: (sessionId: string, prompt: string) =>
-    invoke<PiSessionSendResult>("pi_session_send", { sessionId, prompt }),
+  sessionSend: (
+    sessionId: string,
+    prompt: string,
+    context?: PiPromptContext | null,
+  ) =>
+    invoke<PiSessionSendResult>("pi_session_send", {
+      sessionId,
+      prompt,
+      context: context ?? null,
+      workspace: currentWorkspaceEnv(),
+    }),
   sessionStop: (sessionId: string) =>
     invoke<PiSessionStopResult>("pi_session_stop", { sessionId }),
 };

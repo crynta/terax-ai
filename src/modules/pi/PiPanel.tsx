@@ -78,9 +78,17 @@ function transcriptItemClass(kind: "assistant" | "error" | "system" | "user") {
 
 type PiPanelProps = {
   workspaceRoot?: string | null;
+  activeCwd?: string | null;
+  activeFile?: string | null;
+  activeTerminalPrivate?: boolean;
 };
 
-export function PiPanel({ workspaceRoot = null }: PiPanelProps) {
+export function PiPanel({
+  workspaceRoot = null,
+  activeCwd = null,
+  activeFile = null,
+  activeTerminalPrivate = false,
+}: PiPanelProps) {
   const [runtimeState, setRuntimeState] = useState(INITIAL_PI_STATE);
   const [diagnostics, setDiagnostics] = useState<PiDiagnostics | null>(null);
   const [sessions, setSessions] = useState<PiSession[]>([]);
@@ -276,7 +284,12 @@ export function PiPanel({ workspaceRoot = null }: PiPanelProps) {
 
       setIsBusy(true);
       try {
-        const result = await piNative.sessionSend(selectedSession.id, text);
+        const result = await piNative.sessionSend(selectedSession.id, text, {
+          workspaceRoot: selectedSession.cwd ?? workspaceRoot,
+          activeTerminalCwd: activeCwd,
+          activeFile,
+          activeTerminalPrivate,
+        });
         applySessionUpdate(result.session, result.events);
         setPrompt("");
       } catch (error) {
@@ -285,7 +298,15 @@ export function PiPanel({ workspaceRoot = null }: PiPanelProps) {
         setIsBusy(false);
       }
     },
-    [applySessionUpdate, prompt, selectedSession],
+    [
+      activeCwd,
+      activeFile,
+      activeTerminalPrivate,
+      applySessionUpdate,
+      prompt,
+      selectedSession,
+      workspaceRoot,
+    ],
   );
 
   const stopSelectedSession = useCallback(async () => {

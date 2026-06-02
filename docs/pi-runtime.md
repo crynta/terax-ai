@@ -40,7 +40,7 @@ See [`pi-session-protocol.md`](./pi-session-protocol.md) for the session contrac
 
 `sessions.create` creates an actual `AgentSession` from `@earendil-works/pi-coding-agent`, passes the Rust-validated Terax workspace cwd into `createAgentSession({ cwd })`, and keeps `noTools: "all"` with an in-memory `SessionManager`. This keeps the first real prompt path model-only until Rust-owned tool bridges are designed deliberately, while project-local Pi context resolves from the user workspace instead of the Tauri/sidecar process cwd.
 
-`sessions.send` returns after the prompt is accepted. The sidecar streams later output/status/error envelopes as JSON-RPC `session.event` notifications; Rust filters those out of the response stream and emits frontend `pi:session-event` events.
+`sessions.send` returns after the prompt is accepted. Terax sends Rust-validated per-turn UI context (`workspace_root`, `active_terminal_cwd`, `active_file`) separately from the user prompt; the sidecar prepends it as an SDK-only `<env>` block while preserving the original prompt in session history. The sidecar streams later output/status/error envelopes as JSON-RPC `session.event` notifications; Rust filters those out of the response stream and emits frontend `pi:session-event` events.
 
 Session metadata and event history are persisted by Rust under the app data directory in `pi-sessions.json`. The Node sidecar still keeps SDK `AgentSession` objects in memory only; after app restart, the sidebar restores persisted history without granting persistence ownership to Node.
 
@@ -48,4 +48,4 @@ Session metadata and event history are persisted by Rust under the app data dire
 
 Boundary tests enforce that the sidecar package depends only on `@earendil-works/pi-*` packages, rejects Terax-owned method families such as terminal/PTY, shell, git, files, and editor calls with JSON-RPC `Method not found`, and keeps incidental Pi SDK stdout off the JSON-RPC stdout stream. Rust launches the sidecar with an env allowlist, while the sidecar enforces method allowlists plus prompt/session resource limits.
 
-The Rust host manager applies a request timeout, captures a bounded stderr tail for diagnostics, cleans up timed-out children, and clears stale hosts so explicit starts can respawn a fresh sidecar.
+The Rust host manager applies a request timeout, captures a bounded stderr tail for diagnostics, and cleans up timed-out children. Requests are matched by JSON-RPC id instead of arrival order: each call registers its id in a pending-response map, the stdout reader demultiplexes response lines by id, and `session.event` notifications are routed independently. This lets future concurrent Rust callers and multiple Pi sessions share one sidecar safely even if responses complete out of order. Transport/protocol failures clear stale hosts so explicit starts can respawn a fresh sidecar; JSON-RPC method errors such as busy or missing sessions do not tear down a healthy host.

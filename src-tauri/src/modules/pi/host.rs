@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use std::env;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -11,8 +13,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{
-    PiDiagnostics, PiHostInfo, PiPhase, PiRuntimeSnapshot, PiSessionCreateResult, PiSessionEvent,
-    PiSessionSendResult, PiSessionStopResult, PiSessionsList,
+    PiDiagnostics, PiHostInfo, PiPhase, PiPromptContext, PiRuntimeSnapshot, PiSessionCreateResult,
+    PiSessionEvent, PiSessionSendResult, PiSessionStopResult, PiSessionsList,
 };
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
@@ -54,6 +56,30 @@ struct HostResponse<T> {
 struct HostError {
     code: i64,
     message: String,
+}
+
+#[derive(Deserialize)]
+struct HostResponseEnvelope {
+    jsonrpc: String,
+    id: u64,
+}
+
+#[derive(Debug)]
+pub(super) enum HostCallError {
+    Method(String),
+    Transport(String),
+}
+
+impl HostCallError {
+    pub(super) fn message(self) -> String {
+        match self {
+            Self::Method(message) | Self::Transport(message) => message,
+        }
+    }
+
+    pub(super) fn is_transport(&self) -> bool {
+        matches!(self, Self::Transport(_))
+    }
 }
 
 #[derive(Deserialize)]
@@ -121,13 +147,62 @@ impl StderrTail {
     }
 }
 
+type PendingReceiver = mpsc::Receiver<Result<String, String>>;
+type PendingSender = mpsc::Sender<Result<String, String>>;
+
+#[derive(Clone, Default)]
+struct PendingResponses {
+    inner: Arc<Mutex<HashMap<u64, PendingSender>>>,
+}
+
+impl PendingResponses {
+    fn register(&self, id: u64) -> PendingReceiver {
+        let (tx, rx) = mpsc::channel();
+        if let Ok(mut pending) = self.inner.lock() {
+            pending.insert(id, tx);
+        }
+        rx
+    }
+
+    fn complete_response(&self, id: u64, line: String) -> bool {
+        let sender = match self.inner.lock() {
+            Ok(mut pending) => pending.remove(&id),
+            Err(_) => None,
+        };
+        let Some(sender) = sender else {
+            return false;
+        };
+        let _ = sender.send(Ok(line));
+        true
+    }
+
+    fn remove(&self, id: u64) {
+        if let Ok(mut pending) = self.inner.lock() {
+            pending.remove(&id);
+        }
+    }
+
+    fn fail_all(&self, error: String) {
+        let senders = match self.inner.lock() {
+            Ok(mut pending) => pending
+                .drain()
+                .map(|(_, sender)| sender)
+                .collect::<Vec<_>>(),
+            Err(_) => Vec::new(),
+        };
+        for sender in senders {
+            let _ = sender.send(Err(error.clone()));
+        }
+    }
+}
+
 pub struct PiHost {
-    child: Child,
-    stdin: ChildStdin,
-    responses: mpsc::Receiver<Result<String, String>>,
+    child: Mutex<Child>,
+    stdin: Mutex<ChildStdin>,
+    pending: PendingResponses,
     stderr_tail: StderrTail,
     request_timeout: Duration,
-    next_id: u64,
+    next_id: AtomicU64,
 }
 
 impl PiHost {
@@ -176,93 +251,154 @@ impl PiHost {
         })?;
 
         let stderr_tail = StderrTail::default();
+        let pending = PendingResponses::default();
         spawn_stderr_reader(stderr, stderr_tail.clone());
-        let responses = spawn_stdout_reader(stdout, event_sink);
+        spawn_stdout_reader(stdout, pending.clone(), event_sink);
 
-        let mut host = Self {
-            child,
-            stdin,
-            responses,
+        let host = Self {
+            child: Mutex::new(child),
+            stdin: Mutex::new(stdin),
+            pending,
             stderr_tail,
             request_timeout,
-            next_id: 1,
+            next_id: AtomicU64::new(1),
         };
-        let ping: PingResult = host.call("ping")?;
+        let ping: PingResult = host.call("ping").map_err(HostCallError::message)?;
         if !ping.pong {
             return Err("Pi host ping failed".to_string());
         }
         Ok(host)
     }
 
-    pub fn status(&mut self) -> Result<PiRuntimeSnapshot, String> {
+    pub fn status(&self) -> Result<PiRuntimeSnapshot, HostCallError> {
         let status: HostStatus = self.call("status")?;
         Ok(status.into())
     }
 
-    pub fn info(&mut self) -> Result<PiHostInfo, String> {
+    pub fn info(&self) -> Result<PiHostInfo, HostCallError> {
         self.call("info")
     }
 
-    pub fn diagnostics(&mut self) -> Result<PiDiagnostics, String> {
+    pub fn diagnostics(&self) -> Result<PiDiagnostics, HostCallError> {
         self.call("diagnostics")
     }
 
-    pub fn sessions_list(&mut self) -> Result<PiSessionsList, String> {
+    pub fn sessions_list(&self) -> Result<PiSessionsList, HostCallError> {
         self.call("sessions.list")
     }
 
     pub fn session_create(
-        &mut self,
+        &self,
         title: Option<String>,
         cwd: Option<String>,
-    ) -> Result<PiSessionCreateResult, String> {
+    ) -> Result<PiSessionCreateResult, HostCallError> {
         self.call_with_params("sessions.create", json!({ "title": title, "cwd": cwd }))
     }
 
     pub fn session_send(
-        &mut self,
+        &self,
         session_id: String,
         prompt: String,
-    ) -> Result<PiSessionSendResult, String> {
+        context: Option<PiPromptContext>,
+    ) -> Result<PiSessionSendResult, HostCallError> {
         self.call_with_params(
             "sessions.send",
-            json!({ "sessionId": session_id, "prompt": prompt }),
+            json!({ "sessionId": session_id, "prompt": prompt, "context": context }),
         )
     }
 
-    pub fn session_stop(&mut self, session_id: String) -> Result<PiSessionStopResult, String> {
+    pub fn session_stop(&self, session_id: String) -> Result<PiSessionStopResult, HostCallError> {
         self.call_with_params("sessions.stop", json!({ "sessionId": session_id }))
     }
 
-    pub fn shutdown(mut self) {
+    pub fn shutdown(&self) {
         let result = self.call::<ShutdownResult>("shutdown");
         if !matches!(result, Ok(ShutdownResult { ok: true })) {
-            let _ = self.child.kill();
+            self.kill_child();
         }
         self.wait_or_kill();
     }
 
-    fn call<T: DeserializeOwned>(&mut self, method: &str) -> Result<T, String> {
+    fn call<T: DeserializeOwned>(&self, method: &str) -> Result<T, HostCallError> {
         self.call_json(method, None)
     }
 
     fn call_with_params<T: DeserializeOwned>(
-        &mut self,
+        &self,
         method: &str,
         params: Value,
-    ) -> Result<T, String> {
+    ) -> Result<T, HostCallError> {
         self.call_json(method, Some(params))
     }
 
     fn call_json<T: DeserializeOwned>(
-        &mut self,
+        &self,
         method: &str,
         params: Option<Value>,
-    ) -> Result<T, String> {
+    ) -> Result<T, HostCallError> {
         self.ensure_running()?;
 
-        let id = self.next_id;
-        self.next_id = self.next_id.checked_add(1).unwrap_or(1);
+        let id = self.next_request_id();
+        let response_rx = self.pending.register(id);
+        let write_result = self.write_request(id, method, params);
+        if let Err(error) = write_result {
+            self.pending.remove(id);
+            return Err(error);
+        }
+
+        let line = match response_rx.recv_timeout(self.request_timeout) {
+            Ok(Ok(line)) => line,
+            Ok(Err(error)) => return Err(HostCallError::Transport(self.with_stderr(error))),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                self.pending.remove(id);
+                self.kill_child();
+                return Err(HostCallError::Transport(self.with_stderr(format!(
+                    "Pi host request `{method}` timed out after {}ms",
+                    self.request_timeout.as_millis()
+                ))));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(HostCallError::Transport(
+                    self.with_stderr("Pi host response reader stopped".to_string()),
+                ));
+            }
+        };
+
+        let response: HostResponse<T> = serde_json::from_str(line.trim_end()).map_err(|e| {
+            HostCallError::Transport(
+                self.with_stderr(format!("Pi host response was not valid JSON: {e}")),
+            )
+        })?;
+        if response.jsonrpc != "2.0" || response.id != id {
+            return Err(HostCallError::Transport(
+                self.with_stderr("Pi host response id mismatch".to_string()),
+            ));
+        }
+        if let Some(error) = response.error {
+            return Err(HostCallError::Method(self.with_stderr(format!(
+                "Pi host error {}: {}",
+                error.code, error.message
+            ))));
+        }
+        response.result.ok_or_else(|| {
+            HostCallError::Transport(self.with_stderr("Pi host response had no result".to_string()))
+        })
+    }
+
+    fn next_request_id(&self) -> u64 {
+        self.next_id
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.checked_add(1).unwrap_or(1))
+            })
+            .unwrap_or(1)
+    }
+
+    fn write_request(
+        &self,
+        id: u64,
+        method: &str,
+        params: Option<Value>,
+    ) -> Result<(), HostCallError> {
         let mut request = json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -271,48 +407,33 @@ impl PiHost {
         if let Some(params) = params {
             request["params"] = params;
         }
-        let request = serde_json::to_string(&request).map_err(|e| e.to_string())?;
-        self.stdin
+        let request = serde_json::to_string(&request).map_err(|e| {
+            HostCallError::Transport(self.with_stderr(format!("Pi host request failed: {e}")))
+        })?;
+        let mut stdin = self.stdin.lock().map_err(|e| {
+            HostCallError::Transport(self.with_stderr(format!("Pi host stdin lock failed: {e}")))
+        })?;
+        stdin
             .write_all(request.as_bytes())
-            .and_then(|_| self.stdin.write_all(b"\n"))
-            .and_then(|_| self.stdin.flush())
-            .map_err(|e| self.with_stderr(format!("Pi host write failed: {e}")))?;
-
-        let line = match self.responses.recv_timeout(self.request_timeout) {
-            Ok(Ok(line)) => line,
-            Ok(Err(error)) => return Err(self.with_stderr(error)),
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                let _ = self.child.kill();
-                return Err(self.with_stderr(format!(
-                    "Pi host request `{method}` timed out after {}ms",
-                    self.request_timeout.as_millis()
-                )));
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(self.with_stderr("Pi host response reader stopped".to_string()));
-            }
-        };
-
-        let response: HostResponse<T> = serde_json::from_str(line.trim_end())
-            .map_err(|e| self.with_stderr(format!("Pi host response was not valid JSON: {e}")))?;
-        if response.jsonrpc != "2.0" || response.id != id {
-            return Err(self.with_stderr("Pi host response id mismatch".to_string()));
-        }
-        if let Some(error) = response.error {
-            return Err(
-                self.with_stderr(format!("Pi host error {}: {}", error.code, error.message))
-            );
-        }
-        response
-            .result
-            .ok_or_else(|| self.with_stderr("Pi host response had no result".to_string()))
+            .and_then(|_| stdin.write_all(b"\n"))
+            .and_then(|_| stdin.flush())
+            .map_err(|e| {
+                HostCallError::Transport(self.with_stderr(format!("Pi host write failed: {e}")))
+            })
     }
 
-    fn ensure_running(&mut self) -> Result<(), String> {
-        match self.child.try_wait() {
-            Ok(Some(status)) => Err(self.with_stderr(format!("Pi host exited with {status}"))),
+    fn ensure_running(&self) -> Result<(), HostCallError> {
+        let mut child = self.child.lock().map_err(|e| {
+            HostCallError::Transport(self.with_stderr(format!("Pi host child lock failed: {e}")))
+        })?;
+        match child.try_wait() {
+            Ok(Some(status)) => Err(HostCallError::Transport(
+                self.with_stderr(format!("Pi host exited with {status}")),
+            )),
             Ok(None) => Ok(()),
-            Err(error) => Err(self.with_stderr(format!("Pi host status check failed: {error}"))),
+            Err(error) => Err(HostCallError::Transport(
+                self.with_stderr(format!("Pi host status check failed: {error}")),
+            )),
         }
     }
 
@@ -325,23 +446,34 @@ impl PiHost {
         }
     }
 
-    fn wait_or_kill(&mut self) {
+    fn kill_child(&self) {
+        if let Ok(mut child) = self.child.lock() {
+            let _ = child.kill();
+        }
+    }
+
+    fn wait_or_kill(&self) {
+        let Ok(mut child) = self.child.lock() else {
+            return;
+        };
         for _ in 0..20 {
-            match self.child.try_wait() {
+            match child.try_wait() {
                 Ok(Some(_)) => return,
                 Ok(None) => thread::sleep(Duration::from_millis(25)),
                 Err(_) => return,
             }
         }
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 
 impl Drop for PiHost {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Ok(mut child) = self.child.lock() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -354,18 +486,32 @@ fn session_event_notification(line: &str) -> Option<PiSessionEvent> {
     }
 }
 
+fn response_id(line: &str) -> Result<Option<u64>, String> {
+    let value: Value = serde_json::from_str(line.trim_end())
+        .map_err(|error| format!("Pi host response was not valid JSON: {error}"))?;
+    if value.get("method").is_some() {
+        return Ok(None);
+    }
+    let envelope: HostResponseEnvelope = serde_json::from_value(value)
+        .map_err(|error| format!("Pi host response envelope was invalid: {error}"))?;
+    if envelope.jsonrpc != "2.0" {
+        return Err("Pi host response envelope had invalid jsonrpc version".to_string());
+    }
+    Ok(Some(envelope.id))
+}
+
 fn spawn_stdout_reader(
     stdout: ChildStdout,
+    pending: PendingResponses,
     event_sink: Option<PiSessionEventSink>,
-) -> mpsc::Receiver<Result<String, String>> {
-    let (tx, rx) = mpsc::channel();
+) {
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         loop {
             let mut line = String::new();
             match reader.read_line(&mut line) {
                 Ok(0) => {
-                    let _ = tx.send(Err("Pi host closed stdout".to_string()));
+                    pending.fail_all("Pi host closed stdout".to_string());
                     break;
                 }
                 Ok(_) => {
@@ -375,18 +521,24 @@ fn spawn_stdout_reader(
                         }
                         continue;
                     }
-                    if tx.send(Ok(line)).is_err() {
-                        break;
+                    match response_id(&line) {
+                        Ok(Some(id)) => {
+                            let _ = pending.complete_response(id, line);
+                        }
+                        Ok(None) => pending.fail_all(
+                            "Pi host protocol message was neither response nor notification"
+                                .to_string(),
+                        ),
+                        Err(error) => pending.fail_all(error),
                     }
                 }
                 Err(error) => {
-                    let _ = tx.send(Err(format!("Pi host read failed: {error}")));
+                    pending.fail_all(format!("Pi host read failed: {error}"));
                     break;
                 }
             }
         }
     });
-    rx
 }
 
 fn spawn_stderr_reader(mut stderr: ChildStderr, tail: StderrTail) {
@@ -614,6 +766,98 @@ mod tests {
             session_event_notification(r#"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn pending_responses_deliver_out_of_order_lines_by_id() {
+        let pending = PendingResponses::default();
+        let first = pending.register(1);
+        let second = pending.register(2);
+
+        assert!(pending.complete_response(2, "two\n".to_string()));
+        assert!(pending.complete_response(1, "one\n".to_string()));
+        assert!(!pending.complete_response(3, "orphan\n".to_string()));
+
+        assert_eq!(
+            first
+                .recv_timeout(Duration::from_millis(50))
+                .unwrap()
+                .unwrap(),
+            "one\n"
+        );
+        assert_eq!(
+            second
+                .recv_timeout(Duration::from_millis(50))
+                .unwrap()
+                .unwrap(),
+            "two\n"
+        );
+    }
+
+    #[test]
+    fn host_matches_concurrent_out_of_order_responses_by_id() {
+        let temp = tempdir().unwrap();
+        let script = temp.path().join("host.js");
+        fs::write(
+            &script,
+            r#"
+import { createInterface } from 'node:readline';
+const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+const pending = [];
+
+function write(envelope) {
+  process.stdout.write(`${JSON.stringify(envelope)}\n`);
+}
+
+function resultFor(request) {
+  if (request.method === 'status') {
+    return { phase: 'ready', detail: 'first response' };
+  }
+  if (request.method === 'info') {
+    return { hostVersion: 'fake', piSdkLoaded: true, piPackages: [] };
+  }
+  throw new Error(`unexpected method ${request.method}`);
+}
+
+for await (const line of lines) {
+  const request = JSON.parse(line);
+  if (request.method === 'ping') {
+    write({ jsonrpc: '2.0', id: request.id, result: { pong: true } });
+    continue;
+  }
+  if (request.method === 'shutdown') {
+    write({ jsonrpc: '2.0', id: request.id, result: { ok: true } });
+    process.exit(0);
+  }
+  pending.push(request);
+  if (pending.length === 2) {
+    const [first, second] = pending.splice(0, 2);
+    write({ jsonrpc: '2.0', id: second.id, result: resultFor(second) });
+    write({ jsonrpc: '2.0', id: first.id, result: resultFor(first) });
+  }
+}
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(
+            PiHost::spawn_inner(PathBuf::from("node"), script, Duration::from_secs(5), None)
+                .unwrap(),
+        );
+        let status_host = Arc::clone(&host);
+        let info_host = Arc::clone(&host);
+
+        let status = thread::spawn(move || status_host.status());
+        let info = thread::spawn(move || info_host.info());
+
+        let status = status.join().unwrap().unwrap();
+        let info = info.join().unwrap().unwrap();
+
+        assert_eq!(status.phase, PiPhase::Ready);
+        assert_eq!(status.detail.as_deref(), Some("first response"));
+        assert_eq!(info.host_version, "fake");
+
+        host.shutdown();
     }
 
     #[test]
