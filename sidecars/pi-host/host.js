@@ -11,7 +11,7 @@ for await (const line of lines) {
     continue;
   }
 
-  const result = handleJsonRpcLine(line);
+  const result = await handleJsonRpcLine(line);
   process.stdout.write(`${JSON.stringify(result.response)}\n`);
 
   if (result.shutdown) {

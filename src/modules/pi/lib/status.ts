@@ -5,10 +5,18 @@ export type PiRuntimeState = {
   detail: string | null;
 };
 
+export type PiPackageInfo = {
+  name: string;
+  version: string | null;
+  loaded: boolean;
+  exportCount: number;
+  error: string | null;
+};
+
 export type PiHostInfo = {
   hostVersion: string;
   piSdkLoaded: boolean;
-  piPackages: string[];
+  piPackages: PiPackageInfo[];
 };
 
 export type PiStatusView = {

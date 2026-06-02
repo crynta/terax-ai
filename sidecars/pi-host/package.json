@@ -3,5 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Stdio stub for Terax Pi runtime"
+  "description": "Stdio stub for Terax Pi runtime",
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.78.0",
+    "@earendil-works/pi-ai": "0.78.0",
+    "@earendil-works/pi-coding-agent": "0.78.0",
+    "@earendil-works/pi-tui": "0.78.0"
+  }
 }

@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { PI_PACKAGE_NAMES } from "./protocol.js";
 
 const HOST_PATH = fileURLToPath(new URL("./host.js", import.meta.url));
 
@@ -25,21 +26,33 @@ describe("Pi host stdio", () => {
       await expect(readResponse(lines)).resolves.toMatchObject({
         jsonrpc: "2.0",
         id: 1,
-        result: { phase: "ready", piSdkLoaded: false },
+        result: {
+          phase: "ready",
+          piSdkLoaded: true,
+          piPackages: expect.arrayContaining([
+            expect.objectContaining({
+              name: "@earendil-works/pi-coding-agent",
+              loaded: true,
+            }),
+          ]),
+        },
       });
 
       child.stdin.write(
         `${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "info" })}\n`,
       );
-      await expect(readResponse(lines)).resolves.toEqual({
+      const info = await readResponse(lines);
+      expect(info).toMatchObject({
         jsonrpc: "2.0",
         id: 2,
         result: {
           hostVersion: "0.1.0",
-          piSdkLoaded: false,
-          piPackages: [],
+          piSdkLoaded: true,
         },
       });
+      expect(info.result.piPackages.map((pkg) => pkg.name)).toEqual(
+        PI_PACKAGE_NAMES,
+      );
 
       child.stdin.write(
         `${JSON.stringify({ jsonrpc: "2.0", id: 3, method: "shutdown" })}\n`,

@@ -36,8 +36,13 @@ fn host_info_reports_stub_capabilities() {
     let info = state.info().unwrap();
 
     assert_eq!(info.host_version, "0.1.0");
-    assert!(!info.pi_sdk_loaded);
-    assert!(info.pi_packages.is_empty());
+    assert!(info.pi_sdk_loaded);
+    assert!(info.pi_packages.iter().any(|pkg| {
+        pkg.name == "@earendil-works/pi-coding-agent"
+            && pkg.version.as_deref() == Some("0.78.0")
+            && pkg.loaded
+            && pkg.error.is_none()
+    }));
     state.stop().unwrap();
 }
 

@@ -1,5 +1,10 @@
+packages:
+  - sidecars/*
+
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
 allowBuilds:
+  "@google/genai": true
   esbuild: true
   msw: true
+  protobufjs: true

@@ -29,7 +29,17 @@ pub enum PiPhase {
 pub struct PiHostInfo {
     pub host_version: String,
     pub pi_sdk_loaded: bool,
-    pub pi_packages: Vec<String>,
+    pub pi_packages: Vec<PiPackageInfo>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiPackageInfo {
+    pub name: String,
+    pub version: Option<String>,
+    pub loaded: bool,
+    pub export_count: usize,
+    pub error: Option<String>,
 }
 
 impl Default for PiRuntimeSnapshot {
