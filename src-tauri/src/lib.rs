@@ -1,6 +1,6 @@
 pub mod modules;
 
-use modules::{agent, fs, git, net, pty, secrets, shell, workspace};
+use modules::{agent, codex_auth, fs, git, net, pty, secrets, shell, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -35,7 +35,7 @@ fn parse_launch_dir() -> Option<String> {
 #[tauri::command]
 async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Result<(), String> {
     let url_path = match tab.as_deref() {
-        Some(t) if !t.is_empty() => format!("settings.html?tab={}", t),
+        Some(t) if !t.is_empty() => format!("settings.html?tab={t}"),
         _ => "settings.html".to_string(),
     };
 
@@ -158,6 +158,7 @@ pub fn run() {
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
+        .manage(codex_auth::CodexAuthState::default())
         .manage(fs::watch::FsWatchState::default())
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
@@ -232,6 +233,12 @@ pub fn run() {
             net::lm_ping,
             net::ai_http_request,
             net::ai_http_stream,
+            codex_auth::openai_codex_auth_start_device,
+            codex_auth::openai_codex_auth_poll,
+            codex_auth::openai_codex_auth_cancel,
+            codex_auth::openai_codex_auth_status,
+            codex_auth::openai_codex_auth_logout,
+            codex_auth::openai_codex_responses_stream,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

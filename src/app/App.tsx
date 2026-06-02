@@ -30,6 +30,7 @@ import {
   LocalAgentNotificationsBridge,
   SelectionAskAi,
   useChatStore,
+  useCodexAuthStore,
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { redactSensitive } from "@/modules/ai/lib/redact";
@@ -423,6 +424,8 @@ export default function App() {
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
+  const codexSignedIn = useCodexAuthStore((s) => s.status.signedIn);
+  const refreshCodexAuthStatus = useCodexAuthStore((s) => s.refreshStatus);
 
   useEffect(() => {
     if (activeSessionId) firePendingReviewForSession(activeSessionId);
@@ -447,7 +450,7 @@ export default function App() {
     (openaiCompatibleBaseURL.trim().length > 0 &&
       openaiCompatibleModelId.trim().length > 0) ||
     customEndpoints.some((e) => e.baseURL.trim().length > 0 && e.modelId.trim().length > 0);
-  const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
+  const hasComposer = hasAnyKey(apiKeys) || hasLocalModel || codexSignedIn;
 
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   const [keysLoaded, setKeysLoaded] = useState(false);
@@ -460,6 +463,7 @@ export default function App() {
         setKeysLoaded(true);
       });
       if (!prefsHydrated) return;
+      void refreshCodexAuthStatus();
       void getAllCustomEndpointKeys(
         usePreferencesStore.getState().customEndpoints,
       ).then((epKeys) => {
@@ -473,7 +477,7 @@ export default function App() {
       alive = false;
       void unlistenP.then((fn) => fn());
     };
-  }, [setApiKeys, setCustomEndpointKeys, prefsHydrated]);
+  }, [setApiKeys, setCustomEndpointKeys, refreshCodexAuthStatus, prefsHydrated]);
 
   // Hydrate the cross-window preference store and mirror the default model
   // into chatStore so the dropdown reflects what the user picked in Settings.

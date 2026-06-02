@@ -41,7 +41,7 @@ fn generate_sentinel() -> String {
     let counter = SENTINEL_COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id() as u64;
     let mix = nanos ^ counter.rotate_left(17) ^ pid.rotate_left(31);
-    format!("__TERAX_CWD_{:016x}_{:016x}__", mix, counter)
+    format!("__TERAX_CWD_{mix:016x}_{counter:016x}__")
 }
 
 impl ShellSession {

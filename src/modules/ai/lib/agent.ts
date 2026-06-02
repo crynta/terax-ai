@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_MODEL_ID,
   endpointIdFromCompatModel,
+  getModelWireId,
   getModelContextLimit,
   isCompatModelId,
   LMSTUDIO_DEFAULT_BASE_URL,
@@ -26,9 +27,20 @@ import {
 import { buildTools, type ToolContext } from "../tools/tools";
 import { compactModelMessagesDetailed } from "./compact";
 import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
+import { createCodexProxyFetch } from "./codexFetch";
+import {
+  buildCodexProviderOptions,
+  type CodexReasoning,
+  type CodexSpeed,
+} from "./codexOptions";
 import { createProxyFetch } from "./proxyFetch";
+import {
+  filterReasoningForIssuer,
+  responsesIssuerForProvider,
+} from "./reasoningIssuer";
 
 const localProxyFetch = createProxyFetch({ allowPrivateNetwork: true });
+const codexProxyFetch = createCodexProxyFetch();
 
 const TOOL_LABELS: Record<string, (input: Record<string, unknown>) => string> =
   {
@@ -100,6 +112,16 @@ export async function buildLanguageModel(
     case "openai": {
       const { createOpenAI } = await import("@ai-sdk/openai");
       built = createOpenAI({ apiKey: key })(resolvedModelId);
+      break;
+    }
+    case "openai-codex": {
+      const { createOpenAI } = await import("@ai-sdk/openai");
+      const openai = createOpenAI({
+        apiKey: "terax-codex-session",
+        baseURL: "https://chatgpt.com/backend-api/codex",
+        fetch: codexProxyFetch,
+      });
+      built = openai.responses(resolvedModelId);
       break;
     }
     case "anthropic": {
@@ -253,7 +275,7 @@ export function buildConfiguredLanguageModel(
     );
   }
   const m = resolveModel(modelId);
-  let resolvedId: string = m.id;
+  let resolvedId: string = getModelWireId(m);
   if (m.id === "lmstudio-local") {
     if (!local.lmstudioModelId?.trim()) {
       throw new Error(
@@ -384,6 +406,8 @@ export type RunAgentOptions = {
   customEndpointKeys?: CustomEndpointKeys;
   planMode?: boolean;
   projectMemory?: string | null;
+  codexReasoning?: CodexReasoning;
+  codexSpeed?: CodexSpeed;
   uiMessages: UIMessage[];
   abortSignal?: AbortSignal;
 };
@@ -414,7 +438,11 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.projectMemory ?? null,
   );
 
-  const history = await convertToModelMessages(opts.uiMessages);
+  const reasoningIssuer = responsesIssuerForProvider(provider);
+  const uiMessages = reasoningIssuer
+    ? filterReasoningForIssuer(opts.uiMessages, reasoningIssuer)
+    : opts.uiMessages;
+  const history = await convertToModelMessages(uiMessages);
   const keepsReasoning = modelKeepsReasoning(info);
   const prunedHistory = pruneMessages({
     messages: history,
@@ -434,13 +462,26 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.onCompact?.({ droppedCount: compact.droppedCount });
   }
 
-  const messages: ModelMessage[] = [{ role: "system", content: stableSystem }];
-  if (opts.planMode) {
+  const codexInstructions = opts.planMode
+    ? `${stableSystem}\n\n${PLAN_MODE_PROMPT}`
+    : stableSystem;
+  const messages: ModelMessage[] =
+    provider === "openai-codex"
+      ? []
+      : [{ role: "system", content: stableSystem }];
+  if (opts.planMode && provider !== "openai-codex") {
     messages.push({ role: "system", content: PLAN_MODE_PROMPT });
   }
   messages.push(...compactedHistory);
 
   const finalMessages = applyCacheBreakpoints(messages, provider);
+  const providerOptions = buildProviderOptions(
+    provider,
+    getModelWireId(info),
+    opts,
+    codexInstructions,
+    opts.toolContext.getSessionId(),
+  );
 
   let stepsSeen = 0;
   return streamText({
@@ -449,6 +490,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
     tools: buildTools(opts.toolContext),
     stopWhen: stepCountIs(MAX_AGENT_STEPS),
     abortSignal: opts.abortSignal,
+    providerOptions,
     onStepFinish: (step) => {
       stepsSeen++;
       if (opts.onStep) {
@@ -487,6 +529,23 @@ export async function runAgentStream(opts: RunAgentOptions) {
       });
     },
   });
+}
+
+function buildProviderOptions(
+  provider: ProviderId,
+  modelWireId: string,
+  opts: Pick<RunAgentOptions, "codexReasoning" | "codexSpeed">,
+  instructions: string,
+  promptCacheKey: string | null,
+) {
+  if (provider !== "openai-codex") return undefined;
+  return buildCodexProviderOptions(
+    opts.codexReasoning,
+    opts.codexSpeed,
+    modelWireId,
+    instructions,
+    promptCacheKey,
+  );
 }
 
 export { EMPTY_USAGE };

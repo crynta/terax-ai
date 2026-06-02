@@ -198,6 +198,7 @@ export function AiChatView({
   const patchAgentMeta = useChatStore((s) => s.patchAgentMeta);
   const showContinue =
     !isBusy && hitStepCap && lastMessage?.role === "assistant";
+  const errorMessage = error ? formatChatError(error) : null;
 
   const onApproval = useCallback(
     (id: string, approved: boolean) => addToolApprovalResponse({ id, approved }),
@@ -254,7 +255,7 @@ export function AiChatView({
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             <div className="font-medium">Something went wrong.</div>
             <div className="mt-0.5 leading-relaxed opacity-90">
-              {error.message}
+              {errorMessage}
             </div>
             <button
               type="button"
@@ -269,6 +270,43 @@ export function AiChatView({
       <ConversationScrollButton />
     </Conversation>
   );
+}
+
+function formatChatError(error: Error): string {
+  const shaped = error as Error & {
+    responseBody?: unknown;
+    data?: unknown;
+    cause?: unknown;
+  };
+  const candidates = [
+    extractErrorMessage(shaped.responseBody),
+    extractErrorMessage(shaped.data),
+    extractErrorMessage(shaped.cause),
+    error.message,
+    String(error),
+  ];
+  return (
+    candidates.find((message) => message && message.trim().length > 0) ??
+    "AI request failed"
+  );
+}
+
+function extractErrorMessage(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      return extractErrorMessage(JSON.parse(trimmed)) ?? trimmed;
+    } catch {
+      return trimmed;
+    }
+  }
+  if (typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const direct = record.detail ?? record.message ?? record.error_description;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  return extractErrorMessage(record.error) ?? extractErrorMessage(record.cause);
 }
 
 const CompactionNotice = memo(function CompactionNotice({

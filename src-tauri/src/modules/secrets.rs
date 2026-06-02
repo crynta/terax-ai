@@ -112,6 +112,85 @@ fn entry(service: &str, account: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(service, account).map_err(|e| e.to_string())
 }
 
+pub(crate) fn get_secret_value(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| m.get(&key).cloned())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        match e.get_password() {
+            Ok(v) => Ok(Some(v)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+}
+
+pub(crate) fn set_secret_value(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+    password: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| {
+            m.insert(key, password);
+        })?;
+        let snapshot = {
+            let guard = state.cache.lock().map_err(|e| e.to_string())?;
+            guard.as_ref().cloned().unwrap_or_default()
+        };
+        write_store(app, &snapshot)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        e.set_password(&password).map_err(|e| e.to_string())
+    }
+}
+
+pub(crate) fn delete_secret_value(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| {
+            m.remove(&key);
+        })?;
+        let snapshot = {
+            let guard = state.cache.lock().map_err(|e| e.to_string())?;
+            guard.as_ref().cloned().unwrap_or_default()
+        };
+        write_store(app, &snapshot)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        match e.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn secrets_get(
     app: AppHandle,
@@ -119,22 +198,7 @@ pub async fn secrets_get(
     service: String,
     account: String,
 ) -> Result<Option<String>, String> {
-    #[cfg(target_os = "linux")]
-    {
-        let _ = state; // capture
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| m.get(&key).cloned())
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        match e.get_password() {
-            Ok(v) => Ok(Some(v)),
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(err) => Err(err.to_string()),
-        }
-    }
+    get_secret_value(&app, &state, &service, &account)
 }
 
 #[tauri::command]
@@ -145,24 +209,7 @@ pub async fn secrets_set(
     account: String,
     password: String,
 ) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| {
-            m.insert(key, password);
-        })?;
-        let snapshot = {
-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(&app, &snapshot)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        e.set_password(&password).map_err(|e| e.to_string())
-    }
+    set_secret_value(&app, &state, &service, &account, password)
 }
 
 #[tauri::command]
@@ -172,27 +219,7 @@ pub async fn secrets_delete(
     service: String,
     account: String,
 ) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| {
-            m.remove(&key);
-        })?;
-        let snapshot = {
-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(&app, &snapshot)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        match e.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(err) => Err(err.to_string()),
-        }
-    }
+    delete_secret_value(&app, &state, &service, &account)
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -245,7 +272,10 @@ mod tests {
         write_store_at(&p, &HashMap::new()).unwrap();
 
         let tmp_path = p.with_extension("json.tmp");
-        assert!(!tmp_path.exists(), "tmp file must be renamed away on success");
+        assert!(
+            !tmp_path.exists(),
+            "tmp file must be renamed away on success"
+        );
     }
 
     #[test]

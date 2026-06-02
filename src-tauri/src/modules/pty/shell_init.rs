@@ -204,10 +204,7 @@ mod unix {
                 cmd.arg("-i");
             }
             Shell::Other => {
-                log::info!(
-                    "unsupported shell '{}', spawning without integration",
-                    shell_path
-                );
+                log::info!("unsupported shell '{shell_path}', spawning without integration");
             }
         }
         Ok(cmd)

@@ -1,9 +1,14 @@
 import type { UIMessage } from "@ai-sdk/react";
-import { type CustomEndpoint } from "../config";
+import { resolveModel, type CustomEndpoint } from "../config";
 import { runAgentStream, type AgentUsageDelta } from "./agent";
 import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
 import { native } from "./native";
 import type { ToolContext } from "../tools/tools";
+import type { CodexReasoning, CodexSpeed } from "./codexOptions";
+import {
+  responsesIssuerForProvider,
+  tagReasoningIssuerInStream,
+} from "./reasoningIssuer";
 
 const TERAX_MD_MAX_BYTES = 32 * 1024;
 type MemoryCacheEntry = { content: string | null; mtime: number };
@@ -56,6 +61,8 @@ type Deps = {
   getOpenaiCompatibleModelId?: () => string | undefined;
   getOpenaiCompatibleContextLimit?: () => number | undefined;
   getOpenrouterModelId?: () => string | undefined;
+  getCodexReasoning?: () => CodexReasoning | undefined;
+  getCodexSpeed?: () => CodexSpeed | undefined;
   getCustomEndpoints?: () => readonly CustomEndpoint[];
   getCustomEndpointKeys?: () => CustomEndpointKeys;
   onStep?: (step: string | null) => void;
@@ -73,6 +80,11 @@ type SendOptions = {
 
 export function createContextAwareTransport(deps: Deps) {
   const run = async (options: SendOptions) => {
+    const modelId = deps.getModelId();
+    const customEndpoints = deps.getCustomEndpoints?.();
+    const issuer = responsesIssuerForProvider(
+      resolveModel(modelId, customEndpoints).provider,
+    );
     const live = deps.getLive();
     const projectMemory = await readTeraxMd(live.workspaceRoot);
     const envBlock = formatEnvBlock(live);
@@ -81,7 +93,7 @@ export function createContextAwareTransport(deps: Deps) {
       : options.messages;
     const result = await runAgentStream({
       keys: deps.getKeys(),
-      modelId: deps.getModelId(),
+      modelId,
       customInstructions: deps.getCustomInstructions(),
       agentPersona: deps.getAgentPersona(),
       toolContext: deps.toolContext,
@@ -99,16 +111,19 @@ export function createContextAwareTransport(deps: Deps) {
       openaiCompatibleModelId: deps.getOpenaiCompatibleModelId?.(),
       openaiCompatibleContextLimit: deps.getOpenaiCompatibleContextLimit?.(),
       openrouterModelId: deps.getOpenrouterModelId?.(),
-      customEndpoints: deps.getCustomEndpoints?.(),
+      codexReasoning: deps.getCodexReasoning?.(),
+      codexSpeed: deps.getCodexSpeed?.(),
+      customEndpoints,
       customEndpointKeys: deps.getCustomEndpointKeys?.(),
       planMode: deps.getPlanMode?.(),
       projectMemory,
       uiMessages: messagesForRun,
       abortSignal: options.abortSignal,
     });
-    return result.toUIMessageStream({
+    const stream = result.toUIMessageStream({
       originalMessages: options.messages,
     });
+    return tagReasoningIssuerInStream(stream, issuer);
   };
 
   return {

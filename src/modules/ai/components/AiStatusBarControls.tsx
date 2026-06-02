@@ -47,9 +47,11 @@ import {
   compatModelIdForEndpoint,
   getCompatModelInfo,
   getModel,
+  getModelWireId,
   isCompatModelId,
   MODELS,
   providerNeedsKey,
+  providerNeedsOAuthSession,
   PROVIDERS,
   type ModelCapabilities,
   type ModelId,
@@ -57,12 +59,20 @@ import {
   type ProviderId,
 } from "../config";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
+import {
+  codexModelSupportsFast,
+  CODEX_REASONING_LEVELS,
+  CODEX_SPEED_OPTIONS,
+} from "../lib/codexOptions";
 import { toggleFavoriteModel } from "../lib/modelPrefs";
 import { useChatStore } from "../store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { setCodexReasoning, setCodexSpeed } from "@/modules/settings/store";
+import { useCodexAuthStore } from "../store/codexAuthStore";
 
 const PROVIDER_ICON = {
   openai: ChatGptIcon,
+  "openai-codex": ChatGptIcon,
   anthropic: ClaudeIcon,
   google: GoogleGeminiIcon,
   xai: Grok02Icon,
@@ -212,6 +222,7 @@ type Tab = "all" | "favorites" | "recent";
 function ModelDropdown() {
   const selected = useChatStore((s) => s.selectedModelId);
   const apiKeys = useChatStore((s) => s.apiKeys);
+  const codexSignedIn = useCodexAuthStore((s) => s.status.signedIn);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
   const favoriteIds = usePreferencesStore((s) => s.favoriteModelIds);
   const recentIds = usePreferencesStore((s) => s.recentModelIds);
@@ -225,12 +236,19 @@ function ModelDropdown() {
   const inputRef = useRef<HTMLInputElement>(null);
   const currentProviderHasKey = isCompatModelId(selected)
     ? true
+    : providerNeedsOAuthSession(current.provider)
+      ? codexSignedIn
     : providerNeedsKey(current.provider)
       ? !!apiKeys[current.provider]
       : true;
+  const showCodexOptions =
+    activeProvider === "openai-codex" ||
+    (activeProvider === null && current.provider === "openai-codex");
 
-  const hasKeyFor = (id: ProviderId) =>
-    providerNeedsKey(id) ? !!apiKeys[id] : true;
+  const hasKeyFor = (id: ProviderId) => {
+    if (providerNeedsOAuthSession(id)) return codexSignedIn;
+    return providerNeedsKey(id) ? !!apiKeys[id] : true;
+  };
 
   const epModelInfos = useMemo(() => {
     return customEndpoints.map((ep) =>
@@ -247,7 +265,7 @@ function ModelDropdown() {
     }
     return { configured, unconfigured };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiKeys]);
+  }, [apiKeys, codexSignedIn]);
 
   const allModels = useMemo(
     () => [...MODELS, ...epModelInfos],
@@ -302,7 +320,7 @@ function ModelDropdown() {
           title={
             currentProviderHasKey
               ? `Model: ${current.label}`
-              : `${current.label} — no key configured`
+              : `${current.label} is not configured`
           }
         >
           {current.label}
@@ -411,6 +429,7 @@ function ModelDropdown() {
             activeProvider !== COMPAT_PROVIDER_ID ? (
               <ProviderHeader providerId={activeProvider as ProviderId} />
             ) : null}
+            {showCodexOptions ? <CodexOptionsPanel model={current} /> : null}
             {activeProvider !== null &&
             activeProvider !== COMPAT_PROVIDER_ID &&
             !hasKeyFor(activeProvider as ProviderId) ? (
@@ -521,6 +540,81 @@ function ProviderPill({
   );
 }
 
+function CodexOptionsPanel({ model }: { model: ModelInfo }) {
+  const reasoning = usePreferencesStore((s) => s.codexReasoning);
+  const speed = usePreferencesStore((s) => s.codexSpeed);
+  const fastAvailable =
+    model.provider === "openai-codex" &&
+    codexModelSupportsFast(getModelWireId(model));
+  const effectiveSpeed = fastAvailable ? speed : "standard";
+
+  return (
+    <div className="mx-2 mb-1 rounded-md border border-border/60 bg-muted/20 p-2">
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <HugeiconsIcon icon={BrainIcon} size={12} strokeWidth={1.75} />
+        <span>Reasoning</span>
+      </div>
+      <div className="grid grid-cols-4 gap-1">
+        {CODEX_REASONING_LEVELS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => void setCodexReasoning(option.id)}
+            className={cn(
+              "h-7 rounded-md px-1 text-[11px] font-medium transition-colors",
+              option.id === reasoning
+                ? "bg-accent text-foreground"
+                : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 mb-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+        <HugeiconsIcon icon={FlashIcon} size={12} strokeWidth={1.75} />
+        <span>Speed</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        {CODEX_SPEED_OPTIONS.map((option) => {
+          const disabled = option.id === "fast" && !fastAvailable;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => {
+                if (!disabled) void setCodexSpeed(option.id);
+              }}
+              disabled={disabled}
+              title={
+                disabled
+                  ? "Fast mode is available for GPT-5.5 and GPT-5.4"
+                  : undefined
+              }
+              className={cn(
+                "flex h-10 min-w-0 flex-col items-start justify-center rounded-md px-2 text-left transition-colors",
+                option.id === effectiveSpeed
+                  ? "bg-accent text-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                disabled &&
+                  "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-muted-foreground",
+              )}
+            >
+              <span className="text-[11px] font-medium leading-none">
+                {option.label}
+              </span>
+              <span className="mt-1 max-w-full truncate text-[10px] leading-none text-muted-foreground/80">
+                {option.description}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ProviderHeader({ providerId }: { providerId: ProviderId }) {
   const p = PROVIDERS.find((x) => x.id === providerId);
   if (!p) return null;
@@ -573,6 +667,10 @@ function ModelRow({
   onPick: () => void;
   onToggleFavorite: () => void;
 }) {
+  const fastModeAvailable =
+    model.provider === "openai-codex" &&
+    codexModelSupportsFast(getModelWireId(model));
+
   return (
     <DropdownMenuItem
       onSelect={(e) => {
@@ -618,6 +716,14 @@ function ModelRow({
       ) : null}
 
       <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        {fastModeAvailable ? (
+          <HugeiconsIcon
+            icon={FlashIcon}
+            size={11}
+            strokeWidth={1.85}
+            className="shrink-0 text-muted-foreground"
+          />
+        ) : null}
         <span className="shrink-0 text-[12px] font-medium leading-none">
           {model.label}
         </span>

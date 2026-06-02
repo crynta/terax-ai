@@ -2,6 +2,7 @@ export const KEYRING_SERVICE = "terax-ai";
 
 export type ProviderId =
   | "openai"
+  | "openai-codex"
   | "anthropic"
   | "google"
   | "xai"
@@ -15,9 +16,16 @@ export type ProviderId =
   | "mlx"
   | "ollama";
 
+export type ProviderAuthKind =
+  | "api-key"
+  | "oauth-device-code"
+  | "local"
+  | "custom";
+
 export type ProviderInfo = {
   id: ProviderId;
   label: string;
+  authKind: ProviderAuthKind;
   keyringAccount: string;
   keyPrefix: string | null;
   consoleUrl: string;
@@ -29,13 +37,23 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "openai",
     label: "OpenAI",
+    authKind: "api-key",
     keyringAccount: "openai-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.openai.com/api-keys",
   },
   {
+    id: "openai-codex",
+    label: "OpenAI Codex",
+    authKind: "oauth-device-code",
+    keyringAccount: "openai-codex-oauth",
+    keyPrefix: null,
+    consoleUrl: "https://developers.openai.com/codex/auth",
+  },
+  {
     id: "anthropic",
     label: "Anthropic",
+    authKind: "api-key",
     keyringAccount: "anthropic-api-key",
     keyPrefix: "sk-ant-",
     consoleUrl: "https://console.anthropic.com/settings/keys",
@@ -43,6 +61,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "google",
     label: "Google",
+    authKind: "api-key",
     keyringAccount: "google-api-key",
     keyPrefix: null,
     consoleUrl: "https://aistudio.google.com/apikey",
@@ -50,6 +69,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "xai",
     label: "xAI",
+    authKind: "api-key",
     keyringAccount: "xai-api-key",
     keyPrefix: "xai-",
     consoleUrl: "https://console.x.ai/",
@@ -57,6 +77,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "cerebras",
     label: "Cerebras",
+    authKind: "api-key",
     keyringAccount: "cerebras-api-key",
     keyPrefix: "csk-",
     consoleUrl: "https://cloud.cerebras.ai/",
@@ -64,6 +85,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "groq",
     label: "Groq",
+    authKind: "api-key",
     keyringAccount: "groq-api-key",
     keyPrefix: "gsk_",
     consoleUrl: "https://console.groq.com/keys",
@@ -71,6 +93,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "deepseek",
     label: "DeepSeek",
+    authKind: "api-key",
     keyringAccount: "deepseek-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.deepseek.com/api_keys",
@@ -78,6 +101,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "mistral",
     label: "Mistral",
+    authKind: "api-key",
     keyringAccount: "mistral-api-key",
     keyPrefix: null,
     consoleUrl: "https://console.mistral.ai/api-keys/",
@@ -85,6 +109,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "openrouter",
     label: "OpenRouter",
+    authKind: "api-key",
     keyringAccount: "openrouter-api-key",
     keyPrefix: "sk-or-",
     consoleUrl: "https://openrouter.ai/keys",
@@ -92,6 +117,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "openai-compatible",
     label: "OpenAI Compatible",
+    authKind: "custom",
     keyringAccount: "openai-compatible-api-key",
     keyPrefix: null,
     consoleUrl: "https://platform.openai.com/docs/api-reference",
@@ -100,6 +126,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "lmstudio",
     label: "LM Studio",
+    authKind: "local",
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
@@ -107,6 +134,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "mlx",
     label: "MLX",
+    authKind: "local",
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md",
@@ -114,6 +142,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
   {
     id: "ollama",
     label: "Ollama",
+    authKind: "local",
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://ollama.com/download",
@@ -176,6 +205,7 @@ export type ModelTag = "vision" | "reasoning" | "tools" | "coding";
 
 export type ModelInfo = {
   id: string;
+  wireId?: string;
   provider: ProviderId;
   label: string;
   /** One short word for the dropdown trigger. */
@@ -223,6 +253,46 @@ export const MODELS = [
     description: "Tuned for code and tool use.",
     capabilities: { intelligence: 4, speed: 4, cost: 3 },
     tags: ["tools", "coding"],
+  },
+  {
+    id: "openai-codex-gpt-5.5",
+    wireId: "gpt-5.5",
+    provider: "openai-codex",
+    label: "GPT-5.5",
+    hint: "Codex",
+    description: "ChatGPT Codex frontier model.",
+    capabilities: { intelligence: 5, speed: 3, cost: 1 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+  },
+  {
+    id: "openai-codex-gpt-5.4",
+    wireId: "gpt-5.4",
+    provider: "openai-codex",
+    label: "GPT-5.4",
+    hint: "Codex",
+    description: "ChatGPT Codex model for complex work.",
+    capabilities: { intelligence: 5, speed: 3, cost: 2 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+  },
+  {
+    id: "openai-codex-gpt-5.4-mini",
+    wireId: "gpt-5.4-mini",
+    provider: "openai-codex",
+    label: "GPT-5.4 Mini",
+    hint: "Codex",
+    description: "Faster ChatGPT Codex model.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+  },
+  {
+    id: "openai-codex-gpt-5.3-codex-spark",
+    wireId: "gpt-5.3-codex-spark",
+    provider: "openai-codex",
+    label: "GPT-5.3 Codex Spark",
+    hint: "Fast",
+    description: "Fast ChatGPT Codex coding model.",
+    capabilities: { intelligence: 4, speed: 5, cost: 4 },
+    tags: ["reasoning", "tools", "coding"],
   },
   {
     id: "gpt-4.1-mini",
@@ -553,6 +623,10 @@ export function resolveModel(
   return m;
 }
 
+export function getModelWireId(model: ModelInfo): string {
+  return model.wireId ?? model.id;
+}
+
 export function getModel(id: ModelId): ModelInfo {
   const m = MODELS.find((x) => x.id === id);
   if (!m) throw new Error(`Unknown model: ${id}`);
@@ -586,6 +660,10 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "gpt-5.4-mini": 400_000,
   "gpt-5.4-nano": 400_000,
   "gpt-5.3-codex": 400_000,
+  "openai-codex-gpt-5.5": 272_000,
+  "openai-codex-gpt-5.4": 272_000,
+  "openai-codex-gpt-5.4-mini": 272_000,
+  "openai-codex-gpt-5.3-codex-spark": 272_000,
   "gpt-4.1-mini": 128_000,
   "claude-opus-4-7": 200_000,
   "claude-sonnet-4-6": 200_000,
@@ -681,26 +759,43 @@ export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
   "mlx",
   "ollama",
   "openai-compatible",
+  "openai-codex",
 ] as const;
 
 export function providerNeedsKey(id: ProviderId): boolean {
-  return !KEYLESS_PROVIDERS.includes(id);
+  return getProvider(id).authKind === "api-key";
+}
+
+export function providerNeedsOAuthSession(id: ProviderId): boolean {
+  return getProvider(id).authKind === "oauth-device-code";
+}
+
+export function providerAuthKind(id: ProviderId): ProviderAuthKind {
+  return getProvider(id).authKind;
 }
 
 /** True for providers that accept an API key — required *or* optional.
  *  Used by Settings to decide whether to render a key card at all. */
 export function providerSupportsKey(id: ProviderId): boolean {
-  if (providerNeedsKey(id)) return true;
+  if (getProvider(id).authKind === "api-key") return true;
   const p = getProvider(id);
   return !!p.keyOptional;
 }
 
 /** Any provider can power the editor's inline autocomplete; latency is the
  *  user's choice. The picker filters down to fast tiers in the UI. */
-export type AutocompleteProviderId = ProviderId;
+export type AutocompleteProviderId = Exclude<ProviderId, "openai-codex">;
+
+export function isAutocompleteProvider(
+  id: ProviderId,
+): id is AutocompleteProviderId {
+  return id !== "openai-codex";
+}
 
 /** Sensible default model id per provider for inline autocomplete. */
-export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
+export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<
+  Record<AutocompleteProviderId, string>
+> = {
   cerebras: "gpt-oss-120b",
   groq: "openai/gpt-oss-20b",
   lmstudio: "qwen2.5-coder-7b-instruct",
@@ -716,7 +811,10 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
 /** Curated list of fast models suitable for inline completion (speed ≥ 4). */
 export function getAutocompleteEligibleModels(): readonly ModelInfo[] {
   return MODELS.filter(
-    (m) => m.capabilities.speed >= 4 && m.id !== "openai-compatible-custom",
+    (m) =>
+      m.capabilities.speed >= 4 &&
+      m.id !== "openai-compatible-custom" &&
+      m.provider !== "openai-codex",
   );
 }
 

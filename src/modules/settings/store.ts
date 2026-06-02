@@ -11,6 +11,14 @@ import {
   type CustomEndpoint,
   type ModelId,
 } from "@/modules/ai/config";
+import {
+  DEFAULT_CODEX_REASONING,
+  DEFAULT_CODEX_SPEED,
+  normalizeCodexReasoning,
+  normalizeCodexSpeed,
+  type CodexReasoning,
+  type CodexSpeed,
+} from "@/modules/ai/lib/codexOptions";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -75,6 +83,8 @@ export type Preferences = {
   openaiCompatibleContextLimit: number;
   customEndpoints: CustomEndpoint[];
   openrouterModelId: string;
+  codexReasoning: CodexReasoning;
+  codexSpeed: CodexSpeed;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
@@ -118,6 +128,8 @@ const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_OPENAI_COMPAT_CONTEXT_LIMIT = "openaiCompatibleContextLimit";
 const KEY_CUSTOM_ENDPOINTS = "customEndpoints";
 const KEY_OPENROUTER_MODEL_ID = "openrouterModelId";
+const KEY_CODEX_REASONING = "codexReasoning";
+const KEY_CODEX_SPEED = "codexSpeed";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
@@ -176,6 +188,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   openaiCompatibleContextLimit: 128_000,
   customEndpoints: [],
   openrouterModelId: "",
+  codexReasoning: DEFAULT_CODEX_REASONING,
+  codexSpeed: DEFAULT_CODEX_SPEED,
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
@@ -285,6 +299,8 @@ export async function loadPreferences(): Promise<Preferences> {
     openrouterModelId:
       get<string>(KEY_OPENROUTER_MODEL_ID) ??
       DEFAULT_PREFERENCES.openrouterModelId,
+    codexReasoning: normalizeCodexReasoning(get<string>(KEY_CODEX_REASONING)),
+    codexSpeed: normalizeCodexSpeed(get<string>(KEY_CODEX_SPEED)),
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ??
       DEFAULT_PREFERENCES.favoriteModelIds
@@ -457,6 +473,16 @@ export async function setOpenrouterModelId(value: string): Promise<void> {
   await writePref(KEY_OPENROUTER_MODEL_ID, value);
 }
 
+export async function setCodexReasoning(
+  value: CodexReasoning,
+): Promise<void> {
+  await writePref(KEY_CODEX_REASONING, normalizeCodexReasoning(value));
+}
+
+export async function setCodexSpeed(value: CodexSpeed): Promise<void> {
+  await writePref(KEY_CODEX_SPEED, normalizeCodexSpeed(value));
+}
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -575,6 +601,8 @@ export async function onPreferencesChange(
     [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
     [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
     [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
+    [KEY_CODEX_REASONING]: "codexReasoning",
+    [KEY_CODEX_SPEED]: "codexSpeed",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",

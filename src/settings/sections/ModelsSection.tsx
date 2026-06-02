@@ -16,10 +16,13 @@ import {
   PROVIDERS,
   compatModelIdForEndpoint,
   getAutocompleteEligibleModels,
+  isAutocompleteProvider,
   getModel,
   getProvider,
+  providerAuthKind,
   providerNeedsKey,
   type CustomEndpoint,
+  type AutocompleteProviderId,
   type ModelId,
   type ProviderId,
   type ProviderInfo,
@@ -33,6 +36,7 @@ import {
   setCustomEndpointKey,
   type CustomEndpointKeys,
 } from "@/modules/ai/lib/keyring";
+import { useCodexAuthStore } from "@/modules/ai/store/codexAuthStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -62,6 +66,8 @@ import {
   Cancel01Icon,
   CheckmarkCircle02Icon,
   ChevronDown,
+  Copy01Icon,
+  Refresh01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -73,7 +79,8 @@ import { SectionHeader } from "../components/SectionHeader";
 
 type KeysMap = Record<ProviderId, string | null>;
 
-const isLocalProvider = (id: ProviderId): boolean => !providerNeedsKey(id);
+const isLocalProvider = (id: ProviderId): boolean =>
+  providerAuthKind(id) === "local" || providerAuthKind(id) === "custom";
 
 type LocalMeta = {
   urlPlaceholder: string;
@@ -133,6 +140,9 @@ export function ModelsSection() {
   const [keys, setKeys] = useState<KeysMap | null>(null);
   const [epKeys, setEpKeys] = useState<CustomEndpointKeys>({});
   const [adding, setAdding] = useState<Set<ProviderId>>(new Set());
+  const codexStatus = useCodexAuthStore((s) => s.status);
+  const refreshCodexStatus = useCodexAuthStore((s) => s.refreshStatus);
+  const logoutCodex = useCodexAuthStore((s) => s.logout);
 
   const defaultModel = usePreferencesStore((s) => s.defaultModelId);
   const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
@@ -152,6 +162,10 @@ export function ModelsSection() {
   useEffect(() => {
     void getAllKeys().then(setKeys);
   }, []);
+
+  useEffect(() => {
+    void refreshCodexStatus();
+  }, [refreshCodexStatus]);
 
   useEffect(() => {
     void getAllCustomEndpointKeys(customEndpoints).then(setEpKeys);
@@ -282,6 +296,7 @@ export function ModelsSection() {
   };
 
   const isConfigured = (id: ProviderId): boolean => {
+    if (id === "openai-codex") return codexStatus.signedIn;
     if (id === "openrouter")
       return !!keys?.[id] && !!openrouterModelId.trim();
     if (!isLocalProvider(id)) return !!keys?.[id];
@@ -309,7 +324,15 @@ export function ModelsSection() {
   );
 
   const removeProvider = (id: ProviderId) => {
-    if (id === "openrouter") {
+    if (id === "openai-codex") {
+      void logoutCodex().then(async () => {
+        const { selectedModelId, setSelectedModelId } = useChatStore.getState();
+        if (isOpenAiCodexModelId(selectedModelId)) {
+          setSelectedModelId(DEFAULT_MODEL_ID);
+        }
+        await emitKeysChanged();
+      });
+    } else if (id === "openrouter") {
       void setOpenrouterModelId("");
       void onClearKey(id);
     } else if (isLocalProvider(id)) {
@@ -368,7 +391,13 @@ export function ModelsSection() {
         ) : (
           <div className="flex flex-col gap-2">
             {visibleProviders.map((p) =>
-              p.id === "openrouter" ? (
+              p.id === "openai-codex" ? (
+                <CodexAuthCard
+                  key={p.id}
+                  provider={p}
+                  onRemove={() => removeProvider(p.id)}
+                />
+              ) : p.id === "openrouter" ? (
                 <LocalProviderCard
                   key={p.id}
                   provider={p}
@@ -634,7 +663,7 @@ function AutocompleteRow({
     );
   }, [eligible, provider, modelId]);
 
-  const setModel = (id: string, providerId: ProviderId) => {
+  const setModel = (id: string, providerId: AutocompleteProviderId) => {
     void setAutocompleteProvider(providerId);
     void setAutocompleteModelId(isLocalProvider(providerId) ? "" : id);
   };
@@ -705,7 +734,11 @@ function AutocompleteRow({
                       <DropdownMenuItem
                         key={m.id}
                         disabled={!pConfigured}
-                        onSelect={() => pConfigured && setModel(m.id, p.id)}
+                        onSelect={() => {
+                          if (pConfigured && isAutocompleteProvider(p.id)) {
+                            setModel(m.id, p.id);
+                          }
+                        }}
                         className={cn(
                           "text-[11.5px]",
                           m.id === modelId && "bg-accent/50",
@@ -732,6 +765,202 @@ function AutocompleteRow({
         </p>
       ) : null}
     </>
+  );
+}
+
+function CodexAuthCard({
+  provider,
+  onRemove,
+}: {
+  provider: ProviderInfo;
+  onRemove: () => void;
+}) {
+  const status = useCodexAuthStore((s) => s.status);
+  const pending = useCodexAuthStore((s) => s.pending);
+  const loading = useCodexAuthStore((s) => s.loading);
+  const error = useCodexAuthStore((s) => s.error);
+  const startDeviceLogin = useCodexAuthStore((s) => s.startDeviceLogin);
+  const pollDeviceLogin = useCodexAuthStore((s) => s.pollDeviceLogin);
+  const cancelDeviceLogin = useCodexAuthStore((s) => s.cancelDeviceLogin);
+  const logout = useCodexAuthStore((s) => s.logout);
+  const refreshStatus = useCodexAuthStore((s) => s.refreshStatus);
+
+  useEffect(() => {
+    if (!pending) return;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped) return;
+      const result = await pollDeviceLogin().catch(() => null);
+      if (result?.status === "complete") await emitKeysChanged();
+    };
+    void tick();
+    const interval = window.setInterval(
+      () => void tick(),
+      Math.max(1, pending.pollIntervalSecs) * 1000,
+    );
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [pending, pollDeviceLogin]);
+
+  const connected = status.signedIn && !status.needsRelogin;
+  const badgeLabel = pending
+    ? "Waiting"
+    : connected
+      ? "Connected"
+      : status.needsRelogin
+        ? "Sign in again"
+        : "Not connected";
+  const detail =
+    pending
+      ? "Enter the code in your browser to finish signing in."
+      : status.message ||
+        (connected
+          ? status.accountEmail || "Signed in with ChatGPT"
+          : "Sign in with ChatGPT using the Codex device-code flow.");
+
+  const start = async () => {
+    await startDeviceLogin();
+  };
+
+  const disconnect = async () => {
+    await logout();
+    const { selectedModelId, setSelectedModelId } = useChatStore.getState();
+    if (isOpenAiCodexModelId(selectedModelId)) {
+      setSelectedModelId(DEFAULT_MODEL_ID);
+    }
+    await emitKeysChanged();
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <ProviderIcon provider={provider.id} size={15} />
+        <span className="text-[12.5px] font-medium">{provider.label}</span>
+        <Badge
+          variant="outline"
+          className={cn(
+            "ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal",
+            connected
+              ? "text-muted-foreground"
+              : "text-amber-600 dark:text-amber-400",
+          )}
+        >
+          {connected ? (
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
+          ) : null}
+          {badgeLabel}
+        </Badge>
+        <button
+          type="button"
+          onClick={() => void openUrl(provider.consoleUrl)}
+          className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Docs
+          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
+        </button>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={onRemove}
+          title="Remove provider"
+          className="size-7 text-muted-foreground hover:text-destructive"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+        </Button>
+      </div>
+
+      <p className="text-[10.5px] text-muted-foreground">{detail}</p>
+
+      {pending ? (
+        <div className="flex items-center gap-1.5">
+          <code className="flex-1 rounded bg-muted/40 px-2 py-1.5 text-center font-mono text-[13px] tracking-[0.18em] text-foreground">
+            {pending.userCode}
+          </code>
+          <Button
+            size="icon"
+            variant="outline"
+            onClick={() => void navigator.clipboard?.writeText(pending.userCode)}
+            title="Copy code"
+            className="size-8"
+          >
+            <HugeiconsIcon icon={Copy01Icon} size={12} strokeWidth={1.75} />
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void openUrl(pending.verificationUrl)}
+            className="h-8 gap-1.5 px-2.5 text-[11px]"
+          >
+            Open
+            <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            onClick={() => void cancelDeviceLogin()}
+            title="Cancel sign-in"
+            className="size-8 text-muted-foreground hover:text-destructive"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <Button
+            size="sm"
+            onClick={() => void start()}
+            disabled={loading}
+            className="h-8 gap-1.5 px-3 text-[11px]"
+          >
+            {loading ? <RefreshSpinner /> : null}
+            {connected ? "Sign in again" : "Sign in"}
+          </Button>
+          <Button
+            size="icon"
+            variant="outline"
+            onClick={() => void refreshStatus()}
+            title="Refresh status"
+            className="size-8"
+          >
+            <HugeiconsIcon icon={Refresh01Icon} size={12} strokeWidth={1.75} />
+          </Button>
+          {connected || status.needsRelogin ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void disconnect()}
+              className="h-8 px-2.5 text-[11px] text-muted-foreground hover:text-destructive"
+            >
+              Log out
+            </Button>
+          ) : null}
+        </div>
+      )}
+      {error ? <p className="text-[10.5px] text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+function isOpenAiCodexModelId(id: string): boolean {
+  return MODELS.some(
+    (model) => model.id === id && model.provider === "openai-codex",
+  );
+}
+
+function RefreshSpinner() {
+  return (
+    <HugeiconsIcon
+      icon={Refresh01Icon}
+      size={12}
+      strokeWidth={1.75}
+      className="animate-spin"
+    />
   );
 }
 

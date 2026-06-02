@@ -6,7 +6,14 @@ import {
   type GitStatusSnapshot,
 } from "@/modules/ai/lib/native";
 import { useChatStore } from "@/modules/ai/store/chatStore";
-import { providerNeedsKey, resolveModel } from "@/modules/ai/config";
+import {
+  providerNeedsKey,
+  providerNeedsOAuthSession,
+  getModelWireId,
+  resolveModel,
+} from "@/modules/ai/config";
+import { useCodexAuthStore } from "@/modules/ai/store/codexAuthStore";
+import { buildCodexProviderOptions } from "@/modules/ai/lib/codexOptions";
 import {
   invalidateDiff,
   invalidateRepoDiffs,
@@ -368,8 +375,10 @@ export function useSourceControlPanel(
 ): SourceControlPanelState {
   const selectedModelId = useChatStore((state) => state.selectedModelId);
   const agentStatus = useChatStore((state) => state.agentMeta.status);
+  const codexSignedIn = useCodexAuthStore((state) => state.status.signedIn);
   const hasApiKeyForSelected = useChatStore((state) => {
     const model = resolveModel(state.selectedModelId);
+    if (providerNeedsOAuthSession(model.provider)) return codexSignedIn;
     return !providerNeedsKey(model.provider) || !!state.apiKeys[model.provider];
   });
   const lmstudioModelId = usePreferencesStore((state) => state.lmstudioModelId);
@@ -870,6 +879,17 @@ export function useSourceControlPanel(
       const { text: diffText, truncated } = truncateDiff(diff.diffText);
       const chatState = useChatStore.getState();
       const prefs = usePreferencesStore.getState();
+      const selectedInfo = resolveModel(selectedModelId);
+      const selectedIsCodex = selectedInfo.provider === "openai-codex";
+      const providerOptions =
+        selectedIsCodex
+          ? buildCodexProviderOptions(
+              prefs.codexReasoning,
+              prefs.codexSpeed,
+              getModelWireId(selectedInfo),
+              COMMIT_MESSAGE_SYSTEM_PROMPT,
+            )
+          : undefined;
       const model = await buildConfiguredLanguageModel(
         selectedModelId,
         chatState.apiKeys,
@@ -887,19 +907,21 @@ export function useSourceControlPanel(
       );
       const result = await generateText({
         model,
-        system: COMMIT_MESSAGE_SYSTEM_PROMPT,
+        system: selectedIsCodex ? undefined : COMMIT_MESSAGE_SYSTEM_PROMPT,
         prompt: buildCommitMessagePrompt(stagedEntries, diffText, truncated),
         maxOutputTokens: COMMIT_MESSAGE_MAX_OUTPUT_TOKENS,
         temperature: 0.2,
+        providerOptions,
       });
       let message = cleanCommitMessage(result.text);
       if (!isValidCommitMessage(message)) {
         const repair = await generateText({
           model,
-          system: COMMIT_MESSAGE_SYSTEM_PROMPT,
+          system: selectedIsCodex ? undefined : COMMIT_MESSAGE_SYSTEM_PROMPT,
           prompt: buildRepairCommitMessagePrompt(message, stagedEntries),
           maxOutputTokens: COMMIT_MESSAGE_MAX_OUTPUT_TOKENS,
           temperature: 0,
+          providerOptions,
         });
         message = cleanCommitMessage(repair.text);
       }

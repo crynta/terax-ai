@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod codex_auth;
 pub mod fs;
 pub mod git;
 pub mod net;

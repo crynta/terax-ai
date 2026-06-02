@@ -2,10 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   compatModelIdForEndpoint,
   endpointIdFromCompatModel,
+  getAutocompleteEligibleModels,
+  getModelWireId,
   getModelContextLimit,
   isCompatModelId,
   migrateLegacyCompatEndpoint,
+  MODELS,
   modelKeepsReasoning,
+  providerAuthKind,
+  providerNeedsKey,
+  providerNeedsOAuthSession,
+  providerSupportsKey,
   resolveModel,
   type CustomEndpoint,
 } from "./config";
@@ -51,6 +58,36 @@ describe("resolveModel", () => {
 
   it("throws on an unknown static model id", () => {
     expect(() => resolveModel("nope-not-real")).toThrow();
+  });
+});
+
+describe("provider auth", () => {
+  it("classifies Codex as OAuth instead of API-key auth", () => {
+    expect(providerAuthKind("openai-codex")).toBe("oauth-device-code");
+    expect(providerNeedsOAuthSession("openai-codex")).toBe(true);
+    expect(providerNeedsKey("openai-codex")).toBe(false);
+    expect(providerSupportsKey("openai-codex")).toBe(false);
+  });
+
+  it("keeps model ids unique while mapping Codex to its wire id", () => {
+    const ids = MODELS.map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const codexModels = MODELS.filter((m) => m.provider === "openai-codex");
+    expect(codexModels.map((m) => getModelWireId(m))).toEqual([
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.3-codex-spark",
+    ]);
+    expect(resolveModel("openai-codex-gpt-5.3-codex-spark").provider).toBe(
+      "openai-codex",
+    );
+  });
+
+  it("omits ChatGPT Codex from autocomplete choices", () => {
+    expect(
+      getAutocompleteEligibleModels().some((m) => m.provider === "openai-codex"),
+    ).toBe(false);
   });
 });
 

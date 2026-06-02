@@ -10,6 +10,7 @@ import {
   getModel,
   isCompatModelId,
   providerNeedsKey,
+  providerNeedsOAuthSession,
   type ModelId,
   type ProviderId,
 } from "../config";
@@ -34,6 +35,7 @@ import {
 import { pushRecentModel } from "../lib/modelPrefs";
 import { createContextAwareTransport } from "../lib/transport";
 import type { ToolContext } from "../tools/tools";
+import { useCodexAuthStore } from "./codexAuthStore";
 
 type Live = {
   getCwd: () => string | null;
@@ -275,6 +277,10 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       usePreferencesStore.getState().openaiCompatibleContextLimit,
     getOpenrouterModelId: () =>
       usePreferencesStore.getState().openrouterModelId,
+    getCodexReasoning: () =>
+      usePreferencesStore.getState().codexReasoning,
+    getCodexSpeed: () =>
+      usePreferencesStore.getState().codexSpeed,
     getCustomEndpoints: () =>
       usePreferencesStore.getState().customEndpoints,
     getCustomEndpointKeys: () =>
@@ -555,6 +561,9 @@ export function hasKeyForModel(modelId: string): boolean {
     return true;
   }
   const provider = getModel(modelId as ModelId).provider;
+  if (providerNeedsOAuthSession(provider)) {
+    return useCodexAuthStore.getState().status.signedIn;
+  }
   return providerNeedsKey(provider) ? !!apiKeys[provider] : true;
 }
 
@@ -579,7 +588,7 @@ export async function sendMessage(text: string): Promise<boolean> {
   const state = useChatStore.getState();
   const sessionId = state.activeSessionId;
   if (!sessionId) return false;
-  if (providerNeedsKey(getModel(state.selectedModelId as ModelId).provider) && !getActiveProviderKey()) return false;
+  if (!hasKeyForModel(state.selectedModelId)) return false;
   const c = getOrCreateChat(sessionId);
   await c.sendMessage({ text });
   return true;

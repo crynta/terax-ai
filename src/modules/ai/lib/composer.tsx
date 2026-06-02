@@ -10,8 +10,16 @@ import { useWhisperRecording } from "../hooks/useWhisperRecording";
 import { expandSnippetTokens, type Snippet } from "../lib/snippets";
 import { tryRunSlashCommand, type SlashCommandMeta } from "./slashCommands";
 import { getOrCreateChat, useChatStore } from "../store/chatStore";
+import { useCodexAuthStore } from "../store/codexAuthStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import {
+  isCompatModelId,
+  providerNeedsKey,
+  providerNeedsOAuthSession,
+  resolveModel,
+} from "../config";
+import type { ProviderKeys } from "./keyring";
 
 export type FileAttachment = {
   id: string;
@@ -73,6 +81,9 @@ type ProviderProps = {
 export function AiComposerProvider({ children }: ProviderProps) {
   const sessionId = useChatStore((s) => s.activeSessionId);
   const status = useChatStore((s) => s.agentMeta.status);
+  const selectedModelId = useChatStore((s) => s.selectedModelId);
+  const apiKeys = useChatStore((s) => s.apiKeys);
+  const codexSignedIn = useCodexAuthStore((s) => s.status.signedIn);
   const isBusy = status === "thinking" || status === "streaming";
 
   const [value, setValue] = useState("");
@@ -304,6 +315,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
     }
 
     if (!sessionId) return;
+    if (!selectedModelHasAuth(selectedModelId, apiKeys, codexSignedIn)) return;
     const chat = getOrCreateChat(sessionId);
     void chat.sendMessage({ role: "user", parts } as Parameters<
       typeof chat.sendMessage
@@ -326,6 +338,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
 
   const canSend =
     !isBusy &&
+    selectedModelHasAuth(selectedModelId, apiKeys, codexSignedIn) &&
     (value.trim().length > 0 ||
       files.length > 0 ||
       pickedSnippets.length > 0 ||
@@ -353,6 +366,17 @@ export function AiComposerProvider({ children }: ProviderProps) {
   };
 
   return <Ctx.Provider value={ctx}>{children}</Ctx.Provider>;
+}
+
+function selectedModelHasAuth(
+  modelId: string,
+  apiKeys: ProviderKeys,
+  codexSignedIn: boolean,
+): boolean {
+  if (isCompatModelId(modelId)) return true;
+  const provider = resolveModel(modelId).provider;
+  if (providerNeedsOAuthSession(provider)) return codexSignedIn;
+  return providerNeedsKey(provider) ? !!apiKeys[provider] : true;
 }
 
 async function readAttachment(file: File): Promise<FileAttachment | null> {

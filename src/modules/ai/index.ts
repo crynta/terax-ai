@@ -28,3 +28,9 @@ export {
   type AgentMeta,
   type AgentRunStatus,
 } from "./store/chatStore";
+export { useCodexAuthStore } from "./store/codexAuthStore";
+export type {
+  CodexAuthStatus,
+  CodexDeviceStart,
+  CodexPollResult,
+} from "./lib/codexAuth";
