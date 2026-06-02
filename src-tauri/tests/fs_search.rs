@@ -1,6 +1,6 @@
 mod common;
 
-use common::FsFixture;
+use common::{git_available, FsFixture, GitRepoFixture};
 use terax_lib::modules::fs::grep::{fs_glob, fs_grep};
 use terax_lib::modules::fs::search::{fs_list_files, fs_search};
 use terax_lib::modules::fs::tree::{fs_read_dir, list_subdirs, EntryKind};
@@ -301,4 +301,33 @@ fn list_subdirs_hides_dot_dirs_by_default() {
 
     let on = list_subdirs(fx.root_str(), true, None).expect("list_subdirs");
     assert!(on.contains(&".hidden".to_string()));
+}
+
+#[test]
+fn read_dir_marks_gitignored_entries() {
+    if !git_available() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    fx.write_file(".gitignore", "node_modules/\ndist/\n");
+    fx.write_file("src/main.ts", "");
+    fx.write_file("node_modules/pkg/index.js", "");
+    fx.write_file("dist/bundle.js", "");
+
+    let entries = fs_read_dir(fx.repo_str(), false, None).expect("read_dir");
+    let ignored = |name: &str| {
+        entries
+            .iter()
+            .find(|e| e.name == name)
+            .map(|e| e.gitignored)
+            .unwrap_or(false)
+    };
+
+    assert!(!ignored("src"));
+    assert!(ignored("node_modules"));
+    assert!(ignored("dist"));
+
+    let nested = terax_lib::modules::fs::to_canon(fx.repo_path.join("node_modules/pkg"));
+    let inside = fs_read_dir(nested, false, None).expect("read_dir nested");
+    assert!(inside.iter().all(|e| e.gitignored));
 }

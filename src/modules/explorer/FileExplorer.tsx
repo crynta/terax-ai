@@ -63,8 +63,17 @@ type Row =
       isDir: boolean;
       isExpanded: boolean;
       depth: number;
+      gitignored: boolean;
     }
-  | { kind: "rename"; key: string; path: string; name: string; isDir: boolean; depth: number }
+  | {
+      kind: "rename";
+      key: string;
+      path: string;
+      name: string;
+      isDir: boolean;
+      depth: number;
+      gitignored: boolean;
+    }
   | { kind: "pending"; key: string; depth: number; pendingKind: "file" | "dir" }
   | { kind: "status"; key: string; depth: number; tone: "muted" | "error"; message: string };
 
@@ -99,6 +108,7 @@ function buildRows(
           name: entry.name,
           isDir,
           depth,
+          gitignored: entry.gitignored,
         });
       } else {
         entryIndexByPath.set(path, rows.length);
@@ -110,6 +120,7 @@ function buildRows(
           isDir,
           isExpanded: expanded,
           depth,
+          gitignored: entry.gitignored,
         });
       }
       if (isDir && expanded) {
@@ -369,6 +380,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               onAttachToAgent={onAttachToAgent}
               onOpenMarkdownPreview={onOpenMarkdownPreview}
               gitStatusCode={lookupGitStatus(row.path)}
+              gitignored={row.gitignored}
             />
           );
         }

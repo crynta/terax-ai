@@ -9,6 +9,7 @@ export type DirEntry = {
   kind: "file" | "dir" | "symlink";
   size: number;
   mtime: number;
+  gitignored: boolean;
 };
 
 type ChildrenState =

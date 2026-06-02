@@ -39,6 +39,7 @@ export type EntryRowProps = {
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
   gitStatusCode?: GitStatusCode | null;
+  gitignored?: boolean;
 };
 
 function isMarkdownPath(path: string): boolean {
@@ -62,6 +63,7 @@ function EntryRowImpl(props: EntryRowProps) {
     onAttachToAgent,
     onOpenMarkdownPreview,
     gitStatusCode,
+    gitignored = false,
   } = props;
 
   const [isConfirming, setIsConfirming] = useState(false);
@@ -103,7 +105,10 @@ function EntryRowImpl(props: EntryRowProps) {
             onClick={handleClick}
             onDoubleClick={() => !isDir && tree.beginRename(path)}
             className={cn(
-              "group flex h-6 w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 text-left text-[13px] text-foreground/85 transition-colors hover:bg-accent/70",
+              "group flex h-6 w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 text-left text-[13px] transition-colors hover:bg-accent/70",
+              gitignored && !isSelected
+                ? "text-muted-foreground/50"
+                : "text-foreground/85",
               isSelected && "bg-accent text-foreground",
             )}
             style={{ paddingLeft }}
@@ -122,7 +127,11 @@ function EntryRowImpl(props: EntryRowProps) {
               ) : null}
             </span>
             {iconUrl ? (
-              <img src={iconUrl} alt="" className="size-4 shrink-0" />
+              <img
+                src={iconUrl}
+                alt=""
+                className={cn("size-4 shrink-0", gitignored && !isSelected && "opacity-45")}
+              />
             ) : (
               <span className="size-4 shrink-0" />
             )}

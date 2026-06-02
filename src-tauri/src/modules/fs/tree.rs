@@ -1,5 +1,8 @@
+use std::collections::HashSet;
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+use ignore::WalkBuilder;
 use serde::Serialize;
 
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
@@ -19,6 +22,60 @@ pub struct DirEntry {
     pub size: u64,
     /// Milliseconds since UNIX epoch; 0 if unavailable.
     pub mtime: u64,
+    /// True when git would ignore this entry (`.gitignore`, global excludes, etc.).
+    pub gitignored: bool,
+}
+
+// Names of immediate children that git does not ignore. Outside a git repo every
+// name is treated as visible so nothing is dimmed.
+fn git_non_ignored_names(parent: &Path, show_hidden: bool) -> HashSet<String> {
+    let walker = WalkBuilder::new(parent)
+        .hidden(!show_hidden)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .ignore(false)
+        .parents(true)
+        .max_depth(Some(1))
+        .follow_links(false)
+        .build();
+
+    walker
+        .flatten()
+        .filter_map(|dent| dent.file_name().to_str().map(str::to_string))
+        .collect()
+}
+
+// find the git root of the repository
+fn find_git_root(mut path: &Path) -> Option<std::path::PathBuf> {
+    loop {
+        if path.join(".git").exists() {
+            return Some(path.to_path_buf());
+        }
+        path = path.parent()?;
+    }
+}
+
+// True when `dir` or any ancestor below the git root is gitignored.
+// dir is the parent directory of the file or directory that is being checked
+fn is_under_gitignored_chain(dir: &Path, show_hidden: bool) -> bool {
+    let Some(git_root) = find_git_root(dir) else {
+        return false;
+    };
+    let mut current = dir;
+    while current.starts_with(&git_root) && current != git_root {
+        let Some(parent) = current.parent() else {
+            break;
+        };
+        let Some(name) = current.file_name().and_then(|n| n.to_str()) else {
+            break;
+        };
+        if !git_non_ignored_names(parent, show_hidden).contains(name) {
+            return true;
+        }
+        current = parent;
+    }
+    false
 }
 
 /// Lists immediate children of `path`. Dirs first, then files, each sorted
@@ -36,6 +93,9 @@ pub fn fs_read_dir(
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
         e.to_string()
     })?;
+
+    let git_visible = git_non_ignored_names(&root, show_hidden);
+    let parent_gitignored = is_under_gitignored_chain(&root, show_hidden);
 
     let mut entries: Vec<DirEntry> = read
         .filter_map(Result::ok)
@@ -73,6 +133,7 @@ pub fn fs_read_dir(
                 .unwrap_or(0);
 
             Some(DirEntry {
+                gitignored: parent_gitignored || !git_visible.contains(&name),
                 name,
                 kind,
                 size,
