@@ -4,13 +4,19 @@
   "version": "0.7.3",
   "license": "Apache-2.0",
   "type": "module",
+  "packageManager": "pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "format": "biome format --write ./src",
+    "format:check": "biome format ./src"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",
@@ -92,6 +98,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
     "@tailwindcss/vite": "^4.2.3",
     "@tauri-apps/cli": "^2",
     "@types/node": "^25.6.0",
