@@ -9,7 +9,7 @@ Terax loads `TERAX.md` from the workspace root as agent memory (similar to AGENT
 - Bundle id: `app.crynta.terax`
 - Package manager: **pnpm**
 - Platforms: macOS, Linux, Windows
-- Frontend checks: `pnpm exec tsc --noEmit`, `pnpm test`
+- Frontend checks: `pnpm lint`, `pnpm check-types`, `pnpm test`
 - Rust checks: `cd src-tauri && cargo clippy && cargo test --locked`
 
 ## Quality bar
@@ -22,7 +22,7 @@ Production-grade or it does not ship. Every change is judged against all of thes
 - **UI/UX**: polished, professional, premium. Every state and detail considered.
 - **Architecture**: new or changed logic lives in pure, dependency-light functions (functional core); tauri commands and React components stay thin (imperative shell). Keeps it testable without a later rewrite.
 
-Verify before claiming done: `pnpm exec tsc --noEmit`, `pnpm test`, `cargo clippy`, `cargo test --locked`. A change to a core subsystem (terminal/shell spawn, workspace auth, git, fs, IPC or AI tool surface) needs a test that locks the invariant.
+Verify before claiming done: `pnpm lint`, `pnpm check-types`, `pnpm test`, `cargo clippy`, `cargo test --locked`. A change to a core subsystem (terminal/shell spawn, workspace auth, git, fs, IPC or AI tool surface) needs a test that locks the invariant.
 
 ## Conventions
 

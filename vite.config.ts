@@ -1,13 +1,38 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-import { defineConfig } from "vite";
+import { defineConfig, type PluginOption } from "vite";
+import Inspect from "vite-plugin-inspect";
 
 const host = process.env.TAURI_DEV_HOST;
 
+// Bundle/treemap analysis is opt-in: `ANALYZE=true pnpm build` emits stats.html.
+const analyze = process.env.ANALYZE === "true";
+
 // https://vite.dev/config/
 export default defineConfig(async ({ mode }) => ({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react({
+      babel: {
+        plugins: [["babel-plugin-react-compiler", { target: "19" }]],
+      },
+    }),
+    tailwindcss(),
+    // Dev-only module-graph inspector at /__inspect (who-imports-what,
+    // per-plugin transforms). Never included in a production build.
+    ...(mode === "development" ? [Inspect() as PluginOption] : []),
+    ...(analyze
+      ? [
+          (await import("rollup-plugin-visualizer")).visualizer({
+            filename: "stats.html",
+            template: "treemap",
+            gzipSize: true,
+            brotliSize: true,
+            open: true,
+          }) as PluginOption,
+        ]
+      : []),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -31,7 +56,26 @@ export default defineConfig(async ({ mode }) => ({
       },
       output: {
         manualChunks(id: string) {
+          // Vite's __vitePreload helper is a virtual module. Left to Rollup it
+          // gets hoisted into whichever chunk it happens to land in (observed:
+          // the 480kB streamdown chunk), and since every lazy importer pulls the
+          // helper, that heavy chunk gets dragged into the eager startup graph.
+          // Pin it to the always-eager react chunk so it costs nothing extra.
+          if (id.includes("vite/preload-helper") || id.includes("/vite/dist/"))
+            return "react";
+
           if (!id.includes("node_modules")) return;
+
+          // Ubiquitous styling utils used by `cn()` on nearly every eager
+          // component. Left unassigned, Rollup absorbs them into whichever
+          // feature chunk claims them first (observed: streamdown), dragging
+          // that heavy chunk into the eager graph. Pin them to react (eager).
+          if (
+            id.includes("/clsx/") ||
+            id.includes("/tailwind-merge/") ||
+            id.includes("/class-variance-authority/")
+          )
+            return "react";
 
           // Each AI provider SDK in its own chunk so unused providers
           // don't bloat the initial load (lazy-imported in agent.ts).
@@ -46,6 +90,18 @@ export default defineConfig(async ({ mode }) => ({
           if (id.includes("@ai-sdk/")) return "ai-sdk-shared";
 
           if (id.includes("/xterm/") || id.includes("@xterm/")) return "xterm";
+          // Lang packs and legacy modes are dynamically imported by
+          // languageResolver; give each its own named chunk so they load on
+          // demand instead of being glued into the codemirror core chunk.
+          // (bundle audit, issue #551)
+          {
+            const m = id.match(/@codemirror\/lang-([\w-]+)/);
+            if (m) return `cm-lang-${m[1]}`;
+          }
+          {
+            const m = id.match(/@codemirror\/legacy-modes\/mode\/([\w-]+)/);
+            if (m) return `cm-legacy-${m[1]}`;
+          }
           if (
             id.includes("@codemirror/") ||
             id.includes("@uiw/codemirror") ||
