@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleJsonRpcLine, resetProtocolForTests } from "./protocol.js";
-import { formatPromptWithContext, setSessionEventSink } from "./sessions.js";
+import {
+  formatPromptWithContext,
+  mapAgentSessionEvent,
+  setSessionEventSink,
+} from "./sessions.js";
 
 async function request(id, method, params) {
   return handleJsonRpcLine(
@@ -54,6 +58,55 @@ describe("formatPromptWithContext", () => {
   });
 });
 
+describe("mapAgentSessionEvent", () => {
+  beforeEach(() => {
+    liveEvents = [];
+    setSessionEventSink((event) => liveEvents.push(event));
+  });
+
+  afterEach(() => {
+    setSessionEventSink(null);
+  });
+
+  it("suppresses assistant events after the active run is cancelled", () => {
+    mapAgentSessionEvent(
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", delta: "stale" },
+      },
+      {
+        id: "pi-1",
+        status: "running",
+        activeRunId: 3,
+        cancelledRunId: 3,
+        agentGeneration: 1,
+      },
+      1,
+    );
+
+    expect(liveEvents).toEqual([]);
+  });
+
+  it("suppresses assistant events from old agent subscriptions", () => {
+    mapAgentSessionEvent(
+      {
+        type: "message_update",
+        assistantMessageEvent: { type: "text_end", content: "stale" },
+      },
+      {
+        id: "pi-1",
+        status: "running",
+        activeRunId: 4,
+        cancelledRunId: null,
+        agentGeneration: 2,
+      },
+      1,
+    );
+
+    expect(liveEvents).toEqual([]);
+  });
+});
+
 describe("Pi host session protocol", () => {
   beforeEach(async () => {
     liveEvents = [];
@@ -85,13 +138,15 @@ describe("Pi host session protocol", () => {
   it("creates real Pi AgentSessions with an explicit cwd", async () => {
     const cwd = process.cwd();
     const result = await request(2, "sessions.create", { title: "Plan", cwd });
+    const sessionId = result.response.result.session.id;
+    const eventId = result.response.result.events[0].id;
 
     expect(result.response).toMatchObject({
       jsonrpc: "2.0",
       id: 2,
       result: {
         session: {
-          id: "pi-1",
+          id: expect.stringMatching(/^pi_/),
           title: "Plan",
           cwd,
           status: "idle",
@@ -99,12 +154,12 @@ describe("Pi host session protocol", () => {
         },
         events: [
           {
-            id: "evt-1",
+            id: expect.stringMatching(/^evt_/),
             type: "session.created",
-            sessionId: "pi-1",
+            sessionId,
             payload: {
               session: {
-                id: "pi-1",
+                id: sessionId,
                 title: "Plan",
                 cwd,
                 status: "idle",
@@ -114,9 +169,23 @@ describe("Pi host session protocol", () => {
         ],
       },
     });
+    expect(eventId).toMatch(/^evt_/);
     expect(result.response.result.session.createdAt).toEqual(
       expect.any(String),
     );
+  });
+
+  it("does not reuse session or event ids after a protocol reset", async () => {
+    const first = await request(31, "sessions.create", { title: "First" });
+    const firstSessionId = first.response.result.session.id;
+    const firstEventId = first.response.result.events[0].id;
+
+    await resetProtocolForTests();
+
+    const second = await request(32, "sessions.create", { title: "Second" });
+
+    expect(second.response.result.session.id).not.toBe(firstSessionId);
+    expect(second.response.result.events[0].id).not.toBe(firstEventId);
   });
 
   it("rejects empty session cwd values", async () => {
@@ -135,11 +204,29 @@ describe("Pi host session protocol", () => {
     });
   });
 
+  it("derives default session titles from the first prompt", async () => {
+    const created = await request(22, "sessions.create", {});
+    const sessionId = created.response.result.session.id;
+    const result = await request(23, "sessions.send", {
+      sessionId,
+      prompt: "Explain the payment flow in this workspace",
+    });
+    const list = await request(24, "sessions.list");
+
+    expect(result.response.result.session.title).toBe(
+      "Explain the payment flow in this workspace",
+    );
+    expect(list.response.result.sessions[0].title).toBe(
+      "Explain the payment flow in this workspace",
+    );
+  });
+
   it("runs prompts through the Pi SDK and returns output events", async () => {
     const cwd = process.cwd();
-    await request(3, "sessions.create", { title: "Run", cwd });
+    const created = await request(3, "sessions.create", { title: "Run", cwd });
+    const sessionId = created.response.result.session.id;
     const result = await request(4, "sessions.send", {
-      sessionId: "pi-1",
+      sessionId,
       prompt: "hello Pi",
       context: {
         activeTerminalCwd: `${cwd}/src`,
@@ -153,7 +240,7 @@ describe("Pi host session protocol", () => {
       result: {
         accepted: true,
         session: {
-          id: "pi-1",
+          id: sessionId,
           status: "running",
           lastPrompt: "hello Pi",
         },
@@ -161,9 +248,9 @@ describe("Pi host session protocol", () => {
     });
     expect(result.response.result.events).toEqual([
       expect.objectContaining({
-        id: "evt-2",
+        id: expect.stringMatching(/^evt_/),
         type: "session.input",
-        sessionId: "pi-1",
+        sessionId,
         payload: {
           text: "hello Pi",
           context: {
@@ -174,9 +261,9 @@ describe("Pi host session protocol", () => {
         },
       }),
       expect.objectContaining({
-        id: "evt-3",
+        id: expect.stringMatching(/^evt_/),
         type: "session.status",
-        sessionId: "pi-1",
+        sessionId,
         payload: { status: "running" },
       }),
     ]);
@@ -190,17 +277,17 @@ describe("Pi host session protocol", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "session.output.delta",
-          sessionId: "pi-1",
+          sessionId,
           payload: expect.objectContaining({ text: expect.any(String) }),
         }),
         expect.objectContaining({
           type: "session.output.text",
-          sessionId: "pi-1",
+          sessionId,
           payload: { text: "hello from real Pi SDK" },
         }),
         expect.objectContaining({
           type: "session.status",
-          sessionId: "pi-1",
+          sessionId,
           payload: { status: "idle" },
         }),
       ]),
@@ -213,79 +300,96 @@ describe("Pi host session protocol", () => {
     ).toBe("hello from real Pi SDK");
   });
 
-  it("stops sessions and keeps them visible in the list", async () => {
-    await request(5, "sessions.create", { title: "Stop me" });
-    await request(6, "sessions.send", { sessionId: "pi-1", prompt: "go" });
-    const stop = await request(7, "sessions.stop", { sessionId: "pi-1" });
+  it("cancels active runs and keeps the session sendable", async () => {
+    process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE = "slow ".repeat(80);
+    process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND = "1";
+    const created = await request(5, "sessions.create", { title: "Cancel me" });
+    const sessionId = created.response.result.session.id;
+    await request(6, "sessions.send", { sessionId, prompt: "go" });
+    const stop = await request(7, "sessions.stop", { sessionId });
     const list = await request(8, "sessions.list");
 
     expect(stop.response).toMatchObject({
       jsonrpc: "2.0",
       id: 7,
       result: {
-        session: { id: "pi-1", status: "stopped" },
+        session: { id: sessionId, status: "idle" },
         events: [
           {
             type: "session.status",
-            sessionId: "pi-1",
-            payload: { status: "stopped" },
+            sessionId,
+            payload: { status: "idle" },
           },
         ],
       },
     });
     expect(list.response.result.sessions).toEqual([
-      expect.objectContaining({ id: "pi-1", status: "stopped" }),
+      expect.objectContaining({ id: sessionId, status: "idle" }),
     ]);
+
+    process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE = "follow-up ok";
+    process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND = "1000";
+    const followUp = await request(81, "sessions.send", {
+      sessionId,
+      prompt: "again",
+    });
+    expect(followUp.response.result.session.status).toBe("running");
   });
 
   it("rejects a second prompt while a session is already running", async () => {
     process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE = "slow ".repeat(80);
     process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND = "1";
-    await request(9, "sessions.create", { title: "Busy" });
+    const created = await request(9, "sessions.create", { title: "Busy" });
+    const sessionId = created.response.result.session.id;
     const first = await request(10, "sessions.send", {
-      sessionId: "pi-1",
+      sessionId,
       prompt: "go slowly",
     });
 
     expect(first.response.result.session.status).toBe("running");
     const second = await request(11, "sessions.send", {
-      sessionId: "pi-1",
+      sessionId,
       prompt: "overlap",
     });
 
     expect(second.response).toEqual({
       jsonrpc: "2.0",
       id: 11,
-      error: { code: -32007, message: "Pi session is already running: pi-1" },
+      error: {
+        code: -32007,
+        message: `Pi session is already running: ${sessionId}`,
+      },
     });
   });
 
-  it("aborts active Pi runs when stopping a running session", async () => {
+  it("does not publish stale completion after cancelling a running session", async () => {
     process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE = "slow ".repeat(80);
     process.env.TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND = "1";
-    await request(12, "sessions.create", { title: "Abort me" });
+    const created = await request(12, "sessions.create", { title: "Abort me" });
+    const sessionId = created.response.result.session.id;
     const sent = await request(13, "sessions.send", {
-      sessionId: "pi-1",
+      sessionId,
       prompt: "go slowly",
     });
 
     expect(sent.response.result.session.status).toBe("running");
-    const stop = await request(14, "sessions.stop", { sessionId: "pi-1" });
-    expect(stop.response.result.session.status).toBe("stopped");
+    const stop = await request(14, "sessions.stop", { sessionId });
+    expect(stop.response.result.session.status).toBe("idle");
 
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(
-      liveEvents.some(
+      liveEvents.filter(
         (event) =>
           event.type === "session.status" && event.payload.status === "idle",
       ),
-    ).toBe(false);
+    ).toHaveLength(0);
   });
 
   it("rejects prompts over the resource limit", async () => {
-    await request(12, "sessions.create", { title: "Limits" });
+    const created = await request(12, "sessions.create", { title: "Limits" });
+    const sessionId = created.response.result.session.id;
     const result = await request(13, "sessions.send", {
-      sessionId: "pi-1",
+      sessionId,
       prompt: "x".repeat(20_001),
     });
 

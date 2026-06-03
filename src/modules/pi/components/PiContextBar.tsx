@@ -6,10 +6,13 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
+import { PiSection } from "@/modules/pi/components/PiSection";
 import type { PiContextPreviewItem } from "@/modules/pi/lib/view";
 
 type PiContextBarProps = {
+  collapsed: boolean;
   items: PiContextPreviewItem[];
+  onCollapsedChange: (collapsed: boolean) => void;
 };
 
 const contextIcons: Record<
@@ -22,17 +25,19 @@ const contextIcons: Record<
   mode: IncognitoIcon,
 };
 
-export function PiContextBar({ items }: PiContextBarProps) {
+export function PiContextBar({
+  collapsed,
+  items,
+  onCollapsedChange,
+}: PiContextBarProps) {
   return (
-    <div className="shrink-0 border-b border-border/35 bg-card/45 px-2.5 py-2">
-      <div className="mb-1.5 flex min-w-0 items-center gap-2">
-        <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/85">
-          Context
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground/65">
-          Sent with the next prompt
-        </span>
-      </div>
+    <PiSection
+      title="Context"
+      collapsed={collapsed}
+      summary="Sent with the next prompt"
+      contentClassName="px-2.5 pb-2"
+      onCollapsedChange={onCollapsedChange}
+    >
       <div className="grid grid-cols-2 gap-1.5">
         {items.map((item) => (
           <div
@@ -66,6 +71,6 @@ export function PiContextBar({ items }: PiContextBarProps) {
           </div>
         ))}
       </div>
-    </div>
+    </PiSection>
   );
 }

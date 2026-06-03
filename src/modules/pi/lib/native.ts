@@ -10,12 +10,30 @@ import type {
 } from "./sessions";
 import type { PiDiagnostics, PiHostInfo, PiRuntimeState } from "./status";
 
+export type PiProfileModelInfo = {
+  provider: string;
+  providerLabel: string;
+  id: string;
+  label: string;
+  available: boolean;
+  contextWindow: number | null;
+  maxTokens: number | null;
+  reasoning: boolean;
+};
+
+export type PiProfileModelsList = {
+  profileAgentDir: string;
+  loadError: string | null;
+  models: PiProfileModelInfo[];
+};
+
 export const piNative = {
   status: () => invoke<PiRuntimeState>("pi_status"),
   start: () => invoke<PiRuntimeState>("pi_start"),
   stop: () => invoke<PiRuntimeState>("pi_stop"),
   hostInfo: () => invoke<PiHostInfo>("pi_host_info"),
   diagnostics: () => invoke<PiDiagnostics>("pi_diagnostics"),
+  modelsList: () => invoke<PiProfileModelsList>("pi_models_list"),
   sessionsHistory: () => invoke<PiSessionsList>("pi_sessions_history"),
   sessionsList: () => invoke<PiSessionsList>("pi_sessions_list"),
   sessionCreate: (

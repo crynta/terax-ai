@@ -13,13 +13,123 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{
-    PiDiagnostics, PiHostInfo, PiPhase, PiPromptContext, PiResolvedProviderConfig,
-    PiRuntimeSnapshot, PiSessionCreateResult, PiSessionEvent, PiSessionSendResult,
-    PiSessionStopResult, PiSessionsList,
+    PiDiagnostics, PiHostInfo, PiMethodTimeoutDiagnostics, PiPhase, PiProfileModelsList,
+    PiPromptContext, PiResolvedProviderConfig, PiRuntimeSnapshot, PiSessionCreateResult,
+    PiSessionEvent, PiSessionSendResult, PiSessionStopResult, PiSessionsList,
 };
 
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const STDERR_TAIL_LIMIT: usize = 4096;
+
+#[derive(Clone)]
+struct RequestTimeouts {
+    fallback: Duration,
+    ping: Duration,
+    status: Duration,
+    info: Duration,
+    diagnostics: Duration,
+    models_list: Duration,
+    sessions_list: Duration,
+    sessions_create: Duration,
+    sessions_send: Duration,
+    sessions_stop: Duration,
+    shutdown: Duration,
+}
+
+impl RequestTimeouts {
+    fn production() -> Self {
+        Self {
+            fallback: DEFAULT_REQUEST_TIMEOUT,
+            ping: Duration::from_secs(3),
+            status: Duration::from_secs(3),
+            info: Duration::from_secs(5),
+            diagnostics: Duration::from_secs(30),
+            models_list: Duration::from_secs(30),
+            sessions_list: Duration::from_secs(5),
+            sessions_create: Duration::from_secs(60),
+            sessions_send: DEFAULT_REQUEST_TIMEOUT,
+            sessions_stop: Duration::from_secs(10),
+            shutdown: Duration::from_secs(10),
+        }
+    }
+
+    #[cfg(test)]
+    fn uniform(timeout: Duration) -> Self {
+        Self {
+            fallback: timeout,
+            ping: timeout,
+            status: timeout,
+            info: timeout,
+            diagnostics: timeout,
+            models_list: timeout,
+            sessions_list: timeout,
+            sessions_create: timeout,
+            sessions_send: timeout,
+            sessions_stop: timeout,
+            shutdown: timeout,
+        }
+    }
+
+    #[cfg(test)]
+    fn for_tests(timeout: Duration) -> Self {
+        Self::uniform(timeout)
+    }
+
+    #[cfg(test)]
+    fn with_method(mut self, method: &str, timeout: Duration) -> Self {
+        match method {
+            "ping" => self.ping = timeout,
+            "status" => self.status = timeout,
+            "info" => self.info = timeout,
+            "diagnostics" => self.diagnostics = timeout,
+            "models.list" => self.models_list = timeout,
+            "sessions.list" => self.sessions_list = timeout,
+            "sessions.create" => self.sessions_create = timeout,
+            "sessions.send" => self.sessions_send = timeout,
+            "sessions.stop" => self.sessions_stop = timeout,
+            "shutdown" => self.shutdown = timeout,
+            _ => self.fallback = timeout,
+        }
+        self
+    }
+
+    fn for_method(&self, method: &str) -> Duration {
+        match method {
+            "ping" => self.ping,
+            "status" => self.status,
+            "info" => self.info,
+            "diagnostics" => self.diagnostics,
+            "models.list" => self.models_list,
+            "sessions.list" => self.sessions_list,
+            "sessions.create" => self.sessions_create,
+            "sessions.send" => self.sessions_send,
+            "sessions.stop" => self.sessions_stop,
+            "shutdown" => self.shutdown,
+            _ => self.fallback,
+        }
+    }
+
+    fn diagnostics(&self) -> Vec<PiMethodTimeoutDiagnostics> {
+        [
+            "ping",
+            "status",
+            "info",
+            "diagnostics",
+            "models.list",
+            "sessions.list",
+            "sessions.create",
+            "sessions.send",
+            "sessions.stop",
+            "shutdown",
+        ]
+        .into_iter()
+        .map(|method| PiMethodTimeoutDiagnostics {
+            method: method.to_string(),
+            timeout_ms: self.for_method(method).as_millis() as u64,
+        })
+        .collect()
+    }
+}
 const HOST_ENV_ALLOWLIST: &[&str] = &[
     "PATH",
     "HOME",
@@ -31,15 +141,6 @@ const HOST_ENV_ALLOWLIST: &[&str] = &[
     "TMP",
     "SHELL",
     "PI_CODING_AGENT_DIR",
-    "ANTHROPIC_API_KEY",
-    "OPENAI_API_KEY",
-    "GOOGLE_GENERATIVE_AI_API_KEY",
-    "GEMINI_API_KEY",
-    "GROQ_API_KEY",
-    "XAI_API_KEY",
-    "CEREBRAS_API_KEY",
-    "DEEPSEEK_API_KEY",
-    "MISTRAL_API_KEY",
     "TERAX_PI_NODE_MODULES",
     "TERAX_PI_HOST_TEST_FAUX_RESPONSE",
     "TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND",
@@ -204,7 +305,7 @@ pub struct PiHost {
     stdin: Mutex<ChildStdin>,
     pending: PendingResponses,
     stderr_tail: StderrTail,
-    request_timeout: Duration,
+    request_timeouts: RequestTimeouts,
     next_id: AtomicU64,
 }
 
@@ -214,18 +315,33 @@ impl PiHost {
         event_sink: Option<PiSessionEventSink>,
     ) -> Result<Self, String> {
         let host_path = resolve_host_path(resource_dir)?;
-        Self::spawn_inner(
+        Self::spawn_inner_with_timeouts(
             node_binary(resource_dir),
             host_path,
-            DEFAULT_REQUEST_TIMEOUT,
+            RequestTimeouts::production(),
             event_sink,
         )
     }
 
+    #[cfg(test)]
     fn spawn_inner(
         node_binary: PathBuf,
         host_path: PathBuf,
         request_timeout: Duration,
+        event_sink: Option<PiSessionEventSink>,
+    ) -> Result<Self, String> {
+        Self::spawn_inner_with_timeouts(
+            node_binary,
+            host_path,
+            RequestTimeouts::uniform(request_timeout),
+            event_sink,
+        )
+    }
+
+    fn spawn_inner_with_timeouts(
+        node_binary: PathBuf,
+        host_path: PathBuf,
+        request_timeouts: RequestTimeouts,
         event_sink: Option<PiSessionEventSink>,
     ) -> Result<Self, String> {
         let mut command = Command::new(node_binary);
@@ -263,7 +379,7 @@ impl PiHost {
             stdin: Mutex::new(stdin),
             pending,
             stderr_tail,
-            request_timeout,
+            request_timeouts,
             next_id: AtomicU64::new(1),
         };
         let ping: PingResult = host.call("ping").map_err(HostCallError::message)?;
@@ -283,11 +399,31 @@ impl PiHost {
     }
 
     pub fn diagnostics(&self) -> Result<PiDiagnostics, HostCallError> {
-        self.call("diagnostics")
+        let mut diagnostics: PiDiagnostics = self.call("diagnostics")?;
+        diagnostics.manager.method_timeouts = self.request_timeouts.diagnostics();
+        Ok(diagnostics)
     }
 
     pub fn sessions_list(&self) -> Result<PiSessionsList, HostCallError> {
         self.call("sessions.list")
+    }
+
+    pub fn has_running_sessions(&self) -> Result<bool, HostCallError> {
+        Ok(self
+            .sessions_list()?
+            .sessions
+            .iter()
+            .any(|session| session.status == "running"))
+    }
+
+    pub fn models_list(
+        &self,
+        profile_agent_dir: String,
+    ) -> Result<PiProfileModelsList, HostCallError> {
+        self.call_with_params(
+            "models.list",
+            json!({ "profileAgentDir": profile_agent_dir }),
+        )
     }
 
     pub fn session_create(
@@ -353,7 +489,8 @@ impl PiHost {
             return Err(error);
         }
 
-        let line = match response_rx.recv_timeout(self.request_timeout) {
+        let request_timeout = self.request_timeouts.for_method(method);
+        let line = match response_rx.recv_timeout(request_timeout) {
             Ok(Ok(line)) => line,
             Ok(Err(error)) => return Err(HostCallError::Transport(self.with_stderr(error))),
             Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -361,7 +498,7 @@ impl PiHost {
                 self.kill_child();
                 return Err(HostCallError::Transport(self.with_stderr(format!(
                     "Pi host request `{method}` timed out after {}ms",
-                    self.request_timeout.as_millis()
+                    request_timeout.as_millis()
                 ))));
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -738,19 +875,24 @@ mod tests {
     }
 
     #[test]
-    fn host_environment_uses_allowlist() {
-        std::env::set_var("ANTHROPIC_API_KEY", "allowed-secret");
+    fn host_environment_uses_allowlist_without_provider_secrets() {
+        std::env::set_var("ANTHROPIC_API_KEY", "blocked-provider-secret");
+        std::env::set_var("TERAX_PI_NODE_MODULES", "/tmp/pi-node-modules");
         std::env::set_var("TERAX_SHOULD_NOT_LEAK", "blocked-secret");
         let environment = host_environment();
 
-        assert!(environment
+        assert!(environment.iter().any(
+            |(name, value)| name == "TERAX_PI_NODE_MODULES" && value == "/tmp/pi-node-modules"
+        ));
+        assert!(!environment
             .iter()
-            .any(|(name, value)| name == "ANTHROPIC_API_KEY" && value == "allowed-secret"));
+            .any(|(name, _)| name == "ANTHROPIC_API_KEY"));
         assert!(!environment
             .iter()
             .any(|(name, _)| name == "TERAX_SHOULD_NOT_LEAK"));
 
         std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::remove_var("TERAX_PI_NODE_MODULES");
         std::env::remove_var("TERAX_SHOULD_NOT_LEAK");
     }
 
@@ -865,6 +1007,44 @@ for await (const line of lines) {
         assert_eq!(info.host_version, "fake");
 
         host.shutdown();
+    }
+
+    #[test]
+    fn production_timeouts_are_method_specific() {
+        let timeouts = RequestTimeouts::production();
+
+        assert!(timeouts.for_method("status") < timeouts.for_method("sessions.create"));
+        assert!(timeouts.for_method("sessions.stop") < timeouts.for_method("models.list"));
+        assert_eq!(timeouts.for_method("status"), Duration::from_secs(3));
+    }
+
+    #[test]
+    fn request_timeout_uses_method_specific_duration() {
+        let temp = tempdir().unwrap();
+        let script = temp.path().join("host.js");
+        fs::write(
+            &script,
+            r#"
+import { createInterface } from 'node:readline';
+const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+for await (const line of lines) {
+  const request = JSON.parse(line);
+  if (request.method === 'ping') {
+    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { pong: true } })}\n`);
+  }
+}
+"#,
+        )
+        .unwrap();
+        let timeouts = RequestTimeouts::for_tests(Duration::from_millis(500))
+            .with_method("status", Duration::from_millis(75));
+        let host = PiHost::spawn_inner_with_timeouts(PathBuf::from("node"), script, timeouts, None)
+            .unwrap();
+
+        let error = host.status().unwrap_err().message();
+
+        assert!(error.contains("status` timed out after 75ms"), "{error}");
+        host.kill_child();
     }
 
     #[test]

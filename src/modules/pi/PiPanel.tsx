@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -19,35 +20,24 @@ import { PiDiagnosticsCard } from "@/modules/pi/components/PiDiagnosticsCard";
 import { PiRuntimeCard } from "@/modules/pi/components/PiRuntimeCard";
 import { PiSessionList } from "@/modules/pi/components/PiSessionList";
 import { PiTranscript } from "@/modules/pi/components/PiTranscript";
-import {
-  buildPiDiagnosticsView,
-  type PiProviderKeyStatus,
-} from "@/modules/pi/lib/diagnostics";
+import type { PiProviderKeyStatus } from "@/modules/pi/lib/diagnostics";
+import { shouldPrewarmPiRuntime } from "@/modules/pi/lib/lifecycle";
 import { piNative } from "@/modules/pi/lib/native";
+import { buildPiPanelState } from "@/modules/pi/lib/panel-state";
 import {
   type PiProviderPrefs,
   resolvePiProviderConfig,
 } from "@/modules/pi/lib/provider";
-import type {
-  PiPromptContext,
-  PiSession,
-  PiSessionEvent,
-} from "@/modules/pi/lib/sessions";
+import type { PiSession, PiSessionEvent } from "@/modules/pi/lib/sessions";
 import {
   applyPiSessionEvents,
-  buildPiSessionTranscript,
-  isPiSessionSendable,
+  MAX_PI_PROMPT_CHARS,
   markPiSessionsStopped,
   mergePiSessionEvents,
   mergePiSessionSnapshots,
   upsertPiSession,
 } from "@/modules/pi/lib/sessions";
-import {
-  getPiStatusView,
-  type PiDiagnostics,
-  type PiRuntimeState,
-} from "@/modules/pi/lib/status";
-import { buildPiContextPreview } from "@/modules/pi/lib/view";
+import type { PiDiagnostics, PiRuntimeState } from "@/modules/pi/lib/status";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
@@ -75,6 +65,15 @@ type PiPanelProps = {
   activeTerminalPrivate?: boolean;
 };
 
+type PiPanelSectionId = "diagnostics" | "sessions" | "context";
+type PiPanelSectionCollapseState = Record<PiPanelSectionId, boolean>;
+
+const INITIAL_SECTION_COLLAPSED = {
+  diagnostics: true,
+  sessions: true,
+  context: true,
+} satisfies PiPanelSectionCollapseState;
+
 export function PiPanel({
   workspaceRoot = null,
   activeCwd = null,
@@ -93,10 +92,14 @@ export function PiPanel({
   );
   const [prompt, setPrompt] = useState("");
   const [isBusy, setIsBusy] = useState(false);
+  const [collapsedSections, setCollapsedSections] =
+    useState<PiPanelSectionCollapseState>(INITIAL_SECTION_COLLAPSED);
   const [providerKeyStatus, setProviderKeyStatus] = useState<
     PiProviderKeyStatus | undefined
   >(undefined);
   const [keyRefreshToken, setKeyRefreshToken] = useState(0);
+  const prewarmAttemptedRef = useRef(false);
+  const piAuthMode = usePreferencesStore((state) => state.piAuthMode);
   const piModelId = usePreferencesStore((state) => state.piModelId);
   const lmstudioBaseURL = usePreferencesStore((state) => state.lmstudioBaseURL);
   const lmstudioModelId = usePreferencesStore((state) => state.lmstudioModelId);
@@ -117,10 +120,9 @@ export function PiPanel({
     (state) => state.openrouterModelId,
   );
   const customEndpoints = usePreferencesStore((state) => state.customEndpoints);
-  const status = getPiStatusView(runtimeState);
-  const runtimeReady = runtimeState.phase === "ready";
   const piProviderPrefs = useMemo<PiProviderPrefs>(
     () => ({
+      piAuthMode,
       piModelId,
       lmstudioBaseURL,
       lmstudioModelId,
@@ -146,6 +148,7 @@ export function PiPanel({
       openaiCompatibleContextLimit,
       openaiCompatibleModelId,
       openrouterModelId,
+      piAuthMode,
       piModelId,
     ],
   );
@@ -153,66 +156,52 @@ export function PiPanel({
     () => resolvePiProviderConfig(piProviderPrefs),
     [piProviderPrefs],
   );
-  const canCreateSession =
-    runtimeReady && workspaceRoot !== null && piProvider.ok;
-  const selectedSession = useMemo(
-    () => sessions.find((session) => session.id === selectedSessionId) ?? null,
-    [selectedSessionId, sessions],
-  );
-  const selectedSessionSendable = isPiSessionSendable(selectedSession);
-  const selectedEvents = useMemo(
+  const panelState = useMemo(
     () =>
-      selectedSessionId === null
-        ? []
-        : sessionEvents.filter(
-            (event) => event.sessionId === selectedSessionId,
-          ),
-    [selectedSessionId, sessionEvents],
-  );
-  const selectedTranscript = useMemo(
-    () => buildPiSessionTranscript(selectedEvents),
-    [selectedEvents],
-  );
-  const promptContext = useMemo<PiPromptContext>(
-    () => ({
-      workspaceRoot: selectedSession?.cwd ?? workspaceRoot,
-      activeTerminalCwd: activeCwd,
-      activeFile,
-      activeTerminalPrivate,
-    }),
+      buildPiPanelState({
+        activeCwd,
+        activeFile,
+        activeTerminalPrivate,
+        diagnostics,
+        diagnosticsError,
+        historyError,
+        isBusy,
+        prompt,
+        provider: piProvider,
+        providerKeyStatus,
+        runtimeState,
+        selectedSessionId,
+        sessionEvents,
+        sessions,
+        workspaceRoot,
+      }),
     [
       activeCwd,
       activeFile,
       activeTerminalPrivate,
-      selectedSession?.cwd,
-      workspaceRoot,
-    ],
-  );
-  const contextPreview = useMemo(
-    () => buildPiContextPreview(promptContext, selectedSession?.cwd),
-    [promptContext, selectedSession?.cwd],
-  );
-  const diagnosticsView = useMemo(
-    () =>
-      buildPiDiagnosticsView({
-        diagnostics,
-        diagnosticsError,
-        historyError,
-        provider: piProvider,
-        providerKeyStatus,
-        runtimeState,
-        workspaceRoot,
-      }),
-    [
       diagnostics,
       diagnosticsError,
       historyError,
+      isBusy,
       piProvider,
+      prompt,
       providerKeyStatus,
       runtimeState,
+      selectedSessionId,
+      sessionEvents,
+      sessions,
       workspaceRoot,
     ],
   );
+  const status = panelState.runtime.status;
+  const runtimeReady = panelState.runtime.ready;
+  const canCreateSession = panelState.composer.canCreateSession;
+  const selectedSession = panelState.sessions.selected;
+  const selectedSessionSendable = panelState.sessions.selectedSendable;
+  const selectedTranscript = panelState.sessions.transcript;
+  const promptContext = panelState.context.prompt;
+  const contextPreview = panelState.context.preview;
+  const diagnosticsView = panelState.diagnostics.view;
 
   useEffect(() => {
     let alive = true;
@@ -242,7 +231,18 @@ export function PiPanel({
         return;
       }
 
-      const provider = piProvider.config.provider;
+      if (piProvider.config.authMode === "profile") {
+        setProviderKeyStatus({
+          configured: null,
+          required: false,
+          supported: false,
+        });
+        return;
+      }
+
+      const provider = piProvider.config.provider as Parameters<
+        typeof providerSupportsKey
+      >[0];
       const supported = providerSupportsKey(provider);
       const required = providerNeedsKey(provider);
       if (!supported) {
@@ -265,6 +265,17 @@ export function PiPanel({
       alive = false;
     };
   }, [keyRefreshToken, piProvider]);
+
+  const setSectionCollapsed = useCallback(
+    (section: PiPanelSectionId, collapsed: boolean) => {
+      setCollapsedSections((current) =>
+        current[section] === collapsed
+          ? current
+          : { ...current, [section]: collapsed },
+      );
+    },
+    [],
+  );
 
   const applySessionEvents = useCallback((events: PiSessionEvent[]) => {
     if (events.length === 0) {
@@ -370,11 +381,6 @@ export function PiPanel({
   }, [refreshDiagnostics, refreshHistory, refreshSessions]);
 
   useEffect(() => {
-    void refreshStatus();
-    void refreshHistory();
-  }, [refreshHistory, refreshStatus]);
-
-  useEffect(() => {
     setSelectedSessionId((current) =>
       current !== null && sessions.some((session) => session.id === current)
         ? current
@@ -419,6 +425,20 @@ export function PiPanel({
       setIsBusy(false);
     }
   }, [refreshDiagnostics, refreshHistory, refreshSessions]);
+
+  useEffect(() => {
+    if (
+      !shouldPrewarmPiRuntime({
+        attempted: prewarmAttemptedRef.current,
+        isBusy,
+        runtimeState,
+      })
+    ) {
+      return;
+    }
+    prewarmAttemptedRef.current = true;
+    void startRuntime();
+  }, [isBusy, runtimeState, startRuntime]);
 
   const stopRuntime = useCallback(async () => {
     setIsBusy(true);
@@ -479,7 +499,12 @@ export function PiPanel({
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       const text = prompt.trim();
-      if (selectedSession === null || !selectedSessionSendable || text === "") {
+      if (
+        selectedSession === null ||
+        !selectedSessionSendable ||
+        text === "" ||
+        text.length > MAX_PI_PROMPT_CHARS
+      ) {
         return;
       }
 
@@ -567,24 +592,38 @@ export function PiPanel({
       />
 
       <PiDiagnosticsCard
+        collapsed={collapsedSections.diagnostics}
         disabled={isBusy || isDiagnosticsRefreshing}
         isRefreshing={isDiagnosticsRefreshing}
         view={diagnosticsView}
+        onCollapsedChange={(collapsed) =>
+          setSectionCollapsed("diagnostics", collapsed)
+        }
         onOpenSettings={openModelSettings}
         onRefresh={() => void refreshPanelDiagnostics()}
         onStartRuntime={() => void startRuntime()}
       />
 
-      <PiContextBar items={contextPreview} />
+      <PiContextBar
+        collapsed={collapsedSections.context}
+        items={contextPreview}
+        onCollapsedChange={(collapsed) =>
+          setSectionCollapsed("context", collapsed)
+        }
+      />
 
       <div className="flex min-h-0 flex-1 flex-col">
         <PiSessionList
           canCreateSession={canCreateSession}
+          collapsed={collapsedSections.sessions}
           disabled={isBusy}
           runtimeReady={runtimeReady}
           selectedSessionId={selectedSessionId}
           sessions={sessions}
           workspaceRoot={workspaceRoot}
+          onCollapsedChange={(collapsed) =>
+            setSectionCollapsed("sessions", collapsed)
+          }
           onCreateSession={() => void createSession()}
           onSelectSession={setSelectedSessionId}
         />
@@ -592,6 +631,7 @@ export function PiPanel({
         <PiTranscript
           selectedSession={selectedSession}
           transcript={selectedTranscript}
+          onUsePrompt={setPrompt}
         />
 
         <PiComposer

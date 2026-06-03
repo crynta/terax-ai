@@ -6,10 +6,12 @@ import {
 import {
   nextPiModelIdAfterCustomEndpointRemoval,
   type PiProviderPrefs,
+  profileModelSourceId,
   resolvePiProviderConfig,
 } from "@/modules/pi/lib/provider";
 
 const basePrefs: PiProviderPrefs = {
+  piAuthMode: "terax",
   piModelId: DEFAULT_MODEL_ID,
   lmstudioBaseURL: "http://localhost:1234/v1",
   lmstudioModelId: "",
@@ -105,6 +107,27 @@ describe("resolvePiProviderConfig", () => {
       providerLabel: "Ollama",
       modelLabel: "Ollama",
       error: "Ollama needs a model id in Settings > Models.",
+    });
+  });
+
+  it("resolves profile-backed Pi models without Terax provider keys", () => {
+    const resolved = resolvePiProviderConfig({
+      ...basePrefs,
+      piAuthMode: "profile",
+      piModelId: profileModelSourceId("openai-codex", "gpt-5.3-codex"),
+    });
+
+    expect(resolved).toMatchObject({
+      ok: true,
+      provider: "openai-codex",
+      providerLabel: "OpenAI Codex",
+      modelLabel: "gpt-5.3-codex",
+      config: {
+        authMode: "profile",
+        provider: "openai-codex",
+        modelId: "gpt-5.3-codex",
+        sourceModelId: "pi-profile:openai-codex:gpt-5.3-codex",
+      },
     });
   });
 });

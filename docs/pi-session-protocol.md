@@ -1,6 +1,6 @@
 # Pi session protocol
 
-The Rust Pi host manager talks to the Node Pi host over newline-delimited JSON-RPC 2.0 on stdio. The protocol keeps Terax-owned capabilities out of the Node sidecar; session methods only manage Pi session state and prompt delivery. Rust persists session metadata/events separately in the app data directory.
+The Rust Pi host manager talks to the Node Pi host over newline-delimited JSON-RPC 2.0 on stdio. The protocol keeps Terax-owned capabilities out of the Node sidecar; session methods only manage Pi session state and prompt delivery. Rust persists session metadata/events separately in the app data directory. When the sidecar shuts down or is cleared after a transport failure, Rust records synthetic `session.status` events that mark unfinished persisted sessions as `stopped`.
 
 ## Runtime ownership
 
@@ -14,7 +14,8 @@ The Rust Pi host manager talks to the Node Pi host over newline-delimited JSON-R
 type PiSessionStatus = "idle" | "running" | "stopped" | "error";
 
 type PiSession = {
-  id: `pi-${number}`;
+  // Opaque restart-safe id, e.g. `pi_<timestamp>_<random>`.
+  id: string;
   title: string;
   cwd?: string;
   status: PiSessionStatus;
@@ -34,7 +35,8 @@ Events use the same envelope in both method responses and live JSON-RPC notifica
 
 ```ts
 type PiSessionEvent = {
-  id: `evt-${number}`;
+  // Opaque restart-safe id, e.g. `evt_<timestamp>_<sequence>_<random>`.
+  id: string;
   type:
     | "session.created"
     | "session.input"
@@ -83,7 +85,72 @@ active_terminal_mode: private
 
 Params: none.
 
-Result includes host/package status, Node runtime metadata, no-tools mode, session storage mode, and API-key presence booleans. It never returns secret values.
+Result includes host/package status, Node runtime metadata, no-tools mode, session storage mode, API-key presence booleans, disabled capability flags, JSON-RPC method allowlist, resource limits, forwarded environment variable names, and Rust manager policy such as idle shutdown and method-specific timeouts. It never returns secret values.
+
+```ts
+type PiDiagnostics = PiHostInfo & {
+  node: {
+    version: string;
+    execPath: string;
+    platform: string;
+    arch: string;
+    pid: number;
+    cwd: string;
+  };
+  config: {
+    toolMode: "noTools";
+    sessionStorage: "rust-app-data-json";
+    apiKeys: Array<{ name: string; configured: boolean }>;
+    forwardedEnvNames: string[];
+  };
+  capabilities: {
+    tools: false;
+    files: false;
+    shell: false;
+    git: false;
+    terminal: false;
+    editor: false;
+  };
+  protocol: { allowedMethods: string[] };
+  limits: { maxPromptChars: number; maxSessions: number };
+  manager: {
+    idleShutdownMs: number;
+    methodTimeouts: Array<{ method: string; timeoutMs: number }>;
+  };
+  sessions: Array<{ id: string; title: string; status: string; cwd: string | null }>;
+};
+```
+
+### `models.list`
+
+Params:
+
+```ts
+{ profileAgentDir: string }
+```
+
+Result:
+
+```ts
+type PiProfileModelInfo = {
+  provider: string;
+  providerLabel: string;
+  id: string;
+  label: string;
+  available: boolean;
+  contextWindow: number | null;
+  maxTokens: number | null;
+  reasoning: boolean;
+};
+
+{
+  profileAgentDir: string;
+  loadError: string | null;
+  models: PiProfileModelInfo[];
+}
+```
+
+Lists non-secret model catalog metadata from an explicitly opted-in terminal Pi profile. The sidecar reads `auth.json`/`models.json` through Pi SDK `AuthStorage` and `ModelRegistry`, reports whether auth is available, and never returns secret values.
 
 ### `sessions.list`
 
@@ -100,7 +167,17 @@ Result:
 Params:
 
 ```ts
-{ title?: string; cwd?: string }
+type PiProviderConfig = {
+  authMode?: "terax" | "profile";
+  provider: string;
+  modelId: string;
+  sourceModelId?: string;
+  baseUrl?: string;
+  contextLimit?: number;
+  customEndpointId?: string;
+};
+
+{ title?: string; cwd?: string; providerConfig?: PiProviderConfig }
 ```
 
 Result:
@@ -110,6 +187,8 @@ Result:
 ```
 
 Creates an idle Pi SDK `AgentSession` owned by the sidecar. `cwd` scopes Pi project context and must be a non-empty string when provided. Terax's Tauri command requires `cwd`, canonicalizes and validates it against the authorized workspace, then forwards only that canonical path to the Node sidecar.
+
+When `providerConfig.authMode` is omitted or `"terax"`, Rust fetches the selected Terax keyring entry, excludes provider keys from the sidecar process environment, forwards only the runtime key in this request to an in-memory sidecar auth registry, and the sidecar never persists it. When `authMode` is `"profile"`, Rust resolves the opted-in terminal Pi agent directory and forwards only that directory path; the sidecar uses Pi SDK profile-backed auth/model/settings objects so terminal Pi providers remain separate from Terax AI settings.
 
 ### `sessions.send`
 
@@ -141,7 +220,9 @@ Result:
 { session: PiSession; events: PiSessionEvent[] }
 ```
 
-Aborts a running Pi session with `AgentSession.abort()` when possible, disposes the SDK session, marks it `stopped`, and emits a `session.status` event. Late prompt completion/error callbacks are ignored after the session is stopped.
+If the session is running, aborts the active Pi prompt with `AgentSession.abort()`, replaces the underlying SDK `AgentSession`, marks the Terax Pi session `idle`, and emits a `session.status` event so the same sidebar session remains sendable. Late prompt completion/error callbacks from the cancelled run are ignored.
+
+If the session is not running, disposes the SDK session, marks it `stopped`, and emits a `session.status` event.
 
 ## Errors
 

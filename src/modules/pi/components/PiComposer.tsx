@@ -1,7 +1,10 @@
+import { ArrowUpIcon, StopCircleIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { PiSession } from "@/modules/pi/lib/sessions";
+import { cn } from "@/lib/utils";
+import { MAX_PI_PROMPT_CHARS, type PiSession } from "@/modules/pi/lib/sessions";
 
 type PiComposerProps = {
   disabled: boolean;
@@ -13,6 +16,8 @@ type PiComposerProps = {
   onSendPrompt: (event: FormEvent<HTMLFormElement>) => void;
   onStopSession: () => void;
 };
+
+const PROMPT_LIMIT_WARNING_CHARS = 19_000;
 
 function composerHint(
   runtimeReady: boolean,
@@ -27,9 +32,14 @@ function composerHint(
     return "Create a new session to send more prompts.";
   }
   if (selectedSession.status === "error") {
-    return "Create a new session or restart Pi before sending.";
+    return "Fix settings if needed, then send again to retry.";
   }
-  return "Enter to send, Shift Enter for a new line.";
+  return "Enter to send · Shift Enter for newline";
+}
+
+function promptLimitLabel(prompt: string): string | null {
+  if (prompt.length < PROMPT_LIMIT_WARNING_CHARS) return null;
+  return `${prompt.length.toLocaleString()}/${MAX_PI_PROMPT_CHARS.toLocaleString()}`;
 }
 
 export function PiComposer({
@@ -42,17 +52,26 @@ export function PiComposer({
   onSendPrompt,
   onStopSession,
 }: PiComposerProps) {
-  const sendDisabled = disabled || prompt.trim() === "";
+  const isRunning = selectedSession?.status === "running";
+  const sendDisabled =
+    disabled || prompt.trim() === "" || prompt.length > MAX_PI_PROMPT_CHARS;
   const stopDisabled =
-    !runtimeReady ||
-    selectedSession === null ||
-    selectedSession.status === "stopped" ||
-    isBusy;
+    !runtimeReady || selectedSession === null || !isRunning || isBusy;
+  const limitLabel = promptLimitLabel(prompt);
+  const overLimit = prompt.length > MAX_PI_PROMPT_CHARS;
+
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    if (sendDisabled) {
+      event.preventDefault();
+      return;
+    }
+    onSendPrompt(event);
+  };
 
   return (
     <form
       className="shrink-0 border-t border-border/35 bg-card/40 px-2.5 py-2"
-      onSubmit={onSendPrompt}
+      onSubmit={onSubmit}
     >
       <Textarea
         aria-label="Pi prompt"
@@ -72,24 +91,51 @@ export function PiComposer({
         <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground/70">
           {composerHint(runtimeReady, selectedSession)}
         </span>
-        <Button
-          type="button"
-          size="xs"
-          variant="outline"
-          className="h-6"
-          disabled={stopDisabled}
-          onClick={onStopSession}
-        >
-          Stop
-        </Button>
-        <Button
-          type="submit"
-          size="xs"
-          className="h-6 min-w-16"
-          disabled={sendDisabled}
-        >
-          Send
-        </Button>
+        {limitLabel ? (
+          <span
+            className={cn(
+              "shrink-0 tabular-nums text-[10px] text-muted-foreground/70",
+              overLimit && "text-destructive",
+            )}
+          >
+            {limitLabel}
+          </span>
+        ) : null}
+        {isRunning ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="outline"
+            className="h-6 min-w-16"
+            aria-label="Stop response"
+            disabled={stopDisabled}
+            onClick={onStopSession}
+          >
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={StopCircleIcon}
+              size={11}
+              strokeWidth={1.75}
+            />
+            Stop
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            size="xs"
+            className="h-6 min-w-16"
+            aria-label="Send prompt"
+            disabled={sendDisabled}
+          >
+            Send
+            <HugeiconsIcon
+              data-icon="inline-end"
+              icon={ArrowUpIcon}
+              size={11}
+              strokeWidth={1.75}
+            />
+          </Button>
+        )}
       </div>
     </form>
   );

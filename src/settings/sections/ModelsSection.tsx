@@ -5,11 +5,12 @@ import {
   Cancel01Icon,
   CheckmarkCircle02Icon,
   ChevronDown,
+  Refresh01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,8 +48,15 @@ import {
 } from "@/modules/ai/lib/keyring";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import {
+  getPiModelProviderGroups,
+  getPiProfileModelGroups,
+} from "@/modules/pi/lib/model-options";
+import { type PiProfileModelsList, piNative } from "@/modules/pi/lib/native";
+import {
+  isProfileModelSourceId,
   nextPiModelIdAfterCustomEndpointRemoval,
   type PiProviderPrefs,
+  profileModelSourceId,
   resolvePiProviderConfig,
 } from "@/modules/pi/lib/provider";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -70,6 +78,7 @@ import {
   setOpenaiCompatibleContextLimit,
   setOpenaiCompatibleModelId,
   setOpenrouterModelId,
+  setPiAuthMode,
   setPiModelId,
   setRecentModelIds,
 } from "@/modules/settings/store";
@@ -138,6 +147,7 @@ export function ModelsSection() {
   const [adding, setAdding] = useState<Set<ProviderId>>(new Set());
 
   const defaultModel = usePreferencesStore((s) => s.defaultModelId);
+  const piAuthMode = usePreferencesStore((s) => s.piAuthMode);
   const piModelId = usePreferencesStore((s) => s.piModelId);
   const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
   const lmstudioModelId = usePreferencesStore((s) => s.lmstudioModelId);
@@ -252,6 +262,7 @@ export function ModelsSection() {
 
   const piProviderPrefs = useMemo<PiProviderPrefs>(
     () => ({
+      piAuthMode,
       piModelId,
       lmstudioBaseURL,
       lmstudioModelId,
@@ -277,6 +288,7 @@ export function ModelsSection() {
       ollamaBaseURL,
       ollamaModelId,
       openrouterModelId,
+      piAuthMode,
       piModelId,
     ],
   );
@@ -575,6 +587,30 @@ function DefaultsBlock({
             prefs={piProviderPrefs}
           />
         </FieldRow>
+        <FieldRow label="Pi profile">
+          <div className="flex flex-1 items-center justify-between gap-3 rounded-md border border-border/50 bg-background/40 px-2.5 py-2">
+            <div className="min-w-0">
+              <p className="text-[11.5px] text-foreground">
+                Use existing Pi profile
+              </p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                Uses terminal Pi auth/catalog. Terax model keys stay separate.
+              </p>
+            </div>
+            <Switch
+              checked={piProviderPrefs.piAuthMode === "profile"}
+              onCheckedChange={(checked) => {
+                void setPiAuthMode(checked ? "profile" : "terax");
+                if (
+                  !checked &&
+                  isProfileModelSourceId(piProviderPrefs.piModelId)
+                ) {
+                  void setPiModelId(DEFAULT_MODEL_ID);
+                }
+              }}
+            />
+          </div>
+        </FieldRow>
         <AutocompleteRow keys={keys} configuredIds={configuredIds} />
       </div>
     </div>
@@ -662,13 +698,47 @@ function PiModelPicker({
   configuredIds: Set<ProviderId>;
   prefs: PiProviderPrefs;
 }) {
+  const [profileCatalog, setProfileCatalog] =
+    useState<PiProfileModelsList | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const current = resolvePiProviderConfig(prefs);
+  const providerGroups = getPiModelProviderGroups(configuredIds);
+  const profileGroups = useMemo(
+    () => getPiProfileModelGroups(profileCatalog),
+    [profileCatalog],
+  );
   const hasAny =
-    configuredIds.size > 0 ||
-    prefs.customEndpoints.some(
-      (endpoint) => endpoint.baseURL.trim() && endpoint.modelId.trim(),
-    );
+    prefs.piAuthMode === "profile"
+      ? profileLoading || profileGroups.length > 0
+      : providerGroups.length > 0 || prefs.customEndpoints.length > 0;
   const currentProvider = current.provider ?? "openai";
+
+  const refreshProfileCatalog = useCallback(async () => {
+    setProfileLoading(true);
+    setProfileError(null);
+    try {
+      setProfileCatalog(await piNative.modelsList());
+    } catch (error: unknown) {
+      setProfileError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (prefs.piAuthMode !== "profile") return;
+    void refreshProfileCatalog();
+  }, [prefs.piAuthMode, refreshProfileCatalog]);
+
+  const modeLabel =
+    prefs.piAuthMode === "profile"
+      ? current.ok
+        ? current.providerLabel
+        : "Choose profile model"
+      : current.ok
+        ? current.providerLabel
+        : "Needs setup";
 
   return (
     <DropdownMenu>
@@ -684,9 +754,7 @@ function PiModelPicker({
           <span className="flex items-center gap-2 truncate">
             <ProviderIcon provider={currentProvider} size={13} />
             <span className="truncate">{current.modelLabel}</span>
-            <span className="text-muted-foreground">
-              · {current.ok ? current.providerLabel : "Needs setup"}
-            </span>
+            <span className="text-muted-foreground">· {modeLabel}</span>
           </span>
           <HugeiconsIcon
             icon={ArrowDown01Icon}
@@ -704,19 +772,104 @@ function PiModelPicker({
         className="min-w-70 p-1"
       >
         <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
-          {PROVIDERS.filter((provider) => configuredIds.has(provider.id)).map(
-            (provider) => {
-              const models = MODELS.filter(
-                (model) => model.provider === provider.id,
-              );
-              if (models.length === 0) return null;
-              return (
-                <div key={provider.id} className="px-1 pt-1.5 first:pt-1">
+          {prefs.piAuthMode === "profile" ? (
+            <>
+              <div className="px-1 pt-1.5 first:pt-1">
+                <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                  <ProviderIcon provider="openai-compatible" size={11} />
+                  <span>Existing Pi profile</span>
+                </div>
+                {profileCatalog ? (
+                  <p className="mb-1 truncate px-2 text-[10px] text-muted-foreground">
+                    {profileCatalog.profileAgentDir}
+                  </p>
+                ) : null}
+                <DropdownMenuItem
+                  disabled={profileLoading}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    void refreshProfileCatalog();
+                  }}
+                  className="flex items-center gap-2 text-[12px]"
+                >
+                  <HugeiconsIcon
+                    icon={Refresh01Icon}
+                    size={12}
+                    strokeWidth={1.8}
+                  />
+                  {profileLoading ? "Refreshing profile models…" : "Refresh profile models"}
+                </DropdownMenuItem>
+                {profileLoading ? (
+                  <DropdownMenuItem disabled className="text-[12px]">
+                    Loading Pi profile models…
+                  </DropdownMenuItem>
+                ) : null}
+                {profileError ? (
+                  <DropdownMenuItem disabled className="text-[12px]">
+                    {profileError}
+                  </DropdownMenuItem>
+                ) : null}
+                {profileCatalog?.loadError ? (
+                  <DropdownMenuItem disabled className="text-[12px]">
+                    {profileCatalog.loadError}
+                  </DropdownMenuItem>
+                ) : null}
+                {profileCatalog &&
+                !profileLoading &&
+                !profileError &&
+                !profileCatalog.loadError &&
+                profileCatalog.models.length === 0 ? (
+                  <DropdownMenuItem disabled className="text-[12px]">
+                    No Pi profile models found.
+                  </DropdownMenuItem>
+                ) : null}
+              </div>
+              {profileGroups.map((group) => (
+                <div key={group.provider} className="px-1 pt-1.5 first:pt-1">
                   <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                    <ProviderIcon provider={provider.id} size={11} />
-                    <span>{provider.label}</span>
+                    <ProviderIcon provider={group.provider} size={11} />
+                    <span>{group.providerLabel}</span>
                   </div>
-                  {models.map((model) => (
+                  {group.models.map((model) => {
+                    const id = profileModelSourceId(model.provider, model.id);
+                    return (
+                      <DropdownMenuItem
+                        key={id}
+                        disabled={!model.available}
+                        onSelect={() => void setPiModelId(id)}
+                        className={cn(
+                          "flex items-start gap-2 text-[12px]",
+                          id === prefs.piModelId && "bg-accent/50",
+                        )}
+                      >
+                        <span className="flex flex-1 flex-col">
+                          <span>{model.label}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {model.available
+                              ? model.providerLabel
+                              : "Needs auth in Pi profile"}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              {providerGroups.map((group) => (
+                <div key={group.provider.id} className="px-1 pt-1.5 first:pt-1">
+                  <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                    <ProviderIcon provider={group.provider.id} size={11} />
+                    <span>{group.provider.label}</span>
+                    {group.setupRequired ? (
+                      <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium tracking-normal text-muted-foreground normal-case">
+                        Needs setup
+                      </span>
+                    ) : null}
+                  </div>
+                  {group.models.map((model) => (
                     <DropdownMenuItem
                       key={model.id}
                       onSelect={() => void setPiModelId(model.id)}
@@ -734,46 +887,46 @@ function PiModelPicker({
                     </DropdownMenuItem>
                   ))}
                 </div>
-              );
-            },
+              ))}
+              {prefs.customEndpoints.length > 0 ? (
+                <div className="px-1 pt-1.5 first:pt-1">
+                  <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                    <ProviderIcon provider="openai-compatible" size={11} />
+                    <span>Custom endpoints</span>
+                  </div>
+                  {prefs.customEndpoints.map((endpoint) => {
+                    const ready =
+                      endpoint.baseURL.trim() && endpoint.modelId.trim();
+                    const id = compatModelIdForEndpoint(endpoint.id);
+                    return (
+                      <DropdownMenuItem
+                        key={endpoint.id}
+                        disabled={!ready}
+                        onSelect={() => ready && void setPiModelId(id)}
+                        className={cn(
+                          "flex items-start gap-2 text-[12px]",
+                          id === prefs.piModelId && "bg-accent/50",
+                        )}
+                      >
+                        <span className="flex flex-1 flex-col">
+                          <span>
+                            {endpoint.name.trim() ||
+                              endpoint.modelId ||
+                              "Custom endpoint"}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {ready
+                              ? endpoint.baseURL
+                              : "Add a base URL and model id"}
+                          </span>
+                        </span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </>
           )}
-          {prefs.customEndpoints.length > 0 ? (
-            <div className="px-1 pt-1.5 first:pt-1">
-              <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                <ProviderIcon provider="openai-compatible" size={11} />
-                <span>Custom endpoints</span>
-              </div>
-              {prefs.customEndpoints.map((endpoint) => {
-                const ready =
-                  endpoint.baseURL.trim() && endpoint.modelId.trim();
-                const id = compatModelIdForEndpoint(endpoint.id);
-                return (
-                  <DropdownMenuItem
-                    key={endpoint.id}
-                    disabled={!ready}
-                    onSelect={() => ready && void setPiModelId(id)}
-                    className={cn(
-                      "flex items-start gap-2 text-[12px]",
-                      id === prefs.piModelId && "bg-accent/50",
-                    )}
-                  >
-                    <span className="flex flex-1 flex-col">
-                      <span>
-                        {endpoint.name.trim() ||
-                          endpoint.modelId ||
-                          "Custom endpoint"}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {ready
-                          ? endpoint.baseURL
-                          : "Add a base URL and model id"}
-                      </span>
-                    </span>
-                  </DropdownMenuItem>
-                );
-              })}
-            </div>
-          ) : null}
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

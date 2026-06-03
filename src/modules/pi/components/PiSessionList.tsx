@@ -13,16 +13,19 @@ import {
 } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
 import { sessionStatusDotClass } from "@/modules/pi/components/classes";
+import { PiSection } from "@/modules/pi/components/PiSection";
 import type { PiSession } from "@/modules/pi/lib/sessions";
 import { pathBasename } from "@/modules/pi/lib/view";
 
 type PiSessionListProps = {
   canCreateSession: boolean;
+  collapsed: boolean;
   disabled: boolean;
   runtimeReady: boolean;
   selectedSessionId: string | null;
   sessions: PiSession[];
   workspaceRoot: string | null;
+  onCollapsedChange: (collapsed: boolean) => void;
   onCreateSession: () => void;
   onSelectSession: (sessionId: string) => void;
 };
@@ -38,11 +41,13 @@ function emptyDescription(
 
 export function PiSessionList({
   canCreateSession,
+  collapsed,
   disabled,
   runtimeReady,
   selectedSessionId,
   sessions,
   workspaceRoot,
+  onCollapsedChange,
   onCreateSession,
   onSelectSession,
 }: PiSessionListProps) {
@@ -89,28 +94,30 @@ export function PiSessionList({
   };
 
   return (
-    <div className="flex min-h-0 shrink-0 flex-col border-b border-border/35">
-      <div className="flex h-7 shrink-0 items-center gap-2 px-3">
-        <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/85">
-          Sessions
-        </span>
+    <PiSection
+      title="Sessions"
+      collapsed={collapsed}
+      summary={
         <Badge
           variant="outline"
           className="h-4 min-w-4 px-1 text-[9.5px] text-muted-foreground"
         >
           {sessions.length}
         </Badge>
+      }
+      actions={
         <Button
           size="xs"
           variant="ghost"
-          className="ml-auto h-5 rounded-md px-1.5 text-[10px]"
+          className="h-5 rounded-md px-1.5 text-[10px]"
           disabled={!canCreateSession || disabled}
           onClick={onCreateSession}
         >
           New
         </Button>
-      </div>
-
+      }
+      onCollapsedChange={onCollapsedChange}
+    >
       {sessions.length === 0 ? (
         <Empty className="min-h-36 gap-2 rounded-none border-0 px-4 py-5">
           <EmptyHeader className="gap-1.5">
@@ -187,6 +194,6 @@ export function PiSessionList({
           })}
         </div>
       )}
-    </div>
+    </PiSection>
   );
 }

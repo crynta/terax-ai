@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { SessionProtocolError } from "./session-errors.js";
 
 const INVALID_PARAMS = -32602;
@@ -5,6 +6,8 @@ const MIN_CONTEXT_LIMIT = 1_000;
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 16_384;
 const LOCAL_RUNTIME_API_KEY = "terax-local-runtime-key";
+
+const AUTH_MODES = new Set(["terax", "profile"]);
 
 const PROVIDERS = new Set([
   "openai",
@@ -89,14 +92,22 @@ export function normalizeRuntimeProviderConfig(rawConfig) {
     return undefined;
   }
 
+  const authMode = optionalRuntimeString(raw, "authMode") ?? "terax";
+  if (!AUTH_MODES.has(authMode)) {
+    throw protocolError(
+      `providerConfig.authMode is not supported: ${authMode}`,
+    );
+  }
+
   const provider = requiredRuntimeString(raw, "provider");
-  if (!PROVIDERS.has(provider)) {
+  if (authMode === "terax" && !PROVIDERS.has(provider)) {
     throw protocolError(
       `providerConfig.provider is not supported: ${provider}`,
     );
   }
 
   const config = {
+    authMode,
     provider,
     modelId: requiredRuntimeString(raw, "modelId"),
   };
@@ -105,6 +116,7 @@ export function normalizeRuntimeProviderConfig(rawConfig) {
     ["baseUrl", optionalRuntimeString(raw, "baseUrl")],
     ["contextLimit", optionalContextLimit(raw)],
     ["customEndpointId", optionalRuntimeString(raw, "customEndpointId")],
+    ["profileAgentDir", optionalRuntimeString(raw, "profileAgentDir")],
     ["apiKey", optionalRuntimeString(raw, "apiKey")],
   ]) {
     if (value !== undefined) {
@@ -171,10 +183,48 @@ function runtimeProviderConfig(config) {
   };
 }
 
-export async function createRuntimeProviderOptions(pi, rawConfig) {
+function createProfileProviderOptions(pi, config, options) {
+  if (!config.profileAgentDir) {
+    throw protocolError(
+      "providerConfig.profileAgentDir is required for Pi profile mode",
+    );
+  }
+  const authStorage = pi.AuthStorage.create(
+    join(config.profileAgentDir, "auth.json"),
+  );
+  const modelRegistry = pi.ModelRegistry.create(
+    authStorage,
+    join(config.profileAgentDir, "models.json"),
+  );
+  const model = modelRegistry.find(config.provider, config.modelId);
+  if (!model) {
+    throw protocolError(
+      `providerConfig model is not available in Pi profile: ${config.provider}/${config.modelId}`,
+    );
+  }
+  return {
+    model,
+    authStorage,
+    modelRegistry,
+    settingsManager: pi.SettingsManager.create(
+      options?.cwd ?? process.cwd(),
+      config.profileAgentDir,
+    ),
+  };
+}
+
+export async function createRuntimeProviderOptions(
+  pi,
+  rawConfig,
+  options = {},
+) {
   const config = normalizeRuntimeProviderConfig(rawConfig);
   if (config === undefined) {
     return {};
+  }
+
+  if (config.authMode === "profile") {
+    return createProfileProviderOptions(pi, config, options);
   }
 
   const authStorage =

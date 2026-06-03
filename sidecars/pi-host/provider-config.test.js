@@ -6,15 +6,22 @@ import {
 
 class FakeAuthStorage {
   runtimeKeys = new Map();
+  constructor(path) {
+    this.path = path;
+  }
   setRuntimeApiKey(provider, apiKey) {
     this.runtimeKeys.set(provider, apiKey);
   }
 }
 
 class FakeModelRegistry {
-  constructor(authStorage) {
+  constructor(authStorage, path) {
     this.authStorage = authStorage;
-    this.models = [{ provider: "anthropic", id: "claude-sonnet-4-6" }];
+    this.path = path;
+    this.models = [
+      { provider: "anthropic", id: "claude-sonnet-4-6" },
+      { provider: "openai-codex", id: "gpt-5.3-codex" },
+    ];
     this.registered = [];
   }
 
@@ -40,15 +47,29 @@ function fakePi() {
   return {
     refs,
     AuthStorage: {
+      create(path) {
+        refs.authStorage = new FakeAuthStorage(path);
+        return refs.authStorage;
+      },
       inMemory() {
         refs.authStorage = new FakeAuthStorage();
         return refs.authStorage;
       },
     },
     ModelRegistry: {
+      create(authStorage, path) {
+        refs.modelRegistry = new FakeModelRegistry(authStorage, path);
+        return refs.modelRegistry;
+      },
       inMemory(authStorage) {
         refs.modelRegistry = new FakeModelRegistry(authStorage);
         return refs.modelRegistry;
+      },
+    },
+    SettingsManager: {
+      create(_cwd, agentDir) {
+        refs.settingsManager = { agentDir };
+        return refs.settingsManager;
       },
     },
   };
@@ -63,9 +84,28 @@ describe("normalizeRuntimeProviderConfig", () => {
         sourceModelId: " claude-sonnet-4-6 ",
       }),
     ).toEqual({
+      authMode: "terax",
       provider: "anthropic",
       modelId: "claude-sonnet-4-6",
       sourceModelId: "claude-sonnet-4-6",
+    });
+  });
+
+  it("normalizes explicit Pi profile config", () => {
+    expect(
+      normalizeRuntimeProviderConfig({
+        authMode: " profile ",
+        provider: " openai-codex ",
+        modelId: " gpt-5.3-codex ",
+        sourceModelId: "pi-profile:openai-codex:gpt-5.3-codex",
+        profileAgentDir: " /Users/me/.pi/agent ",
+      }),
+    ).toEqual({
+      authMode: "profile",
+      provider: "openai-codex",
+      modelId: "gpt-5.3-codex",
+      sourceModelId: "pi-profile:openai-codex:gpt-5.3-codex",
+      profileAgentDir: "/Users/me/.pi/agent",
     });
   });
 
@@ -123,5 +163,29 @@ describe("createRuntimeProviderOptions", () => {
         }),
       }),
     ]);
+  });
+
+  it("uses explicit Pi profile storage for profile-backed models", async () => {
+    const pi = fakePi();
+    const options = await createRuntimeProviderOptions(
+      pi,
+      {
+        authMode: "profile",
+        provider: "openai-codex",
+        modelId: "gpt-5.3-codex",
+        profileAgentDir: "/Users/me/.pi/agent",
+      },
+      { cwd: "/repo" },
+    );
+
+    expect(options.model).toEqual({
+      provider: "openai-codex",
+      id: "gpt-5.3-codex",
+    });
+    expect(pi.refs.authStorage.path).toBe("/Users/me/.pi/agent/auth.json");
+    expect(pi.refs.modelRegistry.path).toBe("/Users/me/.pi/agent/models.json");
+    expect(options.settingsManager).toEqual({
+      agentDir: "/Users/me/.pi/agent",
+    });
   });
 });

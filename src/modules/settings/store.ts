@@ -20,6 +20,7 @@ export type ThemePref = "system" | "light" | "dark";
 export const DEFAULT_THEME_ID = "terax-default";
 
 export type BackgroundKind = "none" | "image";
+export type PiAuthMode = "terax" | "profile";
 
 export const EDITOR_THEMES = [
   "atomone",
@@ -57,6 +58,7 @@ export type Preferences = {
   backgroundOpacity: number;
   backgroundBlur: number;
   defaultModelId: ModelId;
+  piAuthMode: PiAuthMode;
   piModelId: string;
   editorTheme: EditorThemeId;
   customInstructions: string;
@@ -101,6 +103,7 @@ const KEY_BG_IMAGE_ID = "backgroundImageId";
 const KEY_BG_OPACITY = "backgroundOpacity";
 const KEY_BG_BLUR = "backgroundBlur";
 const KEY_DEFAULT_MODEL = "defaultModelId";
+const KEY_PI_AUTH_MODE = "piAuthMode";
 const KEY_PI_MODEL = "piModelId";
 const KEY_EDITOR_THEME = "editorTheme";
 const KEY_CUSTOM_INSTRUCTIONS = "customInstructions";
@@ -160,6 +163,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   backgroundOpacity: 0.5,
   backgroundBlur: 0,
   defaultModelId: DEFAULT_MODEL_ID,
+  piAuthMode: "terax",
   piModelId: DEFAULT_MODEL_ID,
   editorTheme: "atomone",
   customInstructions: "",
@@ -236,6 +240,8 @@ export async function loadPreferences(): Promise<Preferences> {
         ? stored
         : DEFAULT_PREFERENCES.defaultModelId;
     })(),
+    piAuthMode:
+      get<PiAuthMode>(KEY_PI_AUTH_MODE) ?? DEFAULT_PREFERENCES.piAuthMode,
     piModelId: get<string>(KEY_PI_MODEL) ?? DEFAULT_PREFERENCES.piModelId,
     editorTheme:
       get<EditorThemeId>(KEY_EDITOR_THEME) ?? DEFAULT_PREFERENCES.editorTheme,
@@ -375,6 +381,10 @@ export async function setBackgroundBlur(value: number): Promise<void> {
 
 export async function setDefaultModel(value: ModelId): Promise<void> {
   await writePref(KEY_DEFAULT_MODEL, value);
+}
+
+export async function setPiAuthMode(value: PiAuthMode): Promise<void> {
+  await writePref(KEY_PI_AUTH_MODE, value);
 }
 
 export async function setPiModelId(value: string): Promise<void> {
@@ -552,63 +562,71 @@ export async function resetShortcuts(): Promise<void> {
 
 export type PrefKey = keyof Preferences;
 
+const STORE_KEY_TO_PREF_KEY = {
+  [KEY_THEME]: "theme",
+  [KEY_THEME_ID]: "themeId",
+  [KEY_BG_KIND]: "backgroundKind",
+  [KEY_BG_IMAGE_ID]: "backgroundImageId",
+  [KEY_BG_OPACITY]: "backgroundOpacity",
+  [KEY_BG_BLUR]: "backgroundBlur",
+  [KEY_DEFAULT_MODEL]: "defaultModelId",
+  [KEY_PI_AUTH_MODE]: "piAuthMode",
+  [KEY_PI_MODEL]: "piModelId",
+  [KEY_EDITOR_THEME]: "editorTheme",
+  [KEY_CUSTOM_INSTRUCTIONS]: "customInstructions",
+  [KEY_AUTOSTART]: "autostart",
+  [KEY_RESTORE_WINDOW]: "restoreWindowState",
+  [KEY_AUTOCOMPLETE_ENABLED]: "autocompleteEnabled",
+  [KEY_AUTOCOMPLETE_PROVIDER]: "autocompleteProvider",
+  [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
+  [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
+  [KEY_LMSTUDIO_MODEL_ID]: "lmstudioModelId",
+  [KEY_MLX_BASE_URL]: "mlxBaseURL",
+  [KEY_MLX_MODEL_ID]: "mlxModelId",
+  [KEY_OLLAMA_BASE_URL]: "ollamaBaseURL",
+  [KEY_OLLAMA_MODEL_ID]: "ollamaModelId",
+  [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
+  [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
+  [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
+  [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
+  [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
+  [KEY_FAVORITE_MODELS]: "favoriteModelIds",
+  [KEY_RECENT_MODELS]: "recentModelIds",
+  [KEY_VIM_MODE]: "vimMode",
+  [KEY_SHOW_HIDDEN]: "showHidden",
+  [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
+  [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
+  [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
+  [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
+  [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+  [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
+  [KEY_ZOOM_LEVEL]: "zoomLevel",
+  [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
+  [KEY_SHORTCUTS]: "shortcuts",
+  [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
+  [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
+} satisfies Record<PrefKey, PrefKey>;
+
+function storeKeyToPrefKey(key: string): PrefKey | undefined {
+  return Object.prototype.hasOwnProperty.call(STORE_KEY_TO_PREF_KEY, key)
+    ? STORE_KEY_TO_PREF_KEY[key as PrefKey]
+    : undefined;
+}
+
 /** Subscribe to changes from any window (settings → main). */
 export async function onPreferencesChange(
   cb: (key: PrefKey, value: unknown) => void,
 ): Promise<UnlistenFn> {
-  const map: Record<string, PrefKey> = {
-    [KEY_THEME]: "theme",
-    [KEY_THEME_ID]: "themeId",
-    [KEY_BG_KIND]: "backgroundKind",
-    [KEY_BG_IMAGE_ID]: "backgroundImageId",
-    [KEY_BG_OPACITY]: "backgroundOpacity",
-    [KEY_BG_BLUR]: "backgroundBlur",
-    [KEY_DEFAULT_MODEL]: "defaultModelId",
-    [KEY_PI_MODEL]: "piModelId",
-    [KEY_EDITOR_THEME]: "editorTheme",
-    [KEY_CUSTOM_INSTRUCTIONS]: "customInstructions",
-    [KEY_AUTOSTART]: "autostart",
-    [KEY_RESTORE_WINDOW]: "restoreWindowState",
-    [KEY_AUTOCOMPLETE_ENABLED]: "autocompleteEnabled",
-    [KEY_AUTOCOMPLETE_PROVIDER]: "autocompleteProvider",
-    [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
-    [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
-    [KEY_LMSTUDIO_MODEL_ID]: "lmstudioModelId",
-    [KEY_MLX_BASE_URL]: "mlxBaseURL",
-    [KEY_MLX_MODEL_ID]: "mlxModelId",
-    [KEY_OLLAMA_BASE_URL]: "ollamaBaseURL",
-    [KEY_OLLAMA_MODEL_ID]: "ollamaModelId",
-    [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
-    [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
-    [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
-    [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
-    [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
-    [KEY_FAVORITE_MODELS]: "favoriteModelIds",
-    [KEY_RECENT_MODELS]: "recentModelIds",
-    [KEY_VIM_MODE]: "vimMode",
-    [KEY_SHOW_HIDDEN]: "showHidden",
-    [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
-    [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
-    [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
-    [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
-    [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
-    [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
-    [KEY_ZOOM_LEVEL]: "zoomLevel",
-    [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
-    [KEY_SHORTCUTS]: "shortcuts",
-    [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
-    [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
-  };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
   const unsubLocal = await store.onChange<unknown>((key, value) => {
-    const mapped = map[key];
+    const mapped = storeKeyToPrefKey(key);
     if (mapped) cb(mapped, value);
   });
   const unsubEvent = await listen<{ key: string; value: unknown }>(
     PREFS_CHANGED_EVENT,
     (e) => {
-      const mapped = map[e.payload.key];
+      const mapped = storeKeyToPrefKey(e.payload.key);
       if (mapped) cb(mapped, e.payload.value);
     },
   );

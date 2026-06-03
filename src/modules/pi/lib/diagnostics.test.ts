@@ -31,6 +31,26 @@ function diagnostics(patch: Partial<PiDiagnostics> = {}): PiDiagnostics {
       toolMode: "noTools",
       sessionStorage: "rust-app-data-json",
       apiKeys: [{ name: "ANTHROPIC_API_KEY", configured: true }],
+      forwardedEnvNames: ["PATH", "HOME"],
+    },
+    capabilities: {
+      tools: false,
+      files: false,
+      shell: false,
+      git: false,
+      terminal: false,
+      editor: false,
+    },
+    protocol: {
+      allowedMethods: ["ping", "status", "sessions.create", "sessions.send"],
+    },
+    limits: {
+      maxPromptChars: 20_000,
+      maxSessions: 20,
+    },
+    manager: {
+      idleShutdownMs: 600_000,
+      methodTimeouts: [{ method: "sessions.create", timeoutMs: 60_000 }],
     },
     sessions: [{ id: "pi-1", title: "Pi", status: "idle", cwd: "/tmp" }],
     ...patch,
@@ -43,6 +63,7 @@ const anthropicProvider = {
   providerLabel: "Anthropic",
   modelLabel: "Claude Sonnet 4.6",
   config: {
+    authMode: "terax",
     provider: "anthropic",
     modelId: "claude-sonnet-4-6",
     sourceModelId: "claude-sonnet-4-6",
@@ -55,6 +76,7 @@ const lmstudioProvider = {
   providerLabel: "LM Studio",
   modelLabel: "qwen2.5-coder",
   config: {
+    authMode: "terax",
     provider: "lmstudio",
     modelId: "qwen2.5-coder",
     sourceModelId: "lmstudio-local",
@@ -81,6 +103,10 @@ describe("buildPiDiagnosticsView", () => {
         packageCount: 1,
         sessionCount: 1,
         toolMode: "noTools",
+        capabilityLabel: "Tools disabled",
+        methodCount: 4,
+        promptLimitLabel: "20,000 chars",
+        idlePolicyLabel: "10m idle",
       }),
     );
     expect(view.issues).toEqual([]);

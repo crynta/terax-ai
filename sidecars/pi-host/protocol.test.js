@@ -53,35 +53,65 @@ describe("Pi host protocol", () => {
   });
 
   it("reports non-secret diagnostics", async () => {
-    const result = await handleJsonRpcLine(
-      JSON.stringify({ jsonrpc: "2.0", id: 40, method: "diagnostics" }),
-    );
+    const previousAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "diagnostics-secret-value";
 
-    expect(result.response).toMatchObject({
-      jsonrpc: "2.0",
-      id: 40,
-      result: {
-        hostVersion: "0.1.0",
-        piSdkLoaded: true,
-        node: {
-          version: process.version,
-          platform: process.platform,
-          arch: process.arch,
+    try {
+      const result = await handleJsonRpcLine(
+        JSON.stringify({ jsonrpc: "2.0", id: 40, method: "diagnostics" }),
+      );
+
+      expect(result.response).toMatchObject({
+        jsonrpc: "2.0",
+        id: 40,
+        result: {
+          hostVersion: "0.1.0",
+          piSdkLoaded: true,
+          node: {
+            version: process.version,
+            platform: process.platform,
+            arch: process.arch,
+          },
+          config: {
+            toolMode: "noTools",
+            sessionStorage: "rust-app-data-json",
+            apiKeys: expect.arrayContaining([
+              { name: "ANTHROPIC_API_KEY", configured: true },
+              { name: "DEEPSEEK_API_KEY", configured: expect.any(Boolean) },
+              { name: "MISTRAL_API_KEY", configured: expect.any(Boolean) },
+            ]),
+            forwardedEnvNames: expect.arrayContaining(["PATH", "HOME"]),
+          },
+          capabilities: {
+            tools: false,
+            files: false,
+            shell: false,
+            git: false,
+            terminal: false,
+            editor: false,
+          },
+          protocol: {
+            allowedMethods: ALLOWED_METHODS,
+          },
+          limits: {
+            maxPromptChars: 20000,
+            maxSessions: 20,
+          },
         },
-        config: {
-          toolMode: "noTools",
-          sessionStorage: "rust-app-data-json",
-          apiKeys: expect.arrayContaining([
-            { name: "ANTHROPIC_API_KEY", configured: expect.any(Boolean) },
-            { name: "DEEPSEEK_API_KEY", configured: expect.any(Boolean) },
-            { name: "MISTRAL_API_KEY", configured: expect.any(Boolean) },
-          ]),
-        },
-      },
-    });
-    expect(JSON.stringify(result.response.result.config.apiKeys)).not.toContain(
-      process.env.ANTHROPIC_API_KEY ?? "not-a-real-secret-value",
-    );
+      });
+      expect(result.response.result.config.forwardedEnvNames).not.toContain(
+        "ANTHROPIC_API_KEY",
+      );
+      expect(JSON.stringify(result.response.result)).not.toContain(
+        "diagnostics-secret-value",
+      );
+    } finally {
+      if (previousAnthropicKey === undefined) {
+        delete process.env.ANTHROPIC_API_KEY;
+      } else {
+        process.env.ANTHROPIC_API_KEY = previousAnthropicKey;
+      }
+    }
   });
 
   it("marks shutdown requests", async () => {
@@ -115,6 +145,7 @@ describe("Pi host protocol", () => {
       "status",
       "info",
       "diagnostics",
+      "models.list",
       "sessions.list",
       "sessions.create",
       "sessions.send",

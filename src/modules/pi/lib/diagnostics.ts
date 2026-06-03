@@ -29,13 +29,17 @@ export type PiProviderKeyStatus = {
 
 export type PiDiagnosticsView = {
   apiKeyCount: number;
+  capabilityLabel: string;
   configuredApiKeyCount: number;
   healthy: boolean;
+  idlePolicyLabel: string;
   issues: PiDiagnosticsIssue[];
   loadedPackageCount: number;
+  methodCount: number;
   modelLabel: string;
   nodeLabel: string;
   packageCount: number;
+  promptLimitLabel: string;
   providerKeyLabel: string;
   providerLabel: string;
   sessionCount: number;
@@ -73,6 +77,24 @@ function packageIssueDescription(diagnostics: PiDiagnostics): string {
     return "Pi package status could not be confirmed.";
   }
   return `Unable to load ${names}. Refresh diagnostics after rebuilding sidecars.`;
+}
+
+function capabilityLabel(diagnostics: PiDiagnostics | null): string {
+  if (!diagnostics?.capabilities) return "Unavailable";
+  return diagnostics.capabilities.tools ? "Tools enabled" : "Tools disabled";
+}
+
+function formatDuration(milliseconds: number | undefined): string {
+  if (!milliseconds || milliseconds < 1) return "Unavailable";
+  if (milliseconds % 60_000 === 0) return `${milliseconds / 60_000}m idle`;
+  if (milliseconds % 1_000 === 0) return `${milliseconds / 1_000}s idle`;
+  return `${milliseconds}ms idle`;
+}
+
+function promptLimitLabel(diagnostics: PiDiagnostics | null): string {
+  const limit = diagnostics?.limits?.maxPromptChars;
+  if (!limit || limit < 1) return "Unavailable";
+  return `${limit.toLocaleString("en-US")} chars`;
 }
 
 function runtimeIssue(state: PiRuntimeState): PiDiagnosticsIssue | null {
@@ -214,15 +236,19 @@ export function buildPiDiagnosticsView({
 
   return {
     apiKeyCount,
+    capabilityLabel: capabilityLabel(diagnostics),
     configuredApiKeyCount,
     healthy: issues.length === 0,
+    idlePolicyLabel: formatDuration(diagnostics?.manager?.idleShutdownMs),
     issues,
     loadedPackageCount,
+    methodCount: diagnostics?.protocol?.allowedMethods.length ?? 0,
     modelLabel: provider?.modelLabel ?? "Default",
     nodeLabel: diagnostics
       ? `${diagnostics.node.version} ${diagnostics.node.platform}/${diagnostics.node.arch}`
       : "Unavailable",
     packageCount,
+    promptLimitLabel: promptLimitLabel(diagnostics),
     providerKeyLabel: providerKeyLabel(provider, providerKeyStatus),
     providerLabel: provider?.providerLabel ?? "Pi",
     sessionCount: diagnostics?.sessions.length ?? 0,

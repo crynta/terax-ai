@@ -48,4 +48,12 @@ describe("piNative", () => {
       workspace: { kind: "local" },
     });
   });
+
+  it("requests the Pi profile model catalog", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ models: [] });
+
+    await piNative.modelsList();
+
+    expect(invoke).toHaveBeenCalledWith("pi_models_list");
+  });
 });

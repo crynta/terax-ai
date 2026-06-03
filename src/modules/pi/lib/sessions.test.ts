@@ -36,6 +36,25 @@ function event(
 }
 
 describe("buildPiSessionTranscript", () => {
+  it("orders restart-safe event ids by embedded sequence when timestamps match", () => {
+    expect(
+      buildPiSessionTranscript([
+        {
+          ...event("evt_mpx_2_bbbbbbbbbbbb", "session.status", {
+            status: "running",
+          }),
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          ...event("evt_mpx_1_aaaaaaaaaaaa", "session.input", {
+            text: "Hello",
+          }),
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ]).map((item) => item.kind),
+    ).toEqual(["user", "system"]);
+  });
+
   it("orders events chronologically and coalesces output deltas", () => {
     expect(
       buildPiSessionTranscript([
@@ -103,6 +122,33 @@ describe("buildPiSessionTranscript", () => {
         event("evt-1", "session.output.delta", { text: "" }),
       ]),
     ).toEqual([]);
+  });
+
+  it("carries prompt context into user transcript items", () => {
+    const transcript = buildPiSessionTranscript([
+      event("evt-1", "session.input", {
+        text: "Where is this defined?",
+        context: {
+          workspaceRoot: "/Users/me/project",
+          activeFile: "/Users/me/project/src/App.tsx",
+          activeTerminalCwd: "/Users/me/project/src",
+          activeTerminalPrivate: true,
+        },
+      }),
+    ]);
+
+    expect(transcript[0]).toEqual(
+      expect.objectContaining({
+        kind: "user",
+        text: "Where is this defined?",
+        context: {
+          workspaceRoot: "/Users/me/project",
+          activeFile: "/Users/me/project/src/App.tsx",
+          activeTerminalCwd: "/Users/me/project/src",
+          activeTerminalPrivate: true,
+        },
+      }),
+    );
   });
 });
 
@@ -175,11 +221,11 @@ describe("markPiSessionsStopped", () => {
 });
 
 describe("isPiSessionSendable", () => {
-  it("only allows idle live sessions to accept prompts", () => {
+  it("allows idle and error sessions to accept retry prompts", () => {
     expect(isPiSessionSendable(session("pi-1", "idle"))).toBe(true);
     expect(isPiSessionSendable(session("pi-1", "running"))).toBe(false);
     expect(isPiSessionSendable(session("pi-1", "stopped"))).toBe(false);
-    expect(isPiSessionSendable(session("pi-1", "error"))).toBe(false);
+    expect(isPiSessionSendable(session("pi-1", "error"))).toBe(true);
     expect(isPiSessionSendable(null)).toBe(false);
   });
 });

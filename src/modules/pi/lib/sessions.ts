@@ -53,21 +53,81 @@ export type PiTranscriptItem = {
   text: string | null;
   eventIds: string[];
   createdAt: string;
+  context?: PiPromptContext;
 };
+
+export const MAX_PI_PROMPT_CHARS = 20_000;
 
 const DEFAULT_EVENT_LIMIT = 500;
 
-function eventSortKey(event: PiSessionEvent): number {
-  const numericId = Number(event.id.match(/\d+$/)?.[0]);
-  if (Number.isFinite(numericId)) {
-    return numericId;
-  }
+function eventTimestamp(event: PiSessionEvent): number {
   const timestamp = Date.parse(event.createdAt);
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function eventSequence(event: PiSessionEvent): number | null {
+  const restartSafeSequence = event.id.match(/^evt_[a-z0-9]+_(\d+)_/i)?.[1];
+  if (restartSafeSequence) {
+    const parsed = Number(restartSafeSequence);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  const legacySequence = event.id.match(/^evt-(\d+)$/)?.[1];
+  if (legacySequence) {
+    const parsed = Number(legacySequence);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function comparePiSessionEventsAscending(
+  left: PiSessionEvent,
+  right: PiSessionEvent,
+): number {
+  const timestampOrder = eventTimestamp(left) - eventTimestamp(right);
+  if (timestampOrder !== 0) return timestampOrder;
+
+  const leftSequence = eventSequence(left);
+  const rightSequence = eventSequence(right);
+  if (leftSequence !== null && rightSequence !== null) {
+    const sequenceOrder = leftSequence - rightSequence;
+    if (sequenceOrder !== 0) return sequenceOrder;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
 function eventText(event: PiSessionEvent): string | null {
   return typeof event.payload.text === "string" ? event.payload.text : null;
+}
+
+function eventContext(event: PiSessionEvent): PiPromptContext | undefined {
+  const context = event.payload.context;
+  if (
+    context === null ||
+    typeof context !== "object" ||
+    Array.isArray(context)
+  ) {
+    return undefined;
+  }
+
+  const raw = context as Record<string, unknown>;
+  const next: PiPromptContext = {};
+  if (typeof raw.workspaceRoot === "string") {
+    next.workspaceRoot = raw.workspaceRoot;
+  }
+  if (typeof raw.activeTerminalCwd === "string") {
+    next.activeTerminalCwd = raw.activeTerminalCwd;
+  }
+  if (typeof raw.activeFile === "string") {
+    next.activeFile = raw.activeFile;
+  }
+  if (raw.activeTerminalPrivate === true) {
+    next.activeTerminalPrivate = true;
+  }
+
+  return Object.keys(next).length === 0 ? undefined : next;
 }
 
 function isPiSessionStatus(value: unknown): value is PiSessionStatus {
@@ -83,7 +143,7 @@ function chronologicalEvents(events: PiSessionEvent[]): PiSessionEvent[] {
   return events
     .map((event, index) => ({ event, index }))
     .sort((a, b) => {
-      const order = eventSortKey(a.event) - eventSortKey(b.event);
+      const order = comparePiSessionEventsAscending(a.event, b.event);
       return order === 0 ? a.index - b.index : order;
     })
     .map(({ event }) => event);
@@ -178,6 +238,7 @@ function transcriptItemForEvent(
         text: eventText(event),
         eventIds: [event.id],
         createdAt: event.createdAt,
+        context: eventContext(event),
       };
     case "session.status":
       return {
@@ -248,14 +309,14 @@ export function mergePiSessionEvents(
   }
 
   return Array.from(byId.values())
-    .sort((a, b) => eventSortKey(b) - eventSortKey(a))
+    .sort((a, b) => comparePiSessionEventsAscending(b, a))
     .slice(0, limit);
 }
 
 export function isPiSessionSendable(
   session: PiSession | null | undefined,
 ): boolean {
-  return session?.status === "idle";
+  return session?.status === "idle" || session?.status === "error";
 }
 
 export function markPiSessionsStopped(sessions: PiSession[]): PiSession[] {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createRuntimeProviderOptions } from "./provider-config.js";
 import {
   friendlySessionErrorMessage,
@@ -11,8 +12,8 @@ const SESSION_NOT_FOUND = -32004;
 const SESSION_STOPPED = -32005;
 const RESOURCE_LIMIT = -32006;
 const SESSION_BUSY = -32007;
-const MAX_SESSIONS = 20;
-const MAX_PROMPT_CHARS = 20_000;
+export const MAX_SESSIONS = 20;
+export const MAX_PROMPT_CHARS = 20_000;
 
 let nextSessionNumber = 1;
 let nextEventNumber = 1;
@@ -23,19 +24,41 @@ function isoNow() {
   return new Date().toISOString();
 }
 
+function shortRandomId() {
+  return randomUUID().replaceAll("-", "").slice(0, 12);
+}
+
+function timestampIdPart() {
+  return Date.now().toString(36);
+}
+
+function createSessionId() {
+  return `pi_${timestampIdPart()}_${shortRandomId()}`;
+}
+
+function createEventId(sequence) {
+  return `evt_${timestampIdPart()}_${sequence}_${shortRandomId()}`;
+}
+
 function sessionSnapshot(session) {
   const {
     agentSession: _agentSession,
     unsubscribe: _unsubscribe,
     cleanup: _cleanup,
+    activeRunId: _activeRunId,
+    cancelledRunId: _cancelledRunId,
+    providerConfig: _providerConfig,
+    autoTitle: _autoTitle,
+    agentGeneration: _agentGeneration,
     ...snapshot
   } = session;
   return { ...snapshot };
 }
 
 function sessionEvent(type, sessionId, payload, createdAt = isoNow()) {
+  const sequence = nextEventNumber;
   return {
-    id: `evt-${nextEventNumber}`,
+    id: createEventId(sequence),
     type,
     sessionId,
     createdAt,
@@ -95,6 +118,14 @@ function optionalString(params, key, method) {
     );
   }
   return value.trim();
+}
+
+function titleFromPrompt(prompt) {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 56) {
+    return normalized;
+  }
+  return `${normalized.slice(0, 55).trimEnd()}…`;
 }
 
 function optionalContextString(params, key, method) {
@@ -295,24 +326,61 @@ async function createTestFauxOptions(pi) {
   };
 }
 
-function mapAgentSessionEvent(event, sessionId) {
+export function mapAgentSessionEvent(
+  event,
+  session,
+  agentGeneration = session.agentGeneration,
+) {
   if (event.type !== "message_update") {
+    return null;
+  }
+  if (session.status !== "running") {
+    return null;
+  }
+  if (agentGeneration !== session.agentGeneration) {
+    return null;
+  }
+  if (session.cancelledRunId === session.activeRunId) {
     return null;
   }
 
   if (event.assistantMessageEvent?.type === "text_delta") {
-    return publishEvent("session.output.delta", sessionId, {
+    return publishEvent("session.output.delta", session.id, {
       text: event.assistantMessageEvent.delta,
     });
   }
 
   if (event.assistantMessageEvent?.type === "text_end") {
-    return publishEvent("session.output.text", sessionId, {
+    return publishEvent("session.output.text", session.id, {
       text: event.assistantMessageEvent.content,
     });
   }
 
   return null;
+}
+
+async function attachAgentSession(session) {
+  const pi = await import("@earendil-works/pi-coding-agent");
+  const testFaux = await createTestFauxOptions(pi);
+  const providerOptions = testFaux.cleanup
+    ? {}
+    : await createRuntimeProviderOptions(pi, session.providerConfig, {
+        cwd: session.cwd,
+      });
+  const { session: agentSession } = await pi.createAgentSession({
+    ...providerOptions,
+    ...testFaux.options,
+    cwd: session.cwd,
+    noTools: "all",
+    sessionManager: pi.SessionManager.inMemory(),
+  });
+  const agentGeneration = session.agentGeneration + 1;
+  session.agentGeneration = agentGeneration;
+  session.agentSession = agentSession;
+  session.cleanup = testFaux.cleanup;
+  session.unsubscribe = agentSession.subscribe((event) => {
+    mapAgentSessionEvent(event, session, agentGeneration);
+  });
 }
 
 async function createAgentSessionRecord({
@@ -321,37 +389,28 @@ async function createAgentSessionRecord({
   cwd,
   createdAt,
   providerConfig,
+  autoTitle,
 }) {
-  const pi = await import("@earendil-works/pi-coding-agent");
-  const testFaux = await createTestFauxOptions(pi);
-  const providerOptions = testFaux.cleanup
-    ? {}
-    : await createRuntimeProviderOptions(pi, providerConfig);
-  const { session: agentSession } = await pi.createAgentSession({
-    ...providerOptions,
-    ...testFaux.options,
-    cwd,
-    noTools: "all",
-    sessionManager: pi.SessionManager.inMemory(),
-  });
-  const unsubscribe = agentSession.subscribe((event) => {
-    mapAgentSessionEvent(event, id);
-  });
-
-  return {
+  const session = {
     id,
     title,
+    autoTitle,
     cwd,
     status: "idle",
     createdAt,
     updatedAt: createdAt,
     lastPrompt: null,
-    agentSession,
-    unsubscribe,
-    cleanup: testFaux.cleanup,
+    agentSession: undefined,
+    unsubscribe: undefined,
+    cleanup: undefined,
+    activeRunId: 0,
+    cancelledRunId: null,
+    agentGeneration: 0,
+    providerConfig,
   };
+  await attachAgentSession(session);
+  return session;
 }
-
 export async function resetSessionsForTests() {
   for (const session of sessions.values()) {
     session.status = "stopped";
@@ -373,12 +432,14 @@ export async function createSession(params) {
   const options = assertParamsObject(params, "sessions.create");
   assertSessionCapacity();
   const createdAt = isoNow();
-  const id = `pi-${nextSessionNumber}`;
+  const displayNumber = nextSessionNumber;
+  const id = createSessionId();
   nextSessionNumber += 1;
-  const title =
+  const explicitTitle =
     typeof options.title === "string" && options.title.trim() !== ""
       ? options.title.trim()
-      : `Pi Session ${id.replace("pi-", "")}`;
+      : null;
+  const title = explicitTitle ?? `Pi Session ${displayNumber}`;
   const cwd =
     optionalString(options, "cwd", "sessions.create") ?? process.cwd();
   const session = await createAgentSessionRecord({
@@ -387,6 +448,7 @@ export async function createSession(params) {
     cwd,
     createdAt,
     providerConfig: options.providerConfig,
+    autoTitle: explicitTitle === null,
   });
   sessions.set(id, session);
 
@@ -399,12 +461,16 @@ export async function createSession(params) {
   };
 }
 
-async function runPrompt(session, prompt, context) {
+async function runPrompt(session, prompt, context, runId) {
   try {
     await session.agentSession.prompt(
       formatPromptWithContext(session, prompt, context),
     );
-    if (session.status === "stopped") {
+    if (
+      session.status === "stopped" ||
+      session.activeRunId !== runId ||
+      session.cancelledRunId === runId
+    ) {
       return;
     }
     const doneAt = isoNow();
@@ -417,7 +483,11 @@ async function runPrompt(session, prompt, context) {
       doneAt,
     );
   } catch (error) {
-    if (session.status === "stopped") {
+    if (
+      session.status === "stopped" ||
+      session.activeRunId !== runId ||
+      session.cancelledRunId === runId
+    ) {
       return;
     }
     const failedAt = isoNow();
@@ -445,6 +515,13 @@ export async function sendToSession(params) {
   const promptContext = contextWithWorkspace(session, context);
   const updatedAt = isoNow();
 
+  const runId = session.activeRunId + 1;
+  session.activeRunId = runId;
+  session.cancelledRunId = null;
+  if (session.autoTitle && session.lastPrompt === null) {
+    session.title = titleFromPrompt(prompt);
+    session.autoTitle = false;
+  }
   session.status = "running";
   session.updatedAt = updatedAt;
   session.lastPrompt = prompt;
@@ -467,7 +544,7 @@ export async function sendToSession(params) {
   ];
 
   setImmediate(() => {
-    void runPrompt(session, prompt, promptContext);
+    void runPrompt(session, prompt, promptContext, runId);
   });
 
   return {
@@ -484,10 +561,18 @@ export async function stopSession(params) {
   const updatedAt = isoNow();
 
   if (session.status === "running") {
-    await session.agentSession.abort();
+    session.cancelledRunId = session.activeRunId;
+    try {
+      await session.agentSession.abort();
+    } finally {
+      disposeSession(session);
+    }
+    await attachAgentSession(session);
+    session.status = "idle";
+  } else {
+    disposeSession(session);
+    session.status = "stopped";
   }
-  disposeSession(session);
-  session.status = "stopped";
   session.updatedAt = updatedAt;
 
   const snapshot = sessionSnapshot(session);

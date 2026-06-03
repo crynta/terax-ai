@@ -32,6 +32,26 @@ export type PiDiagnostics = PiHostInfo & {
     toolMode: string;
     sessionStorage: string;
     apiKeys: Array<{ name: string; configured: boolean }>;
+    forwardedEnvNames?: string[];
+  };
+  capabilities?: {
+    tools: boolean;
+    files: boolean;
+    shell: boolean;
+    git: boolean;
+    terminal: boolean;
+    editor: boolean;
+  };
+  protocol?: {
+    allowedMethods: string[];
+  };
+  limits?: {
+    maxPromptChars: number;
+    maxSessions: number;
+  };
+  manager?: {
+    idleShutdownMs: number;
+    methodTimeouts: Array<{ method: string; timeoutMs: number }>;
   };
   sessions: Array<{
     id: string;

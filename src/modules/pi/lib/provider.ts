@@ -9,7 +9,12 @@ import {
   resolveModel,
 } from "@/modules/ai/config";
 
+export type PiAuthMode = "terax" | "profile";
+
+const PROFILE_MODEL_PREFIX = "pi-profile";
+
 export type PiProviderPrefs = {
+  piAuthMode: PiAuthMode;
   piModelId: string;
   lmstudioBaseURL: string;
   lmstudioModelId: string;
@@ -25,7 +30,8 @@ export type PiProviderPrefs = {
 };
 
 export type PiProviderRuntimeConfig = {
-  provider: ProviderId;
+  authMode: PiAuthMode;
+  provider: string;
   modelId: string;
   sourceModelId: string;
   baseUrl?: string;
@@ -37,14 +43,14 @@ export type PiProviderRuntimeConfig = {
 export type PiProviderResolution =
   | {
       ok: true;
-      provider: ProviderId;
+      provider: string;
       providerLabel: string;
       modelLabel: string;
       config: PiProviderRuntimeConfig;
     }
   | {
       ok: false;
-      provider: ProviderId | null;
+      provider: string | null;
       providerLabel: string;
       modelLabel: string;
       error: string;
@@ -55,12 +61,59 @@ function trimValue(value: string | undefined): string {
   return value?.trim() ?? "";
 }
 
-function providerLabel(provider: ProviderId): string {
-  return getProvider(provider).label;
+const ACRONYM_LABELS: Record<string, string> = {
+  ai: "AI",
+  api: "API",
+  gpt: "GPT",
+  openai: "OpenAI",
+};
+
+function humanizeId(value: string): string {
+  return value
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map(
+      (part) =>
+        ACRONYM_LABELS[part] ?? part.charAt(0).toUpperCase() + part.slice(1),
+    )
+    .join(" ");
+}
+
+function providerLabel(provider: string): string {
+  try {
+    return getProvider(provider as ProviderId).label;
+  } catch {
+    return humanizeId(provider);
+  }
+}
+
+export function profileModelSourceId(
+  provider: string,
+  modelId: string,
+): string {
+  return `${PROFILE_MODEL_PREFIX}:${provider}:${modelId}`;
+}
+
+export function isProfileModelSourceId(sourceModelId: string): boolean {
+  return sourceModelId.startsWith(`${PROFILE_MODEL_PREFIX}:`);
+}
+
+function parseProfileModelSourceId(
+  sourceModelId: string,
+): { provider: string; modelId: string } | null {
+  const prefix = `${PROFILE_MODEL_PREFIX}:`;
+  if (!sourceModelId.startsWith(prefix)) return null;
+  const rest = sourceModelId.slice(prefix.length);
+  const separatorIndex = rest.indexOf(":");
+  if (separatorIndex <= 0 || separatorIndex === rest.length - 1) return null;
+  return {
+    provider: rest.slice(0, separatorIndex),
+    modelId: rest.slice(separatorIndex + 1),
+  };
 }
 
 function incomplete(
-  provider: ProviderId,
+  provider: string,
   modelLabel: string,
   error: string,
 ): PiProviderResolution {
@@ -75,7 +128,7 @@ function incomplete(
 }
 
 function resolved(
-  provider: ProviderId,
+  provider: string,
   modelLabel: string,
   config: PiProviderRuntimeConfig,
 ): PiProviderResolution {
@@ -128,6 +181,7 @@ function resolveCustomEndpoint(
     );
   }
   return resolved(provider, modelLabel, {
+    authMode: "terax",
     provider,
     modelId,
     sourceModelId,
@@ -155,6 +209,31 @@ export function resolvePiProviderConfig(
   prefs: PiProviderPrefs,
 ): PiProviderResolution {
   const sourceModelId = trimValue(prefs.piModelId) || DEFAULT_MODEL_ID;
+  const profileModel = parseProfileModelSourceId(sourceModelId);
+  if (prefs.piAuthMode === "profile") {
+    if (!profileModel) {
+      return incomplete(
+        "pi-profile",
+        "Pi profile model",
+        "Choose a model from your existing Pi profile.",
+      );
+    }
+    return resolved(profileModel.provider, profileModel.modelId, {
+      authMode: "profile",
+      provider: profileModel.provider,
+      modelId: profileModel.modelId,
+      sourceModelId,
+    });
+  }
+
+  if (profileModel) {
+    return incomplete(
+      profileModel.provider,
+      profileModel.modelId,
+      "Turn on existing Pi profile mode or choose a Terax provider model.",
+    );
+  }
+
   if (isCompatModelId(sourceModelId)) {
     return resolveCustomEndpoint(prefs, sourceModelId);
   }
@@ -179,6 +258,7 @@ export function resolvePiProviderConfig(
       );
       if (typeof modelId !== "string") return modelId;
       return resolved("lmstudio", modelId, {
+        authMode: "terax",
         provider: "lmstudio",
         modelId,
         sourceModelId,
@@ -189,6 +269,7 @@ export function resolvePiProviderConfig(
       const modelId = requiredModelId("mlx", model.label, prefs.mlxModelId);
       if (typeof modelId !== "string") return modelId;
       return resolved("mlx", modelId, {
+        authMode: "terax",
         provider: "mlx",
         modelId,
         sourceModelId,
@@ -203,6 +284,7 @@ export function resolvePiProviderConfig(
       );
       if (typeof modelId !== "string") return modelId;
       return resolved("ollama", modelId, {
+        authMode: "terax",
         provider: "ollama",
         modelId,
         sourceModelId,
@@ -226,6 +308,7 @@ export function resolvePiProviderConfig(
         );
       }
       return resolved(provider, modelId, {
+        authMode: "terax",
         provider,
         modelId,
         sourceModelId,
@@ -242,6 +325,7 @@ export function resolvePiProviderConfig(
       );
       if (typeof modelId !== "string") return modelId;
       return resolved(provider, modelId, {
+        authMode: "terax",
         provider,
         modelId,
         sourceModelId,
@@ -249,6 +333,7 @@ export function resolvePiProviderConfig(
     }
     default:
       return resolved(model.provider, model.label, {
+        authMode: "terax",
         provider: model.provider,
         modelId: model.id,
         sourceModelId,

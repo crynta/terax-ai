@@ -1,9 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { listProfileModels } from "./model-catalog.js";
 import {
   createSession,
   listSessions,
+  MAX_PROMPT_CHARS,
+  MAX_SESSIONS,
   resetSessionsForTests,
   SessionProtocolError,
   sendToSession,
@@ -24,6 +27,7 @@ export const ALLOWED_METHODS = [
   "status",
   "info",
   "diagnostics",
+  "models.list",
   "sessions.list",
   "sessions.create",
   "sessions.send",
@@ -235,6 +239,22 @@ async function info() {
   };
 }
 
+const FORWARDED_ENV_NAMES = [
+  "PATH",
+  "HOME",
+  "USERPROFILE",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  "SHELL",
+  "PI_CODING_AGENT_DIR",
+  "TERAX_PI_NODE_MODULES",
+  "TERAX_PI_HOST_TEST_FAUX_RESPONSE",
+  "TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND",
+];
+
 const API_KEY_ENV_NAMES = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
@@ -277,6 +297,24 @@ async function diagnostics() {
       toolMode: "noTools",
       sessionStorage: "rust-app-data-json",
       apiKeys: API_KEY_ENV_NAMES.map(envStatus),
+      forwardedEnvNames: FORWARDED_ENV_NAMES.filter(
+        (name) => process.env[name] !== undefined,
+      ),
+    },
+    capabilities: {
+      tools: false,
+      files: false,
+      shell: false,
+      git: false,
+      terminal: false,
+      editor: false,
+    },
+    protocol: {
+      allowedMethods: ALLOWED_METHODS,
+    },
+    limits: {
+      maxPromptChars: MAX_PROMPT_CHARS,
+      maxSessions: MAX_SESSIONS,
     },
     sessions: listSessions().sessions.map((session) => ({
       id: session.id,
@@ -369,6 +407,18 @@ export async function handleJsonRpcLine(line) {
     case "diagnostics":
       return {
         response: successResponse(request.id, await diagnostics()),
+        shutdown: false,
+      };
+    case "models.list":
+      return {
+        response: await sessionResponse(
+          request.id,
+          async (params) => {
+            const pi = await import("@earendil-works/pi-coding-agent");
+            return listProfileModels(pi, params);
+          },
+          request.params,
+        ),
         shutdown: false,
       };
     case "sessions.list":

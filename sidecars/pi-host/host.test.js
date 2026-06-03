@@ -137,14 +137,18 @@ describe("Pi host stdio", () => {
 
     try {
       writeRequest(child, 1, "sessions.create", { title: "stdio" });
-      await expect(readResponse(lines)).resolves.toMatchObject({
+      const created = await readResponse(lines);
+      expect(created).toMatchObject({
         jsonrpc: "2.0",
         id: 1,
-        result: { session: { id: "pi-1", status: "idle" } },
+        result: {
+          session: { id: expect.stringMatching(/^pi_/), status: "idle" },
+        },
       });
+      const sessionId = created.result.session.id;
 
       writeRequest(child, 2, "sessions.send", {
-        sessionId: "pi-1",
+        sessionId,
         prompt: "hello",
       });
       const sent = await readResponse(lines);

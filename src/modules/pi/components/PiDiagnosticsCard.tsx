@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import { PiSection } from "@/modules/pi/components/PiSection";
 import type {
   PiDiagnosticsAction,
   PiDiagnosticsIssue,
@@ -17,9 +18,11 @@ import type {
 } from "@/modules/pi/lib/diagnostics";
 
 type PiDiagnosticsCardProps = {
+  collapsed: boolean;
   disabled: boolean;
   isRefreshing: boolean;
   view: PiDiagnosticsView;
+  onCollapsedChange: (collapsed: boolean) => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
   onStartRuntime: () => void;
@@ -152,9 +155,11 @@ function IssueRow({
 }
 
 export function PiDiagnosticsCard({
+  collapsed,
   disabled,
   isRefreshing,
   view,
+  onCollapsedChange,
   onOpenSettings,
   onRefresh,
   onStartRuntime,
@@ -164,11 +169,10 @@ export function PiDiagnosticsCard({
   );
 
   return (
-    <div className="shrink-0 border-b border-border/35 bg-card/45 px-2.5 py-2">
-      <div className="mb-1.5 flex min-w-0 items-center gap-2">
-        <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/85">
-          Diagnostics
-        </span>
+    <PiSection
+      title="Diagnostics"
+      collapsed={collapsed}
+      summary={
         <Badge
           variant={view.healthy ? "secondary" : "outline"}
           className="h-4 gap-1 px-1.5 text-[9.5px] text-muted-foreground"
@@ -182,44 +186,50 @@ export function PiDiagnosticsCard({
           />
           {view.healthy ? "Healthy" : "Review"}
         </Badge>
-        <Button
-          size="xs"
-          variant="ghost"
-          className="ml-auto h-5 rounded-md px-1.5 text-[10px]"
-          disabled={disabled}
-          onClick={onRefresh}
-        >
-          {isRefreshing ? (
-            <Spinner className="size-2.5" />
-          ) : (
-            <HugeiconsIcon
-              data-icon="inline-start"
-              icon={Refresh01Icon}
-              size={11}
-              strokeWidth={1.75}
-            />
-          )}
-          Refresh
-        </Button>
-        {hasSettingsAction ? (
+      }
+      actions={
+        <>
           <Button
             size="xs"
             variant="ghost"
             className="h-5 rounded-md px-1.5 text-[10px]"
             disabled={disabled}
-            onClick={onOpenSettings}
+            onClick={onRefresh}
           >
-            <HugeiconsIcon
-              data-icon="inline-start"
-              icon={Settings01Icon}
-              size={11}
-              strokeWidth={1.75}
-            />
-            Settings
+            {isRefreshing ? (
+              <Spinner className="size-2.5" />
+            ) : (
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={Refresh01Icon}
+                size={11}
+                strokeWidth={1.75}
+              />
+            )}
+            Refresh
           </Button>
-        ) : null}
-      </div>
-
+          {hasSettingsAction ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              className="h-5 rounded-md px-1.5 text-[10px]"
+              disabled={disabled}
+              onClick={onOpenSettings}
+            >
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={Settings01Icon}
+                size={11}
+                strokeWidth={1.75}
+              />
+              Settings
+            </Button>
+          ) : null}
+        </>
+      }
+      contentClassName="px-2.5 pb-2"
+      onCollapsedChange={onCollapsedChange}
+    >
       <div className="grid grid-cols-2 gap-1.5 text-[10px] text-muted-foreground">
         <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 tabular-nums">
           Packages {view.loadedPackageCount}/{view.packageCount}
@@ -237,7 +247,13 @@ export function PiDiagnosticsCard({
           Sessions {view.sessionCount}
         </span>
         <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 text-right">
-          Tools {view.toolMode}
+          {view.capabilityLabel}
+        </span>
+        <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 tabular-nums">
+          Methods {view.methodCount}
+        </span>
+        <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 text-right tabular-nums">
+          Limit {view.promptLimitLabel}
         </span>
       </div>
 
@@ -267,9 +283,9 @@ export function PiDiagnosticsCard({
           ))
         )}
         <div className="truncate text-[9.5px] text-muted-foreground/60">
-          Node {view.nodeLabel} · Storage {view.storageLabel}
+          Node {view.nodeLabel} · Storage {view.storageLabel} · {view.idlePolicyLabel}
         </div>
       </div>
-    </div>
+    </PiSection>
   );
 }
