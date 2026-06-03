@@ -38,3 +38,22 @@ export function gitStatusTextClass(code: string): string {
 
 /** Explorer folder dot when any descendant has git changes. */
 export const gitFolderDirtyDotClass = "bg-amber-500/30";
+
+/** Human-readable status for the explorer hover tooltip. */
+export function gitStatusLabel(code: string): string {
+  switch (code.trim().toUpperCase()) {
+    case "A":
+      return "Added";
+    case "U":
+      return "Untracked";
+    case "M":
+      return "Modified";
+    case "D":
+      return "Deleted";
+    case "R":
+    case "C":
+      return "Renamed";
+    default:
+      return "Modified";
+  }
+}
