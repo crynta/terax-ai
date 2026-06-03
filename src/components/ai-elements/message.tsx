@@ -25,6 +25,7 @@ import {
 import { Streamdown } from "streamdown";
 import { ChatStreamingProvider } from "./chat-code";
 import { MarkdownCode } from "./markdown-code";
+import { streamdownPlugins } from "./streamdown-plugins";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -332,6 +333,7 @@ export const MessageResponse = memo(
           className,
         )}
         components={streamdownComponents}
+        plugins={streamdownPlugins}
         {...props}
       />
     </ChatStreamingProvider>

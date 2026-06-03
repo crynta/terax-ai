@@ -1,4 +1,5 @@
 import { MarkdownCode } from "@/components/ai-elements/markdown-code";
+import { streamdownPlugins } from "@/components/ai-elements/streamdown-plugins";
 import { cn } from "@/lib/utils";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
@@ -86,6 +87,7 @@ export function MarkdownPreviewPane({ path, visible }: Props) {
           <Streamdown
             className="select-text prose-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             components={components}
+            plugins={streamdownPlugins}
           >
             {status.content}
           </Streamdown>
