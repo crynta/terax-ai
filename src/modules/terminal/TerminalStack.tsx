@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { PaneTreeView } from "./PaneTreeView";
 import type { TerminalPaneHandle } from "./TerminalPane";
 import { leafIds } from "./lib/panes";
+import { workspaceScopeKey } from "@/modules/workspace";
 
 type Props = {
   tabs: Tab[];
@@ -11,16 +12,18 @@ type Props = {
   /** Register/unregister handle by leaf id (not tab id). */
   registerHandle: (leafId: number, handle: TerminalPaneHandle | null) => void;
   onSearchReady: (leafId: number, addon: SearchAddon) => void;
-  onCwd: (leafId: number, cwd: string) => void;
+  onCwd: (leafId: number, cwd: string, host: string | null) => void;
   onExit: (leafId: number, code: number) => void;
+  onCommandStart: (leafId: number, command: string) => void;
   onFocusLeaf: (tabId: number, leafId: number) => void;
 };
 
 type Bundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
   onSearch: (addon: SearchAddon) => void;
-  onCwd: (cwd: string) => void;
+  onCwd: (cwd: string, host: string | null) => void;
   onExit: (code: number) => void;
+  onCommandStart: (command: string) => void;
 };
 
 export function TerminalStack({
@@ -30,6 +33,7 @@ export function TerminalStack({
   onSearchReady,
   onCwd,
   onExit,
+  onCommandStart,
   onFocusLeaf,
 }: Props) {
   const terminals = useMemo(
@@ -41,6 +45,7 @@ export function TerminalStack({
   const searchReadyRef = useRef(onSearchReady);
   const cwdRef = useRef(onCwd);
   const exitRef = useRef(onExit);
+  const commandStartRef = useRef(onCommandStart);
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -53,6 +58,9 @@ export function TerminalStack({
   useEffect(() => {
     exitRef.current = onExit;
   }, [onExit]);
+  useEffect(() => {
+    commandStartRef.current = onCommandStart;
+  }, [onCommandStart]);
 
   const bundles = useRef(new Map<number, Bundle>());
   const getBundle = (leafId: number): Bundle => {
@@ -61,8 +69,9 @@ export function TerminalStack({
       b = {
         setRef: (h) => registerRef.current(leafId, h),
         onSearch: (addon) => searchReadyRef.current(leafId, addon),
-        onCwd: (cwd) => cwdRef.current(leafId, cwd),
+        onCwd: (cwd, host) => cwdRef.current(leafId, cwd, host),
         onExit: (code) => exitRef.current(leafId, code),
+        onCommandStart: (command) => commandStartRef.current(leafId, command),
       };
       bundles.current.set(leafId, b);
     }
@@ -95,6 +104,9 @@ export function TerminalStack({
               node={t.paneTree}
               tabVisible={tabVisible}
               activeLeafId={t.activeLeafId}
+              workspace={t.workspace}
+              workspaceKey={workspaceScopeKey(t.workspace)}
+              workspaceNonce={t.workspaceNonce}
               onFocusLeaf={(leafId) => onFocusLeaf(t.id, leafId)}
               getBundle={getBundle}
             />

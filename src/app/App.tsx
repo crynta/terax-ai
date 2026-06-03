@@ -24,16 +24,24 @@ import {
   AiInputBar,
   AiInputBarConnect,
   AiMiniWindow,
-  getAllKeys,
-  getAllCustomEndpointKeys,
-  hasAnyKey,
   LocalAgentNotificationsBridge,
   SelectionAskAi,
   useChatStore,
 } from "@/modules/ai";
+import {
+  DEFAULT_CODEX_MODEL_ID,
+  endpointIdFromCompatModel,
+  isCodexModelId,
+  isCompatModelId,
+  providerNeedsKey,
+  resolveModel,
+  type CustomEndpoint,
+  type ProviderId,
+} from "@/modules/ai/config";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { redactSensitive } from "@/modules/ai/lib/redact";
 import { native } from "@/modules/ai/lib/native";
+import { buildTerminalInventory } from "@/modules/ai/lib/terminalInventory";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
 import {
@@ -70,7 +78,7 @@ import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { onKeysChanged, setThemeId as persistThemeId } from "@/modules/settings/store";
+import { setThemeId as persistThemeId } from "@/modules/settings/store";
 import {
   ShortcutsDialog,
   useGlobalShortcuts,
@@ -98,6 +106,7 @@ import {
   type TerminalPaneHandle,
   useTerminalFileDrop,
 } from "@/modules/terminal";
+import { parseSshCommandLine } from "@/modules/terminal/lib/sshCommandTracker";
 import { ThemeProvider } from "@/modules/theme";
 import { listCustomThemes, saveCustomTheme } from "@/modules/theme/customThemes";
 import {
@@ -109,10 +118,13 @@ import {
   writeThemeFile,
 } from "@/modules/theme/themeFiles";
 import { UpdaterDialog } from "@/modules/updater";
+import { hostname } from "@tauri-apps/plugin-os";
 import {
   currentWorkspaceEnv,
   getWslHome,
+  isLocalHost,
   LOCAL_WORKSPACE,
+  sameWorkspaceEnv,
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
@@ -146,6 +158,56 @@ function dirname(path: string | null): string | null {
   const idx = normalized.lastIndexOf("/");
   if (idx <= 0) return normalized;
   return normalized.slice(0, idx);
+}
+
+type KeylessModelConfig = {
+  lmstudio: boolean;
+  mlx: boolean;
+  ollama: boolean;
+  openaiCompatible: boolean;
+  customEndpoints: readonly CustomEndpoint[];
+};
+
+function isProviderUsableWithoutKey(
+  provider: ProviderId,
+  config: KeylessModelConfig,
+): boolean {
+  switch (provider) {
+    case "codex":
+      return true;
+    case "lmstudio":
+      return config.lmstudio;
+    case "mlx":
+      return config.mlx;
+    case "ollama":
+      return config.ollama;
+    case "openai-compatible":
+      return config.openaiCompatible;
+    default:
+      return !providerNeedsKey(provider);
+  }
+}
+
+function isModelUsableWithoutKey(
+  modelId: string,
+  config: KeylessModelConfig,
+): boolean {
+  if (isCodexModelId(modelId)) return true;
+  if (isCompatModelId(modelId)) {
+    const endpointId = endpointIdFromCompatModel(modelId);
+    return config.customEndpoints.some(
+      (endpoint) =>
+        endpoint.id === endpointId &&
+        endpoint.baseURL.trim().length > 0 &&
+        endpoint.modelId.trim().length > 0,
+    );
+  }
+  try {
+    const provider = resolveModel(modelId).provider;
+    return isProviderUsableWithoutKey(provider, config);
+  } catch {
+    return false;
+  }
 }
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
@@ -209,7 +271,7 @@ export default function App() {
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
-    resetWorkspace,
+    setTerminalTabWorkspace,
   } = useTabs(getLaunchDir() ? { cwd: getLaunchDir() } : undefined);
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
@@ -243,6 +305,7 @@ export default function App() {
   const sidebarWidthRef = useRef(readSidebarWidth());
   const sidebarWidthWriteTimerRef = useRef(0);
   const [sidebarView, setSidebarViewState] = useState<SidebarViewId>(readSidebarView);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const persistSidebarView = useCallback((view: SidebarViewId) => {
     setSidebarViewState(view);
     try {
@@ -254,8 +317,13 @@ export default function App() {
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
     if (!p) return;
-    if (p.getSize().asPercentage <= 0) p.expand();
-    else p.collapse();
+    if (p.getSize().asPercentage <= 0) {
+      p.expand();
+      setSidebarCollapsed(false);
+    } else {
+      p.collapse();
+      setSidebarCollapsed(true);
+    }
   }, []);
   const cycleSidebarView = useCallback(
     (view: SidebarViewId) => {
@@ -263,11 +331,13 @@ export default function App() {
       const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
       if (collapsed) {
         if (panel) panel.resize(`${sidebarWidthRef.current}px`);
+        setSidebarCollapsed(false);
         if (view !== sidebarView) persistSidebarView(view);
         return;
       }
       if (view === sidebarView) {
         panel?.collapse();
+        setSidebarCollapsed(true);
         return;
       }
       persistSidebarView(view);
@@ -302,6 +372,7 @@ export default function App() {
     const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
     if (sidebarView !== "explorer" || collapsed) {
       if (panel && collapsed) panel.resize(`${sidebarWidthRef.current}px`);
+      if (collapsed) setSidebarCollapsed(false);
       if (sidebarView !== "explorer") persistSidebarView("explorer");
       const active = document.activeElement;
       explorerReturnFocusRef.current =
@@ -329,9 +400,9 @@ export default function App() {
   }, [persistSidebarView, sidebarView]);
 
   const [home, setHome] = useState<string | null>(null);
+  const [localHostname, setLocalHostname] = useState("");
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
   const [pendingTerminalCloseTab, setPendingTerminalCloseTab] = useState<number | null>(null);
-  const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
   const [launchCwdResolved, setLaunchCwdResolved] = useState(false);
@@ -352,18 +423,28 @@ export default function App() {
       .catch(() => setHome(null));
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    hostname()
+      .then((value) => {
+        if (!cancelled) setLocalHostname((value ?? "").trim().toLowerCase());
+      })
+      .catch(() => {
+        if (!cancelled) setLocalHostname("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const switchWorkspace = useCallback(
     async (env: WorkspaceEnv) => {
+      const targetTab = tabsRef.current.find((t) => t.id === activeId) ?? null;
       if (
-        env.kind === workspaceEnv.kind &&
-        (env.kind === "local" ||
-          (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
+        targetTab &&
+        sameWorkspaceEnv(env, targetTab.workspace) &&
+        !(env.kind === "ssh" && env.password)
       ) {
-        return;
-      }
-      const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
-      if (dirty) {
-        window.alert("Save or close unsaved editor tabs before switching workspace.");
         return;
       }
 
@@ -371,6 +452,8 @@ export default function App() {
       try {
         if (env.kind === "wsl") {
           nextHome = await getWslHome(env.distro);
+        } else if (env.kind === "ssh") {
+          nextHome = env.rootPath;
         } else {
           nextHome = (await homeDir()).replace(/\\/g, "/");
         }
@@ -379,26 +462,31 @@ export default function App() {
         return;
       }
 
-      for (const id of liveLeavesRef.current) disposeSession(id);
-      searchAddons.current.clear();
-      terminalRefs.current.clear();
-      editorRefs.current.clear();
-      previewRefs.current.clear();
-      setActiveSearchAddon(null);
-      setActiveEditorHandle(null);
-      setWorkspaceEnv(env.kind === "local" ? LOCAL_WORKSPACE : env);
-      setHome(nextHome);
-      setLaunchCwd(nextHome);
-      if (nextHome) {
-        try {
-          await native.workspaceAuthorize(nextHome);
-        } catch {
-          // Non-fatal — git panel will surface "not authorized" if needed.
-        }
+      if (!targetTab) {
+        setWorkspaceEnv(env);
+        return;
       }
-      resetWorkspace(nextHome ?? undefined);
+
+      if (targetTab.kind === "terminal") {
+        setTerminalTabWorkspace(targetTab.id, env, {
+          cwd: nextHome ?? undefined,
+          restartSession: true,
+        });
+        setWorkspaceEnv(env);
+        if (nextHome && env.kind !== "ssh") {
+          try {
+            await native.workspaceAuthorize(nextHome);
+          } catch {
+            // Non-fatal — git panel will surface "not authorized" if needed.
+          }
+        }
+        return;
+      }
+
+      updateTab(targetTab.id, { workspace: env });
+      setWorkspaceEnv(env);
     },
-    [workspaceEnv, setWorkspaceEnv, resetWorkspace],
+    [activeId, setTerminalTabWorkspace, setWorkspaceEnv, updateTab],
   );
   useEffect(() => {
     native
@@ -417,9 +505,6 @@ export default function App() {
   const focusInput = useChatStore((s) => s.focusInput);
   const openPanel = useChatStore((s) => s.openPanel);
   const panelOpen = useChatStore((s) => s.panelOpen);
-  const apiKeys = useChatStore((s) => s.apiKeys);
-  const setApiKeys = useChatStore((s) => s.setApiKeys);
-  const setCustomEndpointKeys = useChatStore((s) => s.setCustomEndpointKeys);
   const setSelectedModelId = useChatStore((s) => s.setSelectedModelId);
   const setLive = useChatStore((s) => s.setLive);
   const respondToApproval = useChatStore((s) => s.respondToApproval);
@@ -440,40 +525,35 @@ export default function App() {
     (s) => s.openaiCompatibleBaseURL,
   );
   const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
-  const hasLocalModel =
-    (lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0) ||
-    (mlxBaseURL.trim().length > 0 && mlxModelId.trim().length > 0) ||
-    (ollamaBaseURL.trim().length > 0 && ollamaModelId.trim().length > 0) ||
-    (openaiCompatibleBaseURL.trim().length > 0 &&
-      openaiCompatibleModelId.trim().length > 0) ||
-    customEndpoints.some((e) => e.baseURL.trim().length > 0 && e.modelId.trim().length > 0);
-  const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
+  const sshWorkspaces = usePreferencesStore((s) => s.sshWorkspaces);
+  const keylessModelConfig = useMemo<KeylessModelConfig>(
+    () => ({
+      lmstudio:
+        lmstudioBaseURL.trim().length > 0 && lmstudioModelId.trim().length > 0,
+      mlx: mlxBaseURL.trim().length > 0 && mlxModelId.trim().length > 0,
+      ollama:
+        ollamaBaseURL.trim().length > 0 && ollamaModelId.trim().length > 0,
+      openaiCompatible:
+        openaiCompatibleBaseURL.trim().length > 0 &&
+        openaiCompatibleModelId.trim().length > 0,
+      customEndpoints,
+    }),
+    [
+      customEndpoints,
+      lmstudioBaseURL,
+      lmstudioModelId,
+      mlxBaseURL,
+      mlxModelId,
+      ollamaBaseURL,
+      ollamaModelId,
+      openaiCompatibleBaseURL,
+      openaiCompatibleModelId,
+    ],
+  );
+  const hasComposer = true;
+  const keysLoaded = true;
 
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
-  const [keysLoaded, setKeysLoaded] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    const reload = () => {
-      void getAllKeys().then((keys) => {
-        if (!alive) return;
-        setApiKeys(keys);
-        setKeysLoaded(true);
-      });
-      if (!prefsHydrated) return;
-      void getAllCustomEndpointKeys(
-        usePreferencesStore.getState().customEndpoints,
-      ).then((epKeys) => {
-        if (!alive) return;
-        setCustomEndpointKeys(epKeys);
-      });
-    };
-    reload();
-    const unlistenP = onKeysChanged(reload);
-    return () => {
-      alive = false;
-      void unlistenP.then((fn) => fn());
-    };
-  }, [setApiKeys, setCustomEndpointKeys, prefsHydrated]);
 
   // Hydrate the cross-window preference store and mirror the default model
   // into chatStore so the dropdown reflects what the user picked in Settings.
@@ -484,8 +564,12 @@ export default function App() {
   }, [initPrefs]);
   useEffect(() => {
     if (!prefsHydrated) return;
-    setSelectedModelId(prefDefaultModel);
-  }, [prefsHydrated, prefDefaultModel, setSelectedModelId]);
+    setSelectedModelId(
+      isModelUsableWithoutKey(prefDefaultModel, keylessModelConfig)
+        ? prefDefaultModel
+        : DEFAULT_CODEX_MODEL_ID,
+    );
+  }, [keylessModelConfig, prefsHydrated, prefDefaultModel, setSelectedModelId]);
 
   const hydrateSessions = useChatStore((s) => s.hydrateSessions);
   useEffect(() => {
@@ -495,6 +579,7 @@ export default function App() {
   }, [hydrateSessions]);
 
   const activeTab = tabs.find((t) => t.id === activeId);
+  const activeWorkspace = activeTab?.workspace ?? LOCAL_WORKSPACE;
   const isTerminalTab = activeTab?.kind === "terminal";
   const isEditorTab = activeTab?.kind === "editor";
   const isPreviewTab = activeTab?.kind === "preview";
@@ -503,6 +588,14 @@ export default function App() {
   const isGitDiffTab =
     activeTab?.kind === "git-diff" || activeTab?.kind === "git-commit-file";
   const isGitHistoryTab = activeTab?.kind === "git-history";
+
+  useEffect(() => {
+    const nextWorkspace = activeTab?.workspace ?? LOCAL_WORKSPACE;
+    const current = currentWorkspaceEnv();
+    if (!sameWorkspaceEnv(current, nextWorkspace)) {
+      setWorkspaceEnv(nextWorkspace);
+    }
+  }, [activeTab, setWorkspaceEnv]);
 
   // When an AI diff is approved (write_file applied to disk), reload any
   // open editor tabs for that path so the user sees the new content. We
@@ -551,10 +644,10 @@ export default function App() {
     const prev = editorWatchRef.current;
     const toAdd = [...want].filter((d) => !prev.has(d));
     const toRemove = [...prev].filter((d) => !want.has(d));
-    watchAdd(toAdd);
-    watchRemove(toRemove);
+    watchAdd(toAdd, activeWorkspace);
+    watchRemove(toRemove, activeWorkspace);
     editorWatchRef.current = want;
-  }, [tabs]);
+  }, [tabs, activeWorkspace]);
 
   useEffect(() => {
     let alive = true;
@@ -638,10 +731,18 @@ export default function App() {
     };
   }, [openFileTab]);
 
-  const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
+  const { explorerRoot } = useWorkspaceCwd(
     activeTab,
     tabs,
     launchCwd ?? home,
+    activeWorkspace.kind === "ssh"
+      ? `ssh:${activeWorkspace.user ?? ""}@${activeWorkspace.host}${
+          activeWorkspace.port ? `:${activeWorkspace.port}` : ""
+        }`
+      : activeWorkspace.kind === "wsl"
+        ? `wsl:${activeWorkspace.distro}`
+        : "local",
+    activeWorkspace.kind === "ssh" ? activeWorkspace.rootPath : null,
   );
 
   useWindowTitle(activeTab, explorerRoot);
@@ -849,12 +950,12 @@ export default function App() {
   }, [askFromSelection]);
 
   const openNewTab = useCallback(() => {
-    newTab(inheritedCwdForNewTab());
-  }, [newTab, inheritedCwdForNewTab]);
+    newTab(home ?? launchCwd ?? undefined);
+  }, [newTab, home, launchCwd]);
 
   const openNewPrivateTab = useCallback(() => {
-    newPrivateTab(inheritedCwdForNewTab());
-  }, [newPrivateTab, inheritedCwdForNewTab]);
+    newPrivateTab(home ?? launchCwd ?? undefined);
+  }, [newPrivateTab, home, launchCwd]);
 
   const sendCd = useCallback(
     (path: string) => {
@@ -870,6 +971,13 @@ export default function App() {
   const cdInNewTab = useCallback(
     (path: string) => {
       const tabId = newTab(path);
+      const workspace = activeTab?.workspace ?? LOCAL_WORKSPACE;
+      if (workspace.kind !== "local") {
+        setTerminalTabWorkspace(tabId, workspace, {
+          cwd: path,
+          restartSession: true,
+        });
+      }
       setTimeout(() => {
         const tab = tabsRef.current.find((x) => x.id === tabId);
         if (!tab || tab.kind !== "terminal") return;
@@ -879,7 +987,7 @@ export default function App() {
         t.focus();
       }, 80);
     },
-    [newTab],
+    [activeTab, newTab, setTerminalTabWorkspace],
   );
 
   const handleOpenFile = useCallback(
@@ -971,7 +1079,12 @@ export default function App() {
     : null;
   const sourceControlContextPath = (() => {
     if (activeTab?.kind === "terminal") {
-      return activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath;
+      return (
+        activeTerminalLeafCwd ??
+        (activeTab.workspace.kind === "ssh" ? activeTab.workspace.rootPath : null) ??
+        explorerRoot ??
+        workspaceFallbackPath
+      );
     }
     if (activeTab?.kind === "editor") return dirname(activeTab.path);
     if (activeTab?.kind === "git-diff") return activeTab.repoRoot;
@@ -998,7 +1111,11 @@ export default function App() {
   const sourceControlPath = sourceControlActive
     ? sourceControlContextPath
     : badgeContextPath;
-  const sourceControl = useSourceControl(sourceControlPath, true);
+  const sourceControl = useSourceControl(
+    sourceControlPath,
+    activeWorkspace,
+    !sidebarCollapsed,
+  );
 
   const toggleSourceControl = useCallback(() => {
     cycleSidebarView("source-control");
@@ -1194,18 +1311,64 @@ export default function App() {
     [updateTab],
   );
 
-  const authorizedCwds = useRef(new Set<string>());
   const handleTerminalCwd = useCallback(
-    (leafId: number, cwd: string) => {
+    (leafId: number, cwd: string, host: string | null) => {
       setLeafCwd(leafId, cwd);
-      if (cwd && !authorizedCwds.current.has(cwd)) {
-        authorizedCwds.current.add(cwd);
-        native.workspaceAuthorize(cwd).catch(() => {
-          authorizedCwds.current.delete(cwd);
+      const tab = tabsRef.current.find(
+        (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
+      );
+      if (!tab || tab.kind !== "terminal") return;
+      const remoteHost = host?.trim().toLowerCase() ?? "";
+      if (!localHostname) return;
+      if (
+        remoteHost &&
+        !isLocalHost(remoteHost, localHostname) &&
+        !(tab.workspace.kind === "ssh" && isLocalHost(tab.workspace.host, remoteHost))
+      ) {
+        const nextEnv: WorkspaceEnv = {
+          kind: "ssh",
+          id: `auto:${remoteHost}`,
+          label: `SSH: ${host ?? remoteHost}`,
+          host: host ?? remoteHost,
+          user: null,
+          port: null,
+          rootPath: cwd || "/",
+        };
+        setTerminalTabWorkspace(tab.id, nextEnv, {
+          cwd: cwd || undefined,
+          restartSession: true,
         });
+        return;
       }
     },
-    [setLeafCwd],
+    [setLeafCwd, setTerminalTabWorkspace, localHostname],
+  );
+
+  const handleTerminalCommandStart = useCallback(
+    (leafId: number, command: string) => {
+      const tab = tabsRef.current.find(
+        (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
+      );
+      if (!tab || tab.kind !== "terminal") return;
+      if (tab.workspace.kind !== "local") return;
+      const spec = parseSshCommandLine(command);
+      if (!spec) return;
+      const host = spec.host.trim();
+      const user = spec.user?.trim() || null;
+      const port = spec.port ?? null;
+      const match = sshWorkspaces.find((profile) => {
+        if (profile.host.trim() !== host) return false;
+        if ((profile.user ?? null) !== user) return false;
+        if ((profile.port ?? null) !== port) return false;
+        return true;
+      });
+      if (!match) return;
+      setTerminalTabWorkspace(tab.id, { kind: "ssh", ...match }, {
+        cwd: match.rootPath,
+        restartSession: true,
+      });
+    },
+    [sshWorkspaces, setTerminalTabWorkspace],
   );
 
   const handleFocusLeaf = useCallback(
@@ -1237,7 +1400,10 @@ export default function App() {
         leafIds(tab.paneTree).length === 1 &&
         all.filter((t) => t.kind === "terminal").length === 1;
       if (isLast) {
-        void respawnSession(leafId, tab.cwd);
+        void respawnSession(
+          leafId,
+          tab.workspace.kind === "ssh" ? tab.workspace.rootPath : tab.cwd,
+        );
       } else {
         closePaneByLeaf(leafId);
       }
@@ -1347,6 +1513,7 @@ export default function App() {
       }
       return explorerRoot ?? launchCwd ?? home ?? null;
     };
+    const getTerminalInventory = () => buildTerminalInventory(tabs, activeId);
 
     setLive({
       getCwd: findCwd,
@@ -1357,6 +1524,7 @@ export default function App() {
         const buf = terminalRefs.current.get(t.activeLeafId)?.getBuffer(300);
         return buf ? redactSensitive(buf) : null;
       },
+      getTerminalInventory,
       isActiveTerminalPrivate: () => {
         const t = tabs.find((x) => x.id === activeId);
         return t?.kind === "terminal" && t.private === true;
@@ -1451,6 +1619,7 @@ export default function App() {
           onSearchReady={handleSearchReady}
           onCwd={handleTerminalCwd}
           onExit={handleLeafExit}
+          onCommandStart={handleTerminalCommandStart}
           onFocusLeaf={handleFocusLeaf}
         />
       </div>
@@ -1577,6 +1746,7 @@ export default function App() {
                 collapsible
                 collapsedSize={0}
                 onResize={(size) => {
+                  setSidebarCollapsed(size.inPixels <= 0);
                   if (size.inPixels > 0) persistSidebarWidth(size.inPixels);
                 }}
               >
@@ -1586,7 +1756,9 @@ export default function App() {
                       <FileExplorer
                         ref={explorerRef}
                         rootPath={explorerRoot}
+                        workspace={activeWorkspace}
                         activeFilePath={explorerActiveFilePath}
+                        enabled={!sidebarCollapsed}
                         onOpenFile={handleOpenFile}
                         onPathRenamed={handlePathRenamed}
                         onPathDeleted={handlePathDeleted}
@@ -1596,7 +1768,7 @@ export default function App() {
                       />
                     ) : (
                       <SourceControlPanel
-                        open
+                        open={!sidebarCollapsed}
                         sourceControl={sourceControl}
                         onOpenDiff={openGitDiffTab}
                         onOpenGitGraph={openGitGraphFromContext}
@@ -1645,10 +1817,11 @@ export default function App() {
           </main>
 
           {!zenMode && (
-            <StatusBar
+          <StatusBar
             cwd={activeCwd}
             filePath={activeFilePath}
             home={home}
+            workspace={activeWorkspace}
             onCd={sendCd}
             onWorkspaceChange={switchWorkspace}
             onOpenMini={openMini}
@@ -1656,7 +1829,7 @@ export default function App() {
             privateActive={
               activeTab?.kind === "terminal" && activeTab.private === true
             }
-            />
+          />
           )}
 
           <AgentNotificationsBridge

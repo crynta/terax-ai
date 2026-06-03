@@ -14,7 +14,6 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
-import { currentWorkspaceEnv } from "@/modules/workspace";
 import { motion } from "motion/react";
 import {
   forwardRef,
@@ -24,6 +23,7 @@ import {
   useState,
 } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import { fileIconUrl } from "./lib/iconResolver";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
@@ -46,6 +46,7 @@ const DEBOUNCE_MS = 300;
 
 type Props = {
   rootPath: string;
+  workspace: WorkspaceEnv;
   onOpenFile: (path: string) => void;
   open: boolean;
   onRequestClose: () => void;
@@ -61,6 +62,7 @@ export type ExplorerSearchHandle = {
 
 export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function ExplorerSearch({
   rootPath,
+  workspace,
   onOpenFile,
   open,
   onRequestClose,
@@ -116,7 +118,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
           query: q,
           limit: 200,
           showHidden,
-          workspace: currentWorkspaceEnv(),
+          workspace,
         });
         if (alive) {
           setResults(res.hits);
@@ -139,7 +141,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
       alive = false;
       clearTimeout(handle);
     };
-  }, [query, rootPath, showHidden]);
+  }, [query, rootPath, showHidden, workspace]);
 
   useImperativeHandle(
     ref,

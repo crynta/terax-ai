@@ -14,9 +14,10 @@ use std::time::Duration;
 use serde::Serialize;
 use shared_child::SharedChild;
 
-use crate::modules::workspace::{authorize_spawn_cwd, WorkspaceEnv, WorkspaceRegistry};
+use crate::modules::ssh;
 #[cfg(windows)]
 use crate::modules::workspace::validate_wsl_distro_name;
+use crate::modules::workspace::{authorize_spawn_cwd, WorkspaceEnv, WorkspaceRegistry};
 
 use background::{BackgroundLogResponse, BackgroundProc, BackgroundProcInfo};
 use session::{SessionRunOutput, ShellSession};
@@ -180,7 +181,9 @@ pub fn shell_session_open(
     let initial = match cwd.as_deref().filter(|s| !s.is_empty()) {
         Some(c) => c.to_string(),
         None => {
-            if let WorkspaceEnv::Wsl { distro } = &workspace {
+            if let WorkspaceEnv::Ssh { root_path, .. } = &workspace {
+                root_path.clone()
+            } else if let WorkspaceEnv::Wsl { distro } = &workspace {
                 crate::modules::workspace::wsl_home(distro.clone())?
             } else {
                 crate::modules::fs::to_canon(dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")))
@@ -210,7 +213,9 @@ pub async fn shell_session_run(
         .get(&id)
         .cloned()
         .ok_or_else(|| "no shell session".to_string())?;
-    let effective_workspace = workspace.clone().unwrap_or_else(|| session.workspace.clone());
+    let effective_workspace = workspace
+        .clone()
+        .unwrap_or_else(|| session.workspace.clone());
     authorize_spawn_cwd(&registry, cwd.as_deref(), &effective_workspace)?;
     let dur = Duration::from_secs(
         timeout_secs
@@ -286,6 +291,28 @@ pub(crate) fn build_oneshot_command(
     #[cfg_attr(not(windows), allow(unused_variables))] workspace: &WorkspaceEnv,
     #[cfg_attr(not(windows), allow(unused_variables))] cwd: Option<&str>,
 ) -> Result<Command, String> {
+    if let WorkspaceEnv::Ssh { .. } = workspace {
+        let (target, port) = ssh::ssh_endpoint(workspace)?;
+        let remote =
+            ssh::remote_shell_command(cwd.or_else(|| ssh::workspace_root(workspace)), command);
+        let remote = ssh::remote_shell_invocation(&remote);
+        let (auth_args, auth_envs) = ssh::ssh_auth_options(workspace)?;
+        let mut cmd = Command::new("ssh");
+        cmd.arg("-T");
+        cmd.arg("-o").arg("ConnectTimeout=10");
+        for arg in auth_args {
+            cmd.arg(arg);
+        }
+        if let Some(port) = port {
+            cmd.arg("-p").arg(port.to_string());
+        }
+        cmd.arg(target);
+        cmd.arg(remote);
+        for (key, value) in auth_envs {
+            cmd.env(key, value);
+        }
+        return Ok(cmd);
+    }
     #[cfg(windows)]
     if let WorkspaceEnv::Wsl { distro } = workspace {
         validate_wsl_distro_name(distro)?;

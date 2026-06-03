@@ -1,3 +1,5 @@
+import type { TerminalInventory } from "../lib/terminalInventory";
+
 export type ToolContext = {
   /** Active terminal tab cwd, used to resolve relative paths. Null = home. */
   getCwd: () => string | null;
@@ -5,7 +7,11 @@ export type ToolContext = {
   getWorkspaceRoot: () => string | null;
   /** Last N lines of the active terminal buffer (or null if not a terminal tab). */
   getTerminalContext: () => string | null;
+  /** Snapshot of all terminal tabs and panes. */
+  getTerminalInventory: () => TerminalInventory;
   isActiveTerminalPrivate: () => boolean;
+  /** Read the scrollback tail for a specific terminal leaf. */
+  readLeafBuffer: (leafId: number) => string | null;
   /**
    * Type a string into the active terminal at the prompt — without executing.
    * Returns false if there is no active terminal tab to inject into.

@@ -11,7 +11,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
 import { useComposer, type FileAttachment } from "../lib/composer";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
@@ -72,6 +72,9 @@ export function AiInputBar() {
   const c = useComposer();
   const snippets = useSnippetsStore((s) => s.snippets);
   const workspaceRoot = useChatStore((s) => s.live.getWorkspaceRoot());
+  const isComposingRef = useRef(false);
+  const imeEnterIgnoreUntilRef = useRef(0);
+  const IME_ENTER_IGNORE_MS = 50;
 
   const [trigger, setTrigger] = useState<SnippetTrigger | null>(null);
   const [fileTrigger, setFileTrigger] = useState<FileTrigger | null>(null);
@@ -242,10 +245,35 @@ export function AiInputBar() {
                 ref={c.textareaRef}
                 value={c.value}
                 onChange={(e) => c.setValue(e.target.value)}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                }}
+                onCompositionEnd={() => {
+                  isComposingRef.current = false;
+                  imeEnterIgnoreUntilRef.current =
+                    performance.now() + IME_ENTER_IGNORE_MS;
+                }}
                 onKeyUp={updateTrigger}
                 onClick={updateTrigger}
                 onSelect={updateTrigger}
                 onKeyDown={(e) => {
+                  const isComposing =
+                    isComposingRef.current ||
+                    e.nativeEvent.isComposing ||
+                    e.keyCode === 229;
+                  if (isComposing) {
+                    return;
+                  }
+                  if (
+                    shouldIgnoreEnterAfterImeCommit({
+                      key: e.key,
+                      now: performance.now(),
+                      ignoreUntil: imeEnterIgnoreUntilRef.current,
+                    })
+                  ) {
+                    e.preventDefault();
+                    return;
+                  }
                   if (pickerOpen) {
                     const items = fileTrigger ? filteredFiles : filteredItems;
                     if (e.key === "ArrowDown") {
@@ -280,7 +308,12 @@ export function AiInputBar() {
                       return;
                     }
                   }
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (shouldSubmitOnEnter({
+                    key: e.key,
+                    shiftKey: e.shiftKey,
+                    isComposing,
+                    keyCode: e.keyCode,
+                  })) {
                     e.preventDefault();
                     c.submit();
                   }
@@ -497,4 +530,23 @@ export function AiInputBarConnect({ onAdd }: { onAdd: () => void }) {
       </div>
     </div>
   );
+}
+
+export function shouldSubmitOnEnter(input: {
+  key: string;
+  shiftKey: boolean;
+  isComposing: boolean;
+  keyCode?: number;
+}): boolean {
+  if (input.isComposing) return false;
+  if (input.keyCode === 229) return false;
+  return input.key === "Enter" && !input.shiftKey;
+}
+
+export function shouldIgnoreEnterAfterImeCommit(input: {
+  key: string;
+  now: number;
+  ignoreUntil: number;
+}): boolean {
+  return input.key === "Enter" && input.now < input.ignoreUntil;
 }

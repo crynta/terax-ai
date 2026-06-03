@@ -32,6 +32,7 @@ import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
+import type { WorkspaceEnv } from "@/modules/workspace";
 
 export type FileExplorerHandle = {
   focus: () => void;
@@ -41,6 +42,8 @@ export type FileExplorerHandle = {
 
 type Props = {
   rootPath: string | null;
+  workspace: WorkspaceEnv;
+  enabled?: boolean;
   activeFilePath?: string | null;
   onOpenFile: (path: string, pin?: boolean) => void;
   onPathRenamed?: (from: string, to: string) => void;
@@ -149,6 +152,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
   function FileExplorer(
     {
       rootPath,
+      workspace,
+      enabled = true,
       activeFilePath,
       onOpenFile,
       onPathRenamed,
@@ -159,7 +164,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     },
     ref,
   ) {
-    const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
+    const tree = useFileTree(rootPath, {
+      workspace,
+      enabled,
+      onPathRenamed,
+      onPathDeleted,
+    });
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
@@ -445,6 +455,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
         <ExplorerSearch
           ref={searchRef}
           rootPath={rootPath}
+          workspace={workspace}
           onOpenFile={onOpenFile}
           open={isSearchOpen}
           onRequestClose={() => setIsSearchOpen(false)}

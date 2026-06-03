@@ -18,6 +18,7 @@ import {
   getAutocompleteEligibleModels,
   getModel,
   getProvider,
+  isCodexModelId,
   providerNeedsKey,
   type CustomEndpoint,
   type ModelId,
@@ -27,12 +28,13 @@ import {
 import {
   clearKey,
   clearCustomEndpointKey,
-  getAllKeys,
-  getAllCustomEndpointKeys,
+  EMPTY_PROVIDER_KEYS,
   setKey,
   setCustomEndpointKey,
   type CustomEndpointKeys,
 } from "@/modules/ai/lib/keyring";
+import { native } from "@/modules/ai/lib/native";
+import { useCodexAuthStore } from "@/modules/ai/store/codexAuthStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -100,9 +102,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     modelPlaceholder: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
     description:
       "Apple-silicon inference via mlx_lm.server (pip install mlx-lm).",
-    modelHint: (
-      <>The Hugging Face repo path you launched mlx_lm.server with.</>
-    ),
+    modelHint: <>The Hugging Face repo path you launched mlx_lm.server with.</>,
   },
   ollama: {
     urlPlaceholder: "http://localhost:11434/v1",
@@ -122,15 +122,14 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     description: "Any model on OpenRouter — type its full provider/model id.",
     modelHint: (
       <>
-        Browse ids at{" "}
-        <span className="font-mono">openrouter.ai/models</span>.
+        Browse ids at <span className="font-mono">openrouter.ai/models</span>.
       </>
     ),
   },
 };
 
 export function ModelsSection() {
-  const [keys, setKeys] = useState<KeysMap | null>(null);
+  const [keys, setKeys] = useState<KeysMap>({ ...EMPTY_PROVIDER_KEYS });
   const [epKeys, setEpKeys] = useState<CustomEndpointKeys>({});
   const [adding, setAdding] = useState<Set<ProviderId>>(new Set());
 
@@ -148,36 +147,45 @@ export function ModelsSection() {
   );
   const openrouterModelId = usePreferencesStore((s) => s.openrouterModelId);
   const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
+  const codexStatus = useCodexAuthStore((s) => s.status);
+  const codexModelsAvailable = codexStatus?.logged_in !== false;
 
   useEffect(() => {
-    void getAllKeys().then(setKeys);
-  }, []);
-
-  useEffect(() => {
-    void getAllCustomEndpointKeys(customEndpoints).then(setEpKeys);
-  }, [customEndpoints]);
+    if (codexModelsAvailable) return;
+    if (isCodexModelId(defaultModel)) void setDefaultModel(DEFAULT_MODEL_ID);
+  }, [codexModelsAvailable, defaultModel]);
 
   const onSaveKey = async (provider: ProviderId, value: string) => {
     await setKey(provider, value);
-    setKeys((prev) => (prev ? { ...prev, [provider]: value } : prev));
+    setKeys((prev) => ({ ...prev, [provider]: value }));
+    useChatStore.getState().setApiKey(provider, value);
     await emitKeysChanged();
   };
 
   const onClearKey = async (provider: ProviderId) => {
     await clearKey(provider);
-    setKeys((prev) => (prev ? { ...prev, [provider]: null } : prev));
+    setKeys((prev) => ({ ...prev, [provider]: null }));
+    useChatStore.getState().setApiKey(provider, null);
     await emitKeysChanged();
   };
 
   const onSaveEndpointKey = async (endpointId: string, value: string) => {
     await setCustomEndpointKey(endpointId, value);
     setEpKeys((prev) => ({ ...prev, [endpointId]: value }));
+    useChatStore.getState().setCustomEndpointKeys({
+      ...useChatStore.getState().customEndpointKeys,
+      [endpointId]: value,
+    });
     await emitKeysChanged();
   };
 
   const onClearEndpointKey = async (endpointId: string) => {
     await clearCustomEndpointKey(endpointId);
     setEpKeys((prev) => ({ ...prev, [endpointId]: null }));
+    useChatStore.getState().setCustomEndpointKeys({
+      ...useChatStore.getState().customEndpointKeys,
+      [endpointId]: null,
+    });
     await emitKeysChanged();
   };
 
@@ -208,6 +216,15 @@ export function ModelsSection() {
       delete next[id];
       return next;
     });
+    useChatStore
+      .getState()
+      .setCustomEndpointKeys(
+        Object.fromEntries(
+          Object.entries(useChatStore.getState().customEndpointKeys).filter(
+            ([key]) => key !== id,
+          ),
+        ),
+      );
 
     // Drop the now-dead model id from favorites/recents before touching the
     // selection, so the recents push from a selection reset can't race it.
@@ -229,7 +246,9 @@ export function ModelsSection() {
     const { selectedModelId, setSelectedModelId } = useChatStore.getState();
     if (selectedModelId === deadModelId) {
       setSelectedModelId(
-        remaining[0] ? compatModelIdForEndpoint(remaining[0].id) : DEFAULT_MODEL_ID,
+        remaining[0]
+          ? compatModelIdForEndpoint(remaining[0].id)
+          : DEFAULT_MODEL_ID,
       );
     }
 
@@ -282,8 +301,8 @@ export function ModelsSection() {
   };
 
   const isConfigured = (id: ProviderId): boolean => {
-    if (id === "openrouter")
-      return !!keys?.[id] && !!openrouterModelId.trim();
+    if (id === "codex") return true;
+    if (id === "openrouter") return !!keys?.[id] && !!openrouterModelId.trim();
     if (!isLocalProvider(id)) return !!keys?.[id];
     const cfg = localConfig(id);
     if (!cfg) return false;
@@ -291,10 +310,6 @@ export function ModelsSection() {
       return !!cfg.baseURL.trim() && !!cfg.modelId.trim();
     return !!cfg.modelId.trim();
   };
-
-  if (!keys) {
-    return <div className="text-[12px] text-muted-foreground">Loading…</div>;
-  }
 
   const configuredIds = new Set(
     PROVIDERS.filter((p) => isConfigured(p.id)).map((p) => p.id),
@@ -344,6 +359,7 @@ export function ModelsSection() {
         defaultModel={defaultModel}
         configuredIds={configuredIds}
         keys={keys}
+        codexModelsAvailable={codexModelsAvailable}
       />
 
       <div className="flex flex-col gap-3">
@@ -368,7 +384,9 @@ export function ModelsSection() {
         ) : (
           <div className="flex flex-col gap-2">
             {visibleProviders.map((p) =>
-              p.id === "openrouter" ? (
+              p.id === "codex" ? (
+                <CodexProviderCard key={p.id} provider={p} />
+              ) : p.id === "openrouter" ? (
                 <LocalProviderCard
                   key={p.id}
                   provider={p}
@@ -440,7 +458,10 @@ function AddProviderMenu({
   onAddCompat: () => void;
 }) {
   const cloud = providers.filter((p) => !isLocalProvider(p.id));
-  const local = providers.filter((p) => isLocalProvider(p.id) && p.id !== "openai-compatible");
+  const local = providers.filter(
+    (p) =>
+      isLocalProvider(p.id) && p.id !== "codex" && p.id !== "openai-compatible",
+  );
 
   return (
     <DropdownMenu>
@@ -505,10 +526,12 @@ function DefaultsBlock({
   defaultModel,
   configuredIds,
   keys,
+  codexModelsAvailable,
 }: {
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
   keys: KeysMap;
+  codexModelsAvailable: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -518,6 +541,7 @@ function DefaultsBlock({
           <DefaultModelPicker
             defaultModel={defaultModel}
             configuredIds={configuredIds}
+            codexModelsAvailable={codexModelsAvailable}
           />
         </FieldRow>
         <AutocompleteRow keys={keys} configuredIds={configuredIds} />
@@ -529,9 +553,11 @@ function DefaultsBlock({
 function DefaultModelPicker({
   defaultModel,
   configuredIds,
+  codexModelsAvailable,
 }: {
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
+  codexModelsAvailable: boolean;
 }) {
   const m = getModel(defaultModel);
   const hasAny = configuredIds.size > 0;
@@ -565,7 +591,11 @@ function DefaultModelPicker({
         className="min-w-70 p-1"
       >
         <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
-          {PROVIDERS.filter((p) => configuredIds.has(p.id)).map((p) => {
+          {PROVIDERS.filter(
+            (p) =>
+              configuredIds.has(p.id) &&
+              (p.id !== "codex" || codexModelsAvailable),
+          ).map((p) => {
             const models = MODELS.filter((x) => x.provider === p.id);
             if (models.length === 0) return null;
             return (
@@ -615,7 +645,8 @@ function AutocompleteRow({
   // Fast cloud tiers + any configured local provider (one model id each).
   const items = useMemo(() => {
     const local = PROVIDERS.filter(
-      (p) => isLocalProvider(p.id) && configuredIds.has(p.id),
+      (p) =>
+        isLocalProvider(p.id) && p.id !== "codex" && configuredIds.has(p.id),
     ).flatMap((p) => {
       const m = MODELS.find((x) => x.provider === p.id);
       return m ? [m] : [];
@@ -735,6 +766,137 @@ function AutocompleteRow({
   );
 }
 
+function CodexProviderCard({ provider }: { provider: ProviderInfo }) {
+  const status = useCodexAuthStore((s) => s.status);
+  const setStatus = useCodexAuthStore((s) => s.setStatus);
+  const [busy, setBusy] = useState<"idle" | "refresh" | "login" | "logout">(
+    "idle",
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = async () => {
+    setBusy("refresh");
+    setError(null);
+    try {
+      setStatus(await native.codexAuthStatus());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("idle");
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+  }, []);
+
+  const login = async () => {
+    setBusy("login");
+    setError(null);
+    try {
+      setStatus(await native.codexLoginChatGpt());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("idle");
+    }
+  };
+
+  const logout = async () => {
+    setBusy("logout");
+    setError(null);
+    try {
+      const next = await native.codexLogout();
+      setStatus(next);
+      if (!next.logged_in) {
+        const { selectedModelId, setSelectedModelId } = useChatStore.getState();
+        if (isCodexModelId(selectedModelId)) {
+          setSelectedModelId(DEFAULT_MODEL_ID);
+        }
+        if (isCodexModelId(usePreferencesStore.getState().defaultModelId)) {
+          await setDefaultModel(DEFAULT_MODEL_ID);
+        }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("idle");
+    }
+  };
+
+  const loggedIn = status?.logged_in ?? false;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <ProviderIcon provider={provider.id} size={15} />
+        <span className="text-[12.5px] font-medium">{provider.label}</span>
+        {loggedIn ? (
+          <Badge
+            variant="outline"
+            className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
+          >
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
+            Connected
+          </Badge>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void openUrl(provider.consoleUrl)}
+          className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Codex
+          <HugeiconsIcon
+            icon={ArrowUpRight01Icon}
+            size={11}
+            strokeWidth={1.75}
+          />
+        </button>
+      </div>
+
+      <span className="text-[10.5px] leading-relaxed text-muted-foreground">
+        Uses the local Codex app-server with your ChatGPT/Codex login. No OpenAI
+        API key is stored or required.
+      </span>
+
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          onClick={() => (loggedIn ? void refresh() : void login())}
+          disabled={busy !== "idle"}
+          className="h-8 px-3 text-[11px]"
+        >
+          {busy === "login"
+            ? "Waiting for browser..."
+            : busy === "refresh"
+              ? "Checking..."
+              : loggedIn
+                ? "Refresh status"
+                : "Sign in with ChatGPT"}
+        </Button>
+        {loggedIn ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => void logout()}
+            disabled={busy !== "idle"}
+            className="h-8 px-3 text-[11px] text-muted-foreground hover:text-destructive"
+          >
+            {busy === "logout" ? "Signing out..." : "Sign out"}
+          </Button>
+        ) : null}
+        <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted-foreground">
+          {error ?? status?.detail ?? "Checking Codex login..."}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function LocalProviderCard({
   provider,
   configured,
@@ -798,7 +960,11 @@ function LocalProviderCard({
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
             Connected
           </Badge>
         ) : null}
@@ -808,7 +974,11 @@ function LocalProviderCard({
           className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
           Docs
-          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
+          <HugeiconsIcon
+            icon={ArrowUpRight01Icon}
+            size={11}
+            strokeWidth={1.75}
+          />
         </button>
         <Button
           size="icon"
@@ -882,7 +1052,9 @@ function LocalProviderCard({
                 spellCheck={false}
                 className="h-8 w-28 font-mono text-[11.5px]"
               />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
             </div>
           </FieldRow>
         ) : null}
@@ -901,7 +1073,11 @@ function LocalProviderCard({
                   title="Remove key"
                   className="size-7 text-muted-foreground hover:text-destructive"
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
                 </Button>
               </div>
             ) : (
@@ -979,8 +1155,7 @@ function CustomEndpointCard({
     [endpoint.contextLimit],
   );
 
-  const configured =
-    !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
+  const configured = !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
 
   const test = async () => {
     setTestStatus("testing");
@@ -1022,7 +1197,11 @@ function CustomEndpointCard({
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
             Connected
           </Badge>
         ) : null}
@@ -1110,7 +1289,9 @@ function CustomEndpointCard({
                 spellCheck={false}
                 className="h-8 w-28 font-mono text-[11.5px]"
               />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
             </div>
           </FieldRow>
 
@@ -1127,7 +1308,11 @@ function CustomEndpointCard({
                   title="Remove key"
                   className="size-7 text-muted-foreground hover:text-destructive"
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
                 </Button>
               </div>
             ) : (

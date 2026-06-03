@@ -3,7 +3,7 @@ import {
   type GitRepoInfo,
   type GitStatusSnapshot,
 } from "@/modules/ai/lib/native";
-import { useWorkspaceEnvStore, workspaceScopeKey } from "@/modules/workspace";
+import { workspaceScopeKey, type WorkspaceEnv } from "@/modules/workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const AUTO_FETCH_THROTTLE_MS = 5 * 60_000;
@@ -145,10 +145,11 @@ function touchAutoFetch(map: Map<string, number>, key: string): void {
 
 export function useSourceControl(
   contextPath: string | null,
+  workspaceEnv: WorkspaceEnv,
   enabled: boolean = true,
 ): SourceControlSummary {
-  const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const workspaceKey = workspaceScopeKey(workspaceEnv);
+  const sshWorkspace = workspaceEnv.kind === "ssh";
   const [state, setState] = useState<SourceControlSummaryState>({
     repo: null,
     status: null,
@@ -205,6 +206,18 @@ export function useSourceControl(
   const doRefresh = useCallback(
     async (remoteMode: SourceControlRefreshMode): Promise<void> => {
       if (!enabledRef.current) return;
+      if (sshWorkspace) {
+        setState({
+          repo: null,
+          status: null,
+          hasRepo: false,
+          isLoading: false,
+          localError: null,
+          busyAction: null,
+          lastRemoteError: null,
+        });
+        return;
+      }
       const requestId = ++requestIdRef.current;
 
       if (!contextPath) {
@@ -338,7 +351,7 @@ export function useSourceControl(
         lastRefreshAtRef.current = Date.now();
       }
     },
-    [contextPath, workspaceKey],
+    [contextPath, sshWorkspace, workspaceKey],
   );
 
   const refresh = useCallback(

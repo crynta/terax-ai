@@ -245,7 +245,10 @@ mod tests {
         write_store_at(&p, &HashMap::new()).unwrap();
 
         let tmp_path = p.with_extension("json.tmp");
-        assert!(!tmp_path.exists(), "tmp file must be renamed away on success");
+        assert!(
+            !tmp_path.exists(),
+            "tmp file must be renamed away on success"
+        );
     }
 
     #[test]

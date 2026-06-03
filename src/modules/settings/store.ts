@@ -12,6 +12,7 @@ import {
   type ModelId,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
+import type { SshWorkspaceProfile } from "@/modules/workspace";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
@@ -85,6 +86,7 @@ export type Preferences = {
   terminalFontSize: number;
   terminalScrollback: number;
   lastWslDistro: string | null;
+  sshWorkspaces: SshWorkspaceProfile[];
   zoomLevel: number;
   agentNotifications: boolean;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
@@ -129,6 +131,7 @@ const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
+const KEY_SSH_WORKSPACES = "sshWorkspaces";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
@@ -186,6 +189,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
   lastWslDistro: null,
+  sshWorkspaces: [],
   zoomLevel: 1.0,
   agentNotifications: true,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
@@ -316,6 +320,9 @@ export async function loadPreferences(): Promise<Preferences> {
     lastWslDistro:
       get<string | null>(KEY_LAST_WSL_DISTRO) ??
       DEFAULT_PREFERENCES.lastWslDistro,
+    sshWorkspaces:
+      get<SshWorkspaceProfile[]>(KEY_SSH_WORKSPACES) ??
+      DEFAULT_PREFERENCES.sshWorkspaces,
     zoomLevel: get<number>(KEY_ZOOM_LEVEL) ?? DEFAULT_PREFERENCES.zoomLevel,
     agentNotifications:
       get<boolean>(KEY_AGENT_NOTIFICATIONS) ??
@@ -512,6 +519,12 @@ export async function setLastWslDistro(value: string | null): Promise<void> {
   await writePref(KEY_LAST_WSL_DISTRO, value);
 }
 
+export async function setSshWorkspaces(
+  value: SshWorkspaceProfile[],
+): Promise<void> {
+  await writePref(KEY_SSH_WORKSPACES, value);
+}
+
 export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
 }
@@ -585,6 +598,7 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
+    [KEY_SSH_WORKSPACES]: "sshWorkspaces",
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
     [KEY_SHORTCUTS]: "shortcuts",

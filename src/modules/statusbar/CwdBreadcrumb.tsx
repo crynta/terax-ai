@@ -22,7 +22,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { segmentsFromCwd } from "./lib/pathUtils";
 
@@ -30,6 +30,7 @@ type Props = {
   cwd: string | null;
   filePath?: string | null;
   home: string | null;
+  workspace: WorkspaceEnv;
   onCd: (path: string) => void;
 };
 
@@ -44,7 +45,7 @@ function basename(path: string): string {
   return i === -1 ? path : path.slice(i + 1);
 }
 
-export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
+export function CwdBreadcrumb({ cwd, filePath, home, workspace, onCd }: Props) {
   // File mode: dir segments navigate; filename is the terminal leaf.
   if (filePath) {
     const dir = dirname(filePath);
@@ -123,6 +124,7 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
           <CurrentSegmentDropdown
             label={current.label}
             path={current.fullPath}
+            workspace={workspace}
             onCd={onCd}
           />
         </BreadcrumbItem>
@@ -173,10 +175,12 @@ function BreadcrumbSegment({
 function CurrentSegmentDropdown({
   label,
   path,
+  workspace,
   onCd,
 }: {
   label: string;
   path: string;
+  workspace: WorkspaceEnv;
   onCd: (p: string) => void;
 }) {
   const showHidden = usePreferencesStore((s) => s.showHidden);
@@ -190,14 +194,14 @@ function CurrentSegmentDropdown({
       const dirs = await invoke<string[]>("list_subdirs", {
         path,
         showHidden,
-        workspace: currentWorkspaceEnv(),
+        workspace,
       });
       setChildren(dirs);
     } catch (e) {
       setError(String(e));
       setChildren([]);
     }
-  }, [path, showHidden]);
+  }, [path, showHidden, workspace]);
 
   useEffect(() => {
     if (open) load();

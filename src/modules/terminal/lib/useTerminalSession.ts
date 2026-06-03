@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { DormantRing } from "./dormantRing";
@@ -8,6 +9,7 @@ import {
   createShellIntegrationState,
   registerCwdHandler,
   registerPromptTracker,
+  type Osc7Location,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 import {
@@ -29,12 +31,14 @@ import {
 type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
-  onCwd?: (cwd: string) => void;
+  onCwd?: (cwd: string, host: string | null) => void;
+  onCommandStart?: (command: string) => void;
 };
 
 type Session = {
   pty: PtySession | null;
   ptyOpening: boolean;
+  workspace: WorkspaceEnv;
   initialCwd: string | undefined;
   lastCwd: string | null;
   pendingExit: number | null;
@@ -166,6 +170,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
   const session: Session = {
     pty: null,
     ptyOpening: false,
+    workspace: { kind: "local" },
     initialCwd,
     lastCwd: null,
     pendingExit: null,
@@ -205,6 +210,7 @@ function deliverPtyBytes(leafId: number, bytes: Uint8Array): void {
 async function openPtyForSession(
   leafId: number,
   s: Session,
+  workspace: WorkspaceEnv,
   cwd: string | undefined,
 ): Promise<PtySession> {
   const startCols = s.cols > 0 ? s.cols : 80;
@@ -223,6 +229,7 @@ async function openPtyForSession(
         else s.pendingExit = code;
       },
     },
+    workspace,
     cwd,
   );
 }
@@ -247,14 +254,16 @@ function bindLeafToSlot(leafId: number, s: Session): void {
       // 7 emitted by untrusted command output (remote SSH, `cat` of an
       // attacker file, etc.).
       const shellState = createShellIntegrationState();
-      const prompt = registerPromptTracker(term, shellState);
+      const prompt = registerPromptTracker(term, shellState, {
+        onCommandStart: (command) => s.callbacks.onCommandStart?.(command),
+      });
       const cwd = registerCwdHandler(
         term,
-        (next) => {
+        (next: Osc7Location) => {
           markSessionReady(leafId);
-          if (s.lastCwd === next) return;
-          s.lastCwd = next;
-          s.callbacks.onCwd?.(next);
+          if (s.lastCwd === next.cwd) return;
+          s.lastCwd = next.cwd;
+          s.callbacks.onCwd?.(next.cwd, next.host);
         },
         shellState,
       );
@@ -264,7 +273,7 @@ function bindLeafToSlot(leafId: number, s: Session): void {
   });
   s.snapshot = null;
   s.hasSlot = true;
-  if (s.lastCwd !== null) s.callbacks.onCwd?.(s.lastCwd);
+  if (s.lastCwd !== null) s.callbacks.onCwd?.(s.lastCwd, null);
   if (s.pendingExit !== null) {
     const code = s.pendingExit;
     s.pendingExit = null;
@@ -287,6 +296,7 @@ function unbindLeafFromSlot(leafId: number, s: Session): void {
 function attachSession(
   leafId: number,
   container: HTMLDivElement,
+  workspace: WorkspaceEnv,
   callbacks: Callbacks,
 ): void {
   const s = sessions.get(leafId);
@@ -298,7 +308,7 @@ function attachSession(
 
   if (!s.pty && !s.ptyOpening && !s.shellExited) {
     s.ptyOpening = true;
-    openPtyForSession(leafId, s, s.initialCwd)
+    openPtyForSession(leafId, s, workspace, s.initialCwd)
       .then((pty) => {
         s.ptyOpening = false;
         if (s.disposed) {
@@ -347,7 +357,7 @@ export async function respawnSession(
   s.ptyOpening = true;
   let pty: PtySession;
   try {
-    pty = await openPtyForSession(leafId, s, cwd ?? s.initialCwd);
+    pty = await openPtyForSession(leafId, s, s.workspace, cwd ?? s.initialCwd);
   } catch (e) {
     s.ptyOpening = false;
     console.error("[terax] respawn openPty failed:", e);
@@ -399,10 +409,14 @@ type Options = {
   container: React.RefObject<HTMLDivElement | null>;
   visible: boolean;
   focused?: boolean;
+  workspace: WorkspaceEnv;
+  workspaceKey: string;
+  workspaceNonce: number;
   initialCwd?: string;
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
-  onCwd?: (cwd: string) => void;
+  onCwd?: (cwd: string, host: string | null) => void;
+  onCommandStart?: (command: string) => void;
 };
 
 export function useTerminalSession({
@@ -410,25 +424,64 @@ export function useTerminalSession({
   container,
   visible,
   focused = true,
+  workspace,
+  workspaceKey,
+  workspaceNonce,
   initialCwd,
   onSearchReady,
   onExit,
   onCwd,
+  onCommandStart,
 }: Options) {
   const cbRef = useRef({ onSearchReady, onExit, onCwd });
   cbRef.current = { onSearchReady, onExit, onCwd };
+  const commandStartRef = useRef(onCommandStart);
+  commandStartRef.current = onCommandStart;
+  const workspaceRef = useRef(workspace);
+  const workspaceKeyRef = useRef(workspaceKey);
+  const workspaceNonceRef = useRef(workspaceNonce);
+  const visibleRef = useRef(visible);
+  const focusedRef = useRef(focused);
+
+  useEffect(() => {
+    visibleRef.current = visible;
+    focusedRef.current = focused;
+  }, [visible, focused]);
+
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+
+  useEffect(() => {
+    const s = sessions.get(leafId);
+    if (s) s.workspace = workspace;
+  }, [leafId, workspace]);
 
   useEffect(() => {
     let cancelled = false;
+    const nextWorkspaceKey = workspaceKey;
+    const workspaceChanged = workspaceKeyRef.current !== nextWorkspaceKey;
+    const nonceChanged = workspaceNonceRef.current !== workspaceNonce;
+    if (workspaceChanged || nonceChanged) {
+      workspaceKeyRef.current = nextWorkspaceKey;
+      workspaceNonceRef.current = workspaceNonce;
+      disposeSession(leafId);
+    }
     const s = ensureSession(leafId, initialCwd);
+    s.visibleNow = visibleRef.current;
+    s.focusedNow = focusedRef.current;
     s.ready.then(() => {
       if (cancelled || s.disposed) return;
       const node = container.current;
       if (!node) return;
-      attachSession(leafId, node, {
+      s.workspace = workspaceRef.current;
+      s.visibleNow = visibleRef.current;
+      s.focusedNow = focusedRef.current;
+      attachSession(leafId, node, workspaceRef.current, {
         onSearchReady: (a) => cbRef.current.onSearchReady?.(a),
         onExit: (c) => cbRef.current.onExit?.(c),
-        onCwd: (c) => cbRef.current.onCwd?.(c),
+        onCwd: (c, host) => cbRef.current.onCwd?.(c, host),
+        onCommandStart: (command) => commandStartRef.current?.(command),
       });
       if (s.visibleNow && s.focusedNow) focusSlot(leafId);
     });
@@ -436,7 +489,7 @@ export function useTerminalSession({
       cancelled = true;
       detachSession(leafId);
     };
-  }, [leafId, container, initialCwd]);
+  }, [leafId, container, initialCwd, workspaceKey, workspaceNonce]);
 
   const fontSize = usePreferencesStore((p) => p.terminalFontSize);
   const zoomLevel = usePreferencesStore((p) => p.zoomLevel);
@@ -490,7 +543,13 @@ export function useTerminalSession({
     [leafId],
   );
 
-  const focus = useCallback(() => focusSlot(leafId), [leafId]);
+  const focus = useCallback(() => {
+    const s = sessions.get(leafId);
+    if (s?.visibleNow && s.container && !s.hasSlot) {
+      bindLeafToSlot(leafId, s);
+    }
+    focusSlot(leafId);
+  }, [leafId]);
 
   const getBuffer = useCallback(
     (maxLines = 200): string | null => {

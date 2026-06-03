@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { workspaceScopeKey, type WorkspaceEnv } from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { listenFsChanged, watchAdd, watchRemove } from "./watch";
 
@@ -37,10 +37,24 @@ export function dirname(path: string): string {
 
 const EXPANSION_CACHE_LIMIT = 8;
 const expansionCache = new Map<string, string[]>();
+const DIR_CACHE_LIMIT = 256;
+const dirCache = new Map<string, DirEntry[]>();
 
-function rememberExpansion(root: string, expanded: Set<string>): void {
-  expansionCache.delete(root);
-  if (expanded.size > 0) expansionCache.set(root, [...expanded]);
+export function expansionCacheKey(workspaceKey: string, root: string): string {
+  return `${workspaceKey}\0${root}`;
+}
+
+export function directoryCacheKey(
+  workspaceKey: string,
+  showHidden: boolean,
+  path: string,
+): string {
+  return `${workspaceKey}\0${showHidden ? "1" : "0"}\0${path}`;
+}
+
+function rememberExpansion(key: string, expanded: Set<string>): void {
+  expansionCache.delete(key);
+  if (expanded.size > 0) expansionCache.set(key, [...expanded]);
   while (expansionCache.size > EXPANSION_CACHE_LIMIT) {
     const oldest = expansionCache.keys().next().value;
     if (oldest === undefined) break;
@@ -48,12 +62,30 @@ function rememberExpansion(root: string, expanded: Set<string>): void {
   }
 }
 
-function recallExpansion(root: string): string[] {
-  const v = expansionCache.get(root);
+function recallExpansion(key: string): string[] {
+  const v = expansionCache.get(key);
   if (!v) return [];
-  expansionCache.delete(root);
-  expansionCache.set(root, v);
+  expansionCache.delete(key);
+  expansionCache.set(key, v);
   return v;
+}
+
+function rememberEntries(key: string, entries: DirEntry[]): void {
+  dirCache.delete(key);
+  dirCache.set(key, entries);
+  while (dirCache.size > DIR_CACHE_LIMIT) {
+    const oldest = dirCache.keys().next().value;
+    if (oldest === undefined) break;
+    dirCache.delete(oldest);
+  }
+}
+
+function cachedEntries(key: string): DirEntry[] | null {
+  const entries = dirCache.get(key);
+  if (!entries) return null;
+  dirCache.delete(key);
+  dirCache.set(key, entries);
+  return entries;
 }
 
 function isUnder(key: string, root: string): boolean {
@@ -61,12 +93,17 @@ function isUnder(key: string, root: string): boolean {
 }
 
 type Options = {
+  workspace: WorkspaceEnv;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
+  enabled?: boolean;
 };
 
-export function useFileTree(rootPath: string | null, options?: Options) {
+export function useFileTree(rootPath: string | null, options: Options) {
+  const workspace = options.workspace;
+  const workspaceKey = workspaceScopeKey(workspace);
   const showHidden = usePreferencesStore((s) => s.showHidden);
+  const enabled = options.enabled ?? true;
   const showHiddenRef = useRef(showHidden);
   const [nodes, setNodes] = useState<TreeState>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -78,6 +115,8 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   const expandedRef = useRef(expanded);
   const nodesRef = useRef(nodes);
   const watchedRef = useRef<Set<string>>(new Set());
+  const treeScopeRef = useRef("");
+  treeScopeRef.current = `${workspaceKey}\0${showHidden ? "1" : "0"}\0${rootPath ?? ""}`;
 
   useEffect(() => {
     showHiddenRef.current = showHidden;
@@ -91,74 +130,103 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     nodesRef.current = nodes;
   }, [nodes]);
 
-  const addWatch = useCallback((path: string) => {
-    if (watchedRef.current.has(path)) return;
-    watchedRef.current.add(path);
-    watchAdd([path]);
-  }, []);
+  const addWatch = useCallback(
+    (path: string) => {
+      if (watchedRef.current.has(path)) return;
+      watchedRef.current.add(path);
+      watchAdd([path], workspace);
+    },
+    [workspace],
+  );
 
-  const removeWatch = useCallback((path: string) => {
-    if (!watchedRef.current.delete(path)) return;
-    watchRemove([path]);
-  }, []);
+  const removeWatch = useCallback(
+    (path: string) => {
+      if (!watchedRef.current.delete(path)) return;
+      watchRemove([path], workspace);
+    },
+    [workspace],
+  );
 
-  const fetchChildren = useCallback(async (path: string) => {
-    setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
-    try {
-      const entries = await invoke<DirEntry[]>("fs_read_dir", {
-        path,
-        showHidden: showHiddenRef.current,
-        workspace: currentWorkspaceEnv(),
-      });
-
-      const liveDirs = new Set(
-        entries.filter((e) => e.kind === "dir").map((e) => joinPath(path, e.name)),
-      );
-      const removedRoots: string[] = [];
-      for (const key of Object.keys(nodesRef.current)) {
-        if (dirname(key) === path && !liveDirs.has(key)) removedRoots.push(key);
+  const fetchChildren = useCallback(
+    async (path: string, opts?: { showLoading?: boolean }) => {
+      const runScope = treeScopeRef.current;
+      const key = directoryCacheKey(workspaceKey, showHiddenRef.current, path);
+      const cached = cachedEntries(key);
+      if (cached && nodesRef.current[path]?.status !== "loaded") {
+        setNodes((s) => ({
+          ...s,
+          [path]: { status: "loaded", entries: cached },
+        }));
+      } else if (opts?.showLoading ?? !cached) {
+        setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
       }
-      const dead = new Set<string>();
-      if (removedRoots.length > 0) {
-        const candidates = new Set<string>([
-          ...Object.keys(nodesRef.current),
-          ...expandedRef.current,
-          ...watchedRef.current,
-        ]);
-        for (const k of candidates) {
-          if (removedRoots.some((r) => isUnder(k, r))) dead.add(k);
-        }
-      }
-
-      setNodes((s) => {
-        const next: TreeState = {};
-        for (const [k, v] of Object.entries(s)) if (!dead.has(k)) next[k] = v;
-        next[path] = { status: "loaded", entries };
-        return next;
-      });
-
-      if (dead.size > 0) {
-        setExpanded((c) => {
-          let changed = false;
-          const n = new Set(c);
-          for (const d of dead) if (n.delete(d)) changed = true;
-          return changed ? n : c;
+      try {
+        const entries = await invoke<DirEntry[]>("fs_read_dir", {
+          path,
+          showHidden: showHiddenRef.current,
+          workspace,
         });
-        const toUnwatch: string[] = [];
-        for (const d of dead) if (watchedRef.current.delete(d)) toUnwatch.push(d);
-        watchRemove(toUnwatch);
-      }
-    } catch (e) {
-      setNodes((s) => ({
-        ...s,
-        [path]: { status: "error", message: String(e) },
-      }));
-    }
-  }, []);
+        if (runScope !== treeScopeRef.current) return;
+        rememberEntries(key, entries);
 
-  // Root change → restore the cached expansion for this root, re-scope watches,
-  // and persist the outgoing root's expansion on the way out.
+        const liveDirs = new Set(
+          entries
+            .filter((e) => e.kind === "dir")
+            .map((e) => joinPath(path, e.name)),
+        );
+        const removedRoots: string[] = [];
+        for (const key of Object.keys(nodesRef.current)) {
+          if (dirname(key) === path && !liveDirs.has(key))
+            removedRoots.push(key);
+        }
+        const dead = new Set<string>();
+        if (removedRoots.length > 0) {
+          const candidates = new Set<string>([
+            ...Object.keys(nodesRef.current),
+            ...expandedRef.current,
+            ...watchedRef.current,
+          ]);
+          for (const k of candidates) {
+            if (removedRoots.some((r) => isUnder(k, r))) dead.add(k);
+          }
+        }
+
+        setNodes((s) => {
+          const next: TreeState = {};
+          for (const [k, v] of Object.entries(s)) {
+            if (!dead.has(k)) next[k] = v;
+          }
+          next[path] = { status: "loaded", entries };
+          return next;
+        });
+
+        if (dead.size > 0) {
+          setExpanded((c) => {
+            let changed = false;
+            const n = new Set(c);
+            for (const d of dead) if (n.delete(d)) changed = true;
+            return changed ? n : c;
+          });
+          const toUnwatch: string[] = [];
+          for (const d of dead)
+            if (watchedRef.current.delete(d)) toUnwatch.push(d);
+          watchRemove(toUnwatch, workspace);
+        }
+      } catch (e) {
+        if (runScope !== treeScopeRef.current || cached) return;
+        setNodes((s) => ({
+          ...s,
+          [path]: { status: "error", message: String(e) },
+        }));
+      }
+    },
+    [workspace, workspaceKey],
+  );
+
+  // Root change: restore cached expansion, re-scope watches, and persist the
+  // outgoing root's expansion on cleanup.
   useEffect(() => {
+    if (!enabled) return;
     if (!rootPath) {
       setNodes({});
       setExpanded(new Set());
@@ -169,26 +237,37 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     setPendingCreate(null);
     setRenaming(null);
 
-    const restored = recallExpansion(rootPath);
+    const expansionKey = expansionCacheKey(workspaceKey, rootPath);
+    const restored = recallExpansion(expansionKey);
     setExpanded(new Set(restored));
-    setNodes({});
+    const seededNodes: TreeState = {};
+    for (const path of [rootPath, ...restored]) {
+      const entries = cachedEntries(
+        directoryCacheKey(workspaceKey, showHiddenRef.current, path),
+      );
+      if (entries) seededNodes[path] = { status: "loaded", entries };
+    }
+    setNodes(seededNodes);
 
     const toWatch = [rootPath, ...restored];
-    void fetchChildren(rootPath);
-    for (const d of restored) void fetchChildren(d);
+    void fetchChildren(rootPath, { showLoading: !seededNodes[rootPath] });
+    for (const d of restored) {
+      void fetchChildren(d, { showLoading: !seededNodes[d] });
+    }
     for (const p of toWatch) watchedRef.current.add(p);
-    watchAdd(toWatch);
+    watchAdd(toWatch, workspace);
 
     return () => {
-      rememberExpansion(rootPath, expandedRef.current);
+      rememberExpansion(expansionKey, expandedRef.current);
       if (watchedRef.current.size > 0) {
-        watchRemove([...watchedRef.current]);
+        watchRemove([...watchedRef.current], workspace);
         watchedRef.current.clear();
       }
     };
-  }, [rootPath, fetchChildren]);
+  }, [rootPath, enabled, fetchChildren, workspace, workspaceKey]);
 
   useEffect(() => {
+    if (!enabled) return;
     let alive = true;
     let unlisten: (() => void) | undefined;
     void listenFsChanged((paths) => {
@@ -208,9 +287,10 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       alive = false;
       unlisten?.();
     };
-  }, [fetchChildren]);
+  }, [enabled, fetchChildren]);
 
   useEffect(() => {
+    if (!enabled) return;
     if (!rootPath) return;
     const loadedPaths = Object.entries(nodes)
       .filter(([, state]) => state.status === "loaded")
@@ -220,7 +300,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     // `nodes` is intentionally omitted so ordinary tree edits don't refetch
     // every expanded directory.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHidden, rootPath, fetchChildren]);
+  }, [enabled, showHidden, rootPath, fetchChildren]);
 
   const toggle = useCallback(
     (path: string) => {
@@ -303,7 +383,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       const cmd =
         pendingCreate.kind === "dir" ? "fs_create_dir" : "fs_create_file";
       try {
-        await invoke(cmd, { path, workspace: currentWorkspaceEnv() });
+        await invoke(cmd, { path, workspace });
         await fetchChildren(pendingCreate.parentPath);
       } catch (e) {
         console.error(`${cmd} failed:`, e);
@@ -311,7 +391,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         setPendingCreate(null);
       }
     },
-    [pendingCreate, fetchChildren],
+    [pendingCreate, fetchChildren, workspace],
   );
 
   const beginRename = useCallback((path: string) => {
@@ -336,7 +416,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         await invoke("fs_rename", {
           from: renaming,
           to,
-          workspace: currentWorkspaceEnv(),
+          workspace,
         });
         options?.onPathRenamed?.(renaming, to);
         await fetchChildren(parent);
@@ -346,20 +426,20 @@ export function useFileTree(rootPath: string | null, options?: Options) {
         setRenaming(null);
       }
     },
-    [renaming, fetchChildren, options],
+    [renaming, fetchChildren, options, workspace],
   );
 
   const deletePath = useCallback(
     async (path: string) => {
       try {
-        await invoke("fs_delete", { path, workspace: currentWorkspaceEnv() });
+        await invoke("fs_delete", { path, workspace });
         options?.onPathDeleted?.(path);
         await fetchChildren(dirname(path));
       } catch (e) {
         console.error("fs_delete failed:", e);
       }
     },
-    [fetchChildren, options],
+    [fetchChildren, options, workspace],
   );
 
   return {

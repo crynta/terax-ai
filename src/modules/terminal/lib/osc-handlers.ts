@@ -12,13 +12,18 @@ export type ShellIntegrationState = {
   inCommand: boolean;
 };
 
+export type Osc7Location = {
+  host: string | null;
+  cwd: string;
+};
+
 export function createShellIntegrationState(): ShellIntegrationState {
   return { inCommand: false };
 }
 
 export function registerCwdHandler(
   term: Terminal,
-  onCwd: (cwd: string) => void,
+  onCwd: (location: Osc7Location) => void,
   state?: ShellIntegrationState,
 ): () => void {
   const d = term.parser.registerOscHandler(7, (data) => {
@@ -27,8 +32,8 @@ export function registerCwdHandler(
     // of attacker-controlled bytes). The local shell only emits OSC 7
     // between commands via its precmd/PROMPT_COMMAND hook.
     if (state?.inCommand) return true;
-    const cwd = parseOsc7(data);
-    if (cwd) onCwd(cwd);
+    const location = parseOsc7(data);
+    if (location) onCwd(location);
     return true;
   });
   return () => d.dispose();
@@ -39,9 +44,14 @@ export type PromptTracker = {
   dispose: () => void;
 };
 
+export type PromptTrackerOptions = {
+  onCommandStart?: (command: string) => void;
+};
+
 export function registerPromptTracker(
   term: Terminal,
   state?: ShellIntegrationState,
+  options?: PromptTrackerOptions,
 ): PromptTracker {
   let marker: IMarker | null = null;
   const d = term.parser.registerOscHandler(133, (data) => {
@@ -57,6 +67,7 @@ export function registerPromptTracker(
     } else if (data.startsWith("C")) {
       // OSC 133 C — command pre-execution marker; still inside command.
       if (state) state.inCommand = true;
+      options?.onCommandStart?.(data.slice(2));
     } else if (data.startsWith("D")) {
       // OSC 133 D — command ends.
       if (state) state.inCommand = false;
@@ -73,14 +84,25 @@ export function registerPromptTracker(
   };
 }
 
-function parseOsc7(data: string): string | null {
-  const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
+function parseOsc7(data: string): Osc7Location | null {
+  const m = data.match(/^file:\/\/([^/]*)(\/.*)$/);
   if (!m) return null;
-  let path = m[1];
+  const host = decodeHost(m[1]);
+  let path = m[2];
   try {
     path = decodeURIComponent(path);
   } catch {}
   // /C:/Users/foo -> C:/Users/foo so it's a valid Windows path.
   if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
-  return path;
+  return { host, cwd: path };
+}
+
+function decodeHost(host: string): string | null {
+  const trimmed = host.trim();
+  if (!trimmed) return null;
+  try {
+    return decodeURIComponent(trimmed);
+  } catch {
+    return trimmed;
+  }
 }

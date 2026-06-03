@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LOCAL_WORKSPACE } from "@/modules/workspace";
 import { labelFor } from "./tabLabel";
 import type { TerminalTab } from "./useTabs";
 
@@ -7,6 +8,8 @@ function terminalTab(over: Partial<TerminalTab> = {}): TerminalTab {
     id: 1,
     kind: "terminal",
     title: "shell",
+    workspace: LOCAL_WORKSPACE,
+    workspaceNonce: 0,
     paneTree: { kind: "leaf", id: 2 },
     activeLeafId: 2,
     ...over,

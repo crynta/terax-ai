@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  currentWorkspaceEnv,
+  LOCAL_WORKSPACE,
+  sameWorkspaceEnv,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
+import {
   findLeafCwd,
   hasLeaf,
   leafIds,
@@ -21,6 +27,8 @@ export type TerminalTab = {
   kind: "terminal";
   title: string;
   cwd?: string;
+  workspace: WorkspaceEnv;
+  workspaceNonce: number;
   paneTree: PaneNode;
   activeLeafId: number;
   /** AI agent cannot read buffer / context of this terminal. */
@@ -35,6 +43,7 @@ export type EditorTab = {
   title: string;
   path: string;
   dirty: boolean;
+  workspace: WorkspaceEnv;
   /**
    * True while the tab is in the transient "preview" state — opened by a
    * single-click in the explorer and not yet pinned by the user. A preview tab
@@ -48,6 +57,7 @@ export type PreviewTab = {
   kind: "preview";
   title: string;
   url: string;
+  workspace: WorkspaceEnv;
 };
 
 export type MarkdownTab = {
@@ -55,6 +65,7 @@ export type MarkdownTab = {
   kind: "markdown";
   title: string;
   path: string;
+  workspace: WorkspaceEnv;
 };
 
 export type AiDiffStatus = "pending" | "approved" | "rejected";
@@ -71,6 +82,7 @@ export type AiDiffTab = {
   approvalId: string;
   status: AiDiffStatus;
   isNewFile: boolean;
+  workspace: WorkspaceEnv;
 };
 
 export type GitDiffTab = {
@@ -81,6 +93,7 @@ export type GitDiffTab = {
   repoRoot: string;
   mode: "-" | "+";
   originalPath: string | null;
+  workspace: WorkspaceEnv;
 };
 
 export type GitHistoryTab = {
@@ -88,6 +101,7 @@ export type GitHistoryTab = {
   kind: "git-history";
   title: string;
   repoRoot: string;
+  workspace: WorkspaceEnv;
 };
 
 export type GitCommitFileDiffTab = {
@@ -100,6 +114,7 @@ export type GitCommitFileDiffTab = {
   subject: string;
   path: string;
   originalPath: string | null;
+  workspace: WorkspaceEnv;
 };
 
 export type Tab =
@@ -118,6 +133,8 @@ export type TabPatch = Partial<{
   path: string;
   dirty: boolean;
   url: string;
+  workspace: WorkspaceEnv;
+  workspaceNonce: number;
   /** Empty string resets a terminal tab to its cwd-derived name. */
   customTitle: string;
 }>;
@@ -136,16 +153,45 @@ function titleFromUrl(url: string): string {
   }
 }
 
+function mapPaneTreeCwd(tree: PaneNode, cwd?: string): PaneNode {
+  if (tree.kind === "leaf") {
+    return { ...tree, cwd };
+  }
+  return {
+    ...tree,
+    children: tree.children.map((child) => mapPaneTreeCwd(child, cwd)),
+  };
+}
+
+export function resolveTerminalWorkspaceUpdate(
+  tab: TerminalTab,
+  workspace: WorkspaceEnv,
+  options?: { cwd?: string; restartSession?: boolean },
+): {
+  workspaceChanged: boolean;
+  restartSession: boolean;
+  nextCwd: string | undefined;
+} {
+  const workspaceChanged = !sameWorkspaceEnv(tab.workspace, workspace);
+  const restartSession = Boolean(options?.restartSession || workspaceChanged);
+  const nextCwd =
+    options?.cwd ?? (workspace.kind === "ssh" ? workspace.rootPath : undefined);
+  return { workspaceChanged, restartSession, nextCwd };
+}
+
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const tabId = 1;
     const leafId = 2;
+    const workspace = initial?.workspace ?? LOCAL_WORKSPACE;
     return [
       {
         id: tabId,
         kind: "terminal",
         title: initial?.title ?? "shell",
         cwd: initial?.cwd,
+        workspace,
+        workspaceNonce: 0,
         paneTree: { kind: "leaf", id: leafId, cwd: initial?.cwd },
         activeLeafId: leafId,
       },
@@ -169,6 +215,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         kind: "terminal",
         title: "shell",
         cwd,
+        workspace: LOCAL_WORKSPACE,
+        workspaceNonce: 0,
         paneTree: { kind: "leaf", id: leafId, cwd },
         activeLeafId: leafId,
       },
@@ -188,6 +236,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           kind: "terminal",
           title,
           cwd,
+          workspace: LOCAL_WORKSPACE,
+          workspaceNonce: 0,
           paneTree: { kind: "leaf", id: leafId, cwd },
           activeLeafId: leafId,
         },
@@ -203,14 +253,16 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     const leafId = nextIdRef.current++;
     setTabs((t) => [
       ...t,
-      {
-        id: tabId,
-        kind: "terminal",
-        title: "private",
-        cwd,
-        paneTree: { kind: "leaf", id: leafId, cwd },
-        activeLeafId: leafId,
-        private: true,
+        {
+          id: tabId,
+          kind: "terminal",
+          title: "private",
+          cwd,
+          workspace: LOCAL_WORKSPACE,
+          workspaceNonce: 0,
+          paneTree: { kind: "leaf", id: leafId, cwd },
+          activeLeafId: leafId,
+          private: true,
       },
     ]);
     setActiveId(tabId);
@@ -229,11 +281,15 @@ export function useTabs(initial?: Partial<TerminalTab>) {
    */
   const openFileTab = useCallback((path: string, pin = true) => {
     let targetId: number | null = null;
+    const workspace = currentWorkspaceEnv();
     setTabs((curr) => {
       if (pin) {
         // Persistent open: find any existing editor tab, pin it if needed.
         const existing = curr.find(
-          (t) => t.kind === "editor" && t.path === path,
+          (t) =>
+            t.kind === "editor" &&
+            t.path === path &&
+            sameWorkspaceEnv(t.workspace, workspace),
         );
         if (existing) {
           targetId = existing.id;
@@ -255,13 +311,17 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             path,
             dirty: false,
             preview: false,
+            workspace: currentWorkspaceEnv(),
           } satisfies EditorTab,
         ];
       } else {
         // Preview open: persistent tab for this path takes priority.
         const persistent = curr.find(
           (t) =>
-            t.kind === "editor" && t.path === path && !(t as EditorTab).preview,
+            t.kind === "editor" &&
+            t.path === path &&
+            !(t as EditorTab).preview &&
+            sameWorkspaceEnv(t.workspace, workspace),
         );
         if (persistent) {
           targetId = persistent.id;
@@ -270,7 +330,10 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         // Reuse the slot if it already shows the same path.
         const existingPreview = curr.find(
           (t) =>
-            t.kind === "editor" && t.path === path && (t as EditorTab).preview,
+            t.kind === "editor" &&
+            t.path === path &&
+            (t as EditorTab).preview &&
+            sameWorkspaceEnv(t.workspace, workspace),
         );
         if (existingPreview) {
           targetId = existingPreview.id;
@@ -278,7 +341,10 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         }
         // Replace the current preview slot, or append a new one.
         const previewIdx = curr.findIndex(
-          (t) => t.kind === "editor" && (t as EditorTab).preview,
+          (t) =>
+            t.kind === "editor" &&
+            (t as EditorTab).preview &&
+            sameWorkspaceEnv(t.workspace, workspace),
         );
         const id = nextIdRef.current++;
         targetId = id;
@@ -289,6 +355,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           path,
           dirty: false,
           preview: true,
+          workspace: currentWorkspaceEnv(),
         };
         if (previewIdx === -1) return [...curr, tab];
         const next = [...curr];
@@ -321,9 +388,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       isNewFile: boolean;
     }) => {
       let targetId: number | null = null;
+      const workspace = currentWorkspaceEnv();
       setTabs((curr) => {
         const existing = curr.find(
-          (t) => t.kind === "ai-diff" && t.approvalId === input.approvalId,
+          (t) =>
+            t.kind === "ai-diff" &&
+            t.approvalId === input.approvalId &&
+            sameWorkspaceEnv(t.workspace, workspace),
         );
         if (existing) {
           targetId = existing.id;
@@ -344,6 +415,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             approvalId: input.approvalId,
             status: "pending",
             isNewFile: input.isNewFile,
+            workspace: currentWorkspaceEnv(),
           },
         ];
       });
@@ -392,7 +464,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     const id = nextIdRef.current++;
     setTabs((t) => [
       ...t,
-      { id, kind: "preview", title: titleFromUrl(url), url },
+      {
+        id,
+        kind: "preview",
+        title: titleFromUrl(url),
+        url,
+        workspace: currentWorkspaceEnv(),
+      },
     ]);
     setActiveId(id);
     return id;
@@ -400,9 +478,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
   const newMarkdownTab = useCallback((path: string) => {
     let targetId: number | null = null;
+    const workspace = currentWorkspaceEnv();
     setTabs((curr) => {
       const existing = curr.find(
-        (t) => t.kind === "markdown" && t.path === path,
+        (t) =>
+          t.kind === "markdown" &&
+          t.path === path &&
+          sameWorkspaceEnv(t.workspace, workspace),
       );
       if (existing) {
         targetId = existing.id;
@@ -410,7 +492,16 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       }
       const id = nextIdRef.current++;
       targetId = id;
-      return [...curr, { id, kind: "markdown", title: basename(path), path }];
+      return [
+        ...curr,
+        {
+          id,
+          kind: "markdown",
+          title: basename(path),
+          path,
+          workspace: currentWorkspaceEnv(),
+        },
+      ];
     });
     if (targetId !== null) setActiveId(targetId);
     return targetId;
@@ -425,12 +516,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       title?: string;
     }) => {
       const curr = tabsRef.current;
+      const workspace = currentWorkspaceEnv();
       const existing = curr.find(
         (t) =>
           t.kind === "git-diff" &&
           t.repoRoot === input.repoRoot &&
           t.path === input.path &&
-          t.mode === input.mode,
+          t.mode === input.mode &&
+          sameWorkspaceEnv(t.workspace, workspace),
       );
       const computedTitle =
         input.title ?? `${basename(input.path)} (${input.mode})`;
@@ -459,6 +552,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           repoRoot: input.repoRoot,
           mode: input.mode,
           originalPath,
+          workspace: currentWorkspaceEnv(),
         } satisfies GitDiffTab,
       ];
       tabsRef.current = nextTabs;
@@ -472,8 +566,12 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const openCommitHistoryTab = useCallback(
     (input: { repoRoot: string; branch?: string | null }) => {
       const curr = tabsRef.current;
+      const workspace = currentWorkspaceEnv();
       const existing = curr.find(
-        (t) => t.kind === "git-history" && t.repoRoot === input.repoRoot,
+        (t) =>
+          t.kind === "git-history" &&
+          t.repoRoot === input.repoRoot &&
+          sameWorkspaceEnv(t.workspace, workspace),
       );
       const title = input.branch
         ? `History · ${input.branch}`
@@ -495,6 +593,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           kind: "git-history",
           title,
           repoRoot: input.repoRoot,
+          workspace: currentWorkspaceEnv(),
         } satisfies GitHistoryTab,
       ];
       tabsRef.current = nextTabs;
@@ -515,12 +614,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       originalPath: string | null;
     }) => {
       const curr = tabsRef.current;
+      const workspace = currentWorkspaceEnv();
       const existing = curr.find(
         (t) =>
           t.kind === "git-commit-file" &&
           t.repoRoot === input.repoRoot &&
           t.sha === input.sha &&
-          t.path === input.path,
+          t.path === input.path &&
+          sameWorkspaceEnv(t.workspace, workspace),
       );
       const title = `${basename(input.path)} @ ${input.shortSha}`;
       if (existing) {
@@ -552,6 +653,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           subject: input.subject,
           path: input.path,
           originalPath: input.originalPath,
+          workspace: currentWorkspaceEnv(),
         } satisfies GitCommitFileDiffTab,
       ];
       tabsRef.current = nextTabs;
@@ -589,6 +691,10 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             ...x,
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.cwd !== undefined && { cwd: patch.cwd }),
+            ...(patch.workspace !== undefined && { workspace: patch.workspace }),
+            ...(patch.workspaceNonce !== undefined && {
+              workspaceNonce: patch.workspaceNonce,
+            }),
             ...(patch.customTitle !== undefined && {
               customTitle: patch.customTitle === "" ? undefined : patch.customTitle,
             }),
@@ -602,12 +708,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
               url: patch.url,
               title: patch.title ?? titleFromUrl(patch.url),
             }),
+            ...(patch.workspace !== undefined && { workspace: patch.workspace }),
           };
         }
         if (x.kind === "markdown") {
           return {
             ...x,
             ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.workspace !== undefined && { workspace: patch.workspace }),
           };
         }
         // editor tab: auto-promote from preview the moment the file becomes dirty.
@@ -621,6 +729,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           ...(patch.title !== undefined && { title: patch.title }),
           ...(patch.dirty !== undefined && { dirty: patch.dirty }),
           ...(patch.path !== undefined && { path: patch.path }),
+          ...(patch.workspace !== undefined && { workspace: patch.workspace }),
         };
       }),
     );
@@ -654,6 +763,38 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       return changed ? next : curr;
     });
   }, []);
+
+  const setTerminalTabWorkspace = useCallback(
+    (
+      tabId: number,
+      workspace: WorkspaceEnv,
+      options?: { cwd?: string; restartSession?: boolean },
+    ) => {
+      setTabs((curr) =>
+        curr.map((t) => {
+          if (t.id !== tabId || t.kind !== "terminal") return t;
+          const { restartSession, nextCwd } = resolveTerminalWorkspaceUpdate(
+            t,
+            workspace,
+            options,
+          );
+          return {
+            ...t,
+            workspace,
+            ...(restartSession
+              ? { workspaceNonce: t.workspaceNonce + 1 }
+              : {}),
+            ...(nextCwd !== undefined
+              ? restartSession
+                ? { cwd: nextCwd, paneTree: mapPaneTreeCwd(t.paneTree, nextCwd) }
+                : { cwd: nextCwd }
+              : {}),
+          };
+        }),
+      );
+    },
+    [],
+  );
 
   const focusPane = useCallback((tabId: number, leafId: number) => {
     setTabs((curr) =>
@@ -792,6 +933,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           kind: "terminal",
           title: "shell",
           cwd,
+          workspace: LOCAL_WORKSPACE,
+          workspaceNonce: 0,
           paneTree: { kind: "leaf", id: leafId, cwd },
           activeLeafId: leafId,
         },
@@ -828,5 +971,6 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,
+    setTerminalTabWorkspace,
   };
 }

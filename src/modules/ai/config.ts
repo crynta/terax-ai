@@ -2,6 +2,7 @@ export const KEYRING_SERVICE = "terax-ai";
 
 export type ProviderId =
   | "openai"
+  | "codex"
   | "anthropic"
   | "google"
   | "xai"
@@ -32,6 +33,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openai-api-key",
     keyPrefix: "sk-",
     consoleUrl: "https://platform.openai.com/api-keys",
+  },
+  {
+    id: "codex",
+    label: "Codex",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://chatgpt.com/codex",
   },
   {
     id: "anthropic",
@@ -186,7 +194,54 @@ export type ModelInfo = {
   tags?: readonly ModelTag[];
 };
 
+export const CODEX_MODEL_PREFIX = "codex:";
+export const DEFAULT_CODEX_MODEL_ID = "codex:gpt-5.5";
+export const LEGACY_CODEX_MODEL_ID = "codex-app-server";
+
+export function isCodexModelId(modelId: string): boolean {
+  return (
+    modelId === LEGACY_CODEX_MODEL_ID ||
+    modelId.startsWith(CODEX_MODEL_PREFIX)
+  );
+}
+
+export function codexModelSlug(modelId: string): string {
+  if (modelId === LEGACY_CODEX_MODEL_ID) return "gpt-5.5";
+  return modelId.startsWith(CODEX_MODEL_PREFIX)
+    ? modelId.slice(CODEX_MODEL_PREFIX.length)
+    : modelId;
+}
+
 export const MODELS = [
+  // ── Codex app-server (ChatGPT/Codex login, no API key) ───────────────────
+  {
+    id: "codex:gpt-5.5",
+    provider: "codex",
+    label: "GPT-5.5",
+    hint: "Codex",
+    description: "Frontier Codex model for complex coding and research.",
+    capabilities: { intelligence: 5, speed: 3, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "codex:gpt-5.4",
+    provider: "codex",
+    label: "GPT-5.4",
+    hint: "Codex",
+    description: "Strong Codex model for everyday coding.",
+    capabilities: { intelligence: 4, speed: 3, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "codex:gpt-5.4-mini",
+    provider: "codex",
+    label: "GPT-5.4 Mini",
+    hint: "Codex",
+    description: "Small and fast Codex model for simpler coding tasks.",
+    capabilities: { intelligence: 3, speed: 4, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+
   // ── OpenAI ────────────────────────────────────────────────────────────────
   {
     id: "gpt-5.5",
@@ -611,6 +666,10 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-r1-distill-llama-70b": 128_000,
   "openrouter-custom": 256_000,
   "openai-compatible-custom": 128_000,
+  "codex:gpt-5.5": 272_000,
+  "codex:gpt-5.4": 272_000,
+  "codex:gpt-5.4-mini": 272_000,
+  [LEGACY_CODEX_MODEL_ID]: 272_000,
   "lmstudio-local": 32_000,
   "mlx-local": 32_000,
   "ollama-local": 32_000,
@@ -677,6 +736,7 @@ export function estimateCost(
 
 /** Providers that do not require an API key (local servers, key-optional). */
 export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
+  "codex",
   "lmstudio",
   "mlx",
   "ollama",
@@ -716,7 +776,10 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
 /** Curated list of fast models suitable for inline completion (speed ≥ 4). */
 export function getAutocompleteEligibleModels(): readonly ModelInfo[] {
   return MODELS.filter(
-    (m) => m.capabilities.speed >= 4 && m.id !== "openai-compatible-custom",
+    (m) =>
+      m.capabilities.speed >= 4 &&
+      m.provider !== "codex" &&
+      m.id !== "openai-compatible-custom",
   );
 }
 

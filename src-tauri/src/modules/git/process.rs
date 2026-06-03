@@ -15,9 +15,10 @@ use crate::modules::git::types::{
     GitOutput, TextSource, DEFAULT_TIMEOUT_SECS, MAX_FILE_BYTES, MAX_OUTPUT_BYTES,
     MAX_TIMEOUT_SECS, MIN_GIT_VERSION,
 };
-use crate::modules::workspace::WorkspaceEnv;
+use crate::modules::ssh;
 #[cfg(windows)]
 use crate::modules::workspace::validate_wsl_distro_name;
+use crate::modules::workspace::WorkspaceEnv;
 
 #[derive(Clone)]
 enum Availability {
@@ -47,6 +48,19 @@ fn workspace_cache_key(workspace: &WorkspaceEnv) -> String {
     match workspace {
         WorkspaceEnv::Local => "local".into(),
         WorkspaceEnv::Wsl { distro } => format!("wsl:{distro}"),
+        WorkspaceEnv::Ssh {
+            id,
+            host,
+            user,
+            port,
+            root_path,
+            ..
+        } => format!(
+            "ssh:{id}:{}@{}:{}:{root_path}",
+            user.clone().unwrap_or_default(),
+            host,
+            port.map(|p| p.to_string()).unwrap_or_default()
+        ),
     }
 }
 
@@ -249,6 +263,22 @@ where
         .into_iter()
         .map(|arg| arg.as_ref().to_os_string())
         .collect();
+    if workspace.is_ssh() {
+        let cwd = cwd.filter(|s| !s.is_empty()).unwrap_or_else(|| {
+            if let WorkspaceEnv::Ssh { root_path, .. } = workspace {
+                root_path.as_str()
+            } else {
+                ""
+            }
+        });
+        let args = args
+            .into_iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        let output =
+            ssh::git_output(workspace, cwd, args, dur.as_secs()).map_err(GitError::Spawn)?;
+        return Ok(output);
+    }
     let mut cmd = build_git_command(workspace, cwd, &args)?;
     cmd.env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")

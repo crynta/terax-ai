@@ -79,6 +79,9 @@ pub fn authorize_spawn_cwd(
     let Some(cwd) = cwd.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
     };
+    if workspace.is_ssh() {
+        return Ok(Some(PathBuf::from(cwd)));
+    }
     let resolved = resolve_path(cwd, workspace);
     let canonical =
         std::fs::canonicalize(&resolved).map_err(|e| format!("cwd not accessible: {e}"))?;
@@ -104,6 +107,9 @@ pub fn authorize_user_spawn_cwd(
     let Some(cwd) = cwd.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
     };
+    if workspace.is_ssh() {
+        return Ok(Some(PathBuf::from(cwd)));
+    }
     let resolved = resolve_path(cwd, workspace);
     let canonical =
         std::fs::canonicalize(&resolved).map_err(|e| format!("cwd not accessible: {e}"))?;
@@ -128,6 +134,9 @@ pub async fn workspace_authorize(
     registry: tauri::State<'_, WorkspaceRegistry>,
 ) -> Result<String, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return Ok(crate::modules::fs::to_canon(PathBuf::from(path)));
+    }
     let resolved = resolve_path(&path, &workspace);
     let canonical = registry.authorize(&resolved).map_err(|e| e.to_string())?;
     Ok(crate::modules::fs::to_canon(&canonical))
@@ -215,6 +224,17 @@ pub enum WorkspaceEnv {
     Wsl {
         distro: String,
     },
+    #[serde(rename_all = "camelCase")]
+    Ssh {
+        id: String,
+        label: String,
+        host: String,
+        user: Option<String>,
+        port: Option<u16>,
+        root_path: String,
+        #[serde(default)]
+        password: Option<String>,
+    },
 }
 
 impl WorkspaceEnv {
@@ -224,6 +244,10 @@ impl WorkspaceEnv {
 
     pub fn is_wsl(&self) -> bool {
         matches!(self, Self::Wsl { .. })
+    }
+
+    pub fn is_ssh(&self) -> bool {
+        matches!(self, Self::Ssh { .. })
     }
 }
 
@@ -239,6 +263,7 @@ pub fn resolve_path(path: &str, workspace: &WorkspaceEnv) -> PathBuf {
     match workspace {
         WorkspaceEnv::Local => PathBuf::from(path),
         WorkspaceEnv::Wsl { distro } => wsl_path_to_host(distro, path),
+        WorkspaceEnv::Ssh { .. } => PathBuf::from(path),
     }
 }
 
@@ -749,6 +774,24 @@ mod auth_tests {
         let err = authorize_spawn_cwd(&reg, Some(&s), &WorkspaceEnv::Local)
             .expect_err("symlink-escape must be rejected");
         assert!(err.contains("outside"), "got: {err}");
+    }
+
+    #[test]
+    fn authorize_spawn_cwd_passthrough_for_ssh_workspace() {
+        let reg = WorkspaceRegistry::default();
+        let workspace = WorkspaceEnv::Ssh {
+            id: "ssh-1".into(),
+            label: "Remote".into(),
+            host: "example.com".into(),
+            user: Some("alice".into()),
+            port: Some(22),
+            root_path: "/srv/project".into(),
+            password: None,
+        };
+        let resolved = authorize_spawn_cwd(&reg, Some("/srv/project"), &workspace)
+            .expect("ssh cwd accepted")
+            .expect("path returned");
+        assert_eq!(resolved, PathBuf::from("/srv/project"));
     }
 
     #[test]

@@ -1,9 +1,16 @@
+use crate::modules::ssh;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 /// Creates a new empty file. Fails if the file already exists.
 #[tauri::command]
 pub fn fs_create_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::create_file(&workspace, &path, 120).map_err(|e| {
+            log::debug!("ssh fs_create_file({path}) failed: {e}");
+            e
+        });
+    }
     let p = resolve_path(&path, &workspace);
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
@@ -20,6 +27,12 @@ pub fn fs_create_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<(
 #[tauri::command]
 pub fn fs_create_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::create_dir(&workspace, &path, 120).map_err(|e| {
+            log::debug!("ssh fs_create_dir({path}) failed: {e}");
+            e
+        });
+    }
     let p = resolve_path(&path, &workspace);
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
@@ -34,6 +47,12 @@ pub fn fs_create_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<()
 #[tauri::command]
 pub fn fs_rename(from: String, to: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::rename(&workspace, &from, &to, 120).map_err(|e| {
+            log::debug!("ssh fs_rename({from} -> {to}) failed: {e}");
+            e
+        });
+    }
     let from_p = resolve_path(&from, &workspace);
     let to_p = resolve_path(&to, &workspace);
     if !from_p.exists() {
@@ -57,6 +76,12 @@ pub fn fs_rename(from: String, to: String, workspace: Option<WorkspaceEnv>) -> R
 #[tauri::command]
 pub fn fs_delete(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::delete(&workspace, &path, 120).map_err(|e| {
+            log::warn!("ssh fs_delete({path}) failed: {e}");
+            e
+        });
+    }
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::symlink_metadata(&p).map_err(|e| {
         log::debug!("fs_delete stat({}) failed: {e}", p.display());

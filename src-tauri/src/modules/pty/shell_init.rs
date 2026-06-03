@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use portable_pty::CommandBuilder;
 
+use crate::modules::ssh;
 use crate::modules::workspace::{self, WorkspaceEnv};
 
 #[cfg(windows)]
@@ -51,6 +52,9 @@ pub fn build_command(
     cwd: Option<String>,
     workspace: WorkspaceEnv,
 ) -> Result<CommandBuilder, String> {
+    if let WorkspaceEnv::Ssh { .. } = workspace {
+        return build_ssh(cwd, workspace);
+    }
     #[cfg(unix)]
     {
         let _ = workspace;
@@ -60,6 +64,40 @@ pub fn build_command(
     {
         windows::build(cwd, workspace)
     }
+}
+
+fn build_ssh(cwd: Option<String>, workspace: WorkspaceEnv) -> Result<CommandBuilder, String> {
+    let (target, port) = ssh::ssh_endpoint(&workspace)?;
+    let remote = ssh::remote_login_command(Some(
+        cwd.as_deref()
+            .filter(|s| !s.is_empty())
+            .or_else(|| ssh::workspace_root(&workspace))
+            .unwrap_or("/"),
+    ));
+    let remote = ssh::remote_shell_invocation(&remote);
+    let mut cmd = CommandBuilder::new("ssh");
+    cmd.arg("-tt");
+    cmd.arg("-o");
+    cmd.arg(format!("ConnectTimeout={}", 10_u64));
+    let (args, envs) = ssh::ssh_auth_options(&workspace)?;
+    for arg in args {
+        cmd.arg(arg);
+    }
+    if let Some(port) = port {
+        cmd.arg("-p");
+        cmd.arg(port.to_string());
+    }
+    cmd.arg(target);
+    cmd.arg(remote);
+    for (key, value) in envs {
+        cmd.env(key, value);
+    }
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env("TERAX_TERMINAL", "1");
+    ensure_utf8_locale(&mut cmd);
+    log::info!("spawning SSH terminal");
+    Ok(cmd)
 }
 
 fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
@@ -300,7 +338,9 @@ mod windows {
             zdotdir: String,
             user_zdotdir: Option<String>,
         },
-        Bash { rcfile: String },
+        Bash {
+            rcfile: String,
+        },
         Fish,
         None,
     }

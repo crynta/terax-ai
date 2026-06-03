@@ -99,7 +99,7 @@ pub fn spawn(
         return Err("empty command".into());
     }
     if let Some(ref dir) = cwd {
-        if !resolve_path(dir, &workspace).is_dir() {
+        if !workspace.is_ssh() && !resolve_path(dir, &workspace).is_dir() {
             return Err(format!("cwd is not a directory: {dir}"));
         }
     }

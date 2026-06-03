@@ -1,10 +1,11 @@
 use ignore::WalkBuilder;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::to_canon;
+use crate::modules::ssh;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SearchHit {
     /// Absolute path of the matched file.
     pub path: String,
@@ -15,7 +16,7 @@ pub struct SearchHit {
     pub is_dir: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct SearchResult {
     pub hits: Vec<SearchHit>,
     /// True if the scan stopped early (entry budget or hit cap reached).
@@ -60,6 +61,12 @@ pub fn fs_search(
     let cap = limit.unwrap_or(200).min(1000);
     let show_hidden = show_hidden.unwrap_or(false);
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::search(&workspace, &root, &query, Some(cap), show_hidden, 120).map_err(|e| {
+            log::debug!("ssh fs_search({root}) failed: {e}");
+            e
+        });
+    }
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
@@ -137,7 +144,7 @@ pub fn fs_search(
     })
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ListFilesResult {
     pub files: Vec<String>,
     pub truncated: bool,
@@ -160,6 +167,13 @@ pub fn fs_list_files(
     let depth = max_depth.unwrap_or(DEFAULT_DEPTH).clamp(1, HARD_DEPTH);
     let show_hidden = show_hidden.unwrap_or(false);
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::list_files(&workspace, &root, Some(cap), Some(depth), show_hidden, 120)
+            .map_err(|e| {
+                log::debug!("ssh fs_list_files({root}) failed: {e}");
+                e
+            });
+    }
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));

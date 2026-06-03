@@ -19,6 +19,7 @@ import { useAgentsStore } from "./agentsStore";
 import { usePlanStore } from "./planStore";
 import { useTodosStore } from "./todoStore";
 import type { AgentUsage } from "../lib/agent";
+import type { TerminalInventory } from "../lib/terminalInventory";
 import { EMPTY_PROVIDER_KEYS, type ProviderKeys, type CustomEndpointKeys } from "../lib/keyring";
 import {
   deleteSessionData,
@@ -38,7 +39,9 @@ import type { ToolContext } from "../tools/tools";
 type Live = {
   getCwd: () => string | null;
   getTerminalContext: () => string | null;
+  getTerminalInventory: () => TerminalInventory;
   isActiveTerminalPrivate: () => boolean;
+  readLeafBuffer: (leafId: number) => string | null;
   injectIntoActivePty: (text: string) => boolean;
   getWorkspaceRoot: () => string | null;
   getActiveFile: () => string | null;
@@ -47,7 +50,6 @@ type Live = {
     prompt: string,
     sessionId: string,
   ) => { tabId: number; leafId: number } | null;
-  readLeafBuffer: (leafId: number) => string | null;
 };
 
 export type AgentRunStatus =
@@ -164,13 +166,19 @@ type StoreState = {
 const NOOP_LIVE: Live = {
   getCwd: () => null,
   getTerminalContext: () => null,
+  getTerminalInventory: () => ({
+    activeTabId: null,
+    activeTerminalTabId: null,
+    activeTerminalLeafId: null,
+    tabs: [],
+  }),
   isActiveTerminalPrivate: () => false,
+  readLeafBuffer: () => null,
   injectIntoActivePty: () => false,
   getWorkspaceRoot: () => null,
   getActiveFile: () => null,
   openPreview: () => false,
   spawnManagedAgent: () => null,
-  readLeafBuffer: () => null,
 };
 
 const CHATS_LRU_CAP = 8;
@@ -226,8 +234,11 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       useChatStore.getState().live.getWorkspaceRoot(),
     getTerminalContext: () =>
       useChatStore.getState().live.getTerminalContext(),
+    getTerminalInventory: () =>
+      useChatStore.getState().live.getTerminalInventory(),
     isActiveTerminalPrivate: () =>
       useChatStore.getState().live.isActiveTerminalPrivate(),
+    readLeafBuffer: (leafId) => useChatStore.getState().live.readLeafBuffer(leafId),
     injectIntoActivePty: (text) =>
       useChatStore.getState().live.injectIntoActivePty(text),
     openPreview: (url) => useChatStore.getState().live.openPreview(url),

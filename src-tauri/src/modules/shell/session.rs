@@ -77,9 +77,13 @@ impl ShellSession {
         if self.pristine.load(Ordering::Acquire) {
             if let Some(hint) = cwd_hint.filter(|s| !s.is_empty()) {
                 let effective_workspace = workspace_hint.as_ref().unwrap_or(&self.workspace);
-                let p = resolve_path(&hint, effective_workspace);
-                if p.is_dir() {
+                if effective_workspace.is_ssh() {
                     *self.cwd.lock().unwrap() = hint;
+                } else {
+                    let p = resolve_path(&hint, effective_workspace);
+                    if p.is_dir() {
+                        *self.cwd.lock().unwrap() = hint;
+                    }
                 }
             }
         }
@@ -102,9 +106,13 @@ impl ShellSession {
 
         let (stdout_clean, cwd_after) = strip_cwd_sentinel(&raw.stdout, &cwd, &self.sentinel);
         if let Some(ref new_cwd) = cwd_after {
-            let p = resolve_path(new_cwd, &self.workspace);
-            if p.is_dir() {
+            if self.workspace.is_ssh() {
                 *self.cwd.lock().unwrap() = new_cwd.clone();
+            } else {
+                let p = resolve_path(new_cwd, &self.workspace);
+                if p.is_dir() {
+                    *self.cwd.lock().unwrap() = new_cwd.clone();
+                }
             }
         }
         let resolved_cwd = to_canon(self.current_cwd());
@@ -175,7 +183,10 @@ mod tests {
         let stdout = format!("{attacker}{trailer}");
         let (clean, cwd) = strip_cwd_sentinel(&stdout, "/fallback", &s.sentinel);
         assert_eq!(cwd.as_deref(), Some("/real"));
-        assert!(clean.contains(attacker), "attacker payload survives in stdout");
+        assert!(
+            clean.contains(attacker),
+            "attacker payload survives in stdout"
+        );
     }
 
     #[test]

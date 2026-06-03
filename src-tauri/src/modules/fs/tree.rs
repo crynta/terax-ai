@@ -1,10 +1,11 @@
 use std::time::UNIX_EPOCH;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
+use crate::modules::ssh;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EntryKind {
     File,
@@ -12,7 +13,7 @@ pub enum EntryKind {
     Symlink,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct DirEntry {
     pub name: String,
     pub kind: EntryKind,
@@ -31,6 +32,12 @@ pub fn fs_read_dir(
     workspace: Option<WorkspaceEnv>,
 ) -> Result<Vec<DirEntry>, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::read_dir(&workspace, &path, show_hidden, 120).map_err(|e| {
+            log::debug!("ssh fs_read_dir({path}) failed: {e}");
+            e
+        });
+    }
     let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
@@ -106,6 +113,12 @@ pub fn list_subdirs(
     workspace: Option<WorkspaceEnv>,
 ) -> Result<Vec<String>, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::list_subdirs(&workspace, &path, show_hidden, 120).map_err(|e| {
+            log::debug!("ssh list_subdirs({path}) failed: {e}");
+            e
+        });
+    }
     let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("list_subdirs({}) read_dir failed: {e}", root.display());

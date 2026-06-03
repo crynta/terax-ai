@@ -5,6 +5,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import type { SearchAddon } from "@xterm/addon-search";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 import { useTerminalDropStore } from "./lib/dropStore";
 import type { PaneNode } from "./lib/panes";
@@ -12,14 +13,18 @@ import type { PaneNode } from "./lib/panes";
 type LeafBundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
   onSearch: (addon: SearchAddon) => void;
-  onCwd: (cwd: string) => void;
+  onCwd: (cwd: string, host: string | null) => void;
   onExit: (code: number) => void;
+  onCommandStart: (command: string) => void;
 };
 
 type Props = {
   node: PaneNode;
   tabVisible: boolean;
   activeLeafId: number;
+  workspace: WorkspaceEnv;
+  workspaceKey: string;
+  workspaceNonce: number;
   onFocusLeaf: (leafId: number) => void;
   getBundle: (leafId: number) => LeafBundle;
 };
@@ -28,6 +33,9 @@ export function PaneTreeView({
   node,
   tabVisible,
   activeLeafId,
+  workspace,
+  workspaceKey,
+  workspaceNonce,
   onFocusLeaf,
   getBundle,
 }: Props) {
@@ -51,11 +59,15 @@ export function PaneTreeView({
           leafId={node.id}
           visible={tabVisible}
           focused={focused}
+          workspace={workspace}
+          workspaceKey={workspaceKey}
+          workspaceNonce={workspaceNonce}
           initialCwd={node.cwd}
           ref={b.setRef}
           onSearchReady={(_id, addon) => b.onSearch(addon)}
-          onCwd={(_id, cwd) => b.onCwd(cwd)}
+          onCwd={(_id, cwd, host) => b.onCwd(cwd, host)}
           onExit={(_id, code) => b.onExit(code)}
+          onCommandStart={(_id, command) => b.onCommandStart(command)}
         />
         <DropOverlay leafId={node.id} />
       </div>
@@ -74,6 +86,9 @@ export function PaneTreeView({
               node={child}
               tabVisible={tabVisible}
               activeLeafId={activeLeafId}
+              workspace={workspace}
+              workspaceKey={workspaceKey}
+              workspaceNonce={workspaceNonce}
               onFocusLeaf={onFocusLeaf}
               getBundle={getBundle}
             />

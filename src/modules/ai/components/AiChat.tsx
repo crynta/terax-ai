@@ -395,7 +395,9 @@ const RenderedMessage = memo(function RenderedMessage({
                 <RenderedPart
                   part={g.part}
                   onApproval={onApproval}
-                  streaming={streaming && g.idx === lastTextIdx}
+                  streaming={
+                    streaming && (partIsStreaming(g.part) || g.idx === lastTextIdx)
+                  }
                 />
               </PartAppear>
             );
@@ -412,6 +414,10 @@ type Group =
 
 function partType(p: AnyPart): string {
   return (p as { type?: string }).type ?? "";
+}
+
+function partIsStreaming(p: AnyPart): boolean {
+  return (p as { state?: string }).state === "streaming";
 }
 
 function isReadFilePart(p: AnyPart): boolean {
@@ -610,7 +616,7 @@ const RenderedPart = memo(function RenderedPart({
 
   if (part.type === "reasoning") {
     return (
-      <Reasoning>
+      <Reasoning isStreaming={streaming}>
         <ReasoningTrigger />
         <ReasoningContent>
           {(part as unknown as { text: string }).text}

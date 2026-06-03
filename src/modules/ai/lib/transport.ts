@@ -1,6 +1,10 @@
 import type { UIMessage } from "@ai-sdk/react";
 import { type CustomEndpoint } from "../config";
 import { runAgentStream, type AgentUsageDelta } from "./agent";
+import {
+  isCodexModelId,
+  runCodexAppServerStream,
+} from "./codexTransport";
 import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
 import { native } from "./native";
 import type { ToolContext } from "../tools/tools";
@@ -79,6 +83,20 @@ export function createContextAwareTransport(deps: Deps) {
     const messagesForRun = envBlock
       ? injectEnvIntoLastUser(options.messages, envBlock)
       : options.messages;
+    if (isCodexModelId(deps.getModelId())) {
+      return runCodexAppServerStream({
+        messages: messagesForRun,
+        originalMessages: options.messages,
+        live,
+        projectMemory,
+        customInstructions: deps.getCustomInstructions(),
+        agentPersona: deps.getAgentPersona(),
+        planMode: deps.getPlanMode?.() ?? false,
+        modelId: deps.getModelId(),
+        abortSignal: options.abortSignal,
+        onStep: deps.onStep,
+      });
+    }
     const result = await runAgentStream({
       keys: deps.getKeys(),
       modelId: deps.getModelId(),

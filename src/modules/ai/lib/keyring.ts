@@ -13,6 +13,7 @@ export type CustomEndpointKeys = Record<string, string | null>;
 
 export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   openai: null,
+  codex: null,
   anthropic: null,
   google: null,
   xai: null,

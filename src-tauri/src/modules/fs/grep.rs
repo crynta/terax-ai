@@ -6,16 +6,17 @@ use grep_regex::RegexMatcherBuilder;
 use grep_searcher::sinks::UTF8;
 use grep_searcher::{BinaryDetection, SearcherBuilder};
 use ignore::{WalkBuilder, WalkState};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::to_canon;
+use crate::modules::ssh;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 200;
 const HARD_MAX_RESULTS: usize = 2000;
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct GrepHit {
     pub path: String,
     pub rel: String,
@@ -23,7 +24,7 @@ pub struct GrepHit {
     pub text: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct GrepResponse {
     pub hits: Vec<GrepHit>,
     pub truncated: bool,
@@ -56,6 +57,21 @@ pub fn fs_grep(
         return Err("empty pattern".into());
     }
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::grep(
+            &workspace,
+            &pattern,
+            &root,
+            glob,
+            case_insensitive,
+            max_results,
+            120,
+        )
+        .map_err(|e| {
+            log::debug!("ssh fs_grep({root}) failed: {e}");
+            e
+        });
+    }
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
@@ -167,13 +183,13 @@ pub fn fs_grep(
     })
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct GlobHit {
     pub path: String,
     pub rel: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct GlobResponse {
     pub hits: Vec<GlobHit>,
     pub truncated: bool,
@@ -190,6 +206,12 @@ pub fn fs_glob(
         return Err("empty pattern".into());
     }
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return ssh::glob(&workspace, &pattern, &root, max_results, 120).map_err(|e| {
+            log::debug!("ssh fs_glob({root}) failed: {e}");
+            e
+        });
+    }
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));

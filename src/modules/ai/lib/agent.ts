@@ -97,6 +97,11 @@ export async function buildLanguageModel(
 
   let built: LanguageModel;
   switch (provider) {
+    case "codex": {
+      throw new Error(
+        "Codex uses the local app-server transport, not an OpenAI API key provider.",
+      );
+    }
     case "openai": {
       const { createOpenAI } = await import("@ai-sdk/openai");
       built = createOpenAI({ apiKey: key })(resolvedModelId);

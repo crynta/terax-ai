@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 
 export type ReadResult =
@@ -123,6 +123,26 @@ export type GitDiscardEntry = {
   untracked: boolean;
 };
 
+export type CodexAuthStatus = {
+  logged_in: boolean;
+  detail: string;
+};
+
+export type CodexTurnOutput = {
+  text: string;
+};
+
+export type CodexStreamEvent =
+  | { kind: "textStart"; id: string }
+  | { kind: "textDelta"; id: string; delta: string }
+  | { kind: "textEnd"; id: string }
+  | { kind: "reasoningStart"; id: string }
+  | { kind: "reasoningDelta"; id: string; delta: string }
+  | { kind: "reasoningEnd"; id: string }
+  | { kind: "step"; label: string | null }
+  | { kind: "done" }
+  | { kind: "error"; message: string };
+
 export const native = {
   workspaceCurrentDir: () => invoke<string>("workspace_current_dir"),
   workspaceAuthorize: (path: string) =>
@@ -180,11 +200,7 @@ export const native = {
       maxResults: params.maxResults ?? null,
       workspace: currentWorkspaceEnv(),
     }),
-  runCommand: (
-    command: string,
-    cwd?: string | null,
-    timeoutSecs?: number,
-  ) =>
+  runCommand: (command: string, cwd?: string | null, timeoutSecs?: number) =>
     invoke<CommandOutput>("shell_run_command", {
       command,
       cwd: cwd ?? null,
@@ -245,6 +261,42 @@ export const native = {
         exit_code: number | null;
       }[]
     >("shell_bg_list"),
+  codexAuthStatus: () => invoke<CodexAuthStatus>("codex_auth_status"),
+  codexLoginChatGpt: () => invoke<CodexAuthStatus>("codex_login_chatgpt"),
+  codexLogout: () => invoke<CodexAuthStatus>("codex_logout"),
+  codexAppServerTurn: (params: {
+    prompt: string;
+    cwd?: string | null;
+    model?: string | null;
+    developerInstructions?: string | null;
+  }) =>
+    invoke<CodexTurnOutput>("codex_app_server_turn", {
+      prompt: params.prompt,
+      cwd: params.cwd ?? null,
+      model: params.model ?? null,
+      developerInstructions: params.developerInstructions ?? null,
+      workspace: currentWorkspaceEnv(),
+    }),
+  codexAppServerStream: (
+    params: {
+      prompt: string;
+      cwd?: string | null;
+      model?: string | null;
+      developerInstructions?: string | null;
+    },
+    onEvent: (event: CodexStreamEvent) => void,
+  ) => {
+    const channel = new Channel<CodexStreamEvent>();
+    channel.onmessage = onEvent;
+    return invoke<void>("codex_app_server_stream", {
+      prompt: params.prompt,
+      cwd: params.cwd ?? null,
+      model: params.model ?? null,
+      developerInstructions: params.developerInstructions ?? null,
+      workspace: currentWorkspaceEnv(),
+      onEvent: channel,
+    });
+  },
   gitResolveRepo: (cwd: string) =>
     invoke<GitRepoInfo | null>("git_resolve_repo", {
       cwd,
@@ -319,7 +371,10 @@ export const native = {
       repoRoot,
       workspace: currentWorkspaceEnv(),
     }),
-  gitLog: (repoRoot: string, options?: { limit?: number; beforeSha?: string }) =>
+  gitLog: (
+    repoRoot: string,
+    options?: { limit?: number; beforeSha?: string },
+  ) =>
     invoke<GitLogEntry[]>("git_log", {
       repoRoot,
       limit: options?.limit ?? null,

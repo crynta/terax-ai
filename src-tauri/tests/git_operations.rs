@@ -117,13 +117,13 @@ fn stage_then_commit_produces_log_entry() {
     assert!(entry.staged);
     assert!(!entry.untracked);
 
-    let commit = operations::commit(&fx.registry, &fx.repo_str(), "add a", &fx.workspace)
-        .expect("commit");
+    let commit =
+        operations::commit(&fx.registry, &fx.repo_str(), "add a", &fx.workspace).expect("commit");
     assert_eq!(commit.summary, "add a");
     assert_eq!(commit.commit_sha.len(), 40);
 
-    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace)
-        .expect("log");
+    let entries =
+        operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).expect("log");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].sha, commit.commit_sha);
     assert_eq!(entries[0].subject, "add a");
@@ -203,8 +203,8 @@ fn diff_shows_worktree_change() {
     fx.run_git(&["commit", "-q", "-m", "init"]);
     fx.write_file("a.txt", "alpha\nbeta\n");
 
-    let diff = operations::diff(&fx.registry, &fx.repo_str(), None, false, &fx.workspace)
-        .expect("diff");
+    let diff =
+        operations::diff(&fx.registry, &fx.repo_str(), None, false, &fx.workspace).expect("diff");
     assert!(diff.diff_text.contains("+beta"));
 }
 
@@ -304,9 +304,8 @@ fn panel_snapshot_outside_repo_is_empty() {
     let registry = WorkspaceRegistry::default();
     registry.authorize(&canonical).unwrap();
 
-    let snap =
-        operations::panel_snapshot(&registry, &to_canon(&canonical), &WorkspaceEnv::Local)
-            .expect("panel_snapshot");
+    let snap = operations::panel_snapshot(&registry, &to_canon(&canonical), &WorkspaceEnv::Local)
+        .expect("panel_snapshot");
     assert!(snap.repo.is_none());
     assert!(snap.status.is_none());
 }
@@ -321,8 +320,7 @@ fn show_commit_diff_returns_patch_for_known_sha() {
     fx.run_git(&["add", "a.txt"]);
     fx.run_git(&["commit", "-q", "-m", "seed"]);
 
-    let entries =
-        operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).unwrap();
+    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).unwrap();
     let sha = &entries[0].sha;
 
     let diff = operations::show_commit_diff(&fx.registry, &fx.repo_str(), sha, &fx.workspace)
@@ -337,12 +335,7 @@ fn show_commit_diff_rejects_invalid_sha() {
         return;
     }
     let fx = GitRepoFixture::new();
-    match operations::show_commit_diff(
-        &fx.registry,
-        &fx.repo_str(),
-        "not-a-sha",
-        &fx.workspace,
-    ) {
+    match operations::show_commit_diff(&fx.registry, &fx.repo_str(), "not-a-sha", &fx.workspace) {
         Err(GitError::CommandFailed { .. }) => {}
         Err(other) => panic!("expected CommandFailed, got {other}"),
         Ok(_) => panic!("expected error for invalid sha"),
@@ -361,8 +354,7 @@ fn log_paginates_with_before_sha_cursor() {
         fx.run_git(&["commit", "-q", "-m", &format!("c{i}")]);
     }
 
-    let first_page =
-        operations::log(&fx.registry, &fx.repo_str(), 1, None, &fx.workspace).unwrap();
+    let first_page = operations::log(&fx.registry, &fx.repo_str(), 1, None, &fx.workspace).unwrap();
     assert_eq!(first_page.len(), 1);
     let cursor = first_page[0].sha.clone();
 
@@ -415,8 +407,7 @@ fn commit_files_reports_added_and_modified() {
     fx.run_git(&["add", "a.txt"]);
     fx.run_git(&["commit", "-q", "-m", "modify"]);
 
-    let entries =
-        operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).unwrap();
+    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).unwrap();
     let head = &entries[0].sha;
 
     let files =
@@ -440,13 +431,18 @@ fn commit_file_diff_returns_original_and_modified_text() {
     fx.run_git(&["add", "a.txt"]);
     fx.run_git(&["commit", "-q", "-m", "v2"]);
 
-    let entries =
-        operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).unwrap();
+    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).unwrap();
     let head = &entries[0].sha;
 
-    let diff =
-        operations::commit_file_diff(&fx.registry, &fx.repo_str(), head, "a.txt", None, &fx.workspace)
-            .unwrap();
+    let diff = operations::commit_file_diff(
+        &fx.registry,
+        &fx.repo_str(),
+        head,
+        "a.txt",
+        None,
+        &fx.workspace,
+    )
+    .unwrap();
     assert_eq!(diff.original_content, "v1\n");
     assert_eq!(diff.modified_content, "v2\n");
     assert!(!diff.is_binary);
@@ -458,8 +454,8 @@ fn remote_url_returns_none_for_missing_remote() {
         return;
     }
     let fx = GitRepoFixture::new();
-    let url = operations::remote_url(&fx.registry, &fx.repo_str(), "origin", &fx.workspace)
-        .unwrap();
+    let url =
+        operations::remote_url(&fx.registry, &fx.repo_str(), "origin", &fx.workspace).unwrap();
     assert!(url.is_none());
 }
 
@@ -469,15 +465,10 @@ fn remote_url_returns_configured_url() {
         return;
     }
     let fx = GitRepoFixture::new();
-    fx.run_git(&[
-        "remote",
-        "add",
-        "origin",
-        "https://example.com/x.git",
-    ]);
+    fx.run_git(&["remote", "add", "origin", "https://example.com/x.git"]);
 
-    let url = operations::remote_url(&fx.registry, &fx.repo_str(), "origin", &fx.workspace)
-        .unwrap();
+    let url =
+        operations::remote_url(&fx.registry, &fx.repo_str(), "origin", &fx.workspace).unwrap();
     assert_eq!(url.as_deref(), Some("https://example.com/x.git"));
 }
 

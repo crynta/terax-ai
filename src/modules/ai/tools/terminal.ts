@@ -1,6 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { checkShellCommand } from "../lib/security";
+import {
+  redactTerminalInventory,
+  resolveTerminalTarget,
+} from "../lib/terminalInventory";
 import type { ToolContext } from "./context";
 
 export function buildTerminalTools(ctx: ToolContext) {
@@ -31,8 +35,20 @@ export function buildTerminalTools(ctx: ToolContext) {
 
     get_terminal_output: tool({
       description:
-        "Return the tail of the active terminal's scrollback. Use this when the user references 'this error', 'the last command', or you need to interpret recent terminal output. Default is 80 lines; raise it only when you genuinely need more. Returns an empty string if there is no active terminal; refuses if the terminal is in Privacy mode.",
+        "Return the tail of a terminal's scrollback. Use this when the user references 'this error', 'the last command', or you need to interpret recent terminal output. If `tabId` or `leafId` is omitted, it reads the active terminal tab. Returns an empty string if the selected terminal has no buffer; refuses if the selected terminal is in Privacy mode.",
       inputSchema: z.object({
+        tabId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Terminal tab id to read. Defaults to the active terminal tab."),
+        leafId: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Specific terminal leaf id to read. Takes precedence over tabId."),
         lines: z
           .number()
           .int()
@@ -41,22 +57,45 @@ export function buildTerminalTools(ctx: ToolContext) {
           .optional()
           .describe("Number of trailing lines to return. Default 80."),
       }),
-      execute: async ({ lines }) => {
-        if (ctx.isActiveTerminalPrivate()) {
+      execute: async ({ tabId, leafId, lines }) => {
+        const inventory = ctx.getTerminalInventory();
+        const target = resolveTerminalTarget(inventory, { tabId, leafId });
+        if (!target.ok) return { error: target.error };
+        if (target.target.tab.private) {
           return {
             error:
-              "active terminal is in Privacy mode; its buffer is withheld. Ask the user to switch to a regular tab if they want you to see it.",
+              `terminal tab ${target.target.tab.tabId} is in Privacy mode; its buffer is withheld. Ask the user to switch to a regular tab if they want you to see it.`,
           };
         }
-        const buffer = ctx.getTerminalContext();
-        if (!buffer) return { output: "", note: "no active terminal" };
+        const buffer = ctx.readLeafBuffer(target.target.leafId);
+        if (!buffer) {
+          return {
+            output: "",
+            note: `no buffer for terminal leaf ${target.target.leafId}`,
+            terminal: target.target,
+          };
+        }
         const n = lines ?? 80;
         const parts = buffer.split("\n");
         const sliced = parts.length <= n ? buffer : parts.slice(parts.length - n).join("\n");
         const MAX = 24_000;
         const capped =
           sliced.length > MAX ? `…[truncated]…\n${sliced.slice(sliced.length - MAX)}` : sliced;
-        return { output: capped, lines_returned: Math.min(parts.length, n) };
+        return {
+          output: capped,
+          lines_returned: Math.min(parts.length, n),
+          terminal: target.target,
+        };
+      },
+    }),
+
+    list_terminals: tool({
+      description:
+        "List all open terminal tabs and panes, including which terminal tab is active in the app. Use this before reading a specific terminal if the user mentions a tab by title or if multiple terminals are open.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        const inventory = redactTerminalInventory(ctx.getTerminalInventory());
+        return inventory;
       },
     }),
 

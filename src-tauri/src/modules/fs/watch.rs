@@ -213,12 +213,16 @@ fn prepare_add(
     workspace: &WorkspaceEnv,
     paths: Vec<String>,
 ) -> Vec<PathBuf> {
+    if workspace.is_ssh() {
+        return Vec::new();
+    }
     paths
         .into_iter()
         .filter_map(|raw| {
             let resolved = resolve_path(&raw, workspace);
             let canonical = std::fs::canonicalize(&resolved).ok()?;
-            if !canonical.is_dir() || is_skipped(&canonical) || !registry.is_authorized(&canonical) {
+            if !canonical.is_dir() || is_skipped(&canonical) || !registry.is_authorized(&canonical)
+            {
                 return None;
             }
             Some(canonical)
@@ -235,6 +239,9 @@ pub fn fs_watch_add(
     registry: State<'_, WorkspaceRegistry>,
 ) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return Ok(());
+    }
     let prepared = prepare_add(&registry, &workspace, paths);
     if prepared.is_empty() {
         return Ok(());
@@ -254,6 +261,9 @@ pub fn fs_watch_remove(
     state: State<'_, FsWatchState>,
 ) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
+    if workspace.is_ssh() {
+        return Ok(());
+    }
     // A removed/renamed dir no longer canonicalizes; fall back so the refcount
     // entry is still released.
     let prepared: Vec<PathBuf> = paths

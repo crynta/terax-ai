@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::modules::git::errors::{GitError, Result};
+use crate::modules::ssh;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv, WorkspaceRegistry};
 
 #[derive(Clone, Debug)]
@@ -30,6 +31,14 @@ pub fn canonical_dir(
     path: &str,
     workspace: &WorkspaceEnv,
 ) -> Result<ResolvedGitDirectory> {
+    if workspace.is_ssh() {
+        let git_path = path.replace('\\', "/");
+        return Ok(ResolvedGitDirectory {
+            workspace: workspace.clone(),
+            git_path,
+            local_path: PathBuf::from(path),
+        });
+    }
     let candidate = resolve_path(path, workspace);
     if !candidate.is_dir() {
         return Err(GitError::NotADirectory(path.to_string()));
@@ -55,6 +64,17 @@ pub fn authorized_repo_root(
     workspace: &WorkspaceEnv,
 ) -> Result<ResolvedGitDirectory> {
     let canonical = canonical_dir(registry, path, workspace)?;
+    if workspace.is_ssh() {
+        let Some(root) = ssh::workspace_root(workspace) else {
+            return Err(GitError::PathOutsideWorkspace(canonical.local_path.clone()));
+        };
+        let path_norm = canonical.git_path.trim_end_matches('/');
+        let root_norm = root.trim_end_matches('/');
+        if path_norm != root_norm && !path_norm.starts_with(&format!("{root_norm}/")) {
+            return Err(GitError::PathOutsideWorkspace(canonical.local_path.clone()));
+        }
+        return Ok(canonical);
+    }
     if !registry.is_authorized(&canonical.local_path) {
         return Err(GitError::PathOutsideWorkspace(canonical.local_path.clone()));
     }
