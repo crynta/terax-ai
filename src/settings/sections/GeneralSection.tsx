@@ -27,6 +27,7 @@ import {
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
+  setTerminalFontWeight,
   setTerminalLetterSpacing,
   setTerminalFontSize,
   setTerminalScrollback,
@@ -56,6 +57,12 @@ const APPEARANCE: {
   { id: "dark", label: "Dark", icon: Moon02Icon },
 ];
 
+const TERMINAL_FONT_WEIGHTS = [
+  { value: "normal", label: "Normal" },
+  { value: "500", label: "Medium" },
+  { value: "600", label: "Semi-Bold" },
+  { value: "bold", label: "Bold" },
+] as const;
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
@@ -77,6 +84,7 @@ export function GeneralSection() {
     (s) => s.terminalWebglEnabled,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
+  const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalLetterSpacing = usePreferencesStore(
     (s) => s.terminalLetterSpacing,
   );
@@ -253,6 +261,33 @@ export function GeneralSection() {
             onChange={(e) => void setTerminalFontFamily(e.target.value)}
             className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
           />
+        </SettingRow>
+        <SettingRow
+          title="Font weight"
+          description="Thickness of terminal characters"
+        >
+          <Select
+            value={terminalFontWeight}
+            onValueChange={(v) => void setTerminalFontWeight(v)}
+          >
+            <SelectTrigger
+              value={terminalFontWeight}
+              className="h-8 w-28 text-[12px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TERMINAL_FONT_WEIGHTS.map((w) => (
+                <SelectItem
+                  key={w.value}
+                  value={w.value}
+                  className="text-[12px]"
+                >
+                  {w.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingRow>
         <SettingRow
           title="Letter spacing"
