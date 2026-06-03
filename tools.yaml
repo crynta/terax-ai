@@ -1,0 +1,937 @@
+---
+version: v1.2
+tools:
+  ## Access Groups
+  ## An access group is the equivalent of an Endpoint Group in Portainer.
+  ## ------------------------------------------------------------
+  - name: listAccessGroups
+    description: List all available access groups
+    annotations:
+      title: List Access Groups
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: createAccessGroup
+    description: Create a new access group. Use access groups when you want to define
+      accesses on more than one environment. Otherwise, define the accesses on
+      the environment level.
+    parameters:
+      - name: name
+        description: The name of the access group
+        type: string
+        required: true
+      - name: environmentIds
+        description: "The IDs of the environments that are part of the access group.
+          Must include all the environment IDs that are part of the group - this
+          includes new environments and the existing environments that are
+          already associated with the group. Example: [1, 2, 3]"
+        type: array
+        items:
+          type: number
+    annotations:
+      title: Create Access Group
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+  - name: updateAccessGroupName
+    description: Update the name of an existing access group.
+    parameters:
+      - name: id
+        description: The ID of the access group to update
+        type: number
+        required: true
+      - name: name
+        description: The name of the access group
+        type: string
+        required: true
+    annotations:
+      title: Update Access Group Name
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateAccessGroupUserAccesses
+    description: Update the user accesses of an existing access group.
+    parameters:
+      - name: id
+        description: The ID of the access group to update
+        type: number
+        required: true
+      - name: userAccesses
+        description: "The user accesses that are associated with all the environments in
+          the access group. The ID is the user ID of the user in Portainer.
+          Example: [{id: 1, access: 'environment_administrator'}, {id: 2,
+          access: 'standard_user'}]"
+        type: array
+        required: true
+        items:
+          type: object
+          properties:
+            id:
+              description: The ID of the user
+              type: number
+            access:
+              description: The access level of the user. Can be environment_administrator,
+                helpdesk_user, standard_user, readonly_user or operator_user
+              type: string
+              enum:
+                - environment_administrator
+                - helpdesk_user
+                - standard_user
+                - readonly_user
+                - operator_user
+    annotations:
+      title: Update Access Group User Accesses
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateAccessGroupTeamAccesses
+    description: Update the team accesses of an existing access group.
+    parameters:
+      - name: id
+        description: The ID of the access group to update
+        type: number
+        required: true
+      - name: teamAccesses
+        description: "The team accesses that are associated with all the environments in
+          the access group. The ID is the team ID of the team in Portainer.
+          Example: [{id: 1, access: 'environment_administrator'}, {id: 2,
+          access: 'standard_user'}]"
+        type: array
+        required: true
+        items:
+          type: object
+          properties:
+            id:
+              description: The ID of the team
+              type: number
+            access:
+              description: The access level of the team. Can be environment_administrator,
+                helpdesk_user, standard_user, readonly_user or operator_user
+              type: string
+              enum:
+                - environment_administrator
+                - helpdesk_user
+                - standard_user
+                - readonly_user
+                - operator_user
+    annotations:
+      title: Update Access Group Team Accesses
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: addEnvironmentToAccessGroup
+    description: Add an environment to an access group.
+    parameters:
+      - name: id
+        description: The ID of the access group to update
+        type: number
+        required: true
+      - name: environmentId
+        description: The ID of the environment to add to the access group
+        type: number
+        required: true
+    annotations:
+      title: Add Environment To Access Group
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: removeEnvironmentFromAccessGroup
+    description: Remove an environment from an access group.
+    parameters:
+      - name: id
+        description: The ID of the access group to update
+        type: number
+        required: true
+      - name: environmentId
+        description: The ID of the environment to remove from the access group
+        type: number
+        required: true
+    annotations:
+      title: Remove Environment From Access Group
+      readOnlyHint: false
+      destructiveHint: true
+      idempotentHint: true
+      openWorldHint: false
+  ## Environment
+  ## ------------------------------------------------------------
+  - name: listEnvironments
+    description: List all available environments
+    annotations:
+      title: List Environments
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateEnvironmentTags
+    description: Update the tags associated with an environment
+    parameters:
+      - name: id
+        description: The ID of the environment to update
+        type: number
+        required: true
+      - name: tagIds
+        description: >-
+          The IDs of the tags that are associated with the environment.
+          Must include all the tag IDs that should be associated with the environment - this includes new tags and existing tags.
+          Providing an empty array will remove all tags.
+          Example: [1, 2, 3]
+        type: array
+        required: true
+        items:
+          type: number
+    annotations:
+      title: Update Environment Tags
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateEnvironmentUserAccesses
+    description: Update the user access policies of an environment
+    parameters:
+      - name: id
+        description: The ID of the environment to update
+        type: number
+        required: true
+      - name: userAccesses
+        description: >-
+          The user accesses that are associated with the environment.
+          The ID is the user ID of the user in Portainer.
+          Must include all the access policies for all users that should be associated with the environment.
+          Providing an empty array will remove all user accesses.
+          Example: [{id: 1, access: 'environment_administrator'}, {id: 2, access: 'standard_user'}]
+        type: array
+        required: true
+        items:
+          type: object
+          properties:
+            id:
+              description: The ID of the user
+              type: number
+            access:
+              description: The access level of the user
+              type: string
+              enum:
+                - environment_administrator
+                - helpdesk_user
+                - standard_user
+                - readonly_user
+                - operator_user
+    annotations:
+      title: Update Environment User Accesses
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateEnvironmentTeamAccesses
+    description: Update the team access policies of an environment
+    parameters:
+      - name: id
+        description: The ID of the environment to update
+        type: number
+        required: true
+      - name: teamAccesses
+        description: >-
+          The team accesses that are associated with the environment.
+          The ID is the team ID of the team in Portainer.
+          Must include all the access policies for all teams that should be associated with the environment.
+          Providing an empty array will remove all team accesses.
+          Example: [{id: 1, access: 'environment_administrator'}, {id: 2, access: 'standard_user'}]
+        type: array
+        required: true
+        items:
+          type: object
+          properties:
+            id:
+              description: The ID of the team
+              type: number
+            access:
+              description: The access level of the team
+              type: string
+              enum:
+                - environment_administrator
+                - helpdesk_user
+                - standard_user
+                - readonly_user
+                - operator_user
+    annotations:
+      title: Update Environment Team Accesses
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  ## Environment Groups
+  ## An environment group is the equivalent of an Edge Group in Portainer.
+  ## ------------------------------------------------------------
+  - name: createEnvironmentGroup
+    description: Create a new environment group. Environment groups are the equivalent of Edge Groups in Portainer.
+    parameters:
+      - name: name
+        description: The name of the environment group
+        type: string
+        required: true
+      - name: environmentIds
+        description: The IDs of the environments to add to the group
+        type: array
+        required: true
+        items:
+          type: number
+    annotations:
+      title: Create Environment Group
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+  - name: listEnvironmentGroups
+    description: List all available environment groups. Environment groups are the equivalent of Edge Groups in Portainer.
+    annotations:
+      title: List Environment Groups
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateEnvironmentGroupName
+    description: Update the name of an environment group. Environment groups are the equivalent of Edge Groups in Portainer.
+    parameters:
+      - name: id
+        description: The ID of the environment group to update
+        type: number
+        required: true
+      - name: name
+        description: The new name for the environment group
+        type: string
+        required: true
+    annotations:
+      title: Update Environment Group Name
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateEnvironmentGroupEnvironments
+    description: Update the environments associated with an environment group. Environment groups are the equivalent of Edge Groups in Portainer.
+    parameters:
+      - name: id
+        description: The ID of the environment group to update
+        type: number
+        required: true
+      - name: environmentIds
+        description: >-
+          The IDs of the environments that should be part of the group.
+          Must include all environment IDs that should be associated with the group.
+          Providing an empty array will remove all environments from the group.
+          Example: [1, 2, 3]
+        type: array
+        required: true
+        items:
+          type: number
+    annotations:
+      title: Update Environment Group Environments
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateEnvironmentGroupTags
+    description: Update the tags associated with an environment group. Environment groups are the equivalent of Edge Groups in Portainer.
+    parameters:
+      - name: id
+        description: The ID of the environment group to update
+        type: number
+        required: true
+      - name: tagIds
+        description: >-
+          The IDs of the tags that should be associated with the group.
+          Must include all tag IDs that should be associated with the group.
+          Providing an empty array will remove all tags from the group.
+          Example: [1, 2, 3]
+        type: array
+        required: true
+        items:
+          type: number
+    annotations:
+      title: Update Environment Group Tags
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  ## Settings
+  ## ------------------------------------------------------------
+  - name: getSettings
+    description: Get the settings of the Portainer instance
+    annotations:
+      title: Get Settings
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  ## Stacks
+  ## ------------------------------------------------------------
+  - name: listStacks
+    description: List all available stacks
+    annotations:
+      title: List Stacks
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: getStackFile
+    description: Get the compose file for a specific stack ID
+    parameters:
+      - name: id
+        description: The ID of the stack to get the compose file for
+        type: number
+        required: true
+    annotations:
+      title: Get Stack File
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: createStack
+    description: Create a new stack
+    parameters:
+      - name: name
+        description: Name of the stack. Stack name must only consist of lowercase alpha
+          characters, numbers, hyphens, or underscores as well as start with a
+          lowercase character or number
+        type: string
+        required: true
+      - name: file
+        description: >-
+          Content of the stack file. The file must be a valid
+          docker-compose.yml file. example: services:
+           web:
+             image:nginx
+        type: string
+        required: true
+      - name: environmentGroupIds
+        description: "The IDs of the environment groups that the stack belongs to. Must
+          include at least one environment group ID. Example: [1, 2, 3]"
+        type: array
+        required: true
+        items:
+          type: number
+    annotations:
+      title: Create Stack
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+  - name: updateStack
+    description: Update an existing stack
+    parameters:
+      - name: id
+        description: The ID of the stack to update
+        type: number
+        required: true
+      - name: file
+        description: >-
+          Content of the stack file. The file must be a valid
+          docker-compose.yml file. example: version: 3
+           services:
+             web:
+               image:nginx
+        type: string
+        required: true
+      - name: environmentGroupIds
+        description: "The IDs of the environment groups that the stack belongs to. Must
+          include at least one environment group ID. Example: [1, 2, 3]"
+        type: array
+        required: true
+        items:
+          type: number
+    annotations:
+      title: Update Stack
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  ## Local Stacks (regular Docker Compose stacks, non-Edge)
+  ## ------------------------------------------------------------
+  - name: listLocalStacks
+    description: >-
+      List all local (non-edge) stacks deployed on Portainer environments.
+      Returns stack ID, name, status, type, environment ID, creation date,
+      and environment variables for each stack.
+    annotations:
+      title: List Local Stacks
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: getLocalStackFile
+    description: >-
+      Get the docker-compose file content for a specific local stack by its ID.
+      Returns the raw compose file as text.
+    parameters:
+      - name: id
+        description: The ID of the local stack to get the compose file for
+        type: number
+        required: true
+    annotations:
+      title: Get Local Stack File
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: createLocalStack
+    description: >-
+      Create a new local standalone Docker Compose stack on a specific environment.
+      Requires the environment ID, a stack name, and the compose file content.
+      Optionally accepts environment variables.
+    parameters:
+      - name: environmentId
+        description: The ID of the environment to deploy the stack to
+        type: number
+        required: true
+      - name: name
+        description: >-
+          Name of the stack. Stack name must only consist of lowercase alpha
+          characters, numbers, hyphens, or underscores as well as start with a
+          lowercase character or number
+        type: string
+        required: true
+      - name: file
+        description: >-
+          Content of the stack file. The file must be a valid
+          docker-compose.yml file. example: services:
+           web:
+             image: nginx
+        type: string
+        required: true
+      - name: env
+        description: >-
+          Optional environment variables for the stack. Each variable must have
+          a 'name' and 'value' field.
+          Example: [{"name": "DB_HOST", "value": "localhost"}]
+        type: array
+        required: false
+        items:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the environment variable
+            value:
+              type: string
+              description: The value of the environment variable
+    annotations:
+      title: Create Local Stack
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+  - name: updateLocalStack
+    description: >-
+      Update an existing local stack with new compose file content and/or
+      environment variables. Requires the stack ID and environment ID.
+    parameters:
+      - name: id
+        description: The ID of the local stack to update
+        type: number
+        required: true
+      - name: environmentId
+        description: The ID of the environment where the stack is deployed
+        type: number
+        required: true
+      - name: file
+        description: >-
+          Content of the stack file. The file must be a valid
+          docker-compose.yml file. example: services:
+           web:
+             image: nginx
+        type: string
+        required: true
+      - name: env
+        description: >-
+          Optional environment variables for the stack. Each variable must have
+          a 'name' and 'value' field.
+          Example: [{"name": "DB_HOST", "value": "localhost"}]
+        type: array
+        required: false
+        items:
+          type: object
+          properties:
+            name:
+              type: string
+              description: The name of the environment variable
+            value:
+              type: string
+              description: The value of the environment variable
+      - name: prune
+        description: >-
+          If true, services that are no longer in the compose file will be removed.
+          Default: false
+        type: boolean
+        required: false
+      - name: pullImage
+        description: >-
+          If true, images will be pulled before deploying. Default: false
+        type: boolean
+        required: false
+    annotations:
+      title: Update Local Stack
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: startLocalStack
+    description: >-
+      Start a stopped local stack. Brings up all containers defined in the
+      stack's compose file.
+    parameters:
+      - name: id
+        description: The ID of the local stack to start
+        type: number
+        required: true
+      - name: environmentId
+        description: The ID of the environment where the stack is deployed
+        type: number
+        required: true
+    annotations:
+      title: Start Local Stack
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: stopLocalStack
+    description: >-
+      Stop a running local stack. Stops all containers defined in the
+      stack's compose file.
+    parameters:
+      - name: id
+        description: The ID of the local stack to stop
+        type: number
+        required: true
+      - name: environmentId
+        description: The ID of the environment where the stack is deployed
+        type: number
+        required: true
+    annotations:
+      title: Stop Local Stack
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: deleteLocalStack
+    description: >-
+      Delete a local stack permanently. This removes the stack and all its
+      associated containers from the environment.
+    parameters:
+      - name: id
+        description: The ID of the local stack to delete
+        type: number
+        required: true
+      - name: environmentId
+        description: The ID of the environment where the stack is deployed
+        type: number
+        required: true
+    annotations:
+      title: Delete Local Stack
+      readOnlyHint: false
+      destructiveHint: true
+      idempotentHint: false
+      openWorldHint: false
+  ## Tags
+  ## ------------------------------------------------------------
+  - name: createEnvironmentTag
+    description: Create a new environment tag
+    parameters:
+      - name: name
+        description: The name of the tag
+        type: string
+        required: true
+    annotations:
+      title: Create Environment Tag
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+  - name: listEnvironmentTags
+    description: List all available environment tags
+    annotations:
+      title: List Environment Tags
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  ## Teams
+  ## ------------------------------------------------------------
+  - name: createTeam
+    description: Create a new team
+    parameters:
+      - name: name
+        description: The name of the team
+        type: string
+        required: true
+    annotations:
+      title: Create Team
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: false
+      openWorldHint: false
+  - name: listTeams
+    description: List all available teams
+    annotations:
+      title: List Teams
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateTeamName
+    description: Update the name of an existing team
+    parameters:
+      - name: id
+        description: The ID of the team to update
+        type: number
+        required: true
+      - name: name
+        description: The new name of the team
+        type: string
+        required: true
+    annotations:
+      title: Update Team Name
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateTeamMembers
+    description: Update the members of an existing team
+    parameters:
+      - name: id
+        description: The ID of the team to update
+        type: number
+        required: true
+      - name: userIds
+        description: "The IDs of the users that are part of the team. Must include all
+          the user IDs that are part of the team - this includes new users and
+          the existing users that are already associated with the team. Example:
+          [1, 2, 3]"
+        type: array
+        required: true
+        items:
+          type: number
+    annotations:
+      title: Update Team Members
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+
+  ## Users
+  ## ------------------------------------------------------------
+  - name: listUsers
+    description: List all available users
+    annotations:
+      title: List Users
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+  - name: updateUserRole
+    description: Update an existing user
+    parameters:
+      - name: id
+        description: The ID of the user to update
+        type: number
+        required: true
+      - name: role
+        description: The role of the user. Can be admin, user or edge_admin
+        type: string
+        required: true
+        enum:
+          - admin
+          - user
+          - edge_admin
+    annotations:
+      title: Update User Role
+      readOnlyHint: false
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
+
+  ## Docker Proxy
+  ## ------------------------------------------------------------
+  - name: dockerProxy
+    description: Proxy Docker requests to a specific Portainer environment.
+      This tool can be used with any Docker API operation as documented in the Docker Engine API specification (https://docs.docker.com/reference/api/engine/version/v1.48/).
+      In read-only mode, only GET requests are allowed.
+    parameters:
+      - name: environmentId
+        description: The ID of the environment to proxy Docker requests to
+        type: number
+        required: true
+      - name: method
+        description: The HTTP method to use to proxy the Docker API operation
+        type: string
+        required: true
+        enum:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - HEAD
+      - name: dockerAPIPath
+        description: "The route of the Docker API operation to proxy. Must include the leading slash. Example: /containers/json"
+        type: string
+        required: true
+      - name: queryParams
+        description: "The query parameters to include in the Docker API operation. Must be an array of key-value pairs.
+          Example: [{key: 'all', value: 'true'}, {key: 'filter', value: 'dangling'}]"
+        type: array
+        required: false
+        items:
+          type: object
+          properties:
+            key:
+              type: string
+              description: The key of the query parameter
+            value:
+              type: string
+              description: The value of the query parameter
+      - name: headers
+        description: "The headers to include in the Docker API operation. Must be an array of key-value pairs.
+          Example: [{key: 'Content-Type', value: 'application/json'}]"
+        type: array
+        required: false
+        items:
+          type: object
+          properties:
+            key:
+              type: string
+              description: The key of the header
+            value:
+              type: string
+              description: The value of the header
+      - name: body
+        description: "The body of the Docker API operation to proxy. Must be a JSON string.
+          Example: {'Image': 'nginx:latest', 'Name': 'my-container'}"
+        type: string
+        required: false
+    annotations:
+      title: Docker Proxy
+      readOnlyHint: true
+      destructiveHint: true
+      idempotentHint: true
+      openWorldHint: false
+
+  ## Kubernetes Proxy
+  ## ------------------------------------------------------------
+  - name: kubernetesProxy
+    description: Proxy Kubernetes requests to a specific Portainer environment.
+      This tool can be used with any Kubernetes API operation as documented in the Kubernetes API specification (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/).
+      In read-only mode, only GET requests are allowed.
+    parameters:
+      - name: environmentId
+        description: The ID of the environment to proxy Kubernetes requests to
+        type: number
+        required: true
+      - name: method
+        description: The HTTP method to use to proxy the Kubernetes API operation
+        type: string
+        required: true
+        enum:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - HEAD
+      - name: kubernetesAPIPath
+        description: "The route of the Kubernetes API operation to proxy. Must include the leading slash. Example: /api/v1/namespaces/default/pods"
+        type: string
+        required: true
+      - name: queryParams
+        description: "The query parameters to include in the Kubernetes API operation. Must be an array of key-value pairs.
+          Example: [{key: 'watch', value: 'true'}, {key: 'fieldSelector', value: 'metadata.name=my-pod'}]"
+        type: array
+        required: false
+        items:
+          type: object
+          properties:
+            key:
+              type: string
+              description: The key of the query parameter
+            value:
+              type: string
+              description: The value of the query parameter
+      - name: headers
+        description: "The headers to include in the Kubernetes API operation. Must be an array of key-value pairs.
+          Example: [{key: 'Content-Type', value: 'application/json'}]"
+        type: array
+        required: false
+        items:
+          type: object
+          properties:
+            key:
+              type: string
+              description: The key of the header
+            value:
+              type: string
+              description: The value of the header
+      - name: body
+        description: "The body of the Kubernetes API operation to proxy. Must be a JSON string.
+          Example: {'apiVersion': 'v1', 'kind': 'Pod', 'metadata': {'name': 'my-pod'}}"
+        type: string
+        required: false
+    annotations:
+      title: Kubernetes Proxy
+      readOnlyHint: true
+      destructiveHint: true
+      idempotentHint: true
+      openWorldHint: false
+  - name: getKubernetesResourceStripped
+    description: >-
+      Proxy GET requests to a specific Portainer environment for Kubernetes resources,
+      and automatically strips verbose metadata fields (such as 'managedFields') from the API response
+      to reduce its size. This tool is intended for retrieving Kubernetes resource
+      information where a leaner payload is desired.
+      This tool can be used with any GET Kubernetes API operation as documented
+      in the Kubernetes API specification (https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.32/).
+      For other methods (POST, PUT, DELETE, HEAD), use the 'kubernetesProxy' tool.
+    parameters:
+      - name: environmentId
+        description: The ID of the environment to proxy Kubernetes GET requests to
+        type: number
+        required: true
+      - name: kubernetesAPIPath
+        description: "The route of the Kubernetes API GET operation to proxy. Must include the leading slash. Example: /api/v1/namespaces/default/pods"
+        type: string
+        required: true
+      - name: queryParams
+        description: "The query parameters to include in the Kubernetes API operation. Must be an array of key-value pairs.
+          Example: [{key: 'watch', value: 'true'}, {key: 'fieldSelector', value: 'metadata.name=my-pod'}]"
+        type: array
+        required: false
+        items:
+          type: object
+          properties:
+            key:
+              type: string
+              description: The key of the query parameter
+            value:
+              type: string
+              description: The value of the query parameter
+      - name: headers
+        description: "The headers to include in the Kubernetes API operation. Must be an array of key-value pairs.
+          Example: [{key: 'Accept', value: 'application/json'}]"
+        type: array
+        required: false
+        items:
+          type: object
+          properties:
+            key:
+              type: string
+              description: The key of the header
+            value:
+              type: string
+              description: The value of the header
+    annotations:
+      title: Get Kubernetes Resource (Stripped)
+      readOnlyHint: true
+      destructiveHint: false
+      idempotentHint: true
+      openWorldHint: false
