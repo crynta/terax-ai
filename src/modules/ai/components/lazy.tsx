@@ -1,3 +1,4 @@
+import type { PresenceState } from "@/lib/usePresence";
 import { lazy, Suspense } from "react";
 import type { AgentRunBridgeProps } from "./AgentRunBridge";
 import type { SelectionAskAiProps } from "./SelectionAskAi";
@@ -32,10 +33,10 @@ export function AgentRunBridge(props: AgentRunBridgeProps) {
   );
 }
 
-export function AiMiniWindow() {
+export function AiMiniWindow({ state }: { state: PresenceState }) {
   return (
     <Suspense fallback={null}>
-      <AiMiniWindowInner />
+      <AiMiniWindowInner state={state} />
     </Suspense>
   );
 }

@@ -2,7 +2,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { AlertCircleIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { AnimatePresence, motion } from "motion/react";
 import { useChatStore, type AgentMeta } from "../store/chatStore";
 
 type Props = {
@@ -19,25 +18,20 @@ export function AgentStatusPill({ onClick }: Props) {
   const { tone, icon, label } = describe(meta);
 
   return (
-    <AnimatePresence mode="wait">
-      <motion.button
-        key={`${meta.status}:${label}`}
-        type="button"
-        onClick={onClick}
-        initial={{ opacity: 0, y: 2 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -2 }}
-        transition={{ duration: 0.12, ease: "easeOut" }}
-        className={cn(
-          "flex h-6 items-center gap-1.5 rounded-md border px-1.5 text-[11px] transition-colors",
-          tone,
-        )}
-        title="Open AI log"
-      >
-        {icon}
-        <span className="max-w-[180px] truncate">{label}</span>
-      </motion.button>
-    </AnimatePresence>
+    <button
+      key={`${meta.status}:${label}`}
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex h-6 items-center gap-1.5 rounded-md border px-1.5 text-[11px] transition-colors",
+        "animate-in fade-in-0 slide-in-from-top-1 duration-150 ease-out",
+        tone,
+      )}
+      title="Open AI log"
+    >
+      {icon}
+      <span className="max-w-[180px] truncate">{label}</span>
+    </button>
   );
 }
 

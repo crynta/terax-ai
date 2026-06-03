@@ -27,7 +27,7 @@ import {
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { motion } from "motion/react";
+import type { PresenceState } from "@/lib/usePresence";
 import { useEffect, useMemo } from "react";
 import { estimateCost, getModel, getModelContextLimit, type ModelId } from "../config";
 import type { ResizeDir } from "../lib/miniWindowGeometry";
@@ -64,7 +64,7 @@ const SUGGESTIONS = [
   },
 ];
 
-export function AiMiniWindow() {
+export function AiMiniWindow({ state }: { state: PresenceState }) {
   const closeMini = useChatStore((s) => s.closeMini);
   const sessionId = useChatStore((s) => s.activeSessionId);
   const openPanel = useChatStore((s) => s.openPanel);
@@ -89,18 +89,18 @@ export function AiMiniWindow() {
   }, [closeMini]);
 
   return (
-    <motion.div
+    <div
       ref={ref}
-      initial={{ opacity: 0, y: 12, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 12, scale: 0.98 }}
-      transition={{ type: "spring", stiffness: 320, damping: 32 }}
+      data-state={state}
       data-ai-mini-window
       className={cn(
         "no-scrollbar-deep fixed z-40 flex flex-col overflow-hidden",
         "rounded-2xl border border-border/60 bg-card text-[12px]",
         "shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_24px_48px_-12px_rgba(0,0,0,0.45),0_8px_16px_-8px_rgba(0,0,0,0.3)]",
         "ring-1 ring-black/5 dark:ring-white/5",
+        "duration-200 ease-out",
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-bottom-2",
+        "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-bottom-2",
       )}
     >
       <div
@@ -125,7 +125,7 @@ export function AiMiniWindow() {
         />
       )}
       <PlanDiffReview />
-    </motion.div>
+    </div>
   );
 }
 
