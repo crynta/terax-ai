@@ -32,7 +32,8 @@ import {
 } from "@hugeicons/core-free-icons";
 import { SLASH_COMMANDS, TERAX_CMD_RE } from "../lib/slashCommands";
 import { Spinner } from "@/components/ui/spinner";
-import { useChatStore, sendMessage } from "../store/chatStore";
+import { useChatStore } from "../store/chatStore";
+import { sendMessage } from "../store/chatRuntime";
 import type {
   ChatStatus,
   DynamicToolUIPart,
