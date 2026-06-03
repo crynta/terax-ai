@@ -245,9 +245,13 @@ fn build_request(
 fn build_safe_client(
     allow_private: bool,
     pinned: &[(String, Vec<IpAddr>)],
+    timeout: Option<Duration>,
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10));
+    if let Some(timeout) = timeout {
+        builder = builder.timeout(timeout);
+    }
     // Pin reqwest's resolver to the IPs we just classified. Without this,
     // reqwest's own DNS lookup could return a different (private/metadata) IP
     // for the same hostname between classify and connect — classic DNS
@@ -299,6 +303,33 @@ fn build_safe_client(
         .map_err(|e| e.to_string())
 }
 
+fn request_timeout(timeout_ms: Option<u64>) -> Option<Duration> {
+    timeout_ms.map(|ms| Duration::from_millis(ms.clamp(1_000, 60_000)))
+}
+
+async fn limited_body(
+    resp: reqwest::Response,
+    max_body_bytes: Option<usize>,
+) -> Result<Vec<u8>, String> {
+    let Some(max) = max_body_bytes else {
+        return resp
+            .bytes()
+            .await
+            .map(|b| b.to_vec())
+            .map_err(|e| e.to_string());
+    };
+    let mut body = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(item) = stream.next().await {
+        let chunk = item.map_err(|e| e.to_string())?;
+        if body.len().saturating_add(chunk.len()) > max {
+            return Err("response body too large".into());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 fn header_map_to_strings(headers: &HeaderMap) -> HashMap<String, String> {
     let mut out = HashMap::with_capacity(headers.len());
     for (k, v) in headers {
@@ -316,6 +347,8 @@ pub async fn ai_http_request(
     headers: Option<HashMap<String, String>>,
     body: Option<Vec<u8>>,
     allow_private_network: Option<bool>,
+    timeout_ms: Option<u64>,
+    max_body_bytes: Option<usize>,
 ) -> Result<HttpResponse, String> {
     let allow_private = allow_private_network.unwrap_or(false);
     let parsed = validate_url(&url, allow_private)?;
@@ -325,14 +358,18 @@ pub async fn ai_http_request(
         .to_string();
     let safe_ips = classify_and_collect_safe_ips(&host, allow_private).await?;
 
-    let client = build_safe_client(allow_private, &[(host, safe_ips)])?;
+    let client = build_safe_client(
+        allow_private,
+        &[(host, safe_ips)],
+        request_timeout(timeout_ms),
+    )?;
 
     let req = build_request(&client, &method, parsed, headers, body)?;
     let resp = req.send().await.map_err(|e| e.to_string())?;
 
     let status = resp.status().as_u16();
     let headers = header_map_to_strings(resp.headers());
-    let body = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
+    let body = limited_body(resp, max_body_bytes).await?;
     Ok(HttpResponse {
         status,
         headers,
@@ -389,7 +426,7 @@ pub async fn ai_http_stream(
         }
     };
 
-    let client = build_safe_client(allow_private, &[(host, safe_ips)])?;
+    let client = build_safe_client(allow_private, &[(host, safe_ips)], None)?;
 
     let req = build_request(&client, &method, parsed, headers, body)?;
     let resp = match req.send().await {
@@ -544,5 +581,22 @@ mod tests {
                 "expected {hop} to be rejected"
             );
         }
+    }
+
+    #[test]
+    fn request_timeout_clamps_to_safe_bounds() {
+        assert_eq!(request_timeout(None), None);
+        assert_eq!(
+            request_timeout(Some(1)).unwrap(),
+            Duration::from_millis(1_000)
+        );
+        assert_eq!(
+            request_timeout(Some(8_000)).unwrap(),
+            Duration::from_millis(8_000)
+        );
+        assert_eq!(
+            request_timeout(Some(120_000)).unwrap(),
+            Duration::from_millis(60_000)
+        );
     }
 }

@@ -82,6 +82,7 @@ import {
   setPiModelId,
   setRecentModelIds,
 } from "@/modules/settings/store";
+import { ModelIdBrowseField } from "../components/ModelIdBrowseField";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
@@ -1195,17 +1196,30 @@ function LocalProviderCard({
         )}
 
         <FieldRow label="Model ID">
-          <Input
-            value={modelDraft}
-            onChange={(e) => setModelDraft(e.target.value)}
-            onBlur={() => {
-              const v = modelDraft.trim();
-              if (v !== modelId) void setModelId(v);
-            }}
-            placeholder={meta.modelPlaceholder}
-            spellCheck={false}
-            className="h-8 font-mono text-[11.5px]"
-          />
+          {noBaseURL ? (
+            <Input
+              value={modelDraft}
+              onChange={(e) => setModelDraft(e.target.value)}
+              onBlur={() => {
+                const v = modelDraft.trim();
+                if (v !== modelId) void setModelId(v);
+              }}
+              placeholder={meta.modelPlaceholder}
+              spellCheck={false}
+              className="h-8 font-mono text-[11.5px]"
+            />
+          ) : (
+            <ModelIdBrowseField
+              value={modelDraft}
+              committedValue={modelId}
+              onChange={setModelDraft}
+              onCommit={setModelId}
+              placeholder={meta.modelPlaceholder}
+              baseURL={urlDraft}
+              provider={provider.id}
+              apiKey={compatKey ?? null}
+            />
+          )}
         </FieldRow>
 
         {setContextLimit ? (
@@ -1432,16 +1446,16 @@ function CustomEndpointCard({
           </FieldRow>
 
           <FieldRow label="Model ID">
-            <Input
+            <ModelIdBrowseField
               value={modelDraft}
-              onChange={(e) => setModelDraft(e.target.value)}
-              onBlur={() => {
-                const v = modelDraft.trim();
-                if (v !== endpoint.modelId) void onUpdate({ modelId: v });
-              }}
+              committedValue={endpoint.modelId}
+              onChange={setModelDraft}
+              onCommit={(modelId) => onUpdate({ modelId })}
               placeholder="gpt-4o, qwen3-max, glm-4.6, …"
-              spellCheck={false}
-              className="h-8 font-mono text-[11.5px]"
+              baseURL={urlDraft}
+              provider="custom-endpoint"
+              endpointId={endpoint.id}
+              apiKey={endpointKey}
             />
           </FieldRow>
 
