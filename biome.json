@@ -5,6 +5,14 @@
     "clientKind": "git",
     "useIgnoreFile": true
   },
+  "files": {
+    "includes": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "!src/components/ui/**",
+      "!src/components/ai-elements/**"
+    ]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -19,6 +27,46 @@
     }
   },
   "linter": {
-    "enabled": false
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "a11y": {
+        "useSemanticElements": "warn",
+        "useKeyWithClickEvents": "warn",
+        "useFocusableInteractive": "warn",
+        "noStaticElementInteractions": "warn",
+        "useAriaPropsSupportedByRole": "warn",
+        "noSvgWithoutTitle": "warn",
+        "noNoninteractiveTabindex": "warn",
+        "noLabelWithoutControl": "warn"
+      },
+      "suspicious": {
+        "noControlCharactersInRegex": "off",
+        "noArrayIndexKey": "warn",
+        "noAssignInExpressions": "warn",
+        "useIterableCallbackReturn": "warn",
+        "noTsIgnore": "error"
+      },
+      "complexity": {
+        "useOptionalChain": "warn",
+        "useIndexOf": "warn",
+        "noBannedTypes": "warn"
+      },
+      "style": {
+        "useImportType": "error",
+        "noNonNullAssertion": "warn",
+        "useTemplate": "warn",
+        "useExportType": "error"
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "warn",
+        "useHookAtTopLevel": "warn",
+        "useParseIntRadix": "warn",
+        "noUnusedVariables": "warn"
+      },
+      "performance": {
+        "noAccumulatingSpread": "warn"
+      }
+    }
   }
 }
