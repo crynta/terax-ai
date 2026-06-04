@@ -9,6 +9,20 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 
+fn env_proxy() -> reqwest::Proxy {
+    reqwest::Proxy::custom(|url| {
+        if url.scheme() == "https" {
+            std::env::var("HTTPS_PROXY")
+                .or_else(|_| std::env::var("https_proxy"))
+                .ok()
+        } else {
+            std::env::var("HTTP_PROXY")
+                .or_else(|_| std::env::var("http_proxy"))
+                .ok()
+        }
+    })
+}
+
 const HEADER_BLOCKLIST: &[&str] = &[
     "host",
     "content-length",
@@ -203,6 +217,7 @@ pub async fn lm_ping(base_url: String) -> Result<u16, String> {
     let safe_ips = classify_and_collect_safe_ips(&host, true).await?;
 
     let mut builder = reqwest::Client::builder()
+        .proxy(env_proxy())
         .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none());
     let addrs: Vec<SocketAddr> = safe_ips.iter().map(|ip| SocketAddr::new(*ip, 0)).collect();
@@ -247,6 +262,7 @@ fn build_safe_client(
     pinned: &[(String, Vec<IpAddr>)],
 ) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
+        .proxy(env_proxy())
         .connect_timeout(Duration::from_secs(10));
     // Pin reqwest's resolver to the IPs we just classified. Without this,
     // reqwest's own DNS lookup could return a different (private/metadata) IP
