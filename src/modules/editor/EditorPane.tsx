@@ -31,6 +31,7 @@ import { useDocument } from "./lib/useDocument";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { getKey } from "@/modules/ai/lib/keyring";
 import { onKeysChanged } from "@/modules/settings/store";
+import { ImageViewer } from "./ImageViewer";
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -282,6 +283,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       );
     }
     if (doc.status === "binary") {
+      const isImage = /\.(png|jpg|jpeg|gif|webp|svg|ico)$/i.test(path);
+      if (isImage) {
+        return <ImageViewer path={path} size={doc.size} />;
+      }
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
           <div className="text-sm text-foreground">Binary file</div>

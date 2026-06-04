@@ -248,6 +248,13 @@ export function AiInputBar() {
                 onKeyUp={updateTrigger}
                 onClick={updateTrigger}
                 onSelect={updateTrigger}
+                onPaste={(e) => {
+                  const filesList = e.clipboardData.files;
+                  if (filesList && filesList.length > 0) {
+                    e.preventDefault();
+                    void c.addFiles(filesList);
+                  }
+                }}
                 onKeyDown={(e) => {
                   if (pickerOpen) {
                     const items = fileTrigger ? filteredFiles : filteredItems;

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
+use tauri::Manager;
 
 use serde::{Deserialize, Serialize};
 
@@ -123,6 +124,7 @@ pub fn bootstrap_registry(registry: &WorkspaceRegistry) {
 
 #[tauri::command]
 pub async fn workspace_authorize(
+    app: tauri::AppHandle,
     path: String,
     workspace: Option<WorkspaceEnv>,
     registry: tauri::State<'_, WorkspaceRegistry>,
@@ -130,6 +132,11 @@ pub async fn workspace_authorize(
     let workspace = WorkspaceEnv::from_option(workspace);
     let resolved = resolve_path(&path, &workspace);
     let canonical = registry.authorize(&resolved).map_err(|e| e.to_string())?;
+    
+    // Dynamically authorize the workspace directory for the WebView asset protocol
+    let asset_scope = app.asset_protocol_scope();
+    let _ = asset_scope.allow_directory(&canonical, true);
+    
     Ok(crate::modules::fs::to_canon(&canonical))
 }
 

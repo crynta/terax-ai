@@ -81,13 +81,13 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     let builder = builder.decorations(false).transparent(true);
 
-    let window = builder.build().map_err(|e| e.to_string())?;
+    let _window = builder.build().map_err(|e| e.to_string())?;
 
     // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the
     // builder-time decorations flag — re-assert it after realize.
     #[cfg(target_os = "linux")]
     {
-        let _ = window.set_decorations(false);
+        let _ = _window.set_decorations(false);
     }
 
     #[cfg(target_os = "macos")]
@@ -115,6 +115,8 @@ pub fn run() {
     let cli_dir = parse_launch_dir();
     workspace::init_launch_cwd(cli_dir.as_deref());
 
+    let setup_cli_dir = cli_dir.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -136,7 +138,22 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .setup(|_app| {
+        .setup(move |_app| {
+            let app_handle = _app.handle();
+            let asset_scope = app_handle.asset_protocol_scope();
+            
+            // Allow home directory by default
+            if let Some(home) = dirs::home_dir() {
+                let _ = asset_scope.allow_directory(&home, true);
+            }
+            
+            // Allow parsed launch directory or current working directory
+            if let Some(ref launch_dir) = setup_cli_dir {
+                let _ = asset_scope.allow_directory(launch_dir, true);
+            } else if let Ok(cwd) = std::env::current_dir() {
+                let _ = asset_scope.allow_directory(&cwd, true);
+            }
+
             // macOS skips parent() for the settings window, so tie its lifecycle
             // to the main window here instead. Other platforms keep parent().
             #[cfg(target_os = "macos")]
