@@ -6,6 +6,7 @@ import {
   CheckmarkCircle02Icon,
   ChevronDown,
   Refresh01Icon,
+  Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -627,8 +628,21 @@ function DefaultModelPicker({
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
 }) {
+  const [modelSearch, setModelSearch] = useState("");
+  const [showUnavailable, setShowUnavailable] = useState(false);
   const m = getModel(defaultModel);
-  const hasAny = configuredIds.size > 0;
+  const modelQuery = modelSearch.trim();
+  const modelFilters = useMemo(
+    () => ({ query: modelQuery, showUnavailable }),
+    [modelQuery, showUnavailable],
+  );
+  const providerGroups = getPiModelProviderGroups(configuredIds, modelFilters);
+  const hiddenModelCount = countHiddenPiProviderModels(
+    configuredIds,
+    modelFilters,
+  );
+  const hasAny = MODELS.length > 0;
+  const hasResults = providerGroups.length > 0;
 
   return (
     <DropdownMenu>
@@ -656,41 +670,107 @@ function DefaultModelPicker({
         side="bottom"
         sideOffset={6}
         collisionPadding={12}
-        className="min-w-70 p-1"
+        className="min-w-80 p-1"
       >
+        <ModelSearchControls
+          search={modelSearch}
+          searchPlaceholder="Search chat models…"
+          showUnavailable={showUnavailable}
+          onSearchChange={setModelSearch}
+          onShowUnavailableChange={setShowUnavailable}
+        />
         <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
-          {PROVIDERS.filter((p) => configuredIds.has(p.id)).map((p) => {
-            const models = MODELS.filter((x) => x.provider === p.id);
-            if (models.length === 0) return null;
-            return (
-              <div key={p.id} className="px-1 pt-1.5 first:pt-1">
-                <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                  <ProviderIcon provider={p.id} size={11} />
-                  <span>{p.label}</span>
-                </div>
-                {models.map((mod) => (
-                  <DropdownMenuItem
-                    key={mod.id}
-                    onSelect={() => void setDefaultModel(mod.id as ModelId)}
-                    className={cn(
-                      "flex items-start gap-2 text-[12px]",
-                      mod.id === defaultModel && "bg-accent/50",
-                    )}
-                  >
-                    <span className="flex flex-1 flex-col">
-                      <span>{mod.label}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {mod.description}
-                      </span>
-                    </span>
-                  </DropdownMenuItem>
-                ))}
+          {!hasResults ? (
+            <DropdownMenuItem disabled className="text-[12px]">
+              {modelQuery
+                ? hiddenModelCount > 0
+                  ? "No matching usable chat models."
+                  : "No matching chat models."
+                : "No usable chat models."}
+            </DropdownMenuItem>
+          ) : null}
+          {providerGroups.map((group) => (
+            <div key={group.provider.id} className="px-1 pt-1.5 first:pt-1">
+              <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                <ProviderIcon provider={group.provider.id} size={11} />
+                <span>{group.provider.label}</span>
+                {group.setupRequired ? (
+                  <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-[9px] font-medium tracking-normal text-muted-foreground normal-case">
+                    Needs setup
+                  </span>
+                ) : null}
               </div>
-            );
-          })}
+              {group.models.map((mod) => (
+                <DropdownMenuItem
+                  key={mod.id}
+                  disabled={group.setupRequired}
+                  onSelect={() => {
+                    if (!group.setupRequired) {
+                      void setDefaultModel(mod.id as ModelId);
+                    }
+                  }}
+                  className={cn(
+                    "flex items-start gap-2 text-[12px]",
+                    mod.id === defaultModel && "bg-accent/50",
+                  )}
+                >
+                  <span className="flex flex-1 flex-col">
+                    <span>{mod.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {group.setupRequired
+                        ? "Needs setup"
+                        : mod.description}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </div>
+          ))}
+          <HiddenModelsFooter count={hiddenModelCount} />
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function ModelSearchControls({
+  search,
+  searchPlaceholder,
+  showUnavailable,
+  onSearchChange,
+  onShowUnavailableChange,
+}: {
+  search: string;
+  searchPlaceholder: string;
+  showUnavailable: boolean;
+  onSearchChange: (value: string) => void;
+  onShowUnavailableChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="border-b border-border/60 px-2 py-2">
+      <div className="flex items-center gap-2 rounded-xl bg-muted/45 px-2 py-1.5">
+        <HugeiconsIcon
+          icon={Search01Icon}
+          size={13}
+          strokeWidth={1.8}
+          className="text-muted-foreground"
+        />
+        <input
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          onKeyDown={(event) => event.stopPropagation()}
+          placeholder={searchPlaceholder}
+          className="min-w-0 flex-1 bg-transparent text-[11.5px] outline-none placeholder:text-muted-foreground/70"
+        />
+      </div>
+      <label className="mt-2 flex items-center justify-between gap-3 px-1 text-[11px] text-muted-foreground">
+        <span>Show unavailable</span>
+        <Switch
+          checked={showUnavailable}
+          onCheckedChange={onShowUnavailableChange}
+        />
+      </label>
+    </div>
   );
 }
 
@@ -705,31 +785,49 @@ function PiModelPicker({
     useState<PiProfileModelsList | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
+  const [showUnavailable, setShowUnavailable] = useState(false);
   const current = resolvePiProviderConfig(prefs);
-  const providerGroups = getPiModelProviderGroups(configuredIds);
-  const hiddenProviderModelCount = countHiddenPiProviderModels(configuredIds);
-  const readyCustomEndpoints = prefs.customEndpoints.filter(
-    (endpoint) => endpoint.baseURL.trim() && endpoint.modelId.trim(),
+  const modelQuery = modelSearch.trim();
+  const modelFilters = useMemo(
+    () => ({ query: modelQuery, showUnavailable }),
+    [modelQuery, showUnavailable],
   );
-  const hiddenCustomEndpointCount =
-    prefs.customEndpoints.length - readyCustomEndpoints.length;
+  const isSearchingModels = modelQuery.length > 0;
+  const providerGroups = getPiModelProviderGroups(configuredIds, modelFilters);
+  const hiddenProviderModelCount = countHiddenPiProviderModels(
+    configuredIds,
+    modelFilters,
+  );
+  const customEndpointOptions = prefs.customEndpoints
+    .filter((endpoint) => customEndpointMatchesSearch(endpoint, modelQuery))
+    .map((endpoint) => ({ endpoint, ready: isCustomEndpointReady(endpoint) }));
+  const visibleCustomEndpointOptions = showUnavailable
+    ? customEndpointOptions
+    : customEndpointOptions.filter((option) => option.ready);
+  const hiddenCustomEndpointCount = showUnavailable
+    ? 0
+    : customEndpointOptions.filter((option) => !option.ready).length;
   const hiddenTeraxModelCount =
     hiddenProviderModelCount + hiddenCustomEndpointCount;
   const profileGroups = useMemo(
-    () => getPiProfileModelGroups(profileCatalog),
-    [profileCatalog],
+    () => getPiProfileModelGroups(profileCatalog, modelFilters),
+    [modelFilters, profileCatalog],
   );
-  const hiddenProfileModelCount = countHiddenPiProfileModels(profileCatalog);
+  const hiddenProfileModelCount = countHiddenPiProfileModels(
+    profileCatalog,
+    modelFilters,
+  );
   const hasAny =
     prefs.piAuthMode === "profile"
       ? profileLoading ||
-        profileGroups.length > 0 ||
-        hiddenProfileModelCount > 0 ||
-        !!profileError ||
-        !!profileCatalog?.loadError
-      : providerGroups.length > 0 ||
-        readyCustomEndpoints.length > 0 ||
-        hiddenTeraxModelCount > 0;
+        profileCatalog === null ||
+        (profileCatalog.models.length > 0 ||
+          !!profileError ||
+          !!profileCatalog.loadError)
+      : MODELS.length > 0 || prefs.customEndpoints.length > 0;
+  const hasTeraxResults =
+    providerGroups.length > 0 || visibleCustomEndpointOptions.length > 0;
   const currentProvider = current.provider ?? "openai";
 
   const refreshProfileCatalog = useCallback(async () => {
@@ -787,8 +885,15 @@ function PiModelPicker({
         side="bottom"
         sideOffset={6}
         collisionPadding={12}
-        className="min-w-70 p-1"
+        className="min-w-80 p-1"
       >
+        <ModelSearchControls
+          search={modelSearch}
+          searchPlaceholder="Search Pi models…"
+          showUnavailable={showUnavailable}
+          onSearchChange={setModelSearch}
+          onShowUnavailableChange={setShowUnavailable}
+        />
         <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
           {prefs.piAuthMode === "profile" ? (
             <>
@@ -848,7 +953,11 @@ function PiModelPicker({
                 profileCatalog.models.length > 0 &&
                 profileGroups.length === 0 ? (
                   <DropdownMenuItem disabled className="text-[12px]">
-                    No usable Pi profile models.
+                    {isSearchingModels
+                      ? hiddenProfileModelCount > 0
+                        ? "No matching usable Pi profile models."
+                        : "No matching Pi profile models."
+                      : "No usable Pi profile models."}
                   </DropdownMenuItem>
                 ) : null}
               </div>
@@ -863,7 +972,10 @@ function PiModelPicker({
                     return (
                       <DropdownMenuItem
                         key={id}
-                        onSelect={() => void setPiModelId(id)}
+                        disabled={!model.available}
+                        onSelect={() => {
+                          if (model.available) void setPiModelId(id);
+                        }}
                         className={cn(
                           "flex items-start gap-2 text-[12px]",
                           id === prefs.piModelId && "bg-accent/50",
@@ -872,7 +984,9 @@ function PiModelPicker({
                         <span className="flex flex-1 flex-col">
                           <span>{model.label}</span>
                           <span className="text-[10px] text-muted-foreground">
-                            {model.providerLabel}
+                            {model.available
+                              ? model.providerLabel
+                              : "Needs auth in Pi profile"}
                           </span>
                         </span>
                       </DropdownMenuItem>
@@ -884,10 +998,13 @@ function PiModelPicker({
             </>
           ) : (
             <>
-              {providerGroups.length === 0 &&
-              readyCustomEndpoints.length === 0 ? (
+              {!hasTeraxResults ? (
                 <DropdownMenuItem disabled className="text-[12px]">
-                  No usable Terax models.
+                  {isSearchingModels
+                    ? hiddenTeraxModelCount > 0
+                      ? "No matching usable Terax models."
+                      : "No matching Terax models."
+                    : "No usable Terax models."}
                 </DropdownMenuItem>
               ) : null}
               {providerGroups.map((group) => (
@@ -904,7 +1021,10 @@ function PiModelPicker({
                   {group.models.map((model) => (
                     <DropdownMenuItem
                       key={model.id}
-                      onSelect={() => void setPiModelId(model.id)}
+                      disabled={group.setupRequired}
+                      onSelect={() => {
+                        if (!group.setupRequired) void setPiModelId(model.id);
+                      }}
                       className={cn(
                         "flex items-start gap-2 text-[12px]",
                         model.id === prefs.piModelId && "bg-accent/50",
@@ -913,25 +1033,30 @@ function PiModelPicker({
                       <span className="flex flex-1 flex-col">
                         <span>{model.label}</span>
                         <span className="text-[10px] text-muted-foreground">
-                          {model.description}
+                          {group.setupRequired
+                            ? "Needs setup"
+                            : model.description}
                         </span>
                       </span>
                     </DropdownMenuItem>
                   ))}
                 </div>
               ))}
-              {readyCustomEndpoints.length > 0 ? (
+              {visibleCustomEndpointOptions.length > 0 ? (
                 <div className="px-1 pt-1.5 first:pt-1">
                   <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                     <ProviderIcon provider="openai-compatible" size={11} />
                     <span>Custom endpoints</span>
                   </div>
-                  {readyCustomEndpoints.map((endpoint) => {
+                  {visibleCustomEndpointOptions.map(({ endpoint, ready }) => {
                     const id = compatModelIdForEndpoint(endpoint.id);
                     return (
                       <DropdownMenuItem
                         key={endpoint.id}
-                        onSelect={() => void setPiModelId(id)}
+                        disabled={!ready}
+                        onSelect={() => {
+                          if (ready) void setPiModelId(id);
+                        }}
                         className={cn(
                           "flex items-start gap-2 text-[12px]",
                           id === prefs.piModelId && "bg-accent/50",
@@ -944,7 +1069,9 @@ function PiModelPicker({
                               "Custom endpoint"}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            {endpoint.baseURL}
+                            {ready
+                              ? endpoint.baseURL
+                              : "Add a base URL and model id"}
                           </span>
                         </span>
                       </DropdownMenuItem>
@@ -958,6 +1085,21 @@ function PiModelPicker({
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function isCustomEndpointReady(endpoint: CustomEndpoint): boolean {
+  return !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
+}
+
+function customEndpointMatchesSearch(
+  endpoint: CustomEndpoint,
+  query: string,
+): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return [endpoint.name, endpoint.baseURL, endpoint.modelId].some((value) =>
+    value.toLowerCase().includes(normalized),
   );
 }
 

@@ -61,6 +61,40 @@ describe("getPiProfileModelGroups", () => {
     expect(JSON.stringify(groups)).not.toContain("sk-");
   });
 
+  it("can include unavailable Pi profile models when requested", () => {
+    const groups = getPiProfileModelGroups(profileCatalog, {
+      showUnavailable: true,
+    });
+
+    expect(groups.map((group) => group.provider)).toEqual([
+      "openai-codex",
+      "anthropic",
+    ]);
+    expect(
+      groups.find((group) => group.provider === "anthropic")?.models,
+    ).toEqual([
+      expect.objectContaining({ id: "claude-sonnet-4-6", available: false }),
+    ]);
+    expect(
+      countHiddenPiProfileModels(profileCatalog, { showUnavailable: true }),
+    ).toBe(0);
+  });
+
+  it("searches Pi profile models before grouping and hidden counts", () => {
+    const groups = getPiProfileModelGroups(profileCatalog, { query: "mini" });
+
+    expect(groups).toEqual([
+      {
+        provider: "openai-codex",
+        providerLabel: "OpenAI Codex",
+        models: [expect.objectContaining({ id: "gpt-5.4-codex-mini" })],
+      },
+    ]);
+    expect(countHiddenPiProfileModels(profileCatalog, { query: "claude" })).toBe(
+      1,
+    );
+  });
+
   it("counts unavailable Pi profile models hidden from the picker", () => {
     expect(countHiddenPiProfileModels(profileCatalog)).toBe(1);
   });
@@ -72,6 +106,38 @@ describe("getPiModelProviderGroups", () => {
 
     expect(groups.map((group) => group.provider.id)).toEqual(["ollama"]);
     expect(groups.every((group) => group.setupRequired === false)).toBe(true);
+  });
+
+  it("can include unavailable Terax providers when requested", () => {
+    const groups = getPiModelProviderGroups(new Set<ProviderId>(["ollama"]), {
+      query: "claude",
+      showUnavailable: true,
+    });
+    const anthropic = groups.find((group) => group.provider.id === "anthropic");
+
+    expect(anthropic).toMatchObject({ setupRequired: true });
+    expect(anthropic?.models.length).toBeGreaterThan(0);
+    expect(
+      countHiddenPiProviderModels(new Set<ProviderId>(["ollama"]), {
+        query: "claude",
+        showUnavailable: true,
+      }),
+    ).toBe(0);
+  });
+
+  it("searches Terax models before grouping and hidden counts", () => {
+    const groups = getPiModelProviderGroups(new Set<ProviderId>(["openai"]), {
+      query: "mini",
+    });
+    const openai = groups.find((group) => group.provider.id === "openai");
+
+    expect(groups.map((group) => group.provider.id)).toEqual(["openai"]);
+    expect(openai?.models.map((model) => model.id)).toContain("gpt-5.4-mini");
+    expect(
+      countHiddenPiProviderModels(new Set<ProviderId>(["openai"]), {
+        query: "claude",
+      }),
+    ).toBeGreaterThan(0);
   });
 
   it("counts models hidden because their Terax provider is not configured", () => {
