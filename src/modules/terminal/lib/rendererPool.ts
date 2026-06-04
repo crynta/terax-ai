@@ -227,6 +227,18 @@ function createSlot(): Slot {
       event.preventDefault();
       return false;
     }
+    // Linux IBus: keypress missing for non-ASCII, skip keydown to avoid
+    // double-send from the subsequent input event.
+    if (
+      event.type === "keydown" &&
+      event.key.length === 1 &&
+      event.key.charCodeAt(0) > 127 &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey
+    ) {
+      return false;
+    }
     return true;
   });
 
