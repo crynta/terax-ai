@@ -13,6 +13,7 @@ import { openPty, type PtySession } from "./pty-bridge";
 import {
   acquireSlot,
   applyBackgroundActive,
+  applyCursorBlink,
   applyFontFamily,
   applyFontSize,
   applyLetterSpacing,
@@ -20,8 +21,14 @@ import {
   applyScrollback,
   applyWebglPreference,
   configureRendererPool,
+  disposeLeafSlot,
   focusSlot,
   getSlotForLeaf,
+  isLeafAltScreen,
+  parkLeafSlot,
+  poolSize,
+  poolSlotStats,
+  refreshLeafSlot,
   releaseSlot,
   setSlotFocused,
 } from "./rendererPool";
@@ -378,7 +385,8 @@ export function disposeSession(leafId: number): void {
   const s = sessions.get(leafId);
   if (!s) return;
   s.disposed = true;
-  unbindLeafFromSlot(leafId, s);
+  disposeLeafSlot(leafId);
+  s.hasSlot = false;
   s.snapshot = null;
   s.pty?.close();
   s.pty = null;
@@ -464,6 +472,11 @@ export function useTerminalSession({
     applyWebglPreference(webglPref);
   }, [webglPref]);
 
+  const cursorBlink = usePreferencesStore((p) => p.terminalCursorBlink);
+  useEffect(() => {
+    applyCursorBlink(cursorBlink);
+  }, [cursorBlink]);
+
   const bgActive = usePreferencesStore(
     (p) => p.backgroundKind === "image" && !!p.backgroundImageId,
   );
@@ -478,10 +491,12 @@ export function useTerminalSession({
     s.focusedNow = focused;
     if (visible) {
       if (s.container && !s.hasSlot) bindLeafToSlot(leafId, s);
+      else if (s.hasSlot) refreshLeafSlot(leafId);
       setSlotFocused(leafId, focused);
       if (focused) focusSlot(leafId);
     } else if (s.hasSlot) {
-      unbindLeafFromSlot(leafId, s);
+      if (isLeafAltScreen(leafId)) parkLeafSlot(leafId);
+      else unbindLeafFromSlot(leafId, s);
     }
   }, [leafId, visible, focused]);
 
@@ -539,4 +554,41 @@ const ANSI_RE =
 
 function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, "");
+}
+
+export function terminalDebugStats() {
+  const liveSessions = [...sessions.entries()].map(([leafId, s]) => ({
+    leafId,
+    pty: !!s.pty,
+    visible: s.visibleNow,
+    focused: s.focusedNow,
+    hasSlot: s.hasSlot,
+    ringBytes: s.dormantRing.byteLength(),
+    snapshotLen: s.snapshot?.length ?? 0,
+    shellExited: s.shellExited,
+  }));
+  const ringTotal = liveSessions.reduce((n, s) => n + s.ringBytes, 0);
+  const snapshotTotal = liveSessions.reduce((n, s) => n + s.snapshotLen, 0);
+  const slots = poolSlotStats();
+  return {
+    poolSize: poolSize(),
+    webglContexts: slots.filter((s) => s.webgl).length,
+    idleSlots: slots.filter((s) => s.leafId === null).length,
+    slots,
+    sessionCount: liveSessions.length,
+    sessions: liveSessions,
+    ringBytesTotal: ringTotal,
+    snapshotCharsTotal: snapshotTotal,
+    domCanvases: document.querySelectorAll("canvas").length,
+    domScreens: document.querySelectorAll(".xterm-screen").length,
+    domRows: document.querySelectorAll(".xterm-rows > div").length,
+    jsHeapBytes:
+      (performance as unknown as { memory?: { usedJSHeapSize: number } })
+        .memory?.usedJSHeapSize ?? null,
+  };
+}
+
+if (import.meta.env?.DEV && typeof window !== "undefined") {
+  (window as unknown as { __teraxTerm?: unknown }).__teraxTerm =
+    terminalDebugStats;
 }
