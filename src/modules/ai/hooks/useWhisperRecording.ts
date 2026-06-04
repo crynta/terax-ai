@@ -1,5 +1,3 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import { experimental_transcribe as transcribe } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useChatStore } from "../store/chatStore";
 
@@ -19,6 +17,8 @@ function pickMime(): string | undefined {
 }
 
 async function transcribeBlob(blob: Blob, apiKey: string): Promise<string> {
+  const [{ createOpenAI }, { experimental_transcribe: transcribe }] =
+    await Promise.all([import("@ai-sdk/openai"), import("ai")]);
   const openai = createOpenAI({ apiKey });
   const buf = new Uint8Array(await blob.arrayBuffer());
   const { text } = await transcribe({

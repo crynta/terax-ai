@@ -41,7 +41,6 @@ import {
   Tick01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 import {
   compatModelIdForEndpoint,
@@ -79,20 +78,19 @@ const PROVIDER_ICON = {
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
   return (
-    <motion.button
-      initial={{ y: -15 }}
-      animate={{ y: 0 }}
+    <button
       type="button"
       onClick={onOpen}
       className={cn(
         "flex h-6 items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs",
         "text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground",
+        "animate-in slide-in-from-top-2 duration-200 ease-out",
       )}
       title="Open AI agent"
     >
       <span>Open AI agent</span>
       <Kbd className="h-4 min-w-4 px-1">{fmtShortcut(MOD_KEY, "I")}</Kbd>
-    </motion.button>
+    </button>
   );
 }
 
