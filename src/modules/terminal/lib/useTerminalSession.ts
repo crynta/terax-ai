@@ -10,6 +10,7 @@ import {
   registerPromptTracker,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
+import { shouldReleaseHiddenRenderer } from "./hibernationPolicy";
 import {
   acquireSlot,
   applyBackgroundActive,
@@ -471,6 +472,9 @@ export function useTerminalSession({
     applyBackgroundActive(bgActive);
   }, [bgActive]);
 
+  const hibernationEnabled = usePreferencesStore(
+    (p) => p.terminalRendererHibernationEnabled,
+  );
   useEffect(() => {
     const s = sessions.get(leafId);
     if (!s) return;
@@ -480,10 +484,19 @@ export function useTerminalSession({
       if (s.container && !s.hasSlot) bindLeafToSlot(leafId, s);
       setSlotFocused(leafId, focused);
       if (focused) focusSlot(leafId);
-    } else if (s.hasSlot) {
+    } else if (
+      shouldReleaseHiddenRenderer({
+        visible,
+        hasSlot: s.hasSlot,
+        hibernationEnabled,
+      })
+    ) {
       unbindLeafFromSlot(leafId, s);
+    } else {
+      setSlotFocused(leafId, false);
+      getSlotForLeaf(leafId)?.term.blur();
     }
-  }, [leafId, visible, focused]);
+  }, [leafId, visible, focused, hibernationEnabled]);
 
   const write = useCallback(
     (data: string) => sessions.get(leafId)?.pty?.write(data),
