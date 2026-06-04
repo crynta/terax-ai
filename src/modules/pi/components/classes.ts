@@ -6,7 +6,7 @@ export function statusToneDotClass(tone: PiStatusView["tone"]): string {
     case "success":
       return "bg-foreground/75";
     case "progress":
-      return "bg-primary/70";
+      return "bg-muted-foreground/60";
     case "error":
       return "bg-destructive";
     case "muted":
@@ -17,7 +17,7 @@ export function statusToneDotClass(tone: PiStatusView["tone"]): string {
 export function sessionStatusDotClass(status: PiSessionStatus): string {
   switch (status) {
     case "running":
-      return "bg-primary/70";
+      return "bg-foreground/70";
     case "idle":
       return "bg-foreground/70";
     case "stopped":

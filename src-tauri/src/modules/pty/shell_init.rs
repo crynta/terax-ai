@@ -179,7 +179,7 @@ mod unix {
                         log::warn!("zsh shell integration disabled: {e}");
                     }
                 }
-                // Login shell so /etc/zprofile runs path_helper on macOS — without
+                // Login shell so /etc/zprofile runs path_helper on macOS - without
                 // this, GUI-launched apps get a minimal PATH missing Homebrew.
                 cmd.arg("-l");
             }
@@ -300,7 +300,9 @@ mod windows {
             zdotdir: String,
             user_zdotdir: Option<String>,
         },
-        Bash { rcfile: String },
+        Bash {
+            rcfile: String,
+        },
         Fish,
         None,
     }

@@ -44,7 +44,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         let _ = window.show();
         let _ = window.set_focus();
         if let Some(t) = tab.as_deref().filter(|s| !s.is_empty()) {
-            // emit() serializes via JSON — no string-escape footgun, unlike
+            // emit() serializes via JSON - no string-escape footgun, unlike
             // eval() with format!(). Frontend listens via Tauri event API.
             let _ = window.emit("terax:settings-tab", t);
         }
@@ -62,7 +62,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         .always_on_top(true);
 
     // Tie lifecycle to the main window so settings minimizes/closes with it.
-    // macOS: skip parent() — child + always_on_top leaves the settings webview
+    // macOS: skip parent() - child + always_on_top leaves the settings webview
     // behind the main window except while the parent is being dragged (#33).
     #[cfg(not(target_os = "macos"))]
     let builder = if let Some(main) = app.get_webview_window("main") {
@@ -74,6 +74,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     #[cfg(target_os = "macos")]
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .traffic_light_position(tauri::LogicalPosition::new(14.0, 24.0))
         .hidden_title(true);
 
     // On Linux/Windows we render our own titlebar, so drop native chrome
@@ -84,7 +85,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     let window = builder.build().map_err(|e| e.to_string())?;
 
     // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the
-    // builder-time decorations flag — re-assert it after realize.
+    // builder-time decorations flag - re-assert it after realize.
     #[cfg(target_os = "linux")]
     {
         let _ = window.set_decorations(false);
@@ -118,7 +119,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        // Skip restoring VISIBLE — frontend calls window.show() after first
+        // Skip restoring VISIBLE - frontend calls window.show() after first
         // paint so the user never sees a transparent window-shadow flash on
         // Windows/Linux.
         .plugin(
@@ -176,6 +177,7 @@ pub fn run() {
             pty::pty_close,
             pty::pty_close_all,
             pty::pty_has_foreground_process,
+            pi::pi_local_agents_status,
             pi::pi_status,
             pi::pi_start,
             pi::pi_stop,
@@ -185,7 +187,11 @@ pub fn run() {
             pi::pi_sessions_history,
             pi::pi_sessions_list,
             pi::pi_session_create,
+            pi::pi_session_resume,
             pi::pi_session_send,
+            pi::pi_session_tool_respond,
+            pi::pi_session_rename,
+            pi::pi_session_delete,
             pi::pi_session_stop,
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
@@ -237,6 +243,12 @@ pub fn run() {
             open_settings_window,
             agent::agent_enable_claude_hooks,
             agent::agent_claude_hooks_status,
+            agent::agent_enable_codex_hooks,
+            agent::agent_codex_hooks_status,
+            agent::agent_enable_gemini_hooks,
+            agent::agent_gemini_hooks_status,
+            agent::agent_enable_antigravity_hooks,
+            agent::agent_antigravity_hooks_status,
             secrets::secrets_get,
             secrets::secrets_set,
             secrets::secrets_delete,

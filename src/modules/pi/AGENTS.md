@@ -17,8 +17,8 @@ Pi must feel like a native Terax surface, not an imported Howcode UI.
 - Use semantic Tailwind tokens only: `bg-card`, `bg-background`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-muted`, `text-destructive`, etc.
 - Keep the dense desktop scale used by Terax panels: mostly `text-[10px]` through `text-[12.5px]`, compact `h-5`/`h-6`/`h-7` controls, `gap-1` through `gap-2.5`, and `px-2`/`px-3` panel padding.
 - Use Inter through the global font setup; never set a local font family in Pi UI.
-- Use Hugeicons only (`@hugeicons/core-free-icons` + `@hugeicons/react`). Typical panel icons are 12–14px with stroke widths around 1.75–1.9; active rail icons may use stroke width 2.
-- Match existing panel chrome: `bg-card/80 backdrop-blur`, subtle borders like `border-border/40`–`border-border/60`, muted cards like `bg-background/95` or `bg-card/60`, and rounded `md`/`lg`/`2xl` according to nearby Terax surfaces.
+- Use Hugeicons only (`@hugeicons/core-free-icons` + `@hugeicons/react`). Typical panel icons are 12 to 14px with stroke widths around 1.75 to 1.9; active rail icons may use stroke width 2.
+- Match existing panel chrome: `bg-card/80 backdrop-blur`, subtle borders like `border-border/40` to `border-border/60`, muted cards like `bg-background/95` or `bg-card/60`, and rounded `md`/`lg`/`2xl` according to nearby Terax surfaces.
 - Prefer subtle foreground-alpha hovers (`hover:bg-foreground/[0.04]`) or existing Button variants over saturated custom states.
 
 ## Component rules
@@ -33,7 +33,7 @@ Pi must feel like a native Terax surface, not an imported Howcode UI.
 - The Pi sidebar header should mirror Source Control/File Explorer density and hierarchy.
 - Session lists should look like Terax list rows/tree rows: compact height, subtle selected state, tiny status dot, muted secondary metadata.
 - Transcript rendering should follow `src/components/ai-elements/message.tsx`: user messages as muted rounded bubbles, assistant output as full-width readable text, errors as destructive callouts, system/runtime events as compact muted rows.
-- The composer should follow `AiInputBar` and Source Control textarea patterns: compact top border, transparent/card background, `text-[12px]`–`text-[13px]`, `leading-relaxed`/`leading-snug`, existing `Button` sizes.
+- The composer should follow `AiInputBar` and Source Control textarea patterns: compact top border, transparent/card background, `text-[12px]` to `text-[13px]`, `leading-relaxed`/`leading-snug`, existing `Button` sizes.
 - Context preview chips/cards must be non-secret, compact, truncating, and token-based; no bright provider-brand colors.
 - Provider/settings UI must live with existing Settings → Models patterns and keyring infrastructure, not a separate Pi-only settings visual system.
 - Diagnostics should be actionable but quiet: compact status rows, `Badge` for counts/modes, `Alert` only for real errors or missing required setup.

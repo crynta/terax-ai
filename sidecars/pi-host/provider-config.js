@@ -4,10 +4,17 @@ import { SessionProtocolError } from "./session-errors.js";
 const INVALID_PARAMS = -32602;
 const MIN_CONTEXT_LIMIT = 1_000;
 const DEFAULT_CONTEXT_WINDOW = 128_000;
-const DEFAULT_MAX_TOKENS = 16_384;
 const LOCAL_RUNTIME_API_KEY = "terax-local-runtime-key";
 
 const AUTH_MODES = new Set(["terax", "profile"]);
+const THINKING_LEVELS = new Set([
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+]);
 
 const PROVIDERS = new Set([
   "openai",
@@ -86,6 +93,44 @@ function optionalContextLimit(raw) {
   return Math.round(value);
 }
 
+function optionalMaxTokens(raw) {
+  const value = raw.maxTokens;
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!Number.isFinite(value) || value < 1) {
+    throw protocolError("providerConfig.maxTokens must be a positive number");
+  }
+  const maxTokens = Math.round(value);
+  const contextLimit = optionalContextLimit(raw);
+  if (contextLimit !== undefined && maxTokens > contextLimit) {
+    throw protocolError("providerConfig.maxTokens must not exceed contextLimit");
+  }
+  return maxTokens;
+}
+
+function optionalReasoning(raw) {
+  const value = raw.reasoning;
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== "boolean") {
+    throw protocolError("providerConfig.reasoning must be a boolean");
+  }
+  return value;
+}
+
+function optionalThinkingLevel(raw) {
+  const value = optionalRuntimeString(raw, "thinkingLevel");
+  if (value === undefined) return undefined;
+  if (!THINKING_LEVELS.has(value)) {
+    throw protocolError(
+      `providerConfig.thinkingLevel is not supported: ${value}`,
+    );
+  }
+  return value;
+}
+
 export function normalizeRuntimeProviderConfig(rawConfig) {
   const raw = assertPlainObject(rawConfig, "providerConfig");
   if (raw === undefined) {
@@ -115,7 +160,10 @@ export function normalizeRuntimeProviderConfig(rawConfig) {
     ["sourceModelId", optionalRuntimeString(raw, "sourceModelId")],
     ["baseUrl", optionalRuntimeString(raw, "baseUrl")],
     ["contextLimit", optionalContextLimit(raw)],
+    ["maxTokens", optionalMaxTokens(raw)],
+    ["reasoning", optionalReasoning(raw)],
     ["customEndpointId", optionalRuntimeString(raw, "customEndpointId")],
+    ["thinkingLevel", optionalThinkingLevel(raw)],
     ["profileAgentDir", optionalRuntimeString(raw, "profileAgentDir")],
     ["apiKey", optionalRuntimeString(raw, "apiKey")],
   ]) {
@@ -154,6 +202,8 @@ function runtimeProviderConfig(config) {
     );
   }
 
+  const contextWindow = config.contextLimit ?? DEFAULT_CONTEXT_WINDOW;
+  const reasoning = config.reasoning === true;
   return {
     baseUrl,
     apiKey: runtimeApiKey(config),
@@ -166,17 +216,14 @@ function runtimeProviderConfig(config) {
       {
         id: config.modelId,
         name: config.modelId,
-        reasoning: false,
+        reasoning,
         input: ["text"],
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: config.contextLimit ?? DEFAULT_CONTEXT_WINDOW,
-        maxTokens: Math.min(
-          config.contextLimit ?? DEFAULT_CONTEXT_WINDOW,
-          DEFAULT_MAX_TOKENS,
-        ),
+        contextWindow,
+        maxTokens: config.maxTokens ?? contextWindow,
         compat: {
           supportsDeveloperRole: false,
-          supportsReasoningEffort: false,
+          supportsReasoningEffort: reasoning,
         },
       },
     ],
@@ -203,7 +250,9 @@ function createProfileProviderOptions(pi, config, options) {
     );
   }
   return {
+    agentDir: config.profileAgentDir,
     model,
+    ...(config.thinkingLevel ? { thinkingLevel: config.thinkingLevel } : {}),
     authStorage,
     modelRegistry,
     settingsManager: pi.SettingsManager.create(
@@ -250,5 +299,10 @@ export async function createRuntimeProviderOptions(
     );
   }
 
-  return { model, authStorage, modelRegistry };
+  return {
+    model,
+    ...(config.thinkingLevel ? { thinkingLevel: config.thinkingLevel } : {}),
+    authStorage,
+    modelRegistry,
+  };
 }

@@ -58,6 +58,7 @@ try {
   for (const testFile of [
     "host.test.js",
     "model-catalog.test.js",
+    "protocol-schema.test.js",
     "protocol.test.js",
     "sessions.test.js",
     "package.test.js",
@@ -67,6 +68,7 @@ try {
 
   await assertBundleFile("host.js");
   await assertBundleFile("model-catalog.js");
+  await assertBundleFile("protocol-schema.js");
   await assertBundleFile("protocol.js");
   await assertBundleFile("provider-config.js");
   await assertBundleFile("session-errors.js");

@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline";
+import { setNativeToolExecutor } from "./native-tools.js";
 import { handleJsonRpcLine } from "./protocol.js";
 import { setSessionEventSink } from "./sessions.js";
 
@@ -30,6 +31,8 @@ const lines = createInterface({
 });
 
 let protocolWriteQueue = Promise.resolve();
+let nextHostRequestId = 1;
+const pendingHostRequests = new Map();
 
 function writeProtocolEnvelope(envelope) {
   return new Promise((resolve, reject) => {
@@ -54,6 +57,61 @@ function enqueueProtocolEnvelope(envelope) {
   return protocolWriteQueue;
 }
 
+function sendHostRequest(method, params, signal) {
+  const id = nextHostRequestId;
+  nextHostRequestId += 1;
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      pendingHostRequests.delete(id);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(new Error("Operation aborted"));
+    };
+    if (signal?.aborted) {
+      reject(new Error("Operation aborted"));
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    pendingHostRequests.set(id, { cleanup, reject, resolve });
+    void enqueueProtocolEnvelope({ jsonrpc: "2.0", id, method, params });
+  });
+}
+
+function tryResolveHostResponse(line) {
+  let envelope;
+  try {
+    envelope = JSON.parse(line);
+  } catch {
+    return false;
+  }
+  if (
+    !envelope ||
+    envelope.jsonrpc !== "2.0" ||
+    typeof envelope.id !== "number" ||
+    envelope.method !== undefined ||
+    !pendingHostRequests.has(envelope.id)
+  ) {
+    return false;
+  }
+  const pending = pendingHostRequests.get(envelope.id);
+  pending.cleanup();
+  if (envelope.error) {
+    const message = envelope.error.message ?? "Terax native tool request failed";
+    const error = new Error(message);
+    error.data = envelope.error.data;
+    pending.reject(error);
+  } else {
+    pending.resolve(envelope.result);
+  }
+  return true;
+}
+
+setNativeToolExecutor((request, signal) =>
+  sendHostRequest("nativeTools.execute", request, signal),
+);
+
 setSessionEventSink((event) => {
   void enqueueProtocolEnvelope({
     jsonrpc: "2.0",
@@ -64,6 +122,10 @@ setSessionEventSink((event) => {
 
 for await (const line of lines) {
   if (line.trim() === "") {
+    continue;
+  }
+
+  if (tryResolveHostResponse(line)) {
     continue;
   }
 

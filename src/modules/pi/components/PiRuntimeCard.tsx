@@ -8,8 +8,11 @@ import { cn } from "@/lib/utils";
 import { statusToneDotClass } from "@/modules/pi/components/classes";
 import type { PiRuntimeState, PiStatusView } from "@/modules/pi/lib/status";
 
+type PiRuntimeAction = "starting" | "stopping" | "restarting" | null;
+
 type PiRuntimeCardProps = {
   isBusy: boolean;
+  runtimeAction?: PiRuntimeAction;
   runtimeState: PiRuntimeState;
   status: PiStatusView;
   onStart: () => void;
@@ -17,17 +20,39 @@ type PiRuntimeCardProps = {
   onRestart: () => void;
 };
 
+function runtimeActionLabel(action: PiRuntimeAction): string | null {
+  switch (action) {
+    case "starting":
+      return "Starting Pi runtime…";
+    case "stopping":
+      return "Stopping Pi runtime…";
+    case "restarting":
+      return "Restarting Pi runtime…";
+    case null:
+    case undefined:
+      return null;
+  }
+}
+
 export function PiRuntimeCard({
   isBusy,
+  runtimeAction = null,
   runtimeState,
   status,
   onStart,
   onStop,
   onRestart,
 }: PiRuntimeCardProps) {
+  const actionLabel = runtimeActionLabel(runtimeAction);
+  const restartPrimary = runtimeState.phase === "error";
+  const showSpinner =
+    runtimeAction !== null || runtimeState.phase === "starting";
   const detail =
+    actionLabel ??
     runtimeState.detail ??
-    "Connect the Pi runtime to show active sessions in this sidebar.";
+    (runtimeState.phase === "error"
+      ? "The Pi sidecar stopped unexpectedly."
+      : "Connect the Pi runtime to show active sessions in this sidebar.");
 
   return (
     <div className="shrink-0 border-b border-border/40 bg-gradient-to-b from-card/65 to-card/30 px-2.5 py-2.5">
@@ -46,11 +71,9 @@ export function PiRuntimeCard({
           </div>
           <Badge
             variant="outline"
-            className="ml-auto h-5 gap-1 border-border/55 px-1.5 text-[10px] text-muted-foreground"
+            className="ml-auto h-5 gap-1 rounded-md border-border/55 px-1.5 text-[10px] text-muted-foreground"
           >
-            {isBusy || runtimeState.phase === "starting" ? (
-              <Spinner className="size-2.5" />
-            ) : null}
+            {showSpinner ? <Spinner className="size-2.5" /> : null}
             <span
               aria-hidden
               className={cn(
@@ -70,6 +93,10 @@ export function PiRuntimeCard({
             <AlertTitle className="text-[11px]">Pi needs attention</AlertTitle>
             <AlertDescription className="text-[10.5px] leading-snug">
               {detail}
+              <span className="mt-1 block">
+                Restart Pi to launch a fresh sidecar. If this keeps failing,
+                refresh diagnostics or check Settings &gt; Models.
+              </span>
             </AlertDescription>
           </Alert>
         ) : (
@@ -81,29 +108,34 @@ export function PiRuntimeCard({
         <div className="grid grid-cols-3 gap-1.5">
           <Button
             size="xs"
-            className="h-6"
+            variant={restartPrimary ? "outline" : "default"}
+            className="h-6 rounded-md text-[10.5px]"
+            aria-label="Start Pi runtime"
             disabled={!status.canStart || isBusy}
             onClick={onStart}
           >
-            Start
+            {runtimeAction === "starting" ? "Starting…" : "Start"}
           </Button>
           <Button
             size="xs"
             variant="outline"
-            className="h-6"
+            className="h-6 rounded-md text-[10.5px]"
+            aria-label="Stop Pi runtime"
             disabled={!status.canStop || isBusy}
             onClick={onStop}
           >
-            Stop
+            {runtimeAction === "stopping" ? "Stopping…" : "Stop"}
           </Button>
           <Button
             size="xs"
-            variant="outline"
-            className="h-6"
+            variant={restartPrimary ? "default" : "outline"}
+            className="h-6 rounded-md text-[10.5px]"
+            aria-label="Restart Pi runtime"
+            data-primary-runtime-action={restartPrimary ? "restart" : undefined}
             disabled={(!status.canStart && !status.canStop) || isBusy}
             onClick={onRestart}
           >
-            Restart
+            {runtimeAction === "restarting" ? "Restarting…" : "Restart"}
           </Button>
         </div>
       </div>

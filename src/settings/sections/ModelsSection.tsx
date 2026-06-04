@@ -114,7 +114,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
       "Run GGUF models via LM Studio's HTTP server (Developer tab → enable).",
     modelHint: (
       <>
-        The model id loaded in LM Studio — see the server's{" "}
+        The model id loaded in LM Studio, see the server's{" "}
         <span className="font-mono">/v1/models</span> page.
       </>
     ),
@@ -135,13 +135,13 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
   "openai-compatible": {
     urlPlaceholder: "https://api.example.com/v1",
     modelPlaceholder: "gpt-4o, qwen3-max, glm-4.6, …",
-    description: "Any OpenAI-compatible endpoint — vLLM, Z.AI, Fireworks, etc.",
+    description: "Any OpenAI-compatible endpoint: vLLM, Z.AI, Fireworks, etc.",
     modelHint: null,
   },
   openrouter: {
     urlPlaceholder: "",
     modelPlaceholder: "anthropic/claude-sonnet-4-6, openai/gpt-5.5, …",
-    description: "Any model on OpenRouter — type its full provider/model id.",
+    description: "Any model on OpenRouter. Type its full provider/model id.",
     modelHint: (
       <>
         Browse ids at <span className="font-mono">openrouter.ai/models</span>.
@@ -935,7 +935,9 @@ function PiModelPicker({
                     size={12}
                     strokeWidth={1.8}
                   />
-                  {profileLoading ? "Refreshing profile models…" : "Refresh profile models"}
+                  {profileLoading
+                    ? "Refreshing profile models…"
+                    : "Refresh profile models"}
                 </DropdownMenuItem>
                 {profileLoading ? (
                   <DropdownMenuItem disabled className="text-[12px]">
@@ -1028,7 +1030,7 @@ function PiModelPicker({
                     <ProviderIcon provider={group.provider.id} size={11} />
                     <span>{group.provider.label}</span>
                     {group.setupRequired ? (
-                      <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium tracking-normal text-muted-foreground normal-case">
+                      <span className="ml-auto rounded-md bg-muted px-1.5 py-0.5 text-[9px] font-medium tracking-normal text-muted-foreground normal-case">
                         Needs setup
                       </span>
                     ) : null}
@@ -1261,7 +1263,7 @@ function AutocompleteRow({
       </FieldRow>
       {enabled && !hasKey ? (
         <p className="pl-19 text-[10.5px] text-muted-foreground">
-          {getProvider(provider).label} isn't connected — add it below.
+          {getProvider(provider).label} isn't connected. Add it below.
         </p>
       ) : null}
     </>
@@ -1470,7 +1472,7 @@ function LocalProviderCard({
                   type="password"
                   value={keyDraft}
                   onChange={(e) => setKeyDraft(e.target.value)}
-                  placeholder="Optional — leave empty for unauthenticated endpoints"
+                  placeholder="Optional, leave empty for unauthenticated endpoints"
                   spellCheck={false}
                   className="h-8 flex-1 font-mono text-[11.5px]"
                 />
@@ -1705,7 +1707,7 @@ function CustomEndpointCard({
                   type="password"
                   value={keyDraft}
                   onChange={(e) => setKeyDraft(e.target.value)}
-                  placeholder="Optional — leave empty for unauthenticated endpoints"
+                  placeholder="Optional, leave empty for unauthenticated endpoints"
                   spellCheck={false}
                   className="h-8 flex-1 font-mono text-[11.5px]"
                 />
@@ -1765,7 +1767,7 @@ function StatusLine({
     return (
       <span className="flex items-center gap-1 text-[10.5px] text-muted-foreground">
         <HugeiconsIcon icon={CheckmarkCircle02Icon} size={11} strokeWidth={2} />
-        Reachable — server responded.
+        Reachable, server responded.
       </span>
     );
   }

@@ -1,7 +1,13 @@
+export { PiFloatingWindow } from "./components/PiFloatingWindow";
+export { PiNotificationsBridge } from "./components/PiNotificationsBridge";
+export type { PiLocalAgentLaunchRequest } from "./lib/local-agents";
+export { PiControllerProvider } from "./lib/PiControllerProvider";
 export type {
   PiSession,
   PiSessionCreateResult,
+  PiSessionDeleteResult,
   PiSessionEvent,
+  PiSessionRenameResult,
   PiSessionSendResult,
   PiSessionStatus,
   PiSessionStopResult,
@@ -14,4 +20,4 @@ export type {
   PiPhase,
   PiRuntimeState,
 } from "./lib/status";
-export { PiPanel } from "./PiPanel";
+export { type PiFocusRequest, PiPanel } from "./PiPanel";

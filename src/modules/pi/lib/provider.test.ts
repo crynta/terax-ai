@@ -27,20 +27,23 @@ const basePrefs: PiProviderPrefs = {
 };
 
 describe("resolvePiProviderConfig", () => {
-  it("resolves built-in cloud models without secrets", () => {
+  it("resolves built-in reasoning cloud models without secrets", () => {
     const resolved = resolvePiProviderConfig({
       ...basePrefs,
-      piModelId: "claude-sonnet-4-6",
+      piModelId: "gpt-5.5",
     });
 
     expect(resolved).toMatchObject({
       ok: true,
-      providerLabel: "Anthropic",
-      modelLabel: "Claude Sonnet 4.6",
+      providerLabel: "OpenAI",
+      modelLabel: "GPT-5.5",
       config: {
-        provider: "anthropic",
-        modelId: "claude-sonnet-4-6",
-        sourceModelId: "claude-sonnet-4-6",
+        provider: "openai",
+        modelId: "gpt-5.5",
+        sourceModelId: "gpt-5.5",
+        contextLimit: 1_050_000,
+        maxTokens: 1_050_000,
+        reasoning: true,
       },
     });
     expect(resolved.ok && resolved.config.apiKey).toBeUndefined();
@@ -92,6 +95,8 @@ describe("resolvePiProviderConfig", () => {
         customEndpointId: "abc123",
         baseUrl: "https://gateway.example.com/v1",
         contextLimit: 256_000,
+        maxTokens: 256_000,
+        reasoning: true,
       },
     });
   });

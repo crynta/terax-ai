@@ -1,18 +1,20 @@
-export { TabBar } from "./TabBar";
 export {
-  MAX_PANES_PER_TAB,
-  useTabs,
-  type Tab,
-  type TerminalTab,
-  type EditorTab,
-  type PreviewTab,
-  type MarkdownTab,
+  type AiDiffStatus,
   type AiDiffTab,
+  type EditorTab,
+  type GitCommitFileDiffTab,
   type GitDiffTab,
   type GitHistoryTab,
-  type GitCommitFileDiffTab,
-  type AiDiffStatus,
+  MAX_PANES_PER_TAB,
+  type MarkdownTab,
+  type PiWorkspaceTab,
+  type PreviewTab,
+  type Tab,
   type TabPatch,
+  type TerminalTab,
+  upsertPiWorkspaceTab,
+  useTabs,
 } from "./lib/useTabs";
-export { useWorkspaceCwd } from "./lib/useWorkspaceCwd";
 export { useWindowTitle } from "./lib/useWindowTitle";
+export { useWorkspaceCwd } from "./lib/useWorkspaceCwd";
+export { TabBar } from "./TabBar";

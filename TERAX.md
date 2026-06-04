@@ -24,6 +24,8 @@ Production-grade or it does not ship. Every change is judged against all of thes
 
 Verify before claiming done: `pnpm exec tsc --noEmit`, `pnpm test`, `cargo clippy`, `cargo test --locked`. A change to a core subsystem (terminal/shell spawn, workspace auth, git, fs, IPC or AI tool surface) needs a test that locks the invariant.
 
+Agent worktree safety: do not run multiple code-writing agents in the same git worktree. Editing subagents must use isolated git worktrees, or stay read-only. Before long verification runs, stop or move repo-local agent sessions so stale agents cannot rewrite files during tests or builds.
+
 ## Conventions
 
 - **Comments**: default to none, the code should explain itself. If genuinely needed, 1-2 lines on *why*, never *what*. No AI-generic filler.

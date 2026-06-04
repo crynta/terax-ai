@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
+import type { SidebarPosition } from "@/modules/sidebar/position";
 import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
@@ -26,6 +27,7 @@ import {
   setEditorAutoSaveDelay,
   setRestoreWindowState,
   setShowHidden,
+  setSidebarPosition,
   setTerminalFontFamily,
   setTerminalLetterSpacing,
   setTerminalFontSize,
@@ -38,6 +40,8 @@ import { useTheme } from "@/modules/theme";
 import {
   ComputerIcon,
   Moon02Icon,
+  SidebarLeftIcon,
+  SidebarRightIcon,
   Sun03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -54,6 +58,15 @@ const APPEARANCE: {
   { id: "system", label: "System", icon: ComputerIcon },
   { id: "light", label: "Light", icon: Sun03Icon },
   { id: "dark", label: "Dark", icon: Moon02Icon },
+];
+
+const SIDEBAR_POSITION_OPTIONS: {
+  id: SidebarPosition;
+  label: string;
+  icon: typeof SidebarLeftIcon;
+}[] = [
+  { id: "left", label: "Left", icon: SidebarLeftIcon },
+  { id: "right", label: "Right", icon: SidebarRightIcon },
 ];
 
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
@@ -83,6 +96,7 @@ export function GeneralSection() {
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
 
   useEffect(() => {
@@ -112,10 +126,7 @@ export function GeneralSection() {
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionHeader
-        title="General"
-        description="Mode, editor, and startup."
-      />
+      <SectionHeader title="General" description="Mode, editor, and startup." />
 
       <div className="flex flex-col gap-2">
         <Label>Appearance</Label>
@@ -162,6 +173,41 @@ export function GeneralSection() {
             onValueChange={(v) => void setZoomLevel(v[0] ?? 1)}
           />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Layout</Label>
+        <SettingRow
+          title="Sidebar position"
+          description="Choose which side hosts the Files and Git sidebar."
+        >
+          <div className="inline-flex rounded-md border border-border/60 bg-card p-0.5">
+            {SIDEBAR_POSITION_OPTIONS.map((option) => {
+              const active = sidebarPosition === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => void setSidebarPosition(option.id)}
+                  className={cn(
+                    "inline-flex h-7 items-center gap-1.5 rounded px-2.5 text-[11.5px] transition-colors",
+                    active
+                      ? "bg-accent text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <HugeiconsIcon
+                    icon={option.icon}
+                    size={14}
+                    strokeWidth={1.75}
+                  />
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -221,15 +267,12 @@ export function GeneralSection() {
                       ⓘ
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    className="max-w-65 text-[11px]"
-                  >
-                    xterm's WebGL renderer caches glyphs in a GPU texture
-                    atlas. On some macOS setups (especially with Nerd Fonts),
-                    the atlas corrupts and terminal text becomes unreadable.
-                    Turn this off as a fallback — performance dips slightly,
-                    but text renders correctly via the DOM renderer.
+                  <TooltipContent side="top" className="max-w-65 text-[11px]">
+                    xterm's WebGL renderer caches glyphs in a GPU texture atlas.
+                    On some macOS setups (especially with Nerd Fonts), the atlas
+                    corrupts and terminal text becomes unreadable. Turn this off
+                    as a fallback - performance dips slightly, but text renders
+                    correctly via the DOM renderer.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -284,7 +327,11 @@ export function GeneralSection() {
             </SelectTrigger>
             <SelectContent>
               {TERMINAL_FONT_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)} className="text-[12px]">
+                <SelectItem
+                  key={size}
+                  value={String(size)}
+                  className="text-[12px]"
+                >
                   {size} px
                 </SelectItem>
               ))}
@@ -320,8 +367,8 @@ export function GeneralSection() {
       <div className="flex flex-col gap-2">
         <Label>Agents</Label>
         <SettingRow
-          title="Coding agent notifications"
-          description="Alert when Claude Code or Codex running in a terminal needs your input or finishes. Desktop notification when Terax is unfocused, in-app otherwise."
+          title="Agent and Pi notifications"
+          description="Alert when Claude Code, Codex, Terax, or Pi needs attention, finishes, or fails. Desktop notification when Terax is unfocused, in-app otherwise."
         >
           <Switch
             checked={agentNotifications}
@@ -418,4 +465,3 @@ function AutoSaveDelayInput({
     </SettingRow>
   );
 }
-

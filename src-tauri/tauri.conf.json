@@ -19,6 +19,10 @@
         "minWidth": 420,
         "minHeight": 280,
         "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 14,
+          "y": 22
+        },
         "hiddenTitle": true,
         "visible": false
       }
@@ -74,7 +78,7 @@
       "../sidecars/pi-host/dist": "sidecars/pi-host"
     },
     "shortDescription": "AI-native terminal emulator",
-    "longDescription": "Terax — an open-source AI-native terminal emulator with multi-tab, file explorer, code editor, web preview, voice input, and AI agents."
+    "longDescription": "Terax - an open-source AI-native terminal emulator with multi-tab, file explorer, code editor, web preview, voice input, and AI agents."
   },
   "plugins": {
     "updater": {

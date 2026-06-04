@@ -1,9 +1,10 @@
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { invoke } from "@tauri-apps/api/core";
+import { homeDir } from "@tauri-apps/api/path";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import type { SearchAddon } from "@xterm/addon-search";
+import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { PanelImperativeHandle } from "react-resizable-panels";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,47 +15,51 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { getLaunchDir } from "@/lib/launchDir";
+import { quoteShellArg } from "@/lib/shellQuote";
+import { useZoom } from "@/lib/useZoom";
 import { cn } from "@/lib/utils";
 import { AgentNotificationsBridge } from "@/modules/agents";
 import { firePendingReviewForSession } from "@/modules/agents/lib/review";
+import type { AgentStatusContext } from "@/modules/agents/lib/statusSurface";
+import { useAgentStore } from "@/modules/agents/store/agentStore";
 import { useManagedAgentsStore } from "@/modules/agents/store/managedAgentsStore";
-import { Toaster } from "@/components/ui/sonner";
 import {
   AgentRunBridge,
   AiInputBar,
   AiInputBarConnect,
   AiMiniWindow,
-  getAllKeys,
   getAllCustomEndpointKeys,
+  getAllKeys,
   hasAnyKey,
   LocalAgentNotificationsBridge,
   SelectionAskAi,
   useChatStore,
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
-import { redactSensitive } from "@/modules/ai/lib/redact";
 import { native } from "@/modules/ai/lib/native";
+import { redactSensitive } from "@/modules/ai/lib/redact";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
-import {
-  AiDiffStack,
-  EditorStack,
-  GitDiffStack,
-  NewEditorDialog,
-  type EditorPaneHandle,
-} from "@/modules/editor";
-import {
-  GitHistoryStack,
-  type GitHistorySearchHandle,
-} from "@/modules/git-history";
-import { getLaunchDir } from "@/lib/launchDir";
-import { quoteShellArg } from "@/lib/shellQuote";
-import { useZoom } from "@/lib/useZoom";
-import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
   CommandPalette,
   createCommandPaletteActions,
 } from "@/modules/command-palette";
+import {
+  AiDiffStack,
+  type EditorPaneHandle,
+  EditorStack,
+  GitDiffStack,
+  NewEditorDialog,
+} from "@/modules/editor";
+import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import {
   listenFsChanged,
   parentDir,
@@ -62,33 +67,60 @@ import {
   watchRemove,
 } from "@/modules/explorer/lib/watch";
 import {
+  type GitHistorySearchHandle,
+  GitHistoryStack,
+} from "@/modules/git-history";
+import {
   Header,
   type SearchInlineHandle,
   type SearchTarget,
 } from "@/modules/header";
 import { MarkdownStack } from "@/modules/markdown";
-import { PiPanel } from "@/modules/pi";
-import { PreviewStack, type PreviewPaneHandle } from "@/modules/preview";
+import {
+  PiControllerProvider,
+  PiFloatingWindow,
+  type PiFocusRequest,
+  type PiLocalAgentLaunchRequest,
+  PiNotificationsBridge,
+  PiPanel,
+} from "@/modules/pi";
+import { type PreviewPaneHandle, PreviewStack } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { onKeysChanged, setThemeId as persistThemeId } from "@/modules/settings/store";
 import {
-  ShortcutsDialog,
-  useGlobalShortcuts,
+  onKeysChanged,
+  setThemeId as persistThemeId,
+} from "@/modules/settings/store";
+import {
   type ShortcutHandlers,
   type ShortcutId,
+  ShortcutsDialog,
+  useGlobalShortcuts,
 } from "@/modules/shortcuts";
 import {
-  isSidebarViewId,
+  defaultSidebarVisibility,
+  normalizePrimarySidebarView,
+  normalizeSecondarySidebarView,
+  oppositeSidebarPosition,
+  orderSidebarLayout,
+  PRIMARY_SIDEBAR_VIEW_ITEMS,
+  type PrimarySidebarViewId,
+  resolveSidebarViewSelection,
+  SECONDARY_SIDEBAR_VIEW_ITEMS,
+  type SecondarySidebarViewId,
+  SidebarPlaceholderPanel,
   SidebarRail,
-  type SidebarViewId,
+  type SidebarSlotId,
+  type SidebarViewPair,
 } from "@/modules/sidebar";
-import {
-  SourceControlPanel,
-  useSourceControl,
-} from "@/modules/source-control";
+import { SourceControlPanel, useSourceControl } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
-import { MAX_PANES_PER_TAB, useTabs, useWindowTitle, useWorkspaceCwd } from "@/modules/tabs";
+import {
+  MAX_PANES_PER_TAB,
+  useTabs,
+  useWindowTitle,
+  useWorkspaceCwd,
+} from "@/modules/tabs";
 import {
   clearFocusedTerminal,
   disposeSession,
@@ -97,14 +129,17 @@ import {
   leafHasForegroundProcess,
   leafIds,
   respawnSession,
+  type TerminalPaneHandle,
   TerminalStack,
+  useTerminalFileDrop,
   whenSessionReady,
   writeToSession,
-  type TerminalPaneHandle,
-  useTerminalFileDrop,
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
-import { listCustomThemes, saveCustomTheme } from "@/modules/theme/customThemes";
+import {
+  listCustomThemes,
+  saveCustomTheme,
+} from "@/modules/theme/customThemes";
 import {
   isThemeFilePath,
   onThemeEdit,
@@ -121,13 +156,16 @@ import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
-import { invoke } from "@tauri-apps/api/core";
-import { homeDir } from "@tauri-apps/api/path";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import type { SearchAddon } from "@xterm/addon-search";
-import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PanelImperativeHandle } from "react-resizable-panels";
+import {
+  type CodePanelContext,
+  type CodeSurface,
+  codePanelMounts,
+  piSessionActivationPlan,
+  resolveCodeContext,
+  resolveCodeSurfaceAfterWorkspaceClose,
+  shouldCollapseSecondarySidebarForCodeMove,
+  surfaceForSecondarySidebarSelection,
+} from "./codeSurface";
 
 type TuiWaitResult = "ready" | "gone" | "timeout";
 
@@ -145,6 +183,11 @@ async function waitForClaudeTuiReady(
   return "timeout";
 }
 
+type AgentGitIdentity = {
+  branch: string | null;
+  worktree: string | null;
+};
+
 function dirname(path: string | null): string | null {
   if (!path) return null;
   const normalized = path.replace(/\\/g, "/");
@@ -153,11 +196,27 @@ function dirname(path: string | null): string | null {
   return normalized.slice(0, idx);
 }
 
+function pathBasename(path: string | null | undefined): string | null {
+  const cleaned = path?.replace(/[\\/]+$/, "");
+  if (!cleaned) return null;
+  const parts = cleaned.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? cleaned;
+}
+
+function sameWorkspaceEnv(left: WorkspaceEnv, right: WorkspaceEnv): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "local") return true;
+  return right.kind === "wsl" && left.distro === right.distro;
+}
+
 const SIDEBAR_DEFAULT_WIDTH = 260;
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 480;
 const SIDEBAR_WIDTH_STORAGE_KEY = "terax.sidebar.width";
 const SIDEBAR_VIEW_STORAGE_KEY = "terax.sidebar.view";
+const SECONDARY_SIDEBAR_WIDTH_STORAGE_KEY = "terax.secondarySidebar.width";
+const SECONDARY_SIDEBAR_VIEW_STORAGE_KEY = "terax.secondarySidebar.view";
+const SECONDARY_SIDEBAR_VISIBLE_STORAGE_KEY = "terax.secondarySidebar.visible";
 
 function clampSidebarWidth(width: number): number {
   return Math.min(
@@ -166,9 +225,9 @@ function clampSidebarWidth(width: number): number {
   );
 }
 
-function readSidebarWidth(): number {
+function readSidebarWidth(key = SIDEBAR_WIDTH_STORAGE_KEY): number {
   try {
-    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    const stored = window.localStorage.getItem(key);
     const parsed = stored ? Number.parseInt(stored, 10) : NaN;
     return Number.isFinite(parsed)
       ? clampSidebarWidth(parsed)
@@ -178,14 +237,37 @@ function readSidebarWidth(): number {
   }
 }
 
-function readSidebarView(): SidebarViewId {
+function readStoredString(key: string): string | null {
   try {
-    const stored = window.localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
-    if (isSidebarViewId(stored)) return stored;
+    return window.localStorage.getItem(key);
   } catch {
-    // ignore
+    return null;
   }
-  return "explorer";
+}
+
+function readStoredBoolean(key: string): boolean | null {
+  const stored = readStoredString(key);
+  if (stored === "true") return true;
+  if (stored === "false") return false;
+  return null;
+}
+
+function readSidebarViews(): SidebarViewPair {
+  return {
+    primary: normalizePrimarySidebarView(
+      readStoredString(SIDEBAR_VIEW_STORAGE_KEY),
+    ),
+    secondary: normalizeSecondarySidebarView(
+      readStoredString(SECONDARY_SIDEBAR_VIEW_STORAGE_KEY),
+    ),
+  };
+}
+
+function readSecondarySidebarVisible(): boolean {
+  return defaultSidebarVisibility(
+    "secondary",
+    readStoredBoolean(SECONDARY_SIDEBAR_VISIBLE_STORAGE_KEY),
+  );
 }
 
 export default function App() {
@@ -200,6 +282,7 @@ export default function App() {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    openPiWorkspaceTab,
     openAiDiffTab,
     closeAiDiffTab,
     openGitDiffTab,
@@ -244,40 +327,254 @@ export default function App() {
   const explorerRef = useRef<FileExplorerHandle>(null);
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
 
+  const initialSidebarViewsRef = useRef<SidebarViewPair | null>(null);
+  if (initialSidebarViewsRef.current === null) {
+    initialSidebarViewsRef.current = readSidebarViews();
+  }
+  const initialSidebarViews = initialSidebarViewsRef.current;
+  const initialSecondarySidebarVisibleRef = useRef<boolean | null>(null);
+  if (initialSecondarySidebarVisibleRef.current === null) {
+    initialSecondarySidebarVisibleRef.current = readSecondarySidebarVisible();
+  }
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
+  const secondarySidebarRef = useRef<PanelImperativeHandle | null>(null);
   const sidebarWidthRef = useRef(readSidebarWidth());
+  const secondarySidebarWidthRef = useRef(
+    readSidebarWidth(SECONDARY_SIDEBAR_WIDTH_STORAGE_KEY),
+  );
   const sidebarWidthWriteTimerRef = useRef(0);
-  const [sidebarView, setSidebarViewState] = useState<SidebarViewId>(readSidebarView);
-  const persistSidebarView = useCallback((view: SidebarViewId) => {
-    setSidebarViewState(view);
+  const secondarySidebarWidthWriteTimerRef = useRef(0);
+  const [sidebarView, setSidebarViewState] = useState<PrimarySidebarViewId>(
+    initialSidebarViews.primary,
+  );
+  const [secondarySidebarView, setSecondarySidebarViewState] =
+    useState<SecondarySidebarViewId>(initialSidebarViews.secondary);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [secondarySidebarVisible, setSecondarySidebarVisible] = useState(
+    initialSecondarySidebarVisibleRef.current,
+  );
+  const [piFocusRequest, setPiFocusRequest] = useState<PiFocusRequest | null>(
+    null,
+  );
+  const [codeSurface, setCodeSurface] = useState<CodeSurface>("sidebar");
+  const [capturedCodeContext, setCapturedCodeContext] =
+    useState<CodePanelContext | null>(null);
+  const codeContextRef = useRef<CodePanelContext | null>(null);
+  const [codeSelectedSessionId, setCodeSelectedSessionId] = useState<
+    string | null
+  >(null);
+  const piUnreadCount = useAgentStore(
+    (state) =>
+      state.notifications.filter(
+        (notification) => notification.source === "pi" && !notification.read,
+      ).length,
+  );
+  const agentSessions = useAgentStore((state) => state.sessions);
+  const [agentGitIdentityByCwd, setAgentGitIdentityByCwd] = useState<
+    Record<string, AgentGitIdentity | null>
+  >({});
+  const requestedAgentGitIdentityCwds = useRef<Set<string>>(new Set());
+  const agentTerminalContext = useMemo<
+    Record<number, AgentStatusContext>
+  >(() => {
+    const next: Record<number, AgentStatusContext> = {};
+    for (const tab of tabs) {
+      if (tab.kind !== "terminal") continue;
+      for (const leafId of leafIds(tab.paneTree)) {
+        const cwd = findLeafCwd(tab.paneTree, leafId) ?? tab.cwd ?? null;
+        const identity = cwd ? agentGitIdentityByCwd[cwd] : null;
+        next[leafId] = {
+          branch: identity?.branch ?? null,
+          cwd,
+          project: pathBasename(cwd),
+          title: tab.title,
+          worktree: identity?.worktree ?? null,
+        };
+      }
+    }
+    return next;
+  }, [agentGitIdentityByCwd, tabs]);
+  const persistSidebarViews = useCallback((views: SidebarViewPair) => {
+    setSidebarViewState(views.primary);
+    setSecondarySidebarViewState(views.secondary);
     try {
-      window.localStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, view);
+      window.localStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, views.primary);
+      window.localStorage.setItem(
+        SECONDARY_SIDEBAR_VIEW_STORAGE_KEY,
+        views.secondary,
+      );
     } catch {
       // storage may fail in private mode
     }
   }, []);
+  const persistSecondarySidebarVisible = useCallback((visible: boolean) => {
+    setSecondarySidebarVisible((current) =>
+      current === visible ? current : visible,
+    );
+    try {
+      window.localStorage.setItem(
+        SECONDARY_SIDEBAR_VISIBLE_STORAGE_KEY,
+        String(visible),
+      );
+    } catch {
+      // storage may fail in private mode
+    }
+  }, []);
+  const setSidebarPanelVisible = useCallback(
+    (slot: SidebarSlotId, visible: boolean) => {
+      if (slot === "primary") {
+        setSidebarVisible((current) =>
+          current === visible ? current : visible,
+        );
+        return;
+      }
+      persistSecondarySidebarVisible(visible);
+    },
+    [persistSecondarySidebarVisible],
+  );
+  const persistSidebarView = useCallback(
+    (view: PrimarySidebarViewId) => {
+      persistSidebarViews(
+        resolveSidebarViewSelection(
+          { primary: sidebarView, secondary: secondarySidebarView },
+          "primary",
+          view,
+        ),
+      );
+    },
+    [persistSidebarViews, secondarySidebarView, sidebarView],
+  );
+  const persistSecondarySidebarView = useCallback(
+    (view: SecondarySidebarViewId) => {
+      persistSidebarViews(
+        resolveSidebarViewSelection(
+          { primary: sidebarView, secondary: secondarySidebarView },
+          "secondary",
+          view,
+        ),
+      );
+    },
+    [persistSidebarViews, secondarySidebarView, sidebarView],
+  );
+  const openSidebarPanel = useCallback(
+    (slot: SidebarSlotId) => {
+      const panel =
+        slot === "primary" ? sidebarRef.current : secondarySidebarRef.current;
+      const width =
+        slot === "primary"
+          ? sidebarWidthRef.current
+          : secondarySidebarWidthRef.current;
+      setSidebarPanelVisible(slot, true);
+      if (panel?.isCollapsed()) panel.resize(width);
+    },
+    [setSidebarPanelVisible],
+  );
+  const openSecondarySidebarView = useCallback(
+    (view: SecondarySidebarViewId) => {
+      if (secondarySidebarView !== view) persistSecondarySidebarView(view);
+      openSidebarPanel("secondary");
+    },
+    [openSidebarPanel, persistSecondarySidebarView, secondarySidebarView],
+  );
+  const closeSecondarySidebarPanel = useCallback(() => {
+    secondarySidebarRef.current?.collapse();
+    persistSecondarySidebarVisible(false);
+  }, [persistSecondarySidebarVisible]);
+  const focusCurrentCodeSession = useCallback(() => {
+    if (!codeSelectedSessionId) return;
+    setPiFocusRequest({ sessionId: codeSelectedSessionId, token: Date.now() });
+  }, [codeSelectedSessionId]);
+  const openCodeInSidebar = useCallback(() => {
+    setCodeSurface("sidebar");
+    openSecondarySidebarView("code");
+    focusCurrentCodeSession();
+  }, [focusCurrentCodeSession, openSecondarySidebarView]);
+  const openCodePopOut = useCallback(() => {
+    setCapturedCodeContext(codeContextRef.current);
+    setCodeSurface("floating");
+    if (
+      shouldCollapseSecondarySidebarForCodeMove(
+        secondarySidebarView,
+        "floating",
+      )
+    ) {
+      closeSecondarySidebarPanel();
+    }
+    focusCurrentCodeSession();
+  }, [
+    closeSecondarySidebarPanel,
+    focusCurrentCodeSession,
+    secondarySidebarView,
+  ]);
+  const openCodeWorkspace = useCallback(() => {
+    setCapturedCodeContext(codeContextRef.current);
+    openPiWorkspaceTab();
+    setCodeSurface("workspace");
+    if (
+      shouldCollapseSecondarySidebarForCodeMove(
+        secondarySidebarView,
+        "workspace",
+      )
+    ) {
+      closeSecondarySidebarPanel();
+    }
+    focusCurrentCodeSession();
+  }, [
+    closeSecondarySidebarPanel,
+    focusCurrentCodeSession,
+    openPiWorkspaceTab,
+    secondarySidebarView,
+  ]);
+  const selectSecondarySidebarView = useCallback(
+    (view: SecondarySidebarViewId) => {
+      const nextCodeSurface = surfaceForSecondarySidebarSelection(view);
+      if (nextCodeSurface) setCodeSurface(nextCodeSurface);
+      persistSecondarySidebarView(view);
+    },
+    [persistSecondarySidebarView],
+  );
+
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
     if (!p) return;
-    if (p.getSize().asPercentage <= 0) p.expand();
-    else p.collapse();
-  }, []);
+    if (p.isCollapsed()) {
+      openSidebarPanel("primary");
+      return;
+    }
+    p.collapse();
+    setSidebarPanelVisible("primary", false);
+  }, [openSidebarPanel, setSidebarPanelVisible]);
+  const toggleSecondarySidebar = useCallback(() => {
+    const p = secondarySidebarRef.current;
+    if (!p) return;
+    if (p.isCollapsed() || !secondarySidebarVisible) {
+      openSidebarPanel("secondary");
+      return;
+    }
+    p.collapse();
+    persistSecondarySidebarVisible(false);
+  }, [
+    openSidebarPanel,
+    persistSecondarySidebarVisible,
+    secondarySidebarVisible,
+  ]);
   const cycleSidebarView = useCallback(
-    (view: SidebarViewId) => {
+    (view: PrimarySidebarViewId) => {
       const panel = sidebarRef.current;
-      const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
+      const collapsed = panel?.isCollapsed() ?? false;
       if (collapsed) {
-        if (panel) panel.resize(`${sidebarWidthRef.current}px`);
+        openSidebarPanel("primary");
         if (view !== sidebarView) persistSidebarView(view);
         return;
       }
       if (view === sidebarView) {
         panel?.collapse();
+        setSidebarPanelVisible("primary", false);
         return;
       }
       persistSidebarView(view);
     },
-    [persistSidebarView, sidebarView],
+    [openSidebarPanel, persistSidebarView, setSidebarPanelVisible, sidebarView],
   );
   const persistSidebarWidth = useCallback((next: number) => {
     sidebarWidthRef.current = next;
@@ -293,21 +590,58 @@ export default function App() {
       }
     }, 200);
   }, []);
+  const persistSecondarySidebarWidth = useCallback((next: number) => {
+    secondarySidebarWidthRef.current = next;
+    if (secondarySidebarWidthWriteTimerRef.current) {
+      window.clearTimeout(secondarySidebarWidthWriteTimerRef.current);
+    }
+    secondarySidebarWidthWriteTimerRef.current = window.setTimeout(() => {
+      secondarySidebarWidthWriteTimerRef.current = 0;
+      try {
+        window.localStorage.setItem(
+          SECONDARY_SIDEBAR_WIDTH_STORAGE_KEY,
+          String(next),
+        );
+      } catch {
+        // ignore
+      }
+    }, 200);
+  }, []);
   useEffect(() => {
     return () => {
       if (sidebarWidthWriteTimerRef.current) {
         window.clearTimeout(sidebarWidthWriteTimerRef.current);
       }
+      if (secondarySidebarWidthWriteTimerRef.current) {
+        window.clearTimeout(secondarySidebarWidthWriteTimerRef.current);
+      }
     };
   }, []);
 
+  const codePanelVisibility = codePanelMounts({
+    surface: codeSurface,
+    secondarySidebarView,
+    secondarySidebarVisible,
+    activeTabKind: tabs.find((tab) => tab.id === activeId)?.kind,
+  });
+  const piSidebarVisible =
+    codePanelVisibility.sidebar ||
+    codePanelVisibility.floating ||
+    codePanelVisibility.workspace;
+
+  useEffect(() => {
+    if (piSidebarVisible) {
+      useAgentStore.getState().markSourceRead("pi");
+    }
+  }, [piSidebarVisible]);
+
   const toggleExplorerFocus = useCallback(() => {
     const explorer = explorerRef.current;
-    const panel = sidebarRef.current;
-    const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
-    if (sidebarView !== "explorer" || collapsed) {
-      if (panel && collapsed) panel.resize(`${sidebarWidthRef.current}px`);
-      if (sidebarView !== "explorer") persistSidebarView("explorer");
+    const collapsed = sidebarRef.current?.isCollapsed() ?? false;
+    const explorerVisible = sidebarView === "explorer";
+    if (!explorerVisible || collapsed) {
+      openSidebarPanel("primary");
+      if (!explorerVisible) persistSidebarView("explorer");
       const active = document.activeElement;
       explorerReturnFocusRef.current =
         active instanceof HTMLElement && active !== document.body
@@ -331,13 +665,69 @@ export default function App() {
     explorerReturnFocusRef.current =
       active instanceof HTMLElement && active !== document.body ? active : null;
     explorer.focus();
-  }, [persistSidebarView, sidebarView]);
+  }, [openSidebarPanel, persistSidebarView, sidebarView]);
 
   const [home, setHome] = useState<string | null>(null);
   const [pendingCloseTab, setPendingCloseTab] = useState<number | null>(null);
-  const [pendingTerminalCloseTab, setPendingTerminalCloseTab] = useState<number | null>(null);
+  const [pendingTerminalCloseTab, setPendingTerminalCloseTab] = useState<
+    number | null
+  >(null);
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
+  useEffect(() => {
+    requestedAgentGitIdentityCwds.current.clear();
+    setAgentGitIdentityByCwd({});
+  }, [workspaceEnv]);
+  useEffect(() => {
+    const agentLeafIds = new Set(
+      Object.values(agentSessions).map((session) => session.leafId),
+    );
+    if (agentLeafIds.size === 0) return;
+
+    const cwds = new Set<string>();
+    for (const tab of tabs) {
+      if (tab.kind !== "terminal") continue;
+      for (const leafId of leafIds(tab.paneTree)) {
+        if (!agentLeafIds.has(leafId)) continue;
+        const cwd = findLeafCwd(tab.paneTree, leafId) ?? tab.cwd ?? null;
+        if (cwd) cwds.add(cwd);
+      }
+    }
+
+    for (const cwd of cwds) {
+      if (
+        Object.prototype.hasOwnProperty.call(agentGitIdentityByCwd, cwd) ||
+        requestedAgentGitIdentityCwds.current.has(cwd)
+      ) {
+        continue;
+      }
+      requestedAgentGitIdentityCwds.current.add(cwd);
+      const requestWorkspaceEnv = workspaceEnv;
+      native
+        .gitResolveRepo(cwd)
+        .then((repo) => {
+          if (!sameWorkspaceEnv(currentWorkspaceEnv(), requestWorkspaceEnv)) {
+            return;
+          }
+          const identity: AgentGitIdentity | null = repo
+            ? {
+                branch: repo.branch || null,
+                worktree: pathBasename(repo.repoRoot),
+              }
+            : null;
+          setAgentGitIdentityByCwd((state) => ({ ...state, [cwd]: identity }));
+        })
+        .catch(() => {
+          if (!sameWorkspaceEnv(currentWorkspaceEnv(), requestWorkspaceEnv)) {
+            return;
+          }
+          setAgentGitIdentityByCwd((state) => ({ ...state, [cwd]: null }));
+        })
+        .finally(() => {
+          requestedAgentGitIdentityCwds.current.delete(cwd);
+        });
+    }
+  }, [agentGitIdentityByCwd, agentSessions, tabs, workspaceEnv]);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
   const [launchCwdResolved, setLaunchCwdResolved] = useState(false);
   const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
@@ -368,7 +758,9 @@ export default function App() {
       }
       const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
       if (dirty) {
-        window.alert("Save or close unsaved editor tabs before switching workspace.");
+        window.alert(
+          "Save or close unsaved editor tabs before switching workspace.",
+        );
         return;
       }
 
@@ -398,7 +790,7 @@ export default function App() {
         try {
           await native.workspaceAuthorize(nextHome);
         } catch {
-          // Non-fatal — git panel will surface "not authorized" if needed.
+          // Non-fatal - git panel will surface "not authorized" if needed.
         }
       }
       resetWorkspace(nextHome ?? undefined);
@@ -451,10 +843,13 @@ export default function App() {
     (ollamaBaseURL.trim().length > 0 && ollamaModelId.trim().length > 0) ||
     (openaiCompatibleBaseURL.trim().length > 0 &&
       openaiCompatibleModelId.trim().length > 0) ||
-    customEndpoints.some((e) => e.baseURL.trim().length > 0 && e.modelId.trim().length > 0);
+    customEndpoints.some(
+      (e) => e.baseURL.trim().length > 0 && e.modelId.trim().length > 0,
+    );
   const hasComposer = hasAnyKey(apiKeys) || hasLocalModel;
 
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
   const [keysLoaded, setKeysLoaded] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -508,6 +903,14 @@ export default function App() {
   const isGitDiffTab =
     activeTab?.kind === "git-diff" || activeTab?.kind === "git-commit-file";
   const isGitHistoryTab = activeTab?.kind === "git-history";
+  const isPiWorkspaceTab = activeTab?.kind === "pi-workspace";
+
+  useEffect(() => {
+    const hasPiWorkspaceTab = tabs.some((tab) => tab.kind === "pi-workspace");
+    setCodeSurface((current) =>
+      resolveCodeSurfaceAfterWorkspaceClose(current, hasPiWorkspaceTab),
+    );
+  }, [tabs]);
 
   // When an AI diff is approved (write_file applied to disk), reload any
   // open editor tabs for that path so the user sees the new content. We
@@ -530,20 +933,21 @@ export default function App() {
 
   useEffect(() => {
     type FileWrittenPayload = { path: string; source?: string };
-    const unlistenPromise = getCurrentWebviewWindow().listen<FileWrittenPayload>(
-      "fs:file-written",
-      (event) => {
-        if (event.payload.source === "editor") return;
-        const normalizedPath = event.payload.path.replace(/\\/g, "/");
-        const currentTabs = tabsRef.current;
-        for (const t of currentTabs) {
-          if (t.kind !== "editor") continue;
-          if (t.path.replace(/\\/g, "/") === normalizedPath) {
-            editorRefs.current.get(t.id)?.reload();
+    const unlistenPromise =
+      getCurrentWebviewWindow().listen<FileWrittenPayload>(
+        "fs:file-written",
+        (event) => {
+          if (event.payload.source === "editor") return;
+          const normalizedPath = event.payload.path.replace(/\\/g, "/");
+          const currentTabs = tabsRef.current;
+          for (const t of currentTabs) {
+            if (t.kind !== "editor") continue;
+            if (t.path.replace(/\\/g, "/") === normalizedPath) {
+              editorRefs.current.get(t.id)?.reload();
+            }
           }
-        }
-      },
-    );
+        },
+      );
     return () => {
       void unlistenPromise.then((un) => un());
     };
@@ -586,30 +990,32 @@ export default function App() {
   // the code editor. Saving it re-ingests into the runtime store + applies live.
   useEffect(() => {
     type FileWrittenPayload = { path: string; source?: string };
-    const unlistenPromise = getCurrentWebviewWindow().listen<FileWrittenPayload>(
-      "fs:file-written",
-      (event) => {
-        if (event.payload.source !== "editor") return;
-        if (!isThemeFilePath(event.payload.path)) return;
-        void (async () => {
-          try {
-            const res = await invoke<{ kind: string; content?: string }>(
-              "fs_read_file",
-              { path: event.payload.path, workspace: currentWorkspaceEnv() },
-            );
-            if (res.kind !== "text" || typeof res.content !== "string") return;
-            const parsed = parseThemeFile(res.content);
-            if (!parsed.ok) {
-              console.warn("[terax] theme not applied:", parsed.error);
-              return;
+    const unlistenPromise =
+      getCurrentWebviewWindow().listen<FileWrittenPayload>(
+        "fs:file-written",
+        (event) => {
+          if (event.payload.source !== "editor") return;
+          if (!isThemeFilePath(event.payload.path)) return;
+          void (async () => {
+            try {
+              const res = await invoke<{ kind: string; content?: string }>(
+                "fs_read_file",
+                { path: event.payload.path, workspace: currentWorkspaceEnv() },
+              );
+              if (res.kind !== "text" || typeof res.content !== "string")
+                return;
+              const parsed = parseThemeFile(res.content);
+              if (!parsed.ok) {
+                console.warn("[terax] theme not applied:", parsed.error);
+                return;
+              }
+              await saveCustomTheme(parsed.theme);
+            } catch (e) {
+              console.warn("[terax] theme ingest failed:", e);
             }
-            await saveCustomTheme(parsed.theme);
-          } catch (e) {
-            console.warn("[terax] theme ingest failed:", e);
-          }
-        })();
-      },
-    );
+          })();
+        },
+      );
     return () => {
       void unlistenPromise.then((un) => un());
     };
@@ -653,7 +1059,9 @@ export default function App() {
 
   useEffect(() => {
     setActiveSearchAddon(
-      activeLeafId !== null ? (searchAddons.current.get(activeLeafId) ?? null) : null,
+      activeLeafId !== null
+        ? (searchAddons.current.get(activeLeafId) ?? null)
+        : null,
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
   }, [activeId, activeLeafId]);
@@ -678,7 +1086,7 @@ export default function App() {
     [closeTab],
   );
 
-  // Drives session disposal off the pane tree, not React lifecycles —
+  // Drives session disposal off the pane tree, not React lifecycles -
   // split/unsplit re-mount components but the leaf is still live.
   const liveLeavesRef = useRef<Set<number>>(new Set());
   useEffect(() => {
@@ -774,7 +1182,7 @@ export default function App() {
         return;
       }
       // Dispatch a window event the composer listens for. Same pattern as
-      // selections — keeps file-explorer decoupled from the AI module.
+      // selections - keeps file-explorer decoupled from the AI module.
       window.dispatchEvent(
         new CustomEvent<string>("terax:ai-attach-file", { detail: path }),
       );
@@ -974,6 +1382,28 @@ export default function App() {
   const workspaceFallbackPath = launchCwdResolved
     ? (launchCwd ?? home ?? null)
     : null;
+  const activeCodeContext = useMemo<CodePanelContext>(
+    () => ({
+      workspaceRoot: explorerRoot ?? workspaceFallbackPath,
+      activeCwd: activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath,
+      activeFile: activeFilePath,
+      activeTerminalPrivate:
+        activeTab?.kind === "terminal" && activeTab.private === true,
+    }),
+    [
+      activeFilePath,
+      activeTab,
+      activeTerminalLeafCwd,
+      explorerRoot,
+      workspaceFallbackPath,
+    ],
+  );
+  codeContextRef.current = activeCodeContext;
+  const codePanelContext = resolveCodeContext({
+    surface: codeSurface,
+    activeContext: activeCodeContext,
+    capturedContext: capturedCodeContext,
+  });
   const sourceControlContextPath = (() => {
     if (activeTab?.kind === "terminal") {
       return activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath;
@@ -994,8 +1424,7 @@ export default function App() {
       ),
     [tabs],
   );
-  const sourceControlActive =
-    hasOpenGitTab || sidebarView === "source-control";
+  const sourceControlActive = hasOpenGitTab || sidebarView === "source-control";
   // Stable per-session path so switching tabs / cd-ing in a shell does NOT
   // re-fire git IPC for the badge. The active panel resolves the current
   // context path on its own when the user actually opens git.
@@ -1004,6 +1433,57 @@ export default function App() {
     ? sourceControlContextPath
     : badgeContextPath;
   const sourceControl = useSourceControl(sourceControlPath, true);
+
+  const launchPiLocalAgent = useCallback(
+    (request: PiLocalAgentLaunchRequest) => {
+      const cwd =
+        activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath;
+      const launchLabel = request.prompt ? "prompt" : "plan";
+      const { tabId, leafId } = newAgentTab(
+        cwd ?? undefined,
+        `${request.label} · ${launchLabel}`,
+      );
+      const hookCommand =
+        request.id === "claude"
+          ? "agent_enable_claude_hooks"
+          : request.id === "codex"
+            ? "agent_enable_codex_hooks"
+            : request.id === "gemini"
+              ? "agent_enable_gemini_hooks"
+              : request.id === "antigravity"
+                ? "agent_enable_antigravity_hooks"
+                : null;
+      const hooksReady = hookCommand
+        ? invoke(hookCommand).catch((error) => {
+            console.warn(
+              `[terax] Failed to enable ${request.label} terminal hooks`,
+              error,
+            );
+          })
+        : Promise.resolve();
+      void (async () => {
+        try {
+          await Promise.all([whenSessionReady(leafId), hooksReady]);
+          if (!writeToSession(leafId, `${request.command}\r`)) {
+            console.warn(
+              `[terax] Failed to launch ${request.label}: terminal was not writable`,
+            );
+            disposeTab(tabId);
+          }
+        } catch (error) {
+          console.warn(`[terax] Failed to launch ${request.label}`, error);
+          disposeTab(tabId);
+        }
+      })();
+    },
+    [
+      activeTerminalLeafCwd,
+      disposeTab,
+      explorerRoot,
+      newAgentTab,
+      workspaceFallbackPath,
+    ],
+  );
 
   const toggleSourceControl = useCallback(() => {
     cycleSidebarView("source-control");
@@ -1231,6 +1711,17 @@ export default function App() {
     focusInput(null);
   }, [openPanel, focusInput]);
 
+  const onActivatePiSession = useCallback(
+    (sessionId: string) => {
+      const plan = piSessionActivationPlan(codeSurface);
+      if (plan.openWorkspace) openPiWorkspaceTab();
+      if (plan.openSidebar) openSecondarySidebarView("code");
+      setPiFocusRequest({ sessionId, token: Date.now() });
+      useAgentStore.getState().markSourceRead("pi");
+    },
+    [codeSurface, openPiWorkspaceTab, openSecondarySidebarView],
+  );
+
   const handleLeafExit = useCallback(
     (leafId: number, _code: number) => {
       const all = tabsRef.current;
@@ -1342,7 +1833,11 @@ export default function App() {
     const findCwd = () => {
       const active = tabs.find((x) => x.id === activeId);
       if (active?.kind === "terminal") {
-        return findLeafCwd(active.paneTree, active.activeLeafId) ?? active.cwd ?? null;
+        return (
+          findLeafCwd(active.paneTree, active.activeLeafId) ??
+          active.cwd ??
+          null
+        );
       }
       for (let i = tabs.length - 1; i >= 0; i--) {
         const t = tabs[i];
@@ -1389,8 +1884,12 @@ export default function App() {
         if (!trimmed) return null;
         const oneLine = trimmed.replace(/\s*\r?\n\s*/g, " ");
         const cwd = findCwd();
-        const short = oneLine.length > 32 ? `${oneLine.slice(0, 32)}…` : oneLine;
-        const { tabId, leafId } = newAgentTab(cwd ?? undefined, `claude · ${short}`);
+        const short =
+          oneLine.length > 32 ? `${oneLine.slice(0, 32)}…` : oneLine;
+        const { tabId, leafId } = newAgentTab(
+          cwd ?? undefined,
+          `claude · ${short}`,
+        );
         useManagedAgentsStore
           .getState()
           .register({ leafId, tabId, sessionId, task: oneLine, cwd });
@@ -1534,290 +2033,446 @@ export default function App() {
           onSearchHandle={setGitHistoryHandle}
         />
       </div>
+      <div
+        className={cn(
+          "absolute inset-0 p-2",
+          !isPiWorkspaceTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isPiWorkspaceTab}
+      >
+        {codeSurface === "workspace" && isPiWorkspaceTab ? (
+          <PiPanel
+            workspaceRoot={codePanelContext.workspaceRoot}
+            activeCwd={codePanelContext.activeCwd}
+            activeFile={codePanelContext.activeFile}
+            activeTerminalPrivate={codePanelContext.activeTerminalPrivate}
+            focusRequest={piFocusRequest}
+            onOpenLocalAgent={launchPiLocalAgent}
+            onPopOut={openCodePopOut}
+            onSelectedSessionChange={setCodeSelectedSessionId}
+          />
+        ) : isPiWorkspaceTab ? (
+          <SidebarPlaceholderPanel
+            title="Code"
+            description="Code chat is open in another surface."
+          />
+        ) : null}
+      </div>
     </div>
   );
 
   const shell = (
     <ThemeProvider>
-      <TooltipProvider>
-        <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
-          {!zenMode && (
-            <Header
-            tabs={tabs}
-            activeId={activeId}
-            onSelect={setActiveId}
-            onNew={openNewTab}
-            onNewPrivate={openNewPrivateTab}
-            onNewPreview={() => openPreviewTab("")}
-            onNewEditor={() => setNewEditorOpen(true)}
-            onNewGitGraph={openGitGraphFromContext}
-            onClose={handleClose}
-            onPin={pinTab}
-            onRename={handleRenameTab}
-            onToggleSidebar={toggleSidebar}
-            onSplit={splitActivePaneInActiveTab}
-            canSplit={
-              activeTerminalTab !== null &&
-              leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
-            }
-            onActivateAgent={onActivateAgent}
-            onActivateLocalAgent={onActivateLocalAgent}
-            onOpenSettings={() => void openSettingsWindow()}
-            searchTarget={searchTarget}
-            searchRef={searchInlineRef}
-            />
-          )}
+      <PiControllerProvider>
+        <TooltipProvider>
+          <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
+            {!zenMode && (
+              <Header
+                tabs={tabs}
+                activeId={activeId}
+                onSelect={setActiveId}
+                onNew={openNewTab}
+                onNewPrivate={openNewPrivateTab}
+                onNewPreview={() => openPreviewTab("")}
+                onNewEditor={() => setNewEditorOpen(true)}
+                onNewGitGraph={openGitGraphFromContext}
+                onClose={handleClose}
+                onPin={pinTab}
+                onRename={handleRenameTab}
+                onToggleSidebar={toggleSidebar}
+                onToggleSecondarySidebar={toggleSecondarySidebar}
+                onSplit={splitActivePaneInActiveTab}
+                canSplit={
+                  activeTerminalTab !== null &&
+                  leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
+                }
+                agentTerminalContext={agentTerminalContext}
+                onActivateAgent={onActivateAgent}
+                onActivateLocalAgent={onActivateLocalAgent}
+                onActivatePiSession={onActivatePiSession}
+                onOpenSettings={() => void openSettingsWindow()}
+                searchTarget={searchTarget}
+                searchRef={searchInlineRef}
+              />
+            )}
 
-          <main className="zoom-content flex min-h-0 flex-1 flex-col">
-            <ResizablePanelGroup
-              orientation="horizontal"
-              className="min-h-0 flex-1"
-            >
-              <ResizablePanel
-                id="sidebar"
-                panelRef={sidebarRef}
-                defaultSize={`${sidebarWidthRef.current}px`}
-                minSize={`${SIDEBAR_MIN_WIDTH}px`}
-                maxSize={`${SIDEBAR_MAX_WIDTH}px`}
-                collapsible
-                collapsedSize={0}
-                onResize={(size) => {
-                  if (size.inPixels > 0) persistSidebarWidth(size.inPixels);
-                }}
+            <main className="zoom-content flex min-h-0 flex-1 flex-col">
+              <ResizablePanelGroup
+                orientation="horizontal"
+                className="min-h-0 flex-1"
               >
-                <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
-                  <div className="min-h-0 flex-1">
-                    {sidebarView === "explorer" ? (
-                      <FileExplorer
-                        ref={explorerRef}
-                        rootPath={explorerRoot}
-                        activeFilePath={explorerActiveFilePath}
-                        onOpenFile={handleOpenFile}
-                        onPathRenamed={handlePathRenamed}
-                        onPathDeleted={handlePathDeleted}
-                        onRevealInTerminal={cdInNewTab}
-                        onAttachToAgent={handleAttachFileToAgent}
-                        onOpenMarkdownPreview={openMarkdownPreview}
-                      />
-                    ) : sidebarView === "source-control" ? (
-                      <SourceControlPanel
-                        open
-                        sourceControl={sourceControl}
-                        onOpenDiff={openGitDiffTab}
-                        onOpenGitGraph={openGitGraphFromContext}
-                        onOpenFile={handleOpenFile}
-                      />
-                    ) : sidebarView === "pi" ? (
-                      <PiPanel
-                        workspaceRoot={explorerRoot ?? workspaceFallbackPath}
-                        activeCwd={
-                          activeTerminalLeafCwd ??
-                          explorerRoot ??
-                          workspaceFallbackPath
-                        }
-                        activeFile={activeFilePath}
-                        activeTerminalPrivate={
-                          activeTab?.kind === "terminal" &&
-                          activeTab.private === true
-                        }
-                      />
-                    ) : null}
-                  </div>
-                  <SidebarRail
-                    activeView={sidebarView}
-                    onSelectView={persistSidebarView}
-                    changedCount={sourceControl.changedCount}
-                  />
-                </div>
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
-                <div className="flex h-full min-h-0 flex-col">
-                  <div className="relative min-h-0 flex-1">
-                    {workspaceSurface}
-                  </div>
-
-                  {keysLoaded ? (
-                    <motion.div
-                      data-ai-input-bar
-                      initial={false}
-                      animate={{
-                        height: panelOpen ? "auto" : 0,
-                        opacity: panelOpen ? 1 : 0,
-                      }}
-                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                      className="overflow-hidden"
-                      aria-hidden={!panelOpen}
-                    >
-                      {hasComposer ? (
-                        <AiInputBar />
-                      ) : (
-                        <AiInputBarConnect
-                          onAdd={() => void openSettingsWindow("models")}
+                {(() => {
+                  const renderSecondaryPanelContent = () => {
+                    if (secondarySidebarView === "code") {
+                      if (codeSurface !== "sidebar") {
+                        return (
+                          <SidebarPlaceholderPanel
+                            title="Code"
+                            description="Code chat is open in another surface."
+                          />
+                        );
+                      }
+                      if (!secondarySidebarVisible) return null;
+                      return (
+                        <PiPanel
+                          workspaceRoot={codePanelContext.workspaceRoot}
+                          activeCwd={codePanelContext.activeCwd}
+                          activeFile={codePanelContext.activeFile}
+                          activeTerminalPrivate={
+                            codePanelContext.activeTerminalPrivate
+                          }
+                          focusRequest={piFocusRequest}
+                          onOpenLocalAgent={launchPiLocalAgent}
+                          onOpenWorkspace={openCodeWorkspace}
+                          onPopOut={openCodePopOut}
+                          onSelectedSessionChange={setCodeSelectedSessionId}
                         />
-                      )}
-                    </motion.div>
-                  ) : null}
-                </div>
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </main>
+                      );
+                    }
+                    if (secondarySidebarView === "chat") {
+                      return (
+                        <SidebarPlaceholderPanel
+                          title="Chat"
+                          description="Conversation workspace is coming soon."
+                        />
+                      );
+                    }
+                    return (
+                      <SidebarPlaceholderPanel
+                        title="Inbox"
+                        description="Agent messages and review requests will appear here."
+                      />
+                    );
+                  };
+                  const renderSidebarPanel = (slot: SidebarSlotId) => {
+                    const primary = slot === "primary";
+                    const position = primary
+                      ? sidebarPosition
+                      : oppositeSidebarPosition(sidebarPosition);
+                    const panelRef = primary ? sidebarRef : secondarySidebarRef;
+                    const widthRef = primary
+                      ? sidebarWidthRef
+                      : secondarySidebarWidthRef;
+                    const persistWidth = primary
+                      ? persistSidebarWidth
+                      : persistSecondarySidebarWidth;
+                    const visible = primary
+                      ? sidebarVisible
+                      : secondarySidebarVisible;
 
-          {!zenMode && (
-            <StatusBar
-            cwd={activeCwd}
-            filePath={activeFilePath}
-            home={home}
-            onCd={sendCd}
-            onWorkspaceChange={switchWorkspace}
-            onOpenMini={openMini}
-            hasComposer={hasComposer}
-            privateActive={
-              activeTab?.kind === "terminal" && activeTab.private === true
-            }
+                    return (
+                      <ResizablePanel
+                        key={primary ? "sidebar" : "secondary-sidebar"}
+                        id={primary ? "sidebar" : "secondary-sidebar"}
+                        panelRef={panelRef}
+                        defaultSize={visible ? widthRef.current : 0}
+                        minSize={SIDEBAR_MIN_WIDTH}
+                        maxSize={SIDEBAR_MAX_WIDTH}
+                        collapsible
+                        collapsedSize={0}
+                        onResize={(size) => {
+                          const nextVisible = size.inPixels > 0;
+                          setSidebarPanelVisible(slot, nextVisible);
+                          if (nextVisible) persistWidth(size.inPixels);
+                        }}
+                      >
+                        <div
+                          className={cn(
+                            "flex h-full min-h-0 flex-col bg-card",
+                            position === "right"
+                              ? "border-l border-border/60"
+                              : "border-r border-border/60",
+                          )}
+                        >
+                          <div className="min-h-0 flex-1">
+                            {primary ? (
+                              sidebarView === "explorer" ? (
+                                <FileExplorer
+                                  ref={explorerRef}
+                                  rootPath={explorerRoot}
+                                  activeFilePath={explorerActiveFilePath}
+                                  onOpenFile={handleOpenFile}
+                                  onPathRenamed={handlePathRenamed}
+                                  onPathDeleted={handlePathDeleted}
+                                  onRevealInTerminal={cdInNewTab}
+                                  onAttachToAgent={handleAttachFileToAgent}
+                                  onOpenMarkdownPreview={openMarkdownPreview}
+                                />
+                              ) : (
+                                <SourceControlPanel
+                                  open
+                                  sourceControl={sourceControl}
+                                  onOpenDiff={openGitDiffTab}
+                                  onOpenGitGraph={openGitGraphFromContext}
+                                  onOpenFile={handleOpenFile}
+                                />
+                              )
+                            ) : (
+                              renderSecondaryPanelContent()
+                            )}
+                          </div>
+                          {primary ? (
+                            <SidebarRail
+                              activeView={sidebarView}
+                              badges={{
+                                "source-control": sourceControl.changedCount,
+                              }}
+                              items={PRIMARY_SIDEBAR_VIEW_ITEMS}
+                              onSelectView={persistSidebarView}
+                            />
+                          ) : (
+                            <SidebarRail
+                              activeView={secondarySidebarView}
+                              badges={{ code: piUnreadCount }}
+                              items={SECONDARY_SIDEBAR_VIEW_ITEMS}
+                              onSelectView={selectSecondarySidebarView}
+                            />
+                          )}
+                        </div>
+                      </ResizablePanel>
+                    );
+                  };
+                  const workspacePanel = (
+                    <ResizablePanel
+                      key="workspace"
+                      id="workspace"
+                      defaultSize="78%"
+                      minSize="30%"
+                    >
+                      <div className="flex h-full min-h-0 flex-col">
+                        <div className="relative min-h-0 flex-1">
+                          {workspaceSurface}
+                        </div>
+
+                        {keysLoaded ? (
+                          <motion.div
+                            data-ai-input-bar
+                            initial={false}
+                            animate={{
+                              height: panelOpen ? "auto" : 0,
+                              opacity: panelOpen ? 1 : 0,
+                            }}
+                            transition={{
+                              duration: 0.18,
+                              ease: [0.16, 1, 0.3, 1],
+                            }}
+                            className="overflow-hidden"
+                            aria-hidden={!panelOpen}
+                          >
+                            {hasComposer ? (
+                              <AiInputBar />
+                            ) : (
+                              <AiInputBarConnect
+                                onAdd={() => void openSettingsWindow("models")}
+                              />
+                            )}
+                          </motion.div>
+                        ) : null}
+                      </div>
+                    </ResizablePanel>
+                  );
+                  const panels = {
+                    "primary-sidebar": renderSidebarPanel("primary"),
+                    workspace: workspacePanel,
+                    "secondary-sidebar": renderSidebarPanel("secondary"),
+                  };
+                  return orderSidebarLayout(sidebarPosition).flatMap(
+                    (slot, index) =>
+                      index === 0
+                        ? [panels[slot]]
+                        : [
+                            <ResizableHandle
+                              key={`handle-${slot}`}
+                              withHandle
+                            />,
+                            panels[slot],
+                          ],
+                  );
+                })()}
+              </ResizablePanelGroup>
+            </main>
+
+            {!zenMode && (
+              <StatusBar
+                cwd={activeCwd}
+                filePath={activeFilePath}
+                home={home}
+                onCd={sendCd}
+                onWorkspaceChange={switchWorkspace}
+                onOpenMini={openMini}
+                hasComposer={hasComposer}
+                privateActive={
+                  activeTab?.kind === "terminal" && activeTab.private === true
+                }
+              />
+            )}
+
+            <AgentNotificationsBridge
+              tabs={tabs}
+              activeId={activeId}
+              onActivate={onActivateAgent}
             />
-          )}
+            <PiNotificationsBridge
+              visible={piSidebarVisible}
+              onActivateSession={onActivatePiSession}
+            />
+            <Toaster position="bottom-right" />
 
-          <AgentNotificationsBridge
-            tabs={tabs}
-            activeId={activeId}
-            onActivate={onActivateAgent}
-          />
-          <Toaster position="bottom-right" />
-
-          {hasComposer ? (
-            <>
-              <AgentRunBridge
-                openAiDiffTab={openAiDiffTab}
-                closeAiDiffTab={closeAiDiffTab}
-              />
-              <LocalAgentNotificationsBridge />
-            </>
-          ) : null}
-
-          <AnimatePresence>
-            {miniOpen && hasComposer ? <AiMiniWindow key="ai-mini" /> : null}
-            {askPopup ? (
-              <SelectionAskAi
-                key="ask-ai-popup"
-                x={askPopup.x}
-                y={askPopup.y}
-                onAsk={onAskFromSelection}
-                onDismiss={() => setAskPopup(null)}
-              />
+            {hasComposer ? (
+              <>
+                <AgentRunBridge
+                  openAiDiffTab={openAiDiffTab}
+                  closeAiDiffTab={closeAiDiffTab}
+                />
+                <LocalAgentNotificationsBridge />
+              </>
             ) : null}
-          </AnimatePresence>
 
-          <CommandPalette
-            open={commandPaletteOpen}
-            onOpenChange={setCommandPaletteOpen}
-            actions={commandPaletteActions}
-            workspaceRoot={explorerRoot}
-            onOpenFile={handleOpenFile}
-          />
-
-          <ShortcutsDialog
-            open={shortcutsOpen}
-            onOpenChange={setShortcutsOpen}
-          />
-
-          <NewEditorDialog
-            open={newEditorOpen}
-            onOpenChange={setNewEditorOpen}
-            rootPath={explorerRoot ?? home}
-            onCreated={(path) => openFileTab(path)}
-          />
-
-          <UpdaterDialog />
-
-          <AlertDialog
-            open={pendingCloseTab !== null}
-            onOpenChange={(open) => !open && cancelClose()}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {tabs.find((t) => t.id === pendingCloseTab)?.title
-                    ? `"${
-                        tabs.find((t) => t.id === pendingCloseTab)?.title
-                      }" has unsaved changes. Close anyway?`
-                    : "This file has unsaved changes. Close anyway?"}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel onClick={cancelClose}>
-                  Cancel
-                </AlertDialogCancel>
-                <AlertDialogAction onClick={confirmClose}>
-                  Close Anyway
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-
-          <AlertDialog
-            open={pendingTerminalCloseTab !== null}
-            onOpenChange={(open) => !open && setPendingTerminalCloseTab(null)}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Close Terminal?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  A process is running. Closing this tab will terminate it.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel
-                  onClick={() => setPendingTerminalCloseTab(null)}
+            <AnimatePresence>
+              {codeSurface === "floating" ? (
+                <PiFloatingWindow
+                  key="code-floating"
+                  onClose={openCodeInSidebar}
+                  onOpenWorkspace={openCodeWorkspace}
                 >
-                  Cancel
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => {
-                    if (pendingTerminalCloseTab !== null)
-                      disposeTab(pendingTerminalCloseTab);
-                    setPendingTerminalCloseTab(null);
-                  }}
-                >
-                  Close Anyway
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                  <PiPanel
+                    workspaceRoot={codePanelContext.workspaceRoot}
+                    activeCwd={codePanelContext.activeCwd}
+                    activeFile={codePanelContext.activeFile}
+                    activeTerminalPrivate={
+                      codePanelContext.activeTerminalPrivate
+                    }
+                    focusRequest={piFocusRequest}
+                    hideHeader
+                    onOpenLocalAgent={launchPiLocalAgent}
+                    onOpenWorkspace={openCodeWorkspace}
+                    onSelectedSessionChange={setCodeSelectedSessionId}
+                  />
+                </PiFloatingWindow>
+              ) : null}
+              {miniOpen && hasComposer ? <AiMiniWindow key="ai-mini" /> : null}
+              {askPopup ? (
+                <SelectionAskAi
+                  key="ask-ai-popup"
+                  x={askPopup.x}
+                  y={askPopup.y}
+                  onAsk={onAskFromSelection}
+                  onDismiss={() => setAskPopup(null)}
+                />
+              ) : null}
+            </AnimatePresence>
 
-          <AlertDialog
-            open={pendingDeleteTabs !== null}
-            onOpenChange={(open) => !open && cancelDeleteClose()}
-          >
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {pendingDeleteTabs?.length === 1
-                    ? (() => {
-                        const title = tabs.find(
-                          (t) => t.id === pendingDeleteTabs[0],
-                        )?.title;
-                        return title
-                          ? `"${title}" has unsaved changes. The file has been deleted. Close anyway?`
-                          : "This file has unsaved changes. The file has been deleted. Close anyway?";
-                      })()
-                    : `${pendingDeleteTabs?.length ?? 0} files have unsaved changes. They have been deleted. Close all anyway?`}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel onClick={cancelDeleteClose}>
-                  Cancel
-                </AlertDialogCancel>
-                <AlertDialogAction onClick={confirmDeleteClose}>
-                  Close Anyway
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-      </TooltipProvider>
+            <CommandPalette
+              open={commandPaletteOpen}
+              onOpenChange={setCommandPaletteOpen}
+              actions={commandPaletteActions}
+              workspaceRoot={explorerRoot}
+              onOpenFile={handleOpenFile}
+            />
+
+            <ShortcutsDialog
+              open={shortcutsOpen}
+              onOpenChange={setShortcutsOpen}
+            />
+
+            <NewEditorDialog
+              open={newEditorOpen}
+              onOpenChange={setNewEditorOpen}
+              rootPath={explorerRoot ?? home}
+              onCreated={(path) => openFileTab(path)}
+            />
+
+            <UpdaterDialog />
+
+            <AlertDialog
+              open={pendingCloseTab !== null}
+              onOpenChange={(open) => !open && cancelClose()}
+            >
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {tabs.find((t) => t.id === pendingCloseTab)?.title
+                      ? `"${
+                          tabs.find((t) => t.id === pendingCloseTab)?.title
+                        }" has unsaved changes. Close anyway?`
+                      : "This file has unsaved changes. Close anyway?"}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={cancelClose}>
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction onClick={confirmClose}>
+                    Close Anyway
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog
+              open={pendingTerminalCloseTab !== null}
+              onOpenChange={(open) => !open && setPendingTerminalCloseTab(null)}
+            >
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Close Terminal?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    A process is running. Closing this tab will terminate it.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel
+                    onClick={() => setPendingTerminalCloseTab(null)}
+                  >
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      if (pendingTerminalCloseTab !== null)
+                        disposeTab(pendingTerminalCloseTab);
+                      setPendingTerminalCloseTab(null);
+                    }}
+                  >
+                    Close Anyway
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog
+              open={pendingDeleteTabs !== null}
+              onOpenChange={(open) => !open && cancelDeleteClose()}
+            >
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {pendingDeleteTabs?.length === 1
+                      ? (() => {
+                          const title = tabs.find(
+                            (t) => t.id === pendingDeleteTabs[0],
+                          )?.title;
+                          return title
+                            ? `"${title}" has unsaved changes. The file has been deleted. Close anyway?`
+                            : "This file has unsaved changes. The file has been deleted. Close anyway?";
+                        })()
+                      : `${pendingDeleteTabs?.length ?? 0} files have unsaved changes. They have been deleted. Close all anyway?`}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={cancelDeleteClose}>
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction onClick={confirmDeleteClose}>
+                    Close Anyway
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </TooltipProvider>
+      </PiControllerProvider>
     </ThemeProvider>
   );
 

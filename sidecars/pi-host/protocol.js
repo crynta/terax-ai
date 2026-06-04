@@ -3,17 +3,30 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { listProfileModels } from "./model-catalog.js";
 import {
+  PROTOCOL_VERSION,
+  protocolSchemaMethods,
+  validateProtocolParams,
+} from "./protocol-schema.js";
+import {
+  APPROVAL_TOOL_NAMES,
   createSession,
+  deleteSession,
+  ENABLED_TOOL_NAMES,
   listSessions,
   MAX_PROMPT_CHARS,
   MAX_SESSIONS,
+  renameSession,
   resetSessionsForTests,
+  respondToToolApproval,
+  resumeSession,
   SessionProtocolError,
   sendToSession,
   stopSession,
+  TOOL_MODE,
 } from "./sessions.js";
 
 export const HOST_VERSION = "0.1.0";
+export { PROTOCOL_VERSION };
 
 export const PI_PACKAGE_NAMES = [
   "@earendil-works/pi-agent-core",
@@ -22,33 +35,24 @@ export const PI_PACKAGE_NAMES = [
   "@earendil-works/pi-tui",
 ];
 
-export const ALLOWED_METHODS = [
-  "ping",
-  "status",
-  "info",
-  "diagnostics",
-  "models.list",
-  "sessions.list",
-  "sessions.create",
-  "sessions.send",
-  "sessions.stop",
-  "shutdown",
-];
+export const ALLOWED_METHODS = protocolSchemaMethods();
 
 const ERROR_CODES = {
   parseError: -32700,
   invalidRequest: -32600,
   methodNotFound: -32601,
+  invalidParams: -32602,
   internalError: -32603,
+  unsupportedProtocolVersion: -32009,
 };
 
 let packageProbePromise;
 
-function errorResponse(id, code, message) {
+function errorResponse(id, code, message, data = undefined) {
   return {
     jsonrpc: "2.0",
     id,
-    error: { code, message },
+    error: data === undefined ? { code, message } : { code, message, data },
   };
 }
 
@@ -239,7 +243,7 @@ async function info() {
   };
 }
 
-const FORWARDED_ENV_NAMES = [
+const BASE_FORWARDED_ENV_NAMES = [
   "PATH",
   "HOME",
   "USERPROFILE",
@@ -251,9 +255,24 @@ const FORWARDED_ENV_NAMES = [
   "SHELL",
   "PI_CODING_AGENT_DIR",
   "TERAX_PI_NODE_MODULES",
-  "TERAX_PI_HOST_TEST_FAUX_RESPONSE",
-  "TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND",
 ];
+
+const TEST_FAUX_ENV_NAMES = [
+  "TERAX_PI_HOST_ENABLE_TEST_FAUX",
+  "TERAX_PI_HOST_TEST_FAUX_RESPONSE",
+  "TERAX_PI_HOST_TEST_FAUX_TOOL_CALL",
+  "TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND",
+  "TERAX_PI_HOST_TEST_FAUX_REASONING",
+];
+
+const WORKSPACE_FILE_TOOLS = new Set([
+  "read",
+  "ls",
+  "grep",
+  "find",
+  "edit",
+  "write",
+]);
 
 const API_KEY_ENV_NAMES = [
   "ANTHROPIC_API_KEY",
@@ -282,6 +301,14 @@ function status() {
   };
 }
 
+function forwardedEnvNames() {
+  const names = [...BASE_FORWARDED_ENV_NAMES];
+  if (process.env.TERAX_PI_HOST_ENABLE_TEST_FAUX === "1") {
+    names.push(...TEST_FAUX_ENV_NAMES);
+  }
+  return names.filter((name) => process.env[name] !== undefined);
+}
+
 async function diagnostics() {
   return {
     ...(await info()),
@@ -294,22 +321,23 @@ async function diagnostics() {
       cwd: process.cwd(),
     },
     config: {
-      toolMode: "noTools",
-      sessionStorage: "rust-app-data-json",
+      toolMode: TOOL_MODE,
+      enabledTools: ENABLED_TOOL_NAMES,
+      approvalRequiredTools: APPROVAL_TOOL_NAMES,
+      sessionStorage: "rust-app-data-json+pi-sdk-jsonl",
       apiKeys: API_KEY_ENV_NAMES.map(envStatus),
-      forwardedEnvNames: FORWARDED_ENV_NAMES.filter(
-        (name) => process.env[name] !== undefined,
-      ),
+      forwardedEnvNames: forwardedEnvNames(),
     },
     capabilities: {
-      tools: false,
-      files: false,
-      shell: false,
+      tools: ENABLED_TOOL_NAMES.length > 0,
+      files: ENABLED_TOOL_NAMES.some((name) => WORKSPACE_FILE_TOOLS.has(name)),
+      shell: ENABLED_TOOL_NAMES.includes("bash"),
       git: false,
       terminal: false,
       editor: false,
     },
     protocol: {
+      protocolVersion: PROTOCOL_VERSION,
       allowedMethods: ALLOWED_METHODS,
     },
     limits: {
@@ -321,6 +349,7 @@ async function diagnostics() {
       title: session.title,
       status: session.status,
       cwd: session.cwd ?? null,
+      sdkSessionFile: session.sdkSessionFile ?? null,
     })),
   };
 }
@@ -330,7 +359,7 @@ async function sessionResponse(id, handler, params) {
     return successResponse(id, await handler(params));
   } catch (error) {
     if (error instanceof SessionProtocolError) {
-      return errorResponse(id, error.code, error.message);
+      return errorResponse(id, error.code, error.message, error.data);
     }
     return errorResponse(
       id,
@@ -353,6 +382,29 @@ function isRequest(value) {
     Number.isInteger(value.id) &&
     typeof value.method === "string"
   );
+}
+
+function unsupportedProtocolResponse(id, version) {
+  return errorResponse(
+    id,
+    ERROR_CODES.unsupportedProtocolVersion,
+    `Unsupported Pi host protocol version: ${version}`,
+  );
+}
+
+function negotiateProtocol(request, params) {
+  if (request.method !== "ping" || params.protocolVersion === undefined) {
+    return null;
+  }
+  const requestedVersion = Number(params.protocolVersion);
+  if (
+    !Number.isInteger(requestedVersion) ||
+    requestedVersion > PROTOCOL_VERSION ||
+    requestedVersion < 1
+  ) {
+    return unsupportedProtocolResponse(request.id, params.protocolVersion);
+  }
+  return null;
 }
 
 export async function handleJsonRpcLine(line) {
@@ -388,10 +440,32 @@ export async function handleJsonRpcLine(line) {
     };
   }
 
+  const parsedParams = validateProtocolParams(request.method, request.params);
+  if (!parsedParams.ok) {
+    return {
+      response: errorResponse(
+        request.id,
+        ERROR_CODES.invalidParams,
+        parsedParams.message,
+      ),
+      shutdown: false,
+    };
+  }
+  const params = parsedParams.params;
+
+  const protocolError = negotiateProtocol(request, params);
+  if (protocolError !== null) {
+    return { response: protocolError, shutdown: false };
+  }
+
   switch (request.method) {
     case "ping":
       return {
-        response: successResponse(request.id, { pong: true }),
+        response: successResponse(request.id, {
+          pong: true,
+          protocolVersion: PROTOCOL_VERSION,
+          hostVersion: HOST_VERSION,
+        }),
         shutdown: false,
       };
     case "status":
@@ -417,7 +491,7 @@ export async function handleJsonRpcLine(line) {
             const pi = await import("@earendil-works/pi-coding-agent");
             return listProfileModels(pi, params);
           },
-          request.params,
+          params,
         ),
         shutdown: false,
       };
@@ -431,7 +505,7 @@ export async function handleJsonRpcLine(line) {
         response: await sessionResponse(
           request.id,
           createSession,
-          request.params,
+          params,
         ),
         shutdown: false,
       };
@@ -440,7 +514,43 @@ export async function handleJsonRpcLine(line) {
         response: await sessionResponse(
           request.id,
           sendToSession,
-          request.params,
+          params,
+        ),
+        shutdown: false,
+      };
+    case "sessions.resume":
+      return {
+        response: await sessionResponse(
+          request.id,
+          resumeSession,
+          params,
+        ),
+        shutdown: false,
+      };
+    case "sessions.tool.respond":
+      return {
+        response: await sessionResponse(
+          request.id,
+          respondToToolApproval,
+          params,
+        ),
+        shutdown: false,
+      };
+    case "sessions.rename":
+      return {
+        response: await sessionResponse(
+          request.id,
+          renameSession,
+          params,
+        ),
+        shutdown: false,
+      };
+    case "sessions.delete":
+      return {
+        response: await sessionResponse(
+          request.id,
+          deleteSession,
+          params,
         ),
         shutdown: false,
       };
@@ -449,7 +559,7 @@ export async function handleJsonRpcLine(line) {
         response: await sessionResponse(
           request.id,
           stopSession,
-          request.params,
+          params,
         ),
         shutdown: false,
       };

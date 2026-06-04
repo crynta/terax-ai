@@ -8,18 +8,13 @@ use terax_lib::modules::fs::tree::{fs_read_dir, list_subdirs, EntryKind};
 #[test]
 fn grep_finds_matches_and_returns_relative_paths() {
     let fx = FsFixture::new();
-    fx.write("src/main.rs", "fn main() {\n    println!(\"hello world\");\n}\n");
+    fx.write(
+        "src/main.rs",
+        "fn main() {\n    println!(\"hello world\");\n}\n",
+    );
     fx.write("src/lib.rs", "pub fn greet() {}\n");
 
-    let res = fs_grep(
-        "hello".into(),
-        fx.root_str(),
-        None,
-        None,
-        None,
-        None,
-    )
-    .expect("grep");
+    let res = fs_grep("hello".into(), fx.root_str(), None, None, None, None).expect("grep");
 
     assert_eq!(res.hits.len(), 1);
     let hit = &res.hits[0];
@@ -35,12 +30,11 @@ fn grep_case_insensitive_finds_mixed_case() {
     let fx = FsFixture::new();
     fx.write("a.txt", "Hello World\n");
 
-    let strict = fs_grep("hello".into(), fx.root_str(), None, Some(false), None, None)
-        .expect("grep");
+    let strict =
+        fs_grep("hello".into(), fx.root_str(), None, Some(false), None, None).expect("grep");
     assert!(strict.hits.is_empty());
 
-    let loose = fs_grep("hello".into(), fx.root_str(), None, Some(true), None, None)
-        .expect("grep");
+    let loose = fs_grep("hello".into(), fx.root_str(), None, Some(true), None, None).expect("grep");
     assert_eq!(loose.hits.len(), 1);
 }
 
@@ -71,8 +65,7 @@ fn grep_max_results_truncates() {
         fx.write(&format!("f{i}.txt"), "needle\n");
     }
 
-    let res = fs_grep("needle".into(), fx.root_str(), None, None, Some(3), None)
-        .expect("grep");
+    let res = fs_grep("needle".into(), fx.root_str(), None, None, Some(3), None).expect("grep");
 
     assert!(res.hits.len() <= 3);
     assert!(res.truncated);
@@ -105,8 +98,7 @@ fn grep_respects_ignore_file() {
     fx.write("ignored.txt", "secret\n");
     fx.write("visible.txt", "secret\n");
 
-    let res = fs_grep("secret".into(), fx.root_str(), None, None, None, None)
-        .expect("grep");
+    let res = fs_grep("secret".into(), fx.root_str(), None, None, None, None).expect("grep");
 
     let rels: Vec<&str> = res.hits.iter().map(|h| h.rel.as_str()).collect();
     assert!(rels.contains(&"visible.txt"));

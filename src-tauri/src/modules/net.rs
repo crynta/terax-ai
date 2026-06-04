@@ -133,7 +133,7 @@ fn validate_url(url: &str, allow_private: bool) -> Result<reqwest::Url, String> 
     if is_blocked_host_name(host) {
         return Err(format!("host not allowed: {host}"));
     }
-    // The actual IP classification has to be async — caller does it.
+    // The actual IP classification has to be async - caller does it.
     let _ = allow_private;
     Ok(parsed)
 }
@@ -215,7 +215,7 @@ pub async fn lm_ping(base_url: String) -> Result<u16, String> {
         .map(|r| r.status().as_u16())
         .map_err(|e| e.to_string())
 }
-// AI HTTP proxy — bypasses webview CORS / Mixed-Content / PNA so local-network
+// AI HTTP proxy - bypasses webview CORS / Mixed-Content / PNA so local-network
 // model servers (LM Studio, Ollama, vLLM) work in the production bundle.
 
 #[derive(Debug, Serialize)]
@@ -247,14 +247,13 @@ fn build_safe_client(
     pinned: &[(String, Vec<IpAddr>)],
     timeout: Option<Duration>,
 ) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10));
+    let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(10));
     if let Some(timeout) = timeout {
         builder = builder.timeout(timeout);
     }
     // Pin reqwest's resolver to the IPs we just classified. Without this,
     // reqwest's own DNS lookup could return a different (private/metadata) IP
-    // for the same hostname between classify and connect — classic DNS
+    // for the same hostname between classify and connect - classic DNS
     // rebinding attack. We pin port 0 because reqwest fills in the actual
     // port from the URL when wiring up the override map.
     for (host, ips) in pinned {
@@ -454,7 +453,7 @@ pub async fn ai_http_stream(
                     })
                     .is_err()
                 {
-                    // Channel dropped (frontend aborted) — stop streaming.
+                    // Channel dropped (frontend aborted) - stop streaming.
                     return Ok(());
                 }
             }
@@ -488,16 +487,13 @@ mod tests {
             ip_kind("fd00:ec2::254".parse().unwrap()),
             IpKind::BlockedMetadata
         );
-        // Any link-local IPv4 (169.254/16) — same network range, still blocked.
+        // Any link-local IPv4 (169.254/16) - same network range, still blocked.
         assert_eq!(
             ip_kind(IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1))),
             IpKind::BlockedMetadata
         );
         // IPv6 link-local fe80::/10
-        assert_eq!(
-            ip_kind("fe80::1".parse().unwrap()),
-            IpKind::BlockedMetadata
-        );
+        assert_eq!(ip_kind("fe80::1".parse().unwrap()), IpKind::BlockedMetadata);
     }
 
     #[test]

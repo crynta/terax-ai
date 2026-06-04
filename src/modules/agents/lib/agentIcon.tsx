@@ -1,16 +1,47 @@
 import {
+  AiGenerativeIcon,
+  AiMagicIcon,
   ChatGptIcon,
   ClaudeIcon,
+  CursorMagicSelection02Icon,
+  OpenSourceIcon,
   RoboticIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
+import { agentProviderByName } from "./providers";
 
-function iconFor(agent: string): IconSvgElement {
-  const a = agent.toLowerCase();
-  if (a.includes("claude")) return ClaudeIcon;
-  if (a.includes("codex") || a.includes("gpt") || a.includes("openai"))
-    return ChatGptIcon;
-  return RoboticIcon;
+export type AgentIconKind =
+  | "terax"
+  | "claude"
+  | "codex"
+  | "pi"
+  | "cursor"
+  | "opencode"
+  | "gemini"
+  | "antigravity"
+  | "generic";
+
+export function agentIconKind(agent: string): AgentIconKind {
+  return agentProviderByName(agent)?.iconKind ?? "generic";
+}
+
+function iconFor(kind: Exclude<AgentIconKind, "terax" | "pi">): IconSvgElement {
+  switch (kind) {
+    case "claude":
+      return ClaudeIcon;
+    case "codex":
+      return ChatGptIcon;
+    case "cursor":
+      return CursorMagicSelection02Icon;
+    case "opencode":
+      return OpenSourceIcon;
+    case "gemini":
+      return AiGenerativeIcon;
+    case "antigravity":
+      return AiMagicIcon;
+    case "generic":
+      return RoboticIcon;
+  }
 }
 
 export function AgentIcon({
@@ -22,7 +53,8 @@ export function AgentIcon({
   size?: number;
   className?: string;
 }) {
-  if (agent.toLowerCase().includes("terax")) {
+  const kind = agentIconKind(agent);
+  if (kind === "terax") {
     return (
       <img
         src="/logo.png"
@@ -34,9 +66,29 @@ export function AgentIcon({
       />
     );
   }
+  if (kind === "pi") {
+    return (
+      <span
+        aria-hidden
+        className={className}
+        style={{
+          alignItems: "center",
+          display: "inline-flex",
+          fontSize: Math.max(11, Math.round(size * 0.9)),
+          fontWeight: 700,
+          height: size,
+          justifyContent: "center",
+          lineHeight: `${size}px`,
+          width: size,
+        }}
+      >
+        π
+      </span>
+    );
+  }
   return (
     <HugeiconsIcon
-      icon={iconFor(agent)}
+      icon={iconFor(kind)}
       size={size}
       strokeWidth={1.75}
       className={className}

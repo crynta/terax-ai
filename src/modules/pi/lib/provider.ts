@@ -3,8 +3,11 @@ import {
   compatModelIdForEndpoint,
   DEFAULT_MODEL_ID,
   endpointIdFromCompatModel,
+  getModelContextLimit,
   getProvider,
   isCompatModelId,
+  modelKeepsReasoning,
+  type ModelInfo,
   type ProviderId,
   resolveModel,
 } from "@/modules/ai/config";
@@ -29,6 +32,21 @@ export type PiProviderPrefs = {
   customEndpoints: readonly CustomEndpoint[];
 };
 
+export const PI_THINKING_LEVELS = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const;
+
+export type PiThinkingLevel = (typeof PI_THINKING_LEVELS)[number];
+
+export function isPiThinkingLevel(value: unknown): value is PiThinkingLevel {
+  return PI_THINKING_LEVELS.includes(value as PiThinkingLevel);
+}
+
 export type PiProviderRuntimeConfig = {
   authMode: PiAuthMode;
   provider: string;
@@ -36,7 +54,10 @@ export type PiProviderRuntimeConfig = {
   sourceModelId: string;
   baseUrl?: string;
   contextLimit?: number;
+  maxTokens?: number;
+  reasoning?: boolean;
   customEndpointId?: string;
+  thinkingLevel?: PiThinkingLevel;
   apiKey?: undefined;
 };
 
@@ -127,6 +148,28 @@ function incomplete(
   };
 }
 
+function modelRuntimeMetadata(
+  model: ModelInfo,
+  contextOverride?: number,
+): Pick<PiProviderRuntimeConfig, "contextLimit" | "maxTokens" | "reasoning"> {
+  const contextLimit = getModelContextLimit(model.id, contextOverride);
+  return {
+    contextLimit,
+    maxTokens: contextLimit,
+    reasoning: modelKeepsReasoning(model),
+  };
+}
+
+function freeformRuntimeMetadata(
+  contextLimit: number,
+): Pick<PiProviderRuntimeConfig, "contextLimit" | "maxTokens" | "reasoning"> {
+  return {
+    contextLimit,
+    maxTokens: contextLimit,
+    reasoning: true,
+  };
+}
+
 function resolved(
   provider: string,
   modelLabel: string,
@@ -139,6 +182,30 @@ function resolved(
     modelLabel,
     config,
   };
+}
+
+export function piThinkingLevelsForProvider(
+  provider: PiProviderResolution,
+): readonly PiThinkingLevel[] {
+  if (!provider.ok) return [];
+  if (provider.config.reasoning === true) return PI_THINKING_LEVELS;
+
+  const modelIds =
+    provider.config.authMode === "profile"
+      ? [provider.config.modelId]
+      : [provider.config.sourceModelId];
+
+  for (const modelId of modelIds) {
+    try {
+      const model = resolveModel(modelId, []);
+      if (model.tags?.includes("reasoning")) return PI_THINKING_LEVELS;
+    } catch {
+      // Profile catalogs may contain models unknown to Terax. If we cannot
+      // prove the model supports reasoning, keep the control hidden.
+    }
+  }
+
+  return [];
 }
 
 function requiredModelId(
@@ -187,7 +254,7 @@ function resolveCustomEndpoint(
     sourceModelId,
     customEndpointId: endpoint.id,
     baseUrl,
-    contextLimit: endpoint.contextLimit,
+    ...freeformRuntimeMetadata(endpoint.contextLimit),
   });
 }
 
@@ -263,6 +330,7 @@ export function resolvePiProviderConfig(
         modelId,
         sourceModelId,
         baseUrl: trimValue(prefs.lmstudioBaseURL),
+        ...modelRuntimeMetadata(model),
       });
     }
     case "mlx-local": {
@@ -274,6 +342,7 @@ export function resolvePiProviderConfig(
         modelId,
         sourceModelId,
         baseUrl: trimValue(prefs.mlxBaseURL),
+        ...modelRuntimeMetadata(model),
       });
     }
     case "ollama-local": {
@@ -289,6 +358,7 @@ export function resolvePiProviderConfig(
         modelId,
         sourceModelId,
         baseUrl: trimValue(prefs.ollamaBaseURL),
+        ...modelRuntimeMetadata(model),
       });
     }
     case "openai-compatible-custom": {
@@ -313,7 +383,7 @@ export function resolvePiProviderConfig(
         modelId,
         sourceModelId,
         baseUrl,
-        contextLimit: prefs.openaiCompatibleContextLimit,
+        ...freeformRuntimeMetadata(prefs.openaiCompatibleContextLimit),
       });
     }
     case "openrouter-custom": {
@@ -329,6 +399,7 @@ export function resolvePiProviderConfig(
         provider,
         modelId,
         sourceModelId,
+        ...modelRuntimeMetadata(model),
       });
     }
     default:
@@ -337,6 +408,7 @@ export function resolvePiProviderConfig(
         provider: model.provider,
         modelId: model.id,
         sourceModelId,
+        ...modelRuntimeMetadata(model),
       });
   }
 }

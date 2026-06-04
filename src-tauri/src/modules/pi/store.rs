@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -38,12 +39,12 @@ pub fn record_session_result(
     record_session_result_at_path(&history_path(app)?, session, events)
 }
 
+pub fn record_session_events(app: &AppHandle, events: &[PiSessionEvent]) -> Result<(), String> {
+    record_session_events_at_path(&history_path(app)?, events)
+}
+
 pub fn record_event_at_path(path: &Path, event: &PiSessionEvent) -> Result<(), String> {
-    let _guard = history_lock()?;
-    let mut history = load_from_path(path)?;
-    apply_event_to_sessions(&mut history.sessions, event);
-    append_events(&mut history.events, std::slice::from_ref(event));
-    save_to_path(path, &history)
+    record_session_events_at_path(path, std::slice::from_ref(event))
 }
 
 pub fn mark_unfinished_sessions_stopped(app: &AppHandle) -> Result<usize, String> {
@@ -96,6 +97,21 @@ fn stopped_event(session_id: String, created_at: &str, sequence: usize) -> PiSes
         session_id,
         created_at: created_at.to_string(),
         payload: serde_json::json!({ "status": "stopped" }),
+    }
+}
+
+pub(super) fn deleted_event(session_id: String) -> PiSessionEvent {
+    let created_at = now_iso_timestamp();
+    PiSessionEvent {
+        id: format!(
+            "evt_{}_delete_{}",
+            event_id_component(&created_at),
+            event_id_component(&session_id)
+        ),
+        event_type: "session.deleted".to_string(),
+        session_id: session_id.clone(),
+        created_at,
+        payload: serde_json::json!({ "sessionId": session_id }),
     }
 }
 
@@ -155,12 +171,21 @@ fn record_session_result_at_path(
 ) -> Result<(), String> {
     let _guard = history_lock()?;
     let mut history = load_from_path(path)?;
-    upsert_session(&mut history.sessions, session.clone());
-    for event in events {
-        apply_event_to_sessions(&mut history.sessions, event);
+    let changed = upsert_session(&mut history.sessions, session.clone())
+        | apply_events_to_history(&mut history, events);
+    if changed {
+        save_to_path(path, &history)?;
     }
-    append_events(&mut history.events, events);
-    save_to_path(path, &history)
+    Ok(())
+}
+
+fn record_session_events_at_path(path: &Path, events: &[PiSessionEvent]) -> Result<(), String> {
+    let _guard = history_lock()?;
+    let mut history = load_from_path(path)?;
+    if apply_events_to_history(&mut history, events) {
+        save_to_path(path, &history)?;
+    }
+    Ok(())
 }
 
 fn load_from_path(path: &Path) -> Result<PiSessionsList, String> {
@@ -179,11 +204,16 @@ fn save_to_path(path: &Path, history: &PiSessionsList) -> Result<(), String> {
     fs::write(path, format!("{contents}\n")).map_err(|e| e.to_string())
 }
 
-fn upsert_session(sessions: &mut Vec<PiSession>, session: PiSession) {
+fn upsert_session(sessions: &mut Vec<PiSession>, session: PiSession) -> bool {
     if let Some(index) = sessions.iter().position(|current| current.id == session.id) {
+        if sessions[index] == session {
+            return false;
+        }
         sessions[index] = session;
+        true
     } else {
         sessions.insert(0, session);
+        true
     }
 }
 
@@ -196,7 +226,46 @@ fn append_events(history_events: &mut Vec<PiSessionEvent>, events: &[PiSessionEv
     history_events.truncate(MAX_EVENTS);
 }
 
-fn apply_event_to_sessions(sessions: &mut [PiSession], event: &PiSessionEvent) {
+fn apply_events_to_history(history: &mut PiSessionsList, events: &[PiSessionEvent]) -> bool {
+    let mut known_event_ids = history
+        .events
+        .iter()
+        .map(|event| event.id.clone())
+        .collect::<HashSet<_>>();
+    let events = events
+        .iter()
+        .filter(|event| known_event_ids.insert(event.id.clone()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if events.is_empty() {
+        return false;
+    }
+
+    for event in &events {
+        apply_event_to_sessions(&mut history.sessions, event);
+        if event.event_type == "session.deleted" {
+            history
+                .events
+                .retain(|current| current.session_id != event.session_id);
+        }
+    }
+    append_events(&mut history.events, &events);
+    true
+}
+
+fn apply_event_to_sessions(sessions: &mut Vec<PiSession>, event: &PiSessionEvent) {
+    if event.event_type == "session.deleted" {
+        sessions.retain(|session| session.id != event.session_id);
+        return;
+    }
+
+    if event.event_type == "session.resumed" {
+        if let Ok(session) = serde_json::from_value::<PiSession>(event.payload["session"].clone()) {
+            upsert_session(sessions, session);
+        }
+        return;
+    }
+
     let Some(session) = sessions
         .iter_mut()
         .find(|session| session.id == event.session_id)
@@ -207,6 +276,15 @@ fn apply_event_to_sessions(sessions: &mut [PiSession], event: &PiSessionEvent) {
     if event.event_type == "session.status" {
         if let Some(status) = event.payload["status"].as_str() {
             session.status = status.to_string();
+            session.updated_at = event.created_at.clone();
+        }
+    }
+    if event.event_type == "session.renamed" {
+        if let Some(title) = event.payload["title"]
+            .as_str()
+            .filter(|title| !title.trim().is_empty())
+        {
+            session.title = title.trim().to_string();
             session.updated_at = event.created_at.clone();
         }
     }
@@ -232,6 +310,8 @@ mod tests {
             created_at: "2026-01-01T00:00:00.000Z".to_string(),
             updated_at: "2026-01-01T00:00:00.000Z".to_string(),
             last_prompt: None,
+            thinking_level: None,
+            sdk_session_file: None,
         }
     }
 
@@ -290,6 +370,80 @@ mod tests {
 
         assert_eq!(history.sessions[0].status, "stopped");
         assert_eq!(history.events[0].id, "evt-2");
+    }
+
+    #[test]
+    fn duplicate_event_recording_is_a_persistence_noop() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join(HISTORY_FILE_NAME);
+        let idle = event(
+            "evt-duplicate",
+            "session.status",
+            "pi-1",
+            json!({ "status": "idle" }),
+        );
+        record_session_result_at_path(
+            &path,
+            &session("pi-1", "running"),
+            std::slice::from_ref(&idle),
+        )
+        .unwrap();
+
+        let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+        permissions.set_readonly(true);
+        std::fs::set_permissions(&path, permissions).unwrap();
+
+        let result = record_event_at_path(&path, &idle);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+            permissions.set_mode(0o600);
+            std::fs::set_permissions(&path, permissions).unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+            permissions.set_readonly(false);
+            std::fs::set_permissions(&path, permissions).unwrap();
+        }
+        result.unwrap();
+    }
+
+    #[test]
+    fn record_session_result_applies_rename_and_delete_events() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join(HISTORY_FILE_NAME);
+        let mut renamed = session("pi-1", "idle");
+        renamed.title = "Renamed session".to_string();
+        let renamed_event = event(
+            "evt-rename",
+            "session.renamed",
+            "pi-1",
+            json!({ "title": "Renamed session" }),
+        );
+        let deleted_event = event(
+            "evt-delete",
+            "session.deleted",
+            "pi-1",
+            json!({ "sessionId": "pi-1" }),
+        );
+
+        record_session_result_at_path(&path, &session("pi-1", "idle"), &[]).unwrap();
+        record_session_result_at_path(&path, &renamed, std::slice::from_ref(&renamed_event))
+            .unwrap();
+        let history = load_from_path(&path).unwrap();
+        assert_eq!(history.sessions[0].title, "Renamed session");
+
+        record_session_result_at_path(&path, &renamed, std::slice::from_ref(&deleted_event))
+            .unwrap();
+        let history = load_from_path(&path).unwrap();
+        assert!(history.sessions.is_empty());
+        assert!(history
+            .events
+            .iter()
+            .all(|event| event.session_id != "pi-1" || event.event_type == "session.deleted"));
     }
 
     #[test]

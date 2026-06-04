@@ -1,4 +1,9 @@
-import type { PiProviderResolution } from "@/modules/pi/lib/provider";
+import { getModelContextLimit } from "@/modules/ai/config";
+import {
+  type PiProviderResolution,
+  type PiThinkingLevel,
+  piThinkingLevelsForProvider,
+} from "@/modules/pi/lib/provider";
 import type {
   PiPromptContext,
   PiSession,
@@ -12,7 +17,10 @@ import {
 } from "@/modules/pi/lib/sessions";
 import type { PiDiagnostics, PiRuntimeState } from "@/modules/pi/lib/status";
 import { getPiStatusView, type PiStatusView } from "@/modules/pi/lib/status";
-import { buildPiContextPreview, type PiContextPreviewItem } from "@/modules/pi/lib/view";
+import {
+  buildPiContextPreview,
+  type PiContextPreviewItem,
+} from "@/modules/pi/lib/view";
 import {
   buildPiDiagnosticsView,
   type PiDiagnosticsView,
@@ -38,7 +46,7 @@ export type PiComposerSelectedModel = {
 };
 
 export type PiComposerState = {
-  availableThinkingLevels: string[];
+  availableThinkingLevels: PiThinkingLevel[];
   canCreateSession: boolean;
   canSend: boolean;
   canStop: boolean;
@@ -50,7 +58,7 @@ export type PiComposerState = {
   running: boolean;
   selectedModel: PiComposerSelectedModel | null;
   sendDisabledReason: string | null;
-  thinkingLevel: string | null;
+  thinkingLevel: PiThinkingLevel | null;
 };
 
 export type PiPanelState = {
@@ -91,6 +99,7 @@ type BuildPiPanelStateInput = {
   selectedSessionId: string | null;
   sessionEvents: PiSessionEvent[];
   sessions: PiSession[];
+  thinkingLevel?: PiThinkingLevel | null;
   workspaceRoot: string | null;
 };
 
@@ -106,7 +115,9 @@ function composerHint(input: {
     return "Pi is responding. Stop it before sending another prompt.";
   }
   if (input.selectedSession.status === "stopped") {
-    return "Create a new session to send more prompts.";
+    return input.selectedSession.sdkSessionFile
+      ? "Resume this session to send more prompts."
+      : "Continue in a new session to send more prompts.";
   }
   if (input.selectedSession.status === "error") {
     return "Fix settings if needed, then send again to retry.";
@@ -135,7 +146,9 @@ function sendDisabledReason(input: {
   return null;
 }
 
-function selectedModel(provider: PiProviderResolution): PiComposerSelectedModel | null {
+function selectedModel(
+  provider: PiProviderResolution,
+): PiComposerSelectedModel | null {
   if (!provider.ok) return null;
   return {
     providerLabel: provider.providerLabel,
@@ -143,16 +156,120 @@ function selectedModel(provider: PiProviderResolution): PiComposerSelectedModel 
   };
 }
 
+function estimateContextTokens(
+  values: Array<string | null | undefined>,
+): number {
+  const characters = values
+    .filter((value): value is string => value !== null && value !== undefined)
+    .join("\n").length;
+  if (characters === 0) return 0;
+  return Math.max(1, Math.ceil(characters / 4));
+}
+
+function valueText(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function contextValues(context: PiPromptContext | null | undefined): string[] {
+  if (!context) return [];
+  return [
+    context.workspaceRoot ?? null,
+    context.activeTerminalCwd ?? null,
+    context.activeFile ?? null,
+    context.activeTerminalPrivate ? "private terminal" : null,
+  ].filter((value): value is string => value !== null);
+}
+
+function transcriptContextValues(transcript: PiTranscriptItem[]): string[] {
+  return transcript
+    .flatMap((item) => [
+      item.text,
+      item.reasoningText,
+      item.promptText,
+      item.toolName,
+      valueText(item.toolInput),
+      item.toolOutput?.content,
+      item.toolErrorText,
+      ...contextValues(item.context),
+      ...contextValues(item.promptContext),
+    ])
+    .filter((value): value is string => Boolean(value));
+}
+
+function contextWindowForProvider(
+  provider: PiProviderResolution,
+): number | null {
+  if (!provider.ok) return null;
+  return getModelContextLimit(
+    provider.config.sourceModelId,
+    provider.config.contextLimit,
+  );
+}
+
+function selectedThinkingLevel(input: {
+  availableLevels: readonly PiThinkingLevel[];
+  preferredLevel?: PiThinkingLevel | null;
+  sessionLevel?: PiThinkingLevel | null;
+}): PiThinkingLevel | null {
+  if (input.availableLevels.length === 0) return null;
+  if (
+    input.preferredLevel &&
+    input.availableLevels.includes(input.preferredLevel)
+  ) {
+    return input.preferredLevel;
+  }
+  if (
+    input.sessionLevel &&
+    input.availableLevels.includes(input.sessionLevel)
+  ) {
+    return input.sessionLevel;
+  }
+  return input.availableLevels.includes("medium")
+    ? "medium"
+    : (input.availableLevels[0] ?? null);
+}
+
+function composerContextUsage(input: {
+  provider: PiProviderResolution;
+  transcript: PiTranscriptItem[];
+}): PiComposerContextUsage | null {
+  const contextWindow = contextWindowForProvider(input.provider);
+  const tokens = estimateContextTokens(
+    transcriptContextValues(input.transcript),
+  );
+  if (tokens === 0 && contextWindow === null) return null;
+  return {
+    tokens,
+    contextWindow,
+    percent:
+      contextWindow === null || contextWindow <= 0
+        ? null
+        : Math.min(100, Number(((tokens / contextWindow) * 100).toFixed(2))),
+  };
+}
+
 export function buildPiPanelState(input: BuildPiPanelStateInput): PiPanelState {
   const status = getPiStatusView(input.runtimeState);
   const runtimeReady = input.runtimeState.phase === "ready";
   const selectedSession =
-    input.sessions.find((session) => session.id === input.selectedSessionId) ?? null;
+    input.sessions.find((session) => session.id === input.selectedSessionId) ??
+    null;
   const selectedSessionSendable = isPiSessionSendable(selectedSession);
   const selectedEvents =
     input.selectedSessionId === null
       ? []
-      : input.sessionEvents.filter((event) => event.sessionId === input.selectedSessionId);
+      : input.sessionEvents.filter(
+          (event) => event.sessionId === input.selectedSessionId,
+        );
   const transcript = buildPiSessionTranscript(selectedEvents);
   const promptContext: PiPromptContext = {
     workspaceRoot: selectedSession?.cwd ?? input.workspaceRoot,
@@ -178,28 +295,44 @@ export function buildPiPanelState(input: BuildPiPanelStateInput): PiPanelState {
   });
   const running = selectedSession?.status === "running";
   const canCreateSession =
-    runtimeReady && input.workspaceRoot !== null && input.provider.ok && !input.isBusy;
+    runtimeReady &&
+    input.workspaceRoot !== null &&
+    input.provider.ok &&
+    !input.isBusy;
+  const availableThinkingLevels = [
+    ...piThinkingLevelsForProvider(input.provider),
+  ];
 
   return {
     composer: {
-      availableThinkingLevels: [],
+      availableThinkingLevels,
       canCreateSession,
       canSend: reason === null,
-      canStop: runtimeReady && selectedSession !== null && running && !input.isBusy,
-      contextUsage: null,
-      disabled: reason !== null,
-      hint: reason ?? composerHint({
-        prompt: input.prompt,
-        runtimeReady,
-        selectedSession,
-        selectedSessionSendable,
+      canStop:
+        runtimeReady && selectedSession !== null && running && !input.isBusy,
+      contextUsage: composerContextUsage({
+        provider: input.provider,
+        transcript,
       }),
+      disabled: reason !== null,
+      hint:
+        reason ??
+        composerHint({
+          prompt: input.prompt,
+          runtimeReady,
+          selectedSession,
+          selectedSessionSendable,
+        }),
       prompt: input.prompt,
       queuedPrompts: [],
       running,
       selectedModel: selectedModel(input.provider),
       sendDisabledReason: reason,
-      thinkingLevel: null,
+      thinkingLevel: selectedThinkingLevel({
+        availableLevels: availableThinkingLevels,
+        preferredLevel: input.thinkingLevel,
+        sessionLevel: selectedSession?.thinkingLevel,
+      }),
     },
     context: {
       preview: buildPiContextPreview(promptContext, selectedSession?.cwd),

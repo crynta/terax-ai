@@ -57,14 +57,16 @@ function createEnvelopeReader(input) {
   };
 }
 
-function readResponse(reader) {
-  return reader.read();
+function readResponse(reader, timeoutMs = 10_000) {
+  return reader.read(timeoutMs);
+}
+
+function writeEnvelope(child, envelope) {
+  child.stdin.write(`${JSON.stringify(envelope)}\n`);
 }
 
 function writeRequest(child, id, method, params) {
-  child.stdin.write(
-    `${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`,
-  );
+  writeEnvelope(child, { jsonrpc: "2.0", id, method, params });
 }
 
 async function readUntil(reader, predicate, timeoutMs = 6000) {
@@ -125,9 +127,111 @@ describe("Pi host stdio", () => {
     }
   });
 
+  it("round-trips Rust native tool requests over the host protocol", async () => {
+    const child = spawn(process.execPath, [HOST_PATH], {
+      env: hostEnv({
+        TERAX_PI_HOST_ENABLE_TEST_FAUX: "1",
+        TERAX_PI_HOST_TEST_FAUX_RESPONSE: "tool host response",
+        TERAX_PI_HOST_TEST_FAUX_TOOL_CALL: JSON.stringify({
+          id: "call-read",
+          name: "read",
+          arguments: { path: "package.json" },
+        }),
+      }),
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const lines = createEnvelopeReader(child.stdout);
+
+    try {
+      writeRequest(child, 1, "sessions.create", { title: "native tools" });
+      const created = await readResponse(lines);
+      const sessionId = created.result.session.id;
+
+      writeRequest(child, 2, "sessions.send", {
+        sessionId,
+        prompt: "read package",
+      });
+      await expect(readResponse(lines)).resolves.toMatchObject({
+        jsonrpc: "2.0",
+        id: 2,
+        result: { accepted: true },
+      });
+
+      const events = [];
+      let nativeRequest = null;
+      await readUntil(
+        lines,
+        (envelope) => {
+          if (envelope.method === "nativeTools.execute") {
+            nativeRequest = envelope;
+            writeEnvelope(child, {
+              jsonrpc: "2.0",
+              id: envelope.id,
+              result: {
+                content: [{ type: "text", text: "read by Rust" }],
+                details: { mediatedBy: "rust-test" },
+              },
+            });
+            return false;
+          }
+          if (envelope.method !== "session.event") {
+            return false;
+          }
+          events.push(envelope.params);
+          return (
+            envelope.params.type === "session.status" &&
+            envelope.params.payload.status === "idle"
+          );
+        },
+        10_000,
+      );
+
+      const toolCallId = nativeRequest.params.toolCallId;
+      expect(nativeRequest).toMatchObject({
+        jsonrpc: "2.0",
+        method: "nativeTools.execute",
+        params: {
+          sessionId,
+          toolCallId: expect.any(String),
+          toolName: "read",
+          workspaceEnv: { kind: "local" },
+          input: { path: "package.json" },
+        },
+      });
+      expect(events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "session.tool.result",
+            payload: expect.objectContaining({
+              toolCallId,
+              output: expect.objectContaining({
+                content: "read by Rust",
+                details: { mediatedBy: "rust-test" },
+              }),
+              isError: false,
+            }),
+          }),
+        ]),
+      );
+
+      writeRequest(child, 3, "shutdown");
+      await expect(readResponse(lines)).resolves.toEqual({
+        jsonrpc: "2.0",
+        id: 3,
+        result: { ok: true },
+      });
+      await new Promise((resolve) => child.once("exit", resolve));
+      expect(child.exitCode).toBe(0);
+    } finally {
+      lines.close();
+      child.kill();
+    }
+  }, 15_000);
+
   it("keeps Pi SDK stdout writes off the JSON-RPC stream", async () => {
     const child = spawn(process.execPath, [HOST_PATH], {
       env: hostEnv({
+        TERAX_PI_HOST_ENABLE_TEST_FAUX: "1",
         TERAX_PI_HOST_TEST_FAUX_RESPONSE: "stdio safe response",
         TERAX_PI_HOST_TEST_FAUX_TOKENS_PER_SECOND: "",
       }),

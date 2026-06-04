@@ -16,9 +16,9 @@ const viewport = (): Viewport => ({
   vh: window.innerHeight,
 });
 
-function loadGeom(): Geom | null {
+function loadGeom(storageKey: string): Geom | null {
   try {
-    const raw = window.localStorage.getItem(STORE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return null;
     const p = JSON.parse(raw) as Partial<Geom>;
     if (
@@ -30,29 +30,28 @@ function loadGeom(): Geom | null {
       return { x: p.x, y: p.y, w: p.w, h: p.h };
     }
   } catch {
-    // corrupt entry — fall back to default placement
+    // corrupt entry - fall back to default placement
   }
   return null;
 }
 
-function saveGeom(g: Geom) {
+function saveGeom(storageKey: string, g: Geom) {
   try {
-    window.localStorage.setItem(STORE_KEY, JSON.stringify(g));
+    window.localStorage.setItem(storageKey, JSON.stringify(g));
   } catch {
-    // private mode / quota — geometry just won't persist
+    // private mode / quota - geometry just won't persist
   }
 }
 
 type Compute = (start: Geom, dx: number, dy: number, vp: Viewport) => Geom;
 
-/** Drives the mini window's position and size entirely through the DOM (no
- * React state), so neither chat streaming nor any other re-render can disturb
- * an in-flight gesture. Writes are batched into a single rAF per frame. */
-export function useMiniWindowGeometry() {
+/** Drives the mini window's position and size through the DOM, not React state. */
+export function useMiniWindowGeometry(storageKey = STORE_KEY) {
   const ref = useRef<HTMLDivElement>(null);
   const geom = useRef<Geom>({ x: 0, y: 0, w: 0, h: 0 });
   const frame = useRef(0);
   const pending = useRef<Geom | null>(null);
+  const gestureCleanup = useRef<(() => void) | null>(null);
 
   const flush = useCallback(() => {
     frame.current = 0;
@@ -75,7 +74,10 @@ export function useMiniWindowGeometry() {
   );
 
   useLayoutEffect(() => {
-    const g = clampGeom(loadGeom() ?? defaultGeom(viewport()), viewport());
+    const g = clampGeom(
+      loadGeom(storageKey) ?? defaultGeom(viewport()),
+      viewport(),
+    );
     geom.current = g;
     const el = ref.current;
     if (el) {
@@ -90,12 +92,14 @@ export function useMiniWindowGeometry() {
     window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("resize", onResize);
+      gestureCleanup.current?.();
       if (frame.current) cancelAnimationFrame(frame.current);
     };
-  }, [write]);
+  }, [storageKey, write]);
 
   const beginGesture = useCallback(
     (e: React.PointerEvent, compute: Compute, threshold: number) => {
+      gestureCleanup.current?.();
       const el = e.currentTarget as HTMLElement;
       const pointerId = e.pointerId;
       const startX = e.clientX;
@@ -122,20 +126,31 @@ export function useMiniWindowGeometry() {
         }
         write(compute(start, dx, dy, viewport()));
       };
-      const onUp = () => {
+      let cleaned = false;
+      const cleanupGesture = () => {
+        if (cleaned) return;
+        cleaned = true;
         el.removeEventListener("pointermove", onMove);
-        el.removeEventListener("pointerup", onUp);
-        el.removeEventListener("pointercancel", onUp);
+        el.removeEventListener("pointerup", cleanupGesture);
+        el.removeEventListener("pointercancel", cleanupGesture);
+        gestureCleanup.current = null;
         if (!armed) return;
-        el.releasePointerCapture?.(pointerId);
+        try {
+          if (el.hasPointerCapture?.(pointerId)) {
+            el.releasePointerCapture?.(pointerId);
+          }
+        } catch {
+          // Element may have been detached during the gesture.
+        }
         document.body.style.userSelect = "";
-        saveGeom(geom.current);
+        saveGeom(storageKey, geom.current);
       };
+      gestureCleanup.current = cleanupGesture;
       el.addEventListener("pointermove", onMove);
-      el.addEventListener("pointerup", onUp);
-      el.addEventListener("pointercancel", onUp);
+      el.addEventListener("pointerup", cleanupGesture);
+      el.addEventListener("pointercancel", cleanupGesture);
     },
-    [write],
+    [storageKey, write],
   );
 
   const onHeaderPointerDown = useCallback(
@@ -157,7 +172,11 @@ export function useMiniWindowGeometry() {
     (dir: ResizeDir) => (e: React.PointerEvent) => {
       if (e.button !== 0) return;
       e.stopPropagation();
-      beginGesture(e, (start, dx, dy, vp) => applyResize(start, dir, dx, dy, vp), 0);
+      beginGesture(
+        e,
+        (start, dx, dy, vp) => applyResize(start, dir, dx, dy, vp),
+        0,
+      );
     },
     [beginGesture],
   );

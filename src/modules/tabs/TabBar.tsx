@@ -1,3 +1,17 @@
+import {
+  Cancel01Icon,
+  Clock01Icon,
+  CodeIcon,
+  ComputerTerminal02Icon,
+  GitBranchIcon,
+  GitCompareIcon,
+  Globe02Icon,
+  IncognitoIcon,
+  PencilEdit02Icon,
+  PlusSignIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -16,19 +30,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
-import {
-  Cancel01Icon,
-  Clock01Icon,
-  ComputerTerminal02Icon,
-  GitBranchIcon,
-  GitCompareIcon,
-  Globe02Icon,
-  IncognitoIcon,
-  PencilEdit02Icon,
-  PlusSignIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState } from "react";
 import { labelFor } from "./lib/tabLabel";
 import type { EditorTab, Tab } from "./lib/useTabs";
 
@@ -286,7 +287,11 @@ export function TabBar({
               </span>
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewGitGraph()}>
-              <HugeiconsIcon icon={GitBranchIcon} size={14} strokeWidth={1.75} />
+              <HugeiconsIcon
+                icon={GitBranchIcon}
+                size={14}
+                strokeWidth={1.75}
+              />
               <span className="flex-1">Git Graph</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -345,6 +350,16 @@ function TabIcon({ tab }: { tab: Tab }) {
     return (
       <HugeiconsIcon
         icon={Clock01Icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0"
+      />
+    );
+  }
+  if (tab.kind === "pi-workspace") {
+    return (
+      <HugeiconsIcon
+        icon={CodeIcon}
         size={14}
         strokeWidth={2}
         className="shrink-0"

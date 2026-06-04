@@ -1,10 +1,12 @@
 import {
   Alert02Icon,
   CheckmarkCircle01Icon,
+  Copy01Icon,
   Refresh01Icon,
   Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,7 @@ type PiDiagnosticsCardProps = {
   onCollapsedChange: (collapsed: boolean) => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
+  onRestartRuntime: () => void;
   onStartRuntime: () => void;
 };
 
@@ -32,7 +35,7 @@ function actionHandler(
   action: PiDiagnosticsAction | null,
   props: Pick<
     PiDiagnosticsCardProps,
-    "onOpenSettings" | "onRefresh" | "onStartRuntime"
+    "onOpenSettings" | "onRefresh" | "onRestartRuntime" | "onStartRuntime"
   >,
 ): (() => void) | null {
   switch (action) {
@@ -40,10 +43,25 @@ function actionHandler(
       return props.onOpenSettings;
     case "refresh":
       return props.onRefresh;
+    case "restart-runtime":
+      return props.onRestartRuntime;
     case "start-runtime":
       return props.onStartRuntime;
     case null:
       return null;
+  }
+}
+
+type CopyStatus = "copied" | "failed" | "idle";
+
+function copyStatusLabel(status: CopyStatus): string {
+  switch (status) {
+    case "copied":
+      return "Copied";
+    case "failed":
+      return "Copy failed";
+    case "idle":
+      return "Copy";
   }
 }
 
@@ -52,17 +70,20 @@ function IssueAction({
   issue,
   onOpenSettings,
   onRefresh,
+  onRestartRuntime,
   onStartRuntime,
 }: {
   disabled: boolean;
   issue: PiDiagnosticsIssue;
   onOpenSettings: () => void;
   onRefresh: () => void;
+  onRestartRuntime: () => void;
   onStartRuntime: () => void;
 }) {
   const handler = actionHandler(issue.action, {
     onOpenSettings,
     onRefresh,
+    onRestartRuntime,
     onStartRuntime,
   });
   if (!handler || !issue.actionLabel) return null;
@@ -71,7 +92,7 @@ function IssueAction({
     <Button
       size="xs"
       variant={issue.tone === "destructive" ? "outline" : "secondary"}
-      className="h-5 shrink-0 px-1.5 text-[10px]"
+      className="h-5 shrink-0 rounded-md px-1.5 text-[10px]"
       disabled={disabled}
       onClick={handler}
     >
@@ -93,12 +114,14 @@ function IssueRow({
   issue,
   onOpenSettings,
   onRefresh,
+  onRestartRuntime,
   onStartRuntime,
 }: {
   disabled: boolean;
   issue: PiDiagnosticsIssue;
   onOpenSettings: () => void;
   onRefresh: () => void;
+  onRestartRuntime: () => void;
   onStartRuntime: () => void;
 }) {
   const content = (
@@ -130,6 +153,7 @@ function IssueRow({
           issue={issue}
           onOpenSettings={onOpenSettings}
           onRefresh={onRefresh}
+          onRestartRuntime={onRestartRuntime}
           onStartRuntime={onStartRuntime}
         />
       </div>
@@ -162,11 +186,45 @@ export function PiDiagnosticsCard({
   onCollapsedChange,
   onOpenSettings,
   onRefresh,
+  onRestartRuntime,
   onStartRuntime,
 }: PiDiagnosticsCardProps) {
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
+  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasSettingsAction = view.issues.some(
     (issue) => issue.action === "open-settings",
   );
+
+  useEffect(
+    () => () => {
+      if (copyResetTimerRef.current) {
+        clearTimeout(copyResetTimerRef.current);
+      }
+    },
+    [],
+  );
+
+  const resetCopyStatusSoon = () => {
+    if (copyResetTimerRef.current) {
+      clearTimeout(copyResetTimerRef.current);
+    }
+    copyResetTimerRef.current = setTimeout(() => setCopyStatus("idle"), 1600);
+  };
+
+  const copyDiagnostics = async () => {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
+      setCopyStatus("failed");
+      resetCopyStatusSoon();
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(view.diagnosticsText);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+    resetCopyStatusSoon();
+  };
 
   return (
     <PiSection
@@ -175,7 +233,7 @@ export function PiDiagnosticsCard({
       summary={
         <Badge
           variant={view.healthy ? "secondary" : "outline"}
-          className="h-4 gap-1 px-1.5 text-[9.5px] text-muted-foreground"
+          className="h-4 gap-1 rounded-md px-1.5 text-[9.5px] text-muted-foreground"
         >
           <span
             aria-hidden
@@ -208,6 +266,27 @@ export function PiDiagnosticsCard({
             )}
             Refresh
           </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            className={cn(
+              "h-5 rounded-md px-1.5 text-[10px]",
+              copyStatus === "failed" && "text-destructive",
+            )}
+            aria-label="Copy Pi diagnostics"
+            disabled={disabled}
+            onClick={() => void copyDiagnostics()}
+          >
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={
+                copyStatus === "copied" ? CheckmarkCircle01Icon : Copy01Icon
+              }
+              size={11}
+              strokeWidth={1.75}
+            />
+            {copyStatusLabel(copyStatus)}
+          </Button>
           {hasSettingsAction ? (
             <Button
               size="xs"
@@ -230,6 +309,22 @@ export function PiDiagnosticsCard({
       contentClassName="px-2.5 pb-2"
       onCollapsedChange={onCollapsedChange}
     >
+      <div
+        className={cn(
+          "mb-1.5 rounded-lg border px-2.5 py-2",
+          view.healthy
+            ? "border-border/35 bg-card/60"
+            : "border-border/45 bg-background/80",
+        )}
+      >
+        <div className="truncate text-[11px] font-medium text-foreground">
+          {view.summaryTitle}
+        </div>
+        <div className="line-clamp-2 text-[10.5px] leading-snug text-muted-foreground">
+          {view.summaryDescription}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-1.5 text-[10px] text-muted-foreground">
         <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/70 px-1.5 py-1 tabular-nums">
           Packages {view.loadedPackageCount}/{view.packageCount}
@@ -278,12 +373,24 @@ export function PiDiagnosticsCard({
               issue={issue}
               onOpenSettings={onOpenSettings}
               onRefresh={onRefresh}
+              onRestartRuntime={onRestartRuntime}
               onStartRuntime={onStartRuntime}
             />
           ))
         )}
+        {view.debugDetail ? (
+          <details className="rounded-lg border border-border/35 bg-card/50 px-2.5 py-2 text-[10px] text-muted-foreground">
+            <summary className="cursor-pointer select-none text-[10.5px] font-medium text-foreground">
+              Sidecar stderr tail
+            </summary>
+            <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[9.5px] leading-snug text-muted-foreground">
+              {view.debugDetail}
+            </pre>
+          </details>
+        ) : null}
         <div className="truncate text-[9.5px] text-muted-foreground/60">
-          Node {view.nodeLabel} · Storage {view.storageLabel} · {view.idlePolicyLabel}
+          Node {view.nodeLabel} · Storage {view.storageLabel} ·{" "}
+          {view.idlePolicyLabel}
         </div>
       </div>
     </PiSection>

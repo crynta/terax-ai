@@ -109,6 +109,37 @@ describe("normalizeRuntimeProviderConfig", () => {
     });
   });
 
+  it("normalizes supported thinking levels", () => {
+    expect(
+      normalizeRuntimeProviderConfig({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        thinkingLevel: " high ",
+      }),
+    ).toMatchObject({ thinkingLevel: "high" });
+  });
+
+  it("normalizes runtime model reasoning and max token metadata", () => {
+    expect(
+      normalizeRuntimeProviderConfig({
+        provider: "openai-compatible",
+        modelId: "qwen3-max",
+        reasoning: true,
+        maxTokens: 64_000,
+      }),
+    ).toMatchObject({ reasoning: true, maxTokens: 64_000 });
+  });
+
+  it("rejects unsupported thinking levels", () => {
+    expect(() =>
+      normalizeRuntimeProviderConfig({
+        provider: "anthropic",
+        modelId: "claude-sonnet-4-6",
+        thinkingLevel: "extreme",
+      }),
+    ).toThrow("providerConfig.thinkingLevel is not supported: extreme");
+  });
+
   it("rejects newline-bearing provider fields", () => {
     expect(() =>
       normalizeRuntimeProviderConfig({
@@ -165,6 +196,37 @@ describe("createRuntimeProviderOptions", () => {
     ]);
   });
 
+  it("preserves runtime model reasoning and output limits when registering providers", async () => {
+    const pi = fakePi();
+    await createRuntimeProviderOptions(pi, {
+      provider: "openai-compatible",
+      modelId: "qwen3-max",
+      baseUrl: "https://gateway.example.com/v1",
+      contextLimit: 256_000,
+      maxTokens: 64_000,
+      reasoning: true,
+    });
+
+    expect(pi.refs.modelRegistry.registered[0].config.models[0]).toMatchObject({
+      id: "qwen3-max",
+      reasoning: true,
+      contextWindow: 256_000,
+      maxTokens: 64_000,
+      compat: expect.objectContaining({ supportsReasoningEffort: true }),
+    });
+  });
+
+  it("passes validated thinking levels to Pi runtime options", async () => {
+    const pi = fakePi();
+    const options = await createRuntimeProviderOptions(pi, {
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      thinkingLevel: "high",
+    });
+
+    expect(options.thinkingLevel).toBe("high");
+  });
+
   it("uses explicit Pi profile storage for profile-backed models", async () => {
     const pi = fakePi();
     const options = await createRuntimeProviderOptions(
@@ -178,6 +240,7 @@ describe("createRuntimeProviderOptions", () => {
       { cwd: "/repo" },
     );
 
+    expect(options.agentDir).toBe("/Users/me/.pi/agent");
     expect(options.model).toEqual({
       provider: "openai-codex",
       id: "gpt-5.3-codex",

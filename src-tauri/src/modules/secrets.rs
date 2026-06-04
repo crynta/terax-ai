@@ -12,7 +12,7 @@
 //!   isolation the secret-service collection would have otherwise.
 //!
 //! The frontend talks to `secrets_get`, `secrets_set`, `secrets_delete`,
-//! and `secrets_get_all` — no platform branching in JS.
+//! and `secrets_get_all` - no platform branching in JS.
 //!
 //! All commands take `&AppHandle` so we can resolve the data directory
 //! once via Tauri's path API.
@@ -253,7 +253,10 @@ mod tests {
         write_store_at(&p, &HashMap::new()).unwrap();
 
         let tmp_path = p.with_extension("json.tmp");
-        assert!(!tmp_path.exists(), "tmp file must be renamed away on success");
+        assert!(
+            !tmp_path.exists(),
+            "tmp file must be renamed away on success"
+        );
     }
 
     #[test]
@@ -283,7 +286,7 @@ mod tests {
     }
 }
 
-/// Batch read — single IPC roundtrip for the cold-boot fan-out.
+/// Batch read - single IPC roundtrip for the cold-boot fan-out.
 #[tauri::command]
 pub async fn secrets_get_all(
     app: AppHandle,

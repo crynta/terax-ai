@@ -4,16 +4,16 @@ import {
   hasLeaf,
   leafIds,
   nextLeafId,
+  type PaneNode,
   removeLeaf,
+  type SplitDir,
   setLeafCwd as setLeafCwdInTree,
   siblingLeafOf,
   splitLeaf,
-  type PaneNode,
-  type SplitDir,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 
-// Matches the renderer slot pool size — over this we'd evict an active leaf.
+// Matches the renderer slot pool size. Above this we'd evict an active leaf.
 export const MAX_PANES_PER_TAB = 4;
 
 export type TerminalTab = {
@@ -36,7 +36,7 @@ export type EditorTab = {
   path: string;
   dirty: boolean;
   /**
-   * True while the tab is in the transient "preview" state — opened by a
+   * True while the tab is in the transient "preview" state, opened by a
    * single-click in the explorer and not yet pinned by the user. A preview tab
    * is replaced by the next single-click rather than accumulating.
    */
@@ -102,6 +102,12 @@ export type GitCommitFileDiffTab = {
   originalPath: string | null;
 };
 
+export type PiWorkspaceTab = {
+  id: number;
+  kind: "pi-workspace";
+  title: "Code";
+};
+
 export type Tab =
   | TerminalTab
   | EditorTab
@@ -110,7 +116,8 @@ export type Tab =
   | AiDiffTab
   | GitDiffTab
   | GitHistoryTab
-  | GitCommitFileDiffTab;
+  | GitCommitFileDiffTab
+  | PiWorkspaceTab;
 
 export type TabPatch = Partial<{
   title: string;
@@ -134,6 +141,18 @@ function titleFromUrl(url: string): string {
   } catch {
     return url || "preview";
   }
+}
+
+export function upsertPiWorkspaceTab(
+  tabs: Tab[],
+  nextId: number,
+): { activeId: number; tabs: Tab[] } {
+  const existing = tabs.find((tab) => tab.kind === "pi-workspace");
+  if (existing) return { activeId: existing.id, tabs };
+  return {
+    activeId: nextId,
+    tabs: [...tabs, { id: nextId, kind: "pi-workspace", title: "Code" }],
+  };
 }
 
 export function useTabs(initial?: Partial<TerminalTab>) {
@@ -177,26 +196,23 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return tabId;
   }, []);
 
-  const newAgentTab = useCallback(
-    (cwd: string | undefined, title: string) => {
-      const tabId = nextIdRef.current++;
-      const leafId = nextIdRef.current++;
-      setTabs((t) => [
-        ...t,
-        {
-          id: tabId,
-          kind: "terminal",
-          title,
-          cwd,
-          paneTree: { kind: "leaf", id: leafId, cwd },
-          activeLeafId: leafId,
-        },
-      ]);
-      setActiveId(tabId);
-      return { tabId, leafId };
-    },
-    [],
-  );
+  const newAgentTab = useCallback((cwd: string | undefined, title: string) => {
+    const tabId = nextIdRef.current++;
+    const leafId = nextIdRef.current++;
+    setTabs((t) => [
+      ...t,
+      {
+        id: tabId,
+        kind: "terminal",
+        title,
+        cwd,
+        paneTree: { kind: "leaf", id: leafId, cwd },
+        activeLeafId: leafId,
+      },
+    ]);
+    setActiveId(tabId);
+    return { tabId, leafId };
+  }, []);
 
   const newPrivateTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
@@ -220,10 +236,10 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   /**
    * Opens a file in an editor tab.
    *
-   * - `pin = true` (default) — opens or activates a **persistent** tab.
+   * - `pin = true` (default) opens or activates a **persistent** tab.
    *   If the path is currently in the preview slot it is promoted in-place.
    *   Use this for programmatic opens (AI diff, New File dialog, etc.).
-   * - `pin = false` — VSCode-style **preview** tab. A single shared slot is
+   * - `pin = false` opens a VSCode-style **preview** tab. A single shared slot is
    *   reused: if a persistent tab for the path already exists it is activated;
    *   otherwise the current preview slot is replaced with the new path.
    */
@@ -416,6 +432,21 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return targetId;
   }, []);
 
+  const openPiWorkspaceTab = useCallback(() => {
+    const existing = tabsRef.current.find((tab) => tab.kind === "pi-workspace");
+    if (existing) {
+      setActiveId(existing.id);
+      return existing.id;
+    }
+
+    const id = nextIdRef.current++;
+    const result = upsertPiWorkspaceTab(tabsRef.current, id);
+    tabsRef.current = result.tabs;
+    setTabs(result.tabs);
+    setActiveId(result.activeId);
+    return result.activeId;
+  }, []);
+
   const openGitDiffTab = useCallback(
     (input: {
       path: string;
@@ -438,7 +469,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
       if (existing) {
         const nextTabs = curr.map((t) =>
-          t.id === existing.id
+          t.kind === "git-diff" && t.id === existing.id
             ? { ...t, title: computedTitle, originalPath }
             : t,
         );
@@ -475,12 +506,12 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       const existing = curr.find(
         (t) => t.kind === "git-history" && t.repoRoot === input.repoRoot,
       );
-      const title = input.branch
-        ? `History · ${input.branch}`
-        : "Git History";
+      const title = input.branch ? `History · ${input.branch}` : "Git History";
       if (existing) {
         const nextTabs = curr.map((t) =>
-          t.id === existing.id ? { ...t, title } : t,
+          t.kind === "git-history" && t.id === existing.id
+            ? { ...t, title }
+            : t,
         );
         tabsRef.current = nextTabs;
         setTabs(nextTabs);
@@ -525,7 +556,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       const title = `${basename(input.path)} @ ${input.shortSha}`;
       if (existing) {
         const nextTabs = curr.map((t) =>
-          t.id === existing.id
+          t.kind === "git-commit-file" && t.id === existing.id
             ? {
                 ...t,
                 title,
@@ -590,7 +621,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.cwd !== undefined && { cwd: patch.cwd }),
             ...(patch.customTitle !== undefined && {
-              customTitle: patch.customTitle === "" ? undefined : patch.customTitle,
+              customTitle:
+                patch.customTitle === "" ? undefined : patch.customTitle,
             }),
           };
         }
@@ -610,11 +642,37 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             ...(patch.title !== undefined && { title: patch.title }),
           };
         }
-        // editor tab: auto-promote from preview the moment the file becomes dirty.
+        if (x.kind === "ai-diff") {
+          return {
+            ...x,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.path !== undefined && { path: patch.path }),
+          };
+        }
+        if (x.kind === "git-diff") {
+          return {
+            ...x,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.path !== undefined && { path: patch.path }),
+          };
+        }
+        if (x.kind === "git-history") {
+          return {
+            ...x,
+            ...(patch.title !== undefined && { title: patch.title }),
+          };
+        }
+        if (x.kind === "git-commit-file") {
+          return {
+            ...x,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.path !== undefined && { path: patch.path }),
+          };
+        }
+        if (x.kind === "pi-workspace") return x;
+
         const autoPin =
-          patch.dirty === true && (x as EditorTab).preview
-            ? { preview: false }
-            : {};
+          patch.dirty === true && x.preview ? { preview: false } : {};
         return {
           ...x,
           ...autoPin,
@@ -635,7 +693,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   );
 
   /** Update a leaf's cwd; mirror to the tab's `cwd` when the leaf is active.
-   * Bails out without setTabs when nothing actually changed — shell integration
+   * Bails out without setTabs when nothing actually changed. Shell integration
    * re-emits OSC 7 on every prompt, including empty Enters, so this fires at
    * keystroke rate. Always-setTabs there cascades a paneTree re-render across
    * every open tab. */
@@ -765,8 +823,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       }
       const remaining = leafIds(newTree);
       const sib = siblingLeafOf(t.paneTree, target);
-      const newActive =
-        sib && remaining.includes(sib) ? sib : remaining[0];
+      const newActive = sib && remaining.includes(sib) ? sib : remaining[0];
       removedLeaf = target;
       return curr.map((x) =>
         x.id === tabId
@@ -812,6 +869,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    openPiWorkspaceTab,
     openAiDiffTab,
     openGitDiffTab,
     openCommitHistoryTab,

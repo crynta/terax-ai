@@ -32,6 +32,15 @@ jobs:
       - name: Type-check
         run: pnpm exec tsc --noEmit
 
+      - name: Build sidecars
+        run: pnpm build:sidecars
+
+      - name: Pi approval boundary
+        run: pnpm check:pi-boundary
+
+      - name: Pi host bundle smoke
+        run: pnpm smoke:pi-host
+
       - name: Test
         run: pnpm test
 

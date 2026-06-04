@@ -4,6 +4,7 @@ import type {
   AgentSession,
   AgentStatus,
   LocalAgentState,
+  PiAgentSessionState,
 } from "../lib/types";
 
 const MAX_NOTIFICATIONS = 50;
@@ -13,21 +14,25 @@ let notifSeq = 0;
 type AgentStoreState = {
   sessions: Record<number, AgentSession>;
   localAgent: LocalAgentState;
+  piSessions: Record<string, PiAgentSessionState>;
   notifications: AgentNotification[];
   start: (leafId: number, tabId: number, agent: string) => void;
   setStatus: (leafId: number, status: AgentStatus) => void;
   finish: (leafId: number) => void;
   setLocalAgent: (state: LocalAgentState) => void;
-  pushNotification: (
-    n: Omit<AgentNotification, "id" | "at" | "read">,
-  ) => void;
+  setPiSession: (state: PiAgentSessionState) => void;
+  removePiSession: (sessionId: string) => void;
+  pushNotification: (n: Omit<AgentNotification, "id" | "at" | "read">) => void;
   markAllRead: () => void;
+  markSourceRead: (source: AgentNotification["source"]) => void;
+  removeNotification: (id: string) => void;
   clearNotifications: () => void;
 };
 
 export const useAgentStore = create<AgentStoreState>((set) => ({
   sessions: {},
   localAgent: null,
+  piSessions: {},
   notifications: [],
 
   start: (leafId, tabId, agent) =>
@@ -82,7 +87,47 @@ export const useAgentStore = create<AgentStoreState>((set) => ({
       if (a && state && a.status === state.status && a.agent === state.agent) {
         return s;
       }
-      return { localAgent: state };
+      if (!state) return { localAgent: null };
+
+      const now = Date.now();
+      return {
+        localAgent: {
+          ...state,
+          attentionSince:
+            state.attentionSince ?? (state.status === "waiting" ? now : null),
+          lastActivityAt: state.lastActivityAt ?? now,
+          startedAt: state.startedAt ?? a?.startedAt ?? now,
+        },
+      };
+    }),
+
+  setPiSession: (state) =>
+    set((s) => {
+      const prev = s.piSessions[state.sessionId];
+      if (
+        prev &&
+        prev.status === state.status &&
+        prev.title === state.title &&
+        prev.body === state.body &&
+        prev.cwd === state.cwd &&
+        prev.lastActivityAt === state.lastActivityAt
+      ) {
+        return s;
+      }
+      return {
+        piSessions: {
+          ...s.piSessions,
+          [state.sessionId]: state,
+        },
+      };
+    }),
+
+  removePiSession: (sessionId) =>
+    set((s) => {
+      if (!s.piSessions[sessionId]) return s;
+      const next = { ...s.piSessions };
+      delete next[sessionId];
+      return { piSessions: next };
     }),
 
   pushNotification: (n) =>
@@ -96,8 +141,32 @@ export const useAgentStore = create<AgentStoreState>((set) => ({
   markAllRead: () =>
     set((s) => {
       if (!s.notifications.some((n) => !n.read)) return s;
-      return { notifications: s.notifications.map((n) => ({ ...n, read: true })) };
+      return {
+        notifications: s.notifications.map((n) => ({ ...n, read: true })),
+      };
     }),
 
-  clearNotifications: () => set({ notifications: [] }),
+  markSourceRead: (source) =>
+    set((s) => {
+      if (!s.notifications.some((n) => n.source === source && !n.read))
+        return s;
+      return {
+        notifications: s.notifications.map((n) =>
+          n.source === source ? { ...n, read: true } : n,
+        ),
+      };
+    }),
+
+  removeNotification: (id) =>
+    set((s) => {
+      const notifications = s.notifications.filter(
+        (notification) => notification.id !== id,
+      );
+      return notifications.length === s.notifications.length
+        ? s
+        : { notifications };
+    }),
+
+  clearNotifications: () =>
+    set((s) => (s.notifications.length === 0 ? s : { notifications: [] })),
 }));

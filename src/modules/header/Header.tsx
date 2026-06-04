@@ -1,5 +1,14 @@
 import { Button } from "@/components/ui/button";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -8,6 +17,7 @@ import {
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, KEY_SEP, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { setSidebarPosition } from "@/modules/settings/store";
 import {
   getBindingTokens,
   SHORTCUTS,
@@ -16,12 +26,14 @@ import {
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
 import { NotificationBell } from "@/modules/agents";
+import type { AgentStatusContext } from "@/modules/agents/lib/statusSurface";
 import {
   GridViewIcon,
   LayoutTwoColumnIcon,
   LayoutTwoRowIcon,
   Settings01Icon,
   SidebarLeftIcon,
+  SidebarRightIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef, useState, type RefObject } from "react";
@@ -46,11 +58,14 @@ type Props = {
   /** Set a terminal tab's custom label; empty string resets to default. */
   onRename: (id: number, title: string) => void;
   onToggleSidebar: () => void;
+  onToggleSecondarySidebar: () => void;
   onSplit: (dir: "row" | "col") => void;
   /** Active tab is a terminal and below the per-tab pane cap. */
   canSplit: boolean;
+  agentTerminalContext: Record<number, AgentStatusContext>;
   onActivateAgent: (tabId: number, leafId: number) => void;
   onActivateLocalAgent: () => void;
+  onActivatePiSession: (sessionId: string) => void;
   onOpenSettings: () => void;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
@@ -71,10 +86,13 @@ export function Header({
   onPin,
   onRename,
   onToggleSidebar,
+  onToggleSecondarySidebar,
   onSplit,
   canSplit,
+  agentTerminalContext,
   onActivateAgent,
   onActivateLocalAgent,
+  onActivatePiSession,
   onOpenSettings,
   searchTarget,
   searchRef,
@@ -82,6 +100,7 @@ export function Header({
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
 
   const tokensFor = (id: ShortcutId): string => {
     const s = SHORTCUTS.find((s) => s.id === id);
@@ -116,6 +135,8 @@ export function Header({
       <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
     </Button>
   );
+  const sidebarIcon =
+    sidebarPosition === "right" ? SidebarRightIcon : SidebarLeftIcon;
 
   return (
     <div
@@ -126,15 +147,40 @@ export function Header({
       }`}
     >
       <div className="flex shrink-0 items-center gap-0.5">
-        <Button
-          onClick={onToggleSidebar}
-          title="Toggle sidebar"
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <HugeiconsIcon icon={SidebarLeftIcon} size={18} strokeWidth={1.75} />
-        </Button>
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <Button
+              onClick={onToggleSidebar}
+              title="Toggle primary sidebar. Right-click for sidebar options."
+              variant="ghost"
+              size="icon-sm"
+              className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <HugeiconsIcon icon={sidebarIcon} size={18} strokeWidth={1.75} />
+            </Button>
+          </ContextMenuTrigger>
+          <ContextMenuContent className="min-w-48">
+            <ContextMenuItem onSelect={onToggleSecondarySidebar}>
+              Toggle Code sidebar
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+            <ContextMenuRadioGroup
+              value={sidebarPosition}
+              onValueChange={(value) => {
+                if (value === "left" || value === "right") {
+                  void setSidebarPosition(value);
+                }
+              }}
+            >
+              <ContextMenuRadioItem value="left">
+                Primary sidebar left
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem value="right">
+                Primary sidebar right
+              </ContextMenuRadioItem>
+            </ContextMenuRadioGroup>
+          </ContextMenuContent>
+        </ContextMenu>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -178,10 +224,14 @@ export function Header({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {!IS_MAC && <NotificationBell
+        {!IS_MAC && (
+          <NotificationBell
+            terminalContext={agentTerminalContext}
             onActivate={onActivateAgent}
             onActivateLocal={onActivateLocalAgent}
-          />}
+            onActivatePi={onActivatePiSession}
+          />
+        )}
       </div>
 
       {!IS_MAC && <span className="mx-1 h-5 w-px shrink-0 bg-border" />}
@@ -214,8 +264,10 @@ export function Header({
       {IS_MAC && (
         <>
           <NotificationBell
+            terminalContext={agentTerminalContext}
             onActivate={onActivateAgent}
             onActivateLocal={onActivateLocalAgent}
+            onActivatePi={onActivatePiSession}
           />
           {settingsButton}
         </>

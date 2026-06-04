@@ -28,15 +28,17 @@ function diagnostics(patch: Partial<PiDiagnostics> = {}): PiDiagnostics {
       cwd: "/tmp",
     },
     config: {
-      toolMode: "noTools",
-      sessionStorage: "rust-app-data-json",
+      toolMode: "rust-mediated",
+      enabledTools: ["read", "ls", "grep", "find", "bash", "edit", "write"],
+      approvalRequiredTools: ["bash", "edit", "write"],
+      sessionStorage: "rust-app-data-json+pi-sdk-jsonl",
       apiKeys: [{ name: "ANTHROPIC_API_KEY", configured: true }],
       forwardedEnvNames: ["PATH", "HOME"],
     },
     capabilities: {
-      tools: false,
-      files: false,
-      shell: false,
+      tools: true,
+      files: true,
+      shell: true,
       git: false,
       terminal: false,
       editor: false,
@@ -85,6 +87,31 @@ const lmstudioProvider = {
 } as const;
 
 describe("buildPiDiagnosticsView", () => {
+  it("prioritizes runtime restart recovery and extracts stderr tails", () => {
+    const view = buildPiDiagnosticsView({
+      diagnostics: null,
+      diagnosticsError: null,
+      runtimeState: {
+        phase: "error",
+        detail:
+          "Pi host exited with status 1; stderr: boot failed\nmore detail",
+      },
+      workspaceRoot: "/tmp/project",
+    });
+
+    expect(view.summaryTitle).toBe("Pi runtime failed");
+    expect(view.summaryDescription).toContain("Restart Pi");
+    expect(view.debugDetail).toBe("boot failed\nmore detail");
+    expect(view.issues).toContainEqual(
+      expect.objectContaining({
+        id: "runtime-error",
+        action: "restart-runtime",
+        actionLabel: "Restart",
+        description: expect.not.stringContaining("stderr:"),
+      }),
+    );
+  });
+
   it("reports a healthy ready runtime", () => {
     const view = buildPiDiagnosticsView({
       diagnostics: diagnostics(),
@@ -102,13 +129,17 @@ describe("buildPiDiagnosticsView", () => {
         nodeLabel: "v24.16.0 darwin/arm64",
         packageCount: 1,
         sessionCount: 1,
-        toolMode: "noTools",
-        capabilityLabel: "Tools disabled",
+        toolMode: "rust-mediated",
+        capabilityLabel: "Tools enabled",
         methodCount: 4,
         promptLimitLabel: "20,000 chars",
         idlePolicyLabel: "10m idle",
+        summaryTitle: "Pi is ready",
+        summaryDescription:
+          "Runtime, model, key presence, and session storage look ready.",
       }),
     );
+    expect(view.diagnosticsText).toContain("Status: Healthy");
     expect(view.issues).toEqual([]);
   });
 
@@ -153,8 +184,8 @@ describe("buildPiDiagnosticsView", () => {
     const view = buildPiDiagnosticsView({
       diagnostics: diagnostics({
         config: {
-          toolMode: "noTools",
-          sessionStorage: "rust-app-data-json",
+          toolMode: "rust-mediated",
+          sessionStorage: "rust-app-data-json+pi-sdk-jsonl",
           apiKeys: [{ name: "ANTHROPIC_API_KEY", configured: false }],
         },
       }),
@@ -191,8 +222,8 @@ describe("buildPiDiagnosticsView", () => {
     const view = buildPiDiagnosticsView({
       diagnostics: diagnostics({
         config: {
-          toolMode: "noTools",
-          sessionStorage: "rust-app-data-json",
+          toolMode: "rust-mediated",
+          sessionStorage: "rust-app-data-json+pi-sdk-jsonl",
           apiKeys: [{ name: "ANTHROPIC_API_KEY", configured: false }],
         },
       }),

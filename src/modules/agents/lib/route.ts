@@ -18,6 +18,7 @@ type RouteArgs = {
   tabId?: number;
   leafId?: number;
   onActivate: () => void;
+  piSessionId?: string;
 };
 
 export function routeAgentNotification({
@@ -32,11 +33,21 @@ export function routeAgentNotification({
   tabId = 0,
   leafId = 0,
   onActivate,
+  piSessionId,
 }: RouteArgs): void {
   if (!usePreferencesStore.getState().agentNotifications) return;
   if (focused && visible) return;
 
-  useAgentStore.getState().pushNotification({ source, agent, kind, tabId, leafId });
+  useAgentStore.getState().pushNotification({
+    source,
+    agent,
+    kind,
+    tabId,
+    leafId,
+    title,
+    ...(body ? { body } : {}),
+    ...(piSessionId ? { piSessionId } : {}),
+  });
 
   if (!focused) {
     void osNotify(title, body ?? agent);

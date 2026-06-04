@@ -1,1 +1,6 @@
-export type { SidebarViewId } from "./views";
+export type {
+  PrimarySidebarViewId,
+  SecondarySidebarViewId,
+  SidebarViewId,
+  SidebarViewItem,
+} from "./views";

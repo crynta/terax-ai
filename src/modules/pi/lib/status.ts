@@ -30,6 +30,8 @@ export type PiDiagnostics = PiHostInfo & {
   };
   config: {
     toolMode: string;
+    enabledTools?: string[];
+    approvalRequiredTools?: string[];
     sessionStorage: string;
     apiKeys: Array<{ name: string; configured: boolean }>;
     forwardedEnvNames?: string[];
@@ -43,6 +45,7 @@ export type PiDiagnostics = PiHostInfo & {
     editor: boolean;
   };
   protocol?: {
+    protocolVersion?: number;
     allowedMethods: string[];
   };
   limits?: {
@@ -58,6 +61,7 @@ export type PiDiagnostics = PiHostInfo & {
     title: string;
     status: string;
     cwd?: string | null;
+    sdkSessionFile?: string | null;
   }>;
 };
 

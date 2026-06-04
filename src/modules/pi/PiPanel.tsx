@@ -1,6 +1,7 @@
 import { AiChat02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   type FormEvent,
   useCallback,
@@ -10,37 +11,62 @@ import {
   useState,
 } from "react";
 import { Badge } from "@/components/ui/badge";
+import { IS_WINDOWS } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import { useAgentStore } from "@/modules/agents/store/agentStore";
 import { providerNeedsKey, providerSupportsKey } from "@/modules/ai/config";
 import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
 import { statusToneDotClass } from "@/modules/pi/components/classes";
 import { PiComposer } from "@/modules/pi/components/PiComposer";
 import { PiContextBar } from "@/modules/pi/components/PiContextBar";
 import { PiDiagnosticsCard } from "@/modules/pi/components/PiDiagnosticsCard";
+import { PiLocalAgentsCard } from "@/modules/pi/components/PiLocalAgentsCard";
 import { PiRuntimeCard } from "@/modules/pi/components/PiRuntimeCard";
 import { PiSessionList } from "@/modules/pi/components/PiSessionList";
 import { PiTranscript } from "@/modules/pi/components/PiTranscript";
-import type { PiProviderKeyStatus } from "@/modules/pi/lib/diagnostics";
+import { formatPiErrorDetail } from "@/modules/pi/lib/errors";
 import { shouldPrewarmPiRuntime } from "@/modules/pi/lib/lifecycle";
+import {
+  buildPiLocalAgentLaunchCommand,
+  buildPiLocalAgentStatuses,
+  type PiLocalAgentLaunchRequest,
+  type PiLocalAgentStatus,
+  piLocalAgentByName,
+} from "@/modules/pi/lib/local-agents";
 import { piNative } from "@/modules/pi/lib/native";
+import {
+  type PiPanelSectionCollapseState,
+  type PiPanelSectionId,
+  usePiControllerState,
+  usePiControllerStore,
+} from "@/modules/pi/lib/PiControllerProvider";
 import { buildPiPanelState } from "@/modules/pi/lib/panel-state";
 import {
   type PiProviderPrefs,
   resolvePiProviderConfig,
 } from "@/modules/pi/lib/provider";
-import type { PiSession, PiSessionEvent } from "@/modules/pi/lib/sessions";
+import type {
+  PiPromptContext,
+  PiSession,
+  PiSessionBranch,
+  PiSessionEvent,
+} from "@/modules/pi/lib/sessions";
 import {
+  annotatePiSessionEventBranch,
+  annotatePiSessionEventsBranch,
   applyPiSessionEvents,
   MAX_PI_PROMPT_CHARS,
   markPiSessionsStopped,
   mergePiSessionEvents,
   mergePiSessionSnapshots,
+  nextPiRegenerateBranchIndex,
   upsertPiSession,
 } from "@/modules/pi/lib/sessions";
-import type { PiDiagnostics, PiRuntimeState } from "@/modules/pi/lib/status";
+import type { PiRuntimeState } from "@/modules/pi/lib/status";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
+import { useWorkspaceEnvStore } from "@/modules/workspace";
 
 const INITIAL_PI_STATE: PiRuntimeState = {
   phase: "disconnected",
@@ -48,7 +74,7 @@ const INITIAL_PI_STATE: PiRuntimeState = {
 };
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return formatPiErrorDetail(error);
 }
 
 function toErrorState(error: unknown): PiRuntimeState {
@@ -58,47 +84,110 @@ function toErrorState(error: unknown): PiRuntimeState {
   };
 }
 
+export type PiFocusRequest = {
+  sessionId: string;
+  token: number;
+};
+
 type PiPanelProps = {
   workspaceRoot?: string | null;
   activeCwd?: string | null;
   activeFile?: string | null;
   activeTerminalPrivate?: boolean;
+  focusRequest?: PiFocusRequest | null;
+  hideHeader?: boolean;
+  onOpenLocalAgent?: (request: PiLocalAgentLaunchRequest) => void;
+  onOpenWorkspace?: () => void;
+  onPopOut?: () => void;
+  onSelectedSessionChange?: (sessionId: string | null) => void;
 };
 
-type PiPanelSectionId = "diagnostics" | "sessions" | "context";
-type PiPanelSectionCollapseState = Record<PiPanelSectionId, boolean>;
+type PiRuntimeAction = "starting" | "stopping" | "restarting" | null;
 
 const INITIAL_SECTION_COLLAPSED = {
   diagnostics: true,
   sessions: true,
   context: true,
+  localAgents: true,
 } satisfies PiPanelSectionCollapseState;
+
+const INITIAL_LOCAL_AGENT_STATUSES = buildPiLocalAgentStatuses([]);
 
 export function PiPanel({
   workspaceRoot = null,
   activeCwd = null,
   activeFile = null,
   activeTerminalPrivate = false,
+  focusRequest = null,
+  hideHeader = false,
+  onOpenLocalAgent,
+  onOpenWorkspace,
+  onPopOut,
+  onSelectedSessionChange,
 }: PiPanelProps) {
-  const [runtimeState, setRuntimeState] = useState(INITIAL_PI_STATE);
-  const [diagnostics, setDiagnostics] = useState<PiDiagnostics | null>(null);
-  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
-  const [historyError, setHistoryError] = useState<string | null>(null);
-  const [isDiagnosticsRefreshing, setIsDiagnosticsRefreshing] = useState(false);
-  const [sessions, setSessions] = useState<PiSession[]>([]);
-  const [sessionEvents, setSessionEvents] = useState<PiSessionEvent[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(
+  const piControllerStore = usePiControllerStore();
+  const [runtimeState, setRuntimeState] = usePiControllerState(
+    "runtimeState",
+    INITIAL_PI_STATE,
+  );
+  const [diagnostics, setDiagnostics] = usePiControllerState(
+    "diagnostics",
     null,
   );
-  const [prompt, setPrompt] = useState("");
+  const [diagnosticsError, setDiagnosticsError] = usePiControllerState(
+    "diagnosticsError",
+    null,
+  );
+  const [historyError, setHistoryError] = usePiControllerState(
+    "historyError",
+    null,
+  );
+  const [isDiagnosticsRefreshing, setIsDiagnosticsRefreshing] = useState(false);
+  const [sessions, setSessions] = usePiControllerState("sessions", []);
+  const [sessionEvents, setSessionEvents] = usePiControllerState(
+    "sessionEvents",
+    [],
+  );
+  const [selectedSessionId, setSelectedSessionId] = usePiControllerState(
+    "selectedSessionId",
+    null,
+  );
+  const [prompt, setPrompt] = usePiControllerState("prompt", "");
+  const [thinkingLevelOverride, setThinkingLevelOverride] =
+    usePiControllerState("thinkingLevelOverride", null);
   const [isBusy, setIsBusy] = useState(false);
-  const [collapsedSections, setCollapsedSections] =
-    useState<PiPanelSectionCollapseState>(INITIAL_SECTION_COLLAPSED);
-  const [providerKeyStatus, setProviderKeyStatus] = useState<
-    PiProviderKeyStatus | undefined
-  >(undefined);
-  const [keyRefreshToken, setKeyRefreshToken] = useState(0);
-  const prewarmAttemptedRef = useRef(false);
+  const [runtimeAction, setRuntimeAction] = useState<PiRuntimeAction>(null);
+  const [collapsedSections, setCollapsedSections] = usePiControllerState(
+    "collapsedSections",
+    INITIAL_SECTION_COLLAPSED,
+  );
+  const [providerKeyStatus, setProviderKeyStatus] = usePiControllerState(
+    "providerKeyStatus",
+    undefined,
+  );
+  const [localAgents, setLocalAgents] = usePiControllerState(
+    "localAgents",
+    INITIAL_LOCAL_AGENT_STATUSES,
+  );
+  const [isLocalAgentsRefreshing, setIsLocalAgentsRefreshing] = useState(false);
+  const [keyRefreshToken, setKeyRefreshToken] = usePiControllerState(
+    "keyRefreshToken",
+    0,
+  );
+  const activeRegenerateBranchesRef = useRef(
+    piControllerStore.regenerateBranches,
+  );
+  const prewarmAttemptedRef = useRef(piControllerStore.getPrewarmAttempted());
+
+  useEffect(() => {
+    return () => {
+      piControllerStore.setPrewarmAttempted(prewarmAttemptedRef.current);
+    };
+  }, [piControllerStore]);
+
+  const terminalAgentSessions = useAgentStore((state) => state.sessions);
+  const localAgentState = useAgentStore((state) => state.localAgent);
+  const workspaceEnv = useWorkspaceEnvStore((state) => state.env);
   const piAuthMode = usePreferencesStore((state) => state.piAuthMode);
   const piModelId = usePreferencesStore((state) => state.piModelId);
   const lmstudioBaseURL = usePreferencesStore((state) => state.lmstudioBaseURL);
@@ -156,6 +245,14 @@ export function PiPanel({
     () => resolvePiProviderConfig(piProviderPrefs),
     [piProviderPrefs],
   );
+  const thinkingScope = piProvider.ok
+    ? `${piProvider.config.authMode}:${piProvider.config.provider}:${piProvider.config.modelId}:${piProvider.config.sourceModelId}`
+    : "unavailable";
+
+  useEffect(() => {
+    setThinkingLevelOverride(null);
+  }, [selectedSessionId, thinkingScope]);
+
   const panelState = useMemo(
     () =>
       buildPiPanelState({
@@ -173,6 +270,7 @@ export function PiPanel({
         selectedSessionId,
         sessionEvents,
         sessions,
+        thinkingLevel: thinkingLevelOverride,
         workspaceRoot,
       }),
     [
@@ -190,6 +288,7 @@ export function PiPanel({
       selectedSessionId,
       sessionEvents,
       sessions,
+      thinkingLevelOverride,
       workspaceRoot,
     ],
   );
@@ -202,6 +301,53 @@ export function PiPanel({
   const promptContext = panelState.context.prompt;
   const contextPreview = panelState.context.preview;
   const diagnosticsView = panelState.diagnostics.view;
+  const activeThinkingLevel = panelState.composer.thinkingLevel;
+  const localAgentActivities = useMemo(() => {
+    const activities = Object.values(terminalAgentSessions).map((agent) => {
+      const def = piLocalAgentByName(agent.agent);
+      return {
+        id: def?.id,
+        label: def?.label ?? agent.agent,
+        status: agent.status,
+        detail: `Terminal ${agent.tabId}`,
+      };
+    });
+
+    if (localAgentState) {
+      const def = piLocalAgentByName(localAgentState.agent);
+      const key = def?.id ?? localAgentState.agent.trim().toLowerCase();
+      const alreadyShown = activities.some(
+        (activity) =>
+          (activity.id ?? activity.label.trim().toLowerCase()) === key,
+      );
+      if (!alreadyShown) {
+        activities.unshift({
+          id: def?.id,
+          label: def?.label ?? localAgentState.agent,
+          status: localAgentState.status,
+          detail: "Terax agent",
+        });
+      }
+    }
+
+    return activities;
+  }, [localAgentState, terminalAgentSessions]);
+
+  const refreshLocalAgents = useCallback(async () => {
+    setIsLocalAgentsRefreshing(true);
+    try {
+      const result = await piNative.localAgentsStatus(workspaceEnv);
+      setLocalAgents(buildPiLocalAgentStatuses(result.agents));
+    } catch {
+      setLocalAgents(INITIAL_LOCAL_AGENT_STATUSES);
+    } finally {
+      setIsLocalAgentsRefreshing(false);
+    }
+  }, [workspaceEnv]);
+
+  useEffect(() => {
+    void refreshLocalAgents();
+  }, [refreshLocalAgents]);
 
   useEffect(() => {
     let alive = true;
@@ -282,9 +428,27 @@ export function PiPanel({
       return;
     }
 
-    setSessionEvents((current) => mergePiSessionEvents(current, events));
+    const annotatedEvents = events.map((event) => {
+      const branch = activeRegenerateBranchesRef.current.get(event.sessionId);
+      const nextEvent = branch
+        ? annotatePiSessionEventBranch(event, branch)
+        : event;
+      if (
+        event.type === "session.deleted" ||
+        event.type === "session.error" ||
+        event.type === "session.output.text" ||
+        (event.type === "session.status" && event.payload.status !== "running")
+      ) {
+        activeRegenerateBranchesRef.current.delete(event.sessionId);
+      }
+      return nextEvent;
+    });
 
-    setSessions((current) => applyPiSessionEvents(current, events));
+    setSessionEvents((current) =>
+      mergePiSessionEvents(current, annotatedEvents),
+    );
+
+    setSessions((current) => applyPiSessionEvents(current, annotatedEvents));
   }, []);
 
   const applySessionUpdate = useCallback(
@@ -389,6 +553,16 @@ export function PiPanel({
   }, [sessions]);
 
   useEffect(() => {
+    if (focusRequest) {
+      setSelectedSessionId(focusRequest.sessionId);
+    }
+  }, [focusRequest]);
+
+  useEffect(() => {
+    onSelectedSessionChange?.(selectedSessionId);
+  }, [onSelectedSessionChange, selectedSessionId]);
+
+  useEffect(() => {
     let alive = true;
     let unlisten: (() => void) | undefined;
     listen<PiSessionEvent>("pi:session-event", (event) => {
@@ -411,6 +585,7 @@ export function PiPanel({
 
   const startRuntime = useCallback(async () => {
     setIsBusy(true);
+    setRuntimeAction("starting");
     setDiagnostics(null);
     setDiagnosticsError(null);
     setRuntimeState({ phase: "starting", detail: "Starting Pi" });
@@ -422,6 +597,7 @@ export function PiPanel({
     } catch (error) {
       setRuntimeState(toErrorState(error));
     } finally {
+      setRuntimeAction(null);
       setIsBusy(false);
     }
   }, [refreshDiagnostics, refreshHistory, refreshSessions]);
@@ -442,6 +618,7 @@ export function PiPanel({
 
   const stopRuntime = useCallback(async () => {
     setIsBusy(true);
+    setRuntimeAction("stopping");
     try {
       setRuntimeState(await piNative.stop());
       setSessions((current) => markPiSessionsStopped(current));
@@ -450,12 +627,30 @@ export function PiPanel({
     } catch (error) {
       setRuntimeState(toErrorState(error));
     } finally {
+      setRuntimeAction(null);
       setIsBusy(false);
     }
   }, []);
 
+  const requestStopRuntime = useCallback(() => {
+    const hasRunningSessions = sessions.some(
+      (session) => session.status === "running",
+    );
+    const confirmed =
+      !hasRunningSessions ||
+      typeof window === "undefined" ||
+      window.confirm(
+        "Stop Pi runtime? Active Pi responses will be interrupted and restored sessions will be marked stopped.",
+      );
+
+    if (confirmed) {
+      void stopRuntime();
+    }
+  }, [sessions, stopRuntime]);
+
   const restartRuntime = useCallback(async () => {
     setIsBusy(true);
+    setRuntimeAction("restarting");
     setDiagnosticsError(null);
     setRuntimeState({ phase: "starting", detail: "Restarting Pi" });
     try {
@@ -469,6 +664,7 @@ export function PiPanel({
     } catch (error) {
       setRuntimeState(toErrorState(error));
     } finally {
+      setRuntimeAction(null);
       setIsBusy(false);
     }
   }, [refreshDiagnostics, refreshHistory, refreshSessions]);
@@ -481,10 +677,16 @@ export function PiPanel({
 
     setIsBusy(true);
     try {
+      const providerConfig = activeThinkingLevel
+        ? {
+            ...piProvider.config,
+            thinkingLevel: activeThinkingLevel,
+          }
+        : piProvider.config;
       const result = await piNative.sessionCreate(
         undefined,
         workspaceRoot,
-        piProvider.config,
+        providerConfig,
       );
       applySessionUpdate(result.session, result.events);
       await refreshStatus();
@@ -493,7 +695,47 @@ export function PiPanel({
     } finally {
       setIsBusy(false);
     }
-  }, [applySessionUpdate, piProvider, refreshStatus, workspaceRoot]);
+  }, [
+    applySessionUpdate,
+    activeThinkingLevel,
+    piProvider,
+    refreshStatus,
+    workspaceRoot,
+  ]);
+
+  const resumeSession = useCallback(
+    async (sessionId: string) => {
+      if (isBusy) return;
+      if (!piProvider.ok) {
+        setDiagnosticsError(piProvider.error);
+        return;
+      }
+
+      setIsBusy(true);
+      try {
+        const providerConfig = activeThinkingLevel
+          ? {
+              ...piProvider.config,
+              thinkingLevel: activeThinkingLevel,
+            }
+          : piProvider.config;
+        const result = await piNative.sessionResume(sessionId, providerConfig);
+        applySessionUpdate(result.session, result.events);
+        await refreshStatus();
+      } catch (error) {
+        setRuntimeState(toErrorState(error));
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [
+      activeThinkingLevel,
+      applySessionUpdate,
+      isBusy,
+      piProvider,
+      refreshStatus,
+    ],
+  );
 
   const sendPrompt = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -514,6 +756,7 @@ export function PiPanel({
           selectedSession.id,
           text,
           promptContext,
+          { thinkingLevel: activeThinkingLevel },
         );
         applySessionUpdate(result.session, result.events);
         setPrompt("");
@@ -524,11 +767,113 @@ export function PiPanel({
       }
     },
     [
+      activeThinkingLevel,
       applySessionUpdate,
       prompt,
       promptContext,
       selectedSessionSendable,
       selectedSession,
+    ],
+  );
+
+  const retryLastPrompt = useCallback(async () => {
+    const text = selectedSession?.lastPrompt?.trim() ?? "";
+    if (
+      isBusy ||
+      selectedSession === null ||
+      !selectedSessionSendable ||
+      text === "" ||
+      text.length > MAX_PI_PROMPT_CHARS
+    ) {
+      return;
+    }
+
+    const lastPromptItem = [...selectedTranscript]
+      .reverse()
+      .find((item) => item.kind === "user" && item.text?.trim() === text);
+
+    setIsBusy(true);
+    try {
+      const result = await piNative.sessionSend(
+        selectedSession.id,
+        text,
+        lastPromptItem?.context ?? promptContext,
+        { thinkingLevel: activeThinkingLevel },
+      );
+      applySessionUpdate(result.session, result.events);
+      setPrompt("");
+    } catch (error) {
+      setRuntimeState(toErrorState(error));
+    } finally {
+      setIsBusy(false);
+    }
+  }, [
+    activeThinkingLevel,
+    applySessionUpdate,
+    isBusy,
+    promptContext,
+    selectedSession,
+    selectedSessionSendable,
+    selectedTranscript,
+  ]);
+
+  const regenerateResponse = useCallback(
+    async ({
+      branchGroupId,
+      context,
+      prompt: promptText,
+    }: {
+      branchGroupId: string;
+      context?: PiPromptContext;
+      prompt: string;
+    }) => {
+      if (
+        isBusy ||
+        selectedSession === null ||
+        !selectedSessionSendable ||
+        promptText.trim() === "" ||
+        promptText.length > MAX_PI_PROMPT_CHARS
+      ) {
+        return;
+      }
+
+      const branch = {
+        groupId: branchGroupId,
+        index: nextPiRegenerateBranchIndex(selectedTranscript, branchGroupId),
+        regeneratedFromEventId: branchGroupId,
+      } satisfies PiSessionBranch;
+
+      activeRegenerateBranchesRef.current.set(selectedSession.id, branch);
+      setIsBusy(true);
+      try {
+        const result = await piNative.sessionSend(
+          selectedSession.id,
+          promptText,
+          context ?? promptContext,
+          {
+            regenerateBranchGroupId: branchGroupId,
+            thinkingLevel: activeThinkingLevel,
+          },
+        );
+        applySessionUpdate(
+          result.session,
+          annotatePiSessionEventsBranch(result.events, branch),
+        );
+      } catch (error) {
+        activeRegenerateBranchesRef.current.delete(selectedSession.id);
+        setRuntimeState(toErrorState(error));
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [
+      activeThinkingLevel,
+      applySessionUpdate,
+      isBusy,
+      promptContext,
+      selectedSession,
+      selectedSessionSendable,
+      selectedTranscript,
     ],
   );
 
@@ -548,47 +893,148 @@ export function PiPanel({
     }
   }, [applySessionUpdate, selectedSession]);
 
+  const renameSession = useCallback(
+    async (sessionId: string, title: string) => {
+      if (isBusy) return;
+
+      setIsBusy(true);
+      try {
+        const result = await piNative.sessionRename(sessionId, title);
+        applySessionUpdate(result.session, result.events);
+      } catch (error) {
+        setRuntimeState(toErrorState(error));
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [applySessionUpdate, isBusy],
+  );
+
+  const respondToToolApproval = useCallback(
+    async (toolCallId: string, approved: boolean) => {
+      if (isBusy || selectedSession === null) return;
+
+      setIsBusy(true);
+      try {
+        const result = await piNative.sessionToolRespond(
+          selectedSession.id,
+          toolCallId,
+          approved,
+        );
+        applySessionUpdate(result.session, result.events);
+      } catch (error) {
+        setRuntimeState(toErrorState(error));
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [applySessionUpdate, isBusy, selectedSession],
+  );
+
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      if (isBusy) return;
+
+      setIsBusy(true);
+      try {
+        const result = await piNative.sessionDelete(sessionId);
+        applySessionEvents(result.events);
+        setSelectedSessionId((current) =>
+          current === sessionId ? null : current,
+        );
+        await refreshStatus();
+      } catch (error) {
+        setRuntimeState(toErrorState(error));
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [applySessionEvents, isBusy, refreshStatus],
+  );
+
   const openModelSettings = useCallback(() => {
     void openSettingsWindow("models");
   }, []);
 
+  const openLocalAgentDocs = useCallback((agent: PiLocalAgentStatus) => {
+    void openUrl(agent.docsUrl);
+  }, []);
+
+  const launchLocalAgent = useCallback(
+    (agent: PiLocalAgentStatus, promptText: string | null = null) => {
+      const command = buildPiLocalAgentLaunchCommand(agent, promptText, {
+        windowsShell: IS_WINDOWS && workspaceEnv.kind === "local",
+      });
+      if (!command) {
+        void openUrl(agent.docsUrl);
+        return;
+      }
+      onOpenLocalAgent?.({
+        id: agent.id,
+        label: agent.label,
+        command,
+        prompt: promptText?.trim() ? promptText.trim() : null,
+      });
+    },
+    [onOpenLocalAgent, workspaceEnv.kind],
+  );
+
   return (
     <aside
-      aria-label="Pi sessions"
+      aria-label="Code sessions"
       className="flex h-full min-w-0 flex-col bg-card/80 backdrop-blur [contain:layout_style]"
     >
-      <header className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-2">
-        <div className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground">
-          <HugeiconsIcon
-            icon={AiChat02Icon}
-            size={12}
-            strokeWidth={1.9}
-            className="shrink-0 text-muted-foreground"
-          />
-          <span className="truncate">Pi</span>
-        </div>
-        <Badge
-          variant="outline"
-          className="h-5 gap-1 border-border/55 px-1.5 text-[10.5px] text-muted-foreground"
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              statusToneDotClass(status.tone),
-            )}
-          />
-          {status.label}
-        </Badge>
-      </header>
+      {hideHeader ? null : (
+        <header className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-2">
+          <div className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground">
+            <HugeiconsIcon
+              icon={AiChat02Icon}
+              size={12}
+              strokeWidth={1.9}
+              className="shrink-0 text-muted-foreground"
+            />
+            <span className="truncate">Code</span>
+          </div>
+          <Badge
+            variant="outline"
+            className="h-5 gap-1 rounded-md border-border/55 px-1.5 text-[10.5px] text-muted-foreground"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "size-1.5 shrink-0 rounded-full",
+                statusToneDotClass(status.tone),
+              )}
+            />
+            {status.label}
+          </Badge>
+        </header>
+      )}
 
       <PiRuntimeCard
         isBusy={isBusy}
+        runtimeAction={runtimeAction}
         runtimeState={runtimeState}
         status={status}
         onStart={() => void startRuntime()}
-        onStop={() => void stopRuntime()}
+        onStop={requestStopRuntime}
         onRestart={() => void restartRuntime()}
+      />
+
+      <PiLocalAgentsCard
+        activeAgents={localAgentActivities}
+        agents={localAgents}
+        collapsed={collapsedSections.localAgents}
+        disabled={isBusy}
+        isRefreshing={isLocalAgentsRefreshing}
+        prompt={prompt}
+        onCollapsedChange={(collapsed) =>
+          setSectionCollapsed("localAgents", collapsed)
+        }
+        onInstall={openLocalAgentDocs}
+        onLaunch={(agent) => launchLocalAgent(agent)}
+        onLaunchWithPrompt={(agent) => launchLocalAgent(agent, prompt)}
+        onRefresh={() => void refreshLocalAgents()}
       />
 
       <PiDiagnosticsCard
@@ -601,6 +1047,7 @@ export function PiPanel({
         }
         onOpenSettings={openModelSettings}
         onRefresh={() => void refreshPanelDiagnostics()}
+        onRestartRuntime={() => void restartRuntime()}
         onStartRuntime={() => void startRuntime()}
       />
 
@@ -625,24 +1072,43 @@ export function PiPanel({
             setSectionCollapsed("sessions", collapsed)
           }
           onCreateSession={() => void createSession()}
+          onDeleteSession={(sessionId) => void deleteSession(sessionId)}
+          onRenameSession={(sessionId, title) =>
+            void renameSession(sessionId, title)
+          }
+          onResumeSession={(sessionId) => void resumeSession(sessionId)}
           onSelectSession={setSelectedSessionId}
         />
 
         <PiTranscript
+          canRegenerate={!isBusy && selectedSessionSendable}
           selectedSession={selectedSession}
           transcript={selectedTranscript}
+          onOpenWorkspace={onOpenWorkspace}
+          onPopOut={onPopOut}
+          onRegenerate={(request) => void regenerateResponse(request)}
+          onToolApproval={(toolCallId, approved) =>
+            void respondToToolApproval(toolCallId, approved)
+          }
           onUsePrompt={setPrompt}
         />
 
         <PiComposer
+          availableThinkingLevels={panelState.composer.availableThinkingLevels}
+          canCreateSession={canCreateSession}
+          contextUsage={panelState.composer.contextUsage}
           disabled={!runtimeReady || !selectedSessionSendable || isBusy}
           isBusy={isBusy}
           prompt={prompt}
           runtimeReady={runtimeReady}
           selectedSession={selectedSession}
+          thinkingLevel={activeThinkingLevel}
+          onCreateSession={() => void createSession()}
           onPromptChange={setPrompt}
+          onRetryLastPrompt={() => void retryLastPrompt()}
           onSendPrompt={(event) => void sendPrompt(event)}
           onStopSession={() => void stopSelectedSession()}
+          onThinkingLevelChange={setThinkingLevelOverride}
         />
       </div>
     </aside>

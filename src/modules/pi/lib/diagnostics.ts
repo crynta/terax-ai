@@ -1,7 +1,11 @@
 import type { PiProviderResolution } from "@/modules/pi/lib/provider";
 import type { PiDiagnostics, PiRuntimeState } from "@/modules/pi/lib/status";
 
-export type PiDiagnosticsAction = "open-settings" | "refresh" | "start-runtime";
+export type PiDiagnosticsAction =
+  | "open-settings"
+  | "refresh"
+  | "restart-runtime"
+  | "start-runtime";
 
 export type PiDiagnosticsIssue = {
   id:
@@ -31,6 +35,8 @@ export type PiDiagnosticsView = {
   apiKeyCount: number;
   capabilityLabel: string;
   configuredApiKeyCount: number;
+  debugDetail: string | null;
+  diagnosticsText: string;
   healthy: boolean;
   idlePolicyLabel: string;
   issues: PiDiagnosticsIssue[];
@@ -44,6 +50,8 @@ export type PiDiagnosticsView = {
   providerLabel: string;
   sessionCount: number;
   storageLabel: string;
+  summaryDescription: string;
+  summaryTitle: string;
   toolMode: string;
 };
 
@@ -81,7 +89,8 @@ function packageIssueDescription(diagnostics: PiDiagnostics): string {
 
 function capabilityLabel(diagnostics: PiDiagnostics | null): string {
   if (!diagnostics?.capabilities) return "Unavailable";
-  return diagnostics.capabilities.tools ? "Tools enabled" : "Tools disabled";
+  if (!diagnostics.capabilities.tools) return "No Pi tools";
+  return "Tools enabled";
 }
 
 function formatDuration(milliseconds: number | undefined): string {
@@ -97,6 +106,82 @@ function promptLimitLabel(diagnostics: PiDiagnostics | null): string {
   return `${limit.toLocaleString("en-US")} chars`;
 }
 
+type DiagnosticDetailParts = {
+  message: string;
+  stderrTail: string | null;
+};
+
+function splitDiagnosticDetail(
+  detail: string | null | undefined,
+): DiagnosticDetailParts {
+  const fallback = "Check the runtime status and try again.";
+  if (!detail) return { message: fallback, stderrTail: null };
+
+  const marker = "; stderr: ";
+  const markerIndex = detail.indexOf(marker);
+  if (markerIndex === -1) {
+    return { message: detail, stderrTail: null };
+  }
+
+  return {
+    message: detail.slice(0, markerIndex).trim() || fallback,
+    stderrTail: detail.slice(markerIndex + marker.length).trim() || null,
+  };
+}
+
+function summaryForIssues(issues: PiDiagnosticsIssue[]): {
+  summaryDescription: string;
+  summaryTitle: string;
+} {
+  if (issues.length === 0) {
+    return {
+      summaryTitle: "Pi is ready",
+      summaryDescription:
+        "Runtime, model, key presence, and session storage look ready.",
+    };
+  }
+
+  const topIssue = issues[0];
+  const action = topIssue.actionLabel ? ` Next: ${topIssue.actionLabel}.` : "";
+  return {
+    summaryTitle: topIssue.title,
+    summaryDescription: `${topIssue.description}${action}`,
+  };
+}
+
+function buildDiagnosticsText(input: {
+  issues: PiDiagnosticsIssue[];
+  view: Omit<PiDiagnosticsView, "diagnosticsText">;
+}): string {
+  const { issues, view } = input;
+  const lines = [
+    "Pi diagnostics",
+    `Status: ${view.healthy ? "Healthy" : "Review"}`,
+    `Summary: ${view.summaryTitle} - ${view.summaryDescription}`,
+    `Provider: ${view.providerLabel}`,
+    `Model: ${view.modelLabel}`,
+    `Provider key: ${view.providerKeyLabel}`,
+    `Packages: ${view.loadedPackageCount}/${view.packageCount}`,
+    `Sessions: ${view.sessionCount}`,
+    `Capabilities: ${view.capabilityLabel}`,
+    `Tool mode: ${view.toolMode}`,
+    `Allowed methods: ${view.methodCount}`,
+    `Prompt limit: ${view.promptLimitLabel}`,
+    `Storage: ${view.storageLabel}`,
+    `Idle policy: ${view.idlePolicyLabel}`,
+    `Node: ${view.nodeLabel}`,
+  ];
+
+  if (issues.length > 0) {
+    lines.push("Issues:");
+    for (const issue of issues) {
+      lines.push(`- ${issue.title}: ${issue.description}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 function runtimeIssue(state: PiRuntimeState): PiDiagnosticsIssue | null {
   switch (state.phase) {
     case "disconnected":
@@ -104,7 +189,7 @@ function runtimeIssue(state: PiRuntimeState): PiDiagnosticsIssue | null {
         id: "runtime-offline",
         title: "Pi runtime is stopped",
         description:
-          "Start Pi to load package diagnostics and create sessions.",
+          "Start the Pi sidecar to load diagnostics and create workspace sessions.",
         action: "start-runtime",
         actionLabel: "Start",
         tone: "muted",
@@ -113,20 +198,23 @@ function runtimeIssue(state: PiRuntimeState): PiDiagnosticsIssue | null {
       return {
         id: "runtime-connecting",
         title: "Pi runtime is connecting",
-        description: "Refresh after the sidecar finishes starting.",
+        description:
+          "Wait for the sidecar to finish starting, then refresh diagnostics if this stays here.",
         action: "refresh",
         actionLabel: "Refresh",
         tone: "muted",
       };
-    case "error":
+    case "error": {
+      const detail = splitDiagnosticDetail(state.detail);
       return {
         id: "runtime-error",
         title: "Pi runtime failed",
-        description: state.detail ?? "Check the runtime status and try again.",
-        action: "refresh",
-        actionLabel: "Refresh",
+        description: `${detail.message} Restart Pi to launch a fresh sidecar.`,
+        action: "restart-runtime",
+        actionLabel: "Restart",
         tone: "destructive",
       };
+    }
     case "ready":
       return null;
   }
@@ -185,10 +273,11 @@ export function buildPiDiagnosticsView({
     });
   }
   if (runtimeState.phase === "ready" && diagnosticsError) {
+    const detail = splitDiagnosticDetail(diagnosticsError);
     issues.push({
       id: "diagnostics-unavailable",
       title: "Diagnostics refresh failed",
-      description: diagnosticsError,
+      description: `${detail.message} Refresh diagnostics after the runtime settles.`,
       action: "refresh",
       actionLabel: "Refresh",
       tone: "destructive",
@@ -234,10 +323,15 @@ export function buildPiDiagnosticsView({
     });
   }
 
-  return {
+  const runtimeDetail = splitDiagnosticDetail(runtimeState.detail);
+  const diagnosticsDetail = splitDiagnosticDetail(diagnosticsError);
+  const debugDetail = runtimeDetail.stderrTail ?? diagnosticsDetail.stderrTail;
+  const summary = summaryForIssues(issues);
+  const viewWithoutText: Omit<PiDiagnosticsView, "diagnosticsText"> = {
     apiKeyCount,
     capabilityLabel: capabilityLabel(diagnostics),
     configuredApiKeyCount,
+    debugDetail,
     healthy: issues.length === 0,
     idlePolicyLabel: formatDuration(diagnostics?.manager?.idleShutdownMs),
     issues,
@@ -253,6 +347,13 @@ export function buildPiDiagnosticsView({
     providerLabel: provider?.providerLabel ?? "Pi",
     sessionCount: diagnostics?.sessions.length ?? 0,
     storageLabel: diagnostics?.config.sessionStorage ?? "Unavailable",
+    summaryDescription: summary.summaryDescription,
+    summaryTitle: summary.summaryTitle,
     toolMode: diagnostics?.config.toolMode ?? "Unavailable",
+  };
+
+  return {
+    ...viewWithoutText,
+    diagnosticsText: buildDiagnosticsText({ issues, view: viewWithoutText }),
   };
 }

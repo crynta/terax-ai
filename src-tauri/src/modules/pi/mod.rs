@@ -1,5 +1,9 @@
 use std::env;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -12,6 +16,7 @@ use crate::modules::secrets::{self, SecretsState};
 use crate::modules::workspace::{self, WorkspaceEnv, WorkspaceRegistry};
 
 mod host;
+mod native_tools;
 mod store;
 
 use host::{HostCallError, PiHost, PiSessionEventSink};
@@ -24,6 +29,61 @@ pub struct PiRuntimeSnapshot {
     pub phase: PiPhase,
     pub detail: Option<String>,
 }
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiErrorData {
+    pub code: String,
+    pub category: String,
+    pub retryable: bool,
+    pub remediation: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiCommandError {
+    pub message: String,
+    pub code: Option<String>,
+    pub category: Option<String>,
+    pub retryable: Option<bool>,
+    pub remediation: Option<String>,
+}
+
+impl PiCommandError {
+    fn plain(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            code: None,
+            category: None,
+            retryable: None,
+            remediation: None,
+        }
+    }
+
+    fn with_data(message: impl Into<String>, data: PiErrorData) -> Self {
+        Self {
+            message: message.into(),
+            code: Some(data.code),
+            category: Some(data.category),
+            retryable: Some(data.retryable),
+            remediation: Some(data.remediation),
+        }
+    }
+}
+
+impl From<String> for PiCommandError {
+    fn from(message: String) -> Self {
+        Self::plain(message)
+    }
+}
+
+impl From<&str> for PiCommandError {
+    fn from(message: &str) -> Self {
+        Self::plain(message)
+    }
+}
+
+type PiCommandResult<T> = Result<T, PiCommandError>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -76,6 +136,10 @@ pub struct PiNodeDiagnostics {
 #[serde(rename_all = "camelCase")]
 pub struct PiConfigDiagnostics {
     pub tool_mode: String,
+    #[serde(default)]
+    pub enabled_tools: Vec<String>,
+    #[serde(default)]
+    pub approval_required_tools: Vec<String>,
     pub session_storage: String,
     pub api_keys: Vec<PiEnvVarStatus>,
     #[serde(default)]
@@ -96,6 +160,7 @@ pub struct PiCapabilityDiagnostics {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PiProtocolDiagnostics {
+    pub protocol_version: u32,
     pub allowed_methods: Vec<String>,
 }
 
@@ -135,6 +200,8 @@ pub struct PiDiagnosticSession {
     pub status: String,
     #[serde(default)]
     pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdk_session_file: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -158,6 +225,10 @@ pub struct PiSession {
     pub created_at: String,
     pub updated_at: String,
     pub last_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdk_session_file: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -190,6 +261,20 @@ pub struct PiSessionCreateResult {
 #[serde(rename_all = "camelCase")]
 pub struct PiSessionSendResult {
     pub accepted: bool,
+    pub session: PiSession,
+    pub events: Vec<PiSessionEvent>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionResumeResult {
+    pub session: PiSession,
+    pub events: Vec<PiSessionEvent>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionToolRespondResult {
     pub session: PiSession,
     pub events: Vec<PiSessionEvent>,
 }
@@ -227,7 +312,13 @@ pub struct PiProviderConfig {
     #[serde(default)]
     pub context_limit: Option<u32>,
     #[serde(default)]
+    pub max_tokens: Option<u32>,
+    #[serde(default)]
+    pub reasoning: Option<bool>,
+    #[serde(default)]
     pub custom_endpoint_id: Option<String>,
+    #[serde(default)]
+    pub thinking_level: Option<String>,
     #[serde(default)]
     pub auth_mode: Option<PiAuthMode>,
 }
@@ -244,8 +335,14 @@ pub(super) struct PiResolvedProviderConfig {
     pub base_url: Option<String>,
     #[serde(default)]
     pub context_limit: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<bool>,
     #[serde(default)]
     pub custom_endpoint_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_level: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile_agent_dir: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -271,6 +368,32 @@ pub struct PiProfileModelsList {
     pub profile_agent_dir: String,
     pub load_error: Option<String>,
     pub models: Vec<PiProfileModelInfo>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiLocalAgentBinaryStatus {
+    pub binary: String,
+    pub path: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiLocalAgentsStatus {
+    pub agents: Vec<PiLocalAgentBinaryStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionRenameResult {
+    pub session: PiSession,
+    pub events: Vec<PiSessionEvent>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionDeleteResult {
+    pub events: Vec<PiSessionEvent>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -462,7 +585,7 @@ impl PiState {
         &self,
         resource_dir: Option<&Path>,
         action: impl FnOnce(&PiHost) -> Result<R, HostCallError>,
-    ) -> Result<R, String> {
+    ) -> PiCommandResult<R> {
         self.with_host_event_sink(resource_dir, None, action)
     }
 
@@ -471,8 +594,10 @@ impl PiState {
         resource_dir: Option<&Path>,
         event_sink: Option<PiSessionEventSink>,
         action: impl FnOnce(&PiHost) -> Result<R, HostCallError>,
-    ) -> Result<R, String> {
-        let host = self.host_handle(resource_dir, event_sink)?;
+    ) -> PiCommandResult<R> {
+        let host = self
+            .host_handle(resource_dir, event_sink)
+            .map_err(PiCommandError::from)?;
         match action(&host) {
             Ok(result) => {
                 self.schedule_idle_shutdown();
@@ -480,11 +605,11 @@ impl PiState {
             }
             Err(error) => {
                 let clear = error.is_transport();
-                let message = error.message();
+                let command_error = error.into_command_error();
                 if clear {
                     let _ = self.clear_host_if_same(&host);
                 }
-                Err(message)
+                Err(command_error)
             }
         }
     }
@@ -548,14 +673,14 @@ impl PiState {
         }
     }
 
-    pub fn info(&self) -> Result<PiHostInfo, String> {
+    pub fn info(&self) -> PiCommandResult<PiHostInfo> {
         self.info_with_resource_dir(None)
     }
 
     pub fn info_with_resource_dir(
         &self,
         resource_dir: Option<&Path>,
-    ) -> Result<PiHostInfo, String> {
+    ) -> PiCommandResult<PiHostInfo> {
         self.with_host(resource_dir, PiHost::info)
     }
 
@@ -563,7 +688,7 @@ impl PiState {
         &self,
         resource_dir: Option<&Path>,
         event_sink: Option<PiSessionEventSink>,
-    ) -> Result<PiHostInfo, String> {
+    ) -> PiCommandResult<PiHostInfo> {
         self.with_host_event_sink(resource_dir, event_sink, PiHost::info)
     }
 
@@ -571,7 +696,7 @@ impl PiState {
         &self,
         resource_dir: Option<&Path>,
         event_sink: Option<PiSessionEventSink>,
-    ) -> Result<PiDiagnostics, String> {
+    ) -> PiCommandResult<PiDiagnostics> {
         self.with_host_event_sink(resource_dir, event_sink, |host| {
             let mut diagnostics = host.diagnostics()?;
             diagnostics.manager.idle_shutdown_ms = self.idle_shutdown.timeout.as_millis() as u64;
@@ -582,7 +707,7 @@ impl PiState {
     pub fn sessions_list_with_resource_dir(
         &self,
         resource_dir: Option<&Path>,
-    ) -> Result<PiSessionsList, String> {
+    ) -> PiCommandResult<PiSessionsList> {
         self.with_host(resource_dir, PiHost::sessions_list)
     }
 
@@ -591,7 +716,7 @@ impl PiState {
         resource_dir: Option<&Path>,
         event_sink: Option<PiSessionEventSink>,
         profile_agent_dir: String,
-    ) -> Result<PiProfileModelsList, String> {
+    ) -> PiCommandResult<PiProfileModelsList> {
         self.with_host_event_sink(resource_dir, event_sink, |host| {
             host.models_list(profile_agent_dir)
         })
@@ -601,7 +726,7 @@ impl PiState {
         &self,
         resource_dir: Option<&Path>,
         event_sink: Option<PiSessionEventSink>,
-    ) -> Result<PiSessionsList, String> {
+    ) -> PiCommandResult<PiSessionsList> {
         self.with_host_event_sink(resource_dir, event_sink, PiHost::sessions_list)
     }
 
@@ -610,7 +735,7 @@ impl PiState {
         resource_dir: Option<&Path>,
         title: Option<String>,
         cwd: Option<String>,
-    ) -> Result<PiSessionCreateResult, String> {
+    ) -> PiCommandResult<PiSessionCreateResult> {
         self.session_create_with_resource_dir_and_provider(resource_dir, title, cwd, None)
     }
 
@@ -620,9 +745,42 @@ impl PiState {
         title: Option<String>,
         cwd: Option<String>,
         provider_config: Option<PiResolvedProviderConfig>,
-    ) -> Result<PiSessionCreateResult, String> {
+    ) -> PiCommandResult<PiSessionCreateResult> {
+        self.session_create_with_resource_dir_and_provider_and_session_dir(
+            resource_dir,
+            title,
+            cwd,
+            provider_config,
+            None,
+        )
+    }
+
+    pub fn session_create_with_resource_dir_and_session_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        title: Option<String>,
+        cwd: Option<String>,
+        session_dir: Option<String>,
+    ) -> PiCommandResult<PiSessionCreateResult> {
+        self.session_create_with_resource_dir_and_provider_and_session_dir(
+            resource_dir,
+            title,
+            cwd,
+            None,
+            session_dir,
+        )
+    }
+
+    fn session_create_with_resource_dir_and_provider_and_session_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        title: Option<String>,
+        cwd: Option<String>,
+        provider_config: Option<PiResolvedProviderConfig>,
+        session_dir: Option<String>,
+    ) -> PiCommandResult<PiSessionCreateResult> {
         self.with_host(resource_dir, |host| {
-            host.session_create(title, cwd, provider_config)
+            host.session_create(title, cwd, provider_config, session_dir, WorkspaceEnv::Local)
         })
     }
 
@@ -632,13 +790,32 @@ impl PiState {
         event_sink: Option<PiSessionEventSink>,
         title: Option<String>,
         cwd: Option<String>,
-    ) -> Result<PiSessionCreateResult, String> {
+    ) -> PiCommandResult<PiSessionCreateResult> {
         self.session_create_with_resource_dir_and_event_sink_and_provider(
             resource_dir,
             event_sink,
             title,
             cwd,
             None,
+        )
+    }
+
+    pub fn session_create_with_resource_dir_and_event_sink_and_session_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        title: Option<String>,
+        cwd: Option<String>,
+        session_dir: Option<String>,
+    ) -> PiCommandResult<PiSessionCreateResult> {
+        self.session_create_with_resource_dir_and_event_sink_and_provider_and_session_dir(
+            resource_dir,
+            event_sink,
+            title,
+            cwd,
+            None,
+            session_dir,
+            WorkspaceEnv::Local,
         )
     }
 
@@ -649,9 +826,94 @@ impl PiState {
         title: Option<String>,
         cwd: Option<String>,
         provider_config: Option<PiResolvedProviderConfig>,
-    ) -> Result<PiSessionCreateResult, String> {
+    ) -> PiCommandResult<PiSessionCreateResult> {
+        self.session_create_with_resource_dir_and_event_sink_and_provider_and_session_dir(
+            resource_dir,
+            event_sink,
+            title,
+            cwd,
+            provider_config,
+            None,
+            WorkspaceEnv::Local,
+        )
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Event sink, provider config, and persistent session directory are forwarded"
+    )]
+    fn session_create_with_resource_dir_and_event_sink_and_provider_and_session_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        title: Option<String>,
+        cwd: Option<String>,
+        provider_config: Option<PiResolvedProviderConfig>,
+        session_dir: Option<String>,
+        workspace_env: WorkspaceEnv,
+    ) -> PiCommandResult<PiSessionCreateResult> {
         self.with_host_event_sink(resource_dir, event_sink, |host| {
-            host.session_create(title, cwd, provider_config)
+            host.session_create(title, cwd, provider_config, session_dir, workspace_env)
+        })
+    }
+
+    pub fn session_resume_with_resource_dir_and_session_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        session_id: String,
+        title: String,
+        cwd: String,
+        sdk_session_file: String,
+        session_dir: Option<String>,
+    ) -> PiCommandResult<PiSessionResumeResult> {
+        self.session_resume_with_resource_dir_and_event_sink_and_provider(
+            resource_dir,
+            None,
+            session_id,
+            title,
+            cwd,
+            sdk_session_file,
+            session_dir,
+            None,
+            None,
+            None,
+            None,
+            WorkspaceEnv::Local,
+        )
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Pi resume forwards persisted session metadata to the sidecar"
+    )]
+    fn session_resume_with_resource_dir_and_event_sink_and_provider(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        session_id: String,
+        title: String,
+        cwd: String,
+        sdk_session_file: String,
+        session_dir: Option<String>,
+        provider_config: Option<PiResolvedProviderConfig>,
+        created_at: Option<String>,
+        last_prompt: Option<String>,
+        thinking_level: Option<String>,
+        workspace_env: WorkspaceEnv,
+    ) -> PiCommandResult<PiSessionResumeResult> {
+        self.with_host_event_sink(resource_dir, event_sink, |host| {
+            host.session_resume(
+                session_id,
+                title,
+                cwd,
+                sdk_session_file,
+                session_dir,
+                provider_config,
+                created_at,
+                last_prompt,
+                thinking_level,
+                workspace_env,
+            )
         })
     }
 
@@ -661,12 +923,24 @@ impl PiState {
         session_id: String,
         prompt: String,
         context: Option<PiPromptContext>,
-    ) -> Result<PiSessionSendResult, String> {
+        regenerate_branch_group_id: Option<String>,
+        thinking_level: Option<String>,
+    ) -> PiCommandResult<PiSessionSendResult> {
         self.with_host(resource_dir, |host| {
-            host.session_send(session_id, prompt, context)
+            host.session_send(
+                session_id,
+                prompt,
+                context,
+                regenerate_branch_group_id,
+                thinking_level,
+            )
         })
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Event sink and optional send metadata are forwarded to the Pi host"
+    )]
     pub fn session_send_with_resource_dir_and_event_sink(
         &self,
         resource_dir: Option<&Path>,
@@ -674,9 +948,82 @@ impl PiState {
         session_id: String,
         prompt: String,
         context: Option<PiPromptContext>,
-    ) -> Result<PiSessionSendResult, String> {
+        regenerate_branch_group_id: Option<String>,
+        thinking_level: Option<String>,
+    ) -> PiCommandResult<PiSessionSendResult> {
         self.with_host_event_sink(resource_dir, event_sink, |host| {
-            host.session_send(session_id, prompt, context)
+            host.session_send(
+                session_id,
+                prompt,
+                context,
+                regenerate_branch_group_id,
+                thinking_level,
+            )
+        })
+    }
+
+    pub fn session_tool_respond_with_resource_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        session_id: String,
+        tool_call_id: String,
+        approved: bool,
+    ) -> PiCommandResult<PiSessionToolRespondResult> {
+        self.with_host(resource_dir, |host| {
+            host.session_tool_respond(session_id, tool_call_id, approved)
+        })
+    }
+
+    pub fn session_tool_respond_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        session_id: String,
+        tool_call_id: String,
+        approved: bool,
+    ) -> PiCommandResult<PiSessionToolRespondResult> {
+        self.with_host_event_sink(resource_dir, event_sink, |host| {
+            host.session_tool_respond(session_id, tool_call_id, approved)
+        })
+    }
+
+    pub fn session_rename_with_resource_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        session_id: String,
+        title: String,
+    ) -> PiCommandResult<PiSessionRenameResult> {
+        self.with_host(resource_dir, |host| host.session_rename(session_id, title))
+    }
+
+    pub fn session_rename_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        session_id: String,
+        title: String,
+    ) -> PiCommandResult<PiSessionRenameResult> {
+        self.with_host_event_sink(resource_dir, event_sink, |host| {
+            host.session_rename(session_id, title)
+        })
+    }
+
+    pub fn session_delete_with_resource_dir(
+        &self,
+        resource_dir: Option<&Path>,
+        session_id: String,
+    ) -> PiCommandResult<PiSessionDeleteResult> {
+        self.with_host(resource_dir, |host| host.session_delete(session_id))
+    }
+
+    pub fn session_delete_with_resource_dir_and_event_sink(
+        &self,
+        resource_dir: Option<&Path>,
+        event_sink: Option<PiSessionEventSink>,
+        session_id: String,
+    ) -> PiCommandResult<PiSessionDeleteResult> {
+        self.with_host_event_sink(resource_dir, event_sink, |host| {
+            host.session_delete(session_id)
         })
     }
 
@@ -684,7 +1031,7 @@ impl PiState {
         &self,
         resource_dir: Option<&Path>,
         session_id: String,
-    ) -> Result<PiSessionStopResult, String> {
+    ) -> PiCommandResult<PiSessionStopResult> {
         self.with_host(resource_dir, |host| host.session_stop(session_id))
     }
 
@@ -693,7 +1040,7 @@ impl PiState {
         resource_dir: Option<&Path>,
         event_sink: Option<PiSessionEventSink>,
         session_id: String,
-    ) -> Result<PiSessionStopResult, String> {
+    ) -> PiCommandResult<PiSessionStopResult> {
         self.with_host_event_sink(resource_dir, event_sink, |host| {
             host.session_stop(session_id)
         })
@@ -724,6 +1071,52 @@ fn resource_dir(app: &AppHandle) -> Option<PathBuf> {
     app.path().resource_dir().ok()
 }
 
+fn sdk_session_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("pi-sdk-sessions");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+fn validate_sdk_session_file_path(session_file: &str, session_dir: &Path) -> Result<String, String> {
+    let path = PathBuf::from(session_file);
+    if !path.is_absolute() {
+        return Err("Pi SDK session file must be an absolute path".to_string());
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Pi SDK session file must have a parent directory".to_string())?;
+    let canonical_parent = std::fs::canonicalize(parent).map_err(|e| e.to_string())?;
+    let canonical_session_dir = std::fs::canonicalize(session_dir).map_err(|e| e.to_string())?;
+    if !canonical_parent.starts_with(&canonical_session_dir) {
+        return Err("Pi SDK session file must stay inside the Terax session directory".to_string());
+    }
+    Ok(crate::modules::fs::to_canon(&path))
+}
+
+fn validate_existing_sdk_session_file_path(
+    session_file: &str,
+    session_dir: &Path,
+) -> Result<String, String> {
+    let normalized = validate_sdk_session_file_path(session_file, session_dir)?;
+    let metadata = std::fs::symlink_metadata(&normalized).map_err(|e| e.to_string())?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err("Pi SDK session file must be a regular file".to_string());
+    }
+    Ok(normalized)
+}
+
+fn validate_session_sdk_file(session: &mut PiSession, session_dir: &Path) -> Result<(), String> {
+    let Some(session_file) = session.sdk_session_file.as_deref() else {
+        return Err("Pi session did not report an SDK session file".to_string());
+    };
+    session.sdk_session_file = Some(validate_sdk_session_file_path(session_file, session_dir)?);
+    Ok(())
+}
+
 fn session_event_sink(app: &AppHandle) -> PiSessionEventSink {
     let app = app.clone();
     let history_path = store::history_path(&app).ok();
@@ -733,6 +1126,12 @@ fn session_event_sink(app: &AppHandle) -> PiSessionEventSink {
         }
         let _ = app.emit(PI_SESSION_EVENT_NAME, event);
     })
+}
+
+fn emit_session_events(app: &AppHandle, events: &[PiSessionEvent]) {
+    for event in events {
+        let _ = app.emit(PI_SESSION_EVENT_NAME, event.clone());
+    }
 }
 
 fn resolve_session_cwd(
@@ -827,6 +1226,7 @@ fn resolve_prompt_context(
 
 const KEYRING_SERVICE: &str = "terax-ai";
 const MIN_CONTEXT_LIMIT: u32 = 1_000;
+const SUPPORTED_THINKING_LEVELS: &[&str] = &["off", "minimal", "low", "medium", "high", "xhigh"];
 const SUPPORTED_PROVIDERS: &[&str] = &[
     "openai",
     "anthropic",
@@ -841,6 +1241,15 @@ const SUPPORTED_PROVIDERS: &[&str] = &[
     "lmstudio",
     "mlx",
     "ollama",
+];
+const LOCAL_AGENT_BINS: &[&str] = &[
+    "claude",
+    "codex",
+    "cursor-agent",
+    "opencode",
+    "pi",
+    "gemini",
+    "agy",
 ];
 
 fn provider_label(provider: &str) -> &str {
@@ -867,6 +1276,112 @@ fn provider_requires_key(provider: &str) -> bool {
         provider,
         "lmstudio" | "mlx" | "ollama" | "openai-compatible"
     )
+}
+
+fn login_path() -> String {
+    probe_login_path()
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+        .or_else(|| env::var("PATH").ok())
+        .unwrap_or_default()
+}
+
+#[cfg(unix)]
+fn probe_login_path() -> Option<String> {
+    let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let output = Command::new(shell)
+        .arg("-lc")
+        .arg("printf %s \"$PATH\"")
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+#[cfg(windows)]
+fn probe_login_path() -> Option<String> {
+    None
+}
+
+#[cfg(windows)]
+fn executable_exts() -> Vec<String> {
+    env::var("PATHEXT")
+        .unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".to_string())
+        .split(';')
+        .filter(|value| !value.is_empty())
+        .map(|value| value.trim_start_matches('.').to_ascii_lowercase())
+        .collect()
+}
+
+#[cfg(unix)]
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(windows)]
+fn is_executable_file(path: &Path) -> bool {
+    path.is_file()
+}
+
+fn resolve_local_agent_binary_in_path(bin: &str, path: &str) -> Option<PathBuf> {
+    if !LOCAL_AGENT_BINS.contains(&bin) {
+        return None;
+    }
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    for dir in path.split(separator).filter(|value| !value.is_empty()) {
+        let base = PathBuf::from(dir).join(bin);
+        if is_executable_file(&base) {
+            return Some(base);
+        }
+        #[cfg(windows)]
+        for ext in executable_exts() {
+            let candidate = PathBuf::from(dir).join(format!("{bin}.{ext}"));
+            if is_executable_file(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn resolve_local_agent_binary(bin: &str) -> Option<PathBuf> {
+    let path = login_path();
+    resolve_local_agent_binary_in_path(bin, &path)
+}
+
+#[cfg(windows)]
+fn resolve_local_agent_binary_in_wsl(distro: &str, bin: &str) -> Option<String> {
+    if !LOCAL_AGENT_BINS.contains(&bin) {
+        return None;
+    }
+    let shell = crate::modules::workspace::wsl_login_shell(distro.to_string()).ok()?;
+    let script = format!("command -v {bin}");
+    let output =
+        crate::modules::workspace::wsl_exec_capture(distro, &shell, &["-lc", &script]).ok()?;
+    output
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+#[cfg(not(windows))]
+fn resolve_local_agent_binary_in_wsl(_distro: &str, _bin: &str) -> Option<String> {
+    None
+}
+
+fn resolve_local_agent_binary_for_workspace(bin: &str, workspace: &WorkspaceEnv) -> Option<String> {
+    match workspace {
+        WorkspaceEnv::Local => resolve_local_agent_binary(bin).map(crate::modules::fs::to_canon),
+        WorkspaceEnv::Wsl { distro } => resolve_local_agent_binary_in_wsl(distro, bin),
+    }
 }
 
 fn provider_key_account(config: &PiResolvedProviderConfig) -> Option<String> {
@@ -932,6 +1447,18 @@ fn normalize_base_url(value: Option<String>) -> Result<Option<String>, String> {
     Ok(Some(base_url))
 }
 
+fn normalize_thinking_level(value: Option<String>) -> Result<Option<String>, String> {
+    let Some(level) = normalize_optional_config_string(value, "thinkingLevel")? else {
+        return Ok(None);
+    };
+    if !SUPPORTED_THINKING_LEVELS.contains(&level.as_str()) {
+        return Err(format!(
+            "providerConfig.thinkingLevel is not supported: {level}"
+        ));
+    }
+    Ok(Some(level))
+}
+
 fn normalize_provider_config(
     config: Option<PiProviderConfig>,
 ) -> Result<Option<PiResolvedProviderConfig>, String> {
@@ -952,6 +1479,16 @@ fn normalize_provider_config(
             ));
         }
     }
+    if let Some(max_tokens) = config.max_tokens {
+        if max_tokens == 0 {
+            return Err("providerConfig.maxTokens must be a positive integer".to_string());
+        }
+        if let Some(limit) = config.context_limit {
+            if max_tokens > limit {
+                return Err("providerConfig.maxTokens must not exceed contextLimit".to_string());
+            }
+        }
+    }
 
     Ok(Some(PiResolvedProviderConfig {
         auth_mode,
@@ -960,10 +1497,13 @@ fn normalize_provider_config(
         source_model_id: normalize_optional_config_string(config.source_model_id, "sourceModelId")?,
         base_url: normalize_base_url(config.base_url)?,
         context_limit: config.context_limit,
+        max_tokens: config.max_tokens,
+        reasoning: config.reasoning,
         custom_endpoint_id: normalize_optional_config_string(
             config.custom_endpoint_id,
             "customEndpointId",
         )?,
+        thinking_level: normalize_thinking_level(config.thinking_level)?,
         profile_agent_dir: None,
         api_key: None,
     }))
@@ -1040,6 +1580,20 @@ fn bind_history_path(app: &AppHandle, state: &PiState) {
 }
 
 #[tauri::command]
+pub fn pi_local_agents_status(workspace: Option<WorkspaceEnv>) -> PiLocalAgentsStatus {
+    let workspace = workspace.unwrap_or(WorkspaceEnv::Local);
+    PiLocalAgentsStatus {
+        agents: LOCAL_AGENT_BINS
+            .iter()
+            .map(|binary| PiLocalAgentBinaryStatus {
+                binary: (*binary).to_string(),
+                path: resolve_local_agent_binary_for_workspace(binary, &workspace),
+            })
+            .collect(),
+    }
+}
+
+#[tauri::command]
 pub fn pi_status(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
@@ -1074,7 +1628,7 @@ pub fn pi_stop(
 pub fn pi_host_info(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
-) -> Result<PiHostInfo, String> {
+) -> PiCommandResult<PiHostInfo> {
     bind_history_path(&app, &state);
     state.info_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
@@ -1086,7 +1640,7 @@ pub fn pi_host_info(
 pub fn pi_diagnostics(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
-) -> Result<PiDiagnostics, String> {
+) -> PiCommandResult<PiDiagnostics> {
     bind_history_path(&app, &state);
     state.diagnostics_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
@@ -1098,7 +1652,7 @@ pub fn pi_diagnostics(
 pub fn pi_models_list(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
-) -> Result<PiProfileModelsList, String> {
+) -> PiCommandResult<PiProfileModelsList> {
     bind_history_path(&app, &state);
     state.models_list_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
@@ -1108,15 +1662,15 @@ pub fn pi_models_list(
 }
 
 #[tauri::command]
-pub fn pi_sessions_history(app: AppHandle) -> Result<PiSessionsList, String> {
-    store::load(&app)
+pub fn pi_sessions_history(app: AppHandle) -> PiCommandResult<PiSessionsList> {
+    Ok(store::load(&app)?)
 }
 
 #[tauri::command]
 pub fn pi_sessions_list(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
-) -> Result<PiSessionsList, String> {
+) -> PiCommandResult<PiSessionsList> {
     bind_history_path(&app, &state);
     state.sessions_list_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
@@ -1138,22 +1692,84 @@ pub fn pi_session_create(
     cwd: Option<String>,
     provider_config: Option<PiProviderConfig>,
     workspace: Option<WorkspaceEnv>,
-) -> Result<PiSessionCreateResult, String> {
+) -> PiCommandResult<PiSessionCreateResult> {
     bind_history_path(&app, &state);
     let workspace_env = WorkspaceEnv::from_option(workspace);
     let cwd = resolve_session_cwd(&registry, cwd.as_deref(), &workspace_env)?;
     let provider_config = resolve_provider_config(&app, &secrets_state, provider_config)?;
-    let result = state.session_create_with_resource_dir_and_event_sink_and_provider(
+    let session_dir = sdk_session_dir(&app)?;
+    let session_dir_text = crate::modules::fs::to_canon(&session_dir);
+    let mut result = state.session_create_with_resource_dir_and_event_sink_and_provider_and_session_dir(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
         title,
         Some(cwd),
         provider_config,
+        Some(session_dir_text),
+        workspace_env.clone(),
     )?;
+    validate_session_sdk_file(&mut result.session, &session_dir)?;
     store::record_session_result(&app, &result.session, &result.events)?;
+    emit_session_events(&app, &result.events);
     Ok(result)
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri injects app state beside serialized session resume arguments"
+)]
+#[tauri::command]
+pub fn pi_session_resume(
+    app: AppHandle,
+    state: tauri::State<'_, PiState>,
+    registry: tauri::State<'_, WorkspaceRegistry>,
+    secrets_state: tauri::State<'_, SecretsState>,
+    session_id: String,
+    provider_config: Option<PiProviderConfig>,
+    workspace: Option<WorkspaceEnv>,
+) -> PiCommandResult<PiSessionResumeResult> {
+    bind_history_path(&app, &state);
+    let history = store::load(&app)?;
+    let session = history
+        .sessions
+        .iter()
+        .find(|session| session.id == session_id)
+        .cloned()
+        .ok_or_else(|| PiCommandError::plain("Pi session history entry was not found"))?;
+    let sdk_session_file = session
+        .sdk_session_file
+        .clone()
+        .ok_or_else(|| PiCommandError::plain("Pi session has no SDK session file to resume"))?;
+    let workspace_env = WorkspaceEnv::from_option(workspace);
+    let cwd = resolve_session_cwd(&registry, session.cwd.as_deref(), &workspace_env)?;
+    let provider_config = resolve_provider_config(&app, &secrets_state, provider_config)?;
+    let session_dir = sdk_session_dir(&app)?;
+    let session_dir_text = crate::modules::fs::to_canon(&session_dir);
+    let sdk_session_file = validate_existing_sdk_session_file_path(&sdk_session_file, &session_dir)?;
+    let mut result = state.session_resume_with_resource_dir_and_event_sink_and_provider(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+        session.id.clone(),
+        session.title.clone(),
+        cwd,
+        sdk_session_file,
+        Some(session_dir_text),
+        provider_config,
+        Some(session.created_at.clone()),
+        session.last_prompt.clone(),
+        session.thinking_level.clone(),
+        workspace_env.clone(),
+    )?;
+    validate_session_sdk_file(&mut result.session, &session_dir)?;
+    store::record_session_result(&app, &result.session, &result.events)?;
+    emit_session_events(&app, &result.events);
+    Ok(result)
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri injects app state beside serialized session send arguments"
+)]
 #[tauri::command]
 pub fn pi_session_send(
     app: AppHandle,
@@ -1162,8 +1778,10 @@ pub fn pi_session_send(
     session_id: String,
     prompt: String,
     context: Option<PiPromptContext>,
+    regenerate_branch_group_id: Option<String>,
+    thinking_level: Option<String>,
     workspace: Option<WorkspaceEnv>,
-) -> Result<PiSessionSendResult, String> {
+) -> PiCommandResult<PiSessionSendResult> {
     bind_history_path(&app, &state);
     let workspace_env = WorkspaceEnv::from_option(workspace);
     let context = resolve_prompt_context(&registry, context, &workspace_env)?;
@@ -1173,8 +1791,88 @@ pub fn pi_session_send(
         session_id,
         prompt,
         context,
+        regenerate_branch_group_id,
+        thinking_level,
     )?;
     store::record_session_result(&app, &result.session, &result.events)?;
+    emit_session_events(&app, &result.events);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn pi_session_tool_respond(
+    app: AppHandle,
+    state: tauri::State<'_, PiState>,
+    session_id: String,
+    tool_call_id: String,
+    approved: bool,
+) -> PiCommandResult<PiSessionToolRespondResult> {
+    bind_history_path(&app, &state);
+    let result = state.session_tool_respond_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+        session_id,
+        tool_call_id,
+        approved,
+    )?;
+    store::record_session_result(&app, &result.session, &result.events)?;
+    emit_session_events(&app, &result.events);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn pi_session_rename(
+    app: AppHandle,
+    state: tauri::State<'_, PiState>,
+    session_id: String,
+    title: String,
+) -> PiCommandResult<PiSessionRenameResult> {
+    bind_history_path(&app, &state);
+    let result = state.session_rename_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+        session_id,
+        title,
+    )?;
+    store::record_session_result(&app, &result.session, &result.events)?;
+    emit_session_events(&app, &result.events);
+    Ok(result)
+}
+
+fn is_pi_session_not_found_error(error: &PiCommandError) -> bool {
+    error.code.as_deref() == Some("PI_SESSION_NOT_FOUND")
+}
+
+#[tauri::command]
+pub fn pi_session_delete(
+    app: AppHandle,
+    state: tauri::State<'_, PiState>,
+    session_id: String,
+) -> PiCommandResult<PiSessionDeleteResult> {
+    bind_history_path(&app, &state);
+    let result = match state.session_delete_with_resource_dir_and_event_sink(
+        resource_dir(&app).as_deref(),
+        Some(session_event_sink(&app)),
+        session_id.clone(),
+    ) {
+        Ok(result) => result,
+        Err(error) if is_pi_session_not_found_error(&error) => {
+            let history = store::load(&app)?;
+            if !history
+                .sessions
+                .iter()
+                .any(|session| session.id == session_id)
+            {
+                return Err(error);
+            }
+            PiSessionDeleteResult {
+                events: vec![store::deleted_event(session_id.clone())],
+            }
+        }
+        Err(error) => return Err(error),
+    };
+    store::record_session_events(&app, &result.events)?;
+    emit_session_events(&app, &result.events);
     Ok(result)
 }
 
@@ -1183,7 +1881,7 @@ pub fn pi_session_stop(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
     session_id: String,
-) -> Result<PiSessionStopResult, String> {
+) -> PiCommandResult<PiSessionStopResult> {
     bind_history_path(&app, &state);
     let result = state.session_stop_with_resource_dir_and_event_sink(
         resource_dir(&app).as_deref(),
@@ -1191,12 +1889,91 @@ pub fn pi_session_stop(
         session_id,
     )?;
     store::record_session_result(&app, &result.session, &result.events)?;
+    emit_session_events(&app, &result.events);
     Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn command_error_with_code(message: &str, code: Option<&str>) -> PiCommandError {
+        PiCommandError {
+            message: message.to_string(),
+            code: code.map(str::to_string),
+            category: None,
+            retryable: None,
+            remediation: None,
+        }
+    }
+
+    #[test]
+    fn pi_session_not_found_match_uses_structured_error_code() {
+        assert!(is_pi_session_not_found_error(&command_error_with_code(
+            "Pi host wording can change without breaking history-only delete",
+            Some("PI_SESSION_NOT_FOUND"),
+        )));
+        assert!(!is_pi_session_not_found_error(&command_error_with_code(
+            "Pi host error -32004: Pi session not found: pi-1",
+            None,
+        )));
+        assert!(!is_pi_session_not_found_error(&command_error_with_code(
+            "Pi host error -32007: Pi session is already running: pi-1",
+            Some("PI_SESSION_BUSY"),
+        )));
+    }
+
+    #[test]
+    fn sdk_session_file_validation_rejects_paths_outside_session_dir() {
+        let root = tempfile::tempdir().unwrap();
+        let session_dir = root.path().join("sessions");
+        let outside_dir = root.path().join("outside");
+        std::fs::create_dir(&session_dir).unwrap();
+        std::fs::create_dir(&outside_dir).unwrap();
+        let inside = session_dir.join("session.jsonl");
+        let outside = outside_dir.join("session.jsonl");
+        std::fs::write(&inside, "{}").unwrap();
+
+        assert_eq!(
+            validate_sdk_session_file_path(inside.to_str().unwrap(), &session_dir).unwrap(),
+            crate::modules::fs::to_canon(&inside)
+        );
+        assert_eq!(
+            validate_existing_sdk_session_file_path(inside.to_str().unwrap(), &session_dir)
+                .unwrap(),
+            crate::modules::fs::to_canon(&inside)
+        );
+        assert!(validate_sdk_session_file_path(outside.to_str().unwrap(), &session_dir).is_err());
+        assert!(
+            validate_existing_sdk_session_file_path(outside.to_str().unwrap(), &session_dir)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn local_agent_detection_uses_allowlisted_binaries() {
+        let dir = tempfile::tempdir().unwrap();
+        let claude = dir.path().join("claude");
+        let codex = dir.path().join("codex");
+        let pi = dir.path().join("pi");
+        std::fs::write(&claude, "").unwrap();
+        std::fs::write(&codex, "").unwrap();
+        std::fs::write(&pi, "").unwrap();
+        #[cfg(unix)]
+        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+        #[cfg(unix)]
+        std::fs::set_permissions(&pi, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let path = dir.path().to_str().unwrap();
+
+        assert_eq!(
+            resolve_local_agent_binary_in_path("claude", path),
+            Some(claude)
+        );
+        assert_eq!(resolve_local_agent_binary_in_path("pi", path), Some(pi));
+        #[cfg(unix)]
+        assert!(resolve_local_agent_binary_in_path("codex", path).is_none());
+        assert!(resolve_local_agent_binary_in_path("sh", path).is_none());
+    }
 
     #[test]
     fn resolve_session_cwd_canonicalizes_authorized_roots() {
@@ -1315,7 +2092,10 @@ mod tests {
             source_model_id: Some(" claude-sonnet-4-6 ".to_string()),
             base_url: None,
             context_limit: None,
+            max_tokens: None,
+            reasoning: None,
             custom_endpoint_id: None,
+            thinking_level: None,
             auth_mode: None,
         }))
         .unwrap()
@@ -1331,6 +2111,28 @@ mod tests {
     }
 
     #[test]
+    fn normalize_provider_config_preserves_runtime_model_metadata() {
+        let resolved = normalize_provider_config(Some(PiProviderConfig {
+            provider: "openai-compatible".to_string(),
+            model_id: "qwen3-max".to_string(),
+            source_model_id: None,
+            base_url: Some("https://gateway.example.com/v1".to_string()),
+            context_limit: Some(256_000),
+            max_tokens: Some(64_000),
+            reasoning: Some(true),
+            custom_endpoint_id: Some("abc123".to_string()),
+            thinking_level: None,
+            auth_mode: None,
+        }))
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(resolved.context_limit, Some(256_000));
+        assert_eq!(resolved.max_tokens, Some(64_000));
+        assert_eq!(resolved.reasoning, Some(true));
+    }
+
+    #[test]
     fn normalize_provider_config_allows_pi_profile_providers() {
         let resolved = normalize_provider_config(Some(PiProviderConfig {
             provider: " openai-codex ".to_string(),
@@ -1338,7 +2140,10 @@ mod tests {
             source_model_id: Some(" pi-profile:openai-codex:gpt-5.3-codex ".to_string()),
             base_url: None,
             context_limit: None,
+            max_tokens: None,
+            reasoning: None,
             custom_endpoint_id: None,
+            thinking_level: None,
             auth_mode: Some(PiAuthMode::Profile),
         }))
         .unwrap()
@@ -1351,6 +2156,43 @@ mod tests {
     }
 
     #[test]
+    fn normalize_provider_config_validates_thinking_level() {
+        let resolved = normalize_provider_config(Some(PiProviderConfig {
+            provider: "anthropic".to_string(),
+            model_id: "claude-sonnet-4-6".to_string(),
+            source_model_id: None,
+            base_url: None,
+            context_limit: None,
+            max_tokens: None,
+            reasoning: None,
+            custom_endpoint_id: None,
+            thinking_level: Some(" high ".to_string()),
+            auth_mode: None,
+        }))
+        .unwrap()
+        .unwrap();
+        assert_eq!(resolved.thinking_level.as_deref(), Some("high"));
+
+        let error = normalize_provider_config(Some(PiProviderConfig {
+            provider: "anthropic".to_string(),
+            model_id: "claude-sonnet-4-6".to_string(),
+            source_model_id: None,
+            base_url: None,
+            context_limit: None,
+            max_tokens: None,
+            reasoning: None,
+            custom_endpoint_id: None,
+            thinking_level: Some("extreme".to_string()),
+            auth_mode: None,
+        }))
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "providerConfig.thinkingLevel is not supported: extreme"
+        );
+    }
+
+    #[test]
     fn normalize_provider_config_rejects_invalid_base_url() {
         let error = normalize_provider_config(Some(PiProviderConfig {
             provider: "openai-compatible".to_string(),
@@ -1358,7 +2200,10 @@ mod tests {
             source_model_id: None,
             base_url: Some("file:///tmp/model".to_string()),
             context_limit: Some(128_000),
+            max_tokens: None,
+            reasoning: None,
             custom_endpoint_id: Some("abc123".to_string()),
+            thinking_level: None,
             auth_mode: None,
         }))
         .unwrap_err();
@@ -1377,7 +2222,10 @@ mod tests {
             source_model_id: None,
             base_url: None,
             context_limit: None,
+            max_tokens: None,
+            reasoning: None,
             custom_endpoint_id: None,
+            thinking_level: None,
             auth_mode: None,
         }))
         .unwrap()
@@ -1388,7 +2236,10 @@ mod tests {
             source_model_id: None,
             base_url: Some("https://gateway.example.com/v1".to_string()),
             context_limit: Some(128_000),
+            max_tokens: None,
+            reasoning: None,
             custom_endpoint_id: Some("abc123".to_string()),
+            thinking_level: None,
             auth_mode: None,
         }))
         .unwrap()

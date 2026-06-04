@@ -111,6 +111,7 @@ const child = spawn(bundledNode, [bundledHost], {
     TMPDIR: process.env.TMPDIR ?? tmpdir(),
     TEMP: process.env.TEMP ?? tmpdir(),
     TMP: process.env.TMP ?? tmpdir(),
+    TERAX_PI_HOST_ENABLE_TEST_FAUX: "1",
     TERAX_PI_HOST_TEST_FAUX_RESPONSE: "smoke ok",
   },
   stdio: ["pipe", "pipe", "pipe"],
@@ -145,8 +146,30 @@ try {
       `Unexpected bundled Node version: ${diagnostics.node.version}`,
     );
   }
-  if (diagnostics.config.toolMode !== "noTools") {
+  if (diagnostics.config.toolMode !== "rust-mediated") {
     throw new Error(`Unexpected tool mode: ${diagnostics.config.toolMode}`);
+  }
+  const enabledTools = diagnostics.config.enabledTools ?? [];
+  const approvalTools = diagnostics.config.approvalRequiredTools ?? [];
+  const expectedEnabledTools = [
+    "read",
+    "ls",
+    "grep",
+    "find",
+    "bash",
+    "edit",
+    "write",
+  ];
+  const expectedApprovalTools = ["bash", "edit", "write"];
+  if (JSON.stringify(enabledTools) !== JSON.stringify(expectedEnabledTools)) {
+    throw new Error(
+      `Bundled Pi host enabled unexpected tools: ${enabledTools.join(", ")}`,
+    );
+  }
+  if (JSON.stringify(approvalTools) !== JSON.stringify(expectedApprovalTools)) {
+    throw new Error(
+      `Bundled Pi host exposed unexpected approval tools: ${approvalTools.join(", ")}`,
+    );
   }
 
   const created = await request(child, lines, 3, "sessions.create", {

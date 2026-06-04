@@ -36,6 +36,8 @@ import {
   COMPACT_CONTENT,
   COMPACT_ITEM,
 } from "@/modules/explorer/lib/menuItemClass";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { tooltipSideForSidebar } from "@/modules/sidebar/position";
 import { joinPath } from "@/modules/explorer/lib/useFileTree";
 import {
   AiContentGenerator02Icon,
@@ -151,6 +153,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   onOpenFile,
 }: Props) {
   const scm = useSourceControlPanel(open, sourceControl, onOpenDiff);
+  const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);
   const refreshAnimationRef = useRef<number | null>(null);
   const [refreshAnimating, setRefreshAnimating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -623,7 +626,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                       </button>
                     </TooltipTrigger>
                     <TooltipContent
-                      side="left"
+                      side={tooltipSideForSidebar(sidebarPosition)}
                       className={cn(
                         SOURCE_CONTROL_TOOLTIP_CLASS,
                         "text-[10.5px]",

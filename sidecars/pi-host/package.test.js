@@ -11,6 +11,8 @@ describe("Pi host package", () => {
     expect(manifest.files).toEqual([
       "host.js",
       "model-catalog.js",
+      "native-tools.js",
+      "protocol-schema.js",
       "protocol.js",
       "provider-config.js",
       "session-errors.js",

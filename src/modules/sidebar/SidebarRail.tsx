@@ -1,39 +1,49 @@
 import {
-  AiChat02Icon,
+  ChatIcon,
+  CodeIcon,
   FolderGitTwoIcon,
   FolderTreeIcon,
+  InboxIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
-import type { SidebarViewId } from "./types";
-import { SIDEBAR_VIEW_ITEMS } from "./views";
+import type { SidebarViewId, SidebarViewItem } from "./types";
 
 export const SIDEBAR_RAIL_HEIGHT = 36;
 
-type RailItem = {
-  id: SidebarViewId;
-  label: string;
+type RailItem<T extends SidebarViewId = SidebarViewId> = SidebarViewItem<T> & {
   icon: Parameters<typeof HugeiconsIcon>[0]["icon"];
-  badge?: number;
 };
 
-type Props = {
-  activeView: SidebarViewId;
-  onSelectView: (view: SidebarViewId) => void;
-  changedCount: number;
+type Props<T extends SidebarViewId> = {
+  activeView: T;
+  items: readonly SidebarViewItem<T>[];
+  onSelectView: (view: T) => void;
+  badges?: Partial<Record<T, number>>;
 };
 
 const sidebarViewIcons: Record<SidebarViewId, RailItem["icon"]> = {
   explorer: FolderTreeIcon,
   "source-control": FolderGitTwoIcon,
-  pi: AiChat02Icon,
+  code: CodeIcon,
+  chat: ChatIcon,
+  inbox: InboxIcon,
 };
 
-export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
-  const items: RailItem[] = SIDEBAR_VIEW_ITEMS.map((item) => ({
+function formatBadge(view: SidebarViewId, badge: number): string | number {
+  if (view === "code" && badge > 9) return "9+";
+  return badge > 99 ? "99+" : badge;
+}
+
+export function SidebarRail<T extends SidebarViewId>({
+  activeView,
+  items,
+  onSelectView,
+  badges = {},
+}: Props<T>) {
+  const railItems: RailItem<T>[] = items.map((item) => ({
     ...item,
     icon: sidebarViewIcons[item.id],
-    ...(item.id === "source-control" ? { badge: changedCount } : {}),
   }));
 
   return (
@@ -41,9 +51,10 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
       style={{ height: SIDEBAR_RAIL_HEIGHT }}
       className="flex shrink-0 items-stretch gap-1 border-t border-border/60 bg-card/85 px-1.5 py-1 backdrop-blur"
     >
-      {items.map((item) => {
+      {railItems.map((item) => {
         const isActive = item.id === activeView;
-        const showBadge = !!item.badge && item.badge > 0;
+        const badge = badges[item.id] ?? 0;
+        const showBadge = badge > 0;
         return (
           <button
             key={item.id}
@@ -68,7 +79,7 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
             <span>{item.label}</span>
             {showBadge ? (
               <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border/60 bg-card px-1 text-[9px] font-semibold leading-none tabular-nums text-muted-foreground/95">
-                {item.badge! > 99 ? "99+" : item.badge}
+                {formatBadge(item.id, badge)}
               </span>
             ) : null}
           </button>

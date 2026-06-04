@@ -14,6 +14,7 @@
     "build:node-runtime": "node scripts/build-node-runtime.mjs",
     "build:sidecars": "pnpm build:node-runtime && node scripts/build-pi-host-bundle.mjs",
     "smoke:pi-host": "node scripts/smoke-pi-host-bundle.mjs",
+    "check:pi-boundary": "node scripts/check-pi-approval-boundary.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
