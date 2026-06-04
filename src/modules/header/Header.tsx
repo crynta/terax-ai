@@ -25,6 +25,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { AgentUsage } from "./AgentUsage";
 import {
   SearchInline,
   type SearchInlineHandle,
@@ -208,6 +209,8 @@ export function Header({
         />
         <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
       </div>
+
+      <AgentUsage />
 
       <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
 

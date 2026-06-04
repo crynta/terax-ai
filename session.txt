@@ -1,0 +1,4 @@
+claude --resume 76e6c4fe-c8fe-4f4e-b072-3fbacdc4a18a  # Fix app title display on Linux Tauri
+claude --resume 90218759-a006-4a84-a710-4b8328332f40  # Review GitHub pull request 599
+claude --resume bc3aacd8-0e6b-49db-93ce-5fa0e0645331  # Set up Cloud MD dev version with keyboard shortcuts
+claude --resume fbe410ce-e7b9-4d2d-ac4a-daabfab4c857  # Integrate local CLI agents into IDE settings
