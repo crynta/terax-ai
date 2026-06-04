@@ -48,6 +48,8 @@ import {
 } from "@/modules/ai/lib/keyring";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import {
+  countHiddenPiProfileModels,
+  countHiddenPiProviderModels,
   getPiModelProviderGroups,
   getPiProfileModelGroups,
 } from "@/modules/pi/lib/model-options";
@@ -705,14 +707,29 @@ function PiModelPicker({
   const [profileLoading, setProfileLoading] = useState(false);
   const current = resolvePiProviderConfig(prefs);
   const providerGroups = getPiModelProviderGroups(configuredIds);
+  const hiddenProviderModelCount = countHiddenPiProviderModels(configuredIds);
+  const readyCustomEndpoints = prefs.customEndpoints.filter(
+    (endpoint) => endpoint.baseURL.trim() && endpoint.modelId.trim(),
+  );
+  const hiddenCustomEndpointCount =
+    prefs.customEndpoints.length - readyCustomEndpoints.length;
+  const hiddenTeraxModelCount =
+    hiddenProviderModelCount + hiddenCustomEndpointCount;
   const profileGroups = useMemo(
     () => getPiProfileModelGroups(profileCatalog),
     [profileCatalog],
   );
+  const hiddenProfileModelCount = countHiddenPiProfileModels(profileCatalog);
   const hasAny =
     prefs.piAuthMode === "profile"
-      ? profileLoading || profileGroups.length > 0
-      : providerGroups.length > 0 || prefs.customEndpoints.length > 0;
+      ? profileLoading ||
+        profileGroups.length > 0 ||
+        hiddenProfileModelCount > 0 ||
+        !!profileError ||
+        !!profileCatalog?.loadError
+      : providerGroups.length > 0 ||
+        readyCustomEndpoints.length > 0 ||
+        hiddenTeraxModelCount > 0;
   const currentProvider = current.provider ?? "openai";
 
   const refreshProfileCatalog = useCallback(async () => {
@@ -824,6 +841,16 @@ function PiModelPicker({
                     No Pi profile models found.
                   </DropdownMenuItem>
                 ) : null}
+                {profileCatalog &&
+                !profileLoading &&
+                !profileError &&
+                !profileCatalog.loadError &&
+                profileCatalog.models.length > 0 &&
+                profileGroups.length === 0 ? (
+                  <DropdownMenuItem disabled className="text-[12px]">
+                    No usable Pi profile models.
+                  </DropdownMenuItem>
+                ) : null}
               </div>
               {profileGroups.map((group) => (
                 <div key={group.provider} className="px-1 pt-1.5 first:pt-1">
@@ -836,7 +863,6 @@ function PiModelPicker({
                     return (
                       <DropdownMenuItem
                         key={id}
-                        disabled={!model.available}
                         onSelect={() => void setPiModelId(id)}
                         className={cn(
                           "flex items-start gap-2 text-[12px]",
@@ -846,9 +872,7 @@ function PiModelPicker({
                         <span className="flex flex-1 flex-col">
                           <span>{model.label}</span>
                           <span className="text-[10px] text-muted-foreground">
-                            {model.available
-                              ? model.providerLabel
-                              : "Needs auth in Pi profile"}
+                            {model.providerLabel}
                           </span>
                         </span>
                       </DropdownMenuItem>
@@ -856,9 +880,16 @@ function PiModelPicker({
                   })}
                 </div>
               ))}
+              <HiddenModelsFooter count={hiddenProfileModelCount} />
             </>
           ) : (
             <>
+              {providerGroups.length === 0 &&
+              readyCustomEndpoints.length === 0 ? (
+                <DropdownMenuItem disabled className="text-[12px]">
+                  No usable Terax models.
+                </DropdownMenuItem>
+              ) : null}
               {providerGroups.map((group) => (
                 <div key={group.provider.id} className="px-1 pt-1.5 first:pt-1">
                   <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -889,21 +920,18 @@ function PiModelPicker({
                   ))}
                 </div>
               ))}
-              {prefs.customEndpoints.length > 0 ? (
+              {readyCustomEndpoints.length > 0 ? (
                 <div className="px-1 pt-1.5 first:pt-1">
                   <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                     <ProviderIcon provider="openai-compatible" size={11} />
                     <span>Custom endpoints</span>
                   </div>
-                  {prefs.customEndpoints.map((endpoint) => {
-                    const ready =
-                      endpoint.baseURL.trim() && endpoint.modelId.trim();
+                  {readyCustomEndpoints.map((endpoint) => {
                     const id = compatModelIdForEndpoint(endpoint.id);
                     return (
                       <DropdownMenuItem
                         key={endpoint.id}
-                        disabled={!ready}
-                        onSelect={() => ready && void setPiModelId(id)}
+                        onSelect={() => void setPiModelId(id)}
                         className={cn(
                           "flex items-start gap-2 text-[12px]",
                           id === prefs.piModelId && "bg-accent/50",
@@ -916,9 +944,7 @@ function PiModelPicker({
                               "Custom endpoint"}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            {ready
-                              ? endpoint.baseURL
-                              : "Add a base URL and model id"}
+                            {endpoint.baseURL}
                           </span>
                         </span>
                       </DropdownMenuItem>
@@ -926,12 +952,28 @@ function PiModelPicker({
                   })}
                 </div>
               ) : null}
+              <HiddenModelsFooter count={hiddenTeraxModelCount} />
             </>
           )}
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+function HiddenModelsFooter({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <DropdownMenuItem disabled className="text-[11px] text-muted-foreground">
+      {hiddenModelsText(count)}
+    </DropdownMenuItem>
+  );
+}
+
+function hiddenModelsText(count: number): string {
+  return count === 1
+    ? "1 unavailable model hidden"
+    : `${count} unavailable models hidden`;
 }
 
 function AutocompleteRow({

@@ -18,6 +18,7 @@ export function getPiProfileModelGroups(
 ): PiProfileModelGroup[] {
   const groups = new Map<string, PiProfileModelsList["models"]>();
   for (const model of catalog?.models ?? []) {
+    if (!model.available) continue;
     const models = groups.get(model.provider) ?? [];
     models.push(model);
     groups.set(model.provider, models);
@@ -29,6 +30,12 @@ export function getPiProfileModelGroups(
   }));
 }
 
+export function countHiddenPiProfileModels(
+  catalog: PiProfileModelsList | null,
+): number {
+  return (catalog?.models ?? []).filter((model) => !model.available).length;
+}
+
 export type PiModelProviderGroup = {
   provider: ProviderInfo;
   models: readonly ModelInfo[];
@@ -38,9 +45,17 @@ export type PiModelProviderGroup = {
 export function getPiModelProviderGroups(
   configuredIds: ReadonlySet<ProviderId>,
 ): PiModelProviderGroup[] {
-  return PROVIDERS.map((provider) => ({
-    provider,
-    models: MODELS.filter((model) => model.provider === provider.id),
-    setupRequired: !configuredIds.has(provider.id),
-  })).filter((group) => group.models.length > 0);
+  return PROVIDERS.filter((provider) => configuredIds.has(provider.id))
+    .map((provider) => ({
+      provider,
+      models: MODELS.filter((model) => model.provider === provider.id),
+      setupRequired: false,
+    }))
+    .filter((group) => group.models.length > 0);
+}
+
+export function countHiddenPiProviderModels(
+  configuredIds: ReadonlySet<ProviderId>,
+): number {
+  return MODELS.filter((model) => !configuredIds.has(model.provider)).length;
 }
