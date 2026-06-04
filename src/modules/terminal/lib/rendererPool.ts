@@ -168,6 +168,40 @@ function createSlot(): Slot {
 
   attachWebgl(slot);
 
+  // macOS WebKit (WKWebView) delivers Korean/CJK IME through `input` events
+  // — `insertText` when a new glyph starts, `insertReplacementText` as the
+  // in-progress syllable is refined (ㅇ → 아 → 안) — instead of the standard
+  // composition* events xterm understands. xterm forwards `insertText` to the
+  // PTY but silently drops `insertReplacementText`, so only the first jamo of
+  // each syllable ever reached the shell ("안녕" arrived as "ㅇㄴ"). Bridge the
+  // gap: rewrite the in-progress glyph in place — erase the previously sent
+  // one with DEL, then write the refined syllable — so the shell mirrors what
+  // the IME shows. `pendingGlyph` tracks the last uncommitted glyph so the
+  // next replacement knows how many code points to erase.
+  let pendingGlyph = "";
+  {
+    const ta = slot.term.textarea;
+    if (ta) {
+      ta.addEventListener("input", (ev) => {
+        const e = ev as InputEvent;
+        if (slot.currentLeafId === null) return;
+        if (e.inputType === "insertText") {
+          // xterm already forwarded this glyph; just remember it so a
+          // following replacement knows what to erase.
+          pendingGlyph = e.data ?? "";
+          return;
+        }
+        if (e.inputType === "insertReplacementText" && e.data) {
+          const bridge = adapter?.resolveLeaf(slot.currentLeafId);
+          if (!bridge) return;
+          const erase = "\x7f".repeat([...pendingGlyph].length);
+          bridge.writeToPty(erase + e.data);
+          pendingGlyph = e.data;
+        }
+      });
+    }
+  }
+
   term.attachCustomKeyEventHandler((event) => {
     // During IME composition the browser is assembling a multi-keystroke
     // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
