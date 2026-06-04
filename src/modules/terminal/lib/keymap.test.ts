@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  terminalClipboardAction,
   terminalDeleteSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
@@ -11,6 +12,7 @@ const evt = (partial: Partial<TerminalKeyEvent>): TerminalKeyEvent => ({
   altKey: false,
   ctrlKey: false,
   metaKey: false,
+  shiftKey: false,
   key: "",
   code: "",
   ...partial,
@@ -133,5 +135,55 @@ describe("terminalDeleteSequence", () => {
         { isMac: true },
       ),
     ).toBeNull();
+  });
+});
+
+describe("terminalClipboardAction", () => {
+  it("copies with Ctrl+C off macOS when the terminal has a selection", () => {
+    expect(
+      terminalClipboardAction(evt({ ctrlKey: true, key: "c", code: "KeyC" }), {
+        isMac: false,
+        hasSelection: true,
+      }),
+    ).toBe("copy");
+  });
+
+  it("leaves Ctrl+C for SIGINT off macOS when there is no selection", () => {
+    expect(
+      terminalClipboardAction(evt({ ctrlKey: true, key: "c", code: "KeyC" }), {
+        isMac: false,
+        hasSelection: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("copies and pastes with standard macOS shortcuts", () => {
+    expect(
+      terminalClipboardAction(evt({ metaKey: true, key: "c", code: "KeyC" }), {
+        isMac: true,
+        hasSelection: true,
+      }),
+    ).toBe("copy");
+    expect(
+      terminalClipboardAction(evt({ metaKey: true, key: "v", code: "KeyV" }), {
+        isMac: true,
+        hasSelection: false,
+      }),
+    ).toBe("paste");
+  });
+
+  it("keeps Ctrl+Shift+C and Ctrl+Shift+V terminal shortcuts off macOS", () => {
+    expect(
+      terminalClipboardAction(
+        evt({ ctrlKey: true, shiftKey: true, key: "c", code: "KeyC" }),
+        { isMac: false, hasSelection: true },
+      ),
+    ).toBe("copy");
+    expect(
+      terminalClipboardAction(
+        evt({ ctrlKey: true, shiftKey: true, key: "v", code: "KeyV" }),
+        { isMac: false, hasSelection: false },
+      ),
+    ).toBe("paste");
   });
 });

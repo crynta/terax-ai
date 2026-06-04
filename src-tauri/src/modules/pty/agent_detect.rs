@@ -254,16 +254,35 @@ impl AgentDetector {
             if token.starts_with('-') {
                 continue;
             }
-            let base = token.rsplit(['/', '\\']).next().unwrap_or(token);
-            if let Some(agent) = self.agents.iter().find(|a| {
-                base.strip_prefix(a.as_str())
-                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'))
-            }) {
+            let base = token
+                .rsplit(['/', '\\'])
+                .next()
+                .unwrap_or(token)
+                .trim_matches(['"', '\'']);
+            let base = strip_windows_command_extension(base);
+            if let Some(agent) = self.agents.iter().find(|a| agent_name_matches(base, a)) {
                 return Some(agent.clone());
             }
         }
         None
     }
+}
+
+fn strip_windows_command_extension(base: &str) -> &str {
+    const EXTS: [&str; 5] = [".exe", ".cmd", ".bat", ".com", ".ps1"];
+    for ext in EXTS {
+        if base.len() > ext.len() && base.to_ascii_lowercase().ends_with(ext) {
+            return &base[..base.len() - ext.len()];
+        }
+    }
+    base
+}
+
+fn agent_name_matches(base: &str, agent: &str) -> bool {
+    let base = base.to_ascii_lowercase();
+    let agent = agent.to_ascii_lowercase();
+    base.strip_prefix(agent.as_str())
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with('-'))
 }
 
 #[cfg(test)]
@@ -308,6 +327,23 @@ mod tests {
         let mut d2 = AgentDetector::new();
         assert_eq!(
             run(&mut d2, &osc("133;C;npx claude")),
+            vec![started("claude")]
+        );
+    }
+
+    #[test]
+    fn arms_on_windows_command_shims() {
+        let mut d = AgentDetector::new();
+        assert_eq!(
+            run(
+                &mut d,
+                &osc(r"133;C;C:\Users\op237\AppData\Roaming\npm\codex.cmd exec")
+            ),
+            vec![started("codex")]
+        );
+        let mut d2 = AgentDetector::new();
+        assert_eq!(
+            run(&mut d2, &osc("133;C;claude.exe --continue")),
             vec![started("claude")]
         );
     }

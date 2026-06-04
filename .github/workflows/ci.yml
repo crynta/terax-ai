@@ -104,6 +104,37 @@ jobs:
         working-directory: src-tauri
         run: cargo nextest run --locked --retries 2
 
+  macos-app-build:
+    name: macos-build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: macos-${{ matrix.target }}
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build macOS app
+        run: pnpm tauri build --no-bundle --target ${{ matrix.target }}
+
   coverage:
     runs-on: ubuntu-22.04
     needs: rust

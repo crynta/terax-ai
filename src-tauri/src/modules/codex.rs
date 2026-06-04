@@ -926,13 +926,48 @@ fn resolve_codex_executable() -> Result<PathBuf, String> {
 
 fn find_in_path(binary: &str) -> Option<PathBuf> {
     let path_var = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path_var) {
-        let path = dir.join(binary);
-        if is_executable_file(&path) {
-            return Some(path);
+    find_in_paths(binary, std::env::split_paths(&path_var))
+}
+
+fn find_in_paths<I>(binary: &str, paths: I) -> Option<PathBuf>
+where
+    I: IntoIterator<Item = PathBuf>,
+{
+    #[cfg(windows)]
+    {
+        for dir in paths {
+            for path in windows_binary_candidates(&dir, binary) {
+                if is_executable_file(&path) {
+                    return Some(path);
+                }
+            }
         }
+        None
     }
-    None
+
+    #[cfg(not(windows))]
+    {
+        for dir in paths {
+            let path = dir.join(binary);
+            if is_executable_file(&path) {
+                return Some(path);
+            }
+        }
+        None
+    }
+}
+
+#[cfg(windows)]
+fn windows_binary_candidates(dir: &std::path::Path, binary: &str) -> Vec<PathBuf> {
+    let base = dir.join(binary);
+    if base.extension().is_some() {
+        return vec![base];
+    }
+
+    ["exe", "cmd", "bat", "com"]
+        .into_iter()
+        .map(|ext| base.with_extension(ext))
+        .collect()
 }
 
 fn resolve_with_login_shell() -> Result<PathBuf, String> {
@@ -1009,8 +1044,23 @@ fn login_shell_path() -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-fn is_executable_file(path: &PathBuf) -> bool {
-    path.is_file()
+fn is_executable_file(path: &std::path::Path) -> bool {
+    #[cfg(windows)]
+    {
+        let Some(ext) = path.extension().and_then(|ext| ext.to_str()) else {
+            return false;
+        };
+        path.is_file()
+            && matches!(
+                ext.to_ascii_lowercase().as_str(),
+                "exe" | "cmd" | "bat" | "com"
+            )
+    }
+
+    #[cfg(not(windows))]
+    {
+        path.is_file()
+    }
 }
 
 fn open_external_url(url: &str) -> Result<(), String> {
@@ -1023,8 +1073,9 @@ fn open_external_url(url: &str) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     let mut cmd = {
-        let mut cmd = Command::new("cmd");
-        cmd.args(["/C", "start", "", url]);
+        let (program, args) = windows_external_url_command_parts(url);
+        let mut cmd = Command::new(program);
+        cmd.args(args);
         cmd
     };
 
@@ -1044,10 +1095,19 @@ fn open_external_url(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn windows_external_url_command_parts(url: &str) -> (&'static str, Vec<String>) {
+    (
+        "rundll32.exe",
+        vec!["url.dll,FileProtocolHandler".to_string(), url.to_string()],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
 
     #[test]
     fn extracts_reasoning_text_from_summary_and_content() {
@@ -1078,5 +1138,35 @@ mod tests {
         });
 
         assert_eq!(reasoning_text_from_item(&item), "");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn find_in_path_prefers_windows_command_shim_over_extensionless_shell_script() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join("codex"), "#!/bin/sh\nexit 0\n").expect("shim");
+        fs::write(dir.path().join("codex.cmd"), "@echo off\r\nexit /b 0\r\n").expect("cmd");
+
+        let old_path = std::env::var_os("PATH");
+        std::env::set_var("PATH", dir.path());
+        let found = find_in_path("codex").expect("codex should be found");
+        if let Some(old_path) = old_path {
+            std::env::set_var("PATH", old_path);
+        } else {
+            std::env::remove_var("PATH");
+        }
+
+        assert_eq!(found, dir.path().join("codex.cmd"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_external_url_command_does_not_route_oauth_url_through_cmd() {
+        let url =
+            "https://auth.openai.com/oauth/authorize?client_id=abc&state=def&code_challenge=ghi";
+        let (program, args) = windows_external_url_command_parts(url);
+
+        assert_ne!(program, "cmd");
+        assert!(args.iter().any(|arg| arg == url));
     }
 }

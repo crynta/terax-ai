@@ -32,6 +32,33 @@ function global:__terax_urlencode {
     $sb.ToString()
 }
 
+function global:__terax_emit_preexec {
+    param([string]$line)
+    if ([string]::IsNullOrWhiteSpace($line)) { return $true }
+    $esc = [char]27
+    $cmd = $line -replace '[\x00-\x1f\x7f]', ' '
+    if ($cmd.Length -gt 256) { $cmd = $cmd.Substring(0, 256) }
+    try {
+        [Console]::Write("$esc]133;C;$cmd$esc\")
+    } catch {}
+    return $true
+}
+
+try {
+    if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
+        $global:__TERAX_USER_ADD_TO_HISTORY_HANDLER = (Get-PSReadLineOption).AddToHistoryHandler
+        Set-PSReadLineOption -AddToHistoryHandler {
+            param([string]$line)
+            __terax_emit_preexec $line | Out-Null
+            $handler = $global:__TERAX_USER_ADD_TO_HISTORY_HANDLER
+            if ($null -ne $handler) {
+                try { return [bool](& $handler $line) } catch { return $true }
+            }
+            return $true
+        }
+    }
+} catch {}
+
 function global:prompt {
     $lec = $LASTEXITCODE
     if ($null -eq $lec) { $lec = if ($?) { 0 } else { 1 } }

@@ -7,7 +7,7 @@
         "title": "Terax",
         "decorations": false,
         "transparent": true,
-        "visible": false,
+        "visible": true,
         "shadow": false
       }
     ]

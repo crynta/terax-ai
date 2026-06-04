@@ -159,9 +159,11 @@ fn ssh_password(workspace: &WorkspaceEnv) -> Option<&str> {
     }
 }
 
+pub(crate) type SshAuthOptions = (Vec<String>, Vec<(String, String)>);
+
 pub(crate) fn ssh_auth_options(
     workspace: &WorkspaceEnv,
-) -> Result<(Vec<String>, Vec<(String, String)>), String> {
+) -> Result<SshAuthOptions, String> {
     let mut args = vec!["-o".into(), "StrictHostKeyChecking=accept-new".into()];
     args.extend(ssh_multiplex_options()?);
     if let Some(password) = ssh_password(workspace) {
@@ -363,7 +365,7 @@ fn run_remote_json<T: DeserializeOwned>(
     let stderr_handle = thread::spawn(move || drain(&mut stderr_pipe, REMOTE_STDERR_LIMIT));
 
     let start = Instant::now();
-    let dur = Duration::from_secs(timeout_secs.max(1).min(SSH_COMMAND_TIMEOUT_SECS));
+    let dur = Duration::from_secs(timeout_secs.clamp(1, SSH_COMMAND_TIMEOUT_SECS));
     let timed_out = loop {
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
             let _ = status.code();

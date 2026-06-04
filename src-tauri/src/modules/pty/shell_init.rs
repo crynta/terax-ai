@@ -120,6 +120,23 @@ fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
     cmd.env("LANG", fallback);
 }
 
+#[cfg(test)]
+mod notification_script_tests {
+    const BASHRC: &str = include_str!("scripts/bashrc.bash");
+    const ZSHRC: &str = include_str!("scripts/zshrc.zsh");
+    const FISH_INIT: &str = include_str!("scripts/init.fish");
+
+    #[test]
+    fn unix_shell_profiles_emit_command_start_marker_with_command_text() {
+        assert!(BASHRC.contains("BASH_COMMAND"));
+        assert!(BASHRC.contains("]133;C;"));
+        assert!(ZSHRC.contains("add-zsh-hook preexec _terax_preexec"));
+        assert!(ZSHRC.contains("]133;C;"));
+        assert!(FISH_INIT.contains("--on-event fish_preexec"));
+        assert!(FISH_INIT.contains("]133;C;"));
+    }
+}
+
 fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
@@ -372,8 +389,8 @@ mod windows {
                     cmd.arg("-NoExit");
                     cmd.arg("-ExecutionPolicy");
                     cmd.arg("Bypass");
-                    cmd.arg("-File");
-                    cmd.arg(profile);
+                    cmd.arg("-Command");
+                    cmd.arg(powershell_source_profile_command(&profile));
                 }
                 Err(e) => {
                     log::warn!("powershell shell integration disabled: {e}");
@@ -590,6 +607,11 @@ mod windows {
         Ok(file)
     }
 
+    fn powershell_source_profile_command(profile: &Path) -> String {
+        let escaped = profile.to_string_lossy().replace('\'', "''");
+        format!(". '{escaped}'")
+    }
+
     fn write_if_changed(path: &Path, content: &str) -> Result<(), String> {
         if let Ok(existing) = fs::read_to_string(path) {
             if existing == content {
@@ -760,6 +782,43 @@ mod windows {
                     "/usr/bin/nu".to_string(),
                 ]
             );
+        }
+
+        #[test]
+        fn powershell_launch_sources_profile_with_interactive_command() {
+            let cmd = build(None, WorkspaceEnv::Local).expect("build local shell");
+            let argv: Vec<String> = cmd
+                .get_argv()
+                .iter()
+                .map(|arg| arg.to_string_lossy().to_string())
+                .collect();
+            let shell = argv
+                .first()
+                .and_then(|arg| std::path::Path::new(arg).file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if shell == "cmd.exe" {
+                return;
+            }
+
+            assert!(argv.iter().any(|arg| arg == "-NoExit"));
+            assert!(argv.iter().any(|arg| arg == "-Command"));
+            assert!(!argv.iter().any(|arg| arg == "-File"));
+            assert!(argv.iter().any(|arg| arg.contains("profile.ps1")));
+        }
+
+        #[test]
+        fn powershell_profile_emits_command_start_marker() {
+            assert!(PROFILE_PS1.contains("AddToHistoryHandler"));
+            assert!(PROFILE_PS1.contains("]133;C;"));
+        }
+
+        #[test]
+        fn bash_profile_emits_command_start_marker_with_command_text() {
+            let script = super::super::bashrc_script();
+            assert!(script.contains("BASH_COMMAND"));
+            assert!(script.contains("]133;C;"));
         }
     }
 }

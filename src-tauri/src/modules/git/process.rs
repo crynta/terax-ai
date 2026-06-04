@@ -264,7 +264,7 @@ where
         .map(|arg| arg.as_ref().to_os_string())
         .collect();
     if workspace.is_ssh() {
-        let cwd = cwd.filter(|s| !s.is_empty()).unwrap_or_else(|| {
+        let cwd = cwd.filter(|s| !s.is_empty()).unwrap_or({
             if let WorkspaceEnv::Ssh { root_path, .. } = workspace {
                 root_path.as_str()
             } else {

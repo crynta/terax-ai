@@ -1,4 +1,5 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
+import { readClipboardText, writeClipboardText } from "@/lib/clipboard";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -9,6 +10,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import {
+  terminalClipboardAction,
   terminalDeleteSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
@@ -207,18 +209,21 @@ function createSlot(): Slot {
       if (event.type === "keydown") bridge.writeToPty("\x1b\r");
       return false;
     }
-    if (isTerminalCopy(event)) {
+    const clipboardAction = terminalClipboardAction(event, {
+      isMac: IS_MAC,
+      hasSelection: slot.term.hasSelection(),
+    });
+    if (clipboardAction === "copy") {
       if (event.type === "keydown" && slot.term.hasSelection()) {
         const sel = slot.term.getSelection();
-        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        if (sel) void writeClipboardText(sel).catch(() => {});
       }
       event.preventDefault();
       return false;
     }
-    if (isTerminalPaste(event)) {
+    if (clipboardAction === "paste") {
       if (event.type === "keydown") {
-        void navigator.clipboard
-          .readText()
+        void readClipboardText()
           .then((text) => {
             if (text) slot.term.paste(text);
           })
@@ -712,28 +717,6 @@ export function getSlotForLeaf(leafId: number): Slot | null {
 const IS_MAC =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad/.test(navigator.userAgent);
-
-function isTerminalCopy(e: KeyboardEvent): boolean {
-  return (
-    !IS_MAC &&
-    e.ctrlKey &&
-    e.shiftKey &&
-    !e.altKey &&
-    !e.metaKey &&
-    (e.code === "KeyC" || e.key === "c" || e.key === "C")
-  );
-}
-
-function isTerminalPaste(e: KeyboardEvent): boolean {
-  return (
-    !IS_MAC &&
-    e.ctrlKey &&
-    e.shiftKey &&
-    !e.altKey &&
-    !e.metaKey &&
-    (e.code === "KeyV" || e.key === "v" || e.key === "V")
-  );
-}
 
 function isShiftEnter(e: KeyboardEvent): boolean {
   return (

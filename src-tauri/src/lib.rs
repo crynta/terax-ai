@@ -81,13 +81,13 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     let builder = builder.decorations(false).transparent(true);
 
-    let window = builder.build().map_err(|e| e.to_string())?;
+    let _window = builder.build().map_err(|e| e.to_string())?;
 
     // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the
     // builder-time decorations flag — re-assert it after realize.
     #[cfg(target_os = "linux")]
     {
-        let _ = window.set_decorations(false);
+        let _ = _window.set_decorations(false);
     }
 
     #[cfg(target_os = "macos")]
@@ -95,15 +95,15 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         if let (Ok(main_pos), Ok(main_size), Ok(settings_size)) = (
             main.outer_position(),
             main.outer_size(),
-            window.outer_size(),
+            _window.outer_size(),
         ) {
             let x = main_pos.x
                 + ((main_size.width as i32).saturating_sub(settings_size.width as i32)) / 2;
             let y = main_pos.y
                 + ((main_size.height as i32).saturating_sub(settings_size.height as i32)) / 2;
-            let _ = window.set_position(PhysicalPosition::new(x, y));
+            let _ = _window.set_position(PhysicalPosition::new(x, y));
         } else {
-            let _ = window.center();
+            let _ = _window.center();
         }
     }
 
@@ -130,6 +130,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)

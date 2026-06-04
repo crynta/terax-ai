@@ -51,12 +51,20 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
     *) PROMPT_COMMAND="_terax_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;;
   esac
 
+  _terax_preexec() {
+    local _terax_cmd="${1:-}"
+    _terax_cmd="${_terax_cmd//$'\e'/ }"
+    _terax_cmd="${_terax_cmd//$'\n'/ }"
+    _terax_cmd="${_terax_cmd//$'\r'/ }"
+    printf '\e]133;C;%s\e\\' "${_terax_cmd:0:256}"
+  }
+
   # Pre-exec marker via PS0 (bash 4.4+). PS0 is expanded just before a command
   # runs — cleaner than a DEBUG trap, which would clobber user traps and fire
   # on every command including inside PROMPT_COMMAND.
   if [ "${BASH_VERSINFO[0]:-0}" -gt 4 ] \
      || { [ "${BASH_VERSINFO[0]:-0}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -ge 4 ]; }; then
-    PS0='\[\e]133;C\e\\\]'"${PS0:-}"
+    PS0='$(_terax_preexec "$BASH_COMMAND")'"${PS0:-}"
   fi
 
   _terax_precmd
