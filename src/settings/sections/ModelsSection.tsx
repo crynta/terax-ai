@@ -22,6 +22,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
@@ -747,25 +752,35 @@ function ModelSearchControls({
   onShowUnavailableChange: (value: boolean) => void;
 }) {
   return (
-    <div className="border-b border-border/60 px-2 py-2">
-      <div className="flex items-center gap-2 rounded-xl bg-muted/45 px-2 py-1.5">
-        <HugeiconsIcon
-          icon={Search01Icon}
-          size={13}
-          strokeWidth={1.8}
-          className="text-muted-foreground"
-        />
-        <input
+    <div className="border-b border-border/50 p-1.5">
+      <InputGroup className="h-8 rounded-3xl bg-input/50">
+        <InputGroupAddon align="inline-start" className="pl-2.5">
+          <HugeiconsIcon
+            icon={Search01Icon}
+            size={13}
+            strokeWidth={1.8}
+            className="text-muted-foreground"
+          />
+        </InputGroupAddon>
+        <InputGroupInput
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           onKeyDown={(event) => event.stopPropagation()}
           placeholder={searchPlaceholder}
-          className="min-w-0 flex-1 bg-transparent text-[11.5px] outline-none placeholder:text-muted-foreground/70"
+          className="h-8 text-[11.5px]"
         />
-      </div>
-      <label className="mt-2 flex items-center justify-between gap-3 px-1 text-[11px] text-muted-foreground">
-        <span>Show unavailable</span>
+      </InputGroup>
+      <label className="mt-1.5 flex items-center justify-between gap-3 rounded-2xl px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-muted/40">
+        <span className="flex min-w-0 flex-col gap-0.5">
+          <span className="font-medium text-foreground/85">
+            Show unavailable
+          </span>
+          <span className="text-[10px] leading-tight">
+            Reveal setup/auth-required models as disabled.
+          </span>
+        </span>
         <Switch
+          size="sm"
           checked={showUnavailable}
           onCheckedChange={onShowUnavailableChange}
         />
