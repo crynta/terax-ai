@@ -38,8 +38,14 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
     local _terax_ret=$?
     printf '\e]133;D;%s\e\\' "$_terax_ret"
     printf '\e]7;file://%s%s\e\\' "${HOST}" "$(_terax_urlencode "$PWD")"
-    # Re-inject prompt-end marker in case a framework rebuilt PS1 (p10k, starship).
-    if [[ "$PS1" != *$'\e]133;B\e\\'* ]]; then
+    # In block mode the host renders its own input bar, so suppress the shell
+    # prompt entirely (keep only the OSC 133 B marker) and add a leading blank
+    # line so frozen command blocks get vertical breathing room.
+    if [[ -n "$TERAX_BLOCKS" ]]; then
+      PS1=$'\n%{\e]133;B\e\\%}'
+      RPROMPT=''
+    elif [[ "$PS1" != *$'\e]133;B\e\\'* ]]; then
+      # Re-inject prompt-end marker in case a framework rebuilt PS1 (p10k, starship).
       PS1=$'%{\e]133;B\e\\%}'"$PS1"
     fi
     printf '\e]133;A\e\\'

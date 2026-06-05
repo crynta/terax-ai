@@ -21,7 +21,6 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import { motion } from "motion/react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
@@ -553,14 +552,9 @@ const PartAppear = memo(function PartAppear({
   children: React.ReactNode;
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-      style={{ willChange: "transform, opacity" }}
-    >
+    <div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out">
       {children}
-    </motion.div>
+    </div>
   );
 });
 

@@ -98,6 +98,10 @@ const loaders: Record<string, LanguageLoader> = {
   // C#
   cs: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.csharp),
 
+  // Swift
+  swift: () =>
+    import("@codemirror/legacy-modes/mode/swift").then((m) => m.swift),
+
   // Legacy-modes: loaders return the raw StreamParser; wrapped below.
   sh: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
   bash: () =>
