@@ -1,10 +1,8 @@
-pub mod modules;
+mod modules;
 
-use modules::{agent, fs, git, net, pty, secrets, shell, workspace};
+use modules::{agent, fs, git, net, oauth, pty, secrets, shell, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
-#[cfg(target_os = "macos")]
-use tauri::{PhysicalPosition, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
 
 /// Drained on first read so HMR / re-mounts can't replay the launch dir.
@@ -21,9 +19,7 @@ fn parse_launch_dir() -> Option<String> {
         if arg.starts_with('-') {
             continue;
         }
-        let Ok(canon) = std::fs::canonicalize(&arg) else {
-            continue;
-        };
+        let Ok(canon) = std::fs::canonicalize(&arg) else { continue };
         if !canon.is_dir() {
             continue;
         }
@@ -40,7 +36,6 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     };
 
     if let Some(window) = app.get_webview_window("settings") {
-        let _ = window.set_always_on_top(true);
         let _ = window.show();
         let _ = window.set_focus();
         if let Some(t) = tab.as_deref().filter(|s| !s.is_empty()) {
@@ -51,7 +46,7 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         return Ok(());
     }
 
-    let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
+    let mut builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
         .title("Settings")
         .inner_size(900.0, 700.0)
         .min_inner_size(820.0, 620.0)
@@ -62,18 +57,14 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         .always_on_top(true);
 
     // Tie lifecycle to the main window so settings minimizes/closes with it.
-    // macOS: skip parent() — child + always_on_top leaves the settings webview
-    // behind the main window except while the parent is being dragged (#33).
-    #[cfg(not(target_os = "macos"))]
-    let builder = if let Some(main) = app.get_webview_window("main") {
-        builder.parent(&main).map_err(|e| e.to_string())?
-    } else {
-        builder
-    };
+    if let Some(main) = app.get_webview_window("main") {
+        builder = builder.parent(&main).map_err(|e| e.to_string())?;
+    }
 
     #[cfg(target_os = "macos")]
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .traffic_light_position(tauri::LogicalPosition::new(14.0, 24.0))
         .hidden_title(true);
 
     // On Linux/Windows we render our own titlebar, so drop native chrome
@@ -83,37 +74,32 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
     let window = builder.build().map_err(|e| e.to_string())?;
 
+    // Window-state plugin may have restored a tiny saved size — enforce a
+    // sensible minimum. This runs after the plugin has applied its state.
+    #[cfg(target_os = "macos")]
+    if let Ok(size) = window.inner_size() {
+        // inner_size() is physical pixels; on a 2× Retina screen 820 logical ≈ 1640 physical.
+        if size.width < 800 || size.height < 500 {
+            let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                width: 900.0,
+                height: 700.0,
+            }));
+        }
+    }
+
     // Some Linux compositors (GNOME/Mutter with CSD-by-default) ignore the
     // builder-time decorations flag — re-assert it after realize.
     #[cfg(target_os = "linux")]
     {
         let _ = window.set_decorations(false);
     }
-
-    #[cfg(target_os = "macos")]
-    if let Some(main) = app.get_webview_window("main") {
-        if let (Ok(main_pos), Ok(main_size), Ok(settings_size)) = (
-            main.outer_position(),
-            main.outer_size(),
-            window.outer_size(),
-        ) {
-            let x = main_pos.x
-                + ((main_size.width as i32).saturating_sub(settings_size.width as i32)) / 2;
-            let y = main_pos.y
-                + ((main_size.height as i32).saturating_sub(settings_size.height as i32)) / 2;
-            let _ = window.set_position(PhysicalPosition::new(x, y));
-        } else {
-            let _ = window.center();
-        }
-    }
-
+    let _ = window;
     Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let cli_dir = parse_launch_dir();
-    workspace::init_launch_cwd(cli_dir.as_deref());
+    workspace::init_launch_cwd();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -136,45 +122,23 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .setup(|_app| {
-            // macOS skips parent() for the settings window, so tie its lifecycle
-            // to the main window here instead. Other platforms keep parent().
-            #[cfg(target_os = "macos")]
-            if let Some(main) = _app.get_webview_window("main") {
-                let handle = _app.handle().clone();
-                main.on_window_event(move |event| {
-                    if matches!(
-                        event,
-                        WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
-                    ) {
-                        if let Some(settings) = handle.get_webview_window("settings") {
-                            let _ = settings.close();
-                        }
-                    }
-                });
-            }
-            Ok(())
-        })
         .manage(pty::PtyState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
-        .manage(fs::watch::FsWatchState::default())
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
             workspace::bootstrap_registry(&registry);
-            if let Some(ref launch_dir) = cli_dir {
-                let _ = registry.authorize(launch_dir);
+            if let Some(launch_dir) = parse_launch_dir() {
+                let _ = registry.authorize(&launch_dir);
             }
             registry
         })
-        .manage(LaunchDir(Mutex::new(cli_dir)))
+        .manage(LaunchDir(Mutex::new(parse_launch_dir())))
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
             pty::pty_resize,
             pty::pty_close,
-            pty::pty_close_all,
-            pty::pty_has_foreground_process,
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
             fs::file::fs_read_file,
@@ -185,8 +149,6 @@ pub fn run() {
             fs::mutate::fs_create_dir,
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
-            fs::watch::fs_watch_add,
-            fs::watch::fs_watch_remove,
             fs::search::fs_search,
             fs::search::fs_list_files,
             fs::grep::fs_grep,
@@ -232,6 +194,7 @@ pub fn run() {
             net::lm_ping,
             net::ai_http_request,
             net::ai_http_stream,
+            oauth::oauth_openrouter,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

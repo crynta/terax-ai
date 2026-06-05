@@ -1,6 +1,6 @@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WindowControls } from "@/components/WindowControls";
-import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -82,30 +82,38 @@ export function SettingsApp() {
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
       <header
         data-tauri-drag-region
-        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
-          }`}
+        className="relative flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60"
       >
-        <Tabs
-          value={active}
-          onValueChange={(v) => setActive(v as SettingsTab)}
-          orientation="horizontal"
-          className="flex-1 items-center"
+        {/* Tabs absolutely centered so they're not affected by traffic-light padding */}
+        <div
+          className="absolute inset-0 flex items-center justify-center"
           data-tauri-drag-region
         >
-          <TabsList className="mx-auto h-7 bg-muted/40 px-2">
-            {TABS.map((t) => (
-              <TabsTrigger
-                key={t.id}
-                value={t.id}
-                className="h-6 gap-1.5 px-2.5 text-[11.5px]"
-              >
-                <HugeiconsIcon icon={t.icon} size={12} strokeWidth={1.75} />
-                <span>{t.label}</span>
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        {USE_CUSTOM_WINDOW_CONTROLS && <WindowControls closeOnly />}
+          <Tabs
+            value={active}
+            onValueChange={(v) => setActive(v as SettingsTab)}
+            orientation="horizontal"
+          >
+            <TabsList className="h-7 bg-muted/40 px-2">
+              {TABS.map((t) => (
+                <TabsTrigger
+                  key={t.id}
+                  value={t.id}
+                  className="h-6 gap-1.5 px-2.5 text-[11.5px]"
+                >
+                  <HugeiconsIcon icon={t.icon} size={12} strokeWidth={1.75} />
+                  <span>{t.label}</span>
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
+        {/* Window controls pinned to the right on Linux/Windows */}
+        {USE_CUSTOM_WINDOW_CONTROLS && (
+          <div className="relative ml-auto pr-2">
+            <WindowControls closeOnly />
+          </div>
+        )}
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
