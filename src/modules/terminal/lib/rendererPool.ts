@@ -8,6 +8,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
+import { shouldCursorBlink } from "./cursorBlink";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
@@ -49,6 +50,8 @@ export type Slot = {
   observer: ResizeObserver | null;
   fitTimer: ReturnType<typeof setTimeout> | null;
   ptyTimer: ReturnType<typeof setTimeout> | null;
+  webglReapTimer: ReturnType<typeof setTimeout> | null;
+  slotReapTimer: ReturnType<typeof setTimeout> | null;
   unhideRaf: number | null;
   lastCols: number;
   lastRows: number;
@@ -61,8 +64,36 @@ const slots: Slot[] = [];
 let recyclerEl: HTMLDivElement | null = null;
 let adapter: SlotAdapter | null = null;
 
+let windowActive =
+  typeof document === "undefined" ||
+  (!document.hidden && document.hasFocus());
+let windowActivityBound = false;
+let cursorBlinkEnabled = false;
+
+function bindWindowActivityListeners(): void {
+  if (windowActivityBound || typeof window === "undefined") return;
+  windowActivityBound = true;
+  const sync = () => setWindowActive(!document.hidden && document.hasFocus());
+  window.addEventListener("focus", sync);
+  window.addEventListener("blur", sync);
+  document.addEventListener("visibilitychange", sync);
+}
+
+function setWindowActive(active: boolean): void {
+  if (windowActive === active) return;
+  windowActive = active;
+  for (const slot of slots) {
+    if (slot.currentLeafId === null) continue;
+    applyCursorBlinkOnSlot(
+      slot,
+      adapter?.isLeafFocused(slot.currentLeafId) ?? false,
+    );
+  }
+}
+
 export function configureRendererPool(a: SlotAdapter): void {
   adapter = a;
+  bindWindowActivityListeners();
 }
 
 export function forEachSlot(fn: (slot: Slot) => void): void {
@@ -71,6 +102,28 @@ export function forEachSlot(fn: (slot: Slot) => void): void {
 
 export function poolSize(): number {
   return slots.length;
+}
+
+export type PoolSlotStat = {
+  id: number;
+  leafId: number | null;
+  cols: number;
+  rows: number;
+  bufferLines: number;
+  webgl: boolean;
+  canvases: number;
+};
+
+export function poolSlotStats(): PoolSlotStat[] {
+  return slots.map((s) => ({
+    id: s.id,
+    leafId: s.currentLeafId,
+    cols: s.term.cols,
+    rows: s.term.rows,
+    bufferLines: s.term.buffer.active.length,
+    webgl: !!s.webglAddon,
+    canvases: s.webglCanvases.length,
+  }));
 }
 
 // Bracketed paste via xterm, so an app that enabled it (Claude Code) treats a
@@ -158,6 +211,8 @@ function createSlot(): Slot {
     observer: null,
     fitTimer: null,
     ptyTimer: null,
+    webglReapTimer: null,
+    slotReapTimer: null,
     unhideRaf: null,
     lastCols: term.cols,
     lastRows: term.rows,
@@ -165,8 +220,6 @@ function createSlot(): Slot {
     lastH: 0,
     lastUsedAt: 0,
   };
-
-  attachWebgl(slot);
 
   term.attachCustomKeyEventHandler((event) => {
     // During IME composition the browser is assembling a multi-keystroke
@@ -331,6 +384,8 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   slot.lastUsedAt = performance.now();
 
   cancelPendingUnhide(slot);
+  cancelWebglReap(slot);
+  cancelSlotReap(slot);
   slot.host.style.visibility = "hidden";
 
   if (slot.host.parentNode !== p.container) {
@@ -540,12 +595,84 @@ function detachSlotFromLeaf(slot: Slot): void {
 
   slot.currentLeafId = null;
   slot.lastUsedAt = performance.now();
+  scheduleWebglReap(slot);
+  scheduleSlotReap(slot);
+}
+
+function scheduleWebglReap(slot: Slot): void {
+  cancelWebglReap(slot);
+  if (!slot.webglAddon) return;
+  slot.webglReapTimer = setTimeout(() => {
+    slot.webglReapTimer = null;
+    if (slot.currentLeafId === null) disposeSlotWebgl(slot);
+  }, WEBGL_REAP_GRACE_MS);
+}
+
+function cancelWebglReap(slot: Slot): void {
+  if (slot.webglReapTimer !== null) {
+    clearTimeout(slot.webglReapTimer);
+    slot.webglReapTimer = null;
+  }
+}
+
+function scheduleSlotReap(slot: Slot): void {
+  cancelSlotReap(slot);
+  slot.slotReapTimer = setTimeout(() => {
+    slot.slotReapTimer = null;
+    reapIdleSlot(slot);
+  }, SLOT_REAP_GRACE_MS);
+}
+
+function cancelSlotReap(slot: Slot): void {
+  if (slot.slotReapTimer !== null) {
+    clearTimeout(slot.slotReapTimer);
+    slot.slotReapTimer = null;
+  }
+}
+
+function reapIdleSlot(slot: Slot): void {
+  if (slot.currentLeafId !== null) return;
+  const idle = slots.filter((s) => s.currentLeafId === null);
+  if (idle.length <= IDLE_SLOTS_KEEP_WARM) return;
+  idle.sort((a, b) => a.lastUsedAt - b.lastUsedAt);
+  const surplus = idle.slice(0, idle.length - IDLE_SLOTS_KEEP_WARM);
+  if (surplus.includes(slot)) disposeSlot(slot);
+}
+
+function disposeSlot(slot: Slot): void {
+  cancelSlotReap(slot);
+  cancelWebglReap(slot);
+  cancelPendingUnhide(slot);
+  if (slot.fitTimer) clearTimeout(slot.fitTimer);
+  if (slot.ptyTimer) clearTimeout(slot.ptyTimer);
+  slot.fitTimer = null;
+  slot.ptyTimer = null;
+  slot.observer?.disconnect();
+  slot.observer = null;
+  for (const d of slot.oscDisposers) {
+    try {
+      d();
+    } catch {}
+  }
+  slot.oscDisposers = [];
+  disposeSlotWebgl(slot);
+  try {
+    slot.term.dispose();
+  } catch (e) {
+    console.warn("[terax] slot dispose failed:", e);
+  }
+  slot.host.remove();
+  const i = slots.indexOf(slot);
+  if (i >= 0) slots.splice(i, 1);
 }
 
 const WEBGL_RECOVERY_DELAY_MS = 250;
 // Below this a re-shown slot is fresh enough to trust; above it, repaint on
 // unhide to defeat silent GPU/context staleness.
 const SLOT_STALE_MS = 10_000;
+const WEBGL_REAP_GRACE_MS = 30_000;
+const SLOT_REAP_GRACE_MS = 45_000;
+const IDLE_SLOTS_KEEP_WARM = 1;
 
 function attachWebgl(slot: Slot): void {
   if (slot.webglAddon || !slot.term.element) return;
@@ -569,7 +696,7 @@ function attachWebgl(slot: Slot): void {
       // reset; without re-attach the slot would silently fall back to DOM
       // forever. Defer past WebKit's reset window before retrying.
       setTimeout(() => {
-        if (slot.webglAddon) return;
+        if (slot.webglAddon || slot.currentLeafId === null) return;
         if (!usePreferencesStore.getState().terminalWebglEnabled) return;
         attachWebgl(slot);
         if (slot.webglAddon) {
@@ -644,8 +771,19 @@ function releaseCanvasContext(canvas: HTMLCanvasElement): void {
 
 export function applyWebglPreference(enabled: boolean): void {
   for (const slot of slots) {
-    if (enabled && !slot.webglAddon) attachWebgl(slot);
-    else if (!enabled && slot.webglAddon) disposeSlotWebgl(slot);
+    if (enabled) {
+      if (slot.currentLeafId !== null && !slot.webglAddon) {
+        attachWebgl(slot);
+        if (slot.webglAddon) {
+          try {
+            slot.term.refresh(0, slot.term.rows - 1);
+          } catch {}
+        }
+      }
+    } else if (slot.webglAddon) {
+      cancelWebglReap(slot);
+      disposeSlotWebgl(slot);
+    }
   }
 }
 
@@ -711,14 +849,51 @@ export function setSlotFocused(leafId: number, focused: boolean): void {
   applyCursorBlinkOnSlot(slot, focused);
 }
 
+export function applyCursorBlink(enabled: boolean): void {
+  cursorBlinkEnabled = enabled;
+  for (const slot of slots) {
+    if (slot.currentLeafId === null) continue;
+    applyCursorBlinkOnSlot(
+      slot,
+      adapter?.isLeafFocused(slot.currentLeafId) ?? false,
+    );
+  }
+}
+
 function applyCursorBlinkOnSlot(slot: Slot, focused: boolean): void {
-  const desired = focused;
+  const desired = shouldCursorBlink(cursorBlinkEnabled, windowActive, focused);
   if (slot.term.options.cursorBlink === desired) return;
   slot.term.options.cursorBlink = desired;
 }
 
 export function getSlotForLeaf(leafId: number): Slot | null {
   return slots.find((s) => s.currentLeafId === leafId) ?? null;
+}
+
+export function isLeafAltScreen(leafId: number): boolean {
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  return slot ? isAltScreen(slot) : false;
+}
+
+export function parkLeafSlot(leafId: number): void {
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (slot) disposeSlotWebgl(slot);
+}
+
+export function refreshLeafSlot(leafId: number): void {
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (!slot) return;
+  if (usePreferencesStore.getState().terminalWebglEnabled && !slot.webglAddon) {
+    attachWebgl(slot);
+  }
+  try {
+    slot.term.refresh(0, slot.term.rows - 1);
+  } catch {}
+}
+
+export function disposeLeafSlot(leafId: number): void {
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (slot) disposeSlot(slot);
 }
 
 const IS_MAC =

@@ -1,0 +1,21 @@
+.bt-deco {
+  box-sizing: border-box;
+  border-left: 2px solid transparent;
+  pointer-events: none;
+}
+
+.bt-deco.bt-ok {
+  border-left-color: rgba(95, 179, 179, 0.45);
+}
+
+.bt-deco.bt-fail {
+  border-left-color: rgba(229, 112, 107, 0.55);
+  background: rgba(229, 112, 107, 0.05);
+}
+
+.bt-gutter.bt-running {
+  background: #5fb3b3;
+  border-radius: 50%;
+  opacity: 0.8;
+  pointer-events: none;
+}

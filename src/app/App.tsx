@@ -91,6 +91,7 @@ export default function App() {
     activeId,
     setActiveId,
     newTab,
+    newBlockTab,
     newAgentTab,
     newPrivateTab,
     openFileTab,
@@ -355,6 +356,10 @@ export default function App() {
   const openNewPrivateTab = useCallback(() => {
     newPrivateTab(inheritedCwdForNewTab());
   }, [newPrivateTab, inheritedCwdForNewTab]);
+
+  const openNewBlockTab = useCallback(() => {
+    newBlockTab(inheritedCwdForNewTab());
+  }, [newBlockTab, inheritedCwdForNewTab]);
 
   const sendCd = useCallback(
     (path: string) => {
@@ -781,6 +786,7 @@ export default function App() {
               activeId={activeId}
               onSelect={setActiveId}
               onNew={openNewTab}
+              onNewBlock={openNewBlockTab}
               onNewPrivate={openNewPrivateTab}
               onNewPreview={() => openPreviewTab("")}
               onNewEditor={() => setNewEditorOpen(true)}

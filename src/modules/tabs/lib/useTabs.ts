@@ -23,6 +23,7 @@ export type TerminalTab = {
   cwd?: string;
   paneTree: PaneNode;
   activeLeafId: number;
+  blocks?: boolean;
   /** AI agent cannot read buffer / context of this terminal. */
   private?: boolean;
   /** User-set label that overrides the cwd-derived name. Survives cd. */
@@ -176,6 +177,32 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setActiveId(tabId);
     return tabId;
   }, []);
+
+  const newBlockTab = useCallback((cwd?: string) => {
+    const tabId = nextIdRef.current++;
+    const leafId = nextIdRef.current++;
+    setTabs((t) => [
+      ...t,
+      {
+        id: tabId,
+        kind: "terminal",
+        title: "blocks",
+        cwd,
+        paneTree: { kind: "leaf", id: leafId, cwd },
+        activeLeafId: leafId,
+        blocks: true,
+      },
+    ]);
+    setActiveId(tabId);
+    return tabId;
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env?.DEV || typeof window === "undefined") return;
+    (
+      window as unknown as { __teraxNewBlockTab?: (cwd?: string) => number }
+    ).__teraxNewBlockTab = newBlockTab;
+  }, [newBlockTab]);
 
   const newAgentTab = useCallback(
     (cwd: string | undefined, title: string) => {
@@ -689,7 +716,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       let newLeafId: number | null = null;
       setTabs((curr) =>
         curr.map((t) => {
-          if (t.id !== tabId || t.kind !== "terminal") return t;
+          if (t.id !== tabId || t.kind !== "terminal" || t.blocks) return t;
           if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
           const splitId = nextIdRef.current++;
           const leafId = nextIdRef.current++;
@@ -806,6 +833,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     activeId,
     setActiveId,
     newTab,
+    newBlockTab,
     newAgentTab,
     newPrivateTab,
     openFileTab,
