@@ -13,7 +13,25 @@ export type ProviderId =
   | "openai-compatible"
   | "lmstudio"
   | "mlx"
-  | "ollama";
+  | "ollama"
+  | "cli-claude"
+  | "cli-codex"
+  | "cli-cursor"
+  | "cli-opencode";
+
+/** Providers backed by a locally-installed agent CLI (no API key, runs the
+ *  agent's own tool loop). Maps each provider to its CLI agent id. */
+export const CLI_PROVIDERS: Partial<Record<ProviderId, "claude" | "codex" | "cursor" | "opencode">> =
+  {
+    "cli-claude": "claude",
+    "cli-codex": "codex",
+    "cli-cursor": "cursor",
+    "cli-opencode": "opencode",
+  };
+
+export function isCliProvider(id: ProviderId): boolean {
+  return id in CLI_PROVIDERS;
+}
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -117,6 +135,34 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "",
     keyPrefix: null,
     consoleUrl: "https://ollama.com/download",
+  },
+  {
+    id: "cli-claude",
+    label: "Claude Code (CLI)",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://docs.anthropic.com/en/docs/claude-code",
+  },
+  {
+    id: "cli-codex",
+    label: "Codex (CLI)",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://github.com/openai/codex",
+  },
+  {
+    id: "cli-cursor",
+    label: "Cursor Agent (CLI)",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://docs.cursor.com/cli",
+  },
+  {
+    id: "cli-opencode",
+    label: "OpenCode (CLI)",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://opencode.ai/docs",
   },
 ] as const;
 
@@ -522,6 +568,44 @@ export const MODELS = [
     description: "Local models via Ollama.",
     capabilities: { intelligence: 3, speed: 3, cost: 5 },
   },
+
+  // ── Local CLI agents (no API key; the installed CLI runs its own agent) ───
+  {
+    id: "cli-claude-agent",
+    provider: "cli-claude",
+    label: "Claude Code",
+    hint: "CLI",
+    description: "Your installed Claude Code CLI, no API key.",
+    capabilities: { intelligence: 5, speed: 3, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "cli-codex-agent",
+    provider: "cli-codex",
+    label: "Codex",
+    hint: "CLI",
+    description: "Your installed Codex CLI, no API key.",
+    capabilities: { intelligence: 5, speed: 3, cost: 5 },
+    tags: ["reasoning", "tools", "coding"],
+  },
+  {
+    id: "cli-cursor-agent",
+    provider: "cli-cursor",
+    label: "Cursor Agent",
+    hint: "CLI",
+    description: "Your installed cursor-agent CLI, no API key.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools", "coding"],
+  },
+  {
+    id: "cli-opencode-agent",
+    provider: "cli-opencode",
+    label: "OpenCode",
+    hint: "CLI",
+    description: "Your installed OpenCode CLI, no API key.",
+    capabilities: { intelligence: 4, speed: 4, cost: 5 },
+    tags: ["tools", "coding"],
+  },
 ] as const satisfies readonly ModelInfo[];
 
 export type ModelId = (typeof MODELS)[number]["id"];
@@ -681,6 +765,10 @@ export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
   "mlx",
   "ollama",
   "openai-compatible",
+  "cli-claude",
+  "cli-codex",
+  "cli-cursor",
+  "cli-opencode",
 ] as const;
 
 export function providerNeedsKey(id: ProviderId): boolean {

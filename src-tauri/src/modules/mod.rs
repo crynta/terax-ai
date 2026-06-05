@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_cli;
 pub mod fs;
 pub mod git;
 pub mod net;

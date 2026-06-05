@@ -11,6 +11,7 @@ import {
   type CustomEndpoint,
   type ModelId,
 } from "@/modules/ai/config";
+import type { CliPermissionMode } from "@/modules/ai/cli/types";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -75,6 +76,8 @@ export type Preferences = {
   openaiCompatibleContextLimit: number;
   customEndpoints: CustomEndpoint[];
   openrouterModelId: string;
+  /** Permission posture for wrapped CLI agents (claude/codex/cursor/opencode). */
+  cliAgentPermission: CliPermissionMode;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
@@ -119,6 +122,7 @@ const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_OPENAI_COMPAT_CONTEXT_LIMIT = "openaiCompatibleContextLimit";
 const KEY_CUSTOM_ENDPOINTS = "customEndpoints";
 const KEY_OPENROUTER_MODEL_ID = "openrouterModelId";
+const KEY_CLI_AGENT_PERMISSION = "cliAgentPermission";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
@@ -178,6 +182,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   openaiCompatibleContextLimit: 128_000,
   customEndpoints: [],
   openrouterModelId: "",
+  cliAgentPermission: "acceptEdits",
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
@@ -288,6 +293,9 @@ export async function loadPreferences(): Promise<Preferences> {
     openrouterModelId:
       get<string>(KEY_OPENROUTER_MODEL_ID) ??
       DEFAULT_PREFERENCES.openrouterModelId,
+    cliAgentPermission:
+      get<CliPermissionMode>(KEY_CLI_AGENT_PERMISSION) ??
+      DEFAULT_PREFERENCES.cliAgentPermission,
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ??
       DEFAULT_PREFERENCES.favoriteModelIds
@@ -463,6 +471,12 @@ export async function setOpenrouterModelId(value: string): Promise<void> {
   await writePref(KEY_OPENROUTER_MODEL_ID, value);
 }
 
+export async function setCliAgentPermission(
+  value: CliPermissionMode,
+): Promise<void> {
+  await writePref(KEY_CLI_AGENT_PERMISSION, value);
+}
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -585,6 +599,7 @@ export async function onPreferencesChange(
     [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
     [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
     [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
+    [KEY_CLI_AGENT_PERMISSION]: "cliAgentPermission",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
