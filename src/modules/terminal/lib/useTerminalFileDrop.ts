@@ -4,21 +4,52 @@ import { useTerminalDropStore } from "./dropStore";
 import { formatDroppedPaths } from "./quoteShellPath";
 import { pasteIntoLeaf } from "./rendererPool";
 
-// Tauri reports the drop point in physical pixels on some platforms and logical
-// on others; only scale down when it overflows the logical viewport.
-function leafIdAt(x: number, y: number): number | null {
-  let lx = x;
-  let ly = y;
-  if (x > window.innerWidth || y > window.innerHeight) {
-    const dpr = window.devicePixelRatio || 1;
-    lx = x / dpr;
-    ly = y / dpr;
-  }
-  const el = document.elementFromPoint(lx, ly);
+type Point = { x: number; y: number };
+type ViewportLike = { devicePixelRatio?: number };
+
+export function dragPointCandidates(
+  x: number,
+  y: number,
+  viewport: ViewportLike = window,
+): Point[] {
+  const points: Point[] = [{ x, y }];
+  const dpr = viewport.devicePixelRatio || 1;
+  if (dpr !== 1) points.push({ x: x / dpr, y: y / dpr });
+  return points;
+}
+
+function leafIdFromElement(el: Element | null): number | null {
   const leafEl = el?.closest<HTMLElement>("[data-pane-leaf]");
   if (!leafEl) return null;
   const id = Number(leafEl.dataset.paneLeaf);
   return Number.isFinite(id) ? id : null;
+}
+
+function leafIdFromRects(points: Point[]): number | null {
+  for (const leaf of document.querySelectorAll<HTMLElement>("[data-pane-leaf]")) {
+    const rect = leaf.getBoundingClientRect();
+    for (const p of points) {
+      if (
+        p.x >= rect.left &&
+        p.x <= rect.right &&
+        p.y >= rect.top &&
+        p.y <= rect.bottom
+      ) {
+        const id = Number(leaf.dataset.paneLeaf);
+        return Number.isFinite(id) ? id : null;
+      }
+    }
+  }
+  return null;
+}
+
+function leafIdAt(x: number, y: number): number | null {
+  const points = dragPointCandidates(x, y);
+  for (const p of points) {
+    const id = leafIdFromElement(document.elementFromPoint(p.x, p.y));
+    if (id !== null) return id;
+  }
+  return leafIdFromRects(points);
 }
 
 /** Wires native OS file drops into the terminal pane under the cursor: shows a
