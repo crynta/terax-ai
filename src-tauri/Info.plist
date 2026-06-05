@@ -2,7 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Terax wants to use the camera.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Terax uses your microphone for AI voice input.</string>
+	<string>Terax wants to use your microphone.</string>
 </dict>
 </plist>

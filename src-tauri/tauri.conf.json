@@ -42,7 +42,8 @@
       "icons/icon.ico"
     ],
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "entitlements": "./entitlements.plist"
     },
     "linux": {
       "deb": {
