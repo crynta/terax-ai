@@ -63,6 +63,16 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       return () => cancelAnimationFrame(id);
     }, [resolvedMode, themeId, customThemes, session]);
 
+    useEffect(() => {
+      const node = containerRef.current;
+      if (!node) return;
+      const handleContextMenu = (event: MouseEvent) => {
+        if (session.shouldSuppressContextMenu()) event.preventDefault();
+      };
+      node.addEventListener("contextmenu", handleContextMenu);
+      return () => node.removeEventListener("contextmenu", handleContextMenu);
+    }, [session]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -112,7 +122,11 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
     }
 
     return (
-      <div ref={containerRef} className="zoom-exempt h-full w-full" style={hideStyle} />
+      <div
+        ref={containerRef}
+        className="zoom-exempt h-full w-full"
+        style={hideStyle}
+      />
     );
   },
 );

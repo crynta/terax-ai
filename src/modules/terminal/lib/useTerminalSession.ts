@@ -10,6 +10,7 @@ import {
   registerCwdHandler,
   registerPromptTracker,
 } from "./osc-handlers";
+import { shouldSuppressTerminalContextMenu } from "./mouseTracking";
 import { openPty, type PtySession } from "./pty-bridge";
 import { BlockDecorations } from "../block/lib/blockDecorations";
 import "../block/block.css";
@@ -621,6 +622,13 @@ export function useTerminalSession({
     [leafId],
   );
 
+  const shouldSuppressContextMenu = useCallback((): boolean => {
+    const slot = getSlotForLeaf(leafId);
+    return shouldSuppressTerminalContextMenu(
+      slot?.term.modes.mouseTrackingMode,
+    );
+  }, [leafId]);
+
   return useMemo(
     () => ({
       write,
@@ -632,6 +640,7 @@ export function useTerminalSession({
       submitCommand,
       interrupt,
       selectBlockAt,
+      shouldSuppressContextMenu,
     }),
     [
       write,
@@ -643,6 +652,7 @@ export function useTerminalSession({
       submitCommand,
       interrupt,
       selectBlockAt,
+      shouldSuppressContextMenu,
     ],
   );
 }
