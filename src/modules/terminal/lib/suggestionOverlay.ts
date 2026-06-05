@@ -1,6 +1,7 @@
 import type { Terminal } from "@xterm/xterm";
 import { suggestCommand } from "./commandHistory";
 import type { PromptCallbacks } from "./osc-handlers";
+import { nextSuggestionChunk } from "./suggestionChunk";
 
 /**
  * Inline, history-based command suggestion as a fish/zsh-autosuggestions style
@@ -31,12 +32,18 @@ export function acceptSuggestion(leafId: number): boolean {
   return controllers.get(leafId)?.accept() ?? false;
 }
 
+/** Accept only the next word of the suggestion. Returns true if consumed. */
+export function acceptSuggestionWord(leafId: number): boolean {
+  return controllers.get(leafId)?.acceptWord() ?? false;
+}
+
 export function hasActiveSuggestion(leafId: number): boolean {
   return controllers.get(leafId)?.hasSuggestion() ?? false;
 }
 
 type Internal = SuggestionController & {
   accept: () => boolean;
+  acceptWord: () => boolean;
   hasSuggestion: () => boolean;
 };
 
@@ -165,6 +172,15 @@ export function createSuggestionOverlay(
       const text = remainder;
       hide();
       writeToPty(text);
+      return true;
+    },
+    acceptWord: () => {
+      if (!remainder) return false;
+      const chunk = nextSuggestionChunk(remainder);
+      if (!chunk) return false;
+      // Send only the next token; the shell echo advances the cursor and the
+      // next render recomputes the (now shorter) suggestion from history.
+      writeToPty(chunk);
       return true;
     },
     dispose: () => {

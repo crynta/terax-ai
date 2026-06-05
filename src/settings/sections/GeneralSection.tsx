@@ -261,7 +261,7 @@ export function GeneralSection() {
         </SettingRow>
         <SettingRow
           title="Inline suggestions"
-          description="Ghost-text completions from your command history. Press Right arrow or End to accept."
+          description="Ghost-text completions from your command history. Right arrow or End accepts; Alt/Ctrl+Right accepts one word."
         >
           <Switch
             checked={terminalSuggestions}

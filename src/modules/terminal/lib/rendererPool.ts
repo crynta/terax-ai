@@ -9,7 +9,11 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
-import { acceptSuggestion, hasActiveSuggestion } from "./suggestionOverlay";
+import {
+  acceptSuggestion,
+  acceptSuggestionWord,
+  hasActiveSuggestion,
+} from "./suggestionOverlay";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
@@ -236,10 +240,17 @@ function createSlot(): Slot {
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
-    if (isAcceptSuggestion(event) && hasActiveSuggestion(leafId)) {
-      event.preventDefault();
-      if (event.type === "keydown") acceptSuggestion(leafId);
-      return false;
+    if (hasActiveSuggestion(leafId)) {
+      if (isAcceptSuggestionWord(event)) {
+        event.preventDefault();
+        if (event.type === "keydown") acceptSuggestionWord(leafId);
+        return false;
+      }
+      if (isAcceptSuggestion(event)) {
+        event.preventDefault();
+        if (event.type === "keydown") acceptSuggestion(leafId);
+        return false;
+      }
     }
     const lineNavigation = terminalLineNavigationSequence(event, {
       isMac: IS_MAC,
@@ -931,5 +942,12 @@ function isAcceptSuggestion(e: KeyboardEvent): boolean {
     !e.ctrlKey &&
     !e.metaKey &&
     !e.shiftKey
+  );
+}
+
+// Accept only the next word with Alt+Right or Ctrl+Right (forward-word).
+function isAcceptSuggestionWord(e: KeyboardEvent): boolean {
+  return (
+    e.key === "ArrowRight" && (e.altKey || e.ctrlKey) && !e.metaKey && !e.shiftKey
   );
 }
