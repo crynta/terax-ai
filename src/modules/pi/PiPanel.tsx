@@ -1,4 +1,4 @@
-import { AiChat02Icon } from "@hugeicons/core-free-icons";
+import { AiChat02Icon, MenuCollapseIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { IS_WINDOWS } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { useAgentStore } from "@/modules/agents/store/agentStore";
@@ -161,6 +162,8 @@ export function PiPanel({
     "collapsedSections",
     INITIAL_SECTION_COLLAPSED,
   );
+  const [supportingSectionsHidden, setSupportingSectionsHidden] =
+    usePiControllerState("supportingSectionsHidden", false);
   const [providerKeyStatus, setProviderKeyStatus] = usePiControllerState(
     "providerKeyStatus",
     undefined,
@@ -422,6 +425,9 @@ export function PiPanel({
     },
     [],
   );
+  const supportingSectionsToggleLabel = supportingSectionsHidden
+    ? "Show Code sidebar sections"
+    : "Show only Code chat";
 
   const applySessionEvents = useCallback((events: PiSessionEvent[]) => {
     if (events.length === 0) {
@@ -995,90 +1001,120 @@ export function PiPanel({
             />
             <span className="truncate">Code</span>
           </div>
-          <Badge
-            variant="outline"
-            className="h-5 gap-1 rounded-md border-border/55 px-1.5 text-[10.5px] text-muted-foreground"
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "size-1.5 shrink-0 rounded-full",
-                statusToneDotClass(status.tone),
-              )}
-            />
-            {status.label}
-          </Badge>
+          <div className="flex shrink-0 items-center gap-1">
+            <Badge
+              variant="outline"
+              className="h-5 gap-1 rounded-md border-border/55 px-1.5 text-[10.5px] text-muted-foreground"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  statusToneDotClass(status.tone),
+                )}
+              />
+              {status.label}
+            </Badge>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label={supportingSectionsToggleLabel}
+              aria-pressed={supportingSectionsHidden}
+              title={supportingSectionsToggleLabel}
+              onClick={() =>
+                setSupportingSectionsHidden((current) => !current)
+              }
+              className="size-5 rounded-md text-muted-foreground hover:text-foreground"
+            >
+              <HugeiconsIcon
+                icon={MenuCollapseIcon}
+                size={11}
+                strokeWidth={1.8}
+                className={cn(
+                  "transition-transform duration-150",
+                  supportingSectionsHidden && "rotate-180",
+                )}
+              />
+            </Button>
+          </div>
         </header>
       )}
 
-      <PiRuntimeCard
-        isBusy={isBusy}
-        runtimeAction={runtimeAction}
-        runtimeState={runtimeState}
-        status={status}
-        onStart={() => void startRuntime()}
-        onStop={requestStopRuntime}
-        onRestart={() => void restartRuntime()}
-      />
+      {supportingSectionsHidden ? null : (
+        <>
+          <PiRuntimeCard
+            isBusy={isBusy}
+            runtimeAction={runtimeAction}
+            runtimeState={runtimeState}
+            status={status}
+            onStart={() => void startRuntime()}
+            onStop={requestStopRuntime}
+            onRestart={() => void restartRuntime()}
+          />
 
-      <PiLocalAgentsCard
-        activeAgents={localAgentActivities}
-        agents={localAgents}
-        collapsed={collapsedSections.localAgents}
-        disabled={isBusy}
-        isRefreshing={isLocalAgentsRefreshing}
-        prompt={prompt}
-        onCollapsedChange={(collapsed) =>
-          setSectionCollapsed("localAgents", collapsed)
-        }
-        onInstall={openLocalAgentDocs}
-        onLaunch={(agent) => launchLocalAgent(agent)}
-        onLaunchWithPrompt={(agent) => launchLocalAgent(agent, prompt)}
-        onRefresh={() => void refreshLocalAgents()}
-      />
+          <PiLocalAgentsCard
+            activeAgents={localAgentActivities}
+            agents={localAgents}
+            collapsed={collapsedSections.localAgents}
+            disabled={isBusy}
+            isRefreshing={isLocalAgentsRefreshing}
+            prompt={prompt}
+            onCollapsedChange={(collapsed) =>
+              setSectionCollapsed("localAgents", collapsed)
+            }
+            onInstall={openLocalAgentDocs}
+            onLaunch={(agent) => launchLocalAgent(agent)}
+            onLaunchWithPrompt={(agent) => launchLocalAgent(agent, prompt)}
+            onRefresh={() => void refreshLocalAgents()}
+          />
 
-      <PiDiagnosticsCard
-        collapsed={collapsedSections.diagnostics}
-        disabled={isBusy || isDiagnosticsRefreshing}
-        isRefreshing={isDiagnosticsRefreshing}
-        view={diagnosticsView}
-        onCollapsedChange={(collapsed) =>
-          setSectionCollapsed("diagnostics", collapsed)
-        }
-        onOpenSettings={openModelSettings}
-        onRefresh={() => void refreshPanelDiagnostics()}
-        onRestartRuntime={() => void restartRuntime()}
-        onStartRuntime={() => void startRuntime()}
-      />
+          <PiDiagnosticsCard
+            collapsed={collapsedSections.diagnostics}
+            disabled={isBusy || isDiagnosticsRefreshing}
+            isRefreshing={isDiagnosticsRefreshing}
+            view={diagnosticsView}
+            onCollapsedChange={(collapsed) =>
+              setSectionCollapsed("diagnostics", collapsed)
+            }
+            onOpenSettings={openModelSettings}
+            onRefresh={() => void refreshPanelDiagnostics()}
+            onRestartRuntime={() => void restartRuntime()}
+            onStartRuntime={() => void startRuntime()}
+          />
 
-      <PiContextBar
-        collapsed={collapsedSections.context}
-        items={contextPreview}
-        onCollapsedChange={(collapsed) =>
-          setSectionCollapsed("context", collapsed)
-        }
-      />
+          <PiContextBar
+            collapsed={collapsedSections.context}
+            items={contextPreview}
+            onCollapsedChange={(collapsed) =>
+              setSectionCollapsed("context", collapsed)
+            }
+          />
+        </>
+      )}
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <PiSessionList
-          canCreateSession={canCreateSession}
-          collapsed={collapsedSections.sessions}
-          disabled={isBusy}
-          runtimeReady={runtimeReady}
-          selectedSessionId={selectedSessionId}
-          sessions={sessions}
-          workspaceRoot={workspaceRoot}
-          onCollapsedChange={(collapsed) =>
-            setSectionCollapsed("sessions", collapsed)
-          }
-          onCreateSession={() => void createSession()}
-          onDeleteSession={(sessionId) => void deleteSession(sessionId)}
-          onRenameSession={(sessionId, title) =>
-            void renameSession(sessionId, title)
-          }
-          onResumeSession={(sessionId) => void resumeSession(sessionId)}
-          onSelectSession={setSelectedSessionId}
-        />
+        {supportingSectionsHidden ? null : (
+          <PiSessionList
+            canCreateSession={canCreateSession}
+            collapsed={collapsedSections.sessions}
+            disabled={isBusy}
+            runtimeReady={runtimeReady}
+            selectedSessionId={selectedSessionId}
+            sessions={sessions}
+            workspaceRoot={workspaceRoot}
+            onCollapsedChange={(collapsed) =>
+              setSectionCollapsed("sessions", collapsed)
+            }
+            onCreateSession={() => void createSession()}
+            onDeleteSession={(sessionId) => void deleteSession(sessionId)}
+            onRenameSession={(sessionId, title) =>
+              void renameSession(sessionId, title)
+            }
+            onResumeSession={(sessionId) => void resumeSession(sessionId)}
+            onSelectSession={setSelectedSessionId}
+          />
+        )}
 
         <PiTranscript
           canRegenerate={!isBusy && selectedSessionSendable}

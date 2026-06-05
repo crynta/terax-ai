@@ -12,4 +12,11 @@ describe("PiPanel", () => {
     expect(html).toContain("Sessions");
     expect(html).not.toContain("No hidden spawns");
   });
+
+  it("offers a header control for showing only the active chat", () => {
+    const html = renderToStaticMarkup(<PiPanel />);
+
+    expect(html).toContain('aria-label="Show only Code chat"');
+    expect(html).toContain('aria-pressed="false"');
+  });
 });

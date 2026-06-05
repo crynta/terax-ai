@@ -117,6 +117,23 @@ describe("PiTranscript", () => {
     expect(html).toContain("select-text");
   });
 
+  it("keeps completed assistant reasoning collapsed until opened", () => {
+    const html = renderToStaticMarkup(
+      <PiTranscript
+        selectedSession={session}
+        transcript={[
+          {
+            ...item({ id: "evt-1", kind: "assistant", text: "Done." }),
+            reasoningText: "Completed hidden reasoning.",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Reasoned");
+    expect(html).not.toContain("Completed hidden reasoning.");
+  });
+
   it("uses the active branch reasoning with branch controls", () => {
     const html = renderToStaticMarkup(
       <PiTranscript

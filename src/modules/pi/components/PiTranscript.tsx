@@ -597,7 +597,7 @@ function AssistantMessage({
             className="mt-1"
           >
             <ReasoningTrigger />
-            <ReasoningContent className="select-text" forceMount>
+            <ReasoningContent className="select-text">
               {reasoningText}
             </ReasoningContent>
           </Reasoning>

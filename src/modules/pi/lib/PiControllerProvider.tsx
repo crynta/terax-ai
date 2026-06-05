@@ -38,6 +38,7 @@ export type PiControllerState = {
   selectedSessionId: string | null;
   sessionEvents: PiSessionEvent[];
   sessions: PiSession[];
+  supportingSectionsHidden: boolean;
   thinkingLevelOverride: PiThinkingLevel | null;
 };
 
