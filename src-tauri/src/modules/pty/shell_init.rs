@@ -50,15 +50,16 @@ fn fish_init_script() -> &'static str {
 pub fn build_command(
     cwd: Option<String>,
     workspace: WorkspaceEnv,
+    blocks: bool,
 ) -> Result<CommandBuilder, String> {
     #[cfg(unix)]
     {
         let _ = workspace;
-        unix::build(cwd)
+        unix::build(cwd, blocks)
     }
     #[cfg(windows)]
     {
-        windows::build(cwd, workspace)
+        windows::build(cwd, workspace, blocks)
     }
 }
 
@@ -82,10 +83,13 @@ fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
     cmd.env("LANG", fallback);
 }
 
-fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
+fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>, blocks: bool) {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERAX_TERMINAL", "1");
+    if blocks {
+        cmd.env("TERAX_BLOCKS", "1");
+    }
     ensure_utf8_locale(cmd);
 
     let resolved_cwd = cwd
@@ -158,10 +162,10 @@ mod unix {
         }
     }
 
-    pub fn build(cwd: Option<String>) -> Result<CommandBuilder, String> {
+    pub fn build(cwd: Option<String>, blocks: bool) -> Result<CommandBuilder, String> {
         let (shell, shell_path) = Shell::detect();
         let mut cmd = CommandBuilder::new(&shell_path);
-        super::apply_common(&mut cmd, cwd);
+        super::apply_common(&mut cmd, cwd, blocks);
 
         match shell {
             Shell::Zsh => {
@@ -310,8 +314,13 @@ mod windows {
         args: Vec<String>,
     }
 
-    pub fn build(cwd: Option<String>, workspace: WorkspaceEnv) -> Result<CommandBuilder, String> {
+    pub fn build(
+        cwd: Option<String>,
+        workspace: WorkspaceEnv,
+        blocks: bool,
+    ) -> Result<CommandBuilder, String> {
         if let WorkspaceEnv::Wsl { distro } = workspace {
+            let _ = blocks;
             return build_wsl(cwd, distro);
         }
         let shell_path = super::windows_shell_path();
@@ -323,7 +332,7 @@ mod windows {
         let is_powershell = shell_name == "pwsh.exe" || shell_name == "powershell.exe";
 
         let mut cmd = CommandBuilder::new(&shell_path);
-        super::apply_common(&mut cmd, cwd);
+        super::apply_common(&mut cmd, cwd, blocks);
 
         if is_powershell {
             match prepare_ps_profile() {
