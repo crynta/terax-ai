@@ -10,6 +10,11 @@ import {
   registerCwdHandler,
   registerPromptTracker,
 } from "./osc-handlers";
+import { initCommandHistory, recordCommand } from "./commandHistory";
+import {
+  createSuggestionOverlay,
+  setSuggestionsEnabled,
+} from "./suggestionOverlay";
 import { openPty, type PtySession } from "./pty-bridge";
 import { BlockDecorations } from "../block/lib/blockDecorations";
 import "../block/block.css";
@@ -300,7 +305,15 @@ function bindLeafToSlot(leafId: number, s: Session): void {
       // 7 emitted by untrusted command output (remote SSH, `cat` of an
       // attacker file, etc.).
       const shellState = createShellIntegrationState();
-      const prompt = registerPromptTracker(term, shellState);
+      const overlay = createSuggestionOverlay(leafId, term, (data) =>
+        s.pty?.write(data),
+      );
+      const prompt = registerPromptTracker(term, shellState, {
+        onCommand: recordCommand,
+        onPromptStart: overlay.callbacks.onPromptStart,
+        onInputReady: overlay.callbacks.onInputReady,
+        onCommandRun: overlay.callbacks.onCommandRun,
+      });
       const cwd = registerCwdHandler(
         term,
         (next) => {
@@ -311,7 +324,7 @@ function bindLeafToSlot(leafId: number, s: Session): void {
         },
         shellState,
       );
-      return [prompt.dispose, cwd];
+      return [prompt.dispose, cwd, overlay.dispose];
     },
     onSearchReady: (addon) => s.callbacks.onSearchReady?.(addon),
   });
@@ -537,6 +550,12 @@ export function useTerminalSession({
   useEffect(() => {
     applyCursorBlink(cursorBlink);
   }, [cursorBlink]);
+
+  const suggestions = usePreferencesStore((p) => p.terminalSuggestions);
+  useEffect(() => {
+    setSuggestionsEnabled(suggestions);
+    if (suggestions) void initCommandHistory();
+  }, [suggestions]);
 
   const bgActive = usePreferencesStore(
     (p) => p.backgroundKind === "image" && !!p.backgroundImageId,

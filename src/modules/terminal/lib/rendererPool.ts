@@ -9,6 +9,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
+import { acceptSuggestion, hasActiveSuggestion } from "./suggestionOverlay";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
@@ -235,6 +236,11 @@ function createSlot(): Slot {
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
+    if (isAcceptSuggestion(event) && hasActiveSuggestion(leafId)) {
+      event.preventDefault();
+      if (event.type === "keydown") acceptSuggestion(leafId);
+      return false;
+    }
     const lineNavigation = terminalLineNavigationSequence(event, {
       isMac: IS_MAC,
     });
@@ -913,5 +919,17 @@ function isTerminalPaste(e: KeyboardEvent): boolean {
 function isShiftEnter(e: KeyboardEvent): boolean {
   return (
     e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+  );
+}
+
+// Accept an inline suggestion with Right arrow or End at the line end, the
+// fish/zsh-autosuggestions convention. Only consumed when a ghost is showing.
+function isAcceptSuggestion(e: KeyboardEvent): boolean {
+  return (
+    (e.key === "ArrowRight" || e.key === "End") &&
+    !e.altKey &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.shiftKey
   );
 }

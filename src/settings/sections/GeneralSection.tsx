@@ -30,6 +30,7 @@ import {
   setTerminalLetterSpacing,
   setTerminalFontSize,
   setTerminalCursorBlink,
+  setTerminalSuggestions,
   setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
@@ -79,6 +80,9 @@ export function GeneralSection() {
   );
   const terminalCursorBlink = usePreferencesStore(
     (s) => s.terminalCursorBlink,
+  );
+  const terminalSuggestions = usePreferencesStore(
+    (s) => s.terminalSuggestions,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalLetterSpacing = usePreferencesStore(
@@ -253,6 +257,15 @@ export function GeneralSection() {
           <Switch
             checked={terminalCursorBlink}
             onCheckedChange={(v) => void setTerminalCursorBlink(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Inline suggestions"
+          description="Ghost-text completions from your command history. Press Right arrow or End to accept."
+        >
+          <Switch
+            checked={terminalSuggestions}
+            onCheckedChange={(v) => void setTerminalSuggestions(v)}
           />
         </SettingRow>
         <SettingRow

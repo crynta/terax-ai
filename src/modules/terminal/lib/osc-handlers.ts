@@ -39,9 +39,23 @@ export type PromptTracker = {
   dispose: () => void;
 };
 
+/**
+ * Optional observers for the prompt lifecycle, used by inline suggestions.
+ * `onCommand` receives the command text from `OSC 133;C;<cmd>` (emitted by the
+ * zsh/fish preexec hooks). `onInputReady` fires on `OSC 133;B`, the point where
+ * the prompt is fully drawn and the cursor sits at the start of user input.
+ */
+export type PromptCallbacks = {
+  onCommand?: (command: string) => void;
+  onPromptStart?: () => void;
+  onInputReady?: () => void;
+  onCommandRun?: () => void;
+};
+
 export function registerPromptTracker(
   term: Terminal,
   state?: ShellIntegrationState,
+  callbacks?: PromptCallbacks,
 ): PromptTracker {
   let marker: IMarker | null = null;
   const d = term.parser.registerOscHandler(133, (data) => {
@@ -50,13 +64,21 @@ export function registerPromptTracker(
       if (state) state.inCommand = false;
       marker?.dispose();
       marker = term.registerMarker(0);
+      callbacks?.onPromptStart?.();
     } else if (data.startsWith("B")) {
       // OSC 133 B — command begins. From here on, treat all output as
       // untrusted until we see D (command exit) or the next A (new prompt).
       if (state) state.inCommand = true;
+      callbacks?.onInputReady?.();
     } else if (data.startsWith("C")) {
       // OSC 133 C — command pre-execution marker; still inside command.
       if (state) state.inCommand = true;
+      callbacks?.onCommandRun?.();
+      // zsh/fish emit `C;<cmd>`; bash's PS0 emits a bare `C`.
+      const semi = data.indexOf(";");
+      if (semi !== -1 && callbacks?.onCommand) {
+        callbacks.onCommand(data.slice(semi + 1));
+      }
     } else if (data.startsWith("D")) {
       // OSC 133 D — command ends.
       if (state) state.inCommand = false;

@@ -96,3 +96,44 @@ describe("OSC 7 cwd handler — gated by OSC 133 in-command state", () => {
     expect(onCwd).toHaveBeenCalledWith("C:/Users/me/project");
   });
 });
+
+describe("OSC 133 prompt callbacks — inline suggestions", () => {
+  it("extracts the command text from OSC 133 C;<cmd>", () => {
+    const { term, handlers } = makeFakeTerm();
+    const onCommand = vi.fn();
+    registerPromptTracker(term, undefined, { onCommand });
+
+    handlers.get(133)?.("C;git commit -m wip");
+    expect(onCommand).toHaveBeenCalledWith("git commit -m wip");
+  });
+
+  it("preserves semicolons inside the command payload", () => {
+    const { term, handlers } = makeFakeTerm();
+    const onCommand = vi.fn();
+    registerPromptTracker(term, undefined, { onCommand });
+
+    handlers.get(133)?.("C;ls; echo done");
+    expect(onCommand).toHaveBeenCalledWith("ls; echo done");
+  });
+
+  it("does not fire onCommand for a bare C (bash PS0)", () => {
+    const { term, handlers } = makeFakeTerm();
+    const onCommand = vi.fn();
+    registerPromptTracker(term, undefined, { onCommand });
+
+    handlers.get(133)?.("C");
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("fires prompt lifecycle callbacks on A and B", () => {
+    const { term, handlers } = makeFakeTerm();
+    const onPromptStart = vi.fn();
+    const onInputReady = vi.fn();
+    registerPromptTracker(term, undefined, { onPromptStart, onInputReady });
+
+    handlers.get(133)?.("A");
+    handlers.get(133)?.("B");
+    expect(onPromptStart).toHaveBeenCalledTimes(1);
+    expect(onInputReady).toHaveBeenCalledTimes(1);
+  });
+});
