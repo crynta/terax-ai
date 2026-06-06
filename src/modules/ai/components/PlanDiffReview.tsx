@@ -1,16 +1,14 @@
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import {
-  ArrowDown01Icon,
-  Cancel01Icon,
-  FileEditIcon,
-  FilePlusIcon,
-  FolderAddIcon,
-  Tick02Icon,
-} from "@hugeicons/core-free-icons";
+import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import FileEditIcon from "@hugeicons/core-free-icons/FileEditIcon";
+import FilePlusIcon from "@hugeicons/core-free-icons/FilePlusIcon";
+import FolderAddIcon from "@hugeicons/core-free-icons/FolderAddIcon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
-import { usePlanStore, type QueuedEdit } from "../store/planStore";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { type QueuedEdit, usePlanStore } from "../store/planStore";
 
 function basename(p: string): string {
   const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
@@ -111,11 +109,7 @@ function PlanRow({
   const stats = isDir
     ? null
     : diffStats(item.originalContent, item.proposedContent);
-  const Icon = isDir
-    ? FolderAddIcon
-    : isNew
-      ? FilePlusIcon
-      : FileEditIcon;
+  const Icon = isDir ? FolderAddIcon : isNew ? FilePlusIcon : FileEditIcon;
 
   return (
     <li className="group/row overflow-hidden rounded-md border border-border/50 bg-card">

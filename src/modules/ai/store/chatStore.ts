@@ -4,36 +4,40 @@ import {
   lastAssistantMessageIsCompleteWithApprovalResponses,
 } from "ai";
 import { create } from "zustand";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   DEFAULT_MODEL_ID,
   endpointIdFromCompatModel,
   getModel,
   isCompatModelId,
-  providerNeedsKey,
   type ModelId,
   type ProviderId,
+  providerNeedsKey,
 } from "../config";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import { BUILTIN_AGENTS } from "../lib/agents";
-import { useAgentsStore } from "./agentsStore";
-import { usePlanStore } from "./planStore";
-import { useTodosStore } from "./todoStore";
 import type { AgentUsage } from "../lib/agent";
-import { EMPTY_PROVIDER_KEYS, type ProviderKeys, type CustomEndpointKeys } from "../lib/keyring";
+import { BUILTIN_AGENTS } from "../lib/agents";
+import {
+  type CustomEndpointKeys,
+  EMPTY_PROVIDER_KEYS,
+  type ProviderKeys,
+} from "../lib/keyring";
+import { pushRecentModel } from "../lib/modelPrefs";
 import {
   deleteSessionData,
   deriveTitle,
   loadAll,
   loadMessages,
   newSessionId,
+  type SessionMeta,
   saveActiveId,
   saveMessages,
   saveSessionsList,
-  type SessionMeta,
 } from "../lib/sessions";
-import { pushRecentModel } from "../lib/modelPrefs";
 import { createContextAwareTransport } from "../lib/transport";
 import type { ToolContext } from "../tools/tools";
+import { useAgentsStore } from "./agentsStore";
+import { usePlanStore } from "./planStore";
+import { useTodosStore } from "./todoStore";
 
 type Live = {
   getCwd: () => string | null;
@@ -57,6 +61,18 @@ export type AgentRunStatus =
   | "awaiting-approval"
   | "error";
 
+export type AgentRunStopReason = "completed" | "cancelled" | "error" | "paused";
+
+export type AgentRunHistoryEntry = {
+  id: string;
+  sessionId: string;
+  startedAt: number;
+  endedAt: number;
+  stopReason: AgentRunStopReason;
+  step: string | null;
+  error: string | null;
+};
+
 export type AgentMeta = {
   status: AgentRunStatus;
   step: string | null;
@@ -67,6 +83,9 @@ export type AgentMeta = {
   lastCachedTokens: number;
   hitStepCap: boolean;
   compactionNotice: { droppedCount: number; at: number } | null;
+  runStartedAt: number | null;
+  runEndedAt: number | null;
+  stopReason: AgentRunStopReason | null;
 };
 
 const ZERO_USAGE: AgentUsage = {
@@ -74,6 +93,46 @@ const ZERO_USAGE: AgentUsage = {
   outputTokens: 0,
   cachedInputTokens: 0,
 };
+
+const AGENT_RUN_HISTORY_STORAGE_KEY = "terax.agentRunHistory.v1";
+const AGENT_RUN_HISTORY_LIMIT = 40;
+
+function readAgentRunHistory(): AgentRunHistoryEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(AGENT_RUN_HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((entry): entry is AgentRunHistoryEntry => {
+        if (!entry || typeof entry !== "object") return false;
+        const value = entry as Partial<AgentRunHistoryEntry>;
+        return (
+          typeof value.id === "string" &&
+          typeof value.sessionId === "string" &&
+          typeof value.startedAt === "number" &&
+          typeof value.endedAt === "number" &&
+          typeof value.stopReason === "string"
+        );
+      })
+      .slice(0, AGENT_RUN_HISTORY_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
+function writeAgentRunHistory(entries: AgentRunHistoryEntry[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      AGENT_RUN_HISTORY_STORAGE_KEY,
+      JSON.stringify(entries.slice(0, AGENT_RUN_HISTORY_LIMIT)),
+    );
+  } catch {
+    // Ignore storage quota and private-mode failures.
+  }
+}
 
 const IDLE_META: AgentMeta = {
   status: "idle",
@@ -85,6 +144,9 @@ const IDLE_META: AgentMeta = {
   lastCachedTokens: 0,
   hitStepCap: false,
   compactionNotice: null,
+  runStartedAt: null,
+  runEndedAt: null,
+  stopReason: null,
 };
 
 export type MiniState = {
@@ -97,10 +159,7 @@ export type PendingSelection = {
   source: "terminal" | "editor";
 };
 
-export type ApprovalResponder = (
-  approvalId: string,
-  approved: boolean,
-) => void;
+export type ApprovalResponder = (approvalId: string, approved: boolean) => void;
 
 type StoreState = {
   live: Live;
@@ -145,7 +204,12 @@ type StoreState = {
   consumeSelections: () => PendingSelection[];
 
   agentMeta: AgentMeta;
+  agentRunHistory: AgentRunHistoryEntry[];
   patchAgentMeta: (patch: Partial<AgentMeta>) => void;
+  markAgentRunCancelled: () => void;
+  markAgentRunPaused: () => void;
+  recordAgentRun: (entry: Omit<AgentRunHistoryEntry, "id">) => void;
+  clearAgentRunHistory: () => void;
   resetAgentMeta: () => void;
 
   // Sessions
@@ -222,10 +286,8 @@ function makeChat(sessionId: string): Chat<UIMessage> {
   const readCache = new Map<string, { size: number; hash: number }>();
   const toolContext: ToolContext = {
     getCwd: () => useChatStore.getState().live.getCwd(),
-    getWorkspaceRoot: () =>
-      useChatStore.getState().live.getWorkspaceRoot(),
-    getTerminalContext: () =>
-      useChatStore.getState().live.getTerminalContext(),
+    getWorkspaceRoot: () => useChatStore.getState().live.getWorkspaceRoot(),
+    getTerminalContext: () => useChatStore.getState().live.getTerminalContext(),
     isActiveTerminalPrivate: () =>
       useChatStore.getState().live.isActiveTerminalPrivate(),
     injectIntoActivePty: (text) =>
@@ -275,10 +337,8 @@ function makeChat(sessionId: string): Chat<UIMessage> {
       usePreferencesStore.getState().openaiCompatibleContextLimit,
     getOpenrouterModelId: () =>
       usePreferencesStore.getState().openrouterModelId,
-    getCustomEndpoints: () =>
-      usePreferencesStore.getState().customEndpoints,
-    getCustomEndpointKeys: () =>
-      useChatStore.getState().customEndpointKeys,
+    getCustomEndpoints: () => usePreferencesStore.getState().customEndpoints,
+    getCustomEndpointKeys: () => useChatStore.getState().customEndpointKeys,
     onStep: (step) => {
       useChatStore.getState().patchAgentMeta({ step });
     },
@@ -379,7 +439,10 @@ export const useChatStore = create<StoreState>((set, get) => ({
     set((s) => ({
       panelOpen: true,
       focusSignal: s.focusSignal + 1,
-      pendingSelections: [...s.pendingSelections, { id, text: trimmed, source }],
+      pendingSelections: [
+        ...s.pendingSelections,
+        { id, text: trimmed, source },
+      ],
     }));
   },
   consumeSelections: () => {
@@ -389,8 +452,43 @@ export const useChatStore = create<StoreState>((set, get) => ({
   },
 
   agentMeta: IDLE_META,
+  agentRunHistory: readAgentRunHistory(),
   patchAgentMeta: (patch) =>
     set((s) => ({ agentMeta: { ...s.agentMeta, ...patch } })),
+  markAgentRunCancelled: () =>
+    set((s) => ({
+      agentMeta: {
+        ...s.agentMeta,
+        step: null,
+        runEndedAt: Date.now(),
+        stopReason: "cancelled",
+      },
+    })),
+  markAgentRunPaused: () =>
+    set((s) => ({
+      agentMeta: {
+        ...s.agentMeta,
+        step: null,
+        runEndedAt: Date.now(),
+        stopReason: "paused",
+      },
+    })),
+  recordAgentRun: (entry) =>
+    set((s) => {
+      const next = [
+        {
+          ...entry,
+          id: `run-${entry.endedAt}-${Math.random().toString(36).slice(2, 8)}`,
+        },
+        ...s.agentRunHistory,
+      ].slice(0, AGENT_RUN_HISTORY_LIMIT);
+      writeAgentRunHistory(next);
+      return { agentRunHistory: next };
+    }),
+  clearAgentRunHistory: () => {
+    writeAgentRunHistory([]);
+    set({ agentRunHistory: [] });
+  },
   resetAgentMeta: () => set({ agentMeta: IDLE_META }),
 
   sessionsHydrated: false,
@@ -541,7 +639,8 @@ export function getAgentMeta(): AgentMeta {
 }
 
 export function getActiveProviderKey(): string | null {
-  const { selectedModelId, apiKeys, customEndpointKeys } = useChatStore.getState();
+  const { selectedModelId, apiKeys, customEndpointKeys } =
+    useChatStore.getState();
   if (isCompatModelId(selectedModelId)) {
     const eid = endpointIdFromCompatModel(selectedModelId);
     return customEndpointKeys[eid] ?? null;
@@ -579,7 +678,11 @@ export async function sendMessage(text: string): Promise<boolean> {
   const state = useChatStore.getState();
   const sessionId = state.activeSessionId;
   if (!sessionId) return false;
-  if (providerNeedsKey(getModel(state.selectedModelId as ModelId).provider) && !getActiveProviderKey()) return false;
+  if (
+    providerNeedsKey(getModel(state.selectedModelId as ModelId).provider) &&
+    !getActiveProviderKey()
+  )
+    return false;
   const c = getOrCreateChat(sessionId);
   await c.sendMessage({ text });
   return true;

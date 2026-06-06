@@ -1,3 +1,5 @@
+export { AgentStatusPill } from "./components/AgentStatusPill";
+export { LocalAgentNotificationsBridge } from "./components/LocalAgentNotificationsBridge";
 export {
   AgentRunBridge,
   AiInputBar,
@@ -5,26 +7,24 @@ export {
   AiMiniWindow,
   SelectionAskAi,
 } from "./components/lazy";
-export { AgentStatusPill } from "./components/AgentStatusPill";
-export { LocalAgentNotificationsBridge } from "./components/LocalAgentNotificationsBridge";
 export {
-  EMPTY_PROVIDER_KEYS,
-  getAllKeys,
-  getAllCustomEndpointKeys,
-  getKey,
-  setKey,
+  type CustomEndpointKeys,
   clearKey,
+  EMPTY_PROVIDER_KEYS,
+  getAllCustomEndpointKeys,
+  getAllKeys,
+  getKey,
   hasAnyKey,
   type ProviderKeys,
-  type CustomEndpointKeys,
+  setKey,
 } from "./lib/keyring";
 export {
+  type AgentMeta,
+  type AgentRunStatus,
   getActiveProviderKey,
   getOrCreateChat,
   hasKeyForModel,
   sendMessage,
   stop,
   useChatStore,
-  type AgentMeta,
-  type AgentRunStatus,
 } from "./store/chatStore";

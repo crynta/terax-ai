@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type {
   AgentNotification,
+  AgentNotificationCategory,
   AgentSession,
   AgentStatus,
   LocalAgentState,
@@ -24,8 +25,11 @@ type AgentStoreState = {
   removePiSession: (sessionId: string) => void;
   pushNotification: (n: Omit<AgentNotification, "id" | "at" | "read">) => void;
   markAllRead: () => void;
+  markNotificationsRead: (ids: readonly string[]) => void;
+  markPiNotificationsRead: (category: AgentNotificationCategory) => void;
   markSourceRead: (source: AgentNotification["source"]) => void;
   removeNotification: (id: string) => void;
+  clearReadNotifications: () => void;
   clearNotifications: () => void;
 };
 
@@ -146,6 +150,40 @@ export const useAgentStore = create<AgentStoreState>((set) => ({
       };
     }),
 
+  markNotificationsRead: (ids) =>
+    set((s) => {
+      const unreadIds = new Set(ids);
+      if (
+        unreadIds.size === 0 ||
+        !s.notifications.some((n) => unreadIds.has(n.id) && !n.read)
+      ) {
+        return s;
+      }
+      return {
+        notifications: s.notifications.map((n) =>
+          unreadIds.has(n.id) ? { ...n, read: true } : n,
+        ),
+      };
+    }),
+
+  markPiNotificationsRead: (category) =>
+    set((s) => {
+      if (
+        !s.notifications.some(
+          (n) => n.source === "pi" && n.category === category && !n.read,
+        )
+      ) {
+        return s;
+      }
+      return {
+        notifications: s.notifications.map((n) =>
+          n.source === "pi" && n.category === category
+            ? { ...n, read: true }
+            : n,
+        ),
+      };
+    }),
+
   markSourceRead: (source) =>
     set((s) => {
       if (!s.notifications.some((n) => n.source === source && !n.read))
@@ -162,6 +200,14 @@ export const useAgentStore = create<AgentStoreState>((set) => ({
       const notifications = s.notifications.filter(
         (notification) => notification.id !== id,
       );
+      return notifications.length === s.notifications.length
+        ? s
+        : { notifications };
+    }),
+
+  clearReadNotifications: () =>
+    set((s) => {
+      const notifications = s.notifications.filter((n) => !n.read);
       return notifications.length === s.notifications.length
         ? s
         : { notifications };

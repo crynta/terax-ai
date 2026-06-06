@@ -1,8 +1,6 @@
-import {
-  CheckListIcon,
-  ClaudeIcon,
-  SparklesIcon,
-} from "@hugeicons/core-free-icons";
+import CheckListIcon from "@hugeicons/core-free-icons/CheckListIcon";
+import ClaudeIcon from "@hugeicons/core-free-icons/ClaudeIcon";
+import SparklesIcon from "@hugeicons/core-free-icons/SparklesIcon";
 import { usePlanStore } from "../store/planStore";
 
 /**

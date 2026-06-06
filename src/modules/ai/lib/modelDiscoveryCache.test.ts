@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createModelDiscoveryCache } from "./modelDiscoveryCache";
 import type { ModelDiscoveryResult } from "./modelDiscovery";
+import { createModelDiscoveryCache } from "./modelDiscoveryCache";
 
 const first: ModelDiscoveryResult = { ok: true, models: [{ id: "first" }] };
 const second: ModelDiscoveryResult = { ok: true, models: [{ id: "second" }] };

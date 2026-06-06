@@ -117,7 +117,8 @@ describe("decodeModelDiscoveryResponse", () => {
       ok: false,
       error: {
         kind: "invalid-shape",
-        message: "The endpoint did not return an OpenAI-compatible models list.",
+        message:
+          "The endpoint did not return an OpenAI-compatible models list.",
       },
     });
   });

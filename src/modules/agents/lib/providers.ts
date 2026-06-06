@@ -140,14 +140,18 @@ export function agentProviderByName(
   const exact = AGENT_PROVIDERS.find(
     (provider) =>
       normalizeProviderName(provider.label) === normalized ||
-      provider.aliases.some((alias) => normalizeProviderName(alias) === normalized),
+      provider.aliases.some(
+        (alias) => normalizeProviderName(alias) === normalized,
+      ),
   );
   if (exact) return exact;
 
   return AGENT_PROVIDERS.find((provider) =>
     provider.aliases.some((alias) => {
       const normalizedAlias = normalizeProviderName(alias);
-      return normalizedAlias.length >= 4 && normalized.includes(normalizedAlias);
+      return (
+        normalizedAlias.length >= 4 && normalized.includes(normalizedAlias)
+      );
     }),
   );
 }

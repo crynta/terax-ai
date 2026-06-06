@@ -1,15 +1,17 @@
 import type { UIMessage } from "@ai-sdk/react";
 import { type CustomEndpoint } from "../config";
-import { runAgentStream, type AgentUsageDelta } from "./agent";
-import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
-import { native } from "./native";
 import type { ToolContext } from "../tools/tools";
+import { type AgentUsageDelta, runAgentStream } from "./agent";
+import type { CustomEndpointKeys, ProviderKeys } from "./keyring";
+import { native } from "./native";
 
 const TERAX_MD_MAX_BYTES = 32 * 1024;
 type MemoryCacheEntry = { content: string | null; mtime: number };
 const projectMemoryCache = new Map<string, MemoryCacheEntry>();
 
-async function readTeraxMd(workspaceRoot: string | null): Promise<string | null> {
+async function readTeraxMd(
+  workspaceRoot: string | null,
+): Promise<string | null> {
   if (!workspaceRoot) return null;
   const path = `${workspaceRoot.replace(/\/$/, "")}/TERAX.md`;
   const cached = projectMemoryCache.get(workspaceRoot);
@@ -17,7 +19,10 @@ async function readTeraxMd(workspaceRoot: string | null): Promise<string | null>
   try {
     const r = await native.readFile(path);
     if (r.kind !== "text") {
-      projectMemoryCache.set(workspaceRoot, { content: null, mtime: Date.now() });
+      projectMemoryCache.set(workspaceRoot, {
+        content: null,
+        mtime: Date.now(),
+      });
       return null;
     }
     const content =

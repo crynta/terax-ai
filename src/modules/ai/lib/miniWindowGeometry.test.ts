@@ -5,9 +5,9 @@ import {
   applyResize,
   clampGeom,
   defaultGeom,
+  type Geom,
   MIN_H,
   MIN_W,
-  type Geom,
   type Viewport,
 } from "./miniWindowGeometry";
 

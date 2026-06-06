@@ -2,6 +2,11 @@ export type AgentStatus = "working" | "waiting" | "finished" | "idle" | "error";
 
 export type AgentSource = "terminal" | "local" | "pi";
 
+export type AgentNotificationCategory =
+  | "code-run"
+  | "chat-response"
+  | "artifact";
+
 export type AgentSurfaceStatus =
   | "attention"
   | "working"
@@ -40,6 +45,7 @@ export type AgentNotification = {
   agent: string;
   kind: NotificationKind;
   at: number;
+  category?: AgentNotificationCategory;
   read: boolean;
   title?: string;
   body?: string;

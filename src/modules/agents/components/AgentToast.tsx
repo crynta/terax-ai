@@ -8,7 +8,12 @@ type AgentToastArgs = {
   onActivate: () => void;
 };
 
-export function showAgentToast({ agent, title, body, onActivate }: AgentToastArgs) {
+export function showAgentToast({
+  agent,
+  title,
+  body,
+  onActivate,
+}: AgentToastArgs) {
   toast(title, {
     description: body,
     icon: <AgentIcon agent={agent} size={18} />,

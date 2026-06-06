@@ -1,3 +1,34 @@
+import Add01Icon from "@hugeicons/core-free-icons/Add01Icon";
+import AiBookIcon from "@hugeicons/core-free-icons/AiBookIcon";
+import AppleIcon from "@hugeicons/core-free-icons/AppleIcon";
+import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
+import ArrowUpIcon from "@hugeicons/core-free-icons/ArrowUp01Icon";
+import BrainIcon from "@hugeicons/core-free-icons/BrainIcon";
+import ChatGptIcon from "@hugeicons/core-free-icons/ChatGptIcon";
+import ClaudeIcon from "@hugeicons/core-free-icons/ClaudeIcon";
+import Clock01Icon from "@hugeicons/core-free-icons/Clock01Icon";
+import CoinsDollarIcon from "@hugeicons/core-free-icons/CoinsDollarIcon";
+import ComputerIcon from "@hugeicons/core-free-icons/ComputerIcon";
+import CpuIcon from "@hugeicons/core-free-icons/CpuIcon";
+import DeepseekIcon from "@hugeicons/core-free-icons/DeepseekIcon";
+import FavouriteIcon from "@hugeicons/core-free-icons/FavouriteIcon";
+import FlashIcon from "@hugeicons/core-free-icons/FlashIcon";
+import GlobeIcon from "@hugeicons/core-free-icons/GlobeIcon";
+import GoogleGeminiIcon from "@hugeicons/core-free-icons/GoogleGeminiIcon";
+import Grok02Icon from "@hugeicons/core-free-icons/Grok02Icon";
+import Message01Icon from "@hugeicons/core-free-icons/Message01Icon";
+import Mic01Icon from "@hugeicons/core-free-icons/Mic01Icon";
+import MistralIcon from "@hugeicons/core-free-icons/MistralIcon";
+import PlugIcon from "@hugeicons/core-free-icons/Plug01Icon";
+import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
+import ServerStack01Icon from "@hugeicons/core-free-icons/ServerStack01Icon";
+import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
+import StarIcon from "@hugeicons/core-free-icons/StarIcon";
+import StopCircleIcon from "@hugeicons/core-free-icons/StopCircleIcon";
+import Tick01Icon from "@hugeicons/core-free-icons/Tick01Icon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { motion } from "motion/react";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,56 +41,23 @@ import { Spinner } from "@/components/ui/spinner";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
-import {
-  Add01Icon,
-  AiBookIcon,
-  AppleIcon,
-  ArrowDown01Icon,
-  ArrowUpIcon,
-  BrainIcon,
-  ChatGptIcon,
-  ClaudeIcon,
-  Clock01Icon,
-  CoinsDollarIcon,
-  ComputerIcon,
-  CpuIcon,
-  DeepseekIcon,
-  FavouriteIcon,
-  FlashIcon,
-  GlobeIcon,
-  GoogleGeminiIcon,
-  Grok02Icon,
-  MistralIcon,
-  Message01Icon,
-  Mic01Icon,
-  PlugIcon,
-  ServerStack01Icon,
-  Search01Icon,
-  Settings01Icon,
-  StarIcon,
-  StopCircleIcon,
-  Tick01Icon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { motion } from "motion/react";
-import { useMemo, useRef, useState } from "react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   compatModelIdForEndpoint,
   getCompatModelInfo,
   getModel,
   isCompatModelId,
   MODELS,
-  providerNeedsKey,
-  PROVIDERS,
   type ModelCapabilities,
   type ModelId,
   type ModelInfo,
+  PROVIDERS,
   type ProviderId,
+  providerNeedsKey,
 } from "../config";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { toggleFavoriteModel } from "../lib/modelPrefs";
 import { useChatStore } from "../store/chatStore";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 
 const PROVIDER_ICON = {
   openai: ChatGptIcon,
@@ -142,7 +140,7 @@ export function AiStatusBarControls() {
           disabled={c.isBusy || c.voice.transcribing || !c.voice.hasKey}
           className={cn(
             c.voice.recording &&
-            "bg-destructive/10 text-destructive hover:bg-destructive/15",
+              "bg-destructive/10 text-destructive hover:bg-destructive/15",
           )}
         >
           {c.voice.recording ? (
@@ -249,10 +247,7 @@ function ModelDropdown() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKeys]);
 
-  const allModels = useMemo(
-    () => [...MODELS, ...epModelInfos],
-    [epModelInfos],
-  );
+  const allModels = useMemo(() => [...MODELS, ...epModelInfos], [epModelInfos]);
 
   const COMPAT_PROVIDER_ID = "__compat__";
 
@@ -302,7 +297,7 @@ function ModelDropdown() {
           title={
             currentProviderHasKey
               ? `Model: ${current.label}`
-              : `${current.label} — no key configured`
+              : `${current.label} - no key configured`
           }
         >
           {current.label}
@@ -365,7 +360,7 @@ function ModelDropdown() {
         </div>
 
         <div className="flex max-h-104 min-h-0">
-          {/* Provider sidebar — configured first, unconfigured muted, no dividers. */}
+          {/* Provider sidebar: configured first, unconfigured muted, no dividers. */}
           <div className="flex w-11 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/70 bg-muted/20 py-1.5">
             <ProviderPill
               icon={AiBookIcon}
@@ -373,22 +368,21 @@ function ModelDropdown() {
               active={activeProvider === null}
               onClick={() => setActiveProvider(null)}
             />
-            {[...sortedProviders.configured, ...sortedProviders.unconfigured].map(
-              (p) => (
-                <ProviderPill
-                  key={p.id}
-                  icon={PROVIDER_ICON[p.id]}
-                  title={
-                    hasKeyFor(p.id)
-                      ? p.label
-                      : `${p.label} — not configured`
-                  }
-                  active={activeProvider === p.id}
-                  muted={!hasKeyFor(p.id)}
-                  onClick={() => setActiveProvider(p.id)}
-                />
-              ),
-            )}
+            {[
+              ...sortedProviders.configured,
+              ...sortedProviders.unconfigured,
+            ].map((p) => (
+              <ProviderPill
+                key={p.id}
+                icon={PROVIDER_ICON[p.id]}
+                title={
+                  hasKeyFor(p.id) ? p.label : `${p.label} - not configured`
+                }
+                active={activeProvider === p.id}
+                muted={!hasKeyFor(p.id)}
+                onClick={() => setActiveProvider(p.id)}
+              />
+            ))}
             {customEndpoints.length > 0 && (
               <ProviderPill
                 icon={PlugIcon}
@@ -419,7 +413,7 @@ function ModelDropdown() {
             {filtered.length === 0 ? (
               <div className="flex items-center justify-center px-4 py-10 text-xs text-muted-foreground/70">
                 {tab === "favorites"
-                  ? "No favorites yet — star a model to pin it here."
+                  ? "No favorites yet. Star a model to pin it here."
                   : tab === "recent"
                     ? "No recently-used models."
                     : "No models match."}
@@ -430,10 +424,7 @@ function ModelDropdown() {
                   key={m.id}
                   model={m}
                   selected={m.id === selected}
-                  hasKey={
-                    isCompatModelId(m.id) ||
-                    hasKeyFor(m.provider)
-                  }
+                  hasKey={isCompatModelId(m.id) || hasKeyFor(m.provider)}
                   favorite={favoriteIds.includes(m.id)}
                   showProviderIcon={activeProvider === null}
                   onPick={() => {
@@ -526,11 +517,7 @@ function ProviderHeader({ providerId }: { providerId: ProviderId }) {
   if (!p) return null;
   return (
     <div className="flex items-center gap-1.5 px-3 pt-1 pb-1.5 text-[11px] font-medium tracking-tight text-muted-foreground/90">
-      <HugeiconsIcon
-        icon={PROVIDER_ICON[p.id]}
-        size={13}
-        strokeWidth={1.75}
-      />
+      <HugeiconsIcon icon={PROVIDER_ICON[p.id]} size={13} strokeWidth={1.75} />
       <span>{p.label}</span>
     </div>
   );
@@ -645,11 +632,7 @@ function CapabilityBars({ caps }: { caps: ModelCapabilities }) {
     <div className="ml-auto flex items-center gap-1.5">
       <CapBar icon={BrainIcon} value={caps.intelligence} label="Intelligence" />
       <CapBar icon={FlashIcon} value={caps.speed} label="Speed" />
-      <CapBar
-        icon={CoinsDollarIcon}
-        value={caps.cost}
-        label="Affordability"
-      />
+      <CapBar icon={CoinsDollarIcon} value={caps.cost} label="Affordability" />
     </div>
   );
 }
@@ -664,10 +647,7 @@ function CapBar({
   label: string;
 }) {
   return (
-    <span
-      className="flex items-center gap-0.5"
-      title={`${label}: ${value}/5`}
-    >
+    <span className="flex items-center gap-0.5" title={`${label}: ${value}/5`}>
       <HugeiconsIcon
         icon={icon}
         size={10}

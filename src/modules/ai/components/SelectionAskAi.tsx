@@ -1,7 +1,7 @@
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { motion } from "motion/react";
 import { useEffect } from "react";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 
 export type SelectionAskAiProps = {
   x: number;
@@ -13,7 +13,12 @@ export type SelectionAskAiProps = {
 const W = 110;
 const OFFSET = 32;
 
-export function SelectionAskAi({ x, y, onAsk, onDismiss }: SelectionAskAiProps) {
+export function SelectionAskAi({
+  x,
+  y,
+  onAsk,
+  onDismiss,
+}: SelectionAskAiProps) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onDismiss();
@@ -45,7 +50,9 @@ export function SelectionAskAi({ x, y, onAsk, onDismiss }: SelectionAskAiProps) 
       >
         <span>Ask Terax</span>
         <KbdGroup>
-          <Kbd className="h-4 min-w-4 px-1 text-[10px]">{fmtShortcut(MOD_KEY, "L")}</Kbd>
+          <Kbd className="h-4 min-w-4 px-1 text-[10px]">
+            {fmtShortcut(MOD_KEY, "L")}
+          </Kbd>
         </KbdGroup>
       </button>
     </motion.div>

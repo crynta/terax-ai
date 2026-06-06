@@ -1,10 +1,8 @@
-import {
-  Cancel01Icon,
-  CheckmarkCircle02Icon,
-  Loading03Icon,
-  Notification01Icon,
-  Notification03Icon,
-} from "@hugeicons/core-free-icons";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import CheckmarkCircle02Icon from "@hugeicons/core-free-icons/CheckmarkCircle02Icon";
+import Loading03Icon from "@hugeicons/core-free-icons/Loading03Icon";
+import Notification01Icon from "@hugeicons/core-free-icons/Notification01Icon";
+import Notification03Icon from "@hugeicons/core-free-icons/Notification03Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
@@ -183,7 +181,9 @@ export function NotificationBell({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [hooksReady, setHooksReady] = useState(initialHookState);
-  const [installing, setInstalling] = useState<AgentHookProviderId | null>(null);
+  const [installing, setInstalling] = useState<AgentHookProviderId | null>(
+    null,
+  );
   const sessions = useAgentStore((s) => s.sessions);
   const localAgent = useAgentStore((s) => s.localAgent);
   const piSessions = useAgentStore((s) => s.piSessions);

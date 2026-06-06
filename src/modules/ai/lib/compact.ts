@@ -1,7 +1,8 @@
 import type { ModelMessage } from "ai";
 
 const KEEP_TAIL = 24;
-const ELISION_TEXT = "[elided to save context — see prior tool call in history]";
+const ELISION_TEXT =
+  "[elided to save context - see prior tool call in history]";
 
 type ToolPart = {
   type: string;

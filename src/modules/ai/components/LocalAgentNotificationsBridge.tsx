@@ -1,8 +1,8 @@
+import { useEffect, useRef } from "react";
 import { routeAgentNotification } from "@/modules/agents/lib/route";
+import type { AgentStatus } from "@/modules/agents/lib/types";
 import { useWindowFocus } from "@/modules/agents/lib/useWindowFocus";
 import { useAgentStore } from "@/modules/agents/store/agentStore";
-import type { AgentStatus } from "@/modules/agents/lib/types";
-import { useEffect, useRef } from "react";
 import { useChatStore } from "../store/chatStore";
 
 const AGENT = "Terax";
@@ -27,6 +27,7 @@ function liveStatus(s: RunStatus): AgentStatus | null {
 export function LocalAgentNotificationsBridge() {
   const status = useChatStore((s) => s.agentMeta.status) as RunStatus;
   const error = useChatStore((s) => s.agentMeta.error);
+  const stopReason = useChatStore((s) => s.agentMeta.stopReason);
   const visible = useChatStore((s) => s.panelOpen || s.mini.open);
   const focused = useWindowFocus();
 
@@ -37,9 +38,13 @@ export function LocalAgentNotificationsBridge() {
   const prev = useRef<RunStatus>(status);
 
   useEffect(() => {
-    useAgentStore.getState().setLocalAgent(
-      liveStatus(status) ? { agent: AGENT, status: liveStatus(status)! } : null,
-    );
+    useAgentStore
+      .getState()
+      .setLocalAgent(
+        liveStatus(status)
+          ? { agent: AGENT, status: liveStatus(status)! }
+          : null,
+      );
 
     const was = prev.current;
     prev.current = status;
@@ -63,13 +68,22 @@ export function LocalAgentNotificationsBridge() {
       });
 
     if (status === "awaiting-approval") {
-      fire("attention", "Terax needs your approval", "Approve a tool to continue");
+      fire(
+        "attention",
+        "Terax needs your approval",
+        "Approve a tool to continue",
+      );
     } else if (status === "error") {
       fire("error", "Terax run failed", error ?? undefined);
-    } else if (status === "idle" && isBusy(was)) {
+    } else if (
+      status === "idle" &&
+      isBusy(was) &&
+      stopReason !== "cancelled" &&
+      stopReason !== "paused"
+    ) {
       fire("finished", "Terax finished", "Your task is ready");
     }
-  }, [status, error]);
+  }, [status, error, stopReason]);
 
   return null;
 }

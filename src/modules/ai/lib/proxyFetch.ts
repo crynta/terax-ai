@@ -141,6 +141,7 @@ async function proxyFetchImpl(
       headers,
       body,
       allowPrivateNetwork,
+      maxBodyBytes: null,
       onEvent: channel,
     }).catch((e) => {
       if (resolved) return; // headers already arrived; chunk-side error wins

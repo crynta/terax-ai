@@ -47,9 +47,11 @@ describe("checkReadable — secret basenames", () => {
     expect(checkReadable("/home/me/Documents/id_rsa_old")).toMatchObject({
       ok: false,
     });
-    expect(checkReadable("/home/me/Documents/id_ed25519-backup")).toMatchObject({
-      ok: false,
-    });
+    expect(checkReadable("/home/me/Documents/id_ed25519-backup")).toMatchObject(
+      {
+        ok: false,
+      },
+    );
     expect(checkReadable("/home/me/Documents/id_rsa.pub")).toMatchObject({
       ok: false,
     });

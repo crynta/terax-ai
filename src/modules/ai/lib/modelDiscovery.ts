@@ -91,9 +91,10 @@ export function parseDiscoveredModels(payload: unknown): DiscoveredModel[] {
     byId.set(id, model);
   }
 
-  return [...byId.values()].sort((a, b) =>
-    a.id.localeCompare(b.id, undefined, { sensitivity: "base" }) ||
-    a.id.localeCompare(b.id),
+  return [...byId.values()].sort(
+    (a, b) =>
+      a.id.localeCompare(b.id, undefined, { sensitivity: "base" }) ||
+      a.id.localeCompare(b.id),
   );
 }
 

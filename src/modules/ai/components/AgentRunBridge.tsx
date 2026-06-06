@@ -1,15 +1,15 @@
-import { useChat, type UIMessage } from "@ai-sdk/react";
+import { type UIMessage, useChat } from "@ai-sdk/react";
 import type { ToolUIPart, UIMessagePart } from "ai";
 import { useEffect, useMemo, useRef } from "react";
 import { native } from "../lib/native";
 import { checkReadable } from "../lib/security";
-import { resolvePath } from "../tools/tools";
 import {
+  type AgentRunStatus,
   flushPersist,
   getOrCreateChat,
   useChatStore,
-  type AgentRunStatus,
 } from "../store/chatStore";
+import { resolvePath } from "../tools/tools";
 
 /**
  * Headless bridge that mirrors chat lifecycle into the store, so the status
@@ -54,11 +54,15 @@ type ToolPartLike = ToolUIPart & {
 
 type AnyPart = UIMessagePart<Record<string, never>, Record<string, never>>;
 
-function Bridge({
-  sessionId,
-  openAiDiffTab,
-  closeAiDiffTab,
-}: BridgeProps) {
+function isActiveRunStatus(status: AgentRunStatus): boolean {
+  return (
+    status === "thinking" ||
+    status === "streaming" ||
+    status === "awaiting-approval"
+  );
+}
+
+function Bridge({ sessionId, openAiDiffTab, closeAiDiffTab }: BridgeProps) {
   const chat = useMemo(() => getOrCreateChat(sessionId), [sessionId]);
   const { status, messages, addToolApprovalResponse } = useChat<UIMessage>({
     chat,
@@ -66,6 +70,7 @@ function Bridge({
   const patch = useChatStore((s) => s.patchAgentMeta);
   const openMini = useChatStore((s) => s.openMini);
   const persistMessages = useChatStore((s) => s.persistMessages);
+  const recordAgentRun = useChatStore((s) => s.recordAgentRun);
   const setApprovalResponder = useChatStore((s) => s.setApprovalResponder);
 
   // Expose the approval responder so the diff tab can resolve approvals.
@@ -92,6 +97,11 @@ function Bridge({
     return () => flushPersist(sessionId);
   }, [sessionId]);
 
+  const previousRunStatusRef = useRef<AgentRunStatus>("idle");
+  useEffect(() => {
+    previousRunStatusRef.current = "idle";
+  }, [sessionId]);
+
   const approvalsPending = useMemo(() => {
     let n = 0;
     for (const m of messages) {
@@ -110,15 +120,51 @@ function Bridge({
     else if (status === "streaming") runStatus = "streaming";
     else if (status === "error") runStatus = "error";
     else runStatus = "idle";
+
+    const previousRunStatus = previousRunStatusRef.current;
+    previousRunStatusRef.current = runStatus;
+    const wasActive = isActiveRunStatus(previousRunStatus);
+    const isActive = isActiveRunStatus(runStatus);
+    const now = Date.now();
+    const currentMeta = useChatStore.getState().agentMeta;
+    const currentStopReason = currentMeta.stopReason;
+    const stopReason =
+      runStatus === "error"
+        ? "error"
+        : currentStopReason === "cancelled" || currentStopReason === "paused"
+          ? currentStopReason
+          : "completed";
+
+    if (!isActive && wasActive) {
+      recordAgentRun({
+        sessionId,
+        startedAt: currentMeta.runStartedAt ?? now,
+        endedAt: now,
+        stopReason,
+        step: currentMeta.step,
+        error: currentMeta.error,
+      });
+    }
+
     patch({
       status: runStatus,
       approvalsPending,
-      ...(runStatus === "idle" || runStatus === "error"
-        ? { step: null }
+      ...(isActive && !wasActive
+        ? { runStartedAt: now, runEndedAt: null, stopReason: null }
         : {}),
+      ...(!isActive && wasActive
+        ? {
+            runEndedAt: now,
+            stopReason,
+          }
+        : {}),
+      ...(runStatus === "error" && !wasActive
+        ? { runEndedAt: now, stopReason: "error" as const }
+        : {}),
+      ...(runStatus === "idle" || runStatus === "error" ? { step: null } : {}),
       ...(runStatus === "idle" ? { error: null } : {}),
     });
-  }, [status, approvalsPending, patch]);
+  }, [status, approvalsPending, patch, recordAgentRun, sessionId]);
 
   useEffect(() => {
     if (approvalsPending > 0) openMini();
@@ -149,8 +195,7 @@ function Bridge({
           t === "tool-multi_edit"
         ) {
           const state = (p as { state?: string }).state ?? "";
-          const id =
-            (p as { approval?: { id?: string } }).approval?.id ?? "";
+          const id = (p as { approval?: { id?: string } }).approval?.id ?? "";
           fp += `${id}:${state}|`;
         }
       }

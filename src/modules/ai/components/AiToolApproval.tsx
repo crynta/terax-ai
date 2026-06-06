@@ -1,18 +1,16 @@
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import {
-  Cancel01Icon,
-  Edit02Icon,
-  FileEditIcon,
-  FilePlusIcon,
-  FolderAddIcon,
-  TerminalIcon,
-  Tick02Icon,
-  ToolsIcon,
-} from "@hugeicons/core-free-icons";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import Edit02Icon from "@hugeicons/core-free-icons/Edit02Icon";
+import FileEditIcon from "@hugeicons/core-free-icons/FileEditIcon";
+import FilePlusIcon from "@hugeicons/core-free-icons/FilePlusIcon";
+import FolderAddIcon from "@hugeicons/core-free-icons/FolderAddIcon";
+import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
+import ToolsIcon from "@hugeicons/core-free-icons/ToolsIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ToolUIPart } from "ai";
 import { memo } from "react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type Props = {
   part: Extract<ToolUIPart, { state: "approval-requested" }>;
@@ -46,9 +44,7 @@ function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
           strokeWidth={1.75}
           className="shrink-0 text-muted-foreground"
         />
-        <span className="text-[12px] font-medium text-foreground">
-          {label}
-        </span>
+        <span className="text-[12px] font-medium text-foreground">{label}</span>
         <span className="ml-auto text-[10px] text-muted-foreground">
           needs approval
         </span>
@@ -180,4 +176,3 @@ function PreviewBlock({
     </pre>
   );
 }
-

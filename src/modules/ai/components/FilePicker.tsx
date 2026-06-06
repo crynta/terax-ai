@@ -1,8 +1,8 @@
+import { useEffect, useRef } from "react";
 import { PopoverContent } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
-import { useEffect, useRef } from "react";
 
 type Props = {
   files: readonly string[];

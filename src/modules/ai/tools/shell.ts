@@ -1,9 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { currentWorkspaceEnv, workspaceScopeKey } from "@/modules/workspace";
 import { native } from "../lib/native";
 import { checkShellCommand } from "../lib/security";
 import type { ToolContext } from "./context";
-import { currentWorkspaceEnv, workspaceScopeKey } from "@/modules/workspace";
 
 /**
  * Per-session lazy shell-session id. The agent gets one persistent shell per

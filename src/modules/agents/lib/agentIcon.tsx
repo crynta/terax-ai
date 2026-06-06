@@ -1,12 +1,10 @@
-import {
-  AiGenerativeIcon,
-  AiMagicIcon,
-  ChatGptIcon,
-  ClaudeIcon,
-  CursorMagicSelection02Icon,
-  OpenSourceIcon,
-  RoboticIcon,
-} from "@hugeicons/core-free-icons";
+import AiGenerativeIcon from "@hugeicons/core-free-icons/AiGenerativeIcon";
+import AiMagicIcon from "@hugeicons/core-free-icons/AiMagicIcon";
+import ChatGptIcon from "@hugeicons/core-free-icons/ChatGptIcon";
+import ClaudeIcon from "@hugeicons/core-free-icons/ClaudeIcon";
+import CursorMagicSelection02Icon from "@hugeicons/core-free-icons/CursorMagicSelection02Icon";
+import OpenSourceIcon from "@hugeicons/core-free-icons/OpenSourceIcon";
+import RoboticIcon from "@hugeicons/core-free-icons/RoboticIcon";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 import { agentProviderByName } from "./providers";
 

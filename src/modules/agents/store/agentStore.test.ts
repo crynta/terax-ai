@@ -70,6 +70,42 @@ describe("agent notification store", () => {
     ]);
   });
 
+  it("can mark only one Pi notification category read", () => {
+    const store = useAgentStore.getState();
+    store.pushNotification({
+      agent: "Pi",
+      category: "code-run",
+      kind: "finished",
+      leafId: 0,
+      piSessionId: "code-1",
+      source: "pi",
+      tabId: 0,
+      title: "Code run ready",
+    });
+    store.pushNotification({
+      agent: "Pi",
+      category: "artifact",
+      kind: "finished",
+      leafId: 0,
+      piSessionId: "chat-1",
+      source: "pi",
+      tabId: 0,
+      title: "Artifact ready",
+    });
+
+    useAgentStore.getState().markPiNotificationsRead("code-run");
+
+    expect(
+      useAgentStore.getState().notifications.map((notification) => ({
+        category: notification.category,
+        read: notification.read,
+      })),
+    ).toEqual([
+      { category: "artifact", read: false },
+      { category: "code-run", read: true },
+    ]);
+  });
+
   it("removes one history notification without touching live sessions", () => {
     const store = useAgentStore.getState();
     store.start(7, 3, "Claude Code");

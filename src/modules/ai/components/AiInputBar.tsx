@@ -1,26 +1,24 @@
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import CodeIcon from "@hugeicons/core-free-icons/CodeIcon";
+import HashtagIcon from "@hugeicons/core-free-icons/HashtagIcon";
+import Key01Icon from "@hugeicons/core-free-icons/Key01Icon";
+import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import {
-  Cancel01Icon,
-  CodeIcon,
-  HashtagIcon,
-  Key01Icon,
-  TerminalIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
 import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
-import { useComposer, type FileAttachment } from "../lib/composer";
+import { type FileAttachment, useComposer } from "../lib/composer";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
 import type { Snippet } from "../lib/snippets";
 import { useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { FilePickerContent } from "./FilePicker";
-import { SnippetPickerContent, type PickerItem } from "./SnippetPicker";
+import { type PickerItem, SnippetPickerContent } from "./SnippetPicker";
 
 type SnippetTrigger = {
   start: number;

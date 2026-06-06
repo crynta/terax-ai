@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { discoverModels, type ModelDiscoveryRequest } from "./modelDiscoveryClient";
+import {
+  discoverModels,
+  type ModelDiscoveryRequest,
+} from "./modelDiscoveryClient";
 
 function jsonBody(value: unknown): number[] {
   return Array.from(new TextEncoder().encode(JSON.stringify(value)));

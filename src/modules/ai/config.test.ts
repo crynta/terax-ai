@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type CustomEndpoint,
   compatModelIdForEndpoint,
   endpointIdFromCompatModel,
   getModelContextLimit,
@@ -7,7 +8,6 @@ import {
   migrateLegacyCompatEndpoint,
   modelKeepsReasoning,
   resolveModel,
-  type CustomEndpoint,
 } from "./config";
 
 const endpoint: CustomEndpoint = {
@@ -67,7 +67,9 @@ describe("getModelContextLimit", () => {
 
 describe("modelKeepsReasoning", () => {
   it("keeps reasoning for compat endpoints (freeform provider)", () => {
-    const info = resolveModel(compatModelIdForEndpoint(endpoint.id), [endpoint]);
+    const info = resolveModel(compatModelIdForEndpoint(endpoint.id), [
+      endpoint,
+    ]);
     expect(modelKeepsReasoning(info)).toBe(true);
   });
 

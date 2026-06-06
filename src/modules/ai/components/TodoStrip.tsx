@@ -1,3 +1,7 @@
+import CheckmarkSquare02Icon from "@hugeicons/core-free-icons/CheckmarkSquare02Icon";
+import SquareIcon from "@hugeicons/core-free-icons/SquareIcon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useMemo } from "react";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
@@ -8,9 +12,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { CheckmarkSquare02Icon, SquareIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect } from "react";
 import type { Todo } from "../lib/todos";
 import { useTodosStore } from "../store/todoStore";
 
@@ -28,10 +29,16 @@ export function TodoStrip({ sessionId }: Props) {
     if (sessionId) void hydrate(sessionId);
   }, [sessionId, hydrate]);
 
-  if (!sessionId || todos.length === 0) return null;
+  const completed = useMemo(() => {
+    let count = 0;
+    for (const todo of todos) {
+      if (todo.status === "completed") count += 1;
+    }
+    return count;
+  }, [todos]);
+  const pct = todos.length === 0 ? 0 : Math.round((completed / todos.length) * 100);
 
-  const completed = todos.filter((t) => t.status === "completed").length;
-  const pct = Math.round((completed / todos.length) * 100);
+  if (!sessionId || todos.length === 0) return null;
 
   return (
     <div className="flex flex-col min-h-0 shrink-0 border-t-2 border-border/40 bg-muted/80 px-3 py-1.5 max-h-[35%] shadow-[0_-4px_12px_-8px_rgba(0,0,0,0.2)]">

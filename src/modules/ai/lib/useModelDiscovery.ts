@@ -12,7 +12,9 @@ import {
 } from "./modelDiscoveryClient";
 
 const DISCOVERY_CACHE_TTL_MS = 60_000;
-const discoveryCache = createModelDiscoveryCache({ ttlMs: DISCOVERY_CACHE_TTL_MS });
+const discoveryCache = createModelDiscoveryCache({
+  ttlMs: DISCOVERY_CACHE_TTL_MS,
+});
 
 export type ModelDiscoveryStatus =
   | "idle"
