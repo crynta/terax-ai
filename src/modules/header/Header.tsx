@@ -24,6 +24,7 @@ import {
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   SearchInline,
@@ -83,6 +84,7 @@ export function Header({
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
 
   const tokensFor = (id: ShortcutId): string => {
@@ -107,6 +109,33 @@ export function Header({
     return () => ro.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!IS_MAC) return;
+    const w = getCurrentWindow();
+    let alive = true;
+    let unlisten: (() => void) | undefined;
+
+    void w.isFullscreen().then((v) => {
+      if (alive) setFullscreen(v);
+    });
+
+    void w
+      .onResized(() => {
+        void w.isFullscreen().then((v) => {
+          if (alive) setFullscreen(v);
+        });
+      })
+      .then((u) => {
+        if (alive) unlisten = u;
+        else u();
+      });
+
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, []);
+
   const settingsButton = (
     <Button
       variant="ghost"
@@ -124,7 +153,7 @@ export function Header({
       ref={rootRef}
       data-tauri-drag-region
       className={`flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card select-none ${
-        IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
+        IS_MAC ? (fullscreen ? "pr-2 pl-2" : "pr-2 pl-20") : "pr-0 pl-2"
       }`}
     >
       <div className="flex shrink-0 items-center gap-0.5">
