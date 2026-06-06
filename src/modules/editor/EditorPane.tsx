@@ -1,4 +1,5 @@
-import { getKey } from "@/modules/ai/lib/keyring";
+import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
+import { endpointIdFromCompatModel } from "@/modules/ai/config";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
 import { redo, undo } from "@codemirror/commands";
@@ -81,13 +82,17 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     useEffect(() => {
       let cancelled = false;
       const refresh = async () => {
-        const provider = usePreferencesStore.getState().autocompleteProvider;
-        if (
-          provider === "lmstudio" ||
-          provider === "mlx" ||
-          provider === "ollama"
-        ) {
+        const s = usePreferencesStore.getState();
+        const provider = s.autocompleteProvider;
+        if (provider === "lmstudio" || provider === "mlx" || provider === "ollama") {
           apiKeyRef.current = null;
+          return;
+        }
+        // OpenAI-compatible keys live in a per-endpoint keyring slot.
+        if (provider === "openai-compatible") {
+          const eid = endpointIdFromCompatModel(s.autocompleteModelId);
+          const k = eid ? await getCustomEndpointKey(eid) : null;
+          if (!cancelled) apiKeyRef.current = k;
           return;
         }
         const k = await getKey(provider);
@@ -99,7 +104,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         unlistenKeys = un;
       });
       const unsubPrefs = usePreferencesStore.subscribe((state, prev) => {
-        if (state.autocompleteProvider !== prev.autocompleteProvider) {
+        if (
+          state.autocompleteProvider !== prev.autocompleteProvider ||
+          state.autocompleteModelId !== prev.autocompleteModelId
+        ) {
           void refresh();
         }
       });
@@ -169,6 +177,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           getPrefs: () => {
             const s = usePreferencesStore.getState();
             const p = s.autocompleteProvider;
+            // autocompleteModelId holds the compat- id of the chosen endpoint.
+            const compatEp =
+              p === "openai-compatible"
+                ? s.customEndpoints.find(
+                    (e) =>
+                      e.id === endpointIdFromCompatModel(s.autocompleteModelId),
+                  )
+                : undefined;
             const modelId =
               p === "lmstudio"
                 ? s.lmstudioModelId
@@ -177,7 +193,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
                   : p === "ollama"
                     ? s.ollamaModelId
                     : p === "openai-compatible"
-                      ? s.openaiCompatibleModelId
+                      ? (compatEp?.modelId ?? "")
                       : p === "openrouter"
                         ? s.openrouterModelId
                         : s.autocompleteModelId;
@@ -189,7 +205,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               lmstudioBaseURL: s.lmstudioBaseURL,
               mlxBaseURL: s.mlxBaseURL,
               ollamaBaseURL: s.ollamaBaseURL,
-              openaiCompatibleBaseURL: s.openaiCompatibleBaseURL,
+              openaiCompatibleBaseURL:
+                compatEp?.baseURL ?? s.openaiCompatibleBaseURL,
             };
           },
           getPath: () => pathRef.current,
