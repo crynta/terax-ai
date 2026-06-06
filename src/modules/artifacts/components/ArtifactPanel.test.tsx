@@ -1,5 +1,10 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArtifactPanel } from "@/modules/artifacts/components/ArtifactPanel";
 import type {
   Artifact,
@@ -39,7 +44,32 @@ const versions: ArtifactVersionSummary[] = [
   },
 ];
 
+function findButton(container: HTMLElement, label: string): HTMLButtonElement {
+  const button = Array.from(container.querySelectorAll("button")).find(
+    (candidate) => candidate.textContent?.includes(label),
+  );
+  if (!button) throw new Error(`Button not found: ${label}`);
+  return button;
+}
+
 describe("ArtifactPanel", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (
+      globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    document.body.innerHTML = "";
+  });
   it("renders a helpful empty state", () => {
     const html = renderToStaticMarkup(
       <ArtifactPanel artifacts={[]} selectedArtifact={null} />,
@@ -71,6 +101,50 @@ describe("ArtifactPanel", () => {
     );
 
     expect(html).toContain("Export");
+  });
+
+  it("shows an explicit source edit flow for selected artifacts", async () => {
+    const onSaveArtifact = vi.fn(async () => {});
+
+    await act(async () => {
+      root.render(
+        <ArtifactPanel
+          artifacts={[summary]}
+          selectedArtifact={artifact}
+          onSaveArtifact={onSaveArtifact}
+        />,
+      );
+    });
+
+    expect(findButton(container, "Edit")).toBeTruthy();
+
+    await act(async () => {
+      findButton(container, "Edit").click();
+    });
+
+    expect(container.textContent).toContain("Editing latest version");
+    expect(
+      container.querySelector("textarea")?.getAttribute("aria-label"),
+    ).toBe("Artifact source");
+
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(textarea, "<h1>Updated Hero</h1>");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(findButton(container, "Save changes").disabled).toBe(false);
+    await act(async () => {
+      findButton(container, "Save changes").click();
+    });
+
+    expect(onSaveArtifact).toHaveBeenCalledWith(
+      artifact,
+      "<h1>Updated Hero</h1>",
+    );
   });
 
   it("renders version controls for the selected artifact", () => {

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +33,10 @@ type ArtifactPanelProps = {
   onClose?: () => void;
   onSelectVersion?: (version: number) => void;
   onExportArtifact?: (artifact: Artifact) => void;
+  onSaveArtifact?: (
+    artifact: Artifact,
+    content: string,
+  ) => Promise<void> | void;
 };
 
 export function ArtifactPanel({
@@ -45,6 +50,7 @@ export function ArtifactPanel({
   onClose,
   onSelectVersion,
   onExportArtifact,
+  onSaveArtifact,
 }: ArtifactPanelProps) {
   if (artifacts.length === 0) {
     return (
@@ -119,6 +125,7 @@ export function ArtifactPanel({
             versionsLoading={versionsLoading}
             onSelectVersion={onSelectVersion}
             onExportArtifact={onExportArtifact}
+            onSaveArtifact={onSaveArtifact}
           />
         ) : (
           <Empty className="m-3 border">
@@ -174,6 +181,10 @@ type ArtifactDetailProps = {
   versionsLoading: boolean;
   onSelectVersion?: (version: number) => void;
   onExportArtifact?: (artifact: Artifact) => void;
+  onSaveArtifact?: (
+    artifact: Artifact,
+    content: string,
+  ) => Promise<void> | void;
 };
 
 function ArtifactDetail({
@@ -183,9 +194,43 @@ function ArtifactDetail({
   versionsLoading,
   onSelectVersion,
   onExportArtifact,
+  onSaveArtifact,
 }: ArtifactDetailProps) {
   const canPreview = isPreviewableArtifactKind(artifact.summary.kind);
   const defaultTab = canPreview ? "preview" : "code";
+  const latestVersion = versions.reduce(
+    (latest, version) => Math.max(latest, version.version),
+    artifact.summary.version,
+  );
+  const viewingVersion = selectedVersion ?? artifact.summary.version;
+  const canEdit = Boolean(onSaveArtifact) && viewingVersion === latestVersion;
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState(artifact.content);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setIsEditing(false);
+    setDraftContent(artifact.content);
+    setSaving(false);
+  }, [artifact.content, artifact.summary.slug, artifact.summary.version]);
+
+  async function saveDraft() {
+    if (
+      !onSaveArtifact ||
+      !canEdit ||
+      saving ||
+      draftContent === artifact.content
+    ) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSaveArtifact(artifact, draftContent);
+      setIsEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-col">
@@ -200,15 +245,28 @@ function ArtifactDetail({
             <span>{formatBytes(artifact.summary.contentBytes)}</span>
           </div>
         </div>
-        {onExportArtifact ? (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => onExportArtifact(artifact)}
-          >
-            Export
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {onSaveArtifact ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!canEdit || isEditing}
+              title={canEdit ? undefined : "Select the latest version to edit"}
+              onClick={() => setIsEditing(true)}
+            >
+              Edit
+            </Button>
+          ) : null}
+          {onExportArtifact ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onExportArtifact(artifact)}
+            >
+              Export
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <ArtifactVersionControls
@@ -219,31 +277,71 @@ function ArtifactDetail({
         onSelectVersion={onSelectVersion}
       />
 
-      <Tabs defaultValue={defaultTab} className="min-h-0 flex-1 gap-0">
-        <div className="border-b px-3 py-2">
-          <TabsList>
-            <TabsTrigger disabled={!canPreview} value="preview">
-              Preview
-            </TabsTrigger>
-            <TabsTrigger value="code">Code</TabsTrigger>
-          </TabsList>
+      {isEditing ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center justify-between gap-3 border-b bg-muted/20 px-3 py-2">
+            <div className="min-w-0">
+              <div className="text-xs font-medium">Editing latest version</div>
+              <div className="text-muted-foreground text-[11px]">
+                Save creates a new artifact version.
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={saving}
+                onClick={() => {
+                  setDraftContent(artifact.content);
+                  setIsEditing(false);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={saving || draftContent === artifact.content}
+                onClick={() => void saveDraft()}
+              >
+                {saving ? "Saving…" : "Save changes"}
+              </Button>
+            </div>
+          </div>
+          <textarea
+            aria-label="Artifact source"
+            className="min-h-[360px] flex-1 resize-none border-0 bg-background p-4 font-mono text-xs leading-relaxed outline-none ring-0 focus-visible:ring-2 focus-visible:ring-ring"
+            spellCheck={false}
+            value={draftContent}
+            onChange={(event) => setDraftContent(event.currentTarget.value)}
+          />
         </div>
-        <TabsContent className="min-h-0" value="preview">
-          {canPreview ? (
-            <ArtifactPreviewFrame
-              artifact={artifact}
-              className="h-full min-h-[360px] w-full border-0 bg-background"
-            />
-          ) : null}
-        </TabsContent>
-        <TabsContent className="min-h-0" value="code">
-          <ScrollArea className="h-full min-h-[360px]">
-            <pre className="m-0 whitespace-pre-wrap break-words p-4 font-mono text-xs leading-relaxed">
-              {artifact.content}
-            </pre>
-          </ScrollArea>
-        </TabsContent>
-      </Tabs>
+      ) : (
+        <Tabs defaultValue={defaultTab} className="min-h-0 flex-1 gap-0">
+          <div className="border-b px-3 py-2">
+            <TabsList>
+              <TabsTrigger disabled={!canPreview} value="preview">
+                Preview
+              </TabsTrigger>
+              <TabsTrigger value="code">Code</TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent className="min-h-0" value="preview">
+            {canPreview ? (
+              <ArtifactPreviewFrame
+                artifact={artifact}
+                className="h-full min-h-[360px] w-full border-0 bg-background"
+              />
+            ) : null}
+          </TabsContent>
+          <TabsContent className="min-h-0" value="code">
+            <ScrollArea className="h-full min-h-[360px]">
+              <pre className="m-0 whitespace-pre-wrap break-words p-4 font-mono text-xs leading-relaxed">
+                {artifact.content}
+              </pre>
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
+      )}
     </div>
   );
 }

@@ -32,6 +32,10 @@ type ArtifactWorkspacePanelViewProps = {
   onSelectArtifact?: (slug: string) => void;
   onSelectVersion?: (version: number) => void;
   onExportArtifact?: (artifact: Artifact) => void;
+  onSaveArtifact?: (
+    artifact: Artifact,
+    content: string,
+  ) => Promise<void> | void;
 };
 
 export function ArtifactWorkspacePanel({
@@ -47,7 +51,11 @@ export function ArtifactWorkspacePanel({
   const [versions, setVersions] = useState<ArtifactVersionSummary[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
+  const [versionRefreshKey, setVersionRefreshKey] = useState(0);
   const effectiveSlug = selectedSlug ?? artifacts[0]?.slug ?? null;
+  const selectedSummaryVersion =
+    artifacts.find((artifact) => artifact.slug === effectiveSlug)?.version ??
+    null;
 
   useEffect(() => {
     if (!selectedSlug && effectiveSlug) onSelectedSlugChange?.(effectiveSlug);
@@ -79,7 +87,12 @@ export function ArtifactWorkspacePanel({
     return () => {
       cancelled = true;
     };
-  }, [conversationId, effectiveSlug]);
+  }, [
+    conversationId,
+    effectiveSlug,
+    selectedSummaryVersion,
+    versionRefreshKey,
+  ]);
 
   useEffect(() => {
     if (!effectiveSlug) {
@@ -98,7 +111,7 @@ export function ArtifactWorkspacePanel({
     return () => {
       cancelled = true;
     };
-  }, [conversationId, effectiveSlug, selectedVersion]);
+  }, [conversationId, effectiveSlug, selectedSummaryVersion, selectedVersion]);
 
   const selectArtifact = useCallback(
     (slug: string) => {
@@ -106,6 +119,31 @@ export function ArtifactWorkspacePanel({
       onSelectedSlugChange?.(slug);
     },
     [onSelectedSlugChange],
+  );
+
+  const saveArtifact = useCallback(
+    async (artifact: Artifact, content: string) => {
+      try {
+        const updated = await artifactsNative.update(
+          artifact.summary.conversationId,
+          artifact.summary.slug,
+          content,
+          artifact.summary.version,
+        );
+        setSelectedVersion(null);
+        setSelectedArtifact(updated);
+        setVersionRefreshKey((key) => key + 1);
+        toast.success(`Saved ${artifact.summary.title}`, {
+          description: `Created version ${updated.summary.version}`,
+        });
+      } catch (error) {
+        toast.error("Artifact save failed", {
+          description: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
+    [],
   );
 
   const exportArtifact = useCallback(async (artifact: Artifact) => {
@@ -141,6 +179,7 @@ export function ArtifactWorkspacePanel({
       versions={versions}
       versionsLoading={versionsLoading}
       onExportArtifact={exportArtifact}
+      onSaveArtifact={saveArtifact}
       onSelectArtifact={selectArtifact}
       onSelectVersion={setSelectedVersion}
     />
@@ -157,6 +196,7 @@ export function ArtifactWorkspacePanelView({
   onSelectArtifact,
   onSelectVersion,
   onExportArtifact,
+  onSaveArtifact,
 }: ArtifactWorkspacePanelViewProps) {
   return (
     <div
@@ -172,6 +212,7 @@ export function ArtifactWorkspacePanelView({
         versions={versions}
         versionsLoading={versionsLoading}
         onExportArtifact={onExportArtifact}
+        onSaveArtifact={onSaveArtifact}
         onSelectArtifact={onSelectArtifact}
         onSelectVersion={onSelectVersion}
       />

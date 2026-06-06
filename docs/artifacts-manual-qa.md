@@ -33,10 +33,14 @@ Ask Pi to create these artifacts in the active Chat session:
    - Expected: runtime error appears above the preview.
    - Expected: the preview remains sandboxed without same-origin privileges.
 
-## Versions
+## Edit and Versions
 
-1. Edit an artifact through Pi or save a modified artifact version.
-2. Open the Versions controls.
+1. Open the main workspace artifact tab on the latest version.
+2. Click the visible **Edit** button in the artifact header.
+   - Expected: an `Artifact source` editor appears with **Cancel** and **Save changes** actions.
+3. Change the source and click **Save changes**.
+   - Expected: preview/source update and a new artifact version is created.
+4. Open the Versions controls.
    - Expected: historical versions are listed as `v1`, `v2`, etc.
    - Expected: selecting an older version updates Preview and Code.
    - Expected: latest/current version labeling remains accurate.
