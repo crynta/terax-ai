@@ -1,8 +1,6 @@
-import {
-  Cancel01Icon,
-  CodeIcon,
-  FullscreenIcon,
-} from "@hugeicons/core-free-icons";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import CodeIcon from "@hugeicons/core-free-icons/CodeIcon";
+import FullscreenIcon from "@hugeicons/core-free-icons/FullscreenIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { motion } from "motion/react";
 import { type ReactNode, useEffect } from "react";

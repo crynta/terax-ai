@@ -54,7 +54,9 @@ describe("PiLocalAgentsCard", () => {
     expect(html).toContain("No bash, edit, or write tools");
     expect(html).toContain("read-only");
     expect(html).toContain("terminal sandbox restrictions");
-    expect(html).toContain("Local Windows launch stays disabled until env isolation is native");
+    expect(html).toContain(
+      "Local Windows launch stays disabled until env isolation is native",
+    );
   });
 
   it("hides prompt handoff when the composer has no prompt", () => {

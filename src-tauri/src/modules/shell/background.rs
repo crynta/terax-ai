@@ -9,6 +9,7 @@ use serde::Serialize;
 use shared_child::SharedChild;
 
 use super::ringbuffer::BoundedRingBuffer;
+use crate::modules::sync;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const RING_CAP: usize = 4 * 1024 * 1024;
@@ -44,21 +45,22 @@ pub struct BackgroundProcInfo {
 }
 
 impl BackgroundProc {
-    pub fn read_logs(&self, since: u64) -> BackgroundLogResponse {
-        let (bytes, next_offset, dropped) = self.buffer.lock().unwrap().read_from(since);
+    pub fn read_logs(&self, since: u64) -> Result<BackgroundLogResponse, String> {
+        let (bytes, next_offset, dropped) =
+            sync::mutex(&self.buffer, "background log buffer")?.read_from(since);
         let exited = self.exited.load(Ordering::Acquire);
         let exit_code = if exited && !self.exit_unknown.load(Ordering::Acquire) {
             Some(self.exit_code.load(Ordering::Acquire))
         } else {
             None
         };
-        BackgroundLogResponse {
+        Ok(BackgroundLogResponse {
             bytes: String::from_utf8_lossy(&bytes).into_owned(),
             next_offset,
             dropped,
             exited,
             exit_code,
-        }
+        })
     }
 
     pub fn kill(&self) {
@@ -151,7 +153,13 @@ pub fn spawn(
             loop {
                 match pipe.read(&mut buf) {
                     Ok(0) => break,
-                    Ok(n) => proc_ref.buffer.lock().unwrap().push(&buf[..n]),
+                    Ok(n) => match proc_ref.buffer.lock() {
+                        Ok(mut buffer) => buffer.push(&buf[..n]),
+                        Err(error) => {
+                            log::error!("background stdout buffer lock failed: {error}");
+                            break;
+                        }
+                    },
                     Err(_) => break,
                 }
             }
@@ -165,7 +173,13 @@ pub fn spawn(
             loop {
                 match pipe.read(&mut buf) {
                     Ok(0) => break,
-                    Ok(n) => proc_ref.buffer.lock().unwrap().push(&buf[..n]),
+                    Ok(n) => match proc_ref.buffer.lock() {
+                        Ok(mut buffer) => buffer.push(&buf[..n]),
+                        Err(error) => {
+                            log::error!("background stderr buffer lock failed: {error}");
+                            break;
+                        }
+                    },
                     Err(_) => break,
                 }
             }

@@ -10,28 +10,49 @@ import {
 } from "react";
 import type { PiProviderKeyStatus } from "@/modules/pi/lib/diagnostics";
 import type { PiLocalAgentStatus } from "@/modules/pi/lib/local-agents";
+import type {
+  McpEnvSecretStatus,
+  McpServerStatus,
+  McpStoredServerConfig,
+  McpToolDescriptor,
+} from "@/modules/pi/lib/native";
 import type { PiThinkingLevel } from "@/modules/pi/lib/provider";
 import type {
   PiSession,
   PiSessionBranch,
   PiSessionEvent,
 } from "@/modules/pi/lib/sessions";
-import type { PiDiagnostics, PiRuntimeState } from "@/modules/pi/lib/status";
+import type { CapabilityAuditFilter } from "@/modules/pi/components/PiCapabilityAuditCard";
+import type {
+  CapabilityAuditEntry,
+  PiDiagnostics,
+  PiRuntimeState,
+} from "@/modules/pi/lib/status";
 
 export type PiPanelSectionId =
   | "diagnostics"
   | "sessions"
   | "context"
-  | "localAgents";
+  | "localAgents"
+  | "capabilityAudit"
+  | "mcp";
 export type PiPanelSectionCollapseState = Record<PiPanelSectionId, boolean>;
 
 export type PiControllerState = {
   collapsedSections: PiPanelSectionCollapseState;
+  appAuditEntries: CapabilityAuditEntry[];
+  capabilityAuditExpandedKeys: string[];
+  capabilityAuditFilter: CapabilityAuditFilter;
   diagnostics: PiDiagnostics | null;
   diagnosticsError: string | null;
   historyError: string | null;
   keyRefreshToken: number;
   localAgents: PiLocalAgentStatus[];
+  mcpConfigs: McpStoredServerConfig[];
+  mcpEnvSecretStatuses: McpEnvSecretStatus[];
+  mcpError: string | null;
+  mcpStatuses: McpServerStatus[];
+  mcpTools: McpToolDescriptor[];
   prompt: string;
   providerKeyStatus: PiProviderKeyStatus | undefined;
   runtimeState: PiRuntimeState;
@@ -40,6 +61,7 @@ export type PiControllerState = {
   sessions: PiSession[];
   supportingSectionsHidden: boolean;
   thinkingLevelOverride: PiThinkingLevel | null;
+  workflowAuditEntries: CapabilityAuditEntry[];
 };
 
 type RetainedState = Partial<PiControllerState>;
@@ -133,16 +155,19 @@ export function usePiControllerState<K extends keyof PiControllerState>(
   const [value, setValue] = useState<PiControllerState[K]>(() =>
     store.get(key, initialValue),
   );
+  const valueRef = useRef(value);
 
   const setControllerValue = useCallback(
     (next: SetStateAction<PiControllerState[K]>) => {
-      const nextValue = store.set(key, next, value);
+      const nextValue = store.set(key, next, valueRef.current);
+      valueRef.current = nextValue;
       setValue(nextValue);
     },
-    [key, store, value],
+    [key, store],
   );
 
   useEffect(() => {
+    valueRef.current = value;
     store.set(key, value, initialValue);
   }, [initialValue, key, store, value]);
 

@@ -1,4 +1,4 @@
-import { AiChat02Icon } from "@hugeicons/core-free-icons";
+import AiChat02Icon from "@hugeicons/core-free-icons/AiChat02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";

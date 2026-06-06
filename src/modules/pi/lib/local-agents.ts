@@ -24,6 +24,7 @@ export type PiLocalAgentDef = {
   requiresPosixShell?: boolean;
   launchUnavailableReason: string | null;
   guardrail: string;
+  hookCommand: string | null;
 };
 
 export type PiLocalAgentBinaryStatus = {
@@ -133,7 +134,9 @@ function buildLaunchEnvironmentPrefix(
   if (options.windowsShell) return null;
 
   return entries
-    .map(([key, value]) => `${key}=${shellQuote(value, { windowsShell: false })}`)
+    .map(
+      ([key, value]) => `${key}=${shellQuote(value, { windowsShell: false })}`,
+    )
     .join(" ");
 }
 
@@ -148,6 +151,7 @@ export const PI_LOCAL_AGENT_DEFS = [
     promptHandoff: "positional",
     launchUnavailableReason: null,
     guardrail: "Starts in plan mode. Edits still need CLI approval.",
+    hookCommand: "agent_enable_claude_hooks",
   },
   {
     id: "codex",
@@ -159,6 +163,7 @@ export const PI_LOCAL_AGENT_DEFS = [
     promptHandoff: "positional",
     launchUnavailableReason: null,
     guardrail: "Read-only sandbox. Command approval stays interactive.",
+    hookCommand: "agent_enable_codex_hooks",
   },
   {
     id: "cursor",
@@ -170,6 +175,7 @@ export const PI_LOCAL_AGENT_DEFS = [
     promptHandoff: "positional",
     launchUnavailableReason: null,
     guardrail: "Plan mode in a visible terminal, not hidden headless mode.",
+    hookCommand: null,
   },
   {
     id: "opencode",
@@ -184,17 +190,20 @@ export const PI_LOCAL_AGENT_DEFS = [
     launchUnavailableReason: null,
     guardrail:
       "Pure OpenCode launch with temp HOME/XDG config, preserved auth data, and Terax-owned read-only permissions. Local Windows launch stays disabled until env isolation is native.",
+    hookCommand: null,
   },
   {
     id: "pi",
     label: "Pi",
     binary: "pi",
-    docsUrl: "https://github.com/earendil-works/pi/tree/main/packages/coding-agent",
+    docsUrl:
+      "https://github.com/earendil-works/pi/tree/main/packages/coding-agent",
     defaultLaunchMode: "guarded",
     planCommand: "pi --tools read,grep,find,ls",
     promptHandoff: "positional",
     launchUnavailableReason: null,
     guardrail: "Read/search-only Pi launch. No bash, edit, or write tools.",
+    hookCommand: null,
   },
   {
     id: "gemini",
@@ -208,6 +217,7 @@ export const PI_LOCAL_AGENT_DEFS = [
     launchUnavailableReason: null,
     guardrail:
       "Gemini plan approval mode keeps the session read-only. Prompt handoff uses --prompt-interactive so the terminal stays live.",
+    hookCommand: "agent_enable_gemini_hooks",
   },
   {
     id: "antigravity",
@@ -221,8 +231,13 @@ export const PI_LOCAL_AGENT_DEFS = [
     launchUnavailableReason: null,
     guardrail:
       "Starts AGY with terminal sandbox restrictions in a visible terminal. Permissions stay interactive; no dangerous auto-approval flags.",
+    hookCommand: "agent_enable_antigravity_hooks",
   },
 ] as const satisfies readonly PiLocalAgentDef[];
+
+export function piLocalAgentHookCommand(agentId: PiLocalAgentId): string | null {
+  return PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === agentId)?.hookCommand ?? null;
+}
 
 export function buildPiLocalAgentLaunchCommand(
   agent: PiLocalAgentDef,

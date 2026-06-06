@@ -104,7 +104,9 @@ function optionalMaxTokens(raw) {
   const maxTokens = Math.round(value);
   const contextLimit = optionalContextLimit(raw);
   if (contextLimit !== undefined && maxTokens > contextLimit) {
-    throw protocolError("providerConfig.maxTokens must not exceed contextLimit");
+    throw protocolError(
+      "providerConfig.maxTokens must not exceed contextLimit",
+    );
   }
   return maxTokens;
 }

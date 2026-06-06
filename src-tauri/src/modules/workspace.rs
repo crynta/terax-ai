@@ -24,47 +24,58 @@ pub struct WorkspaceRegistry {
 impl WorkspaceRegistry {
     pub fn authorize<P: AsRef<Path>>(&self, path: P) -> std::io::Result<PathBuf> {
         let canonical = std::fs::canonicalize(path.as_ref())?;
-        let mut set = self.roots.lock().expect("workspace registry poisoned");
+        let mut set = self.roots.lock().map_err(|error| {
+            std::io::Error::other(format!("workspace registry lock failed: {error}"))
+        })?;
         set.insert(canonical.clone());
         Ok(canonical)
     }
 
     pub fn is_authorized(&self, target: &Path) -> bool {
-        let set = self.roots.lock().expect("workspace registry poisoned");
-        set.iter().any(|root| target.starts_with(root))
+        match self.roots.lock() {
+            Ok(set) => set.iter().any(|root| target.starts_with(root)),
+            Err(error) => {
+                log::error!("workspace registry lock failed: {error}");
+                false
+            }
+        }
     }
 
     pub fn canonicalize_cached<P: AsRef<Path>>(&self, path: P) -> std::io::Result<PathBuf> {
         let key = path.as_ref().to_path_buf();
-        {
-            let cache = self
-                .canonical_cache
-                .lock()
-                .expect("canonical cache poisoned");
-            if let Some(entry) = cache.get(&key) {
-                if entry.inserted_at.elapsed() < CANONICAL_TTL {
-                    return Ok(entry.canonical.clone());
+        match self.canonical_cache.lock() {
+            Ok(cache) => {
+                if let Some(entry) = cache.get(&key) {
+                    if entry.inserted_at.elapsed() < CANONICAL_TTL {
+                        return Ok(entry.canonical.clone());
+                    }
                 }
+            }
+            Err(error) => {
+                log::warn!("canonical cache lock failed: {error}");
             }
         }
         let canonical = std::fs::canonicalize(&key)?;
-        let mut cache = self
-            .canonical_cache
-            .lock()
-            .expect("canonical cache poisoned");
-        if cache.len() >= CANONICAL_CACHE_CAP {
-            cache.retain(|_, entry| entry.inserted_at.elapsed() < CANONICAL_TTL);
-            if cache.len() >= CANONICAL_CACHE_CAP {
-                cache.clear();
+        match self.canonical_cache.lock() {
+            Ok(mut cache) => {
+                if cache.len() >= CANONICAL_CACHE_CAP {
+                    cache.retain(|_, entry| entry.inserted_at.elapsed() < CANONICAL_TTL);
+                    if cache.len() >= CANONICAL_CACHE_CAP {
+                        cache.clear();
+                    }
+                }
+                cache.insert(
+                    key,
+                    CanonicalEntry {
+                        canonical: canonical.clone(),
+                        inserted_at: Instant::now(),
+                    },
+                );
+            }
+            Err(error) => {
+                log::warn!("canonical cache lock failed: {error}");
             }
         }
-        cache.insert(
-            key,
-            CanonicalEntry {
-                canonical: canonical.clone(),
-                inserted_at: Instant::now(),
-            },
-        );
         Ok(canonical)
     }
 }
@@ -756,7 +767,7 @@ mod auth_tests {
         let cli = tempdir("cli");
         let env = tempdir("env");
         let s = cli.to_string_lossy().into_owned();
-        let resolved = resolve_launch_cwd(Some(&s), Some(env.clone()));
+        let resolved = resolve_launch_cwd(Some(&s), Some(env));
         assert_eq!(resolved.as_deref(), Some(cli.as_path()));
     }
 

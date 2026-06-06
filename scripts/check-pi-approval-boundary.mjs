@@ -9,32 +9,76 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
   requiredText: [
     [
       "sidecars/pi-host/native-tools.js",
-      ["RUST_MEDIATED_TOOL_NAMES", "executeNativeTool", "createTeraxNativeToolDefinitions", "Terax Rust"],
+      [
+        "RUST_MEDIATED_TOOL_NAMES",
+        "executeNativeTool",
+        "createTeraxNativeToolDefinitions",
+        "Terax Rust",
+        "create_artifact",
+      ],
     ],
     [
       "sidecars/pi-host/dist/native-tools.js",
-      ["RUST_MEDIATED_TOOL_NAMES", "executeNativeTool", "createTeraxNativeToolDefinitions", "Terax Rust"],
+      [
+        "RUST_MEDIATED_TOOL_NAMES",
+        "executeNativeTool",
+        "createTeraxNativeToolDefinitions",
+        "Terax Rust",
+        "create_artifact",
+      ],
     ],
     [
       "sidecars/pi-host/host.js",
-      ["nativeTools.execute", "setNativeToolExecutor", "tryResolveHostResponse"],
+      [
+        "nativeTools.execute",
+        "setNativeToolExecutor",
+        "tryResolveHostResponse",
+      ],
     ],
     [
       "sidecars/pi-host/dist/host.js",
-      ["nativeTools.execute", "setNativeToolExecutor", "tryResolveHostResponse"],
+      [
+        "nativeTools.execute",
+        "setNativeToolExecutor",
+        "tryResolveHostResponse",
+      ],
     ],
     [
       "sidecars/pi-host/sessions.js",
-      ["rust-mediated", "createTeraxNativeToolDefinitions", "respondToToolApproval", "createApprovalExtension", "validateToolSafety"],
+      [
+        "rust-mediated",
+        "createTeraxNativeToolDefinitions",
+        "respondToToolApproval",
+        "createApprovalExtension",
+        "validateToolSafety",
+      ],
     ],
     [
       "sidecars/pi-host/dist/sessions.js",
-      ["rust-mediated", "createTeraxNativeToolDefinitions", "respondToToolApproval", "createApprovalExtension", "validateToolSafety"],
+      [
+        "rust-mediated",
+        "createTeraxNativeToolDefinitions",
+        "respondToToolApproval",
+        "createApprovalExtension",
+        "validateToolSafety",
+      ],
     ],
-    ["sidecars/pi-host/protocol.js", ["sessions.tool.respond", "TOOL_MODE", "validateProtocolParams"]],
-    ["sidecars/pi-host/dist/protocol.js", ["sessions.tool.respond", "TOOL_MODE", "validateProtocolParams"]],
-    ["sidecars/pi-host/protocol-schema.js", ["PI_HOST_PROTOCOL_SCHEMA", "validateProtocolParams"]],
-    ["sidecars/pi-host/dist/protocol-schema.js", ["PI_HOST_PROTOCOL_SCHEMA", "validateProtocolParams"]],
+    [
+      "sidecars/pi-host/protocol.js",
+      ["sessions.tool.respond", "TOOL_MODE", "validateProtocolParams"],
+    ],
+    [
+      "sidecars/pi-host/dist/protocol.js",
+      ["sessions.tool.respond", "TOOL_MODE", "validateProtocolParams"],
+    ],
+    [
+      "sidecars/pi-host/protocol-schema.js",
+      ["PI_HOST_PROTOCOL_SCHEMA", "validateProtocolParams"],
+    ],
+    [
+      "sidecars/pi-host/dist/protocol-schema.js",
+      ["PI_HOST_PROTOCOL_SCHEMA", "validateProtocolParams"],
+    ],
     ["sidecars/pi-host/session-errors.js", ["PI_APPROVAL_NOT_FOUND"]],
     ["sidecars/pi-host/dist/session-errors.js", ["PI_APPROVAL_NOT_FOUND"]],
     [
@@ -50,64 +94,141 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
         "PI_APPROVAL_NOT_FOUND",
       ],
     ],
-    ["sidecars/pi-host/protocol.test.js", ["rust-mediated", "sessions.tool.respond"]],
+    [
+      "sidecars/pi-host/protocol.test.js",
+      ["rust-mediated", "sessions.tool.respond"],
+    ],
     [
       "src-tauri/src/modules/pi/native_tools.rs",
-      ["NativeToolRequest", "execute", "mediatedBy", "grep_skips_sensitive_files_inside_workspace"],
+      [
+        "NativeToolRequest",
+        "execute_with_context",
+        "mediatedBy",
+        "create_artifact",
+        "grep_skips_sensitive_files_inside_workspace",
+      ],
     ],
     [
       "src-tauri/src/modules/pi/host.rs",
-      ["nativeTools.execute", "execute_verified_native_tool", "native_tool_sessions", "host_handles_reverse_native_tool_requests"],
+      [
+        "nativeTools.execute",
+        "execute_verified_native_tool",
+        "native_tool_sessions",
+        "NativeToolContext",
+        "host_handles_reverse_native_tool_requests",
+      ],
     ],
     [
       "src-tauri/src/modules/pi/mod.rs",
-      ["PiSessionToolRespondResult", "pi_session_tool_respond", "session_tool_respond_with_resource_dir"],
+      [
+        "PiSessionToolRespondResult",
+        "pi_session_tool_respond",
+        "session_tool_respond_with_resource_dir",
+      ],
     ],
     ["src-tauri/src/lib.rs", ["pi::pi_session_tool_respond"]],
     [
       "src-tauri/tests/pi_state.rs",
-      ["rust-mediated", "tool_approval_responses_are_forwarded_to_the_sidecar", "wait_for_event"],
+      [
+        "rust-mediated",
+        "tool_approval_responses_are_forwarded_to_the_sidecar",
+        "wait_for_event",
+      ],
     ],
     [
       "src/modules/pi/lib/native.ts",
-      ["PiSessionToolRespondResult", "sessionToolRespond", "sessionRename", "sessionDelete"],
+      [
+        "PiSessionToolRespondResult",
+        "sessionToolRespond",
+        "sessionRename",
+        "sessionDelete",
+      ],
     ],
     ["src/modules/pi/lib/native.test.ts", ["responds to Pi tool approvals"]],
     ["src/modules/pi/lib/sessions.ts", ["PiSessionToolRespondResult"]],
     ["src/modules/pi/PiPanel.tsx", ["respondToToolApproval", "onToolApproval"]],
-    ["src/modules/pi/components/PiTranscript.tsx", ["onToolApproval", "Approve", "Deny"]],
-    ["src/modules/pi/components/PiTranscript.test.tsx", ["renders approval requests with approval-gated actions"]],
-    ["src/modules/pi/lib/diagnostics.test.ts", ["rust-mediated", "Tools enabled"]],
+    [
+      "src/modules/pi/components/PiTranscript.tsx",
+      ["onToolApproval", "Approve", "Deny"],
+    ],
+    [
+      "src/modules/pi/components/PiTranscript.test.tsx",
+      ["renders approval requests with approval-gated actions"],
+    ],
+    [
+      "src/modules/pi/lib/diagnostics.test.ts",
+      ["rust-mediated", "Tools enabled"],
+    ],
     ["src/modules/pi/components/PiDiagnosticsCard.test.tsx", ["rust-mediated"]],
-    ["scripts/smoke-pi-host-bundle.mjs", ["rust-mediated", "expectedEnabledTools", "expectedApprovalTools"]],
-    ["docs/pi-runtime.md", ["rust-mediated", "nativeTools.execute", "sessions.tool.respond"]],
-    ["docs/pi-native-tool-bridge.md", ["rust-mediated", "nativeTools.execute", "PI_APPROVAL_NOT_FOUND"]],
-    ["docs/pi-session-protocol.md", ["rust-mediated", "nativeTools.execute", "sessions.tool.respond"]],
-    ["docs/pi-sidebar-verification.md", ["rust-mediated", "PI_APPROVAL_NOT_FOUND"]],
+    [
+      "scripts/smoke-pi-host-bundle.mjs",
+      ["rust-mediated", "expectedEnabledTools", "expectedApprovalTools"],
+    ],
+    [
+      "docs/pi-runtime.md",
+      ["rust-mediated", "nativeTools.execute", "sessions.tool.respond"],
+    ],
+    [
+      "docs/pi-native-tool-bridge.md",
+      ["rust-mediated", "nativeTools.execute", "PI_APPROVAL_NOT_FOUND"],
+    ],
+    [
+      "docs/pi-session-protocol.md",
+      ["rust-mediated", "nativeTools.execute", "sessions.tool.respond"],
+    ],
+    [
+      "docs/pi-sidebar-verification.md",
+      ["rust-mediated", "PI_APPROVAL_NOT_FOUND"],
+    ],
   ],
   forbiddenText: [
     ["src-tauri/tests/pi_state.rs", ["noTools", 'tool_mode, "approval-gated"']],
-    ["src/modules/pi/lib/diagnostics.test.ts", ["noTools", "No Pi tools", "approval-gated"]],
-    ["src/modules/pi/components/PiDiagnosticsCard.test.tsx", ["noTools", "approval-gated"]],
+    [
+      "src/modules/pi/lib/diagnostics.test.ts",
+      ["noTools", "No Pi tools", "approval-gated"],
+    ],
+    [
+      "src/modules/pi/components/PiDiagnosticsCard.test.tsx",
+      ["noTools", "approval-gated"],
+    ],
     [
       "scripts/smoke-pi-host-bundle.mjs",
-      ['toolMode !== "noTools"', 'toolMode !== "approval-gated"', "expectedEnabledTools = []", "expectedApprovalTools = []"],
+      [
+        'toolMode !== "noTools"',
+        'toolMode !== "approval-gated"',
+        "expectedEnabledTools = []",
+        "expectedApprovalTools = []",
+      ],
     ],
-    ["sidecars/pi-host/sessions.test.js", ["while tools are disabled", "Method not found"]],
-    ["sidecars/pi-host/protocol.test.js", ['toolMode: "noTools"', 'toolMode: "approval-gated"']],
+    [
+      "sidecars/pi-host/sessions.test.js",
+      ["while tools are disabled", "Method not found"],
+    ],
+    [
+      "sidecars/pi-host/protocol.test.js",
+      ['toolMode: "noTools"', 'toolMode: "approval-gated"'],
+    ],
     [
       "sidecars/pi-host/sessions.js",
-      ['TOOL_MODE = "noTools"', 'TOOL_MODE = "approval-gated"', 'noTools: "all"'],
+      [
+        'TOOL_MODE = "noTools"',
+        'TOOL_MODE = "approval-gated"',
+        'noTools: "all"',
+      ],
     ],
     [
       "sidecars/pi-host/dist/sessions.js",
-      ['TOOL_MODE = "noTools"', 'TOOL_MODE = "approval-gated"', 'noTools: "all"'],
+      [
+        'TOOL_MODE = "noTools"',
+        'TOOL_MODE = "approval-gated"',
+        'noTools: "all"',
+      ],
     ],
   ],
   forbiddenPiDocText: [
-    "toolMode: \"approval-gated\"",
-    "`toolMode: \"approval-gated\"`",
-    "\"toolMode\": \"approval-gated\"",
+    'toolMode: "approval-gated"',
+    '`toolMode: "approval-gated"`',
+    '"toolMode": "approval-gated"',
     "approval-gated SDK tools",
     "Pi SDK tool allowlist",
     "SDK tool boundary",
@@ -122,12 +243,24 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
   ],
   identicalFiles: [
     ["sidecars/pi-host/host.js", "sidecars/pi-host/dist/host.js"],
-    ["sidecars/pi-host/native-tools.js", "sidecars/pi-host/dist/native-tools.js"],
+    [
+      "sidecars/pi-host/native-tools.js",
+      "sidecars/pi-host/dist/native-tools.js",
+    ],
     ["sidecars/pi-host/sessions.js", "sidecars/pi-host/dist/sessions.js"],
-    ["sidecars/pi-host/protocol-schema.js", "sidecars/pi-host/dist/protocol-schema.js"],
+    [
+      "sidecars/pi-host/protocol-schema.js",
+      "sidecars/pi-host/dist/protocol-schema.js",
+    ],
     ["sidecars/pi-host/protocol.js", "sidecars/pi-host/dist/protocol.js"],
-    ["sidecars/pi-host/session-errors.js", "sidecars/pi-host/dist/session-errors.js"],
-    ["sidecars/pi-host/provider-config.js", "sidecars/pi-host/dist/provider-config.js"],
+    [
+      "sidecars/pi-host/session-errors.js",
+      "sidecars/pi-host/dist/session-errors.js",
+    ],
+    [
+      "sidecars/pi-host/provider-config.js",
+      "sidecars/pi-host/dist/provider-config.js",
+    ],
   ],
 };
 

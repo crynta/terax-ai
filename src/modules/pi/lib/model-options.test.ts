@@ -90,9 +90,9 @@ describe("getPiProfileModelGroups", () => {
         models: [expect.objectContaining({ id: "gpt-5.4-codex-mini" })],
       },
     ]);
-    expect(countHiddenPiProfileModels(profileCatalog, { query: "claude" })).toBe(
-      1,
-    );
+    expect(
+      countHiddenPiProfileModels(profileCatalog, { query: "claude" }),
+    ).toBe(1);
   });
 
   it("counts unavailable Pi profile models hidden from the picker", () => {

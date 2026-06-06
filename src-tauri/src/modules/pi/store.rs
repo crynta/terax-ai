@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager};
 
-use super::{PiSession, PiSessionEvent, PiSessionsList};
+use super::{session_event_type, PiSession, PiSessionEvent, PiSessionsList};
 
 const HISTORY_FILE_NAME: &str = "pi-sessions.json";
 const MAX_EVENTS: usize = 500;
@@ -93,7 +93,7 @@ fn stopped_event(session_id: String, created_at: &str, sequence: usize) -> PiSes
             sequence,
             event_id_component(&session_id)
         ),
-        event_type: "session.status".to_string(),
+        event_type: session_event_type::STATUS.to_string(),
         session_id,
         created_at: created_at.to_string(),
         payload: serde_json::json!({ "status": "stopped" }),
@@ -108,7 +108,7 @@ pub(super) fn deleted_event(session_id: String) -> PiSessionEvent {
             event_id_component(&created_at),
             event_id_component(&session_id)
         ),
-        event_type: "session.deleted".to_string(),
+        event_type: session_event_type::DELETED.to_string(),
         session_id: session_id.clone(),
         created_at,
         payload: serde_json::json!({ "sessionId": session_id }),
@@ -243,7 +243,7 @@ fn apply_events_to_history(history: &mut PiSessionsList, events: &[PiSessionEven
 
     for event in &events {
         apply_event_to_sessions(&mut history.sessions, event);
-        if event.event_type == "session.deleted" {
+        if event.event_type == session_event_type::DELETED {
             history
                 .events
                 .retain(|current| current.session_id != event.session_id);
@@ -254,12 +254,15 @@ fn apply_events_to_history(history: &mut PiSessionsList, events: &[PiSessionEven
 }
 
 fn apply_event_to_sessions(sessions: &mut Vec<PiSession>, event: &PiSessionEvent) {
-    if event.event_type == "session.deleted" {
+    if event.event_type == session_event_type::DELETED {
         sessions.retain(|session| session.id != event.session_id);
         return;
     }
 
-    if event.event_type == "session.resumed" {
+    if matches!(
+        event.event_type.as_str(),
+        session_event_type::CREATED | session_event_type::RESUMED
+    ) {
         if let Ok(session) = serde_json::from_value::<PiSession>(event.payload["session"].clone()) {
             upsert_session(sessions, session);
         }
@@ -273,13 +276,13 @@ fn apply_event_to_sessions(sessions: &mut Vec<PiSession>, event: &PiSessionEvent
         return;
     };
 
-    if event.event_type == "session.status" {
+    if event.event_type == session_event_type::STATUS {
         if let Some(status) = event.payload["status"].as_str() {
             session.status = status.to_string();
             session.updated_at = event.created_at.clone();
         }
     }
-    if event.event_type == "session.renamed" {
+    if event.event_type == session_event_type::RENAMED {
         if let Some(title) = event.payload["title"]
             .as_str()
             .filter(|title| !title.trim().is_empty())
@@ -288,7 +291,7 @@ fn apply_event_to_sessions(sessions: &mut Vec<PiSession>, event: &PiSessionEvent
             session.updated_at = event.created_at.clone();
         }
     }
-    if event.event_type == "session.error" {
+    if event.event_type == session_event_type::ERROR {
         session.status = "error".to_string();
         session.updated_at = event.created_at.clone();
     }
@@ -348,6 +351,28 @@ mod tests {
         assert_eq!(history.sessions.len(), 1);
         assert_eq!(history.sessions[0].status, "idle");
         assert_eq!(history.events, vec![idle]);
+    }
+
+    #[test]
+    fn record_created_event_materializes_session_snapshot() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join(HISTORY_FILE_NAME);
+        let session = session("pi-created", "idle");
+        record_event_at_path(
+            &path,
+            &event(
+                "evt-created",
+                "session.created",
+                "pi-created",
+                json!({ "session": session }),
+            ),
+        )
+        .unwrap();
+
+        let history = load_from_path(&path).unwrap();
+
+        assert_eq!(history.sessions.len(), 1);
+        assert_eq!(history.sessions[0].id, "pi-created");
     }
 
     #[test]
@@ -443,7 +468,8 @@ mod tests {
         assert!(history
             .events
             .iter()
-            .all(|event| event.session_id != "pi-1" || event.event_type == "session.deleted"));
+            .all(|event| event.session_id != "pi-1"
+                || event.event_type == session_event_type::DELETED));
     }
 
     #[test]
@@ -483,7 +509,7 @@ mod tests {
         let stopped_events = history
             .events
             .iter()
-            .filter(|event| event.event_type == "session.status")
+            .filter(|event| event.event_type == session_event_type::STATUS)
             .collect::<Vec<_>>();
         assert_eq!(stopped_events.len(), 2);
         assert!(stopped_events.iter().all(|event| {

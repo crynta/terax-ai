@@ -159,6 +159,10 @@ try {
     "bash",
     "edit",
     "write",
+    "create_artifact",
+    "edit_artifact",
+    "read_artifact",
+    "list_artifacts",
   ];
   const expectedApprovalTools = ["bash", "edit", "write"];
   if (JSON.stringify(enabledTools) !== JSON.stringify(expectedEnabledTools)) {

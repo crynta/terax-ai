@@ -1,21 +1,19 @@
-import {
-  AiChat02Icon,
-  Alert02Icon,
-  ArrowLeft01Icon,
-  ArrowReloadHorizontalIcon,
-  ArrowRight01Icon,
-  CheckmarkCircle01Icon,
-  Copy01Icon,
-  File01Icon,
-  Folder01Icon,
-  FullscreenIcon,
-  IncognitoIcon,
-  TerminalIcon,
-  ToolsIcon,
-  WindowsNewIcon,
-} from "@hugeicons/core-free-icons";
+import AiChat02Icon from "@hugeicons/core-free-icons/AiChat02Icon";
+import Alert02Icon from "@hugeicons/core-free-icons/Alert02Icon";
+import ArrowLeft01Icon from "@hugeicons/core-free-icons/ArrowLeft01Icon";
+import ArrowReloadHorizontalIcon from "@hugeicons/core-free-icons/ArrowReloadHorizontalIcon";
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import CheckmarkCircle01Icon from "@hugeicons/core-free-icons/CheckmarkCircle01Icon";
+import Copy01Icon from "@hugeicons/core-free-icons/Copy01Icon";
+import File01Icon from "@hugeicons/core-free-icons/File01Icon";
+import Folder01Icon from "@hugeicons/core-free-icons/Folder01Icon";
+import FullscreenIcon from "@hugeicons/core-free-icons/FullscreenIcon";
+import IncognitoIcon from "@hugeicons/core-free-icons/IncognitoIcon";
+import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
+import ToolsIcon from "@hugeicons/core-free-icons/ToolsIcon";
+import WindowsNewIcon from "@hugeicons/core-free-icons/WindowsNewIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -52,6 +50,10 @@ import type {
   PiSession,
   PiTranscriptItem,
 } from "@/modules/pi/lib/sessions";
+import {
+  copyStatusLabel,
+  useCopyToClipboard,
+} from "@/modules/pi/lib/useCopyToClipboard";
 import { pathBasename } from "@/modules/pi/lib/view";
 
 type PiRegenerateRequest = {
@@ -171,19 +173,6 @@ function PromptContextChips({
   );
 }
 
-type CopyStatus = "copied" | "failed" | "idle";
-
-function copyStatusLabel(status: CopyStatus): string {
-  switch (status) {
-    case "copied":
-      return "Copied";
-    case "failed":
-      return "Copy failed";
-    case "idle":
-      return "";
-  }
-}
-
 function CopyMessageAction({
   label,
   text,
@@ -191,41 +180,8 @@ function CopyMessageAction({
   label: string;
   text: string | null;
 }) {
-  const [status, setStatus] = useState<CopyStatus>("idle");
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const resetStatusSoon = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    timeoutRef.current = setTimeout(() => setStatus("idle"), 1600);
-  };
-
-  useEffect(
-    () => () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    },
-    [],
-  );
-
+  const { copyText, status } = useCopyToClipboard();
   if (!text) return null;
-
-  const onCopy = async () => {
-    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
-      setStatus("failed");
-      resetStatusSoon();
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(text);
-      setStatus("copied");
-    } catch {
-      setStatus("failed");
-    }
-    resetStatusSoon();
-  };
 
   const statusLabel = copyStatusLabel(status);
 
@@ -242,7 +198,7 @@ function CopyMessageAction({
           "size-5 text-muted-foreground hover:text-foreground",
           status === "failed" && "text-destructive hover:text-destructive",
         )}
-        onClick={() => void onCopy()}
+        onClick={() => void copyText(text)}
       >
         <HugeiconsIcon
           icon={
@@ -271,6 +227,10 @@ const PI_TOOL_UI_NAMES: Record<string, string> = {
   ls: "list_directory",
   read: "read_file",
   write: "write_file",
+  create_artifact: "create_artifact",
+  edit_artifact: "edit_artifact",
+  read_artifact: "read_artifact",
+  list_artifacts: "list_artifacts",
 };
 
 const PI_TOOL_LABELS: Record<string, string> = {
@@ -281,6 +241,10 @@ const PI_TOOL_LABELS: Record<string, string> = {
   ls: "List directory",
   read: "Read file",
   write: "Write file",
+  create_artifact: "Create artifact",
+  edit_artifact: "Edit artifact",
+  read_artifact: "Read artifact",
+  list_artifacts: "List artifacts",
 };
 
 function mappedToolName(toolName: string | undefined): string {

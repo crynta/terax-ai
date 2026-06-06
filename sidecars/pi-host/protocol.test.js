@@ -8,6 +8,7 @@ import {
 import {
   PI_HOST_PROTOCOL_SCHEMA,
   protocolSchemaMethods,
+  validateProtocolParams,
 } from "./protocol-schema.js";
 
 function packageNames(result) {
@@ -99,6 +100,10 @@ describe("Pi host protocol", () => {
               "bash",
               "edit",
               "write",
+              "create_artifact",
+              "edit_artifact",
+              "read_artifact",
+              "list_artifacts",
             ],
             approvalRequiredTools: ["bash", "edit", "write"],
             sessionStorage: "rust-app-data-json+pi-sdk-jsonl",
@@ -231,6 +236,34 @@ describe("Pi host protocol", () => {
     expect(protocolSchemaMethods()).toEqual(ALLOWED_METHODS);
   });
 
+  it("accepts capability manifests on session lifecycle params", () => {
+    const capabilityManifest = {
+      tools: [{ name: "bash", approval: "ask", modelVisible: true }],
+    };
+
+    expect(
+      validateProtocolParams("sessions.create", { capabilityManifest }),
+    ).toEqual({ ok: true, params: { capabilityManifest } });
+    expect(
+      validateProtocolParams("sessions.resume", {
+        sessionId: "pi_1",
+        cwd: process.cwd(),
+        sdkSessionFile: "/tmp/session.jsonl",
+        sessionDir: "/tmp",
+        capabilityManifest,
+      }),
+    ).toEqual({
+      ok: true,
+      params: {
+        sessionId: "pi_1",
+        cwd: process.cwd(),
+        sdkSessionFile: "/tmp/session.jsonl",
+        sessionDir: "/tmp",
+        capabilityManifest,
+      },
+    });
+  });
+
   it("rejects unsupported fields before dispatch", async () => {
     const result = await handleJsonRpcLine(
       JSON.stringify({
@@ -274,7 +307,8 @@ describe("Pi host protocol", () => {
       id: 48,
       error: {
         code: -32602,
-        message: "sessions.send params.context contains unsupported field: ignored",
+        message:
+          "sessions.send params.context contains unsupported field: ignored",
       },
     });
   });
@@ -297,7 +331,8 @@ describe("Pi host protocol", () => {
       id: 49,
       error: {
         code: -32602,
-        message: "sessions.create params.workspaceEnv contains unsupported field: distro",
+        message:
+          "sessions.create params.workspaceEnv contains unsupported field: distro",
       },
     });
   });

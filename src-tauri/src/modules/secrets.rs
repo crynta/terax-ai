@@ -103,7 +103,9 @@ where
     if guard.is_none() {
         *guard = Some(read_store(app)?);
     }
-    let map = guard.as_mut().expect("cache initialized above");
+    let Some(map) = guard.as_mut() else {
+        return Err("secret cache was not initialized".to_string());
+    };
     Ok(f(map))
 }
 
@@ -135,8 +137,64 @@ pub(crate) fn get_secret_value(
     }
 }
 
+pub(crate) fn set_secret_value(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+    password: &str,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| {
+            m.insert(key, password.to_string());
+        })?;
+        let snapshot = {
+            let guard = state.cache.lock().map_err(|e| e.to_string())?;
+            guard.as_ref().cloned().unwrap_or_default()
+        };
+        write_store(app, &snapshot)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        e.set_password(password).map_err(|e| e.to_string())
+    }
+}
+
+pub(crate) fn delete_secret_value(
+    app: &AppHandle,
+    state: &SecretsState,
+    service: &str,
+    account: &str,
+) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let key = key(service, account);
+        with_store(app, state, |m| {
+            m.remove(&key);
+        })?;
+        let snapshot = {
+            let guard = state.cache.lock().map_err(|e| e.to_string())?;
+            guard.as_ref().cloned().unwrap_or_default()
+        };
+        write_store(app, &snapshot)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, state);
+        let e = entry(service, account)?;
+        match e.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+}
+
 #[tauri::command]
-pub async fn secrets_get(
+pub fn secrets_get(
     app: AppHandle,
     state: tauri::State<'_, SecretsState>,
     service: String,
@@ -146,61 +204,24 @@ pub async fn secrets_get(
 }
 
 #[tauri::command]
-pub async fn secrets_set(
+pub fn secrets_set(
     app: AppHandle,
     state: tauri::State<'_, SecretsState>,
     service: String,
     account: String,
     password: String,
 ) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| {
-            m.insert(key, password);
-        })?;
-        let snapshot = {
-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(&app, &snapshot)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        e.set_password(&password).map_err(|e| e.to_string())
-    }
+    set_secret_value(&app, &state, &service, &account, &password)
 }
 
 #[tauri::command]
-pub async fn secrets_delete(
+pub fn secrets_delete(
     app: AppHandle,
     state: tauri::State<'_, SecretsState>,
     service: String,
     account: String,
 ) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        let key = key(&service, &account);
-        with_store(&app, &state, |m| {
-            m.remove(&key);
-        })?;
-        let snapshot = {
-            let guard = state.cache.lock().map_err(|e| e.to_string())?;
-            guard.as_ref().cloned().unwrap_or_default()
-        };
-        write_store(&app, &snapshot)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        let e = entry(&service, &account)?;
-        match e.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(err) => Err(err.to_string()),
-        }
-    }
+    delete_secret_value(&app, &state, &service, &account)
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -288,7 +309,7 @@ mod tests {
 
 /// Batch read - single IPC roundtrip for the cold-boot fan-out.
 #[tauri::command]
-pub async fn secrets_get_all(
+pub fn secrets_get_all(
     app: AppHandle,
     state: tauri::State<'_, SecretsState>,
     service: String,

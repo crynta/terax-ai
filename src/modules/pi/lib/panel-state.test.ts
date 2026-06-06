@@ -133,6 +133,29 @@ describe("buildPiPanelState", () => {
     expect(longDraft?.tokens).toBe(shortDraft?.tokens);
   });
 
+  it("keeps context estimation safe for circular runtime tool input", () => {
+    const input: Record<string, unknown> = { path: "package.json" };
+    input.self = input;
+
+    const state = buildState({
+      sessionEvents: [
+        {
+          id: "evt-1",
+          type: "session.tool.start",
+          sessionId: "pi-session",
+          createdAt: "2026-01-01T00:00:01.000Z",
+          payload: {
+            toolCallId: "call-1",
+            toolName: "read",
+            input,
+          },
+        },
+      ],
+    });
+
+    expect(state.composer.contextUsage?.tokens).toBeGreaterThan(0);
+  });
+
   it("does not inflate context usage with structured tool metadata", () => {
     const state = buildState({
       sessionEvents: [

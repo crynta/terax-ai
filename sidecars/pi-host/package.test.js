@@ -9,14 +9,22 @@ describe("Pi host package", () => {
     const manifest = JSON.parse(await readFile(PACKAGE_PATH, "utf8"));
 
     expect(manifest.files).toEqual([
+      "fallback-capability-manifest.generated.js",
+      "fallback-capability-manifest.js",
       "host.js",
       "model-catalog.js",
       "native-tools.js",
       "protocol-schema.js",
       "protocol.js",
       "provider-config.js",
+      "session-approvals.js",
       "session-errors.js",
+      "session-event-mapper.js",
+      "session-events.js",
+      "session-params.js",
+      "session-payloads.js",
       "sessions.js",
+      "tool-policy.js",
       "package.json",
     ]);
   });

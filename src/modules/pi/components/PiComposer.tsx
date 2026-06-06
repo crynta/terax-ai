@@ -1,4 +1,5 @@
-import { ArrowUpIcon, StopCircleIcon } from "@hugeicons/core-free-icons";
+import ArrowUpIcon from "@hugeicons/core-free-icons/ArrowUp01Icon";
+import StopCircleIcon from "@hugeicons/core-free-icons/StopCircleIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { FormEvent } from "react";
 import { Button } from "@/components/ui/button";

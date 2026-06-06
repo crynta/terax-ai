@@ -19,11 +19,19 @@ pub struct PtyJob {
     handle: HANDLE,
 }
 
+// SAFETY: `PtyJob` has unique ownership of a Windows Job HANDLE. Handles are
+// reference-counted kernel objects that may be closed from any thread, and this
+// type exposes no interior access other than dropping the owned handle.
 unsafe impl Send for PtyJob {}
+// SAFETY: Shared references cannot mutate the handle value. The only side
+// effect is `Drop`, which requires unique ownership of the `PtyJob`.
 unsafe impl Sync for PtyJob {}
 
 impl PtyJob {
     pub fn create_for(pid: u32) -> io::Result<Self> {
+        // SAFETY: All Win32 calls receive valid pointer arguments for the
+        // documented structure sizes. Every owned HANDLE created in this block
+        // is either transferred into `PtyJob` or closed on the error path.
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
             if job.is_null() || job == INVALID_HANDLE_VALUE {
@@ -67,6 +75,8 @@ impl PtyJob {
 impl Drop for PtyJob {
     fn drop(&mut self) {
         if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
+            // SAFETY: `handle` is owned by this `PtyJob`, checked for sentinel
+            // invalid values, and is closed exactly once in `Drop`.
             unsafe { CloseHandle(self.handle) };
         }
     }

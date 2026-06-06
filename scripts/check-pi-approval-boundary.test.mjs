@@ -15,7 +15,7 @@ async function writeFixture(root, files) {
 const hostSource =
   "nativeTools.execute setNativeToolExecutor tryResolveHostResponse";
 const nativeToolsSource =
-  "RUST_MEDIATED_TOOL_NAMES executeNativeTool createTeraxNativeToolDefinitions Terax Rust";
+  "RUST_MEDIATED_TOOL_NAMES executeNativeTool createTeraxNativeToolDefinitions Terax Rust create_artifact";
 const sessionsSource =
   'export const TOOL_MODE = "rust-mediated"; createTeraxNativeToolDefinitions(); function respondToToolApproval(){} function createApprovalExtension(){} function validateToolSafety(){}';
 const protocolSource =
@@ -44,9 +44,9 @@ const healthyFiles = {
     "rust-mediated delegates read-only faux tool calls to the Rust native tool bridge requires approval before running shell faux tool calls PI_APPROVAL_NOT_FOUND",
   "sidecars/pi-host/protocol.test.js": "rust-mediated sessions.tool.respond",
   "src-tauri/src/modules/pi/native_tools.rs":
-    "NativeToolRequest execute mediatedBy grep_skips_sensitive_files_inside_workspace",
+    "NativeToolRequest execute_with_context mediatedBy create_artifact grep_skips_sensitive_files_inside_workspace",
   "src-tauri/src/modules/pi/host.rs":
-    "nativeTools.execute execute_verified_native_tool native_tool_sessions host_handles_reverse_native_tool_requests",
+    "nativeTools.execute execute_verified_native_tool native_tool_sessions NativeToolContext host_handles_reverse_native_tool_requests",
   "src-tauri/src/modules/pi/mod.rs":
     "PiSessionToolRespondResult pi_session_tool_respond session_tool_respond_with_resource_dir",
   "src-tauri/src/lib.rs": "pi::pi_session_tool_respond",
@@ -64,7 +64,8 @@ const healthyFiles = {
   "src/modules/pi/components/PiDiagnosticsCard.test.tsx": "rust-mediated",
   "scripts/smoke-pi-host-bundle.mjs":
     "rust-mediated expectedEnabledTools expectedApprovalTools",
-  "docs/pi-runtime.md": "rust-mediated nativeTools.execute sessions.tool.respond",
+  "docs/pi-runtime.md":
+    "rust-mediated nativeTools.execute sessions.tool.respond",
   "docs/pi-native-tool-bridge.md":
     "rust-mediated nativeTools.execute PI_APPROVAL_NOT_FOUND",
   "docs/pi-session-protocol.md":

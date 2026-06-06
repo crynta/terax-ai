@@ -2,6 +2,7 @@ use ignore::WalkBuilder;
 use serde::Serialize;
 
 use super::to_canon;
+use crate::modules::capabilities::AppCapabilityState;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 #[derive(Serialize)]
@@ -42,12 +43,11 @@ const PRUNE_DIRS: &[&str] = &[
     "__pycache__",
 ];
 
-#[tauri::command]
-pub fn fs_search(
+pub fn fs_search_inner(
     root: String,
     query: String,
     limit: Option<usize>,
-    workspace: Option<WorkspaceEnv>,
+    workspace: WorkspaceEnv,
     show_hidden: Option<bool>,
 ) -> Result<SearchResult, String> {
     let q = query.trim().to_lowercase();
@@ -59,7 +59,6 @@ pub fn fs_search(
     }
     let cap = limit.unwrap_or(200).min(1000);
     let show_hidden = show_hidden.unwrap_or(false);
-    let workspace = WorkspaceEnv::from_option(workspace);
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
@@ -137,18 +136,37 @@ pub fn fs_search(
     })
 }
 
+#[tauri::command]
+pub fn fs_search(
+    app_audit: tauri::State<AppCapabilityState>,
+    root: String,
+    query: String,
+    limit: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+    show_hidden: Option<bool>,
+) -> Result<SearchResult, String> {
+    app_audit.execute_app_capability("app.file_search", || {
+        fs_search_inner(
+            root,
+            query,
+            limit,
+            WorkspaceEnv::from_option(workspace),
+            show_hidden,
+        )
+    })
+}
+
 #[derive(Serialize)]
 pub struct ListFilesResult {
     pub files: Vec<String>,
     pub truncated: bool,
 }
 
-#[tauri::command]
-pub fn fs_list_files(
+pub fn fs_list_files_inner(
     root: String,
     limit: Option<usize>,
     max_depth: Option<usize>,
-    workspace: Option<WorkspaceEnv>,
+    workspace: WorkspaceEnv,
     show_hidden: Option<bool>,
 ) -> Result<ListFilesResult, String> {
     const DEFAULT_LIMIT: usize = 2_000;
@@ -159,7 +177,6 @@ pub fn fs_list_files(
     let cap = limit.unwrap_or(DEFAULT_LIMIT).clamp(1, HARD_LIMIT);
     let depth = max_depth.unwrap_or(DEFAULT_DEPTH).clamp(1, HARD_DEPTH);
     let show_hidden = show_hidden.unwrap_or(false);
-    let workspace = WorkspaceEnv::from_option(workspace);
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
@@ -216,6 +233,26 @@ pub fn fs_list_files(
 
     files.sort_by_key(|a| a.to_lowercase());
     Ok(ListFilesResult { files, truncated })
+}
+
+#[tauri::command]
+pub fn fs_list_files(
+    app_audit: tauri::State<AppCapabilityState>,
+    root: String,
+    limit: Option<usize>,
+    max_depth: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+    show_hidden: Option<bool>,
+) -> Result<ListFilesResult, String> {
+    app_audit.execute_app_capability("app.file_list", || {
+        fs_list_files_inner(
+            root,
+            limit,
+            max_depth,
+            WorkspaceEnv::from_option(workspace),
+            show_hidden,
+        )
+    })
 }
 
 fn display_path(

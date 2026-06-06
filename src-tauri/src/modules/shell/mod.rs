@@ -11,9 +11,13 @@ use std::sync::{mpsc, Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use shared_child::SharedChild;
 
+use crate::modules::capabilities::{
+    AppCapabilityState, WorkflowCapabilityState, WorkflowPolicyContext,
+};
+use crate::modules::sync;
 #[cfg(windows)]
 use crate::modules::workspace::validate_wsl_distro_name;
 use crate::modules::workspace::{authorize_spawn_cwd, WorkspaceEnv, WorkspaceRegistry};
@@ -45,34 +49,32 @@ pub async fn shell_run_command(
     timeout_secs: Option<u64>,
     workspace: Option<WorkspaceEnv>,
     registry: tauri::State<'_, WorkspaceRegistry>,
+    app_audit: tauri::State<'_, AppCapabilityState>,
 ) -> Result<CommandOutput, String> {
-    let trimmed = command.trim().to_string();
-    if trimmed.is_empty() {
-        return Err("empty command".into());
-    }
+    app_audit
+        .execute_app_capability_async("app.shell_command", || async move {
+            let trimmed = command.trim().to_string();
+            if trimmed.is_empty() {
+                return Err("empty command".into());
+            }
 
-    let workspace = WorkspaceEnv::from_option(workspace);
-    authorize_spawn_cwd(&registry, cwd.as_deref(), &workspace)?;
-    let cwd_path = cwd
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
+            let workspace = WorkspaceEnv::from_option(workspace);
+            authorize_spawn_cwd(&registry, cwd.as_deref(), &workspace)?;
+            let cwd_path = cwd
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
 
-    let dur = Duration::from_secs(
-        timeout_secs
-            .unwrap_or(DEFAULT_TIMEOUT_SECS)
-            .clamp(1, MAX_TIMEOUT_SECS),
-    );
+            let dur = Duration::from_secs(
+                timeout_secs
+                    .unwrap_or(DEFAULT_TIMEOUT_SECS)
+                    .clamp(1, MAX_TIMEOUT_SECS),
+            );
 
-    // The blocking spawn + wait runs on a worker thread so the Tauri async
-    // runtime stays unblocked.
-    let (tx, rx) = mpsc::channel::<Result<CommandOutput, String>>();
-    thread::spawn(move || {
-        let _ = tx.send(run_blocking(trimmed, cwd_path, workspace, dur));
-    });
-
-    rx.recv().map_err(|e| e.to_string())?
+            run_blocking_on_worker(trimmed, cwd_path, workspace, dur).await
+        })
+        .await
 }
 
 pub(crate) fn run_blocking_inner(
@@ -82,6 +84,17 @@ pub(crate) fn run_blocking_inner(
     dur: Duration,
 ) -> Result<CommandOutput, String> {
     run_blocking(command, cwd, workspace, dur)
+}
+
+async fn run_blocking_on_worker(
+    command: String,
+    cwd: Option<String>,
+    workspace: WorkspaceEnv,
+    dur: Duration,
+) -> Result<CommandOutput, String> {
+    tauri::async_runtime::spawn_blocking(move || run_blocking(command, cwd, workspace, dur))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 fn run_blocking(
@@ -168,84 +181,189 @@ impl Default for ShellState {
     }
 }
 
+impl ShellState {
+    pub fn background_logs(
+        &self,
+        handle: u32,
+        since_offset: u64,
+    ) -> Result<BackgroundLogResponse, String> {
+        let proc = sync::read(&self.bg, "shell background processes")?
+            .get(&handle)
+            .cloned()
+            .ok_or_else(|| "no background handle".to_string())?;
+        proc.read_logs(since_offset)
+    }
+}
+
 #[tauri::command]
 pub fn shell_session_open(
     state: tauri::State<ShellState>,
     registry: tauri::State<WorkspaceRegistry>,
+    app_audit: tauri::State<AppCapabilityState>,
     cwd: Option<String>,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<u32, String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
-    authorize_spawn_cwd(&registry, cwd.as_deref(), &workspace)?;
-    let initial = match cwd.as_deref().filter(|s| !s.is_empty()) {
-        Some(c) => c.to_string(),
-        None => {
-            if let WorkspaceEnv::Wsl { distro } = &workspace {
-                crate::modules::workspace::wsl_home(distro.clone())?
-            } else {
-                crate::modules::fs::to_canon(dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")))
+    app_audit.execute_app_capability("app.shell_session", || {
+        let workspace = WorkspaceEnv::from_option(workspace);
+        authorize_spawn_cwd(&registry, cwd.as_deref(), &workspace)?;
+        let initial = match cwd.as_deref().filter(|s| !s.is_empty()) {
+            Some(c) => c.to_string(),
+            None => {
+                if let WorkspaceEnv::Wsl { distro } = &workspace {
+                    crate::modules::workspace::wsl_home(distro.clone())?
+                } else {
+                    crate::modules::fs::to_canon(
+                        dirs::home_dir().unwrap_or_else(|| PathBuf::from("/")),
+                    )
+                }
             }
-        }
-    };
-    let session = Arc::new(ShellSession::new(initial, workspace));
-    let id = state.next_session_id.fetch_add(1, Ordering::Relaxed);
-    state.sessions.write().unwrap().insert(id, session);
-    Ok(id)
+        };
+        let session = Arc::new(ShellSession::new(initial, workspace));
+        let id = state.next_session_id.fetch_add(1, Ordering::Relaxed);
+        sync::write(&state.sessions, "shell sessions")?.insert(id, session);
+        Ok(id)
+    })
 }
 
 #[tauri::command]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Tauri command wrappers expose IPC fields directly"
+)]
 pub async fn shell_session_run(
     state: tauri::State<'_, ShellState>,
     registry: tauri::State<'_, WorkspaceRegistry>,
+    app_audit: tauri::State<'_, AppCapabilityState>,
     id: u32,
     command: String,
     cwd: Option<String>,
     timeout_secs: Option<u64>,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<SessionRunOutput, String> {
-    let session = state
-        .sessions
-        .read()
-        .unwrap()
-        .get(&id)
-        .cloned()
-        .ok_or_else(|| "no shell session".to_string())?;
-    let effective_workspace = workspace
-        .clone()
-        .unwrap_or_else(|| session.workspace.clone());
-    authorize_spawn_cwd(&registry, cwd.as_deref(), &effective_workspace)?;
-    let dur = Duration::from_secs(
-        timeout_secs
-            .unwrap_or(DEFAULT_TIMEOUT_SECS)
-            .clamp(1, MAX_TIMEOUT_SECS),
-    );
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = tx.send(session.run(command, cwd, workspace, dur));
-    });
-    rx.recv().map_err(|e| e.to_string())?
+    app_audit
+        .execute_app_capability_async("app.shell_session", || async move {
+            let session = {
+                let sessions = sync::read(&state.sessions, "shell sessions")?;
+                sessions
+                    .get(&id)
+                    .cloned()
+                    .ok_or_else(|| "no shell session".to_string())?
+            };
+            let effective_workspace = workspace
+                .clone()
+                .unwrap_or_else(|| session.workspace.clone());
+            authorize_spawn_cwd(&registry, cwd.as_deref(), &effective_workspace)?;
+            let dur = Duration::from_secs(
+                timeout_secs
+                    .unwrap_or(DEFAULT_TIMEOUT_SECS)
+                    .clamp(1, MAX_TIMEOUT_SECS),
+            );
+            run_session_on_worker(session, command, cwd, workspace, dur).await
+        })
+        .await
+}
+
+async fn run_session_on_worker(
+    session: Arc<ShellSession>,
+    command: String,
+    cwd: Option<String>,
+    workspace: Option<WorkspaceEnv>,
+    dur: Duration,
+) -> Result<SessionRunOutput, String> {
+    tauri::async_runtime::spawn_blocking(move || session.run(command, cwd, workspace, dur))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub fn shell_session_close(state: tauri::State<ShellState>, id: u32) -> Result<(), String> {
-    state.sessions.write().unwrap().remove(&id);
+    sync::write(&state.sessions, "shell sessions")?.remove(&id);
     Ok(())
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowShellSpawnRequest {
+    pub command: String,
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub workspace: WorkspaceEnv,
+    pub approved: bool,
+    pub document_id: String,
+    pub node_id: String,
+}
+
+impl WorkflowShellSpawnRequest {
+    fn policy_context(&self) -> WorkflowPolicyContext {
+        WorkflowPolicyContext {
+            approved: self.approved,
+            document_id: self.document_id.clone(),
+            node_id: self.node_id.clone(),
+        }
+    }
+}
+
+pub fn workflow_shell_bg_spawn_inner(
+    state: &ShellState,
+    registry: &WorkspaceRegistry,
+    audit: &WorkflowCapabilityState,
+    request: WorkflowShellSpawnRequest,
+) -> Result<u32, String> {
+    let context = request.policy_context();
+    audit.execute_workflow_capability(&context, "workflow.shell_command", || {
+        shell_bg_spawn_inner(
+            state,
+            registry,
+            request.command,
+            request.cwd,
+            request.workspace,
+        )
+    })
+}
+
+fn shell_bg_spawn_inner(
+    state: &ShellState,
+    registry: &WorkspaceRegistry,
+    command: String,
+    cwd: Option<String>,
+    workspace: WorkspaceEnv,
+) -> Result<u32, String> {
+    authorize_spawn_cwd(registry, cwd.as_deref(), &workspace)?;
+    let proc = background::spawn(command, cwd, workspace)?;
+    let id = state.next_bg_id.fetch_add(1, Ordering::Relaxed);
+    sync::write(&state.bg, "shell background processes")?.insert(id, proc);
+    Ok(id)
+}
+
+#[tauri::command]
+pub fn workflow_shell_bg_spawn(
+    state: tauri::State<ShellState>,
+    registry: tauri::State<WorkspaceRegistry>,
+    audit: tauri::State<WorkflowCapabilityState>,
+    request: WorkflowShellSpawnRequest,
+) -> Result<u32, String> {
+    workflow_shell_bg_spawn_inner(&state, &registry, &audit, request)
 }
 
 #[tauri::command]
 pub fn shell_bg_spawn(
     state: tauri::State<ShellState>,
     registry: tauri::State<WorkspaceRegistry>,
+    app_audit: tauri::State<AppCapabilityState>,
     command: String,
     cwd: Option<String>,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<u32, String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
-    authorize_spawn_cwd(&registry, cwd.as_deref(), &workspace)?;
-    let proc = background::spawn(command, cwd, workspace)?;
-    let id = state.next_bg_id.fetch_add(1, Ordering::Relaxed);
-    state.bg.write().unwrap().insert(id, proc);
-    Ok(id)
+    app_audit.execute_app_capability("app.shell_background", || {
+        shell_bg_spawn_inner(
+            &state,
+            &registry,
+            command,
+            cwd,
+            WorkspaceEnv::from_option(workspace),
+        )
+    })
 }
 
 #[tauri::command]
@@ -254,19 +372,19 @@ pub fn shell_bg_logs(
     handle: u32,
     since_offset: Option<u64>,
 ) -> Result<BackgroundLogResponse, String> {
-    let proc = state
-        .bg
-        .read()
-        .unwrap()
+    let proc = sync::read(&state.bg, "shell background processes")?
         .get(&handle)
         .cloned()
         .ok_or_else(|| "no background handle".to_string())?;
-    Ok(proc.read_logs(since_offset.unwrap_or(0)))
+    proc.read_logs(since_offset.unwrap_or(0))
 }
 
 #[tauri::command]
 pub fn shell_bg_kill(state: tauri::State<ShellState>, handle: u32) -> Result<(), String> {
-    if let Some(proc) = state.bg.read().unwrap().get(&handle).cloned() {
+    let proc = sync::read(&state.bg, "shell background processes")?
+        .get(&handle)
+        .cloned();
+    if let Some(proc) = proc {
         proc.kill();
     }
     Ok(())
@@ -274,7 +392,7 @@ pub fn shell_bg_kill(state: tauri::State<ShellState>, handle: u32) -> Result<(),
 
 #[tauri::command]
 pub fn shell_bg_list(state: tauri::State<ShellState>) -> Result<Vec<BackgroundProcInfo>, String> {
-    let map = state.bg.read().unwrap();
+    let map = sync::read(&state.bg, "shell background processes")?;
     let mut out = Vec::with_capacity(map.len());
     for (id, p) in map.iter() {
         out.push(p.info(*id));
@@ -350,6 +468,7 @@ fn drain<R: Read>(reader: &mut R) -> (Vec<u8>, bool) {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
 
     fn run(cmd: &str, timeout_secs: u64) -> CommandOutput {
         run_blocking_inner(
@@ -382,6 +501,31 @@ mod tests {
         let out = run("sleep 10", 1);
         assert!(out.timed_out);
         assert_eq!(out.exit_code, None);
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn run_blocking_on_worker_yields_async_executor() {
+        let did_run = Arc::new(AtomicBool::new(false));
+        let did_run_task = Arc::clone(&did_run);
+        tokio::spawn(async move {
+            tokio::task::yield_now().await;
+            did_run_task.store(true, Ordering::SeqCst);
+        });
+
+        let out = run_blocking_on_worker(
+            "sleep 1".into(),
+            None,
+            WorkspaceEnv::Local,
+            Duration::from_secs(5),
+        )
+        .await
+        .expect("run");
+
+        assert_eq!(out.exit_code, Some(0));
+        assert!(
+            did_run.load(Ordering::SeqCst),
+            "blocking command work must yield the async executor"
+        );
     }
 
     #[test]

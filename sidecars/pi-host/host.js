@@ -98,7 +98,8 @@ function tryResolveHostResponse(line) {
   const pending = pendingHostRequests.get(envelope.id);
   pending.cleanup();
   if (envelope.error) {
-    const message = envelope.error.message ?? "Terax native tool request failed";
+    const message =
+      envelope.error.message ?? "Terax native tool request failed";
     const error = new Error(message);
     error.data = envelope.error.data;
     pending.reject(error);

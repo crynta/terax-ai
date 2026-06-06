@@ -1,10 +1,15 @@
 pub mod agent;
+pub mod artifacts;
+pub mod capabilities;
 pub mod fs;
 pub mod git;
+pub mod mcp;
+pub mod model_compare;
 pub mod net;
 pub mod pi;
 pub mod proc;
 pub mod pty;
 pub mod secrets;
 pub mod shell;
+pub(crate) mod sync;
 pub mod workspace;

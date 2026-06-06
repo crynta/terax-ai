@@ -1,7 +1,18 @@
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::expect_used,
+        clippy::undocumented_unsafe_blocks,
+        clippy::unwrap_used
+    )
+)]
+
 pub mod modules;
 
-use modules::{agent, fs, git, net, pi, pty, secrets, shell, workspace};
-use std::sync::Mutex;
+use modules::{
+    agent, artifacts, fs, git, mcp, model_compare, net, pi, pty, secrets, shell, workspace,
+};
+use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
 use tauri::{PhysicalPosition, WindowEvent};
@@ -13,7 +24,13 @@ struct LaunchDir(Mutex<Option<String>>);
 
 #[tauri::command]
 fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
-    state.0.lock().expect("LaunchDir mutex poisoned").take()
+    match state.0.lock() {
+        Ok(mut launch_dir) => launch_dir.take(),
+        Err(error) => {
+            log::error!("launch dir lock failed: {error}");
+            None
+        }
+    }
 }
 
 fn parse_launch_dir() -> Option<String> {
@@ -116,7 +133,7 @@ pub fn run() {
     let cli_dir = parse_launch_dir();
     workspace::init_launch_cwd(cli_dir.as_deref());
 
-    tauri::Builder::default()
+    if let Err(error) = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Skip restoring VISIBLE - frontend calls window.show() after first
@@ -131,6 +148,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_log::Builder::new()
                 .level(tauri_plugin_log::log::LevelFilter::Info)
@@ -158,7 +176,11 @@ pub fn run() {
         })
         .manage(pty::PtyState::default())
         .manage(pi::PiState::default())
+        .manage(Arc::new(mcp::McpState::default()))
+        .manage(artifacts::ArtifactsState::default())
         .manage(shell::ShellState::default())
+        .manage(modules::capabilities::WorkflowCapabilityState::default())
+        .manage(modules::capabilities::AppCapabilityState::default())
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
         .manage({
@@ -186,23 +208,62 @@ pub fn run() {
             pi::pi_models_list,
             pi::pi_sessions_history,
             pi::pi_sessions_list,
+            pi::workflow_pi_session_create,
             pi::pi_session_create,
             pi::pi_session_resume,
             pi::pi_session_send,
             pi::pi_session_tool_respond,
             pi::pi_session_rename,
             pi::pi_session_delete,
+            pi::pi_session_delete_with_artifacts,
             pi::pi_session_stop,
+            mcp::mcp_server_configs_list,
+            mcp::mcp_server_config_save,
+            mcp::mcp_server_config_remove,
+            mcp::mcp_tool_preferences_list,
+            mcp::mcp_tool_preference_set,
+            mcp::mcp_tool_policy_set,
+            mcp::mcp_env_secret_statuses,
+            mcp::mcp_env_secret_set,
+            mcp::mcp_env_secret_remove,
+            mcp::mcp_oauth_start,
+            mcp::mcp_oauth_wait_for_callback,
+            mcp::mcp_oauth_complete,
+            mcp::mcp_connect_saved_stdio,
+            mcp::mcp_connect_stdio,
+            mcp::mcp_connect_http,
+            mcp::mcp_disconnect,
+            mcp::mcp_tools,
+            mcp::mcp_server_statuses,
+            artifacts::artifacts_list,
+            artifacts::artifacts_get,
+            artifacts::artifacts_compile_react,
+            artifacts::artifacts_create,
+            artifacts::artifacts_update,
+            artifacts::artifacts_edit,
+            artifacts::artifacts_versions,
+            artifacts::artifacts_export,
+            artifacts::artifacts_delete,
+            artifacts::artifacts_delete_for_conversation,
+            model_compare::model_compare_history_get,
+            model_compare::model_compare_history_put,
+            model_compare::model_compare_history_clear,
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
             fs::file::fs_read_file,
+            fs::file::workflow_file_read,
             fs::file::fs_write_file,
+            fs::file::workflow_file_write,
+            fs::file::fs_write_base64_file,
             fs::file::fs_stat,
             fs::file::fs_canonicalize,
             fs::mutate::fs_create_file,
             fs::mutate::fs_create_dir,
+            fs::mutate::fs_copy_file,
+            fs::mutate::fs_open_file,
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
+            fs::mutate::workflow_file_delete,
             fs::watch::fs_watch_add,
             fs::watch::fs_watch_remove,
             fs::search::fs_search,
@@ -230,6 +291,9 @@ pub fn run() {
             shell::shell_session_open,
             shell::shell_session_run,
             shell::shell_session_close,
+            shell::workflow_shell_bg_spawn,
+            modules::capabilities::workflow_capability_audit,
+            modules::capabilities::app_capability_audit,
             shell::shell_bg_spawn,
             shell::shell_bg_logs,
             shell::shell_bg_kill,
@@ -254,9 +318,13 @@ pub fn run() {
             secrets::secrets_delete,
             secrets::secrets_get_all,
             net::lm_ping,
+            net::workflow_http_request,
             net::ai_http_request,
             net::ai_http_stream,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    {
+        eprintln!("error while running tauri application: {error}");
+        std::process::exit(1);
+    }
 }

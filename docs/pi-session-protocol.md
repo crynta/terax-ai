@@ -8,7 +8,7 @@ For review and verification checks for this protocol, see [`pi-sidebar-verificat
 
 ## Runtime ownership
 
-`sessions.create` now creates a real `@earendil-works/pi-coding-agent` `AgentSession` with Rust-mediated Terax custom tools, a Pi SDK JSONL `SessionManager`, the reviewed Terax approval extension, untrusted Pi extension loading disabled in the sidecar resource loader, and a stable workspace-root `cwd`. Rust chooses the app-owned SDK session directory, persists the returned `sdkSessionFile`, and validates that future resume requests stay inside that directory. Rust also records the authorized workspace environment (`local` or WSL distro) for the session; native tool requests must echo matching `cwd` and `workspaceEnv` before Rust executes anything. The sidecar overrides `read`, `ls`, `grep`, `find`, `bash`, `edit`, and `write`; actual execution is sent back to Rust with `nativeTools.execute`. Rust verifies the session id/cwd/workspace env, applies workspace and sensitive-path policy, executes the native operation, and returns the result to Pi. Shell and mutating tools still pause until Rust forwards an explicit `sessions.tool.respond` approval or denial. WSL `bash` currently fails closed until Terax routes shell execution through WSL instead of the local host shell. Native git, keyring, process lifecycle, and Terax metadata persistence ownership stays in Rust/Tauri, while the Pi SDK JSONL file owns conversation replay.
+`sessions.create` now creates a real `@earendil-works/pi-coding-agent` `AgentSession` with Rust-mediated Terax custom tools, a Pi SDK JSONL `SessionManager`, the reviewed Terax approval extension, untrusted Pi extension loading disabled in the sidecar resource loader, and a stable workspace-root `cwd`. Rust chooses the app-owned SDK session directory, persists the returned `sdkSessionFile`, and validates that future resume requests stay inside that directory. Rust also records the authorized workspace environment (`local` or WSL distro) for the session; native tool requests must echo matching `cwd` and `workspaceEnv` before Rust executes anything. The sidecar overrides `read`, `ls`, `grep`, `find`, `bash`, `edit`, `write`, `create_artifact`, `edit_artifact`, `read_artifact`, and `list_artifacts`; actual execution is sent back to Rust with `nativeTools.execute`. Rust verifies the session id/cwd/workspace env, applies workspace and sensitive-path policy, executes the native operation, and returns the result to Pi. Artifact tools derive conversation ownership from the verified session id and do not accept model-provided conversation ids. Shell and mutating workspace tools still pause until Rust forwards an explicit `sessions.tool.respond` approval or denial. WSL `bash` currently fails closed until Terax routes shell execution through WSL instead of the local host shell. Native git, keyring, process lifecycle, and Terax metadata persistence ownership stays in Rust/Tauri, while the Pi SDK JSONL file owns conversation replay.
 
 `sessions.send` accepts a prompt immediately, returns the initial `session.input` and `running` status events, then streams output/status/error events asynchronously as JSON-RPC notifications on stdout. Rust validates the optional per-turn Terax context before forwarding it, and the sidecar prepends that context as an `<env>` block only for the SDK prompt. The visible/persisted user prompt remains unchanged. When a reasoning-capable model exposes thinking levels, Terax may include a `thinkingLevel` for the next reply; the sidecar validates it and applies it with the Pi SDK before starting `AgentSession.prompt()`. Rust filters notifications out of the response stream and forwards them to the frontend as Tauri `pi:session-event` events.
 
@@ -116,7 +116,7 @@ type PiDiagnostics = PiHostInfo & {
   };
   config: {
     toolMode: "rust-mediated";
-    enabledTools: Array<"read" | "ls" | "grep" | "find" | "bash" | "edit" | "write">;
+    enabledTools: Array<"read" | "ls" | "grep" | "find" | "bash" | "edit" | "write" | "create_artifact" | "edit_artifact" | "read_artifact" | "list_artifacts">;
     approvalRequiredTools: Array<"bash" | "edit" | "write">;
     sessionStorage: "rust-app-data-json+pi-sdk-jsonl";
     apiKeys: Array<{ name: string; configured: boolean }>;
@@ -225,7 +225,7 @@ Params:
   title: string;
   cwd: string;
   sdkSessionFile: string;
-  sessionDir?: string;
+  sessionDir: string;
   providerConfig?: PiProviderConfig;
   createdAt?: string;
   lastPrompt?: string | null;
@@ -239,7 +239,7 @@ Result:
 { session: PiSession; events: PiSessionEvent[] }
 ```
 
-Reopens a persisted Pi SDK JSONL conversation with `SessionManager.open()` after the Node sidecar lost its in-memory `AgentSession` map. Rust loads the session from `pi-sessions.json`, validates the authorized workspace `cwd`, validates `sdkSessionFile` against the app-data `pi-sdk-sessions` directory, forwards the metadata to the sidecar, persists the returned live session snapshot, and emits `session.resumed`. Resuming does not recreate pending tool approvals; restored approval-only transcript items are treated as expired/denied when a stopped status is present.
+Reopens a persisted Pi SDK JSONL conversation with `SessionManager.open()` after the Node sidecar lost its in-memory `AgentSession` map. Rust loads the session from `pi-sessions.json`, validates the authorized workspace `cwd`, validates `sdkSessionFile` against the app-data `pi-sdk-sessions` directory, verifies the file is an existing regular file, forwards the metadata to the sidecar, persists the returned live session snapshot, and emits `session.resumed`. The sidecar also checks that `sdkSessionFile` is readable, regular, and inside `sessionDir` before opening it. Resuming does not recreate pending tool approvals; restored approval-only transcript items are treated as expired/denied when a stopped status is present.
 
 ### `sessions.send`
 

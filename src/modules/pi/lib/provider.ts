@@ -6,8 +6,8 @@ import {
   getModelContextLimit,
   getProvider,
   isCompatModelId,
-  modelKeepsReasoning,
   type ModelInfo,
+  modelKeepsReasoning,
   type ProviderId,
   resolveModel,
 } from "@/modules/ai/config";

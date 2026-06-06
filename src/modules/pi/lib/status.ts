@@ -13,6 +13,19 @@ export type PiPackageInfo = {
   error: string | null;
 };
 
+export type CapabilityAuditSource = "app" | "core" | "mcp" | "workflow";
+
+export type CapabilityAuditEntry = {
+  sequence: number;
+  sessionId: string;
+  toolCallId: string;
+  toolName: string;
+  approved: boolean;
+  allowed: boolean;
+  outcome: "blocked" | "succeeded" | "failed";
+  message?: string;
+};
+
 export type PiHostInfo = {
   hostVersion: string;
   piSdkLoaded: boolean;
@@ -56,6 +69,7 @@ export type PiDiagnostics = PiHostInfo & {
     idleShutdownMs: number;
     methodTimeouts: Array<{ method: string; timeoutMs: number }>;
   };
+  capabilityAudit?: CapabilityAuditEntry[];
   sessions: Array<{
     id: string;
     title: string;

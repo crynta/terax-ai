@@ -35,7 +35,8 @@ A Pi sidebar change should keep these invariants true:
    - Custom tools route execution back to Rust with reverse JSON-RPC `nativeTools.execute`.
    - Rust verifies the request session id and cwd against the workspace authorized at `sessions.create`.
    - `read`, `ls`, `grep`, `find`, `edit`, and `write` stay workspace-scoped and block sensitive paths; grep/find skip sensitive files during traversal.
-   - Shell and mutating tools (`bash`, `edit`, `write`) pause for `sessions.tool.respond` approval before Rust execution.
+   - Shell and mutating workspace tools (`bash`, `edit`, `write`) pause for `sessions.tool.respond` approval before Rust execution.
+   - Artifact tools (`create_artifact`, `edit_artifact`, `read_artifact`, `list_artifacts`) route through Rust without workspace write approval because they touch only app-owned artifact state.
    - Direct Terax-owned file, shell, git, terminal, editor, and SQLite method families stay unavailable over sidecar JSON-RPC.
 
 3. **Secrets are never diagnostic output**
@@ -119,7 +120,7 @@ Cover these in `sidecars/pi-host/*.test.js`:
 - `models.list` reads profile metadata without returning tokens.
 - `sessions.create`, `sessions.send`, and `sessions.stop` preserve event ordering and status transitions.
 - Diagnostics report `rust-mediated`, the exact enabled/approval-required tool lists, and enabled file/shell/tool capabilities without leaking secrets.
-- Faux host sessions can stream output for tests, read/search tools route through `nativeTools.execute` without approval, and `bash`/`edit`/`write` requests pause until `sessions.tool.respond` approves or denies them.
+- Faux host sessions can stream output for tests, read/search/artifact tools route through `nativeTools.execute` without approval, and `bash`/`edit`/`write` requests pause until `sessions.tool.respond` approves or denies them.
 - Stale or already-resolved tool approvals fail with `PI_APPROVAL_NOT_FOUND` / JSON-RPC `-32008`.
 - Protocol stdout remains valid JSON-RPC when Pi SDK imports or prompt execution produce incidental output.
 

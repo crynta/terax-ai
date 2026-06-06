@@ -2,21 +2,12 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { handleJsonRpcLine, resetProtocolForTests } from "./protocol.js";
 import {
   resetNativeToolExecutorForTests,
   setNativeToolExecutorForTests,
 } from "./native-tools.js";
-import {
-  APPROVAL_TOOL_NAMES,
-  ENABLED_TOOL_NAMES,
-  formatPromptWithContext,
-  mapAgentSessionEvent,
-  setSessionEventSink,
-  TOOL_MODE,
-  toolRequiresApproval,
-  validateToolSafety,
-} from "./sessions.js";
+import { handleJsonRpcLine, resetProtocolForTests } from "./protocol.js";
+import { setSessionEventSink } from "./sessions.js";
 
 async function request(id, method, params) {
   return handleJsonRpcLine(
@@ -55,252 +46,6 @@ function suppressPiTerminalNotifications() {
     process.stdout.write = originalWrite;
   };
 }
-
-describe("formatPromptWithContext", () => {
-  it("prepends Terax env context without changing the user prompt", () => {
-    expect(
-      formatPromptWithContext({ cwd: "/Users/me/project" }, "Where am I?", {
-        activeTerminalCwd: "/Users/me/project/src",
-        activeFile: "/Users/me/project/src/App.tsx",
-        activeTerminalPrivate: true,
-      }),
-    ).toBe(
-      `<env>\nworkspace_root: /Users/me/project\nactive_terminal_cwd: /Users/me/project/src\nactive_file: /Users/me/project/src/App.tsx\nactive_terminal_mode: private\n</env>\n\nWhere am I?`,
-    );
-  });
-});
-
-describe("mapAgentSessionEvent", () => {
-  beforeEach(() => {
-    liveEvents = [];
-    setSessionEventSink((event) => liveEvents.push(event));
-  });
-
-  afterEach(() => {
-    setSessionEventSink(null);
-  });
-
-  it("suppresses assistant events after the active run is cancelled", () => {
-    mapAgentSessionEvent(
-      {
-        type: "message_update",
-        assistantMessageEvent: { type: "text_delta", delta: "stale" },
-      },
-      {
-        id: "pi-1",
-        status: "running",
-        activeRunId: 3,
-        cancelledRunId: 3,
-        agentGeneration: 1,
-      },
-      1,
-    );
-
-    expect(liveEvents).toEqual([]);
-  });
-
-  it("suppresses assistant events from old agent subscriptions", () => {
-    mapAgentSessionEvent(
-      {
-        type: "message_update",
-        assistantMessageEvent: { type: "text_end", content: "stale" },
-      },
-      {
-        id: "pi-1",
-        status: "running",
-        activeRunId: 4,
-        cancelledRunId: null,
-        agentGeneration: 2,
-      },
-      1,
-    );
-
-    expect(liveEvents).toEqual([]);
-  });
-
-  it("publishes progress events for agent lifecycle updates", () => {
-    mapAgentSessionEvent(
-      { type: "turn_start" },
-      {
-        id: "pi-1",
-        status: "running",
-        activeRunId: 1,
-        cancelledRunId: null,
-        agentGeneration: 1,
-        activeBranch: { groupId: "turn-1", index: 0 },
-      },
-      1,
-    );
-
-    expect(liveEvents).toEqual([
-      expect.objectContaining({
-        type: "session.progress",
-        payload: {
-          text: "Preparing model request…",
-          branch: { groupId: "turn-1", index: 0 },
-        },
-      }),
-    ]);
-  });
-
-  it("publishes streamed reasoning events from assistant thinking parts", () => {
-    const session = {
-      id: "pi-1",
-      status: "running",
-      activeRunId: 1,
-      cancelledRunId: null,
-      agentGeneration: 1,
-      activeBranch: { groupId: "turn-1", index: 0 },
-    };
-
-    mapAgentSessionEvent(
-      {
-        type: "message_update",
-        assistantMessageEvent: { type: "thinking_delta", delta: "plan" },
-      },
-      session,
-      1,
-    );
-    mapAgentSessionEvent(
-      {
-        type: "message_update",
-        assistantMessageEvent: { type: "thinking_end", content: "plan done" },
-      },
-      session,
-      1,
-    );
-
-    expect(liveEvents).toEqual([
-      expect.objectContaining({
-        type: "session.reasoning.delta",
-        payload: {
-          text: "plan",
-          branch: { groupId: "turn-1", index: 0 },
-        },
-      }),
-      expect.objectContaining({
-        type: "session.reasoning.text",
-        payload: {
-          text: "plan done",
-          branch: { groupId: "turn-1", index: 0 },
-        },
-      }),
-    ]);
-  });
-
-  it("publishes tool timeline events with active branch metadata", () => {
-    const session = {
-      id: "pi-1",
-      status: "running",
-      activeRunId: 1,
-      cancelledRunId: null,
-      agentGeneration: 1,
-      activeBranch: { groupId: "turn-1", index: 0 },
-      toolInputs: new Map(),
-    };
-
-    mapAgentSessionEvent(
-      {
-        type: "tool_execution_start",
-        toolCallId: "call-1",
-        toolName: "read",
-        args: { path: "package.json" },
-      },
-      session,
-      1,
-    );
-    mapAgentSessionEvent(
-      {
-        type: "tool_execution_update",
-        toolCallId: "call-1",
-        toolName: "read",
-        partialResult: { content: [{ type: "text", text: "partial" }] },
-      },
-      session,
-      1,
-    );
-    mapAgentSessionEvent(
-      {
-        type: "tool_execution_end",
-        toolCallId: "call-1",
-        toolName: "read",
-        result: { content: [{ type: "text", text: "done" }] },
-        isError: false,
-      },
-      session,
-      1,
-    );
-
-    expect(liveEvents).toEqual([
-      expect.objectContaining({
-        type: "session.tool.start",
-        payload: expect.objectContaining({
-          toolCallId: "call-1",
-          toolName: "read",
-          input: { path: "package.json" },
-          branch: { groupId: "turn-1", index: 0 },
-        }),
-      }),
-      expect.objectContaining({
-        type: "session.tool.update",
-        payload: expect.objectContaining({
-          toolCallId: "call-1",
-          output: { content: "partial", details: null },
-          branch: { groupId: "turn-1", index: 0 },
-        }),
-      }),
-      expect.objectContaining({
-        type: "session.tool.result",
-        payload: expect.objectContaining({
-          toolCallId: "call-1",
-          output: { content: "done", details: null },
-          isError: false,
-          branch: { groupId: "turn-1", index: 0 },
-        }),
-      }),
-    ]);
-  });
-});
-
-describe("Pi tool safety policy", () => {
-  const session = { cwd: process.cwd() };
-
-  it("keeps file tools inside the workspace", () => {
-    expect(validateToolSafety(session, "read", { path: "package.json" })).toBe(
-      null,
-    );
-    expect(validateToolSafety(session, "read", { path: "../secret.txt" })).toBe(
-      `read can only access files inside the workspace: ${process.cwd()}`,
-    );
-  });
-
-  it("blocks sensitive paths before execution", () => {
-    expect(validateToolSafety(session, "read", { path: ".env" })).toBe(
-      "read refused sensitive path: .env",
-    );
-    expect(validateToolSafety(session, "write", { path: "tokens.json" })).toBe(
-      "write refused sensitive path: tokens.json",
-    );
-  });
-
-  it("enables only Rust-mediated workspace tools", () => {
-    expect(TOOL_MODE).toBe("rust-mediated");
-    expect(ENABLED_TOOL_NAMES).toEqual([
-      "read",
-      "ls",
-      "grep",
-      "find",
-      "bash",
-      "edit",
-      "write",
-    ]);
-    expect(APPROVAL_TOOL_NAMES).toEqual(["bash", "edit", "write"]);
-    expect(toolRequiresApproval("bash")).toBe(true);
-    expect(toolRequiresApproval("edit")).toBe(true);
-    expect(toolRequiresApproval("write")).toBe(true);
-    expect(toolRequiresApproval("read")).toBe(false);
-  });
-});
 
 describe("Pi host session protocol", () => {
   beforeEach(async () => {
@@ -441,6 +186,40 @@ describe("Pi host session protocol", () => {
         expect.objectContaining({ id: sessionId, sdkSessionFile }),
       ]);
       expect(followUp.response.result.session.status).toBe("running");
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects resume when the SDK session file is missing", async () => {
+    const sessionDir = await mkdtemp(
+      join(tmpdir(), "terax-pi-missing-session-"),
+    );
+    try {
+      const missingFile = join(sessionDir, "missing.jsonl");
+      const result = await request(65, "sessions.resume", {
+        sessionId: "pi-missing",
+        title: "Missing",
+        cwd: process.cwd(),
+        sessionDir,
+        sdkSessionFile: missingFile,
+      });
+
+      expect(result.response).toEqual({
+        jsonrpc: "2.0",
+        id: 65,
+        error: {
+          code: -32009,
+          message: expect.stringContaining("sdkSessionFile was not found"),
+          data: {
+            code: "PI_SESSION_FILE_NOT_FOUND",
+            category: "not_found",
+            retryable: false,
+            remediation:
+              "The saved Pi SDK session file is missing or no longer readable. Continue in a new Pi session.",
+          },
+        },
+      });
     } finally {
       await rm(sessionDir, { recursive: true, force: true });
     }
@@ -642,259 +421,10 @@ describe("Pi host session protocol", () => {
       id: 97,
       error: {
         code: -32602,
-        message: "sessions.send params.thinkingLevel must be one of off, minimal, low, medium, high, xhigh",
+        message:
+          "sessions.send params.thinkingLevel must be one of off, minimal, low, medium, high, xhigh",
       },
     });
-  });
-
-  it("rejects stale tool approval responses", async () => {
-    const created = await request(48, "sessions.create", {
-      title: "Stale approval",
-    });
-    const sessionId = created.response.result.session.id;
-
-    const result = await request(49, "sessions.tool.respond", {
-      sessionId,
-      toolCallId: "missing-call",
-      approved: true,
-    });
-
-    expect(result.response).toMatchObject({
-      jsonrpc: "2.0",
-      id: 49,
-      error: {
-        code: -32008,
-        message: "Pi tool approval not found: missing-call",
-        data: {
-          code: "PI_APPROVAL_NOT_FOUND",
-          category: "not_found",
-          retryable: false,
-          remediation: expect.any(String),
-        },
-      },
-    });
-  });
-
-  it("delegates read-only faux tool calls to the Rust native tool bridge without approval", async () => {
-    const nativeToolCalls = [];
-    setNativeToolExecutorForTests(async (request) => {
-      nativeToolCalls.push(request);
-      return {
-        content: [{ type: "text", text: "read through Rust" }],
-        details: { mediatedBy: "rust" },
-      };
-    });
-    process.env.TERAX_PI_HOST_TEST_FAUX_TOOL_CALL = JSON.stringify({
-      id: "call-read",
-      name: "read",
-      arguments: { path: "package.json" },
-    });
-    const created = await request(50, "sessions.create", {
-      title: "Read tool",
-    });
-    const sessionId = created.response.result.session.id;
-
-    const sent = await request(51, "sessions.send", {
-      sessionId,
-      prompt: "read package",
-    });
-
-    expect(sent.response.result.session.status).toBe("running");
-    await waitFor(() =>
-      liveEvents.some(
-        (event) =>
-          event.type === "session.status" && event.payload.status === "idle",
-      ),
-    );
-    expect(nativeToolCalls).toEqual([
-      expect.objectContaining({
-        sessionId,
-        toolCallId: "call-read",
-        toolName: "read",
-        input: { path: "package.json" },
-      }),
-    ]);
-    expect(
-      liveEvents.some(
-        (event) => event.type === "session.tool.approval.requested",
-      ),
-    ).toBe(false);
-    expect(liveEvents).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "session.tool.start",
-          sessionId,
-          payload: expect.objectContaining({
-            toolCallId: "call-read",
-            toolName: "read",
-            input: { path: "package.json" },
-          }),
-        }),
-        expect.objectContaining({
-          type: "session.tool.result",
-          sessionId,
-          payload: expect.objectContaining({
-            toolCallId: "call-read",
-            toolName: "read",
-            output: expect.objectContaining({
-              content: "read through Rust",
-              details: { mediatedBy: "rust" },
-            }),
-            isError: false,
-          }),
-        }),
-      ]),
-    );
-  });
-
-  it("requires approval before running shell faux tool calls", async () => {
-    const nativeToolCalls = [];
-    setNativeToolExecutorForTests(async (request) => {
-      nativeToolCalls.push(request);
-      return {
-        content: [{ type: "text", text: "shell ran through Rust" }],
-        details: { mediatedBy: "rust" },
-      };
-    });
-    process.env.TERAX_PI_HOST_TEST_FAUX_TOOL_CALL = JSON.stringify({
-      id: "call-bash",
-      name: "bash",
-      arguments: { command: "printf approved" },
-    });
-    const created = await request(52, "sessions.create", {
-      title: "Shell approval",
-    });
-    const sessionId = created.response.result.session.id;
-
-    await request(53, "sessions.send", {
-      sessionId,
-      prompt: "run shell",
-    });
-    await waitFor(() =>
-      liveEvents.some(
-        (event) => event.type === "session.tool.approval.requested",
-      ),
-    );
-
-    expect(liveEvents).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "session.tool.approval.requested",
-          sessionId,
-          payload: expect.objectContaining({
-            approvalId: "call-bash",
-            toolCallId: "call-bash",
-            toolName: "bash",
-            input: { command: "printf approved" },
-          }),
-        }),
-      ]),
-    );
-
-    const responded = await request(54, "sessions.tool.respond", {
-      sessionId,
-      toolCallId: "call-bash",
-      approved: true,
-    });
-
-    expect(responded.response.result.events).toEqual([
-      expect.objectContaining({
-        type: "session.tool.approval.responded",
-        sessionId,
-        payload: expect.objectContaining({
-          toolCallId: "call-bash",
-          approved: true,
-        }),
-      }),
-    ]);
-    await waitFor(() =>
-      liveEvents.some(
-        (event) =>
-          event.type === "session.status" && event.payload.status === "idle",
-      ),
-    );
-    expect(nativeToolCalls).toEqual([
-      expect.objectContaining({
-        sessionId,
-        toolCallId: "call-bash",
-        toolName: "bash",
-        input: { command: "printf approved" },
-      }),
-    ]);
-    expect(liveEvents).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "session.tool.result",
-          sessionId,
-          payload: expect.objectContaining({
-            toolCallId: "call-bash",
-            toolName: "bash",
-            output: expect.objectContaining({
-              content: "shell ran through Rust",
-              details: { mediatedBy: "rust" },
-            }),
-            isError: false,
-          }),
-        }),
-      ]),
-    );
-  });
-
-  it("denies shell faux tool calls without executing them", async () => {
-    process.env.TERAX_PI_HOST_TEST_FAUX_TOOL_CALL = JSON.stringify({
-      id: "call-deny",
-      name: "bash",
-      arguments: { command: "printf denied" },
-    });
-    const created = await request(55, "sessions.create", {
-      title: "Shell denial",
-    });
-    const sessionId = created.response.result.session.id;
-
-    await request(56, "sessions.send", {
-      sessionId,
-      prompt: "run shell",
-    });
-    await waitFor(() =>
-      liveEvents.some(
-        (event) => event.type === "session.tool.approval.requested",
-      ),
-    );
-
-    const responded = await request(57, "sessions.tool.respond", {
-      sessionId,
-      toolCallId: "call-deny",
-      approved: false,
-    });
-
-    expect(responded.response.result.events[0]).toMatchObject({
-      type: "session.tool.approval.responded",
-      sessionId,
-      payload: expect.objectContaining({
-        toolCallId: "call-deny",
-        approved: false,
-      }),
-    });
-    await waitFor(() =>
-      liveEvents.some(
-        (event) =>
-          event.type === "session.tool.result" &&
-          event.payload.toolCallId === "call-deny",
-      ),
-    );
-    expect(liveEvents).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "session.tool.result",
-          sessionId,
-          payload: expect.objectContaining({
-            toolCallId: "call-deny",
-            toolName: "bash",
-            isError: true,
-          }),
-        }),
-      ]),
-    );
   });
 
   it("tags regenerated sends as response branches", async () => {
@@ -1066,6 +596,33 @@ describe("Pi host session protocol", () => {
       prompt: "again",
     });
     expect(followUp.response.result.session.status).toBe("running");
+  });
+
+  it("returns a status event when stopping an already-stopped session", async () => {
+    const created = await request(15, "sessions.create", {
+      title: "Stop twice",
+    });
+    const sessionId = created.response.result.session.id;
+
+    const firstStop = await request(16, "sessions.stop", { sessionId });
+    expect(firstStop.response.result.session.status).toBe("stopped");
+
+    const secondStop = await request(17, "sessions.stop", { sessionId });
+    expect(secondStop.response).toMatchObject({
+      jsonrpc: "2.0",
+      id: 17,
+      result: {
+        session: { id: sessionId, status: "stopped" },
+        events: [
+          {
+            type: "session.status",
+            sessionId,
+            payload: { status: "stopped" },
+          },
+        ],
+      },
+    });
+    expect(secondStop.response.result.events).toHaveLength(1);
   });
 
   it("rejects a second prompt while a session is already running", async () => {

@@ -2,6 +2,7 @@ use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
 
+use crate::modules::capabilities::AppCapabilityState;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 #[derive(Serialize)]
@@ -24,13 +25,11 @@ pub struct DirEntry {
 /// Lists immediate children of `path`. Dirs first, then files, each sorted
 /// case-insensitively. Dot-prefixed entries (files and dirs) are hidden unless
 /// `show_hidden` is set.
-#[tauri::command]
-pub fn fs_read_dir(
+pub fn fs_read_dir_inner(
     path: String,
     show_hidden: bool,
-    workspace: Option<WorkspaceEnv>,
+    workspace: WorkspaceEnv,
 ) -> Result<Vec<DirEntry>, String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
     let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
@@ -95,17 +94,27 @@ pub fn fs_read_dir(
     Ok(entries)
 }
 
+#[tauri::command]
+pub fn fs_read_dir(
+    app_audit: tauri::State<AppCapabilityState>,
+    path: String,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<Vec<DirEntry>, String> {
+    app_audit.execute_app_capability("app.file_list", || {
+        fs_read_dir_inner(path, show_hidden, WorkspaceEnv::from_option(workspace))
+    })
+}
+
 /// Lists immediate subdirectories of `path`. Kept for the CwdBreadcrumb.
 ///
 /// Symlinks to directories are included (matches shell `cd` semantics).
 /// Hidden entries are filtered by dot-prefix only.
-#[tauri::command]
-pub fn list_subdirs(
+pub fn list_subdirs_inner(
     path: String,
     show_hidden: bool,
-    workspace: Option<WorkspaceEnv>,
+    workspace: WorkspaceEnv,
 ) -> Result<Vec<String>, String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
     let root = resolve_path(&path, &workspace);
     let read = std::fs::read_dir(&root).map_err(|e| {
         log::debug!("list_subdirs({}) read_dir failed: {e}", root.display());
@@ -127,4 +136,16 @@ pub fn list_subdirs(
 
     dirs.sort_by_key(|a| a.to_lowercase());
     Ok(dirs)
+}
+
+#[tauri::command]
+pub fn list_subdirs(
+    app_audit: tauri::State<AppCapabilityState>,
+    path: String,
+    show_hidden: bool,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<Vec<String>, String> {
+    app_audit.execute_app_capability("app.file_list", || {
+        list_subdirs_inner(path, show_hidden, WorkspaceEnv::from_option(workspace))
+    })
 }

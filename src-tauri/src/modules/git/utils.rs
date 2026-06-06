@@ -56,7 +56,7 @@ pub fn authorized_repo_root(
 ) -> Result<ResolvedGitDirectory> {
     let canonical = canonical_dir(registry, path, workspace)?;
     if !registry.is_authorized(&canonical.local_path) {
-        return Err(GitError::PathOutsideWorkspace(canonical.local_path.clone()));
+        return Err(GitError::PathOutsideWorkspace(canonical.local_path));
     }
     Ok(canonical)
 }

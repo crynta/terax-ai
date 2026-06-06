@@ -1,3 +1,5 @@
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -8,8 +10,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { useState } from "react";
 import { useUpdater } from "./useUpdater";
 
 type DistroKey = "arch" | "debian" | "fedora";
@@ -163,10 +163,7 @@ export function UpdaterDialog() {
               <Button variant="ghost" size="sm" onClick={dismiss}>
                 Later
               </Button>
-              <Button
-                size="sm"
-                onClick={() => void openUrl(manual.releaseUrl)}
-              >
+              <Button size="sm" onClick={() => void openUrl(manual.releaseUrl)}>
                 Download package
               </Button>
             </>

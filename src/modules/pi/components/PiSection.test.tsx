@@ -14,7 +14,7 @@ describe("PiSection", () => {
       </PiSection>,
     );
 
-    expect(html).toContain("aria-expanded=\"true\"");
+    expect(html).toContain('aria-expanded="true"');
     expect(html).toContain("Diagnostic body");
   });
 
@@ -25,7 +25,7 @@ describe("PiSection", () => {
       </PiSection>,
     );
 
-    expect(html).toContain("aria-expanded=\"false\"");
+    expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Context");
     expect(html).not.toContain("Context body");
   });

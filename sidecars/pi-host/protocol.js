@@ -502,29 +502,17 @@ export async function handleJsonRpcLine(line) {
       };
     case "sessions.create":
       return {
-        response: await sessionResponse(
-          request.id,
-          createSession,
-          params,
-        ),
+        response: await sessionResponse(request.id, createSession, params),
         shutdown: false,
       };
     case "sessions.send":
       return {
-        response: await sessionResponse(
-          request.id,
-          sendToSession,
-          params,
-        ),
+        response: await sessionResponse(request.id, sendToSession, params),
         shutdown: false,
       };
     case "sessions.resume":
       return {
-        response: await sessionResponse(
-          request.id,
-          resumeSession,
-          params,
-        ),
+        response: await sessionResponse(request.id, resumeSession, params),
         shutdown: false,
       };
     case "sessions.tool.respond":
@@ -538,29 +526,17 @@ export async function handleJsonRpcLine(line) {
       };
     case "sessions.rename":
       return {
-        response: await sessionResponse(
-          request.id,
-          renameSession,
-          params,
-        ),
+        response: await sessionResponse(request.id, renameSession, params),
         shutdown: false,
       };
     case "sessions.delete":
       return {
-        response: await sessionResponse(
-          request.id,
-          deleteSession,
-          params,
-        ),
+        response: await sessionResponse(request.id, deleteSession, params),
         shutdown: false,
       };
     case "sessions.stop":
       return {
-        response: await sessionResponse(
-          request.id,
-          stopSession,
-          params,
-        ),
+        response: await sessionResponse(request.id, stopSession, params),
         shutdown: false,
       };
     case "shutdown":

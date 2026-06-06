@@ -9,6 +9,11 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 
+use crate::modules::capabilities::{
+    AppCapabilityState, WorkflowCapabilityState, WorkflowPolicyContext,
+};
+
+const DEFAULT_STREAM_BODY_LIMIT: usize = 16 * 1024 * 1024;
 const HEADER_BLOCKLIST: &[&str] = &[
     "host",
     "content-length",
@@ -189,31 +194,39 @@ fn sanitize_headers(headers: Option<HashMap<String, String>>) -> Result<HeaderMa
 }
 
 #[tauri::command]
-pub async fn lm_ping(base_url: String) -> Result<u16, String> {
-    let trimmed = base_url.trim().trim_end_matches('/');
-    if trimmed.is_empty() {
-        return Err("empty base url".into());
-    }
-    let probe = format!("{trimmed}/models");
-    let parsed = validate_url(&probe, true)?;
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| "missing host".to_string())?
-        .to_string();
-    let safe_ips = classify_and_collect_safe_ips(&host, true).await?;
+pub async fn lm_ping(
+    app_audit: tauri::State<'_, AppCapabilityState>,
+    base_url: String,
+) -> Result<u16, String> {
+    app_audit
+        .execute_app_capability_async("app.http_request", || async move {
+            let trimmed = base_url.trim().trim_end_matches('/');
+            if trimmed.is_empty() {
+                return Err("empty base url".into());
+            }
+            let probe = format!("{trimmed}/models");
+            let parsed = validate_url(&probe, true)?;
+            let host = parsed
+                .host_str()
+                .ok_or_else(|| "missing host".to_string())?
+                .to_string();
+            let safe_ips = classify_and_collect_safe_ips(&host, true).await?;
 
-    let mut builder = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .redirect(reqwest::redirect::Policy::none());
-    let addrs: Vec<SocketAddr> = safe_ips.iter().map(|ip| SocketAddr::new(*ip, 0)).collect();
-    builder = builder.resolve_to_addrs(&host, &addrs);
-    let client = builder.build().map_err(|e| e.to_string())?;
-    client
-        .get(parsed)
-        .send()
+            let mut builder = reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .redirect(reqwest::redirect::Policy::none());
+            let addrs: Vec<SocketAddr> =
+                safe_ips.iter().map(|ip| SocketAddr::new(*ip, 0)).collect();
+            builder = builder.resolve_to_addrs(&host, &addrs);
+            let client = builder.build().map_err(|e| e.to_string())?;
+            client
+                .get(parsed)
+                .send()
+                .await
+                .map(|r| r.status().as_u16())
+                .map_err(|e| e.to_string())
+        })
         .await
-        .map(|r| r.status().as_u16())
-        .map_err(|e| e.to_string())
 }
 // AI HTTP proxy - bypasses webview CORS / Mixed-Content / PNA so local-network
 // model servers (LM Studio, Ollama, vLLM) work in the production bundle.
@@ -223,6 +236,53 @@ pub struct HttpResponse {
     pub status: u16,
     pub headers: HashMap<String, String>,
     pub body: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct HttpRequestBytesResponse {
+    status: u16,
+    status_text: String,
+    headers: HashMap<String, String>,
+    body: Vec<u8>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowHttpResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub headers: HashMap<String, String>,
+    pub body_text: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowHttpRequest {
+    pub method: String,
+    pub url: String,
+    #[serde(default)]
+    pub headers: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub allow_private_network: Option<bool>,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+    #[serde(default)]
+    pub max_body_bytes: Option<usize>,
+    pub approved: bool,
+    pub document_id: String,
+    pub node_id: String,
+}
+
+impl WorkflowHttpRequest {
+    fn policy_context(&self) -> WorkflowPolicyContext {
+        WorkflowPolicyContext {
+            approved: self.approved,
+            document_id: self.document_id.clone(),
+            node_id: self.node_id.clone(),
+        }
+    }
 }
 
 fn build_request(
@@ -339,8 +399,7 @@ fn header_map_to_strings(headers: &HeaderMap) -> HashMap<String, String> {
     out
 }
 
-#[tauri::command]
-pub async fn ai_http_request(
+async fn http_request_bytes(
     url: String,
     method: String,
     headers: Option<HashMap<String, String>>,
@@ -348,7 +407,7 @@ pub async fn ai_http_request(
     allow_private_network: Option<bool>,
     timeout_ms: Option<u64>,
     max_body_bytes: Option<usize>,
-) -> Result<HttpResponse, String> {
+) -> Result<HttpRequestBytesResponse, String> {
     let allow_private = allow_private_network.unwrap_or(false);
     let parsed = validate_url(&url, allow_private)?;
     let host = parsed
@@ -366,14 +425,87 @@ pub async fn ai_http_request(
     let req = build_request(&client, &method, parsed, headers, body)?;
     let resp = req.send().await.map_err(|e| e.to_string())?;
 
-    let status = resp.status().as_u16();
+    let status = resp.status();
+    let status_text = status.canonical_reason().unwrap_or("").to_string();
     let headers = header_map_to_strings(resp.headers());
     let body = limited_body(resp, max_body_bytes).await?;
-    Ok(HttpResponse {
-        status,
+    Ok(HttpRequestBytesResponse {
+        status: status.as_u16(),
+        status_text,
         headers,
         body,
     })
+}
+
+#[tauri::command]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Tauri command wrappers expose IPC fields directly"
+)]
+pub async fn ai_http_request(
+    app_audit: tauri::State<'_, AppCapabilityState>,
+    url: String,
+    method: String,
+    headers: Option<HashMap<String, String>>,
+    body: Option<Vec<u8>>,
+    allow_private_network: Option<bool>,
+    timeout_ms: Option<u64>,
+    max_body_bytes: Option<usize>,
+) -> Result<HttpResponse, String> {
+    app_audit
+        .execute_app_capability_async("app.http_request", || async move {
+            let response = http_request_bytes(
+                url,
+                method,
+                headers,
+                body,
+                allow_private_network,
+                timeout_ms,
+                max_body_bytes,
+            )
+            .await?;
+            Ok(HttpResponse {
+                status: response.status,
+                headers: response.headers,
+                body: response.body,
+            })
+        })
+        .await
+}
+
+pub async fn workflow_http_request_inner(
+    state: &WorkflowCapabilityState,
+    request: WorkflowHttpRequest,
+) -> Result<WorkflowHttpResponse, String> {
+    let context = request.policy_context();
+    state
+        .execute_workflow_capability_async(&context, "workflow.http_request", || async move {
+            let response = http_request_bytes(
+                request.url,
+                request.method,
+                request.headers,
+                request.body.map(String::into_bytes),
+                request.allow_private_network,
+                request.timeout_ms,
+                request.max_body_bytes,
+            )
+            .await?;
+            Ok(WorkflowHttpResponse {
+                status: response.status,
+                status_text: response.status_text,
+                headers: response.headers,
+                body_text: String::from_utf8_lossy(&response.body).into_owned(),
+            })
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn workflow_http_request(
+    state: tauri::State<'_, WorkflowCapabilityState>,
+    request: WorkflowHttpRequest,
+) -> Result<WorkflowHttpResponse, String> {
+    workflow_http_request_inner(&state, request).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -393,81 +525,101 @@ pub enum AiStreamEvent {
 }
 
 #[tauri::command]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Tauri command wrappers expose IPC fields directly"
+)]
 pub async fn ai_http_stream(
+    app_audit: tauri::State<'_, AppCapabilityState>,
     url: String,
     method: String,
     headers: Option<HashMap<String, String>>,
     body: Option<Vec<u8>>,
     allow_private_network: Option<bool>,
+    max_body_bytes: Option<usize>,
     on_event: Channel<AiStreamEvent>,
 ) -> Result<(), String> {
-    let allow_private = allow_private_network.unwrap_or(false);
-    let parsed = match validate_url(&url, allow_private) {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = on_event.send(AiStreamEvent::Error { message: e.clone() });
-            return Err(e);
-        }
-    };
-    let host = match parsed.host_str() {
-        Some(h) => h.to_string(),
-        None => {
-            let e = "missing host".to_string();
-            let _ = on_event.send(AiStreamEvent::Error { message: e.clone() });
-            return Err(e);
-        }
-    };
-    let safe_ips = match classify_and_collect_safe_ips(&host, allow_private).await {
-        Ok(v) => v,
-        Err(e) => {
-            let _ = on_event.send(AiStreamEvent::Error { message: e.clone() });
-            return Err(e);
-        }
-    };
+    app_audit
+        .execute_app_capability_async("app.http_request", || async move {
+            let allow_private = allow_private_network.unwrap_or(false);
+            let parsed = match validate_url(&url, allow_private) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = on_event.send(AiStreamEvent::Error { message: e.clone() });
+                    return Err(e);
+                }
+            };
+            let host = match parsed.host_str() {
+                Some(h) => h.to_string(),
+                None => {
+                    let e = "missing host".to_string();
+                    let _ = on_event.send(AiStreamEvent::Error { message: e.clone() });
+                    return Err(e);
+                }
+            };
+            let safe_ips = match classify_and_collect_safe_ips(&host, allow_private).await {
+                Ok(v) => v,
+                Err(e) => {
+                    let _ = on_event.send(AiStreamEvent::Error { message: e.clone() });
+                    return Err(e);
+                }
+            };
 
-    let client = build_safe_client(allow_private, &[(host, safe_ips)], None)?;
+            let client = build_safe_client(allow_private, &[(host, safe_ips)], None)?;
 
-    let req = build_request(&client, &method, parsed, headers, body)?;
-    let resp = match req.send().await {
-        Ok(r) => r,
-        Err(e) => {
-            let _ = on_event.send(AiStreamEvent::Error {
-                message: e.to_string(),
-            });
-            return Err(e.to_string());
-        }
-    };
+            let req = build_request(&client, &method, parsed, headers, body)?;
+            let resp = match req.send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = on_event.send(AiStreamEvent::Error {
+                        message: e.to_string(),
+                    });
+                    return Err(e.to_string());
+                }
+            };
 
-    let status = resp.status().as_u16();
-    let headers = header_map_to_strings(resp.headers());
-    let _ = on_event.send(AiStreamEvent::Headers { status, headers });
+            let status = resp.status().as_u16();
+            let headers = header_map_to_strings(resp.headers());
+            let _ = on_event.send(AiStreamEvent::Headers { status, headers });
 
-    let mut stream = resp.bytes_stream();
-    while let Some(item) = stream.next().await {
-        match item {
-            Ok(chunk) => {
-                let bytes: Bytes = chunk;
-                if on_event
-                    .send(AiStreamEvent::Chunk {
-                        bytes: bytes.to_vec(),
-                    })
-                    .is_err()
-                {
-                    // Channel dropped (frontend aborted) - stop streaming.
-                    return Ok(());
+            let max_body_bytes = max_body_bytes.unwrap_or(DEFAULT_STREAM_BODY_LIMIT);
+            let mut streamed_bytes = 0_usize;
+            let mut stream = resp.bytes_stream();
+            while let Some(item) = stream.next().await {
+                match item {
+                    Ok(chunk) => {
+                        let bytes: Bytes = chunk;
+                        streamed_bytes = streamed_bytes.saturating_add(bytes.len());
+                        if streamed_bytes > max_body_bytes {
+                            let message = "response body too large".to_string();
+                            let _ = on_event.send(AiStreamEvent::Error {
+                                message: message.clone(),
+                            });
+                            return Err(message);
+                        }
+                        if on_event
+                            .send(AiStreamEvent::Chunk {
+                                bytes: bytes.to_vec(),
+                            })
+                            .is_err()
+                        {
+                            // Channel dropped (frontend aborted) - stop streaming.
+                            return Ok(());
+                        }
+                    }
+                    Err(e) => {
+                        let _ = on_event.send(AiStreamEvent::Error {
+                            message: e.to_string(),
+                        });
+                        return Err(e.to_string());
+                    }
                 }
             }
-            Err(e) => {
-                let _ = on_event.send(AiStreamEvent::Error {
-                    message: e.to_string(),
-                });
-                return Err(e.to_string());
-            }
-        }
-    }
 
-    let _ = on_event.send(AiStreamEvent::End);
-    Ok(())
+            let _ = on_event.send(AiStreamEvent::End);
+            Ok(())
+        })
+        .await
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@ import type {
   NotificationKind,
   PiAgentSessionState,
 } from "@/modules/agents/lib/types";
-import type { PiSessionStatus, PiSessionEvent } from "./sessions";
+import type { PiSessionEvent, PiSessionStatus } from "./sessions";
 
 const NOTIFICATION_BODY_LIMIT = 80;
 

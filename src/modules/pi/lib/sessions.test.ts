@@ -616,7 +616,8 @@ describe("applyPiSessionEvents", () => {
   it("materializes sessions from created events before applying later metadata", () => {
     const created = {
       ...session("pi-created", "idle"),
-      sdkSessionFile: "/Users/me/Library/Application Support/Terax/pi-sdk-sessions/one.jsonl",
+      sdkSessionFile:
+        "/Users/me/Library/Application Support/Terax/pi-sdk-sessions/one.jsonl",
     };
     const events = [
       {
@@ -653,9 +654,10 @@ describe("applyPiSessionEvents", () => {
     };
 
     expect(
-      applyPiSessionEvents([session("pi-1", "stopped")], [
-        event("evt-30", "session.resumed", { session: resumed }),
-      ]),
+      applyPiSessionEvents(
+        [session("pi-1", "stopped")],
+        [event("evt-30", "session.resumed", { session: resumed })],
+      ),
     ).toEqual([resumed]);
   });
 });

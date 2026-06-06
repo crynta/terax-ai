@@ -2,8 +2,11 @@
 
 use std::time::{Duration, Instant};
 
-use terax_lib::modules::shell::background;
-use terax_lib::modules::workspace::WorkspaceEnv;
+use terax_lib::modules::capabilities::{audit::CapabilityAuditOutcome, WorkflowCapabilityState};
+use terax_lib::modules::shell::{
+    background, workflow_shell_bg_spawn_inner, ShellState, WorkflowShellSpawnRequest,
+};
+use terax_lib::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
 fn wait_until<F: Fn() -> bool>(timeout: Duration, check: F) -> bool {
     let deadline = Instant::now() + timeout;
@@ -14,6 +17,74 @@ fn wait_until<F: Fn() -> bool>(timeout: Duration, check: F) -> bool {
         std::thread::sleep(Duration::from_millis(20));
     }
     check()
+}
+
+#[test]
+fn workflow_shell_spawn_requires_policy_approval_and_records_blocked_audit() {
+    let dir = tempfile::tempdir().unwrap();
+    let registry = WorkspaceRegistry::default();
+    registry.authorize(dir.path()).unwrap();
+    let state = ShellState::default();
+    let audit_state = WorkflowCapabilityState::default();
+
+    let error = workflow_shell_bg_spawn_inner(
+        &state,
+        &registry,
+        &audit_state,
+        WorkflowShellSpawnRequest {
+            command: "printf blocked".to_string(),
+            cwd: Some(dir.path().to_string_lossy().into_owned()),
+            workspace: WorkspaceEnv::Local,
+            approved: false,
+            document_id: "workflow-1".to_string(),
+            node_id: "node-shell".to_string(),
+        },
+    )
+    .unwrap_err();
+
+    assert!(error.contains("requires approval"), "{error}");
+    let audit = audit_state.capability_audit_entries();
+    assert_eq!(audit.len(), 1);
+    assert_eq!(audit[0].session_id, "workflow-1");
+    assert_eq!(audit[0].tool_call_id, "node-shell");
+    assert_eq!(audit[0].tool_name, "workflow.shell_command");
+    assert_eq!(audit[0].outcome, CapabilityAuditOutcome::Blocked);
+}
+
+#[test]
+fn workflow_shell_spawn_records_successful_policy_audit() {
+    let dir = tempfile::tempdir().unwrap();
+    let registry = WorkspaceRegistry::default();
+    registry.authorize(dir.path()).unwrap();
+    let state = ShellState::default();
+    let audit_state = WorkflowCapabilityState::default();
+
+    let handle = workflow_shell_bg_spawn_inner(
+        &state,
+        &registry,
+        &audit_state,
+        WorkflowShellSpawnRequest {
+            command: "printf approved".to_string(),
+            cwd: Some(dir.path().to_string_lossy().into_owned()),
+            workspace: WorkspaceEnv::Local,
+            approved: true,
+            document_id: "workflow-2".to_string(),
+            node_id: "node-shell".to_string(),
+        },
+    )
+    .unwrap();
+
+    assert!(wait_until(Duration::from_secs(5), || {
+        state.background_logs(handle, 0).unwrap().exited
+    }));
+    let logs = state.background_logs(handle, 0).unwrap();
+    assert!(logs.bytes.contains("approved"));
+    let audit = audit_state.capability_audit_entries();
+    assert_eq!(audit.len(), 1);
+    assert_eq!(audit[0].session_id, "workflow-2");
+    assert_eq!(audit[0].tool_call_id, "node-shell");
+    assert_eq!(audit[0].tool_name, "workflow.shell_command");
+    assert_eq!(audit[0].outcome, CapabilityAuditOutcome::Succeeded);
 }
 
 #[test]
@@ -37,10 +108,10 @@ fn spawn_captures_stdout_and_exits_zero() {
         background::spawn("printf 'hello\\n'".into(), None, WorkspaceEnv::Local).expect("spawn");
 
     assert!(wait_until(Duration::from_secs(5), || {
-        proc.read_logs(0).exited
+        proc.read_logs(0).expect("read logs").exited
     }));
 
-    let logs = proc.read_logs(0);
+    let logs = proc.read_logs(0).expect("read logs");
     assert!(logs.bytes.contains("hello"));
     assert!(logs.exited);
     assert_eq!(logs.exit_code, Some(0));
@@ -51,9 +122,9 @@ fn spawn_captures_nonzero_exit() {
     let proc = background::spawn("exit 42".into(), None, WorkspaceEnv::Local).expect("spawn");
 
     assert!(wait_until(Duration::from_secs(5), || {
-        proc.read_logs(0).exited
+        proc.read_logs(0).expect("read logs").exited
     }));
-    assert_eq!(proc.read_logs(0).exit_code, Some(42));
+    assert_eq!(proc.read_logs(0).expect("read logs").exit_code, Some(42));
 }
 
 #[test]
@@ -63,7 +134,9 @@ fn kill_terminates_a_running_process() {
     proc.kill();
 
     assert!(
-        wait_until(Duration::from_secs(5), || { proc.read_logs(0).exited }),
+        wait_until(Duration::from_secs(5), || {
+            proc.read_logs(0).expect("read logs").exited
+        }),
         "killed process must reach exited state",
     );
 }
@@ -78,13 +151,13 @@ fn read_logs_advances_offset() {
     .expect("spawn");
 
     assert!(wait_until(Duration::from_secs(5), || {
-        proc.read_logs(0).exited
+        proc.read_logs(0).expect("read logs").exited
     }));
 
-    let first = proc.read_logs(0);
+    let first = proc.read_logs(0).expect("read logs");
     assert!(first.next_offset > 0);
 
-    let next = proc.read_logs(first.next_offset);
+    let next = proc.read_logs(first.next_offset).expect("read logs");
     assert!(
         next.bytes.is_empty(),
         "consumed offset must return no bytes"
@@ -100,7 +173,7 @@ fn info_reflects_command_and_exit() {
     assert_eq!(info_running.command, "true");
 
     assert!(wait_until(Duration::from_secs(5), || {
-        proc.read_logs(0).exited
+        proc.read_logs(0).expect("read logs").exited
     }));
     let info_done = proc.info(7);
     assert!(info_done.exited);

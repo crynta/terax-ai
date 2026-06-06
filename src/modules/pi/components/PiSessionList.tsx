@@ -1,10 +1,8 @@
-import {
-  AiChat02Icon,
-  Cancel01Icon,
-  Delete02Icon,
-  Edit02Icon,
-  Tick02Icon,
-} from "@hugeicons/core-free-icons";
+import AiChat02Icon from "@hugeicons/core-free-icons/AiChat02Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import Delete02Icon from "@hugeicons/core-free-icons/Delete02Icon";
+import Edit02Icon from "@hugeicons/core-free-icons/Edit02Icon";
+import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";

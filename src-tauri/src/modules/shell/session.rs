@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use super::run_blocking_inner;
 use crate::modules::fs::to_canon;
+use crate::modules::sync;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 pub struct ShellSession {
@@ -59,8 +60,8 @@ impl ShellSession {
         }
     }
 
-    pub fn current_cwd(&self) -> String {
-        self.cwd.lock().unwrap().clone()
+    pub fn current_cwd(&self) -> Result<String, String> {
+        Ok(sync::mutex(&self.cwd, "shell session cwd")?.clone())
     }
 
     pub fn run(
@@ -79,11 +80,11 @@ impl ShellSession {
                 let effective_workspace = workspace_hint.as_ref().unwrap_or(&self.workspace);
                 let p = resolve_path(&hint, effective_workspace);
                 if p.is_dir() {
-                    *self.cwd.lock().unwrap() = hint;
+                    *sync::mutex(&self.cwd, "shell session cwd")? = hint;
                 }
             }
         }
-        let cwd = self.current_cwd();
+        let cwd = self.current_cwd()?;
         let effective_workspace = workspace_hint.unwrap_or_else(|| self.workspace.clone());
         let wrapped = wrap_with_sentinel(&trimmed, &effective_workspace, &self.sentinel);
 
@@ -104,10 +105,10 @@ impl ShellSession {
         if let Some(ref new_cwd) = cwd_after {
             let p = resolve_path(new_cwd, &self.workspace);
             if p.is_dir() {
-                *self.cwd.lock().unwrap() = new_cwd.clone();
+                *sync::mutex(&self.cwd, "shell session cwd")? = new_cwd.clone();
             }
         }
-        let resolved_cwd = to_canon(self.current_cwd());
+        let resolved_cwd = to_canon(self.current_cwd()?);
 
         Ok(SessionRunOutput {
             stdout: stdout_clean,

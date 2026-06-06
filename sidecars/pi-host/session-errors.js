@@ -57,6 +57,16 @@ const ERROR_METADATA_BY_CODE = new Map([
         "The approval request expired or was already answered. Send a new prompt if the tool still needs to run.",
     },
   ],
+  [
+    -32009,
+    {
+      code: "PI_SESSION_FILE_NOT_FOUND",
+      category: "not_found",
+      retryable: false,
+      remediation:
+        "The saved Pi SDK session file is missing or no longer readable. Continue in a new Pi session.",
+    },
+  ],
 ]);
 
 export class SessionProtocolError extends Error {

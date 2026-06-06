@@ -1,9 +1,7 @@
-import {
-  File01Icon,
-  Folder01Icon,
-  IncognitoIcon,
-  TerminalIcon,
-} from "@hugeicons/core-free-icons";
+import File01Icon from "@hugeicons/core-free-icons/File01Icon";
+import Folder01Icon from "@hugeicons/core-free-icons/Folder01Icon";
+import IncognitoIcon from "@hugeicons/core-free-icons/IncognitoIcon";
+import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { cn } from "@/lib/utils";
 import { PiSection } from "@/modules/pi/components/PiSection";

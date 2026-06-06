@@ -1,14 +1,7 @@
 {
   "identifier": "desktop-capability",
-  "platforms": [
-    "macOS",
-    "windows",
-    "linux"
-  ],
-  "windows": [
-    "main",
-    "settings"
-  ],
+  "platforms": ["macOS", "windows", "linux"],
+  "windows": ["main", "settings"],
   "permissions": [
     "autostart:default",
     "window-state:default",

@@ -119,9 +119,21 @@ fn diagnostics_report_non_secret_runtime_state() {
     assert_eq!(diagnostics.config.tool_mode, "rust-mediated");
     assert_eq!(
         diagnostics.config.enabled_tools,
-        ["read", "ls", "grep", "find", "bash", "edit", "write"]
-            .map(String::from)
-            .to_vec()
+        [
+            "read",
+            "ls",
+            "grep",
+            "find",
+            "bash",
+            "edit",
+            "write",
+            "create_artifact",
+            "edit_artifact",
+            "read_artifact",
+            "list_artifacts",
+        ]
+        .map(String::from)
+        .to_vec()
     );
     assert_eq!(
         diagnostics.config.approval_required_tools,
@@ -142,6 +154,7 @@ fn diagnostics_report_non_secret_runtime_state() {
         .iter()
         .any(|method| method == "sessions.tool.respond"));
     assert!(diagnostics.manager.idle_shutdown_ms >= 1);
+    assert!(diagnostics.capability_audit.is_empty());
     assert!(diagnostics
         .manager
         .method_timeouts
@@ -257,7 +270,7 @@ fn sessions_resume_from_sdk_session_file_after_host_restart() {
         )
         .unwrap();
     let session_id = created.session.id.clone();
-    let sdk_session_file = created.session.sdk_session_file.clone().unwrap();
+    let sdk_session_file = created.session.sdk_session_file.unwrap();
     assert!(sdk_session_file.starts_with(&session_dir_text));
 
     state
@@ -298,14 +311,7 @@ fn sessions_resume_from_sdk_session_file_after_host_restart() {
     );
 
     let follow_up = state
-        .session_send_with_resource_dir(
-            None,
-            session_id,
-            "continue".to_string(),
-            None,
-            None,
-            None,
-        )
+        .session_send_with_resource_dir(None, session_id, "continue".to_string(), None, None, None)
         .unwrap();
     assert!(follow_up.accepted);
     assert_eq!(follow_up.session.status, "running");
@@ -364,7 +370,7 @@ fn tool_approval_responses_are_forwarded_to_the_sidecar() {
             Some(cwd),
         )
         .unwrap();
-    let session_id = created.session.id.clone();
+    let session_id = created.session.id;
 
     state
         .session_send_with_resource_dir_and_event_sink(
@@ -506,16 +512,9 @@ fn idle_shutdown_does_not_stop_running_sessions() {
     let created = state
         .session_create_with_resource_dir(None, Some("Long Pi".to_string()), Some(cwd))
         .unwrap();
-    let session_id = created.session.id.clone();
+    let session_id = created.session.id;
     state
-        .session_send_with_resource_dir(
-            None,
-            session_id.clone(),
-            "hello".to_string(),
-            None,
-            None,
-            None,
-        )
+        .session_send_with_resource_dir(None, session_id, "hello".to_string(), None, None, None)
         .unwrap();
 
     std::thread::sleep(std::time::Duration::from_millis(250));

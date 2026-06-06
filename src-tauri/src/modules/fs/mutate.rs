@@ -1,9 +1,17 @@
+use std::path::Path;
+use std::process::{Command, Stdio};
+
+use serde::Deserialize;
+use tauri::Emitter;
+
+use crate::modules::capabilities::{
+    AppCapabilityState, WorkflowCapabilityState, WorkflowPolicyContext,
+};
+use crate::modules::fs::safety::ensure_not_sensitive_path;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 /// Creates a new empty file. Fails if the file already exists.
-#[tauri::command]
-pub fn fs_create_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
+pub fn fs_create_file_inner(path: String, workspace: WorkspaceEnv) -> Result<(), String> {
     let p = resolve_path(&path, &workspace);
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
@@ -14,12 +22,21 @@ pub fn fs_create_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<(
     })
 }
 
+#[tauri::command]
+pub fn fs_create_file(
+    app_audit: tauri::State<AppCapabilityState>,
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<(), String> {
+    app_audit.execute_app_capability("app.file_write", || {
+        fs_create_file_inner(path, WorkspaceEnv::from_option(workspace))
+    })
+}
+
 /// Creates a new directory. Fails if the directory already exists.
 /// Parents are created as needed — matches the common "new folder" UX
 /// where typing "a/b/c" creates the full chain.
-#[tauri::command]
-pub fn fs_create_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
+pub fn fs_create_dir_inner(path: String, workspace: WorkspaceEnv) -> Result<(), String> {
     let p = resolve_path(&path, &workspace);
     if p.exists() {
         return Err(format!("already exists: {}", p.display()));
@@ -30,10 +47,123 @@ pub fn fs_create_dir(path: String, workspace: Option<WorkspaceEnv>) -> Result<()
     })
 }
 
-/// Renames (or moves) a path. Refuses to overwrite an existing target.
 #[tauri::command]
-pub fn fs_rename(from: String, to: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
+pub fn fs_create_dir(
+    app_audit: tauri::State<AppCapabilityState>,
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<(), String> {
+    app_audit.execute_app_capability("app.file_write", || {
+        fs_create_dir_inner(path, WorkspaceEnv::from_option(workspace))
+    })
+}
+
+/// Copies a file, overwriting the destination after the caller confirms via UI.
+pub fn fs_copy_file_inner(from: String, to: String, workspace: WorkspaceEnv) -> Result<(), String> {
+    let from_p = resolve_path(&from, &workspace);
+    let to_p = resolve_path(&to, &workspace);
+    if !from_p.is_file() {
+        return Err(format!("not a file: {}", from_p.display()));
+    }
+    std::fs::copy(&from_p, &to_p).map_err(|e| {
+        log::warn!(
+            "fs_copy_file({} -> {}) failed: {e}",
+            from_p.display(),
+            to_p.display()
+        );
+        e.to_string()
+    })?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn fs_copy_file(
+    app_audit: tauri::State<AppCapabilityState>,
+    from: String,
+    to: String,
+    workspace: Option<WorkspaceEnv>,
+    source: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    app_audit.execute_app_capability("app.file_write", || {
+        fs_copy_file_inner(from, to.clone(), WorkspaceEnv::from_option(workspace))?;
+        let _ = app.emit("fs:file-written", FileWrittenEvent { path: to, source });
+        Ok(())
+    })
+}
+
+/// Opens a file or directory using the operating system default app.
+pub fn fs_open_file_inner(path: String, workspace: WorkspaceEnv) -> Result<(), String> {
+    let p = resolve_path(&path, &workspace);
+    if !p.exists() {
+        return Err(format!("not found: {}", p.display()));
+    }
+    open_path_with_system(&p).map_err(|e| {
+        log::warn!("fs_open_file({}) failed: {e}", p.display());
+        e
+    })
+}
+
+#[tauri::command]
+pub fn fs_open_file(
+    app_audit: tauri::State<AppCapabilityState>,
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<(), String> {
+    app_audit.execute_app_capability("app.file_read", || {
+        fs_open_file_inner(path, WorkspaceEnv::from_option(workspace))
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn open_path_with_system(path: &Path) -> Result<(), String> {
+    let status = Command::new("open")
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("open exited with status {status}"))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn open_path_with_system(path: &Path) -> Result<(), String> {
+    Command::new("explorer")
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn open_path_with_system(path: &Path) -> Result<(), String> {
+    Command::new("xdg-open")
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize, Clone)]
+struct FileWrittenEvent {
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+}
+
+/// Renames (or moves) a path. Refuses to overwrite an existing target.
+pub fn fs_rename_inner(from: String, to: String, workspace: WorkspaceEnv) -> Result<(), String> {
     let from_p = resolve_path(&from, &workspace);
     let to_p = resolve_path(&to, &workspace);
     if !from_p.exists() {
@@ -52,11 +182,21 @@ pub fn fs_rename(from: String, to: String, workspace: Option<WorkspaceEnv>) -> R
     })
 }
 
+#[tauri::command]
+pub fn fs_rename(
+    app_audit: tauri::State<AppCapabilityState>,
+    from: String,
+    to: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<(), String> {
+    app_audit.execute_app_capability("app.file_write", || {
+        fs_rename_inner(from, to, WorkspaceEnv::from_option(workspace))
+    })
+}
+
 /// Deletes a file or directory (recursively for dirs). Callers are
 /// responsible for confirming destructive operations with the user.
-#[tauri::command]
-pub fn fs_delete(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), String> {
-    let workspace = WorkspaceEnv::from_option(workspace);
+pub fn fs_delete_inner(path: String, workspace: WorkspaceEnv) -> Result<(), String> {
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::symlink_metadata(&p).map_err(|e| {
         log::debug!("fs_delete stat({}) failed: {e}", p.display());
@@ -75,6 +215,57 @@ pub fn fs_delete(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), St
     })
 }
 
+#[tauri::command]
+pub fn fs_delete(
+    app_audit: tauri::State<AppCapabilityState>,
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<(), String> {
+    app_audit.execute_app_capability("app.file_write", || {
+        fs_delete_inner(path, WorkspaceEnv::from_option(workspace))
+    })
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowFileDeleteRequest {
+    pub path: String,
+    #[serde(default)]
+    pub workspace: WorkspaceEnv,
+    pub approved: bool,
+    pub document_id: String,
+    pub node_id: String,
+}
+
+impl WorkflowFileDeleteRequest {
+    fn policy_context(&self) -> WorkflowPolicyContext {
+        WorkflowPolicyContext {
+            approved: self.approved,
+            document_id: self.document_id.clone(),
+            node_id: self.node_id.clone(),
+        }
+    }
+}
+
+pub fn workflow_file_delete_inner(
+    state: &WorkflowCapabilityState,
+    request: WorkflowFileDeleteRequest,
+) -> Result<(), String> {
+    let context = request.policy_context();
+    state.execute_workflow_capability(&context, "workflow.file_delete", || {
+        ensure_not_sensitive_path(&request.path, &request.workspace)?;
+        fs_delete_inner(request.path, request.workspace)
+    })
+}
+
+#[tauri::command]
+pub fn workflow_file_delete(
+    state: tauri::State<WorkflowCapabilityState>,
+    request: WorkflowFileDeleteRequest,
+) -> Result<(), String> {
+    workflow_file_delete_inner(&state, request)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,13 +278,13 @@ mod tests {
     fn create_file_makes_empty_and_refuses_to_clobber() {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("new.txt");
-        fs_create_file(s(f.clone()), None).expect("create");
+        fs_create_file_inner(s(f.clone()), WorkspaceEnv::Local).expect("create");
         assert!(f.exists());
         assert_eq!(std::fs::read(&f).unwrap(), b"");
 
         // A second create must error, not truncate existing content.
         std::fs::write(&f, b"data").unwrap();
-        let err = fs_create_file(s(f.clone()), None).unwrap_err();
+        let err = fs_create_file_inner(s(f.clone()), WorkspaceEnv::Local).unwrap_err();
         assert!(err.contains("already exists"), "got: {err}");
         assert_eq!(std::fs::read(&f).unwrap(), b"data");
     }
@@ -102,9 +293,9 @@ mod tests {
     fn create_dir_builds_nested_chain_and_refuses_existing() {
         let dir = tempfile::tempdir().unwrap();
         let nested = dir.path().join("a/b/c");
-        fs_create_dir(s(nested.clone()), None).expect("create dir");
+        fs_create_dir_inner(s(nested.clone()), WorkspaceEnv::Local).expect("create dir");
         assert!(nested.is_dir());
-        let err = fs_create_dir(s(nested), None).unwrap_err();
+        let err = fs_create_dir_inner(s(nested), WorkspaceEnv::Local).unwrap_err();
         assert!(err.contains("already exists"), "got: {err}");
     }
 
@@ -115,18 +306,20 @@ mod tests {
         let to = dir.path().join("b.txt");
         std::fs::write(&from, b"payload").unwrap();
 
-        fs_rename(s(from.clone()), s(to.clone()), None).expect("rename");
+        fs_rename_inner(s(from.clone()), s(to.clone()), WorkspaceEnv::Local).expect("rename");
         assert!(!from.exists());
         assert_eq!(std::fs::read(&to).unwrap(), b"payload");
 
         // Missing source is reported, not silently ignored.
-        let err = fs_rename(s(from), s(dir.path().join("c.txt")), None).unwrap_err();
+        let err =
+            fs_rename_inner(s(from), s(dir.path().join("c.txt")), WorkspaceEnv::Local).unwrap_err();
         assert!(err.contains("not found"), "got: {err}");
 
         // Refusing to overwrite an existing target is the data-loss guard.
         let occupied = dir.path().join("keep.txt");
         std::fs::write(&occupied, b"keep").unwrap();
-        let err = fs_rename(s(to.clone()), s(occupied.clone()), None).unwrap_err();
+        let err =
+            fs_rename_inner(s(to.clone()), s(occupied.clone()), WorkspaceEnv::Local).unwrap_err();
         assert!(err.contains("already exists"), "got: {err}");
         assert_eq!(std::fs::read(&occupied).unwrap(), b"keep");
         assert!(to.exists());
@@ -137,16 +330,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("x.txt");
         std::fs::write(&f, b"x").unwrap();
-        fs_delete(s(f.clone()), None).expect("delete file");
+        fs_delete_inner(s(f.clone()), WorkspaceEnv::Local).expect("delete file");
         assert!(!f.exists());
 
         let sub = dir.path().join("sub");
         std::fs::create_dir_all(sub.join("inner")).unwrap();
         std::fs::write(sub.join("inner/y.txt"), b"y").unwrap();
-        fs_delete(s(sub.clone()), None).expect("delete dir");
+        fs_delete_inner(s(sub.clone()), WorkspaceEnv::Local).expect("delete dir");
         assert!(!sub.exists());
 
-        let err = fs_delete(s(dir.path().join("missing")), None).unwrap_err();
+        let err = fs_delete_inner(s(dir.path().join("missing")), WorkspaceEnv::Local).unwrap_err();
         assert!(!err.is_empty());
     }
 
@@ -163,7 +356,7 @@ mod tests {
         let link = dir.path().join("link");
         std::os::unix::fs::symlink(&real, &link).unwrap();
 
-        fs_delete(s(link.clone()), None).expect("delete symlink");
+        fs_delete_inner(s(link.clone()), WorkspaceEnv::Local).expect("delete symlink");
         assert!(!link.exists(), "symlink itself should be gone");
         assert!(real.is_dir(), "target dir must survive");
         assert_eq!(std::fs::read(real.join("keep.txt")).unwrap(), b"keep");

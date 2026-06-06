@@ -69,7 +69,17 @@ static CONPTY_LIFECYCLE_LOCK: Mutex<()> = Mutex::new(());
 
 pub(super) fn drop_session(session: Arc<Session>) {
     #[cfg(windows)]
-    let _guard = CONPTY_LIFECYCLE_LOCK.lock().unwrap();
+    {
+        let _guard = match CONPTY_LIFECYCLE_LOCK.lock() {
+            Ok(guard) => guard,
+            Err(error) => {
+                log::error!("conpty lifecycle lock poisoned during drop: {error}");
+                error.into_inner()
+            }
+        };
+        drop(session);
+    }
+    #[cfg(not(windows))]
     drop(session);
 }
 
@@ -97,7 +107,10 @@ impl Drop for ChildKillGuard {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "PTY setup needs independent Tauri channels and terminal dimensions"
+)]
 pub fn spawn(
     id: u32,
     app: AppHandle,
@@ -109,7 +122,9 @@ pub fn spawn(
     on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
     #[cfg(windows)]
-    let _spawn_guard = CONPTY_LIFECYCLE_LOCK.lock().unwrap();
+    let _spawn_guard = CONPTY_LIFECYCLE_LOCK
+        .lock()
+        .map_err(|error| format!("conpty lifecycle lock failed: {error}"))?;
 
     let pty_system = native_pty_system();
     let size = PtySize {
@@ -132,7 +147,6 @@ pub fn spawn(
     let writer: Arc<Mutex<Box<dyn Write + Send>>> = Arc::new(Mutex::new(
         pair.master.take_writer().map_err(|e| e.to_string())?,
     ));
-    guard.disarm();
 
     let shell_pid = child.process_id().unwrap_or(0);
 
@@ -164,7 +178,7 @@ pub fn spawn(
 
     let pending_r = pending.clone();
     let writer_for_da = writer.clone();
-    let app_reader = app.clone();
+    let app_reader = app;
     let reader_thread = thread::Builder::new()
         .name("terax-pty-reader".into())
         .spawn(move || {
@@ -198,7 +212,13 @@ pub fn spawn(
                             continue;
                         }
                         let (lock, cv) = &*pending_r;
-                        let mut g = lock.lock().unwrap();
+                        let mut g = match lock.lock() {
+                            Ok(guard) => guard,
+                            Err(error) => {
+                                log::error!("pty pending buffer lock failed: {error}");
+                                break;
+                            }
+                        };
                         if g.len() + filtered.len() > MAX_PENDING {
                             dropped_bytes += g.len() as u64;
                             g.clear();
@@ -221,7 +241,7 @@ pub fn spawn(
                 log::warn!("pty backpressure: dropped {dropped_bytes} bytes (cap {MAX_PENDING})");
             }
         })
-        .expect("spawn pty reader thread");
+        .map_err(|error| format!("spawn pty reader thread: {error}"))?;
 
     let on_data_flush = on_data.clone();
     let pending_f = pending.clone();
@@ -232,18 +252,35 @@ pub fn spawn(
             let (lock, cv) = &*pending_f;
             loop {
                 {
-                    let mut g = lock.lock().unwrap();
+                    let mut g = match lock.lock() {
+                        Ok(guard) => guard,
+                        Err(error) => {
+                            log::error!("pty pending buffer lock failed: {error}");
+                            return;
+                        }
+                    };
                     while g.is_empty() {
                         if done_f.load(Ordering::Acquire) {
                             return;
                         }
-                        let (next, _) = cv.wait_timeout(g, FLUSH_MAX_IDLE).unwrap();
-                        g = next;
+                        match cv.wait_timeout(g, FLUSH_MAX_IDLE) {
+                            Ok((next, _)) => g = next,
+                            Err(error) => {
+                                log::error!("pty pending buffer wait failed: {error}");
+                                return;
+                            }
+                        }
                     }
                 }
                 // Coalesce a short window so a burst flushes as one chunk.
                 thread::sleep(FLUSH_COALESCE);
-                let chunk = std::mem::take(&mut *lock.lock().unwrap());
+                let chunk = match lock.lock() {
+                    Ok(mut guard) => std::mem::take(&mut *guard),
+                    Err(error) => {
+                        log::error!("pty pending buffer lock failed: {error}");
+                        return;
+                    }
+                };
                 if chunk.is_empty() {
                     continue;
                 }
@@ -253,11 +290,15 @@ pub fn spawn(
                 }
             }
         })
-        .expect("spawn pty flusher thread");
+        .map_err(|error| {
+            done.store(true, Ordering::Release);
+            pending.1.notify_all();
+            format!("spawn pty flusher thread: {error}")
+        })?;
 
     let on_data_exit = on_data;
-    let pending_e = pending;
-    let done_e = done;
+    let pending_e = pending.clone();
+    let done_e = done.clone();
     thread::Builder::new()
         .name("terax-pty-waiter".into())
         .spawn(move || {
@@ -282,7 +323,13 @@ pub fn spawn(
                 log::error!("pty reader thread panicked: {e:?}");
             }
             let (lock, cv) = &*pending_e;
-            let tail = std::mem::take(&mut *lock.lock().unwrap());
+            let tail = match lock.lock() {
+                Ok(mut guard) => std::mem::take(&mut *guard),
+                Err(error) => {
+                    log::error!("pty pending buffer lock failed: {error}");
+                    Vec::new()
+                }
+            };
             if !tail.is_empty() {
                 if let Err(e) = on_data_exit.send(Response::new(tail)) {
                     log::debug!("pty final-data send failed (channel closed): {e}");
@@ -294,8 +341,13 @@ pub fn spawn(
                 log::debug!("pty exit send failed (channel closed): {e}");
             }
         })
-        .expect("spawn pty waiter thread");
+        .map_err(|error| {
+            done.store(true, Ordering::Release);
+            pending.1.notify_all();
+            format!("spawn pty waiter thread: {error}")
+        })?;
 
+    guard.disarm();
     Ok((session, size))
 }
 

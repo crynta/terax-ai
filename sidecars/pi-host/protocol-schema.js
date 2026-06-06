@@ -80,6 +80,7 @@ export const PI_HOST_PROTOCOL_SCHEMA = Object.freeze({
       providerConfig: objectParam({ nullable: true }),
       sessionDir: stringParam({ minLength: 1, nullable: true }),
       workspaceEnv: workspaceEnvParam({ nullable: true }),
+      capabilityManifest: objectParam({ nullable: true }),
     }),
     "sessions.send": methodParams(
       {
@@ -111,8 +112,9 @@ export const PI_HOST_PROTOCOL_SCHEMA = Object.freeze({
         lastPrompt: stringParam({ nullable: true }),
         thinkingLevel: thinkingLevelParam({ nullable: true }),
         workspaceEnv: workspaceEnvParam({ nullable: true }),
+        capabilityManifest: objectParam({ nullable: true }),
       },
-      ["sessionId", "cwd", "sdkSessionFile"],
+      ["sessionId", "cwd", "sdkSessionFile", "sessionDir"],
     ),
     "sessions.tool.respond": methodParams(
       {
@@ -155,7 +157,10 @@ function validateString(value, schema, path) {
   if (typeof value !== "string") {
     return `${path} must be a string`;
   }
-  if (schema.minLength !== undefined && value.trim().length < schema.minLength) {
+  if (
+    schema.minLength !== undefined &&
+    value.trim().length < schema.minLength
+  ) {
     return `${path} must be a non-empty string`;
   }
   if (schema.noNewline && /\r|\n/.test(value)) {

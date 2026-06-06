@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy)]
@@ -197,27 +197,30 @@ fn is_empty_group(group: &Value) -> bool {
         .is_none_or(|hooks| hooks.is_empty())
 }
 
-fn merge_provider_hooks(mut root: Value, spec: ProviderHooks) -> Value {
-    if !root.is_object() {
-        root = json!({});
-    }
-    let obj = root.as_object_mut().unwrap();
+fn merge_provider_hooks(root: Value, spec: ProviderHooks) -> Value {
+    let mut obj = match root {
+        Value::Object(obj) => obj,
+        _ => Map::new(),
+    };
     let hooks = obj.entry("hooks").or_insert_with(|| json!({}));
     if !hooks.is_object() {
         *hooks = json!({});
     }
-    let hooks = hooks.as_object_mut().unwrap();
+    let Value::Object(hooks) = hooks else {
+        return Value::Object(obj);
+    };
 
     for event in spec.events {
         let arr = hooks.entry(event.name).or_insert_with(|| json!([]));
         if !arr.is_array() {
             *arr = json!([]);
         }
-        let arr = arr.as_array_mut().unwrap();
-        arr.retain(|group| !is_ours(group, spec) && !is_empty_group(group));
-        arr.push((spec.hook_group)(event.marker));
+        if let Value::Array(arr) = arr {
+            arr.retain(|group| !is_ours(group, spec) && !is_empty_group(group));
+            arr.push((spec.hook_group)(event.marker));
+        }
     }
-    root
+    Value::Object(obj)
 }
 
 #[cfg(test)]
@@ -270,7 +273,9 @@ fn antigravity_settings_path() -> Result<PathBuf, String> {
 }
 
 fn enable_hooks_at(path: PathBuf, spec: ProviderHooks) -> Result<(), String> {
-    let dir = path.parent().unwrap();
+    let dir = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
     std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
 
     let existing = match std::fs::read_to_string(&path) {

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { PiSessionEvent } from "./sessions";
 import {
   buildPiAgentSessionStateForEvent,
   buildPiNotificationForEvent,
 } from "./notifications";
+import type { PiSessionEvent } from "./sessions";
 
 function event(
   type: string,

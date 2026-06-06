@@ -9,6 +9,7 @@ use ignore::{WalkBuilder, WalkState};
 use serde::Serialize;
 
 use super::to_canon;
+use crate::modules::capabilities::AppCapabilityState;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
@@ -43,19 +44,17 @@ fn build_globset(patterns: &[String]) -> Result<Option<GlobSet>, String> {
     Ok(Some(set))
 }
 
-#[tauri::command]
-pub fn fs_grep(
+pub fn fs_grep_inner(
     pattern: String,
     root: String,
     glob: Option<Vec<String>>,
     case_insensitive: Option<bool>,
     max_results: Option<usize>,
-    workspace: Option<WorkspaceEnv>,
+    workspace: WorkspaceEnv,
 ) -> Result<GrepResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
-    let workspace = WorkspaceEnv::from_option(workspace);
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
@@ -85,6 +84,7 @@ pub fn fs_grep(
     let hits: Arc<Mutex<Vec<GrepHit>>> = Arc::new(Mutex::new(Vec::new()));
     let scanned = Arc::new(AtomicUsize::new(0));
     let truncated = Arc::new(AtomicBool::new(false));
+    let search_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
     walker.run(|| {
         let matcher = matcher.clone();
@@ -92,12 +92,16 @@ pub fn fs_grep(
         let hits = hits.clone();
         let scanned = scanned.clone();
         let truncated = truncated.clone();
+        let search_error = search_error.clone();
         let root_path = root_path.clone();
         let root_display = root.clone();
         let workspace = workspace.clone();
 
         Box::new(move |dent_res| {
             if truncated.load(Ordering::Relaxed) {
+                return WalkState::Quit;
+            }
+            if search_error.lock().map_or(true, |error| error.is_some()) {
                 return WalkState::Quit;
             }
             let dent = match dent_res {
@@ -126,7 +130,7 @@ pub fn fs_grep(
             scanned.fetch_add(1, Ordering::Relaxed);
 
             let abs = display_path(path, &root_path, &root_display, &workspace);
-            let rel_clone = rel.clone();
+            let rel_for_hit = rel;
             let mut searcher = SearcherBuilder::new()
                 .binary_detection(BinaryDetection::quit(b'\x00'))
                 .line_number(true)
@@ -137,14 +141,23 @@ pub fn fs_grep(
                 path,
                 UTF8(|line_num, text| {
                     let line_text = text.trim_end_matches('\n').to_string();
-                    let mut guard = hits.lock().unwrap();
+                    let mut guard = match hits.lock() {
+                        Ok(guard) => guard,
+                        Err(error) => {
+                            if let Ok(mut stored) = search_error.lock() {
+                                *stored = Some(format!("grep hits lock failed: {error}"));
+                            }
+                            truncated.store(true, Ordering::Relaxed);
+                            return Ok(false);
+                        }
+                    };
                     if guard.len() >= cap {
                         truncated.store(true, Ordering::Relaxed);
                         return Ok(false);
                     }
                     guard.push(GrepHit {
                         path: abs.clone(),
-                        rel: rel_clone.clone(),
+                        rel: rel_for_hit.clone(),
                         line: line_num,
                         text: line_text,
                     });
@@ -156,14 +169,45 @@ pub fn fs_grep(
         })
     });
 
+    if let Some(error) = search_error
+        .lock()
+        .map_err(|error| format!("grep error lock failed: {error}"))?
+        .take()
+    {
+        return Err(error);
+    }
+
     let final_hits = Arc::try_unwrap(hits)
-        .map(|m| m.into_inner().unwrap())
-        .unwrap_or_default();
+        .map_err(|_| "grep workers did not release hit buffer".to_string())?
+        .into_inner()
+        .map_err(|error| format!("grep hits lock failed: {error}"))?;
 
     Ok(GrepResponse {
         hits: final_hits,
         truncated: truncated.load(Ordering::Relaxed),
         files_scanned: scanned.load(Ordering::Relaxed),
+    })
+}
+
+#[tauri::command]
+pub fn fs_grep(
+    app_audit: tauri::State<AppCapabilityState>,
+    pattern: String,
+    root: String,
+    glob: Option<Vec<String>>,
+    case_insensitive: Option<bool>,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<GrepResponse, String> {
+    app_audit.execute_app_capability("app.file_search", || {
+        fs_grep_inner(
+            pattern,
+            root,
+            glob,
+            case_insensitive,
+            max_results,
+            WorkspaceEnv::from_option(workspace),
+        )
     })
 }
 
@@ -179,17 +223,15 @@ pub struct GlobResponse {
     pub truncated: bool,
 }
 
-#[tauri::command]
-pub fn fs_glob(
+pub fn fs_glob_inner(
     pattern: String,
     root: String,
     max_results: Option<usize>,
-    workspace: Option<WorkspaceEnv>,
+    workspace: WorkspaceEnv,
 ) -> Result<GlobResponse, String> {
     if pattern.is_empty() {
         return Err("empty pattern".into());
     }
-    let workspace = WorkspaceEnv::from_option(workspace);
     let root_path = resolve_path(&root, &workspace);
     if !root_path.is_dir() {
         return Err(format!("not a directory: {root}"));
@@ -236,6 +278,24 @@ pub fn fs_glob(
     }
 
     Ok(GlobResponse { hits, truncated })
+}
+
+#[tauri::command]
+pub fn fs_glob(
+    app_audit: tauri::State<AppCapabilityState>,
+    pattern: String,
+    root: String,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<GlobResponse, String> {
+    app_audit.execute_app_capability("app.file_search", || {
+        fs_glob_inner(
+            pattern,
+            root,
+            max_results,
+            WorkspaceEnv::from_option(workspace),
+        )
+    })
 }
 
 fn display_path(

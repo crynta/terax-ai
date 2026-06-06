@@ -1,12 +1,9 @@
-import {
-  Alert02Icon,
-  CheckmarkCircle01Icon,
-  Copy01Icon,
-  Refresh01Icon,
-  Settings01Icon,
-} from "@hugeicons/core-free-icons";
+import Alert02Icon from "@hugeicons/core-free-icons/Alert02Icon";
+import CheckmarkCircle01Icon from "@hugeicons/core-free-icons/CheckmarkCircle01Icon";
+import Copy01Icon from "@hugeicons/core-free-icons/Copy01Icon";
+import Refresh01Icon from "@hugeicons/core-free-icons/Refresh01Icon";
+import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +15,10 @@ import type {
   PiDiagnosticsIssue,
   PiDiagnosticsView,
 } from "@/modules/pi/lib/diagnostics";
+import {
+  copyStatusLabel,
+  useCopyToClipboard,
+} from "@/modules/pi/lib/useCopyToClipboard";
 
 type PiDiagnosticsCardProps = {
   collapsed: boolean;
@@ -49,19 +50,6 @@ function actionHandler(
       return props.onStartRuntime;
     case null:
       return null;
-  }
-}
-
-type CopyStatus = "copied" | "failed" | "idle";
-
-function copyStatusLabel(status: CopyStatus): string {
-  switch (status) {
-    case "copied":
-      return "Copied";
-    case "failed":
-      return "Copy failed";
-    case "idle":
-      return "Copy";
   }
 }
 
@@ -189,42 +177,10 @@ export function PiDiagnosticsCard({
   onRestartRuntime,
   onStartRuntime,
 }: PiDiagnosticsCardProps) {
-  const [copyStatus, setCopyStatus] = useState<CopyStatus>("idle");
-  const copyResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { copyText, status: copyStatus } = useCopyToClipboard();
   const hasSettingsAction = view.issues.some(
     (issue) => issue.action === "open-settings",
   );
-
-  useEffect(
-    () => () => {
-      if (copyResetTimerRef.current) {
-        clearTimeout(copyResetTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  const resetCopyStatusSoon = () => {
-    if (copyResetTimerRef.current) {
-      clearTimeout(copyResetTimerRef.current);
-    }
-    copyResetTimerRef.current = setTimeout(() => setCopyStatus("idle"), 1600);
-  };
-
-  const copyDiagnostics = async () => {
-    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
-      setCopyStatus("failed");
-      resetCopyStatusSoon();
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(view.diagnosticsText);
-      setCopyStatus("copied");
-    } catch {
-      setCopyStatus("failed");
-    }
-    resetCopyStatusSoon();
-  };
 
   return (
     <PiSection
@@ -275,7 +231,7 @@ export function PiDiagnosticsCard({
             )}
             aria-label="Copy Pi diagnostics"
             disabled={disabled}
-            onClick={() => void copyDiagnostics()}
+            onClick={() => void copyText(view.diagnosticsText)}
           >
             <HugeiconsIcon
               data-icon="inline-start"
@@ -285,7 +241,7 @@ export function PiDiagnosticsCard({
               size={11}
               strokeWidth={1.75}
             />
-            {copyStatusLabel(copyStatus)}
+            {copyStatusLabel(copyStatus, "Copy")}
           </Button>
           {hasSettingsAction ? (
             <Button

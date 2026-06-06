@@ -12,5 +12,7 @@ export function shouldPrewarmPiRuntime({
   runtimeState,
 }: PiPrewarmInput): boolean {
   if (attempted || isBusy) return false;
-  return runtimeState.phase === "disconnected" || runtimeState.phase === "error";
+  return (
+    runtimeState.phase === "disconnected" || runtimeState.phase === "error"
+  );
 }

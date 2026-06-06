@@ -1,4 +1,4 @@
-import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { type ReactNode, useId } from "react";
 import { cn } from "@/lib/utils";
@@ -28,10 +28,7 @@ export function PiSection({
 
   return (
     <section
-      className={cn(
-        "shrink-0 border-b border-border/35 bg-card/45",
-        className,
-      )}
+      className={cn("shrink-0 border-b border-border/35 bg-card/45", className)}
     >
       <div className="flex h-8 shrink-0 items-center gap-1.5 px-2.5">
         <button

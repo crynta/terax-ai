@@ -10,6 +10,7 @@ import {
   PI_LOCAL_AGENT_DEFS,
   PI_LOCAL_AGENT_POLICY,
   piLocalAgentByName,
+  piLocalAgentHookCommand,
   piLocalAgentInstallSummary,
 } from "./local-agents";
 
@@ -28,6 +29,16 @@ describe("Pi local agent catalog", () => {
     ]);
     expect(PI_LOCAL_AGENT_POLICY.posture).toBe("Safe visible terminal launch");
     expect(PI_LOCAL_AGENT_POLICY.hiddenProcessSpawns).toBe(false);
+  });
+
+  it("keeps terminal hook commands on the agent definitions", () => {
+    expect(piLocalAgentHookCommand("claude")).toBe("agent_enable_claude_hooks");
+    expect(piLocalAgentHookCommand("codex")).toBe("agent_enable_codex_hooks");
+    expect(piLocalAgentHookCommand("gemini")).toBe("agent_enable_gemini_hooks");
+    expect(piLocalAgentHookCommand("antigravity")).toBe(
+      "agent_enable_antigravity_hooks",
+    );
+    expect(piLocalAgentHookCommand("pi")).toBeNull();
   });
 
   it("uses terminal-safe plan commands", () => {
@@ -52,11 +63,15 @@ describe("Pi local agent catalog", () => {
     expect(antigravity?.promptHandoff).toBe("flag");
     expect(antigravity?.promptFlag).toBe("--prompt-interactive");
     expect(antigravity?.launchUnavailableReason).toBeNull();
-    expect(antigravity?.guardrail).not.toContain("dangerously-skip-permissions");
+    expect(antigravity?.guardrail).not.toContain(
+      "dangerously-skip-permissions",
+    );
   });
 
   it("launches OpenCode only with explicit isolated read-only config", () => {
-    const opencode = PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === "opencode");
+    const opencode = PI_LOCAL_AGENT_DEFS.find(
+      (agent) => agent.id === "opencode",
+    );
     const command = opencode && buildPiLocalAgentLaunchCommand(opencode);
 
     expect(opencode?.launchUnavailableReason).toBeNull();
@@ -80,10 +95,13 @@ describe("Pi local agent catalog", () => {
   });
 
   it("uses OpenCode --prompt handoff and keeps Windows detect-only until env isolation is implemented", () => {
-    const opencode = PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === "opencode");
+    const opencode = PI_LOCAL_AGENT_DEFS.find(
+      (agent) => agent.id === "opencode",
+    );
 
     expect(
-      opencode && buildPiLocalAgentLaunchCommand(opencode, "inspect Bob's diff"),
+      opencode &&
+        buildPiLocalAgentLaunchCommand(opencode, "inspect Bob's diff"),
     ).toContain("--prompt 'inspect Bob'\\''s diff'");
     expect(
       opencode &&
@@ -94,7 +112,9 @@ describe("Pi local agent catalog", () => {
   });
 
   it("executes the OpenCode launch with isolated config and preserved auth data", async () => {
-    const opencode = PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === "opencode");
+    const opencode = PI_LOCAL_AGENT_DEFS.find(
+      (agent) => agent.id === "opencode",
+    );
     expect(opencode).toBeDefined();
     const command = buildPiLocalAgentLaunchCommand(opencode!, "inspect safely");
     expect(command).not.toBeNull();
@@ -176,7 +196,9 @@ describe("Pi local agent catalog", () => {
 
   it("builds prompt handoff commands without shell injection", () => {
     const cursor = PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === "cursor");
-    const opencode = PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === "opencode");
+    const opencode = PI_LOCAL_AGENT_DEFS.find(
+      (agent) => agent.id === "opencode",
+    );
     const pi = PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === "pi");
     const gemini = PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === "gemini");
     const antigravity = PI_LOCAL_AGENT_DEFS.find(
@@ -184,7 +206,8 @@ describe("Pi local agent catalog", () => {
     );
 
     expect(
-      cursor && buildPiLocalAgentLaunchCommand(cursor, "review Bob's diff; rm -rf /"),
+      cursor &&
+        buildPiLocalAgentLaunchCommand(cursor, "review Bob's diff; rm -rf /"),
     ).toBe("cursor-agent --mode plan 'review Bob'\\''s diff; rm -rf /'");
     expect(
       pi && buildPiLocalAgentLaunchCommand(pi, "review Bob's diff; rm -rf /"),

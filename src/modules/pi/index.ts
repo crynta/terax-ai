@@ -20,4 +20,6 @@ export type {
   PiPhase,
   PiRuntimeState,
 } from "./lib/status";
+export type { PiChatFocusRequest } from "./PiChatPanel";
+export { PiChatPanel } from "./PiChatPanel";
 export { type PiFocusRequest, PiPanel } from "./PiPanel";

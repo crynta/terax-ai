@@ -1,4 +1,4 @@
-import { Refresh01Icon } from "@hugeicons/core-free-icons";
+import Refresh01Icon from "@hugeicons/core-free-icons/Refresh01Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,9 @@ import type { AgentStatus } from "@/modules/agents/lib/types";
 import { PiSection } from "@/modules/pi/components/PiSection";
 import {
   PI_LOCAL_AGENT_POLICY,
-  piLocalAgentInstallSummary,
   type PiLocalAgentId,
   type PiLocalAgentStatus,
+  piLocalAgentInstallSummary,
 } from "@/modules/pi/lib/local-agents";
 
 type PiLocalAgentActivity = {

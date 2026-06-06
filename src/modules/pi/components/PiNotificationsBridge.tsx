@@ -3,14 +3,14 @@ import { useEffect, useRef } from "react";
 import { routeAgentNotification } from "@/modules/agents/lib/route";
 import { useWindowFocus } from "@/modules/agents/lib/useWindowFocus";
 import { useAgentStore } from "@/modules/agents/store/agentStore";
-import type {
-  PiSessionEvent,
-  PiSessionStatus,
-} from "@/modules/pi/lib/sessions";
 import {
   buildPiAgentSessionStateForEvent,
   buildPiNotificationForEvent,
 } from "@/modules/pi/lib/notifications";
+import type {
+  PiSessionEvent,
+  PiSessionStatus,
+} from "@/modules/pi/lib/sessions";
 
 const MAX_NOTIFIED_EVENT_IDS = 1000;
 
@@ -117,7 +117,9 @@ export function processPiNotificationEvent(input: {
   onActivateSession: (sessionId: string) => void;
   removePiSession: (sessionId: string) => void;
   routeNotification: (route: PiNotificationRoute) => void;
-  setPiSession: (state: NonNullable<ReturnType<typeof buildPiAgentSessionStateForEvent>>) => void;
+  setPiSession: (
+    state: NonNullable<ReturnType<typeof buildPiAgentSessionStateForEvent>>,
+  ) => void;
   state: PiNotificationProcessorState;
   visible: boolean;
 }): void {
@@ -155,6 +157,7 @@ export function processPiNotificationEvent(input: {
     agent: "Pi",
     allowToast: notification.kind === "error",
     body: notification.body,
+    category: "code-run",
     focused: input.focused,
     kind: notification.kind,
     leafId: 0,

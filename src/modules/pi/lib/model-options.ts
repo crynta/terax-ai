@@ -1,9 +1,9 @@
 import {
   MODELS,
   type ModelInfo,
+  PROVIDERS,
   type ProviderId,
   type ProviderInfo,
-  PROVIDERS,
 } from "@/modules/ai/config";
 import type { PiProfileModelsList } from "@/modules/pi/lib/native";
 

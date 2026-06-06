@@ -5,13 +5,14 @@ Terax now runs Pi SDK sessions with a Rust-mediated native tool bridge. The Node
 ## Current invariants
 
 - The sidecar reports `toolMode: "rust-mediated"`.
-- Enabled Pi tool names are exactly `read`, `ls`, `grep`, `find`, `bash`, `edit`, and `write`.
+- Enabled Pi tool names are exactly `read`, `ls`, `grep`, `find`, `bash`, `edit`, `write`, `create_artifact`, `edit_artifact`, `read_artifact`, and `list_artifacts`.
 - The sidecar overrides those tool names with Terax custom tool definitions from `native-tools.js`; Pi built-in file/shell backends are not the executor.
 - `nativeTools.execute` is a reverse JSON-RPC request from Node to Rust for actual tool execution.
 - Rust records the authorized session `cwd` returned by `sessions.create`; native tool requests from unknown sessions or mismatched cwd values are rejected.
 - Approval-required tools remain exactly `bash`, `edit`, and `write`.
 - `sessions.tool.respond` is in the sidecar allowlist and exposed through Tauri as `pi_session_tool_respond` for approval UI decisions.
 - Read/list/search/edit/write paths are constrained to the Rust-authorized workspace and reject sensitive files/directories.
+- Artifact tools operate on app-owned artifact state, derive the conversation from the verified session id, and never take `conversationId` from the model.
 - Grep/find skip sensitive files encountered during traversal.
 - Pending approvals are denied on stop, delete, sidecar error, run abort, or session disposal.
 - Unknown, stale, or already-resolved approval responses return structured `PI_APPROVAL_NOT_FOUND` metadata.
@@ -19,11 +20,11 @@ Terax now runs Pi SDK sessions with a Rust-mediated native tool bridge. The Node
 
 ## Runtime flow
 
-1. Pi proposes a tool call such as `read` or `bash`.
+1. Pi proposes a tool call such as `read`, `bash`, or `create_artifact`.
 2. The sidecar approval extension checks the tool name and coarse path policy.
 3. For `bash`, `edit`, and `write`, the sidecar emits `session.tool.approval.requested` and waits for the sidebar decision.
-4. After approval, the custom tool definition sends `nativeTools.execute` to Rust with `sessionId`, `toolCallId`, `toolName`, `cwd`, and input.
-5. Rust verifies that the request belongs to a known session and cwd, then executes the native operation with workspace and sensitive-path policy.
+4. After approval, or immediately for non-approval tools, the custom tool definition sends `nativeTools.execute` to Rust with `sessionId`, `toolCallId`, `toolName`, `cwd`, and input.
+5. Rust verifies that the request belongs to a known session and cwd, then executes the native operation with workspace, sensitive-path, or artifact-store policy.
 6. The sidecar returns the Rust result to Pi and emits the usual tool timeline events for transcript persistence.
 
 ## Safety requirements
