@@ -20,7 +20,10 @@ export class DormantRing {
   push(bytes: Uint8Array): void {
     if (bytes.length === 0) return;
     if (bytes.length >= this.byteCap) {
-      this.chunks = [OVERFLOW_NOTICE, bytes.subarray(bytes.length - this.byteCap)];
+      this.chunks = [
+        OVERFLOW_NOTICE,
+        bytes.subarray(bytes.length - this.byteCap),
+      ];
       this.head = 0;
       this.size = 2;
       this.total = OVERFLOW_NOTICE.length + this.byteCap;

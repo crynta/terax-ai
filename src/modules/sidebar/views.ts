@@ -1,29 +1,22 @@
-export const PRIMARY_SIDEBAR_VIEW_ITEMS = [
-  { id: "explorer", label: "Files" },
-  { id: "source-control", label: "Git" },
-] as const;
+export {
+  PRIMARY_SIDEBAR_VIEW_ITEMS,
+  type PrimarySidebarViewId,
+  SECONDARY_SIDEBAR_VIEW_ITEMS,
+  type SecondarySidebarViewId,
+  SIDEBAR_VIEW_ITEMS,
+  type SidebarViewId,
+  type SidebarViewItem,
+} from "./registry";
 
-export const SECONDARY_SIDEBAR_VIEW_ITEMS = [
-  { id: "code", label: "Code" },
-  { id: "chat", label: "Chat" },
-  { id: "inbox", label: "Inbox" },
-] as const;
-
-export const SIDEBAR_VIEW_ITEMS = [
-  ...PRIMARY_SIDEBAR_VIEW_ITEMS,
-  ...SECONDARY_SIDEBAR_VIEW_ITEMS,
-] as const;
-
-export type PrimarySidebarViewId =
-  (typeof PRIMARY_SIDEBAR_VIEW_ITEMS)[number]["id"];
-export type SecondarySidebarViewId =
-  (typeof SECONDARY_SIDEBAR_VIEW_ITEMS)[number]["id"];
-export type SidebarViewId = PrimarySidebarViewId | SecondarySidebarViewId;
-
-export type SidebarViewItem<T extends SidebarViewId = SidebarViewId> = {
-  id: T;
-  label: string;
-};
+import type {
+  PrimarySidebarViewId,
+  SecondarySidebarViewId,
+  SidebarViewId,
+} from "./registry";
+import {
+  PRIMARY_SIDEBAR_VIEW_ITEMS,
+  SECONDARY_SIDEBAR_VIEW_ITEMS,
+} from "./registry";
 
 export function isPrimarySidebarViewId(
   value: string | null | undefined,

@@ -1,3 +1,7 @@
+import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
+import Refresh01Icon from "@hugeicons/core-free-icons/Refresh01Icon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Command,
   CommandDialog,
@@ -12,21 +16,18 @@ import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   getBindingTokens,
-  SHORTCUTS,
   type KeyBinding,
+  SHORTCUTS,
   type ShortcutId,
 } from "@/modules/shortcuts";
-import { AlertCircleIcon, Refresh01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   COMMAND_PALETTE_ACTION_GROUPS,
   type CommandPaletteAction,
 } from "./actions";
 import {
   COMMAND_PALETTE_FILE_SEARCH_MIN_QUERY_LENGTH,
-  useWorkspaceFileSearch,
   type CommandPaletteFileHit,
+  useWorkspaceFileSearch,
 } from "./useWorkspaceFileSearch";
 
 type Props = {
@@ -93,10 +94,7 @@ export function CommandPalette({
 
     if (!showFiles || !workspaceRoot) return actionValues;
     if (error) return [...actionValues, RETRY_VALUE];
-    return [
-      ...actionValues,
-      ...results.map((hit) => fileValue(hit)),
-    ];
+    return [...actionValues, ...results.map((hit) => fileValue(hit))];
   }, [error, results, showFiles, visibleActions, workspaceRoot]);
 
   useEffect(() => {

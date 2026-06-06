@@ -26,7 +26,9 @@ export function useWorkspaceFileSearch({ root, query, enabled }: Params) {
 
   const applyHits = useCallback((hits: CommandPaletteFileHit[]) => {
     setResults(
-      hits.filter((hit) => !hit.is_dir).slice(0, COMMAND_PALETTE_FILE_SEARCH_LIMIT),
+      hits
+        .filter((hit) => !hit.is_dir)
+        .slice(0, COMMAND_PALETTE_FILE_SEARCH_LIMIT),
     );
   }, []);
 
@@ -40,7 +42,11 @@ export function useWorkspaceFileSearch({ root, query, enabled }: Params) {
   const retry = useCallback(() => {
     const rootPath = root;
     const q = query.trim();
-    if (!enabled || !rootPath || q.length < COMMAND_PALETTE_FILE_SEARCH_MIN_QUERY_LENGTH) {
+    if (
+      !enabled ||
+      !rootPath ||
+      q.length < COMMAND_PALETTE_FILE_SEARCH_MIN_QUERY_LENGTH
+    ) {
       return;
     }
 
@@ -71,7 +77,11 @@ export function useWorkspaceFileSearch({ root, query, enabled }: Params) {
     requestIdRef.current += 1;
     const requestId = requestIdRef.current;
 
-    if (!enabled || !root || q.length < COMMAND_PALETTE_FILE_SEARCH_MIN_QUERY_LENGTH) {
+    if (
+      !enabled ||
+      !root ||
+      q.length < COMMAND_PALETTE_FILE_SEARCH_MIN_QUERY_LENGTH
+    ) {
       setResults([]);
       setSearching(false);
       setError(null);

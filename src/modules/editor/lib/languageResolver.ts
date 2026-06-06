@@ -113,8 +113,7 @@ const loaders: Record<string, LanguageLoader> = {
 
   // LaTeX / TeX
   tex: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
-  latex: () =>
-    import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
+  latex: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
   sty: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
   cls: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
 };

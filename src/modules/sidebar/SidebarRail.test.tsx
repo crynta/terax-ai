@@ -37,10 +37,26 @@ describe("SidebarRail", () => {
 
     expect(html).toContain("Code");
     expect(html).toContain("Chat");
+    expect(html).toContain("Compare");
     expect(html).toContain("Inbox");
     expect(html).toContain("9+");
     expect(html).not.toContain("Files");
     expect(html).not.toContain("Git");
     expect(html).not.toContain("Pi");
+  });
+
+  it("keeps dense rail labels shrinkable and icons decorative", () => {
+    const html = renderToStaticMarkup(
+      <SidebarRail
+        activeView="compare"
+        badges={{ compare: 128 }}
+        items={SECONDARY_SIDEBAR_VIEW_ITEMS}
+        onSelectView={() => {}}
+      />,
+    );
+
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain("min-w-0 truncate");
+    expect(html).toContain("99+");
   });
 });

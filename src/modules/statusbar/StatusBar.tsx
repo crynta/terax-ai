@@ -1,19 +1,19 @@
-import { useChatStore } from "@/modules/ai";
-import { AgentStatusPill } from "@/modules/ai/components/AgentStatusPill";
-import {
-  AiOpenButton,
-  AiStatusBarControls,
-} from "@/modules/ai/components/AiStatusBarControls";
+import IncognitoIcon from "@hugeicons/core-free-icons/IncognitoIcon";
+import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { IncognitoIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+import { useChatStore } from "@/modules/ai/store/chatStore";
+import { AgentStatusPill } from "@/modules/ai/components/AgentStatusPill";
+import {
+  AiOpenButton,
+  AiStatusBarControls,
+} from "@/modules/ai/components/AiStatusBarControls";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import { CwdBreadcrumb } from "./CwdBreadcrumb";
 import { WorkspaceEnvSelector } from "./WorkspaceEnvSelector";
-import type { WorkspaceEnv } from "@/modules/workspace";
 
 type Props = {
   cwd: string | null;
@@ -53,7 +53,10 @@ export function StatusBar({
                 <span>Private: hidden from AI</span>
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-64 text-[11px] leading-relaxed">
+            <TooltipContent
+              side="top"
+              className="max-w-64 text-[11px] leading-relaxed"
+            >
               AI can't see this terminal's output. Use it for secrets, SSH, or
               anything you don't want sent to the model.
             </TooltipContent>

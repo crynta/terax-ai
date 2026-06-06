@@ -1,6 +1,3 @@
-import { detectMonoFontFamily } from "@/lib/fonts";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -8,6 +5,9 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
+import { detectMonoFontFamily } from "@/lib/fonts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { buildTerminalTheme } from "@/styles/terminalTheme";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,

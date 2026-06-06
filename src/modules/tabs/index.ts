@@ -1,6 +1,10 @@
 export {
   type AiDiffStatus,
   type AiDiffTab,
+  type ArtifactWorkspaceTab,
+  type ArtifactWorkspaceTabInput,
+  createWorkflowTab,
+  createWorkflowTabFromDocument,
   type EditorTab,
   type GitCommitFileDiffTab,
   type GitDiffTab,
@@ -12,9 +16,22 @@ export {
   type Tab,
   type TabPatch,
   type TerminalTab,
+  upsertArtifactWorkspaceTab,
   upsertPiWorkspaceTab,
+  upsertWorkflowDocumentTab,
   useTabs,
+  type WorkflowTab,
 } from "./lib/useTabs";
 export { useWindowTitle } from "./lib/useWindowTitle";
 export { useWorkspaceCwd } from "./lib/useWorkspaceCwd";
+export {
+  parseWorkflowTabsRestoreSnapshot,
+  readWorkflowTabsRestoreState,
+  WORKFLOW_TAB_RESTORE_STORAGE_KEY,
+  type WorkflowTabRestoreEntry,
+  type WorkflowTabRestoreSnapshot,
+  type WorkflowTabRestoreState,
+  workflowTabsRestoreSnapshot,
+  writeWorkflowTabsRestoreState,
+} from "./lib/workflowTabRestore";
 export { TabBar } from "./TabBar";

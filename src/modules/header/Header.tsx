@@ -1,3 +1,11 @@
+import GridViewIcon from "@hugeicons/core-free-icons/GridViewIcon";
+import LayoutTwoColumnIcon from "@hugeicons/core-free-icons/LayoutTwoColumnIcon";
+import LayoutTwoRowIcon from "@hugeicons/core-free-icons/LayoutTwoRowIcon";
+import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
+import SidebarLeftIcon from "@hugeicons/core-free-icons/SidebarLeftIcon";
+import SidebarRightIcon from "@hugeicons/core-free-icons/SidebarRightIcon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -16,6 +24,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, KEY_SEP, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { NotificationBell } from "@/modules/agents";
+import type { AgentStatusContext } from "@/modules/agents/lib/statusSurface";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { setSidebarPosition } from "@/modules/settings/store";
 import {
@@ -25,18 +35,6 @@ import {
 } from "@/modules/shortcuts/shortcuts";
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
-import { NotificationBell } from "@/modules/agents";
-import type { AgentStatusContext } from "@/modules/agents/lib/statusSurface";
-import {
-  GridViewIcon,
-  LayoutTwoColumnIcon,
-  LayoutTwoRowIcon,
-  Settings01Icon,
-  SidebarLeftIcon,
-  SidebarRightIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState, type RefObject } from "react";
 import {
   SearchInline,
   type SearchInlineHandle,
@@ -51,6 +49,7 @@ type Props = {
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
+  onNewWorkflow: () => void;
   onNewGitGraph: () => void;
   onClose: (id: number) => void;
   /** Promote a preview (transient) tab to persistent. */
@@ -81,6 +80,7 @@ export function Header({
   onNewPrivate,
   onNewPreview,
   onNewEditor,
+  onNewWorkflow,
   onNewGitGraph,
   onClose,
   onPin,
@@ -130,9 +130,16 @@ export function Header({
       size="icon"
       className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
       onClick={onOpenSettings}
+      aria-label="Settings"
       title="Settings"
     >
-      <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
+      <HugeiconsIcon
+        aria-hidden="true"
+        focusable="false"
+        icon={Settings01Icon}
+        size={15}
+        strokeWidth={1.75}
+      />
     </Button>
   );
   const sidebarIcon =
@@ -151,12 +158,19 @@ export function Header({
           <ContextMenuTrigger asChild>
             <Button
               onClick={onToggleSidebar}
+              aria-label="Toggle primary sidebar"
               title="Toggle primary sidebar. Right-click for sidebar options."
               variant="ghost"
               size="icon-sm"
               className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
             >
-              <HugeiconsIcon icon={sidebarIcon} size={18} strokeWidth={1.75} />
+              <HugeiconsIcon
+                aria-hidden="true"
+                focusable="false"
+                icon={sidebarIcon}
+                size={18}
+                strokeWidth={1.75}
+              />
             </Button>
           </ContextMenuTrigger>
           <ContextMenuContent className="min-w-48">
@@ -188,10 +202,17 @@ export function Header({
               variant="ghost"
               size="icon-sm"
               className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+              aria-label="Split terminal"
               title="Split terminal"
               disabled={!canSplit}
             >
-              <HugeiconsIcon icon={GridViewIcon} size={16} strokeWidth={1.75} />
+              <HugeiconsIcon
+                aria-hidden="true"
+                focusable="false"
+                icon={GridViewIcon}
+                size={16}
+                strokeWidth={1.75}
+              />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
@@ -250,6 +271,7 @@ export function Header({
           onNewPrivate={onNewPrivate}
           onNewPreview={onNewPreview}
           onNewEditor={onNewEditor}
+          onNewWorkflow={onNewWorkflow}
           onNewGitGraph={onNewGitGraph}
           onClose={onClose}
           onPin={onPin}

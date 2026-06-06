@@ -1,13 +1,13 @@
+import type { SearchAddon } from "@xterm/addon-search";
 import { Fragment } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import type { SearchAddon } from "@xterm/addon-search";
-import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 import { useTerminalDropStore } from "./lib/dropStore";
 import type { PaneNode } from "./lib/panes";
+import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 
 type LeafBundle = {
   setRef: (h: TerminalPaneHandle | null) => void;

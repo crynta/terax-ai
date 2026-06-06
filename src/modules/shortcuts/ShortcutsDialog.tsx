@@ -1,3 +1,6 @@
+import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -7,16 +10,9 @@ import {
 } from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
-import { Settings01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
-import {
-  getBindingTokens,
-  SHORTCUTS,
-  SHORTCUT_GROUPS,
-} from "./shortcuts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { getBindingTokens, SHORTCUT_GROUPS, SHORTCUTS } from "./shortcuts";
 
 type Props = {
   open: boolean;

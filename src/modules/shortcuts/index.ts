@@ -1,14 +1,14 @@
+export {
+  type ShortcutHandlers,
+  useGlobalShortcuts,
+} from "./lib/useGlobalShortcuts";
 export { ShortcutsDialog } from "./ShortcutsDialog";
 export {
-  SHORTCUTS,
-  SHORTCUT_GROUPS,
   getBindingTokens,
+  type KeyBinding,
+  SHORTCUT_GROUPS,
+  SHORTCUTS,
   type Shortcut,
   type ShortcutGroup,
   type ShortcutId,
-  type KeyBinding,
 } from "./shortcuts";
-export {
-  useGlobalShortcuts,
-  type ShortcutHandlers,
-} from "./lib/useGlobalShortcuts";

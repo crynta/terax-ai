@@ -1,4 +1,5 @@
-import { Alert02Icon, Globe02Icon } from "@hugeicons/core-free-icons";
+import Alert02Icon from "@hugeicons/core-free-icons/Alert02Icon";
+import Globe02Icon from "@hugeicons/core-free-icons/Globe02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   forwardRef,
@@ -171,8 +172,8 @@ function EmptyState() {
             Ports
           </span>{" "}
           dropdown to jump straight to your running dev server. Public sites
-          often block embedding — open them in your browser via the link icon
-          if you see a blank page.
+          often block embedding. Open them in your browser via the link icon if
+          you see a blank page.
         </p>
       </div>
     </div>

@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { ensureMonoFontsLoaded } from "@/lib/fonts";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { ensureMonoFontsLoaded } from "@/lib/fonts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { DormantRing } from "./dormantRing";
 import {
   createShellIntegrationState,
@@ -77,7 +77,10 @@ function markSessionReady(leafId: number): void {
   }
 }
 
-export function whenSessionReady(leafId: number, timeoutMs = 4000): Promise<void> {
+export function whenSessionReady(
+  leafId: number,
+  timeoutMs = 4000,
+): Promise<void> {
   if (readyLeaves.has(leafId)) return Promise.resolve();
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
@@ -362,14 +365,22 @@ export async function respawnSession(
   if (s.cols > 0 && s.rows > 0) pty.resize(s.cols, s.rows);
 }
 
-export async function leafHasForegroundProcess(leafId: number): Promise<boolean> {
+export async function leafHasForegroundProcess(
+  leafId: number,
+): Promise<boolean> {
   const s = sessions.get(leafId);
   if (!s?.pty || s.shellExited) return false;
   try {
-    const result = await invoke<boolean>("pty_has_foreground_process", { id: s.pty.id });
+    const result = await invoke<boolean>("pty_has_foreground_process", {
+      id: s.pty.id,
+    });
     return result;
   } catch (e) {
-    console.error("[terax] pty_has_foreground_process failed for leaf", leafId, e);
+    console.error(
+      "[terax] pty_has_foreground_process failed for leaf",
+      leafId,
+      e,
+    );
     return false;
   }
 }

@@ -1,9 +1,9 @@
-import type { Tab } from "@/modules/tabs";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useEffect, useMemo, useRef } from "react";
+import type { Tab } from "@/modules/tabs";
+import { leafIds } from "./lib/panes";
 import { PaneTreeView } from "./PaneTreeView";
 import type { TerminalPaneHandle } from "./TerminalPane";
-import { leafIds } from "./lib/panes";
 
 type Props = {
   tabs: Tab[];
@@ -71,7 +71,8 @@ export function TerminalStack({
 
   useEffect(() => {
     const live = new Set<number>();
-    for (const t of terminals) for (const id of leafIds(t.paneTree)) live.add(id);
+    for (const t of terminals)
+      for (const id of leafIds(t.paneTree)) live.add(id);
     for (const id of bundles.current.keys()) {
       if (!live.has(id)) bundles.current.delete(id);
     }

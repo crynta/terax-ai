@@ -4,7 +4,6 @@ import {
   hasLeaf,
   leafIds,
   nextLeafId,
-  type PaneNode,
   removeLeaf,
   type SplitDir,
   setLeafCwd as setLeafCwdInTree,
@@ -13,147 +12,58 @@ import {
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 
-// Matches the renderer slot pool size. Above this we'd evict an active leaf.
-export const MAX_PANES_PER_TAB = 4;
-
-export type TerminalTab = {
-  id: number;
-  kind: "terminal";
-  title: string;
-  cwd?: string;
-  paneTree: PaneNode;
-  activeLeafId: number;
-  /** AI agent cannot read buffer / context of this terminal. */
-  private?: boolean;
-  /** User-set label that overrides the cwd-derived name. Survives cd. */
-  customTitle?: string;
-};
-
-export type EditorTab = {
-  id: number;
-  kind: "editor";
-  title: string;
-  path: string;
-  dirty: boolean;
-  /**
-   * True while the tab is in the transient "preview" state, opened by a
-   * single-click in the explorer and not yet pinned by the user. A preview tab
-   * is replaced by the next single-click rather than accumulating.
-   */
-  preview: boolean;
-};
-
-export type PreviewTab = {
-  id: number;
-  kind: "preview";
-  title: string;
-  url: string;
-};
-
-export type MarkdownTab = {
-  id: number;
-  kind: "markdown";
-  title: string;
-  path: string;
-};
-
-export type AiDiffStatus = "pending" | "approved" | "rejected";
-
-export type AiDiffTab = {
-  id: number;
-  kind: "ai-diff";
-  title: string;
-  path: string;
-  /** "" for newly created files. */
-  originalContent: string;
-  proposedContent: string;
-  /** Tool-call approval id used to resolve the AI SDK approval. */
-  approvalId: string;
-  status: AiDiffStatus;
-  isNewFile: boolean;
-};
-
-export type GitDiffTab = {
-  id: number;
-  kind: "git-diff";
-  title: string;
-  path: string;
-  repoRoot: string;
-  mode: "-" | "+";
-  originalPath: string | null;
-};
-
-export type GitHistoryTab = {
-  id: number;
-  kind: "git-history";
-  title: string;
-  repoRoot: string;
-};
-
-export type GitCommitFileDiffTab = {
-  id: number;
-  kind: "git-commit-file";
-  title: string;
-  repoRoot: string;
-  sha: string;
-  shortSha: string;
-  subject: string;
-  path: string;
-  originalPath: string | null;
-};
-
-export type PiWorkspaceTab = {
-  id: number;
-  kind: "pi-workspace";
-  title: "Code";
-};
-
-export type Tab =
-  | TerminalTab
-  | EditorTab
-  | PreviewTab
-  | MarkdownTab
-  | AiDiffTab
-  | GitDiffTab
-  | GitHistoryTab
-  | GitCommitFileDiffTab
-  | PiWorkspaceTab;
-
-export type TabPatch = Partial<{
-  title: string;
-  cwd: string;
-  path: string;
-  dirty: boolean;
-  url: string;
-  /** Empty string resets a terminal tab to its cwd-derived name. */
-  customTitle: string;
-}>;
-
-function basename(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : path;
-}
-
-function titleFromUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    return u.host || url;
-  } catch {
-    return url || "preview";
-  }
-}
-
-export function upsertPiWorkspaceTab(
-  tabs: Tab[],
-  nextId: number,
-): { activeId: number; tabs: Tab[] } {
-  const existing = tabs.find((tab) => tab.kind === "pi-workspace");
-  if (existing) return { activeId: existing.id, tabs };
-  return {
-    activeId: nextId,
-    tabs: [...tabs, { id: nextId, kind: "pi-workspace", title: "Code" }],
-  };
-}
+export { MAX_PANES_PER_TAB } from "./types";
+export type {
+  AiDiffStatus,
+  AiDiffTab,
+  ArtifactWorkspaceTab,
+  EditorTab,
+  GitCommitFileDiffTab,
+  GitDiffTab,
+  GitHistoryTab,
+  MarkdownTab,
+  PiWorkspaceTab,
+  PreviewTab,
+  Tab,
+  TabPatch,
+  TerminalTab,
+  WorkflowTab,
+} from "./types";
+export type { ArtifactWorkspaceTabInput } from "./tabUtils";
+export {
+  basename,
+  createWorkflowTab,
+  createWorkflowTabFromDocument,
+  replaceWorkflowTabDocument,
+  terminalLeafIdsForTab,
+  titleFromUrl,
+  upsertArtifactWorkspaceTab,
+  upsertPiWorkspaceTab,
+  upsertWorkflowDocumentTab,
+} from "./tabUtils";
+import {
+  MAX_PANES_PER_TAB,
+  type AiDiffStatus,
+  type EditorTab,
+  type GitCommitFileDiffTab,
+  type GitDiffTab,
+  type GitHistoryTab,
+  type Tab,
+  type TabPatch,
+  type TerminalTab,
+} from "./types";
+import type { WorkflowDocument } from "@/modules/workflow/lib/schema";
+import {
+  basename,
+  createWorkflowTab,
+  replaceWorkflowTabDocument,
+  terminalLeafIdsForTab,
+  titleFromUrl,
+  upsertArtifactWorkspaceTab,
+  upsertPiWorkspaceTab,
+  upsertWorkflowDocumentTab,
+  type ArtifactWorkspaceTabInput,
+} from "./tabUtils";
 
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
@@ -232,6 +142,41 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setActiveId(tabId);
     return tabId;
   }, []);
+
+  const newWorkflowTab = useCallback(() => {
+    const tabId = nextIdRef.current++;
+    setTabs((t) => [...t, createWorkflowTab(tabId)]);
+    setActiveId(tabId);
+    return tabId;
+  }, []);
+
+  const openWorkflowDocumentTab = useCallback(
+    (document: WorkflowDocument, path?: string) => {
+      const tabId = nextIdRef.current++;
+      let activeId = tabId;
+      setTabs((t) => {
+        const result = upsertWorkflowDocumentTab(t, tabId, document, path);
+        activeId = result.activeId;
+        return result.tabs;
+      });
+      setActiveId(activeId);
+      return activeId;
+    },
+    [],
+  );
+
+  const updateWorkflowDocument = useCallback(
+    (
+      id: number,
+      document: WorkflowDocument,
+      options?: { dirty?: boolean; path?: string },
+    ) => {
+      setTabs((curr) =>
+        replaceWorkflowTabDocument(curr, id, document, options),
+      );
+    },
+    [],
+  );
 
   /**
    * Opens a file in an editor tab.
@@ -447,6 +392,18 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return result.activeId;
   }, []);
 
+  const openArtifactWorkspaceTab = useCallback(
+    (input: ArtifactWorkspaceTabInput) => {
+      const id = nextIdRef.current++;
+      const result = upsertArtifactWorkspaceTab(tabsRef.current, id, input);
+      tabsRef.current = result.tabs;
+      setTabs(result.tabs);
+      setActiveId(result.activeId);
+      return result.activeId;
+    },
+    [],
+  );
+
   const openGitDiffTab = useCallback(
     (input: {
       path: string;
@@ -599,9 +556,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       if (curr.length <= 1) return curr;
       const idx = curr.findIndex((t) => t.id === id);
       const target = curr[idx];
-      if (target && target.kind === "terminal") {
-        toDispose = leafIds(target.paneTree);
-      }
+      if (target) toDispose = terminalLeafIdsForTab(target);
       const next = curr.filter((t) => t.id !== id);
       setActiveId((active) =>
         id === active ? next[Math.max(0, idx - 1)].id : active,
@@ -670,6 +625,27 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           };
         }
         if (x.kind === "pi-workspace") return x;
+        if (x.kind === "artifact") {
+          return {
+            ...x,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.selectedSlug !== undefined && {
+              selectedSlug: patch.selectedSlug,
+            }),
+          };
+        }
+        if (x.kind === "workflow") {
+          return {
+            ...x,
+            ...(patch.path !== undefined && { path: patch.path }),
+            ...(patch.dirty !== undefined && { dirty: patch.dirty }),
+            ...(patch.title !== undefined && {
+              title: patch.title,
+              dirty: true,
+              document: { ...x.document, title: patch.title },
+            }),
+          };
+        }
 
         const autoPin =
           patch.dirty === true && x.preview ? { preview: false } : {};
@@ -840,9 +816,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     const leafId = nextIdRef.current++;
     let toDispose: number[] = [];
     setTabs((curr) => {
-      toDispose = curr.flatMap((t) =>
-        t.kind === "terminal" ? leafIds(t.paneTree) : [],
-      );
+      toDispose = curr.flatMap(terminalLeafIdsForTab);
       return [
         {
           id: tabId,
@@ -865,11 +839,15 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     newTab,
     newAgentTab,
     newPrivateTab,
+    newWorkflowTab,
+    openWorkflowDocumentTab,
+    updateWorkflowDocument,
     openFileTab,
     pinTab,
     newPreviewTab,
     newMarkdownTab,
     openPiWorkspaceTab,
+    openArtifactWorkspaceTab,
     openAiDiffTab,
     openGitDiffTab,
     openCommitHistoryTab,

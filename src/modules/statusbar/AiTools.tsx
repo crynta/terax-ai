@@ -1,3 +1,9 @@
+import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
+import ArrowUp01Icon from "@hugeicons/core-free-icons/ArrowUp01Icon";
+import Mic01Icon from "@hugeicons/core-free-icons/Mic01Icon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { AnimatePresence, motion } from "motion/react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -7,14 +13,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
-import {
-  ArrowDown01Icon,
-  ArrowUp01Icon,
-  Mic01Icon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
 
 const MODELS = [
   { id: "claude-opus-4-7", label: "Claude Opus 4.7" },

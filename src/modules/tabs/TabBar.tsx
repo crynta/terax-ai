@@ -1,15 +1,15 @@
-import {
-  Cancel01Icon,
-  Clock01Icon,
-  CodeIcon,
-  ComputerTerminal02Icon,
-  GitBranchIcon,
-  GitCompareIcon,
-  Globe02Icon,
-  IncognitoIcon,
-  PencilEdit02Icon,
-  PlusSignIcon,
-} from "@hugeicons/core-free-icons";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import CanvasIcon from "@hugeicons/core-free-icons/CanvasIcon";
+import Clock01Icon from "@hugeicons/core-free-icons/Clock01Icon";
+import CodeIcon from "@hugeicons/core-free-icons/CodeIcon";
+import ComputerTerminal02Icon from "@hugeicons/core-free-icons/ComputerTerminal02Icon";
+import GitBranchIcon from "@hugeicons/core-free-icons/GitBranchIcon";
+import File01Icon from "@hugeicons/core-free-icons/File01Icon";
+import GitCompareIcon from "@hugeicons/core-free-icons/GitCompareIcon";
+import Globe02Icon from "@hugeicons/core-free-icons/Globe02Icon";
+import IncognitoIcon from "@hugeicons/core-free-icons/IncognitoIcon";
+import PencilEdit02Icon from "@hugeicons/core-free-icons/PencilEdit02Icon";
+import PlusSignIcon from "@hugeicons/core-free-icons/PlusSignIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ type Props = {
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
+  onNewWorkflow: () => void;
   onNewGitGraph: () => void;
   onClose: (id: number) => void;
   /** Pin (promote) a preview tab to persistent on double-click. */
@@ -58,6 +59,7 @@ export function TabBar({
   onNewPrivate,
   onNewPreview,
   onNewEditor,
+  onNewWorkflow,
   onNewGitGraph,
   onClose,
   onPin,
@@ -171,7 +173,8 @@ export function TabBar({
                     <span className={cn("truncate", isPreview && "italic")}>
                       {labelFor(t)}
                     </span>
-                    {t.kind === "editor" && t.dirty ? (
+                    {(t.kind === "editor" || t.kind === "workflow") &&
+                    t.dirty ? (
                       <span
                         aria-label="Unsaved changes"
                         className="size-1.5 shrink-0 rounded-full bg-foreground/70"
@@ -286,6 +289,10 @@ export function TabBar({
                 {fmtShortcut(MOD_KEY, "P")}
               </span>
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onNewWorkflow()}>
+              <HugeiconsIcon icon={CanvasIcon} size={14} strokeWidth={1.75} />
+              <span className="flex-1">Workflow Canvas</span>
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onNewGitGraph()}>
               <HugeiconsIcon
                 icon={GitBranchIcon}
@@ -360,6 +367,26 @@ function TabIcon({ tab }: { tab: Tab }) {
     return (
       <HugeiconsIcon
         icon={CodeIcon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0"
+      />
+    );
+  }
+  if (tab.kind === "artifact") {
+    return (
+      <HugeiconsIcon
+        icon={File01Icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0"
+      />
+    );
+  }
+  if (tab.kind === "workflow") {
+    return (
+      <HugeiconsIcon
+        icon={CanvasIcon}
         size={14}
         strokeWidth={2}
         className="shrink-0"

@@ -1,18 +1,8 @@
-import { Button } from "@/components/ui/button";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import {
-  FileAddIcon,
-  Folder01Icon,
-  FolderAddIcon,
-  Refresh01Icon,
-  Search01Icon,
-} from "@hugeicons/core-free-icons";
+import FileAddIcon from "@hugeicons/core-free-icons/FileAddIcon";
+import Folder01Icon from "@hugeicons/core-free-icons/Folder01Icon";
+import FolderAddIcon from "@hugeicons/core-free-icons/FolderAddIcon";
+import Refresh01Icon from "@hugeicons/core-free-icons/Refresh01Icon";
+import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -24,14 +14,22 @@ import {
   useRef,
   useState,
 } from "react";
+import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { useGlobalShortcuts } from "@/modules/shortcuts";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
-import { EntryRow, PendingRow, StatusRow } from "./TreeRow";
 import { InlineInput } from "./InlineInput";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
-import { useGlobalShortcuts } from "@/modules/shortcuts";
+import { EntryRow, PendingRow, StatusRow } from "./TreeRow";
 
 export type FileExplorerHandle = {
   focus: () => void;
@@ -60,9 +58,22 @@ type Row =
       isExpanded: boolean;
       depth: number;
     }
-  | { kind: "rename"; key: string; path: string; name: string; isDir: boolean; depth: number }
+  | {
+      kind: "rename";
+      key: string;
+      path: string;
+      name: string;
+      isDir: boolean;
+      depth: number;
+    }
   | { kind: "pending"; key: string; depth: number; pendingKind: "file" | "dir" }
-  | { kind: "status"; key: string; depth: number; tone: "muted" | "error"; message: string };
+  | {
+      kind: "status";
+      key: string;
+      depth: number;
+      tone: "muted" | "error";
+      message: string;
+    };
 
 const ROW_HEIGHT = 24;
 const OVERSCAN = 8;
@@ -168,9 +179,20 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const { rows, entryIndexByPath } = useMemo(() => {
-      if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
+      if (!rootPath)
+        return {
+          rows: [] as Row[],
+          entryIndexByPath: new Map<string, number>(),
+        };
       return buildRows(rootPath, tree);
-    }, [rootPath, tree.nodes, tree.expanded, tree.renaming, tree.pendingCreate, tree]);
+    }, [
+      rootPath,
+      tree.nodes,
+      tree.expanded,
+      tree.renaming,
+      tree.pendingCreate,
+      tree,
+    ]);
 
     const entryPaths = useMemo<string[]>(() => {
       const out: string[] = [];
@@ -203,7 +225,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
 
     const lastSyncedActivePathRef = useRef<string | null>(null);
     useEffect(() => {
-      if (!activeFilePath || activeFilePath === lastSyncedActivePathRef.current) {
+      if (
+        !activeFilePath ||
+        activeFilePath === lastSyncedActivePathRef.current
+      ) {
         return;
       }
       if (!entryIndexByPath.has(activeFilePath)) return;
@@ -375,7 +400,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           );
         case "status":
           return (
-            <StatusRow depth={row.depth} message={row.message} tone={row.tone} />
+            <StatusRow
+              depth={row.depth}
+              message={row.message}
+              tone={row.tone}
+            />
           );
       }
     };
@@ -410,7 +439,13 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             title="Search files"
             aria-label="Search files"
           >
-            <HugeiconsIcon icon={Search01Icon} size={13} strokeWidth={2} />
+            <HugeiconsIcon
+              aria-hidden="true"
+              focusable="false"
+              icon={Search01Icon}
+              size={13}
+              strokeWidth={2}
+            />
           </Button>
 
           <Button
@@ -419,8 +454,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             className="size-6 text-muted-foreground hover:text-foreground"
             onClick={() => tree.beginCreate(rootPath, "file")}
             title="New file"
+            aria-label="New file"
           >
-            <HugeiconsIcon icon={FileAddIcon} size={13} strokeWidth={2} />
+            <HugeiconsIcon
+              aria-hidden="true"
+              focusable="false"
+              icon={FileAddIcon}
+              size={13}
+              strokeWidth={2}
+            />
           </Button>
           <Button
             variant="ghost"
@@ -428,8 +470,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             className="size-6 text-muted-foreground hover:text-foreground"
             onClick={() => tree.beginCreate(rootPath, "dir")}
             title="New folder"
+            aria-label="New folder"
           >
-            <HugeiconsIcon icon={FolderAddIcon} size={13} strokeWidth={2} />
+            <HugeiconsIcon
+              aria-hidden="true"
+              focusable="false"
+              icon={FolderAddIcon}
+              size={13}
+              strokeWidth={2}
+            />
           </Button>
           <Button
             variant="ghost"
@@ -437,8 +486,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             className="size-6 text-muted-foreground hover:text-foreground"
             onClick={() => tree.refresh(rootPath)}
             title="Refresh"
+            aria-label="Refresh"
           >
-            <HugeiconsIcon icon={Refresh01Icon} size={12} strokeWidth={2} />
+            <HugeiconsIcon
+              aria-hidden="true"
+              focusable="false"
+              icon={Refresh01Icon}
+              size={12}
+              strokeWidth={2}
+            />
           </Button>
         </div>
 

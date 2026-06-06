@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { currentWorkspaceEnv } from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 
 type ReadResult =
   | { kind: "text"; content: string; size: number }
@@ -74,7 +74,10 @@ export function useDocument({ path, onDirtyChange }: Options) {
     setDoc({ status: "loading" });
     setDirty(false);
 
-    invoke<ReadResult>("fs_read_file", { path, workspace: currentWorkspaceEnv() })
+    invoke<ReadResult>("fs_read_file", {
+      path,
+      workspace: currentWorkspaceEnv(),
+    })
       .then((res) => {
         if (cancelled) return;
         if (res.kind === "text") {

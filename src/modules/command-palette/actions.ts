@@ -1,23 +1,21 @@
+import ArrowLeft01Icon from "@hugeicons/core-free-icons/ArrowLeft01Icon";
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import FileEditIcon from "@hugeicons/core-free-icons/FileEditIcon";
+import Globe02Icon from "@hugeicons/core-free-icons/Globe02Icon";
+import IncognitoIcon from "@hugeicons/core-free-icons/IncognitoIcon";
+import KeyboardIcon from "@hugeicons/core-free-icons/KeyboardIcon";
+import LayoutTwoColumnIcon from "@hugeicons/core-free-icons/LayoutTwoColumnIcon";
+import LayoutTwoRowIcon from "@hugeicons/core-free-icons/LayoutTwoRowIcon";
+import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
+import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
+import SidebarLeftIcon from "@hugeicons/core-free-icons/SidebarLeftIcon";
+import SparklesIcon from "@hugeicons/core-free-icons/SparklesIcon";
+import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
 import type { SearchTarget } from "@/modules/header";
 import type { ShortcutId } from "@/modules/shortcuts";
 import { MAX_PANES_PER_TAB, type Tab } from "@/modules/tabs";
 import { leafIds } from "@/modules/terminal";
-import {
-  ArrowLeft01Icon,
-  ArrowRight01Icon,
-  Cancel01Icon,
-  FileEditIcon,
-  Globe02Icon,
-  IncognitoIcon,
-  KeyboardIcon,
-  LayoutTwoColumnIcon,
-  LayoutTwoRowIcon,
-  Search01Icon,
-  Settings01Icon,
-  SidebarLeftIcon,
-  SparklesIcon,
-  TerminalIcon,
-} from "@hugeicons/core-free-icons";
 
 type CommandIcon = typeof TerminalIcon;
 
@@ -74,8 +72,7 @@ export function createCommandPaletteActions(
   ctx: CommandPaletteActionContext,
 ): CommandPaletteAction[] {
   const activeTab = ctx.tabs.find((tab) => tab.id === ctx.activeId);
-  const activeTerminalTab =
-    activeTab?.kind === "terminal" ? activeTab : null;
+  const activeTerminalTab = activeTab?.kind === "terminal" ? activeTab : null;
   const activePaneCount = activeTerminalTab
     ? leafIds(activeTerminalTab.paneTree).length
     : 0;

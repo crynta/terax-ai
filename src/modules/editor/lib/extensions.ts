@@ -1,9 +1,9 @@
-import { detectMonoFontFamily } from "@/lib/fonts";
 import { indentUnit } from "@codemirror/language";
 import { lintGutter } from "@codemirror/lint";
 import { search } from "@codemirror/search";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { detectMonoFontFamily } from "@/lib/fonts";
 
 // Compartments allow runtime reconfiguration without rebuilding state.
 export const languageCompartment = new Compartment();

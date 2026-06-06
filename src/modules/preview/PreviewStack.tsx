@@ -1,6 +1,6 @@
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { PreviewTab, Tab } from "@/modules/tabs";
-import { useEffect, useRef } from "react";
 import { PreviewPane, type PreviewPaneHandle } from "./PreviewPane";
 
 type Props = {

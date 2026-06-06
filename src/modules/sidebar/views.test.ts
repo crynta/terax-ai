@@ -20,12 +20,13 @@ describe("sidebar views", () => {
     ]);
   });
 
-  it("keeps the secondary sidebar limited to Code, Chat, and Inbox", () => {
+  it("keeps the secondary sidebar focused on AI/code-adjacent surfaces", () => {
     expect(
       SECONDARY_SIDEBAR_VIEW_ITEMS.map((item) => [item.id, item.label]),
     ).toEqual([
       ["code", "Code"],
       ["chat", "Chat"],
+      ["compare", "Compare"],
       ["inbox", "Inbox"],
     ]);
   });
@@ -36,6 +37,7 @@ describe("sidebar views", () => {
       "source-control",
       "code",
       "chat",
+      "compare",
       "inbox",
     ]);
     expect(isSidebarViewId("pi")).toBe(false);
@@ -47,6 +49,7 @@ describe("sidebar views", () => {
     expect(isPrimarySidebarViewId("explorer")).toBe(true);
     expect(isPrimarySidebarViewId("code")).toBe(false);
     expect(isSecondarySidebarViewId("code")).toBe(true);
+    expect(isSecondarySidebarViewId("compare")).toBe(true);
     expect(isSecondarySidebarViewId("source-control")).toBe(false);
     expect(normalizePrimarySidebarView("code")).toBe("explorer");
     expect(normalizeSecondarySidebarView("pi")).toBe("code");

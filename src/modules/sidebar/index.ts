@@ -1,5 +1,4 @@
-export { SidebarPlaceholderPanel } from "./SidebarPlaceholderPanel";
-export { SIDEBAR_RAIL_HEIGHT, SidebarRail } from "./SidebarRail";
+export { resolveSidebarResize } from "./controller";
 export {
   defaultSidebarVisibility,
   oppositeSidebarPosition,
@@ -11,11 +10,23 @@ export {
   type SidebarViewPair,
 } from "./layout";
 export {
+  clampSidebarWidth,
+  readStoredSidebarWidth,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_STORAGE_KEYS,
+  writeStoredSidebarWidth,
+} from "./persistence";
+export {
   normalizeSidebarPosition,
   SIDEBAR_POSITIONS,
-  tooltipSideForSidebar,
   type SidebarPosition,
+  tooltipSideForSidebar,
 } from "./position";
+export { SidebarLayoutShell } from "./SidebarLayoutShell";
+export { SidebarPlaceholderPanel } from "./SidebarPlaceholderPanel";
+export { SIDEBAR_RAIL_HEIGHT, SidebarRail } from "./SidebarRail";
 export type {
   PrimarySidebarViewId,
   SecondarySidebarViewId,

@@ -1,3 +1,10 @@
+import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
+import Folder01Icon from "@hugeicons/core-free-icons/Folder01Icon";
+import Home03Icon from "@hugeicons/core-free-icons/Home03Icon";
+import MoreHorizontalIcon from "@hugeicons/core-free-icons/MoreHorizontalIcon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -13,17 +20,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  ArrowDown01Icon,
-  Folder01Icon,
-  Home03Icon,
-  MoreHorizontalIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
-import { currentWorkspaceEnv } from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 import { segmentsFromCwd } from "./lib/pathUtils";
 
 type Props = {
@@ -66,10 +64,7 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
             <CollapsedSegments segments={middle} onCd={onCd} />
           ) : null}
           {middle.map((s) => (
-            <span
-              key={s.fullPath}
-              className="contents max-md:hidden"
-            >
+            <span key={s.fullPath} className="contents max-md:hidden">
               <BreadcrumbSegment
                 label={s.label}
                 isHome={s.isHome}
@@ -144,11 +139,7 @@ function BreadcrumbSegment({
     <>
       <BreadcrumbItem>
         <BreadcrumbLink asChild>
-          <button
-            type="button"
-            onClick={onClick}
-            className="cursor-pointer"
-          >
+          <button type="button" onClick={onClick} className="cursor-pointer">
             <Badge
               variant="outline"
               className="gap-1 text-muted-foreground hover:text-foreground"
