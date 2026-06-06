@@ -12,6 +12,7 @@ import { memo, useState } from "react";
 import { InlineInput } from "./InlineInput";
 import {
   copyToClipboard,
+  openInDefaultApp,
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
@@ -148,6 +149,14 @@ function EntryRowImpl(props: EntryRowProps) {
             Open Preview
           </ContextMenuItem>
         )}
+        {!isDir && (
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            onSelect={() => void openInDefaultApp(path)}
+          >
+            Open in Default App
+          </ContextMenuItem>
+        )}
         {isDir && onRevealInTerminal && (
           <ContextMenuItem
             className={COMPACT_ITEM}
@@ -187,6 +196,13 @@ function EntryRowImpl(props: EntryRowProps) {
           onSelect={() => void copyToClipboard(relativePath(rootPath, path))}
         >
           Copy Relative Path
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          className={COMPACT_ITEM}
+          onSelect={() => tree.beginRename(path)}
+        >
+          Rename
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem

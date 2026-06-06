@@ -1,4 +1,4 @@
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 export async function copyToClipboard(text: string): Promise<void> {
   try {
@@ -19,5 +19,13 @@ export async function revealInFinder(path: string): Promise<void> {
     await revealItemInDir(path);
   } catch (e) {
     console.error("revealItemInDir failed:", e);
+  }
+}
+
+export async function openInDefaultApp(path: string): Promise<void> {
+  try {
+    await openPath(path);
+  } catch (e) {
+    console.error("openPath failed:", e);
   }
 }
