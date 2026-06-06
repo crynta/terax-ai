@@ -20,6 +20,24 @@ sidecars/node/.dist-tmp-*
 sidecars/pi-host/.dist-tmp-*
 *.local
 
+# Local agent/session state
+.omc/
+.omx/
+.agents/
+.codex/
+.impeccable/
+.pi/tasks/
+.pi/todos/
+.pi/skills/*
+!.pi/skills/design-md/
+!.pi/skills/design-md/**
+!.pi/skills/deslop/
+!.pi/skills/deslop/**
+!.pi/skills/thermo-nuclear-code-quality-review/
+!.pi/skills/thermo-nuclear-code-quality-review/**
+skills-lock.json
+renderSidebarPanel
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

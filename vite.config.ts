@@ -45,6 +45,7 @@ export default defineConfig(async ({ mode }) => ({
           if (id.includes("@ai-sdk/xai")) return "ai-xai";
           if (id.includes("@ai-sdk/")) return "ai-sdk-shared";
 
+          if (id.includes("@xyflow/")) return "xyflow";
           if (id.includes("/xterm/") || id.includes("@xterm/")) return "xterm";
           if (
             id.includes("@codemirror/") ||
