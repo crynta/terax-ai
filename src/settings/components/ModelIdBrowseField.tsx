@@ -1,3 +1,7 @@
+import Refresh01Icon from "@hugeicons/core-free-icons/Refresh01Icon";
+import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -20,9 +24,6 @@ import type {
   ModelDiscoveryError,
 } from "@/modules/ai/lib/modelDiscovery";
 import { useModelDiscovery } from "@/modules/ai/lib/useModelDiscovery";
-import { Refresh01Icon, Search01Icon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useState } from "react";
 
 type ModelIdBrowseFieldProps = {
   value: string;
@@ -126,7 +127,11 @@ export function ModelIdBrowseField({
               {status === "loading" ? (
                 <Spinner className="size-3" />
               ) : (
-                <HugeiconsIcon icon={Refresh01Icon} size={12} strokeWidth={1.8} />
+                <HugeiconsIcon
+                  icon={Refresh01Icon}
+                  size={12}
+                  strokeWidth={1.8}
+                />
               )}
             </Button>
           </div>
@@ -171,12 +176,17 @@ function renderDiscoveryContent({
 
   if (status === "empty") {
     return (
-      <Message text="No models returned. You can still type an ID." tone="muted" />
+      <Message
+        text="No models returned. You can still type an ID."
+        tone="muted"
+      />
     );
   }
 
   if (models.length === 0) {
-    return <Message text="Refresh to load models from this endpoint." tone="muted" />;
+    return (
+      <Message text="Refresh to load models from this endpoint." tone="muted" />
+    );
   }
 
   return (
@@ -251,6 +261,7 @@ function discoveryErrorText(error: ModelDiscoveryError | null): string {
 function modelMetaText(model: { ownedBy?: string; contextLimit?: number }) {
   const parts: string[] = [];
   if (model.ownedBy) parts.push(model.ownedBy);
-  if (model.contextLimit) parts.push(`${model.contextLimit.toLocaleString()} tokens`);
+  if (model.contextLimit)
+    parts.push(`${model.contextLimit.toLocaleString()} tokens`);
   return parts.join(" · ");
 }

@@ -10,19 +10,16 @@ import {
 import {
   DEFAULT_THEME_ID,
   EDITOR_THEMES,
+  type EditorThemeId,
   loadPreferences,
   onPreferencesChange,
   setEditorTheme as persistEditorTheme,
   setTheme as persistTheme,
   setThemeId as persistThemeId,
-  type EditorThemeId,
   type ThemePref,
 } from "@/modules/settings/store";
 import { applyTheme, clearTheme } from "./applyTheme";
-import {
-  listCustomThemes,
-  onCustomThemesChange,
-} from "./customThemes";
+import { listCustomThemes, onCustomThemesChange } from "./customThemes";
 import { SurfaceLayer } from "./SurfaceLayer";
 import { getBuiltinTheme, getDefaultTheme } from "./themes";
 import type { Theme } from "./types";
@@ -56,7 +53,11 @@ function readFastMode(fallback: ThemePref): ThemePref {
 }
 
 function writeFastMode(t: ThemePref): void {
-  try { window.localStorage.setItem(FAST_PATH_KEY, t); } catch { /* ignore */ }
+  try {
+    window.localStorage.setItem(FAST_PATH_KEY, t);
+  } catch {
+    /* ignore */
+  }
 }
 
 function readFastThemeId(): string {
@@ -65,15 +66,26 @@ function readFastThemeId(): string {
 }
 
 function writeFastThemeId(id: string): void {
-  try { window.localStorage.setItem(FAST_PATH_THEME_ID, id); } catch { /* ignore */ }
+  try {
+    window.localStorage.setItem(FAST_PATH_THEME_ID, id);
+  } catch {
+    /* ignore */
+  }
 }
 
 function resolveTheme(id: string, custom: Theme[]): Theme {
-  return custom.find((t) => t.id === id) ?? getBuiltinTheme(id) ?? getDefaultTheme();
+  return (
+    custom.find((t) => t.id === id) ?? getBuiltinTheme(id) ?? getDefaultTheme()
+  );
 }
 
-export function ThemeProvider({ children, defaultMode = "system" }: ThemeProviderProps) {
-  const [mode, setModeState] = useState<ThemePref>(() => readFastMode(defaultMode));
+export function ThemeProvider({
+  children,
+  defaultMode = "system",
+}: ThemeProviderProps) {
+  const [mode, setModeState] = useState<ThemePref>(() =>
+    readFastMode(defaultMode),
+  );
   const [themeId, setThemeIdState] = useState<string>(() => readFastThemeId());
   const [customThemes, setCustomThemes] = useState<Theme[]>([]);
   const [systemDark, setSystemDark] = useState<boolean>(() =>
@@ -92,7 +104,10 @@ export function ThemeProvider({ children, defaultMode = "system" }: ThemeProvide
       writeFastThemeId(p.themeId);
     });
     const unlistenP = onPreferencesChange((key, value) => {
-      if (key === "theme" && (value === "system" || value === "light" || value === "dark")) {
+      if (
+        key === "theme" &&
+        (value === "system" || value === "light" || value === "dark")
+      ) {
         setModeState(value);
         writeFastMode(value);
       } else if (key === "themeId" && typeof value === "string") {
@@ -108,7 +123,9 @@ export function ThemeProvider({ children, defaultMode = "system" }: ThemeProvide
 
   useEffect(() => {
     let alive = true;
-    void listCustomThemes().then((list) => { if (alive) setCustomThemes(list); });
+    void listCustomThemes().then((list) => {
+      if (alive) setCustomThemes(list);
+    });
     const unlisten = onCustomThemesChange(() => {
       void listCustomThemes().then((list) => setCustomThemes(list));
     });

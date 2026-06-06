@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   type StoreChange = (key: string, value: unknown) => void;
-  type EventChange = (event: { payload: { key: string; value: unknown } }) => void;
+  type EventChange = (event: {
+    payload: { key: string; value: unknown };
+  }) => void;
 
   const storeChanges: StoreChange[] = [];
   const eventChanges = new Map<string, EventChange>();

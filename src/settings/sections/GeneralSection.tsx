@@ -1,3 +1,12 @@
+import ComputerIcon from "@hugeicons/core-free-icons/ComputerIcon";
+import Moon02Icon from "@hugeicons/core-free-icons/Moon02Icon";
+import SidebarLeftIcon from "@hugeicons/core-free-icons/SidebarLeftIcon";
+import SidebarRightIcon from "@hugeicons/core-free-icons/SidebarRightIcon";
+import Sun03Icon from "@hugeicons/core-free-icons/Sun03Icon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { useEffect, useState } from "react";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -5,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -17,10 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
-import type { SidebarPosition } from "@/modules/sidebar/position";
 import {
-  TERMINAL_FONT_SIZES,
-  TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
   setEditorAutoSave,
@@ -29,24 +34,17 @@ import {
   setShowHidden,
   setSidebarPosition,
   setTerminalFontFamily,
-  setTerminalLetterSpacing,
   setTerminalFontSize,
+  setTerminalLetterSpacing,
   setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
   setZoomLevel,
+  TERMINAL_FONT_SIZES,
+  TERMINAL_SCROLLBACK_PRESETS,
 } from "@/modules/settings/store";
+import type { SidebarPosition } from "@/modules/sidebar/position";
 import { useTheme } from "@/modules/theme";
-import {
-  ComputerIcon,
-  Moon02Icon,
-  SidebarLeftIcon,
-  SidebarRightIcon,
-  Sun03Icon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 

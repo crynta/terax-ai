@@ -1,5 +1,5 @@
-import { useTheme } from "@/modules/theme";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
+import { useTheme } from "@/modules/theme";
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { resolvedMode } = useTheme();

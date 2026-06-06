@@ -1,19 +1,17 @@
+import AiScanIcon from "@hugeicons/core-free-icons/AiScanIcon";
+import InformationCircleIcon from "@hugeicons/core-free-icons/InformationCircleIcon";
+import KeyboardIcon from "@hugeicons/core-free-icons/KeyboardIcon";
+import PaintBoardIcon from "@hugeicons/core-free-icons/PaintBoardIcon";
+import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
+import UserMultiple02Icon from "@hugeicons/core-free-icons/UserMultiple02Icon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { JSX, useEffect, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import {
-  AiScanIcon,
-  InformationCircleIcon,
-  PaintBoardIcon,
-  Settings01Icon,
-  UserMultiple02Icon,
-  KeyboardIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { JSX, useEffect, useState } from "react";
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
 import { GeneralSection } from "./sections/GeneralSection";
@@ -21,15 +19,44 @@ import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { ThemesSection } from "./sections/ThemesSection";
 
-const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, component: () => JSX.Element }[] =
-  [
-    { id: "general", label: "General", icon: Settings01Icon, component: GeneralSection },
-    { id: "themes", label: "Themes", icon: PaintBoardIcon, component: ThemesSection },
-    { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon, component: ShortcutsSection },
-    { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
-    { id: "agents", label: "Agents", icon: UserMultiple02Icon, component: AgentsSection },
-    { id: "about", label: "About", icon: InformationCircleIcon, component: AboutSection },
-  ];
+const TABS: {
+  id: SettingsTab;
+  label: string;
+  icon: typeof Settings01Icon;
+  component: () => JSX.Element;
+}[] = [
+  {
+    id: "general",
+    label: "General",
+    icon: Settings01Icon,
+    component: GeneralSection,
+  },
+  {
+    id: "themes",
+    label: "Themes",
+    icon: PaintBoardIcon,
+    component: ThemesSection,
+  },
+  {
+    id: "shortcuts",
+    label: "Shortcuts",
+    icon: KeyboardIcon,
+    component: ShortcutsSection,
+  },
+  { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
+  {
+    id: "agents",
+    label: "Agents",
+    icon: UserMultiple02Icon,
+    component: AgentsSection,
+  },
+  {
+    id: "about",
+    label: "About",
+    icon: InformationCircleIcon,
+    component: AboutSection,
+  },
+];
 
 const VALID_TABS: SettingsTab[] = [
   "general",
@@ -53,7 +80,7 @@ function readInitialTab(): SettingsTab {
 export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const init = usePreferencesStore((s) => s.init);
-  const ActiveSection = TABS.find(t => t.id === active)?.component;
+  const ActiveSection = TABS.find((t) => t.id === active)?.component;
 
   useEffect(() => {
     void init();
@@ -82,8 +109,9 @@ export function SettingsApp() {
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
       <header
         data-tauri-drag-region
-        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
-          }`}
+        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
+          IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
+        }`}
       >
         <Tabs
           value={active}

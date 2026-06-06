@@ -1,20 +1,18 @@
+import ArrowUpRight01Icon from "@hugeicons/core-free-icons/ArrowUpRight01Icon";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import CheckmarkCircle02Icon from "@hugeicons/core-free-icons/CheckmarkCircle02Icon";
+import Edit02Icon from "@hugeicons/core-free-icons/Edit02Icon";
+import ViewIcon from "@hugeicons/core-free-icons/ViewIcon";
+import ViewOffSlashIcon from "@hugeicons/core-free-icons/ViewOffSlashIcon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import type { ProviderInfo } from "@/modules/ai/config";
-import {
-  ArrowUpRight01Icon,
-  Cancel01Icon,
-  CheckmarkCircle02Icon,
-  Edit02Icon,
-  ViewIcon,
-  ViewOffSlashIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useState } from "react";
 import { ProviderIcon } from "./ProviderIcon";
 
 type Props = {
@@ -94,7 +92,11 @@ export function ProviderKeyCard({
           className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
           Get key
-          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
+          <HugeiconsIcon
+            icon={ArrowUpRight01Icon}
+            size={11}
+            strokeWidth={1.75}
+          />
         </button>
         {onRemove ? (
           <Button

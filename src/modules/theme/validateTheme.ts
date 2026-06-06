@@ -1,23 +1,41 @@
-import type { Theme, ThemeColors, ThemeVariant, TerminalPalette } from "./types";
+import type {
+  TerminalPalette,
+  Theme,
+  ThemeColors,
+  ThemeVariant,
+} from "./types";
 
 export type ValidationResult =
   | { ok: true; theme: Theme }
   | { ok: false; error: string };
 
 const COLOR_KEYS: readonly (keyof ThemeColors)[] = [
-  "background", "foreground",
-  "card", "cardForeground",
-  "popover", "popoverForeground",
-  "primary", "primaryForeground",
-  "secondary", "secondaryForeground",
-  "muted", "mutedForeground",
-  "accent", "accentForeground",
+  "background",
+  "foreground",
+  "card",
+  "cardForeground",
+  "popover",
+  "popoverForeground",
+  "primary",
+  "primaryForeground",
+  "secondary",
+  "secondaryForeground",
+  "muted",
+  "mutedForeground",
+  "accent",
+  "accentForeground",
   "destructive",
-  "border", "input", "ring",
-  "sidebar", "sidebarForeground",
-  "sidebarPrimary", "sidebarPrimaryForeground",
-  "sidebarAccent", "sidebarAccentForeground",
-  "sidebarBorder", "sidebarRing",
+  "border",
+  "input",
+  "ring",
+  "sidebar",
+  "sidebarForeground",
+  "sidebarPrimary",
+  "sidebarPrimaryForeground",
+  "sidebarAccent",
+  "sidebarAccentForeground",
+  "sidebarBorder",
+  "sidebarRing",
   "radius",
 ];
 
@@ -40,7 +58,8 @@ function parseColors(raw: unknown, path: string): ThemeColors | string {
       return `${path}.${k} is not a recognized color key`;
     }
     const v = raw[k];
-    if (!isStr(v) || v.length === 0) return `${path}.${k} must be a non-empty string`;
+    if (!isStr(v) || v.length === 0)
+      return `${path}.${k} must be a non-empty string`;
     out[k as keyof ThemeColors] = v;
   }
   return out;
@@ -63,7 +82,8 @@ function parseTerminal(raw: unknown, path: string): TerminalPalette | string {
     out.cursor = raw.cursor;
   }
   if (raw.cursorAccent !== undefined) {
-    if (!isStr(raw.cursorAccent)) return `${path}.cursorAccent must be a string`;
+    if (!isStr(raw.cursorAccent))
+      return `${path}.cursorAccent must be a string`;
     out.cursorAccent = raw.cursorAccent;
   }
   if (raw.selection !== undefined) {
@@ -99,7 +119,8 @@ export function validateTheme(raw: unknown): ValidationResult {
   if (!isStr(raw.name) || raw.name.trim().length === 0) {
     return { ok: false, error: "name must be a non-empty string" };
   }
-  if (!isObj(raw.variants)) return { ok: false, error: "variants must be an object" };
+  if (!isObj(raw.variants))
+    return { ok: false, error: "variants must be an object" };
   const variants: Theme["variants"] = {};
   if (raw.variants.light !== undefined) {
     const v = parseVariant(raw.variants.light, "variants.light");
@@ -112,7 +133,10 @@ export function validateTheme(raw: unknown): ValidationResult {
     variants.dark = v;
   }
   if (!variants.light && !variants.dark) {
-    return { ok: false, error: "variants must contain at least one of: light, dark" };
+    return {
+      ok: false,
+      error: "variants must contain at least one of: light, dark",
+    };
   }
   const theme: Theme = {
     id: raw.id,

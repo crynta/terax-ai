@@ -1,34 +1,31 @@
 "use client";
 
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import CheckListIcon from "@hugeicons/core-free-icons/CheckListIcon";
+import Edit02Icon from "@hugeicons/core-free-icons/Edit02Icon";
+import EyeIcon from "@hugeicons/core-free-icons/EyeIcon";
+import File01Icon from "@hugeicons/core-free-icons/File01Icon";
+import FileEditIcon from "@hugeicons/core-free-icons/FileEditIcon";
+import FilePlusIcon from "@hugeicons/core-free-icons/FilePlusIcon";
+import Folder01Icon from "@hugeicons/core-free-icons/Folder01Icon";
+import FolderAddIcon from "@hugeicons/core-free-icons/FolderAddIcon";
+import FolderOpenIcon from "@hugeicons/core-free-icons/FolderOpenIcon";
+import GlobalSearchIcon from "@hugeicons/core-free-icons/GlobalSearchIcon";
+import RobotIcon from "@hugeicons/core-free-icons/Robot01Icon";
+import SparklesIcon from "@hugeicons/core-free-icons/SparklesIcon";
+import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
+import ToolsIcon from "@hugeicons/core-free-icons/ToolsIcon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import type { DynamicToolUIPart, ToolUIPart } from "ai";
+import type { ComponentProps, ReactNode } from "react";
+import { isValidElement, memo, useState } from "react";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
-import {
-  ArrowRight01Icon,
-  CheckListIcon,
-  Edit02Icon,
-  EyeIcon,
-  File01Icon,
-  FileEditIcon,
-  FilePlusIcon,
-  Folder01Icon,
-  FolderAddIcon,
-  FolderOpenIcon,
-  GlobalSearchIcon,
-  RobotIcon,
-  SparklesIcon,
-  TerminalIcon,
-  ToolsIcon,
-} from "@hugeicons/core-free-icons";
 import { useChatStore } from "@/modules/ai/store/chatStore";
-import { HugeiconsIcon } from "@hugeicons/react";
-import type { DynamicToolUIPart, ToolUIPart } from "ai";
-import type { ComponentProps, ReactNode } from "react";
-import { isValidElement, memo, useState } from "react";
-
 
 export type ToolPart = ToolUIPart | DynamicToolUIPart;
 
@@ -155,8 +152,7 @@ const ToolImpl = ({
   // body, which is huge and re-renders per token.
   const showInputBody = !isHeavy && Boolean(input);
   const showOutputBody = !isHeavy && output !== undefined;
-  const hasDetails =
-    showInputBody || showOutputBody || Boolean(errorText);
+  const hasDetails = showInputBody || showOutputBody || Boolean(errorText);
 
   return (
     <Collapsible
@@ -199,9 +195,7 @@ const ToolImpl = ({
       </CollapsibleTrigger>
 
       {hasDetails && (
-        <CollapsibleContent
-          className={cn("terax-collapsible-content")}
-        >
+        <CollapsibleContent className={cn("terax-collapsible-content")}>
           <div className="ml-3 mt-1 space-y-2 border-l border-border/60 pl-3 pb-1">
             {showInputBody ? (
               <ToolInput toolName={toolName} input={input} />
@@ -229,8 +223,9 @@ export const Tool = memo(ToolImpl, (a, b) => {
   if (a.output !== b.output) return false;
   if (a.className !== b.className) return false;
   if (HEAVY_CONTENT_TOOLS.has(a.toolName)) {
-    return deriveSummary(a.toolName, a.input) ===
-      deriveSummary(b.toolName, b.input);
+    return (
+      deriveSummary(a.toolName, a.input) === deriveSummary(b.toolName, b.input)
+    );
   }
   return a.input === b.input;
 });
@@ -710,9 +705,7 @@ function SuggestCommandCard({
 }) {
   const [inserted, setInserted] = useState(false);
   const onInsert = () => {
-    const ok = useChatStore
-      .getState()
-      .live.injectIntoActivePty(command);
+    const ok = useChatStore.getState().live.injectIntoActivePty(command);
     if (ok) setInserted(true);
   };
   return (

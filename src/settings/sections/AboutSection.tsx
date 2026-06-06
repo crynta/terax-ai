@@ -1,11 +1,12 @@
-import { Button } from "@/components/ui/button";
-import { useUpdater } from "@/modules/updater";
-import { GithubIcon, Globe02Icon } from "@hugeicons/core-free-icons";
+import GithubIcon from "@hugeicons/core-free-icons/GithubIcon";
+import Globe02Icon from "@hugeicons/core-free-icons/Globe02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getName, getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { arch, platform } from "@tauri-apps/plugin-os";
 import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { useUpdater } from "@/modules/updater";
 import { SectionHeader } from "../components/SectionHeader";
 
 const REPO_URL = "https://github.com/crynta/terax-ai";

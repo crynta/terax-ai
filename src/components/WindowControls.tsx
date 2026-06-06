@@ -1,14 +1,12 @@
-import { USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
-import { cn } from "@/lib/utils";
-import {
-  Cancel01Icon,
-  Copy01Icon,
-  MinusSignIcon,
-  SquareIcon,
-} from "@hugeicons/core-free-icons";
+import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
+import Copy01Icon from "@hugeicons/core-free-icons/Copy01Icon";
+import MinusSignIcon from "@hugeicons/core-free-icons/MinusSignIcon";
+import SquareIcon from "@hugeicons/core-free-icons/SquareIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
+import { USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { cn } from "@/lib/utils";
 
 type Props = {
   /** Render only the close button (used by the settings window). */

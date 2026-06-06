@@ -1,19 +1,27 @@
 "use client";
 
+import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
+import CheckmarkCircle01Icon from "@hugeicons/core-free-icons/CheckmarkCircle01Icon";
+import CopyIcon from "@hugeicons/core-free-icons/CopyIcon";
+import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import {
-  ArrowRight01Icon,
-  CheckmarkCircle01Icon,
-  CopyIcon,
-  TerminalIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { createContext, memo, useContext, useEffect, useRef, useState } from "react";
-
+  type HighlightedNode,
+  highlight,
+  isHighlightable,
+} from "./chat-code-lezer";
 import { Shimmer } from "./shimmer";
-import { highlight, isHighlightable, type HighlightedNode } from "./chat-code-lezer";
 
 // True while the parent message is still streaming from the model. We hide
 // fenced-code contents during this phase: parsing partial code is wasted
@@ -41,14 +49,16 @@ const WINDOWS_SHELL = new Set([
 const SHELL_LANGS = new Set([...POSIX_SHELL, ...WINDOWS_SHELL]);
 
 function shellPrompt(lang: string): string {
-  if (WINDOWS_SHELL.has(lang)) return lang === "cmd" || lang === "bat" || lang === "batch" ? ">" : "PS>";
+  if (WINDOWS_SHELL.has(lang))
+    return lang === "cmd" || lang === "bat" || lang === "batch" ? ">" : "PS>";
   return "$";
 }
 
 function normalizeLangLabel(raw: string): string {
   const lower = raw.toLowerCase();
   if (POSIX_SHELL.has(lower)) return "bash";
-  if (lower === "pwsh" || lower === "ps1" || lower === "ps") return "powershell";
+  if (lower === "pwsh" || lower === "ps1" || lower === "ps")
+    return "powershell";
   if (lower === "bat" || lower === "batch") return "cmd";
   return lower || "text";
 }

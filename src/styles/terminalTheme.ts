@@ -1,5 +1,5 @@
-import { readTerminalTokens } from "@/styles/tokens";
 import type { ITheme } from "@xterm/xterm";
+import { readTerminalTokens } from "@/styles/tokens";
 
 export function buildTerminalTheme(): ITheme {
   const t = readTerminalTokens();

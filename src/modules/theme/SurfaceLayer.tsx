@@ -1,10 +1,10 @@
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   readBgFastPath,
   usePreferencesStore,
 } from "@/modules/settings/preferences";
 import { BG_OPACITY_RENDER_FACTOR } from "@/modules/settings/store";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
 const OVERLAY_Z = 2147483646;
 const RESIZE_IDLE_MS = 280;

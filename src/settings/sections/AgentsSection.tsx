@@ -1,3 +1,10 @@
+import Add01Icon from "@hugeicons/core-free-icons/Add01Icon";
+import CheckmarkCircle02Icon from "@hugeicons/core-free-icons/CheckmarkCircle02Icon";
+import Delete02Icon from "@hugeicons/core-free-icons/Delete02Icon";
+import Edit02Icon from "@hugeicons/core-free-icons/Edit02Icon";
+import SparklesIcon from "@hugeicons/core-free-icons/SparklesIcon";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,9 +18,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { AGENT_ICONS } from "@/modules/ai/components/AgentSwitcher";
 import {
-  BUILTIN_AGENTS,
   type Agent,
   type AgentIconId,
+  BUILTIN_AGENTS,
 } from "@/modules/ai/lib/agents";
 import {
   isValidHandle,
@@ -27,15 +34,6 @@ import {
 } from "@/modules/ai/store/snippetsStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { setCustomInstructions } from "@/modules/settings/store";
-import {
-  Add01Icon,
-  CheckmarkCircle02Icon,
-  Delete02Icon,
-  Edit02Icon,
-  SparklesIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 
 const ICON_OPTIONS: AgentIconId[] = [

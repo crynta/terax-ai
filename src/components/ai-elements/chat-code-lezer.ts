@@ -14,9 +14,11 @@ type StreamLoader = () => Promise<StreamParser<unknown>>;
 // produce a Tree, and dragging in a token-stream driver isn't worth the
 // bytes for chat-side highlight.
 const loaders: Record<string, ParserLoader> = {
-  js: () => import("@codemirror/lang-javascript").then((m) => m.javascriptLanguage),
+  js: () =>
+    import("@codemirror/lang-javascript").then((m) => m.javascriptLanguage),
   jsx: () => import("@codemirror/lang-javascript").then((m) => m.jsxLanguage),
-  ts: () => import("@codemirror/lang-javascript").then((m) => m.typescriptLanguage),
+  ts: () =>
+    import("@codemirror/lang-javascript").then((m) => m.typescriptLanguage),
   tsx: () => import("@codemirror/lang-javascript").then((m) => m.tsxLanguage),
   rust: () => import("@codemirror/lang-rust").then((m) => m.rustLanguage),
   go: () => import("@codemirror/lang-go").then((m) => m.goLanguage),
@@ -24,13 +26,12 @@ const loaders: Record<string, ParserLoader> = {
   json: () => import("@codemirror/lang-json").then((m) => m.jsonLanguage),
   html: () => import("@codemirror/lang-html").then((m) => m.htmlLanguage),
   css: () => import("@codemirror/lang-css").then((m) => m.cssLanguage),
-  markdown: () => import("@codemirror/lang-markdown").then((m) => m.markdownLanguage),
+  markdown: () =>
+    import("@codemirror/lang-markdown").then((m) => m.markdownLanguage),
   // `phpLanguage` parses files wrapped in `<?php …`. Chat snippets are bare
   // PHP, so use the `plain: true` variant's Language.
   php: () =>
-    import("@codemirror/lang-php").then(
-      (m) => m.php({ plain: true }).language,
-    ),
+    import("@codemirror/lang-php").then((m) => m.php({ plain: true }).language),
 };
 
 // StreamParser fallback for langs without a Lezer parser. Token names emitted
@@ -158,7 +159,8 @@ function resolve(lang: string | null | undefined): ResolvedKey | null {
   if (!lang) return null;
   const lower = lang.toLowerCase();
   const direct = lower in aliases ? aliases[lower]! : lower;
-  if (direct in loaders) return { kind: "lezer", key: direct as keyof typeof loaders };
+  if (direct in loaders)
+    return { kind: "lezer", key: direct as keyof typeof loaders };
   if (direct in streamLoaders)
     return { kind: "stream", key: direct as keyof typeof streamLoaders };
   return null;
