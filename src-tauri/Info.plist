@@ -3,8 +3,8 @@
 <plist version="1.0">
 <dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Terax wants to use the camera.</string>
+	<string>A program running within Terax would like to use the camera.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Terax wants to use your microphone.</string>
+	<string>A program running within Terax would like to use your microphone.</string>
 </dict>
 </plist>
