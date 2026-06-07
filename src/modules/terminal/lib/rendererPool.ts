@@ -1,4 +1,4 @@
-import { detectMonoFontFamily } from "@/lib/fonts";
+import { loadFontFamily, resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -159,9 +159,10 @@ function bgActive(
 function termOptions() {
   const prefs = usePreferencesStore.getState();
   return {
-    fontFamily: prefs.terminalFontFamily || detectMonoFontFamily(),
+    fontFamily: resolveFontFamily(prefs.terminalFontFamily),
     letterSpacing: prefs.terminalLetterSpacing,
     fontSize: Math.max(4, Math.round(prefs.terminalFontSize * prefs.zoomLevel)),
+    fontWeightBold: prefs.terminalBoldText ? ("bold" as const) : ("normal" as const),
     theme: buildTerminalTheme(),
     cursorBlink: false,
     cursorStyle: "bar" as const,
@@ -778,6 +779,12 @@ export function applyWebglPreference(enabled: boolean): void {
     } else if (slot.webglAddon) {
       cancelWebglReap(slot);
       disposeSlotWebgl(slot);
+      // Disposing the addon restores xterm's DOM renderer; force a repaint so
+      // the switch is visible immediately instead of after the next output.
+      try {
+        slot.fitAddon.fit();
+        slot.term.refresh(0, slot.term.rows - 1);
+      } catch {}
     }
   }
 }
@@ -796,6 +803,15 @@ export function applyFontSize(size: number): void {
   }
 }
 
+export function applyBoldText(enabled: boolean): void {
+  const weight = enabled ? "bold" : "normal";
+  for (const slot of slots) {
+    if (slot.term.options.fontWeightBold === weight) continue;
+    slot.term.options.fontWeightBold = weight;
+    slot.fitAddon.fit();
+  }
+}
+
 export function applyLetterSpacing(spacing: number): void {
   for (const slot of slots) {
     if (slot.term.options.letterSpacing === spacing) continue;
@@ -805,18 +821,22 @@ export function applyLetterSpacing(spacing: number): void {
 }
 
 export function applyFontFamily(family: string): void {
-  const resolved = family || detectMonoFontFamily();
-  for (const slot of slots) {
-    if (slot.term.options.fontFamily === resolved) continue;
-    slot.term.options.fontFamily = resolved;
-    slot.fitAddon.fit();
-    if (slot.currentLeafId !== null) {
-      slot.lastCols = slot.term.cols;
-      slot.lastRows = slot.term.rows;
-      const bridge = adapter?.resolveLeaf(slot.currentLeafId);
-      bridge?.resizePty(slot.term.cols, slot.term.rows);
+  const resolved = resolveFontFamily(family);
+  // Apply only after the (possibly system-installed) font is loaded, so xterm
+  // re-measures cell metrics against real glyph advances instead of fallback.
+  void loadFontFamily(family).then(() => {
+    for (const slot of slots) {
+      if (slot.term.options.fontFamily === resolved) continue;
+      slot.term.options.fontFamily = resolved;
+      slot.fitAddon.fit();
+      if (slot.currentLeafId !== null) {
+        slot.lastCols = slot.term.cols;
+        slot.lastRows = slot.term.rows;
+        const bridge = adapter?.resolveLeaf(slot.currentLeafId);
+        bridge?.resizePty(slot.term.cols, slot.term.rows);
+      }
     }
-  }
+  });
 }
 
 export function applyScrollback(value: number): void {

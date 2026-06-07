@@ -30,6 +30,7 @@ import {
   setTerminalLetterSpacing,
   setTerminalFontSize,
   setTerminalCursorBlink,
+  setTerminalBoldText,
   setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
@@ -80,6 +81,7 @@ export function GeneralSection() {
   const terminalCursorBlink = usePreferencesStore(
     (s) => s.terminalCursorBlink,
   );
+  const terminalBoldText = usePreferencesStore((s) => s.terminalBoldText);
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalLetterSpacing = usePreferencesStore(
     (s) => s.terminalLetterSpacing,
@@ -256,15 +258,21 @@ export function GeneralSection() {
           />
         </SettingRow>
         <SettingRow
+          title="Bold text"
+          description="Render bold text with a heavier font weight. Turn off if a single-weight font (e.g. a Nerd Font with one style) renders too thick."
+        >
+          <Switch
+            checked={terminalBoldText}
+            onCheckedChange={(v) => void setTerminalBoldText(v)}
+          />
+        </SettingRow>
+        <SettingRow
           title="Font family"
           description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
         >
-          <input
-            type="text"
+          <FontFamilyInput
             value={terminalFontFamily}
-            placeholder="Auto-detect"
-            onChange={(e) => void setTerminalFontFamily(e.target.value)}
-            className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+            onChange={(v) => void setTerminalFontFamily(v)}
           />
         </SettingRow>
         <SettingRow
@@ -375,6 +383,40 @@ function Label({ children }: { children: React.ReactNode }) {
     <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+function FontFamilyInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    setDraft(trimmed);
+    if (trimmed !== value) onChange(trimmed);
+  };
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      placeholder="Auto-detect"
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+    />
   );
 }
 

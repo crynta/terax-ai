@@ -53,3 +53,39 @@ export function detectMonoFontFamily(): string {
   detected = FALLBACK_CHAIN;
   return detected;
 }
+
+/** Build the xterm/CSS `font-family` value for a user-entered custom font name.
+ *  Quotes a bare family name (so multi-word names like "CaskaydiaCove Nerd Font
+ *  Mono" resolve as one family) and appends the mono fallback chain so an
+ *  unrecognized name still renders. Mirrors {@link detectMonoFontFamily}. */
+export function resolveFontFamily(custom: string): string {
+  const name = custom.trim();
+  if (!name) return detectMonoFontFamily();
+  if (name.includes(",")) return name;
+  const quoted = name.startsWith('"') ? name : `"${name}"`;
+  return `${quoted}, ${FALLBACK_CHAIN}`;
+}
+
+/** Force WebKit to load a custom (system-installed) family before xterm measures
+ *  cell metrics. Without this, the first measurement uses fallback metrics: the
+ *  glyph advance then mismatches the cell width and text renders mis-spaced. */
+export function loadFontFamily(custom: string): Promise<void> {
+  const name = custom.trim();
+  if (
+    !name ||
+    name.includes(",") ||
+    typeof document === "undefined" ||
+    !document.fonts?.load
+  ) {
+    return Promise.resolve();
+  }
+  const family = name.startsWith('"') ? name : `"${name}"`;
+  try {
+    return Promise.allSettled([
+      document.fonts.load(`400 14px ${family}`),
+      document.fonts.load(`700 14px ${family}`),
+    ]).then(() => undefined);
+  } catch {
+    return Promise.resolve();
+  }
+}
