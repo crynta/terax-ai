@@ -22,7 +22,6 @@ import {
   useRef,
 } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import {
   buildSharedExtensions,
   languageCompartment,
@@ -32,6 +31,7 @@ import { resolveLanguage } from "./lib/languageResolver";
 import { EDITOR_THEME_EXT } from "./lib/themes";
 import { useDocument } from "./lib/useDocument";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
+import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 
 initVimGlobals();
 
