@@ -3,8 +3,10 @@
 @import "shadcn/tailwind.css";
 @import "./fonts.css";
 @import "./code-highlight.css";
+@import "katex/dist/katex.min.css";
 
 @source "../../node_modules/streamdown/dist/index.js";
+@source "../../node_modules/@streamdown/math/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
 
