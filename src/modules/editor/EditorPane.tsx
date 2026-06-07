@@ -245,7 +245,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       return () => {
         cancelled = true;
       };
-    }, [path]);
+    }, [path, doc.status]);
 
     useImperativeHandle(
       ref,
