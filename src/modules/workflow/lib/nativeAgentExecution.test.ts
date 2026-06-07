@@ -103,6 +103,45 @@ describe("native Pi workflow agent executor", () => {
     });
   });
 
+  it("passes the selected Pi provider config to workflow session creation", async () => {
+    const providerConfig = {
+      authMode: "terax" as const,
+      provider: "google",
+      modelId: "gemini-2.5-flash",
+      sourceModelId: "gemini-2.5-flash",
+      contextLimit: 1_048_576,
+      maxTokens: 1_048_576,
+      reasoning: true,
+    };
+    const executor = createWorkflowPiAgentExecutor({
+      providerConfig,
+      listen: async () => () => undefined,
+      pi: {
+        sessionCreate: async (_title, _cwd, _policy, config) => {
+          expect(config).toEqual(providerConfig);
+          return { session: session("pi-provider"), events: [] };
+        },
+        sessionSend: async (sessionId) => ({
+          accepted: true,
+          session: session(sessionId),
+          events: [],
+        }),
+        sessionStop: async () => {
+          throw new Error("should not stop");
+        },
+      },
+    });
+
+    await expect(
+      executor({
+        document,
+        node,
+        prompt: "Use configured model",
+        reportOutput: () => undefined,
+      }),
+    ).resolves.toMatchObject({ sessionId: "pi-provider" });
+  });
+
   it("stops the Pi session when the workflow signal aborts", async () => {
     const controller = new AbortController();
     let listener: WorkflowPiAgentEventListener | null = null;

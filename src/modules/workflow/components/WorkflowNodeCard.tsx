@@ -3,6 +3,7 @@ import {
   type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  type PointerEvent as ReactPointerEvent,
   useState,
 } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -190,6 +191,13 @@ export function RuntimeDetails({
   onApprove: () => void;
   onReject: () => void;
 }) {
+  const stopFlowInteraction = (
+    event:
+      | ReactMouseEvent<HTMLButtonElement>
+      | ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+  };
   const { artifactIds, message, progress, status } = node.runtimeState;
   if (status === "idle" && !message && !artifactIds?.length) return null;
   const progressPercent =
@@ -224,8 +232,14 @@ export function RuntimeDetails({
           <Button
             type="button"
             size="sm"
-            className="nodrag nowheel h-7 px-2 text-xs"
-            onClick={onApprove}
+            className="nodrag nopan nowheel h-7 px-2 text-xs"
+            data-testid={`workflow-approve-node-${node.id}`}
+            onMouseDown={stopFlowInteraction}
+            onPointerDown={stopFlowInteraction}
+            onClick={(event) => {
+              event.stopPropagation();
+              onApprove();
+            }}
           >
             Approve
           </Button>
@@ -233,8 +247,14 @@ export function RuntimeDetails({
             type="button"
             size="sm"
             variant="outline"
-            className="nodrag nowheel h-7 px-2 text-xs"
-            onClick={onReject}
+            className="nodrag nopan nowheel h-7 px-2 text-xs"
+            data-testid={`workflow-reject-node-${node.id}`}
+            onMouseDown={stopFlowInteraction}
+            onPointerDown={stopFlowInteraction}
+            onClick={(event) => {
+              event.stopPropagation();
+              onReject();
+            }}
           >
             Reject
           </Button>

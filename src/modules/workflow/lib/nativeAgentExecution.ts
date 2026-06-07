@@ -3,6 +3,7 @@ import {
   piNative,
   type WorkflowPiSessionPolicy,
 } from "@/modules/pi/lib/native";
+import type { PiProviderRuntimeConfig } from "@/modules/pi/lib/provider";
 import {
   buildPiSessionTranscript,
   type PiPromptContext,
@@ -24,6 +25,7 @@ export type WorkflowPiAgentApi = {
     title?: string,
     cwd?: string | null,
     policy?: WorkflowPiSessionPolicy,
+    providerConfig?: PiProviderRuntimeConfig | null,
   ) => Promise<PiSessionCreateResult>;
   sessionSend: (
     sessionId: string,
@@ -36,11 +38,12 @@ export type WorkflowPiAgentApi = {
 export type WorkflowPiAgentExecutorOptions = {
   pi?: WorkflowPiAgentApi;
   listen?: WorkflowPiAgentEventSource;
+  providerConfig?: PiProviderRuntimeConfig | null;
 };
 
 const workflowPiNativeApi: WorkflowPiAgentApi = {
-  sessionCreate: (title, cwd, policy) =>
-    piNative.workflowSessionCreate(title, cwd, policy),
+  sessionCreate: (title, cwd, policy, providerConfig) =>
+    piNative.workflowSessionCreate(title, cwd, policy, providerConfig),
   sessionSend: (...args) => piNative.sessionSend(...args),
   sessionStop: (...args) => piNative.sessionStop(...args),
 };
@@ -81,6 +84,7 @@ export function createWorkflowPiAgentExecutor(
         input.node.title,
         input.cwd ?? null,
         workflowAgentPolicy(input),
+        options.providerConfig ?? null,
       );
       sessionId = created.session.id;
       events.push(...created.events);

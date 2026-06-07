@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use crate::modules::capabilities::{
     audit::{CapabilityAuditEntry, CapabilityAuditLog, CapabilityAuditOutcome},
     policy::{self, CapabilityApprovalState},
+    ApprovalPolicy,
 };
 
 use super::super::{session_event_type, PiSessionEvent};
@@ -198,6 +199,25 @@ pub(super) fn execute_verified_native_tool_with_approvals(
     )
 }
 
+fn mcp_policy_decision(
+    tool_name: &str,
+    approval_policy: ApprovalPolicy,
+    approval_state: CapabilityApprovalState,
+) -> Result<policy::CapabilityDecision, policy::CapabilityPolicyError> {
+    match approval_policy {
+        ApprovalPolicy::Deny => Err(policy::CapabilityPolicyError::Denied(tool_name.to_string())),
+        ApprovalPolicy::Ask if approval_state != CapabilityApprovalState::Approved => Err(
+            policy::CapabilityPolicyError::ApprovalRequired(tool_name.to_string()),
+        ),
+        ApprovalPolicy::Ask | ApprovalPolicy::Auto => Ok(policy::CapabilityDecision {
+            tool_name: tool_name.to_string(),
+            approval: approval_policy,
+            risk: crate::modules::capabilities::RiskLevel::Medium,
+            origin: crate::modules::capabilities::CapabilityOrigin::Mcp,
+        }),
+    }
+}
+
 pub(super) fn execute_verified_native_tool_with_policy(
     native_tool_sessions: &NativeToolSessions,
     native_tool_approvals: &NativeToolApprovals,
@@ -253,6 +273,12 @@ pub(super) fn execute_verified_native_tool_with_policy(
             native_tool_context.capability_manifest_for_tool(&request.tool_name)
         {
             policy_result = policy::evaluate(&target_manifest, &request.tool_name, approval_state);
+        } else if let Some(approval_policy) = native_tool_context
+            .mcp_approval_policy_for_tool(&request.tool_name)
+            .or_else(|| request.mcp_auto_approval_policy())
+        {
+            policy_result =
+                mcp_policy_decision(&request.tool_name, approval_policy, approval_state);
         }
     }
     if let Err(error) = policy_result {

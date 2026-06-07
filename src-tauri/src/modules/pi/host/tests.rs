@@ -533,6 +533,10 @@ for await (const line of lines) {
         .unwrap();
 
     assert_eq!(created.session.id, "pi-mcp-manifest");
+
+    host.set_native_tool_context(native_tools::NativeToolContext::default())
+        .unwrap();
+
     let sent = host
         .session_send(
             "pi-mcp-manifest".to_string(),
@@ -673,6 +677,7 @@ fn native_bridge_artifact_tools_bind_to_verified_session_id() {
             tool_name: "create_artifact".to_string(),
             cwd: workspace.to_string_lossy().into_owned(),
             workspace_env: Some(WorkspaceEnv::Local),
+            approval: None,
             input: json!({
                 "slug": "bound",
                 "kind": "text",
@@ -713,6 +718,7 @@ fn native_bridge_rejects_unapproved_ask_capability_before_execution() {
             tool_name: "bash".to_string(),
             cwd: workspace.to_string_lossy().into_owned(),
             workspace_env: Some(WorkspaceEnv::Local),
+            approval: None,
             input: json!({ "command": format!("printf blocked > {}", marker.display()) }),
         },
         &native_tools::NativeToolContext::default(),
@@ -749,6 +755,7 @@ fn native_bridge_allows_approved_ask_capability_once() {
             tool_name: "bash".to_string(),
             cwd: workspace.to_string_lossy().into_owned(),
             workspace_env: Some(WorkspaceEnv::Local),
+            approval: None,
             input: json!({ "command": "printf approved" }),
         },
         &native_tools::NativeToolContext::default(),
@@ -768,6 +775,7 @@ fn native_bridge_allows_approved_ask_capability_once() {
             tool_name: "bash".to_string(),
             cwd: workspace.to_string_lossy().into_owned(),
             workspace_env: Some(WorkspaceEnv::Local),
+            approval: None,
             input: json!({ "command": "printf replay" }),
         },
         &native_tools::NativeToolContext::default(),
@@ -844,6 +852,7 @@ for await (const line of rl) {
             tool_name: "mcp__auto__query".to_string(),
             cwd: workspace.to_string_lossy().into_owned(),
             workspace_env: Some(WorkspaceEnv::Local),
+            approval: None,
             input: json!({ "query": "hooks" }),
         },
         &context,
@@ -879,6 +888,7 @@ for await (const line of rl) {
             tool_name: "mcp__auto__query-docs".to_string(),
             cwd: workspace.to_string_lossy().into_owned(),
             workspace_env: Some(WorkspaceEnv::Local),
+            approval: None,
             input: json!({ "query": "hooks" }),
         },
         &context,
@@ -886,6 +896,34 @@ for await (const line of rl) {
     .unwrap_err();
     assert!(error.contains("MCP tool not found"), "{error}");
     assert!(!error.contains("unknown capability tool"), "{error}");
+
+    let metadata_error = execute_verified_native_tool_with_policy(
+        &sessions,
+        &approvals,
+        &audit,
+        NativeToolRequest {
+            session_id: "pi-auto-mcp".to_string(),
+            tool_call_id: "call-metadata-query".to_string(),
+            tool_name: "mcp__auto__ghost-docs".to_string(),
+            cwd: workspace.to_string_lossy().into_owned(),
+            workspace_env: Some(WorkspaceEnv::Local),
+            approval: Some(native_tools::NativeToolApprovalMetadata {
+                policy: Some(crate::modules::capabilities::ApprovalPolicy::Auto),
+                approved: Some(true),
+            }),
+            input: json!({ "query": "hooks" }),
+        },
+        &context,
+    )
+    .unwrap_err();
+    assert!(
+        metadata_error.contains("MCP tool not found"),
+        "{metadata_error}"
+    );
+    assert!(
+        !metadata_error.contains("unknown capability tool"),
+        "{metadata_error}"
+    );
 }
 
 #[test]
@@ -915,6 +953,7 @@ fn native_bridge_audits_blocked_and_successful_capability_calls() {
             tool_name: "bash".to_string(),
             cwd: workspace.to_string_lossy().into_owned(),
             workspace_env: Some(WorkspaceEnv::Local),
+            approval: None,
             input: json!({ "command": "printf blocked" }),
         },
         &native_tools::NativeToolContext::default(),
@@ -930,6 +969,7 @@ fn native_bridge_audits_blocked_and_successful_capability_calls() {
             tool_name: "read".to_string(),
             cwd: workspace.to_string_lossy().into_owned(),
             workspace_env: Some(WorkspaceEnv::Local),
+            approval: None,
             input: json!({ "path": "note.txt" }),
         },
         &native_tools::NativeToolContext::default(),
@@ -977,6 +1017,7 @@ fn native_bridge_rejects_workspace_env_mismatch_before_execution() {
             tool_name: "read".to_string(),
             cwd: workspace.to_string_lossy().into_owned(),
             workspace_env: Some(WorkspaceEnv::Local),
+            approval: None,
             input: json!({ "path": "note.txt" }),
         },
         &native_tools::NativeToolContext::default(),

@@ -201,10 +201,14 @@ impl PiHost {
         &self,
         context: native_tools::NativeToolContext,
     ) -> Result<(), String> {
-        *self
+        let mut current = self
             .native_tool_context
             .lock()
-            .map_err(|error| format!("native tool context lock failed: {error}"))? = context;
+            .map_err(|error| format!("native tool context lock failed: {error}"))?;
+        if !context.has_runtime_backends() && current.has_runtime_backends() {
+            return Ok(());
+        }
+        *current = context;
         Ok(())
     }
 

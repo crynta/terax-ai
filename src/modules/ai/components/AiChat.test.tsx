@@ -1,5 +1,8 @@
+/** @vitest-environment jsdom */
 import type { UIMessage } from "@ai-sdk/react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type AgentMeta, useChatStore } from "../store/chatStore";
 import {
@@ -30,6 +33,52 @@ const toolMessages = [
         state: "approval-requested",
         input: { path: "src/App.tsx" },
         approval: { id: "approval-1" },
+      },
+    ],
+  },
+] as UIMessage[];
+
+const failedToolMessages = [
+  {
+    id: "user-2",
+    role: "user",
+    parts: [{ type: "text", text: "Run failing test" }],
+  },
+  {
+    id: "assistant-2",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-bash_run",
+        state: "output-error",
+        input: { command: "pnpm test" },
+        errorText: "exit status 1",
+      },
+    ],
+  },
+] as UIMessage[];
+
+const multipleFailedToolMessages = [
+  {
+    id: "user-3",
+    role: "user",
+    parts: [{ type: "text", text: "Run multiple failures" }],
+  },
+  {
+    id: "assistant-3",
+    role: "assistant",
+    parts: [
+      {
+        type: "tool-bash_run",
+        state: "output-error",
+        input: { command: "pnpm test" },
+        errorText: "first failure",
+      },
+      {
+        type: "tool-edit",
+        state: "output-error",
+        input: { path: "src/App.tsx" },
+        errorText: "edit failed",
       },
     ],
   },
@@ -204,5 +253,230 @@ describe("AiChatView agent timeline", () => {
     expect(recentRuns[0]).toEqual(
       expect.objectContaining({ stopReason: "paused", step: "Editing files" }),
     );
+  });
+
+  it("collapses and expands timeline details from the header", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <AgentRunTimeline
+          messages={toolMessages}
+          status="streaming"
+          error={undefined}
+          meta={{
+            ...baseMeta,
+            status: "streaming",
+            step: "Running tests",
+            runStartedAt: 1000,
+            runEndedAt: 2000,
+          }}
+          onCancel={vi.fn()}
+          onPause={vi.fn()}
+          onRetry={vi.fn()}
+          onResume={vi.fn()}
+        />,
+      );
+    });
+
+    const body = container.querySelector(
+      "[data-testid='agent-run-timeline-body']",
+    );
+    const header = container.querySelector(
+      "[data-testid='agent-run-timeline-toggle']",
+    );
+
+    expect(body).not.toBeNull();
+    expect(header).not.toBeNull();
+
+    await act(async () => {
+      header?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector("[data-testid='agent-run-timeline-body']")).toBeNull();
+
+    await act(async () => {
+      header?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector("[data-testid='agent-run-timeline-body']")).not.toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("auto-expands the latest failed tool row by default", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <AgentRunTimeline
+          messages={failedToolMessages}
+          status="ready"
+          error={undefined}
+          meta={{
+            ...baseMeta,
+            status: "idle",
+            runStartedAt: 1000,
+            runEndedAt: 2000,
+          }}
+          onCancel={vi.fn()}
+          onPause={vi.fn()}
+          onRetry={vi.fn()}
+          onResume={vi.fn()}
+        />,
+      );
+    });
+
+    const failedBody = container.querySelector(
+      "[data-testid='agent-run-timeline-tool-body-0']",
+    );
+    expect(failedBody).not.toBeNull();
+    expect(failedBody?.textContent).toContain("Error");
+    expect(failedBody?.textContent).toContain("exit status 1");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("auto-expands only the newest failed tool and preserves manual collapse", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <AgentRunTimeline
+          messages={multipleFailedToolMessages}
+          status="ready"
+          error={undefined}
+          meta={{
+            ...baseMeta,
+            status: "idle",
+            runStartedAt: 1000,
+            runEndedAt: 2000,
+          }}
+          onCancel={vi.fn()}
+          onPause={vi.fn()}
+          onRetry={vi.fn()}
+          onResume={vi.fn()}
+        />,
+      );
+    });
+
+    const latestFailedBody = container.querySelector(
+      "[data-testid='agent-run-timeline-tool-body-1']",
+    );
+    const earlierFailedBody = container.querySelector(
+      "[data-testid='agent-run-timeline-tool-body-0']",
+    );
+    expect(latestFailedBody).not.toBeNull();
+    expect(earlierFailedBody).toBeNull();
+
+    const latestFailedToggle = container.querySelector(
+      "[data-testid='agent-run-timeline-tool-toggle-1']",
+    );
+    expect(latestFailedToggle).not.toBeNull();
+
+    await act(async () => {
+      latestFailedToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(
+      container.querySelector("[data-testid='agent-run-timeline-tool-body-1']"),
+    ).toBeNull();
+
+    await act(async () => {
+      root.render(
+        <AgentRunTimeline
+          messages={multipleFailedToolMessages}
+          status="ready"
+          error={undefined}
+          meta={{
+            ...baseMeta,
+            status: "idle",
+            runStartedAt: 1000,
+            runEndedAt: 2000,
+          }}
+          onCancel={vi.fn()}
+          onPause={vi.fn()}
+          onRetry={vi.fn()}
+          onResume={vi.fn()}
+        />,
+      );
+    });
+
+    expect(
+      container.querySelector("[data-testid='agent-run-timeline-tool-body-1']"),
+    ).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("expands and collapses tool call details", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <AgentRunTimeline
+          messages={toolMessages}
+          status="ready"
+          error={undefined}
+          meta={{
+            ...baseMeta,
+            status: "idle",
+            runStartedAt: 1000,
+            runEndedAt: 2000,
+          }}
+          onCancel={vi.fn()}
+          onPause={vi.fn()}
+          onRetry={vi.fn()}
+          onResume={vi.fn()}
+        />,
+      );
+    });
+
+    const toolToggle = container.querySelector(
+      "[data-testid='agent-run-timeline-tool-toggle-0']",
+    );
+    expect(toolToggle).not.toBeNull();
+
+    expect(
+      container.querySelector("[data-testid='agent-run-timeline-tool-body-0']"),
+    ).toBeNull();
+
+    await act(async () => {
+      toolToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const toolBody = container.querySelector(
+      "[data-testid='agent-run-timeline-tool-body-0']",
+    );
+    expect(toolBody).not.toBeNull();
+    expect(toolBody?.textContent).toContain("Input");
+    expect(toolBody?.textContent).toContain("Output");
+
+    await act(async () => {
+      toolToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(
+      container.querySelector("[data-testid='agent-run-timeline-tool-body-0']"),
+    ).toBeNull();
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
   });
 });

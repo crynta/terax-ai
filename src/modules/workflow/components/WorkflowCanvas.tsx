@@ -23,6 +23,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePiProviderConfig } from "@/modules/pi/lib/usePiProviderConfig";
 import {
   collectReusableWorkflowArtifacts,
   persistWorkflowArtifactBinaryFile,
@@ -45,9 +46,9 @@ import {
 import { type WorkflowRecentFile } from "../lib/filePersistence";
 import { workflowNativeHttpExecutor } from "../lib/httpExecution";
 import { buildWorkflowInspectorState } from "../lib/inspector";
-import { tauriWorkflowPiAgentExecutor } from "../lib/nativeAgentExecution";
+import { createWorkflowPiAgentExecutor } from "../lib/nativeAgentExecution";
 import { tauriWorkflowArtifactFileSystem } from "../lib/nativeArtifactStorage";
-import { tauriWorkflowBrowserAutomationExecutor } from "../lib/nativeBrowserAutomation";
+import { createWorkflowBrowserAutomationExecutor } from "../lib/nativeBrowserAutomation";
 import { tauriWorkflowFileOperationExecutor } from "../lib/nativeFileExecution";
 import { tauriWorkflowShellExecutor } from "../lib/nativeShellExecution";
 import type { WorkflowDiscoveredProviderModels } from "../lib/providerConfigUi";
@@ -172,6 +173,21 @@ export function WorkflowCanvas({
   const dragConnectionRef = useRef<WorkflowConnectionDragState | null>(null);
   const runAbortControllerRef = useRef<AbortController | null>(null);
   const runIdRef = useRef(0);
+  const { result: piProvider } = usePiProviderConfig();
+  const configuredPiAgentExecutor = useMemo<WorkflowAgentExecutor>(() => {
+    if (!piProvider.ok) {
+      return async () => {
+        throw new Error(piProvider.error);
+      };
+    }
+    return createWorkflowPiAgentExecutor({
+      providerConfig: piProvider.config,
+    });
+  }, [piProvider]);
+  const configuredBrowserAutomationExecutor = useMemo(
+    () => createWorkflowBrowserAutomationExecutor(configuredPiAgentExecutor),
+    [configuredPiAgentExecutor],
+  );
   const handleApproveNode = useCallback(
     (nodeId: string) => {
       const target = document.nodes.find((node) => node.id === nodeId);
@@ -191,14 +207,14 @@ export function WorkflowCanvas({
         ...(target.type === "agent"
           ? {
               executeAgent:
-                runtimeExecutors?.executeAgent ?? tauriWorkflowPiAgentExecutor,
+                runtimeExecutors?.executeAgent ?? configuredPiAgentExecutor,
             }
           : {}),
         ...(target.type === "browserAutomation"
           ? {
               executeBrowserAutomation:
                 runtimeExecutors?.executeBrowserAutomation ??
-                tauriWorkflowBrowserAutomationExecutor,
+                configuredBrowserAutomationExecutor,
             }
           : {}),
         ...(target.type === "fileOperation"
@@ -248,7 +264,14 @@ export function WorkflowCanvas({
           setWorkflowRunning(false);
         });
     },
-    [document, filePath, onDocumentChange, runtimeExecutors],
+    [
+      configuredBrowserAutomationExecutor,
+      configuredPiAgentExecutor,
+      document,
+      filePath,
+      onDocumentChange,
+      runtimeExecutors,
+    ],
   );
   const handleRejectNode = useCallback(
     (nodeId: string) => {

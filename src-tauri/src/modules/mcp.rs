@@ -234,6 +234,18 @@ impl McpState {
         Ok(tools)
     }
 
+    pub fn approval_policy_for_tool(
+        &self,
+        qualified_name: &str,
+    ) -> Result<Option<ApprovalPolicy>, String> {
+        if let Some(preference) = self.tool_preference(qualified_name) {
+            return Ok(Some(preference.approval_policy));
+        }
+        Ok(self
+            .tool_descriptor(qualified_name)?
+            .map(|tool| tool.approval_policy))
+    }
+
     pub fn tool_descriptor(
         &self,
         qualified_name: &str,

@@ -1,5 +1,5 @@
 import type { ChatStatus, UIMessage, UIMessagePart } from "ai";
-import { memo, useCallback, useMemo } from "react";
+import { memo, useCallback, useMemo, useState, useEffect } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -41,6 +41,9 @@ type AgentToolActivityItem = {
   state: string;
   status: "awaiting" | "done" | "failed" | "running";
   detail: string | null;
+  input: unknown;
+  output: unknown;
+  errorText: string | null;
 };
 
 type AgentToolActivitySummary = {
@@ -73,6 +76,33 @@ function toolNameFromPart(part: AnyPart): string | null {
     return (part as unknown as { toolName?: string }).toolName ?? null;
   }
   return part.type.startsWith("tool-") ? part.type.replace(/^tool-/, "") : null;
+}
+
+function toolPayloadText(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? value : null;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return null;
+  }
+}
+
+const TIMELINE_TOOL_PREVIEW_LIMIT = 3000;
+
+function truncatedToolPayload(value: unknown): string | null {
+  const text = toolPayloadText(value);
+  if (!text) return null;
+  if (text.length <= TIMELINE_TOOL_PREVIEW_LIMIT) {
+    return text;
+  }
+  return `${text.slice(0, TIMELINE_TOOL_PREVIEW_LIMIT)}…`;
 }
 
 function toolDetailFromPart(part: AnyPart): string | null {
@@ -114,6 +144,9 @@ export function summarizeAgentToolActivity(
       else if (status === "failed") summary.failed += 1;
       else if (status === "done") summary.completed += 1;
       else summary.running += 1;
+      const toolInput = (part as { input?: unknown }).input;
+      const toolOutput = (part as { output?: unknown }).output;
+      const toolError = (part as { errorText?: unknown }).errorText;
       summary.items.push({
         id:
           (part as { toolCallId?: string }).toolCallId ??
@@ -123,6 +156,12 @@ export function summarizeAgentToolActivity(
         state,
         status,
         detail: toolDetailFromPart(part),
+        input: toolInput,
+        output: toolOutput,
+        errorText:
+          typeof toolError === "string" && toolError.trim()
+            ? toolError
+            : null,
       });
     }
   }
@@ -352,6 +391,79 @@ export const AgentRunTimeline = memo(function AgentRunTimeline({
     () => summarizeAgentToolActivity(messages),
     [messages],
   );
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [expandedToolRows, setExpandedToolRows] = useState<Set<string>>(
+    new Set(),
+  );
+  const [suppressedAutoExpandFailedKeys, setSuppressedAutoExpandFailedKeys] =
+    useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (isBusy) {
+      setIsCollapsed(false);
+    }
+  }, [isBusy]);
+
+  useEffect(() => {
+    setExpandedToolRows(new Set());
+    setSuppressedAutoExpandFailedKeys(new Set());
+  }, [meta.runStartedAt]);
+
+  const visibleToolItems = activity.items.slice(-4);
+
+  const latestFailedToolKey = useMemo(() => {
+    for (let index = visibleToolItems.length - 1; index >= 0; index -= 1) {
+      if (visibleToolItems[index]?.status === "failed") {
+        const item = visibleToolItems[index];
+        if (item) return `${item.id}-${index}`;
+      }
+    }
+    return null;
+  }, [visibleToolItems]);
+
+  useEffect(() => {
+    if (!latestFailedToolKey || isBusy) return;
+    if (suppressedAutoExpandFailedKeys.has(latestFailedToolKey)) {
+      return;
+    }
+
+    setExpandedToolRows((prev) => {
+      if (prev.has(latestFailedToolKey)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      next.add(latestFailedToolKey);
+      return next;
+    });
+  }, [isBusy, latestFailedToolKey, suppressedAutoExpandFailedKeys]);
+
+  const toggleToolRow = useCallback(
+    (toolId: string, isFailedRow: boolean, wasExpanded: boolean) => {
+      setExpandedToolRows((prev) => {
+        const next = new Set(prev);
+        if (next.has(toolId)) {
+          next.delete(toolId);
+        } else {
+          next.add(toolId);
+        }
+        return next;
+      });
+
+      if (!isFailedRow) return;
+
+      setSuppressedAutoExpandFailedKeys((prev) => {
+        const next = new Set(prev);
+        if (wasExpanded) {
+          next.add(toolId);
+        } else {
+          next.delete(toolId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
   const recentRuns = useMemo(
     () => selectRecentAgentRuns(runHistory, activeSessionId),
     [activeSessionId, runHistory],
@@ -395,17 +507,29 @@ export const AgentRunTimeline = memo(function AgentRunTimeline({
             : "bg-foreground/65";
 
   return (
-    <div className="rounded-lg border border-border/45 bg-card/60 px-2.5 py-2 text-[11px]">
-      <div className="flex min-w-0 items-center gap-2">
+    <div className="rounded-lg border border-border/45 bg-card/60 px-2.5 py-2 text-[11px] leading-none">
+      <div className="flex min-w-0 items-center gap-1.5">
         <span className={cn("size-1.5 shrink-0 rounded-full", statusTone)} />
-        <span className="shrink-0 font-medium text-foreground">
-          Run timeline
-        </span>
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-          {statusLabel}
-          {duration ? ` · ${duration}` : ""}
-          {meta.step ? ` · ${meta.step}` : ""}
-        </span>
+        <button
+          type="button"
+          data-testid="agent-run-timeline-toggle"
+          className="group flex min-w-0 min-h-5 flex-1 items-center rounded-md px-1.5 py-0.5 text-left text-[10px] leading-none transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          aria-expanded={!isCollapsed}
+          aria-controls="agent-run-timeline-body"
+          onClick={() => setIsCollapsed((value) => !value)}
+        >
+          <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center leading-none text-muted-foreground/80">
+            {isCollapsed ? "▸" : "▾"}
+          </span>
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="shrink-0 font-medium text-foreground">Run timeline</span>
+            <span className="min-w-0 shrink truncate text-muted-foreground/85">
+              {statusLabel}
+              {duration ? ` · ${duration}` : ""}
+              {meta.step ? ` · ${meta.step}` : ""}
+            </span>
+          </span>
+        </button>
         {isBusy ? (
           <div className="flex shrink-0 items-center gap-1">
             <Button
@@ -459,100 +583,211 @@ export const AgentRunTimeline = memo(function AgentRunTimeline({
           </Button>
         ) : null}
       </div>
-      {activity.total > 0 ? (
-        <>
-          <div className="mt-1.5 flex min-w-0 flex-wrap gap-1 text-[10px] text-muted-foreground/75">
-            <span className="rounded-md border border-border/35 bg-background/65 px-1.5 py-0.5 tabular-nums">
-              {activity.total} tool{activity.total === 1 ? "" : "s"}
-            </span>
-            {activity.completed > 0 ? (
-              <span className="rounded-md border border-border/35 bg-background/65 px-1.5 py-0.5 tabular-nums">
-                {activity.completed} done
-              </span>
-            ) : null}
-            {activity.running > 0 ? (
-              <span className="rounded-md border border-border/35 bg-background/65 px-1.5 py-0.5 tabular-nums">
-                {activity.running} running
-              </span>
-            ) : null}
-            {activity.awaitingApproval > 0 ? (
-              <span
-                className={cn(
-                  "rounded-md border px-1.5 py-0.5 tabular-nums",
-                  statusBorderSurfaceClass("warning"),
-                )}
-              >
-                {activity.awaitingApproval} needs approval
-              </span>
-            ) : null}
-            {activity.failed > 0 ? (
-              <span className="rounded-md border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 tabular-nums text-destructive">
-                {activity.failed} failed
-              </span>
-            ) : null}
-            {activity.latestToolName ? (
-              <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/65 px-1.5 py-0.5 font-mono">
-                latest {activity.latestToolName}
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1 flex flex-col gap-0.5">
-            {activity.items.slice(-4).map((item) => (
-              <div
-                key={item.id}
-                className="flex min-w-0 items-center gap-1.5 rounded-md border border-border/25 bg-background/45 px-1.5 py-1 text-[10px] text-muted-foreground"
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    "size-1.5 shrink-0 rounded-full",
-                    toolStatusClass(item.status),
-                  )}
-                />
-                <span className="shrink-0 font-mono text-foreground">
-                  {item.name}
+      {!isCollapsed ? (
+        <div id="agent-run-timeline-body" data-testid="agent-run-timeline-body">
+          {activity.total > 0 ? (
+            <>
+              <div className="mt-1 flex min-w-0 flex-wrap gap-1 text-[10px] leading-none text-muted-foreground/75">
+                <span className="rounded-md border border-border/35 bg-background/65 px-1.5 py-0.5 tabular-nums">
+                  {activity.total} tool{activity.total === 1 ? "" : "s"}
                 </span>
-                <span className="shrink-0 opacity-70">{item.status}</span>
-                {item.detail ? (
-                  <span className="min-w-0 flex-1 truncate font-mono opacity-75">
-                    {item.detail}
+                {activity.completed > 0 ? (
+                  <span className="rounded-md border border-border/35 bg-background/65 px-1.5 py-0.5 tabular-nums">
+                    {activity.completed} done
+                  </span>
+                ) : null}
+                {activity.running > 0 ? (
+                  <span className="rounded-md border border-border/35 bg-background/65 px-1.5 py-0.5 tabular-nums">
+                    {activity.running} running
+                  </span>
+                ) : null}
+                {activity.awaitingApproval > 0 ? (
+                  <span
+                    className={cn(
+                      "rounded-md border px-1.5 py-0.5 tabular-nums",
+                      statusBorderSurfaceClass("warning"),
+                    )}
+                  >
+                    {activity.awaitingApproval} needs approval
+                  </span>
+                ) : null}
+                {activity.failed > 0 ? (
+                  <span className="rounded-md border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 tabular-nums text-destructive">
+                    {activity.failed} failed
+                  </span>
+                ) : null}
+                {activity.latestToolName ? (
+                  <span className="min-w-0 truncate rounded-md border border-border/35 bg-background/65 px-1.5 py-0.5 font-mono">
+                    latest {activity.latestToolName}
                   </span>
                 ) : null}
               </div>
-            ))}
-          </div>
-        </>
-      ) : null}
-      {recentRuns.length > 0 ? (
-        <div className="mt-1.5 flex flex-col gap-0.5 border-t border-border/30 pt-1.5">
-          <div className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
-            Recent runs
-          </div>
-          {recentRuns.map((run) => (
-            <div
-              key={run.id}
-              className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground"
-            >
-              <span className="shrink-0 tabular-nums">
-                {formatRunDuration(run.startedAt, run.endedAt) ?? "0s"}
-              </span>
-              <span className="shrink-0 rounded-md border border-border/30 bg-background/55 px-1 py-0.5">
-                {runReasonLabel(run.stopReason)}
-              </span>
-              {run.step ? (
-                <span className="min-w-0 flex-1 truncate">{run.step}</span>
-              ) : run.error ? (
-                <span className="min-w-0 flex-1 truncate text-destructive">
-                  {run.error}
-                </span>
-              ) : null}
+              <div className="mt-1 flex flex-col gap-0.5">
+                {visibleToolItems.map((item, index) => {
+                  const toolKey = `${item.id}-${index}`;
+                  const inputText = truncatedToolPayload(item.input);
+                  const outputText = truncatedToolPayload(item.output);
+                  const hasDetails =
+                    Boolean(inputText) ||
+                    Boolean(outputText) ||
+                    Boolean(item.errorText) ||
+                    Boolean(item.detail);
+                  const isExpanded = expandedToolRows.has(toolKey);
+
+                  const summary = (
+                    <>
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "size-1.5 shrink-0 rounded-full",
+                          toolStatusClass(item.status),
+                        )}
+                      />
+                      <span className="shrink-0 font-mono text-foreground">
+                        {item.name}
+                      </span>
+                      <span className="shrink-0 text-[9.5px] tabular-nums uppercase text-muted-foreground/75">
+                        {item.status}
+                      </span>
+                      {item.detail ? (
+                        <span className="min-w-0 flex-1 truncate font-mono opacity-75">
+                          {item.detail}
+                        </span>
+                      ) : null}
+                    </>
+                  );
+
+                  const expandControl = (
+                    <span
+                      aria-hidden
+                      className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center text-muted-foreground/70 leading-none"
+                    >
+                      {isExpanded ? "▾" : "▸"}
+                    </span>
+                  );
+
+                  if (!hasDetails) {
+                    return (
+                      <div
+                        key={toolKey}
+                        className="flex min-w-0 items-center gap-1.5 rounded-md border border-border/25 bg-background/45 px-1.5 py-1 text-[10px] leading-none text-muted-foreground"
+                      >
+                        <span
+                          aria-hidden
+                          className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center opacity-0"
+                        >
+                          ▸
+                        </span>
+                        {summary}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div key={toolKey} className="rounded-md">
+                      <button
+                        type="button"
+                        data-testid={`agent-run-timeline-tool-toggle-${index}`}
+                        aria-expanded={isExpanded}
+                        aria-controls={`agent-run-timeline-tool-body-${toolKey}`}
+                        aria-label={`Toggle details for ${item.name} tool`}
+                        className="group/tool-row flex w-full min-w-0 items-center gap-1.5 rounded-md border border-border/25 bg-background/45 px-1.5 py-1 text-left text-[10px] leading-none text-muted-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        onClick={() =>
+                          toggleToolRow(toolKey, item.status === "failed", isExpanded)
+                        }
+                      >
+                        {expandControl}
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {summary}
+                        </span>
+                      </button>
+                      {isExpanded ? (
+                        <div
+                          id={`agent-run-timeline-tool-body-${toolKey}`}
+                          data-testid={`agent-run-timeline-tool-body-${index}`}
+                          className="mt-0.5 ml-3.5 space-y-1 rounded-b-md border border-border/25 border-t-0 bg-background/35 px-1.5 py-1 leading-snug"
+                        >
+                          {item.detail ? (
+                            <div className="mb-1 flex items-start gap-1">
+                              <span className="w-11 shrink-0 text-[9px] font-medium text-muted-foreground/85">
+                                Detail
+                              </span>
+                              <span className="min-w-0 break-all font-mono text-[9.5px] text-muted-foreground/95">
+                                {item.detail}
+                              </span>
+                            </div>
+                          ) : null}
+                          {inputText ? (
+                            <div className="mb-1">
+                              <div className="mb-0.5 text-[9px] font-medium text-muted-foreground/85">
+                                Input
+                              </div>
+                              <pre className="max-h-40 overflow-auto rounded border border-border/30 bg-background/60 p-1.5 font-mono text-[9.5px] leading-relaxed">
+                                {inputText}
+                              </pre>
+                            </div>
+                          ) : null}
+                          {outputText ? (
+                            <div className="mb-1">
+                              <div className="mb-0.5 text-[9px] font-medium text-muted-foreground/85">
+                                Output
+                              </div>
+                              <pre className="max-h-40 overflow-auto rounded border border-border/30 bg-background/60 p-1.5 font-mono text-[9.5px] leading-relaxed">
+                                {outputText}
+                              </pre>
+                            </div>
+                          ) : null}
+                          {item.errorText ? (
+                            <div>
+                              <div className="mb-0.5 text-[9px] font-medium text-destructive/90">
+                                Error
+                              </div>
+                              <pre className="max-h-40 overflow-auto rounded border border-destructive/30 bg-destructive/5 p-1.5 font-mono text-[9.5px] leading-relaxed text-destructive">
+                                {item.errorText}
+                              </pre>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+          {recentRuns.length > 0 ? (
+            <div className="mt-1.5 flex flex-col gap-0.5 border-t border-border/30 pt-1.5 leading-none">
+              <div className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
+                Recent runs
+              </div>
+              {recentRuns.map((run) => (
+                <div
+                  key={run.id}
+                  className="flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground"
+                >
+                  <span className="shrink-0 tabular-nums">
+                    {formatRunDuration(run.startedAt, run.endedAt) ?? "0s"}
+                  </span>
+                  <span className="shrink-0 rounded-md border border-border/30 bg-background/55 px-1 py-0.5">
+                    {runReasonLabel(run.stopReason)}
+                  </span>
+                  {run.step ? (
+                    <span className="min-w-0 flex-1 truncate">{run.step}</span>
+                  ) : run.error ? (
+                    <span className="min-w-0 flex-1 truncate text-destructive">
+                      {run.error}
+                    </span>
+                  ) : null}
+                </div>
+              ))}
             </div>
-          ))}
+          ) : null}
         </div>
       ) : null}
     </div>
   );
 });
+
 
 const CompactionNotice = memo(function CompactionNotice({
   droppedCount,

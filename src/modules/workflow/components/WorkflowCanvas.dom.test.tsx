@@ -632,6 +632,39 @@ describe("WorkflowCanvas DOM workflow", () => {
     expect(findButton(container, "Approve")).toBeNull();
   });
 
+  it("rejects an unsafe selected node from the inline node controls", async () => {
+    const { container } = await renderWorkflowCanvas();
+
+    await clickButton(container, "Command");
+    await waitFor(() =>
+      expect(container.textContent).toContain("Shell Command"),
+    );
+    await changeValue(
+      getField(container, "Command, requires approval"),
+      "echo no",
+    );
+    await clickButton(container, "Run selected");
+
+    const rejectButton = await getByTestId(
+      container,
+      "workflow-reject-node-node_shellCommand_1",
+    );
+    expect(rejectButton.className).toContain("nopan");
+    await act(async () => {
+      rejectButton.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true }),
+      );
+      rejectButton.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true }),
+      );
+      rejectButton.click();
+    });
+
+    await waitFor(() =>
+      expect(container.textContent).toContain("Approval rejected"),
+    );
+  });
+
   it("approves and cancels an unsafe shell run from the UI", async () => {
     const shellExecutor = vi.fn(
       (
@@ -718,14 +751,25 @@ function rectWithPosition(input: {
   };
 }
 
-async function clickByTestId(
+async function getByTestId(
   container: HTMLElement,
   testId: string,
-): Promise<void> {
+): Promise<HTMLElement> {
+  await waitFor(() =>
+    expect(container.querySelector(`[data-testid="${testId}"]`)).not.toBeNull(),
+  );
   const element = container.querySelector<HTMLElement>(
     `[data-testid="${testId}"]`,
   );
   if (!element) throw new Error(`Missing element: ${testId}`);
+  return element;
+}
+
+async function clickByTestId(
+  container: HTMLElement,
+  testId: string,
+): Promise<void> {
+  const element = await getByTestId(container, testId);
   await act(async () => {
     element.click();
   });

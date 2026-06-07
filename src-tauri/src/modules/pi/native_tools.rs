@@ -5,7 +5,8 @@ use serde_json::{Map, Value};
 
 use crate::modules::artifacts::{ArtifactStore, ArtifactSummary, ArtifactUpdateReason};
 use crate::modules::capabilities::{
-    capability_manifest_with_mcp_tools, core_capability_manifest, CapabilityManifest,
+    capability_manifest_with_mcp_tools, core_capability_manifest, ApprovalPolicy,
+    CapabilityManifest,
 };
 use crate::modules::mcp::McpState;
 use crate::modules::workspace::WorkspaceEnv;
@@ -65,6 +66,12 @@ impl NativeToolContext {
         }
     }
 
+    pub(super) fn has_runtime_backends(&self) -> bool {
+        self.artifact_store.is_some()
+            || self.artifact_update_sink.is_some()
+            || self.mcp_state.is_some()
+    }
+
     pub(super) fn capability_manifest(&self) -> CapabilityManifest {
         let Some(mcp_state) = self.mcp_state.as_ref() else {
             return core_capability_manifest();
@@ -86,6 +93,21 @@ impl NativeToolContext {
         let tool = mcp_state.tool_descriptor(tool_name).ok().flatten()?;
         Some(capability_manifest_with_mcp_tools(&[tool]))
     }
+
+    pub(super) fn mcp_approval_policy_for_tool(&self, tool_name: &str) -> Option<ApprovalPolicy> {
+        let mcp_state = self.mcp_state.as_ref()?;
+        if !tool_name.starts_with("mcp__") {
+            return None;
+        }
+        mcp_state.approval_policy_for_tool(tool_name).ok().flatten()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct NativeToolApprovalMetadata {
+    pub policy: Option<ApprovalPolicy>,
+    pub approved: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,7 +120,20 @@ pub(super) struct NativeToolRequest {
     #[serde(default)]
     pub workspace_env: Option<WorkspaceEnv>,
     #[serde(default)]
+    pub approval: Option<NativeToolApprovalMetadata>,
+    #[serde(default)]
     pub input: Value,
+}
+
+impl NativeToolRequest {
+    pub(super) fn mcp_auto_approval_policy(&self) -> Option<ApprovalPolicy> {
+        if !self.tool_name.starts_with("mcp__") {
+            return None;
+        }
+        let approval = self.approval.as_ref()?;
+        (approval.policy == Some(ApprovalPolicy::Auto) && approval.approved == Some(true))
+            .then_some(ApprovalPolicy::Auto)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -257,6 +292,7 @@ mod tests {
             tool_name: tool_name.to_string(),
             cwd: cwd.to_string_lossy().into_owned(),
             workspace_env: None,
+            approval: None,
             input,
         }
     }
@@ -474,6 +510,7 @@ mod tests {
             workspace_env: Some(WorkspaceEnv::Wsl {
                 distro: "Ubuntu-24.04".to_string(),
             }),
+            approval: None,
             input: json!({ "command": "pwd" }),
         })
         .unwrap_err();
