@@ -110,6 +110,44 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     Ok(())
 }
 
+/// The default app menu binds several `Cmd/Ctrl` accelerators ("Close Window",
+/// "Undo", "Redo") whose native key-equivalents fire before the webview sees the
+/// keydown, shadowing the app's own shortcuts (tab.close, editor undo/redo, zen
+/// mode on Cmd+Shift+Z, ...). Drop those items so the keys reach the frontend.
+/// Copy/Paste/Cut/Select-All/Quit/Hide stay (they aren't app shortcuts, and the
+/// webview still handles text-field undo from the keydown itself).
+fn strip_conflicting_menu_items<R: tauri::Runtime>(menu: &tauri::menu::Menu<R>) {
+    use tauri::menu::MenuItemKind;
+    // Normalized predefined-item labels whose accelerators collide with app
+    // shortcuts. muda text is e.g. "Close"/"Undo"/"Redo" (macOS) or carries a
+    // "&" mnemonic on Windows ("C&lose Window"), so strip "&" and lowercase.
+    const CONFLICTING: [&str; 4] = ["close", "close window", "undo", "redo"];
+    let Ok(items) = menu.items() else {
+        return;
+    };
+    for item in items {
+        let Some(submenu) = item.as_submenu() else {
+            continue;
+        };
+        let Ok(children) = submenu.items() else {
+            continue;
+        };
+        for child in &children {
+            if let MenuItemKind::Predefined(predefined) = child {
+                let text = predefined
+                    .text()
+                    .unwrap_or_default()
+                    .replace('&', "")
+                    .trim()
+                    .to_lowercase();
+                if CONFLICTING.contains(&text.as_str()) {
+                    let _ = submenu.remove(predefined);
+                }
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let cli_dir = parse_launch_dir();
@@ -136,6 +174,11 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
+        .menu(|app| {
+            let menu = tauri::menu::Menu::default(app)?;
+            strip_conflicting_menu_items(&menu);
+            Ok(menu)
+        })
         .setup(|_app| {
             // macOS skips parent() for the settings window, so tie its lifecycle
             // to the main window here instead. Other platforms keep parent().
