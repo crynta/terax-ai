@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { lazy, Suspense } from "react";
+import { PaneLoadingFallback } from "@/components/PaneLoadingFallback";
 import type { EditorStack as EditorStackType } from "./EditorStack";
 
 const EditorStackInner = lazy(() =>
@@ -10,7 +11,7 @@ type Props = ComponentProps<typeof EditorStackType>;
 
 export function EditorStack(props: Props) {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PaneLoadingFallback label="Loading editor…" />}>
       <EditorStackInner {...props} />
     </Suspense>
   );

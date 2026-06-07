@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { hasAnyKey } from "@/modules/ai/lib/keyring";
 import {
   getAllCustomEndpointKeys,
   getAllKeys,
+  hasAnyKey,
 } from "@/modules/ai/lib/keyring";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
@@ -58,7 +58,9 @@ export function useAppAiBootstrap() {
     const load = async () => {
       const [keys, customKeys] = await Promise.all([
         getAllKeys(),
-        getAllCustomEndpointKeys(usePreferencesStore.getState().customEndpoints),
+        getAllCustomEndpointKeys(
+          usePreferencesStore.getState().customEndpoints,
+        ),
       ]);
       if (!active) return;
       setApiKeys(keys);

@@ -67,7 +67,7 @@ export function PiFloatingWindow({
       data-code-floating-window
       className={cn(
         "no-scrollbar-deep fixed z-40 flex flex-col overflow-hidden",
-        "rounded-2xl border border-border/60 bg-card text-[12px]",
+        "rounded-lg border border-border/60 bg-card text-[12px]",
         "shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_24px_48px_-12px_rgba(0,0,0,0.45),0_8px_16px_-8px_rgba(0,0,0,0.3)]",
         "ring-1 ring-black/5 dark:ring-white/5",
       )}
@@ -106,7 +106,11 @@ export function PiFloatingWindow({
             aria-label="Open Code chat in workspace"
             title="Open Code chat in workspace"
           >
-            <HugeiconsIcon icon={FullscreenIcon} size={11} strokeWidth={1.75} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={FullscreenIcon}
+              strokeWidth={1.75}
+            />
           </Button>
           <Button
             type="button"
@@ -117,11 +121,15 @@ export function PiFloatingWindow({
             aria-label="Close Code pop-out"
             title="Close"
           >
-            <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={1.75} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Cancel01Icon}
+              strokeWidth={1.75}
+            />
           </Button>
         </div>
       </div>
-      <div className="min-h-0 flex-1">{children}</div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{children}</div>
     </motion.div>
   );
 }

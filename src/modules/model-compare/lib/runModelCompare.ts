@@ -1,4 +1,8 @@
-import { stepCountIs, streamText as aiStreamText, type LanguageModel } from "ai";
+import {
+  streamText as aiStreamText,
+  type LanguageModel,
+  stepCountIs,
+} from "ai";
 import { estimateCost } from "@/modules/ai/config";
 import {
   buildConfiguredLanguageModel,
@@ -115,7 +119,10 @@ function comparablePath(path: string): string {
   return next;
 }
 
-export function agentComparePathWithinRoot(path: string, root: string): boolean {
+export function agentComparePathWithinRoot(
+  path: string,
+  root: string,
+): boolean {
   const target = comparablePath(path);
   const scope = comparablePath(root);
   return target === scope || target.startsWith(`${scope}/`);
@@ -261,6 +268,11 @@ export async function runModelComparePane({
   buildModel = buildConfiguredLanguageModel,
   streamText = defaultStreamText,
 }: RunModelComparePaneInput): Promise<RunModelComparePaneResult> {
+  if (mode === "research") {
+    throw new Error(
+      "Deep Research compare is deferred until the standalone Deep Research feature ships.",
+    );
+  }
   const startedAt = now();
   const model = await buildModel(modelId, keys as ProviderKeys, local);
   const agentMode = mode === "agent";

@@ -1,5 +1,11 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createModelCompareRun } from "./lib/modelCompare";
 import {
   appendModelComparePaneDeltaForRun,
   ModelComparePanel,
@@ -10,9 +16,67 @@ import {
   patchModelComparePaneForRun,
   shouldClearModelCompareHistory,
 } from "./ModelComparePanel";
-import { createModelCompareRun } from "./lib/modelCompare";
+
+vi.hoisted(() => {
+  if (typeof HTMLCanvasElement !== "undefined") {
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value: () => null,
+    });
+  }
+});
+
+const modelCompareHistoryNativeMock = vi.hoisted(() => ({
+  clear: vi.fn(),
+  load: vi.fn(),
+  save: vi.fn(),
+}));
+
+const toastMock = vi.hoisted(() => ({
+  error: vi.fn(),
+  success: vi.fn(),
+}));
+
+vi.mock("./lib/native", () => ({
+  modelCompareHistoryNative: modelCompareHistoryNativeMock,
+}));
+
+vi.mock("sonner", () => ({
+  toast: toastMock,
+}));
 
 describe("ModelComparePanel", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (
+      globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
+    Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+      configurable: true,
+      value: vi.fn(() => null),
+    });
+    modelCompareHistoryNativeMock.clear.mockReset();
+    modelCompareHistoryNativeMock.load.mockReset();
+    modelCompareHistoryNativeMock.save.mockReset();
+    modelCompareHistoryNativeMock.clear.mockResolvedValue(undefined);
+    modelCompareHistoryNativeMock.load.mockResolvedValue([]);
+    modelCompareHistoryNativeMock.save.mockResolvedValue(undefined);
+    toastMock.error.mockReset();
+    toastMock.success.mockReset();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    document.body.innerHTML = "";
+    window.localStorage.clear();
+  });
+
   it("renders a compact Terax-native compare cockpit", () => {
     const html = renderToStaticMarkup(<ModelComparePanel />);
 
@@ -32,7 +96,28 @@ describe("ModelComparePanel", () => {
     expect(html).toContain("History");
     expect(html).toContain("Save artifact");
     expect(html).toContain('aria-label="Model compare"');
+    expect(html).toContain(
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card/80",
+    );
     expect(html).toContain('aria-label="Comparison prompt"');
+  });
+
+  it("surfaces native history load failures", async () => {
+    modelCompareHistoryNativeMock.load.mockRejectedValueOnce(
+      new Error("native history down"),
+    );
+
+    await act(async () => {
+      root.render(<ModelComparePanel />);
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        "Model compare history load failed",
+        { description: "native history down" },
+      ),
+    );
   });
 
   it("asks for explicit confirmation before clearing saved history", () => {
@@ -80,6 +165,8 @@ describe("ModelComparePanel", () => {
       })),
     };
     expect(modelCompareRunCanVote(completed, true)).toBe(false);
+    expect(modelCompareRunCanTie(completed, true)).toBe(false);
+    expect(modelCompareRunCanJudge(completed, true)).toBe(false);
     expect(modelCompareRunCanVote(completed, false)).toBe(true);
     expect(modelCompareRunCanTie(completed, false)).toBe(true);
     expect(modelCompareRunCanJudge(completed, false)).toBe(true);
@@ -128,3 +215,19 @@ describe("ModelComparePanel", () => {
     expect(updated.publicSnapshot.panes[0]?.response).toBe("hello");
   });
 });
+
+async function waitFor(assertion: () => void): Promise<void> {
+  let lastError: unknown;
+  for (let i = 0; i < 30; i += 1) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
+  }
+  throw lastError;
+}

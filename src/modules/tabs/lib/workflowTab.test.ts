@@ -19,6 +19,13 @@ import {
 } from "./workflowTabRestore";
 
 describe("workflow tabs", () => {
+  it("uses Canvas as the default new tab title", () => {
+    const tab = createWorkflowTab(12);
+
+    expect(tab.title).toBe("Canvas");
+    expect(tab.document.title).toBe("Canvas");
+  });
+
   it("creates a workflow tab with a starter document", () => {
     const tab = createWorkflowTab(12, "Workflow");
 

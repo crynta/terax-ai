@@ -4,6 +4,7 @@ import { memo, useState } from "react";
 import {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
@@ -84,7 +85,13 @@ function EntryRowImpl(props: EntryRowProps) {
           >
             <span className="size-3.5 shrink-0" />
             {iconUrl ? (
-              <img src={iconUrl} alt="" className="size-4 shrink-0" />
+              <img
+                src={iconUrl}
+                alt=""
+                width={16}
+                height={16}
+                className="size-4 shrink-0"
+              />
             ) : (
               <span className="size-4 shrink-0" />
             )}
@@ -120,7 +127,13 @@ function EntryRowImpl(props: EntryRowProps) {
               ) : null}
             </span>
             {iconUrl ? (
-              <img src={iconUrl} alt="" className="size-4 shrink-0" />
+              <img
+                src={iconUrl}
+                alt=""
+                width={16}
+                height={16}
+                className="size-4 shrink-0"
+              />
             ) : (
               <span className="size-4 shrink-0" />
             )}
@@ -134,85 +147,95 @@ function EntryRowImpl(props: EntryRowProps) {
           if (tree.renaming || tree.pendingCreate) e.preventDefault();
         }}
       >
-        {!isDir && (
+        <ContextMenuGroup>
+          {!isDir && (
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              onSelect={() => onOpenFile(path, true)}
+            >
+              Open
+            </ContextMenuItem>
+          )}
+          {!isDir && isMarkdownPath(path) && onOpenMarkdownPreview && (
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              onSelect={() => onOpenMarkdownPreview(path)}
+            >
+              Open Preview
+            </ContextMenuItem>
+          )}
+          {isDir && onRevealInTerminal && (
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              onSelect={() => onRevealInTerminal(path)}
+            >
+              Open in Terminal
+            </ContextMenuItem>
+          )}
           <ContextMenuItem
             className={COMPACT_ITEM}
-            onSelect={() => onOpenFile(path, true)}
+            onSelect={() => void revealInFinder(path)}
           >
-            Open
+            Reveal in Finder
           </ContextMenuItem>
-        )}
-        {!isDir && isMarkdownPath(path) && onOpenMarkdownPreview && (
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
           <ContextMenuItem
             className={COMPACT_ITEM}
-            onSelect={() => onOpenMarkdownPreview(path)}
+            onSelect={() => tree.beginCreate(createTarget, "file")}
           >
-            Open Preview
+            New File
           </ContextMenuItem>
-        )}
-        {isDir && onRevealInTerminal && (
           <ContextMenuItem
             className={COMPACT_ITEM}
-            onSelect={() => onRevealInTerminal(path)}
+            onSelect={() => tree.beginCreate(createTarget, "dir")}
           >
-            Open in Terminal
+            New Folder
           </ContextMenuItem>
-        )}
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => void revealInFinder(path)}
-        >
-          Reveal in Finder
-        </ContextMenuItem>
+        </ContextMenuGroup>
         <ContextMenuSeparator />
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => tree.beginCreate(createTarget, "file")}
-        >
-          New File
-        </ContextMenuItem>
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => tree.beginCreate(createTarget, "dir")}
-        >
-          New Folder
-        </ContextMenuItem>
+        <ContextMenuGroup>
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            onSelect={() => void copyToClipboard(path)}
+          >
+            Copy Path
+          </ContextMenuItem>
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            onSelect={() => void copyToClipboard(relativePath(rootPath, path))}
+          >
+            Copy Relative Path
+          </ContextMenuItem>
+        </ContextMenuGroup>
         <ContextMenuSeparator />
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => void copyToClipboard(path)}
-        >
-          Copy Path
-        </ContextMenuItem>
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => void copyToClipboard(relativePath(rootPath, path))}
-        >
-          Copy Relative Path
-        </ContextMenuItem>
+        <ContextMenuGroup>
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            onSelect={() => onAttachToAgent?.(path)}
+          >
+            Attach to Agent
+          </ContextMenuItem>
+        </ContextMenuGroup>
         <ContextMenuSeparator />
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => onAttachToAgent?.(path)}
-        >
-          Attach to Agent
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          variant="destructive"
-          onSelect={(e) => {
-            e.preventDefault();
-            if (isConfirming) {
-              void tree.deletePath(path);
-            } else {
-              setIsConfirming(true);
-            }
-          }}
-          onMouseLeave={() => setTimeout(() => setIsConfirming(false), 1500)}
-        >
-          {isConfirming ? "Click again to confirm" : "Delete"}
-        </ContextMenuItem>
+        <ContextMenuGroup>
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            variant="destructive"
+            onSelect={(e) => {
+              e.preventDefault();
+              if (isConfirming) {
+                void tree.deletePath(path);
+              } else {
+                setIsConfirming(true);
+              }
+            }}
+            onMouseLeave={() => setTimeout(() => setIsConfirming(false), 1500)}
+          >
+            {isConfirming ? "Click again to confirm" : "Delete"}
+          </ContextMenuItem>
+        </ContextMenuGroup>
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -244,6 +267,8 @@ export function PendingRow({
           kind === "dir" ? folderIconUrl("", false) : fileIconUrl("untitled")
         }
         alt=""
+        width={16}
+        height={16}
         className="size-4 shrink-0 opacity-70"
       />
       <InlineInput

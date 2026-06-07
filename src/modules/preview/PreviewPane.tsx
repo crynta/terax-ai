@@ -2,12 +2,14 @@ import Alert02Icon from "@hugeicons/core-free-icons/Alert02Icon";
 import Globe02Icon from "@hugeicons/core-free-icons/Globe02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  forwardRef,
+  type Ref,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from "react";
+import { statusBorderSurfaceClass } from "@/lib/statusTone";
+import { cn } from "@/lib/utils";
 import {
   PreviewAddressBar,
   type PreviewAddressBarHandle,
@@ -23,121 +25,125 @@ type Props = {
   url: string;
   visible: boolean;
   onUrlChange: (url: string) => void;
+  ref?: Ref<PreviewPaneHandle>;
 };
 
 // Tear the iframe down after this much invisibility — a background dev
 // server page can hold hundreds of MB inside the WebView.
 const SUSPEND_AFTER_MS = 30_000;
 
-export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
-  function PreviewPane({ url, visible, onUrlChange }, ref) {
-    // `nonce` is part of the iframe `key`. Bumping it remounts the iframe,
-    // which is the only reliable cross-origin reload (calling
-    // contentWindow.location.reload() throws on cross-origin frames).
-    const [nonce, setNonce] = useState(0);
-    const [loaded, setLoaded] = useState(visible);
-    const addressRef = useRef<PreviewAddressBarHandle>(null);
+export function PreviewPane({ url, visible, onUrlChange, ref }: Props) {
+  // `nonce` is part of the iframe `key`. Bumping it remounts the iframe,
+  // which is the only reliable cross-origin reload (calling
+  // contentWindow.location.reload() throws on cross-origin frames).
+  const [nonce, setNonce] = useState(0);
+  const [loaded, setLoaded] = useState(visible);
+  const addressRef = useRef<PreviewAddressBarHandle>(null);
 
-    useEffect(() => {
-      if (visible) {
+  useEffect(() => {
+    if (visible) {
+      setLoaded(true);
+      return;
+    }
+    const t = setTimeout(() => setLoaded(false), SUSPEND_AFTER_MS);
+    return () => clearTimeout(t);
+  }, [visible]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      reload: () => {
         setLoaded(true);
-        return;
-      }
-      const t = setTimeout(() => setLoaded(false), SUSPEND_AFTER_MS);
-      return () => clearTimeout(t);
-    }, [visible]);
+        setNonce((n) => n + 1);
+      },
+      focusAddressBar: () => addressRef.current?.focus(),
+      getUrl: () => url,
+    }),
+    [url],
+  );
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        reload: () => {
-          setLoaded(true);
-          setNonce((n) => n + 1);
-        },
-        focusAddressBar: () => addressRef.current?.focus(),
-        getUrl: () => url,
-      }),
-      [url],
-    );
+  const showXfoHint = url ? !isLocalUrl(url) : false;
 
-    const showXfoHint = url ? !isLocalUrl(url) : false;
-
-    return (
-      <div
-        className="flex h-full w-full flex-col overflow-hidden rounded-md border border-border/60 bg-background"
-        style={{
-          visibility: visible ? "visible" : "hidden",
-          pointerEvents: visible ? "auto" : "none",
-        }}
-      >
-        <PreviewAddressBar
-          ref={addressRef}
-          url={url}
-          onSubmit={onUrlChange}
-          onReload={() => setNonce((n) => n + 1)}
-        />
-        {showXfoHint ? (
-          <div className="flex h-7 shrink-0 items-center gap-1.5 border-b border-border/60 bg-amber-500/8 px-3 text-[11px] text-amber-600 dark:text-amber-400">
-            <HugeiconsIcon
-              icon={Alert02Icon}
-              size={12}
-              strokeWidth={1.75}
-              className="shrink-0"
-            />
-            <span className="truncate">
-              Many public sites refuse to embed (X-Frame-Options). If the page
-              is blank, open it externally.
-            </span>
-          </div>
-        ) : null}
+  return (
+    <div
+      className="flex h-full w-full flex-col overflow-hidden rounded-md border border-border/60 bg-background"
+      style={{
+        visibility: visible ? "visible" : "hidden",
+        pointerEvents: visible ? "auto" : "none",
+      }}
+    >
+      <PreviewAddressBar
+        ref={addressRef}
+        url={url}
+        onSubmit={onUrlChange}
+        onReload={() => setNonce((n) => n + 1)}
+      />
+      {showXfoHint ? (
         <div
-          className={
-            url
-              ? "relative min-h-0 flex-1 bg-white"
-              : "relative min-h-0 flex-1 bg-background"
-          }
-        >
-          {url ? (
-            loaded ? (
-              <iframe
-                key={`${url}#${nonce}`}
-                src={url}
-                title="Preview"
-                className="h-full w-full border-0"
-                // sandbox grants the bare minimum for a dev preview: scripts,
-                // same-origin (cookies/storage for the previewed app), forms,
-                // popups for "open in new tab". Critically OMITS
-                // `allow-top-navigation*` — without it the iframe cannot
-                // navigate the parent Tauri webview to an attacker origin,
-                // which would otherwise expose `window.__TAURI__` IPC.
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
-                referrerPolicy="no-referrer"
-                allow="clipboard-read; clipboard-write; fullscreen"
-              />
-            ) : (
-              <SuspendedState
-                onReload={() => {
-                  setLoaded(true);
-                  setNonce((n) => n + 1);
-                }}
-              />
-            )
-          ) : (
-            <EmptyState />
+          className={cn(
+            "flex h-7 shrink-0 items-center gap-1.5 border-b px-3 text-[11px]",
+            statusBorderSurfaceClass("warning"),
           )}
+        >
+          <HugeiconsIcon
+            icon={Alert02Icon}
+            size={12}
+            strokeWidth={1.75}
+            className="shrink-0"
+          />
+          <span className="truncate">
+            Many public sites refuse to embed (X-Frame-Options). If the page is
+            blank, open it externally.
+          </span>
         </div>
+      ) : null}
+      <div
+        className={
+          url
+            ? "relative min-h-0 flex-1 bg-white"
+            : "relative min-h-0 flex-1 bg-background"
+        }
+      >
+        {url ? (
+          loaded ? (
+            <iframe
+              key={`${url}#${nonce}`}
+              src={url}
+              title="Preview"
+              className="h-full w-full border-0"
+              // sandbox grants the bare minimum for a dev preview: scripts,
+              // same-origin (cookies/storage for the previewed app), forms,
+              // popups for "open in new tab". Critically OMITS
+              // `allow-top-navigation*` — without it the iframe cannot
+              // navigate the parent Tauri webview to an attacker origin,
+              // which would otherwise expose `window.__TAURI__` IPC.
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
+              referrerPolicy="no-referrer"
+              allow="clipboard-read; clipboard-write; fullscreen"
+            />
+          ) : (
+            <SuspendedState
+              onReload={() => {
+                setLoaded(true);
+                setNonce((n) => n + 1);
+              }}
+            />
+          )
+        ) : (
+          <EmptyState />
+        )}
       </div>
-    );
-  },
-);
+    </div>
+  );
+}
 
 function SuspendedState({ onReload }: { onReload: () => void }) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center">
-      <div className="flex size-10 items-center justify-center rounded-2xl border border-border/60 bg-card text-muted-foreground">
+      <div className="flex size-10 items-center justify-center rounded-lg border border-border/60 bg-card text-muted-foreground">
         <HugeiconsIcon icon={Globe02Icon} size={18} strokeWidth={1.5} />
       </div>
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <p className="text-[12.5px] font-medium text-foreground">
           Preview suspended
         </p>
@@ -159,10 +165,10 @@ function SuspendedState({ onReload }: { onReload: () => void }) {
 function EmptyState() {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center">
-      <div className="flex size-12 items-center justify-center rounded-2xl border border-border/60 bg-card text-muted-foreground">
+      <div className="flex size-12 items-center justify-center rounded-lg border border-border/60 bg-card text-muted-foreground">
         <HugeiconsIcon icon={Globe02Icon} size={20} strokeWidth={1.5} />
       </div>
-      <div className="space-y-1.5">
+      <div className="flex flex-col gap-1.5">
         <p className="text-sm font-medium text-foreground">
           Nothing to preview yet
         </p>

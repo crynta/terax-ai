@@ -3,6 +3,7 @@ import { labelFor } from "./tabLabel";
 import {
   type ArtifactWorkspaceTab,
   type Tab,
+  upsertArtifactHubTab,
   upsertArtifactWorkspaceTab,
 } from "./useTabs";
 
@@ -15,6 +16,19 @@ const terminalTab: Tab = {
 };
 
 describe("artifact workspace tabs", () => {
+  it("opens and dedupes the global artifact hub tab", () => {
+    const opened = upsertArtifactHubTab([terminalTab], 2);
+    expect(opened.activeId).toBe(2);
+    expect(opened.tabs).toEqual([
+      terminalTab,
+      { id: 2, kind: "artifact-hub", title: "Artifacts" },
+    ]);
+
+    const reopened = upsertArtifactHubTab(opened.tabs, 3);
+    expect(reopened.activeId).toBe(2);
+    expect(reopened.tabs).toEqual(opened.tabs);
+  });
+
   it("opens an artifact workspace tab for a conversation", () => {
     const result = upsertArtifactWorkspaceTab([terminalTab], 2, {
       conversationId: "pi_123",
@@ -67,5 +81,8 @@ describe("artifact workspace tabs", () => {
         title: "Artifacts · QA Session",
       }),
     ).toBe("Artifacts · QA Session");
+    expect(labelFor({ id: 3, kind: "artifact-hub", title: "Artifacts" })).toBe(
+      "Artifacts",
+    );
   });
 });

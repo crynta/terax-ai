@@ -104,6 +104,12 @@ export type ArtifactWorkspaceTab = {
   selectedSlug: string | null;
 };
 
+export type ArtifactHubTab = {
+  id: number;
+  kind: "artifact-hub";
+  title: "Artifacts";
+};
+
 export type WorkflowTab = {
   id: number;
   kind: "workflow";
@@ -124,6 +130,7 @@ export type Tab =
   | GitCommitFileDiffTab
   | PiWorkspaceTab
   | ArtifactWorkspaceTab
+  | ArtifactHubTab
   | WorkflowTab;
 
 export type TabPatch = Partial<{

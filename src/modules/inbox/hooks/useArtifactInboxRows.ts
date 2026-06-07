@@ -41,10 +41,26 @@ function artifactTimestamp(event: ArtifactUpdateEvent): number {
   return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
+export function artifactInboxBodyForReason(
+  reason: ArtifactUpdateEvent["reason"],
+): string {
+  switch (reason) {
+    case "create":
+      return "Artifact created";
+    case "restore":
+      return "Artifact restored";
+    case "rename":
+    case "save":
+      return "Artifact updated";
+    default:
+      return "Artifact updated";
+  }
+}
+
 function artifactRow(event: ArtifactUpdateEvent): InboxArtifactRow {
   return {
     at: artifactTimestamp(event),
-    body: event.reason === "edit" ? "Artifact updated" : "Artifact created",
+    body: artifactInboxBodyForReason(event.reason),
     conversationId: event.conversationId,
     id: artifactInboxId(event.conversationId, event.artifact.slug),
     read: false,

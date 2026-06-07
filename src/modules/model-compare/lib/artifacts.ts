@@ -1,14 +1,20 @@
-import type { Artifact, ArtifactCreateInput } from "@/modules/artifacts/lib/types";
+import type {
+  Artifact,
+  ArtifactCreateInput,
+} from "@/modules/artifacts/lib/types";
 import {
   buildCompareArtifactMarkdown,
-  revealModelCompareRun,
   type ModelCompareRun,
+  revealModelCompareRun,
 } from "./modelCompare";
 
 export const MODEL_COMPARE_ARTIFACT_CONVERSATION_ID = "model-compare";
 
 export type SaveModelCompareArtifactDeps = {
-  create: (conversationId: string, input: ArtifactCreateInput) => Promise<Artifact>;
+  create: (
+    conversationId: string,
+    input: ArtifactCreateInput,
+  ) => Promise<Artifact>;
   update: (
     conversationId: string,
     slug: string,

@@ -39,6 +39,7 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
+import { statusTextClass } from "@/lib/statusTone";
 import { cn } from "@/lib/utils";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -78,8 +79,9 @@ const PROVIDER_ICON = {
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
   return (
     <motion.button
-      initial={{ y: -15 }}
-      animate={{ y: 0 }}
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.12, ease: "easeOut" }}
       type="button"
       onClick={onOpen}
       className={cn(
@@ -96,6 +98,7 @@ export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
 
 export function AiStatusBarControls() {
   const c = useComposer();
+  const { actions, meta, state } = c;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openMini = useChatStore((s) => s.openMini);
   const miniOpen = useChatStore((s) => s.mini.open);
@@ -110,7 +113,7 @@ export function AiStatusBarControls() {
         accept={ACCEPTED_FILES}
         className="hidden"
         onChange={(e) => {
-          void c.addFiles(e.target.files);
+          void actions.addFiles(e.target.files);
           e.target.value = "";
         }}
       />
@@ -118,34 +121,36 @@ export function AiStatusBarControls() {
       <IconBtn
         title="Attach file or image"
         onClick={() => fileInputRef.current?.click()}
-        disabled={c.isBusy}
+        disabled={state.isBusy}
       >
         <HugeiconsIcon icon={Add01Icon} size={13} strokeWidth={2} />
       </IconBtn>
 
-      {c.voice.supported && (
+      {meta.voice.supported && (
         <IconBtn
           title={
-            !c.voice.hasKey
+            !meta.voice.hasKey
               ? "Voice needs an OpenAI key"
-              : c.voice.recording
+              : meta.voice.recording
                 ? "Stop & transcribe"
-                : c.voice.transcribing
+                : meta.voice.transcribing
                   ? "Transcribing…"
                   : "Voice input"
           }
           onClick={() =>
-            c.voice.recording ? c.voice.stop() : void c.voice.start()
+            meta.voice.recording ? meta.voice.stop() : void meta.voice.start()
           }
-          disabled={c.isBusy || c.voice.transcribing || !c.voice.hasKey}
+          disabled={
+            state.isBusy || meta.voice.transcribing || !meta.voice.hasKey
+          }
           className={cn(
-            c.voice.recording &&
+            meta.voice.recording &&
               "bg-destructive/10 text-destructive hover:bg-destructive/15",
           )}
         >
-          {c.voice.recording ? (
+          {meta.voice.recording ? (
             <span className="size-2 animate-pulse rounded-full bg-destructive" />
-          ) : c.voice.transcribing ? (
+          ) : meta.voice.transcribing ? (
             <Spinner className="size-3" />
           ) : (
             <HugeiconsIcon icon={Mic01Icon} size={13} strokeWidth={1.75} />
@@ -176,29 +181,37 @@ export function AiStatusBarControls() {
         <HugeiconsIcon icon={Message01Icon} size={13} strokeWidth={1.75} />
       </IconBtn>
 
-      {c.isBusy ? (
+      {state.isBusy ? (
         <Button
           type="button"
           size="icon"
           variant="ghost"
-          onClick={c.stop}
+          onClick={actions.stop}
           className="size-6"
           aria-label="Stop"
           title="Stop"
         >
-          <HugeiconsIcon icon={StopCircleIcon} size={13} strokeWidth={1.75} />
+          <HugeiconsIcon
+            data-icon="inline-start"
+            icon={StopCircleIcon}
+            strokeWidth={1.75}
+          />
         </Button>
       ) : (
         <Button
           type="button"
           size="icon"
-          onClick={c.submit}
-          disabled={!c.canSend}
+          onClick={actions.submit}
+          disabled={!state.canSend}
           className="h-5.5 w-7.5 ml-1"
           aria-label="Send"
           title="Send (Enter)"
         >
-          <HugeiconsIcon icon={ArrowUpIcon} size={13} strokeWidth={1.75} />
+          <HugeiconsIcon
+            data-icon="inline-start"
+            icon={ArrowUpIcon}
+            strokeWidth={1.75}
+          />
         </Button>
       )}
     </div>
@@ -292,7 +305,7 @@ function ModelDropdown() {
             "h-5.5 gap-1 rounded-md px-1.5 my-1 text-xs hover:bg-accent hover:text-foreground",
             currentProviderHasKey
               ? "text-muted-foreground"
-              : "text-amber-600 dark:text-amber-400",
+              : statusTextClass("warning"),
           )}
           title={
             currentProviderHasKey
@@ -302,8 +315,8 @@ function ModelDropdown() {
         >
           {current.label}
           <HugeiconsIcon
+            data-icon="inline-start"
             icon={ArrowDown01Icon}
-            size={11}
             strokeWidth={2}
             className="opacity-70"
           />
@@ -331,7 +344,7 @@ function ModelDropdown() {
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => e.stopPropagation()}
             placeholder="Search models, providers, capabilities…"
-            className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
+            className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
           />
         </div>
 
@@ -462,8 +475,9 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
-        "flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors",
+        "flex min-h-7 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
         active
           ? "bg-accent text-foreground"
           : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
@@ -497,9 +511,11 @@ function ProviderPill({
     <button
       type="button"
       title={title}
+      aria-label={title}
+      aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "relative mx-auto flex size-8 items-center justify-center rounded-md transition-colors",
+        "relative mx-auto flex size-8 items-center justify-center rounded-md transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
         active
           ? "bg-accent text-foreground after:absolute after:right-0 after:top-1.5 after:bottom-1.5 after:w-[2px] after:rounded-full after:bg-primary after:content-['']"
           : muted
@@ -579,26 +595,27 @@ function ModelRow({
           e.stopPropagation();
           onToggleFavorite();
         }}
+        aria-label={
+          favorite ? `Unfavorite ${model.label}` : `Favorite ${model.label}`
+        }
         title={favorite ? "Unfavorite" : "Favorite"}
         className={cn(
-          "shrink-0 rounded p-0.5 transition-colors",
+          "shrink-0 rounded p-1 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
           favorite
-            ? "text-amber-500"
-            : "text-muted-foreground/40 hover:text-amber-500",
+            ? "text-primary"
+            : "text-muted-foreground/40 hover:text-primary",
         )}
       >
         <HugeiconsIcon
           icon={StarIcon}
-          size={12}
           strokeWidth={favorite ? 2 : 1.75}
-          className={favorite ? "fill-amber-500" : ""}
+          className={cn(favorite && "fill-primary")}
         />
       </button>
 
       {showProviderIcon ? (
         <HugeiconsIcon
           icon={PROVIDER_ICON[model.provider]}
-          size={13}
           strokeWidth={1.5}
           className="shrink-0 text-muted-foreground/70"
         />
@@ -618,7 +635,6 @@ function ModelRow({
       {selected ? (
         <HugeiconsIcon
           icon={Tick01Icon}
-          size={13}
           strokeWidth={2}
           className="shrink-0 text-foreground"
         />
@@ -688,6 +704,7 @@ function IconBtn({
       variant="ghost"
       size="icon"
       title={title}
+      aria-label={title}
       onClick={onClick}
       disabled={disabled}
       className={cn(

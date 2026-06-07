@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::modules::artifacts::{ArtifactStore, ArtifactSummary, ArtifactUpdateReason};
 use crate::modules::capabilities::{
@@ -56,6 +56,7 @@ impl NativeToolContext {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn with_mcp_state(mcp_state: Arc<McpState>) -> Self {
         Self {
             artifact_store: None,
@@ -72,6 +73,18 @@ impl NativeToolContext {
             Ok(tools) => capability_manifest_with_mcp_tools(&tools),
             Err(_) => core_capability_manifest(),
         }
+    }
+
+    pub(super) fn capability_manifest_for_tool(
+        &self,
+        tool_name: &str,
+    ) -> Option<CapabilityManifest> {
+        let mcp_state = self.mcp_state.as_ref()?;
+        if !tool_name.starts_with("mcp__") {
+            return None;
+        }
+        let tool = mcp_state.tool_descriptor(tool_name).ok().flatten()?;
+        Some(capability_manifest_with_mcp_tools(&[tool]))
     }
 }
 
@@ -109,7 +122,35 @@ impl NativeToolResult {
                 kind: "text",
                 text: text.into(),
             }],
-            details,
+            details: mediated_details(details),
+        }
+    }
+}
+
+fn mediated_details(details: Value) -> Value {
+    match details {
+        Value::Object(mut object) => {
+            object
+                .entry("mediatedBy".to_string())
+                .or_insert_with(|| Value::String("Terax Rust".to_string()));
+            Value::Object(object)
+        }
+        Value::Null => {
+            let mut object = Map::new();
+            object.insert(
+                "mediatedBy".to_string(),
+                Value::String("Terax Rust".to_string()),
+            );
+            Value::Object(object)
+        }
+        other => {
+            let mut object = Map::new();
+            object.insert(
+                "mediatedBy".to_string(),
+                Value::String("Terax Rust".to_string()),
+            );
+            object.insert("result".to_string(), other);
+            Value::Object(object)
         }
     }
 }

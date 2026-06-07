@@ -1,128 +1,36 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use super::edits::{apply_exact_edits, ArtifactTextEdit};
-use super::react::{compile_react_artifact, ReactCompileInput};
 use super::types::{
-    conversation_key, normalize_slug, validate_conversation_id, ArtifactError, ArtifactKind,
-    ArtifactResult,
+    conversation_key, normalize_slug, validate_conversation_id, ArtifactError, ArtifactResult,
 };
 
 pub const ARTIFACT_SCHEMA_VERSION: u32 = 1;
 pub const MAX_ARTIFACT_CONTENT_BYTES: usize = 1_048_576;
 pub const MAX_ARTIFACTS_PER_CONVERSATION: usize = 100;
+pub const MAX_ARTIFACT_TITLE_CHARS: usize = 120;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtifactCreateInput {
-    pub slug: String,
-    pub title: Option<String>,
-    pub kind: ArtifactKind,
-    pub content: String,
-}
+mod models;
+mod support;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtifactSummary {
-    pub conversation_id: String,
-    pub slug: String,
-    pub title: String,
-    pub kind: ArtifactKind,
-    pub version: u32,
-    pub content_hash: String,
-    pub created_at: String,
-    pub updated_at: String,
-    pub content_bytes: usize,
-}
+pub use models::{
+    Artifact, ArtifactBulkItemResult, ArtifactBulkResult, ArtifactBulkTarget,
+    ArtifactConversationArtifacts, ArtifactCreateInput, ArtifactDeleteResult, ArtifactExportResult,
+    ArtifactStore, ArtifactSummary, ArtifactVersionSummary, DeletedArtifactSummary,
+};
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Artifact {
-    pub summary: ArtifactSummary,
-    pub content: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtifactVersionSummary {
-    pub version: u32,
-    pub content_hash: String,
-    pub content_bytes: usize,
-    pub created_at: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtifactDeleteResult {
-    pub deleted: bool,
-    pub deleted_count: usize,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ArtifactExportResult {
-    pub conversation_id: String,
-    pub slug: String,
-    pub version: u32,
-    pub path: PathBuf,
-    pub content_hash: String,
-    pub content_bytes: usize,
-}
-
-#[derive(Clone)]
-pub struct ArtifactStore {
-    inner: Arc<ArtifactStoreInner>,
-}
-
-struct ArtifactStoreInner {
-    root: PathBuf,
-    lock: Mutex<()>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ConversationManifest {
-    schema_version: u32,
-    conversation_id: String,
-    artifacts: BTreeMap<String, ManifestArtifact>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ManifestArtifact {
-    slug: String,
-    title: String,
-    kind: ArtifactKind,
-    current_version: u32,
-    content_hash: String,
-    content_bytes: usize,
-    created_at: String,
-    updated_at: String,
-    versions: Vec<ArtifactVersionSummary>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ArtifactIndex {
-    schema_version: u32,
-    conversations: Vec<ArtifactIndexConversation>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ArtifactIndexConversation {
-    conversation_id: String,
-    conversation_key: String,
-    artifact_count: usize,
-    updated_at: Option<String>,
-}
+use models::{
+    ArtifactIndex, ArtifactIndexConversation, ArtifactStoreInner, ConversationManifest,
+    DeletedArtifactRecord, ManifestArtifact,
+};
+use support::{
+    export_artifact_to, export_filename, normalized_title, now_iso_timestamp, sha256_hex,
+    unix_epoch_millis, validate_content_size, validate_title, validate_undo_token, write_atomic,
+    write_json_atomic,
+};
 
 impl ArtifactStore {
     pub fn new(root: impl Into<PathBuf>) -> Self {
@@ -147,6 +55,59 @@ impl ArtifactStore {
             .values()
             .map(|artifact| artifact.summary(&manifest.conversation_id))
             .collect())
+    }
+
+    pub fn list_all(&self) -> ArtifactResult<Vec<ArtifactConversationArtifacts>> {
+        let _guard = self.write_lock()?;
+        let mut conversations = Vec::new();
+        match fs::read_dir(self.conversations_dir()) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = entry
+                        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
+                    let path = entry.path().join("manifest.json");
+                    if !path.exists() {
+                        continue;
+                    }
+                    let contents = fs::read_to_string(&path)
+                        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
+                    let manifest = serde_json::from_str::<ConversationManifest>(&contents)
+                        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
+                    if manifest.schema_version != ARTIFACT_SCHEMA_VERSION {
+                        return Err(ArtifactError::store_unavailable(
+                            "artifact manifest schema version is not supported",
+                        ));
+                    }
+                    let artifacts: Vec<ArtifactSummary> = manifest
+                        .artifacts
+                        .values()
+                        .map(|artifact| artifact.summary(&manifest.conversation_id))
+                        .collect();
+                    if artifacts.is_empty() {
+                        continue;
+                    }
+                    let updated_at = artifacts
+                        .iter()
+                        .map(|artifact| artifact.updated_at.clone())
+                        .max();
+                    conversations.push(ArtifactConversationArtifacts {
+                        conversation_id: manifest.conversation_id,
+                        artifact_count: artifacts.len(),
+                        updated_at,
+                        artifacts,
+                    });
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(ArtifactError::store_unavailable(error.to_string())),
+        }
+        conversations.sort_by(|left, right| {
+            right
+                .updated_at
+                .cmp(&left.updated_at)
+                .then_with(|| left.conversation_id.cmp(&right.conversation_id))
+        });
+        Ok(conversations)
     }
 
     pub fn get(
@@ -231,6 +192,29 @@ impl ArtifactStore {
         self.update_locked(conversation_id, slug, content, base_version)
     }
 
+    pub fn rename_title(
+        &self,
+        conversation_id: &str,
+        slug: &str,
+        title: &str,
+    ) -> ArtifactResult<Artifact> {
+        let _guard = self.write_lock()?;
+        let conversation_id = validate_conversation_id(conversation_id)?;
+        let key = conversation_key(&conversation_id)?;
+        let slug = normalize_slug(slug)?;
+        let title = validate_title(title)?;
+        let mut manifest = self.load_manifest_locked(&conversation_id)?;
+        let artifact = manifest
+            .artifacts
+            .get_mut(&slug)
+            .ok_or_else(|| ArtifactError::not_found("artifact was not found"))?;
+        artifact.title = title;
+        artifact.updated_at = now_iso_timestamp();
+        self.save_manifest_locked(&key, &manifest)?;
+        self.rebuild_index_locked()?;
+        self.get_from_manifest_locked(&manifest, &key, &slug, None)
+    }
+
     pub fn edit(
         &self,
         conversation_id: &str,
@@ -283,17 +267,62 @@ impl ArtifactStore {
         destination: &Path,
     ) -> ArtifactResult<ArtifactExportResult> {
         let artifact = self.get(conversation_id, slug, version)?;
-        validate_export_destination(&artifact.summary.kind, destination)?;
-        let export_content = export_content_for_artifact(&artifact)?;
-        write_atomic(destination, export_content.as_bytes())?;
-        Ok(ArtifactExportResult {
-            conversation_id: artifact.summary.conversation_id,
-            slug: artifact.summary.slug,
-            version: artifact.summary.version,
-            path: destination.to_path_buf(),
-            content_hash: sha256_hex(&export_content),
-            content_bytes: export_content.len(),
-        })
+        export_artifact_to(artifact, destination)
+    }
+
+    pub fn list_deleted(&self) -> ArtifactResult<Vec<DeletedArtifactSummary>> {
+        let _guard = self.write_lock()?;
+        let mut deleted = Vec::new();
+        match fs::read_dir(self.trash_dir()) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = entry
+                        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
+                    let Some(token) = entry.file_name().to_str().map(str::to_string) else {
+                        continue;
+                    };
+                    let Ok(record) = self.load_deleted_record_locked(&token) else {
+                        continue;
+                    };
+                    deleted.push(record.summary());
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(ArtifactError::store_unavailable(error.to_string())),
+        }
+        deleted.sort_by(|left, right| {
+            right
+                .deleted_at
+                .cmp(&left.deleted_at)
+                .then_with(|| left.title.cmp(&right.title))
+        });
+        Ok(deleted)
+    }
+
+    pub fn delete_many(
+        &self,
+        targets: &[ArtifactBulkTarget],
+    ) -> ArtifactResult<ArtifactBulkResult> {
+        let _guard = self.write_lock()?;
+        let mut index_dirty = false;
+        let items = targets
+            .iter()
+            .map(
+                |target| match self.delete_locked(&target.conversation_id, &target.slug) {
+                    Ok(result) => {
+                        index_dirty = true;
+                        let mut item = ArtifactBulkItemResult::success_for_target(target);
+                        item.undo_token = result.undo_token;
+                        item
+                    }
+                    Err(error) => ArtifactBulkItemResult::failure_for_target(target, error),
+                },
+            )
+            .collect();
+        if index_dirty {
+            self.rebuild_index_locked()?;
+        }
+        Ok(ArtifactBulkResult::from_items(items))
     }
 
     pub fn delete(
@@ -302,25 +331,199 @@ impl ArtifactStore {
         slug: &str,
     ) -> ArtifactResult<ArtifactDeleteResult> {
         let _guard = self.write_lock()?;
+        let result = self.delete_locked(conversation_id, slug)?;
+        self.rebuild_index_locked()?;
+        Ok(result)
+    }
+
+    fn delete_locked(
+        &self,
+        conversation_id: &str,
+        slug: &str,
+    ) -> ArtifactResult<ArtifactDeleteResult> {
         let conversation_id = validate_conversation_id(conversation_id)?;
         let key = conversation_key(&conversation_id)?;
         let slug = normalize_slug(slug)?;
         let mut manifest = self.load_manifest_locked(&conversation_id)?;
-        if manifest.artifacts.remove(&slug).is_none() {
-            return Err(ArtifactError::not_found("artifact was not found"));
+        let artifact = manifest
+            .artifacts
+            .get(&slug)
+            .cloned()
+            .ok_or_else(|| ArtifactError::not_found("artifact was not found"))?;
+        let undo_token = self.next_delete_token_locked(&conversation_id, &slug)?;
+        let trash_dir = self.deleted_artifact_dir(&undo_token);
+        let record = DeletedArtifactRecord {
+            schema_version: ARTIFACT_SCHEMA_VERSION,
+            undo_token: undo_token.clone(),
+            conversation_id,
+            conversation_key: key.clone(),
+            slug: slug.clone(),
+            deleted_at: now_iso_timestamp(),
+            artifact,
+        };
+        write_json_atomic(&trash_dir.join("record.json"), &record)?;
+        if let Err(error) = fs::rename(self.artifact_dir(&key, &slug), trash_dir.join("artifact")) {
+            let _ = fs::remove_dir_all(&trash_dir);
+            return Err(ArtifactError::store_unavailable(error.to_string()));
         }
-        let artifact_dir = self.artifact_dir(&key, &slug);
-        match fs::remove_dir_all(&artifact_dir) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(ArtifactError::store_unavailable(error.to_string())),
-        }
+        manifest.artifacts.remove(&slug);
         self.save_manifest_locked(&key, &manifest)?;
-        self.rebuild_index_locked()?;
         Ok(ArtifactDeleteResult {
             deleted: true,
             deleted_count: 1,
+            undo_token: Some(undo_token),
         })
+    }
+
+    pub fn restore_deleted(
+        &self,
+        conversation_id: &str,
+        slug: &str,
+        undo_token: Option<&str>,
+    ) -> ArtifactResult<Artifact> {
+        let _guard = self.write_lock()?;
+        let artifact = self.restore_deleted_locked(conversation_id, slug, undo_token)?;
+        self.rebuild_index_locked()?;
+        Ok(artifact)
+    }
+
+    fn restore_deleted_locked(
+        &self,
+        conversation_id: &str,
+        slug: &str,
+        undo_token: Option<&str>,
+    ) -> ArtifactResult<Artifact> {
+        let conversation_id = validate_conversation_id(conversation_id)?;
+        let key = conversation_key(&conversation_id)?;
+        let slug = normalize_slug(slug)?;
+        let undo_token = match undo_token {
+            Some(token) => validate_undo_token(token)?,
+            None => self
+                .latest_delete_token_locked(&conversation_id, &slug)?
+                .ok_or_else(|| ArtifactError::not_found("deleted artifact was not found"))?,
+        };
+        let trash_dir = self.deleted_artifact_dir(&undo_token);
+        let record = self.load_deleted_record_locked(&undo_token)?;
+        if record.conversation_id != conversation_id
+            || record.slug != slug
+            || record.conversation_key != key
+        {
+            return Err(ArtifactError::not_found("deleted artifact was not found"));
+        }
+        let mut manifest = self.load_manifest_locked(&conversation_id)?;
+        if manifest.artifacts.contains_key(&slug) {
+            return Err(ArtifactError::conflict(
+                "artifact slug already exists; cannot restore deleted artifact",
+            ));
+        }
+        let destination = self.artifact_dir(&key, &slug);
+        if destination.exists() {
+            return Err(ArtifactError::conflict(
+                "artifact content directory already exists; cannot restore deleted artifact",
+            ));
+        }
+        fs::create_dir_all(self.conversation_dir(&key))
+            .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
+        fs::rename(trash_dir.join("artifact"), &destination)
+            .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
+        manifest.artifacts.insert(slug.clone(), record.artifact);
+        self.save_manifest_locked(&key, &manifest)?;
+        match fs::remove_dir_all(&trash_dir) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                log::warn!("failed to clean restored artifact trash directory: {error}");
+            }
+        }
+        self.get_from_manifest_locked(&manifest, &key, &slug, None)
+    }
+
+    pub fn restore_deleted_many(
+        &self,
+        targets: &[ArtifactBulkTarget],
+    ) -> ArtifactResult<ArtifactBulkResult> {
+        let _guard = self.write_lock()?;
+        let mut index_dirty = false;
+        let items = targets
+            .iter()
+            .map(|target| {
+                match self.restore_deleted_locked(
+                    &target.conversation_id,
+                    &target.slug,
+                    target.undo_token.as_deref(),
+                ) {
+                    Ok(_artifact) => {
+                        index_dirty = true;
+                        ArtifactBulkItemResult::success_for_target(target)
+                    }
+                    Err(error) => ArtifactBulkItemResult::failure_for_target(target, error),
+                }
+            })
+            .collect();
+        if index_dirty {
+            self.rebuild_index_locked()?;
+        }
+        Ok(ArtifactBulkResult::from_items(items))
+    }
+
+    pub fn purge_deleted(
+        &self,
+        conversation_id: &str,
+        slug: &str,
+        undo_token: &str,
+    ) -> ArtifactResult<ArtifactDeleteResult> {
+        let _guard = self.write_lock()?;
+        let conversation_id = validate_conversation_id(conversation_id)?;
+        let slug = normalize_slug(slug)?;
+        let undo_token = validate_undo_token(undo_token)?;
+        let record = self.load_deleted_record_locked(&undo_token)?;
+        if record.conversation_id != conversation_id || record.slug != slug {
+            return Err(ArtifactError::not_found("deleted artifact was not found"));
+        }
+        let trash_dir = self.deleted_artifact_dir(&undo_token);
+        match fs::remove_dir_all(&trash_dir) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(ArtifactError::not_found("deleted artifact was not found"));
+            }
+            Err(error) => return Err(ArtifactError::store_unavailable(error.to_string())),
+        }
+        Ok(ArtifactDeleteResult {
+            deleted: true,
+            deleted_count: 1,
+            undo_token: None,
+        })
+    }
+
+    pub fn export_many(
+        &self,
+        targets: &[ArtifactBulkTarget],
+        destination_dir: &Path,
+    ) -> ArtifactResult<ArtifactBulkResult> {
+        fs::create_dir_all(destination_dir)
+            .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
+        let items = targets
+            .iter()
+            .map(|target| {
+                let export_result = self
+                    .get(&target.conversation_id, &target.slug, target.version)
+                    .and_then(|artifact| {
+                        let destination = destination_dir.join(export_filename(&artifact.summary)?);
+                        export_artifact_to(artifact, &destination)
+                    });
+                match export_result {
+                    Ok(result) => {
+                        let mut item = ArtifactBulkItemResult::success_for_target(target);
+                        item.path = Some(result.path);
+                        item.content_hash = Some(result.content_hash);
+                        item.content_bytes = Some(result.content_bytes);
+                        item
+                    }
+                    Err(error) => ArtifactBulkItemResult::failure_for_target(target, error),
+                }
+            })
+            .collect();
+        Ok(ArtifactBulkResult::from_items(items))
     }
 
     pub fn delete_conversation(
@@ -342,6 +545,7 @@ impl ArtifactStore {
         Ok(ArtifactDeleteResult {
             deleted: deleted_count > 0,
             deleted_count,
+            undo_token: None,
         })
     }
 
@@ -538,193 +742,97 @@ impl ArtifactStore {
         self.artifact_dir(key, slug)
             .join(format!("v{version:04}.txt"))
     }
-}
 
-impl ManifestArtifact {
-    fn summary(&self, conversation_id: &str) -> ArtifactSummary {
-        ArtifactSummary {
-            conversation_id: conversation_id.to_string(),
-            slug: self.slug.clone(),
-            title: self.title.clone(),
-            kind: self.kind.clone(),
-            version: self.current_version,
-            content_hash: self.content_hash.clone(),
-            created_at: self.created_at.clone(),
-            updated_at: self.updated_at.clone(),
-            content_bytes: self.content_bytes,
-        }
+    fn trash_dir(&self) -> PathBuf {
+        self.inner.root.join("trash")
     }
 
-    fn summary_for_version(
+    fn deleted_artifact_dir(&self, undo_token: &str) -> PathBuf {
+        self.trash_dir().join(undo_token)
+    }
+
+    fn deleted_record_path(&self, undo_token: &str) -> PathBuf {
+        self.deleted_artifact_dir(undo_token).join("record.json")
+    }
+
+    fn load_deleted_record_locked(
+        &self,
+        undo_token: &str,
+    ) -> ArtifactResult<DeletedArtifactRecord> {
+        let undo_token = validate_undo_token(undo_token)?;
+        let contents =
+            fs::read_to_string(self.deleted_record_path(&undo_token)).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    ArtifactError::not_found("deleted artifact was not found")
+                } else {
+                    ArtifactError::store_unavailable(error.to_string())
+                }
+            })?;
+        let record = serde_json::from_str::<DeletedArtifactRecord>(&contents)
+            .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
+        if record.schema_version != ARTIFACT_SCHEMA_VERSION {
+            return Err(ArtifactError::store_unavailable(
+                "deleted artifact record schema version is not supported",
+            ));
+        }
+        Ok(record)
+    }
+
+    fn latest_delete_token_locked(
         &self,
         conversation_id: &str,
-        version: u32,
-    ) -> ArtifactResult<ArtifactSummary> {
-        if version == self.current_version {
-            return Ok(self.summary(conversation_id));
+        slug: &str,
+    ) -> ArtifactResult<Option<String>> {
+        let mut latest: Option<DeletedArtifactRecord> = None;
+        match fs::read_dir(self.trash_dir()) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = entry
+                        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
+                    let Some(token) = entry.file_name().to_str().map(str::to_string) else {
+                        continue;
+                    };
+                    let Ok(record) = self.load_deleted_record_locked(&token) else {
+                        continue;
+                    };
+                    if record.conversation_id != conversation_id || record.slug != slug {
+                        continue;
+                    }
+                    if latest
+                        .as_ref()
+                        .is_none_or(|current| record.deleted_at > current.deleted_at)
+                    {
+                        latest = Some(record);
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(ArtifactError::store_unavailable(error.to_string())),
         }
-        let version_summary = self
-            .versions
-            .iter()
-            .find(|entry| entry.version == version)
-            .ok_or_else(|| ArtifactError::not_found("artifact version was not found"))?;
-        Ok(ArtifactSummary {
-            conversation_id: conversation_id.to_string(),
-            slug: self.slug.clone(),
-            title: self.title.clone(),
-            kind: self.kind.clone(),
-            version,
-            content_hash: version_summary.content_hash.clone(),
-            created_at: self.created_at.clone(),
-            updated_at: version_summary.created_at.clone(),
-            content_bytes: version_summary.content_bytes,
-        })
+        Ok(latest.map(|record| record.undo_token))
     }
-}
 
-fn normalized_title(title: Option<&str>, slug: &str) -> String {
-    title
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| slug.to_string())
-}
-
-fn validate_content_size(content: &str) -> ArtifactResult<()> {
-    if content.len() > MAX_ARTIFACT_CONTENT_BYTES {
-        return Err(ArtifactError::too_large(format!(
-            "artifact content must be at most {MAX_ARTIFACT_CONTENT_BYTES} bytes"
-        )));
-    }
-    Ok(())
-}
-
-fn export_content_for_artifact(artifact: &Artifact) -> ArtifactResult<String> {
-    match artifact.summary.kind {
-        ArtifactKind::React => compile_react_artifact(ReactCompileInput {
-            content: artifact.content.clone(),
-        })
-        .map(|result| result.document),
-        _ => Ok(artifact.content.clone()),
-    }
-}
-
-fn validate_export_destination(kind: &ArtifactKind, destination: &Path) -> ArtifactResult<()> {
-    if destination.as_os_str().is_empty() || destination.file_name().is_none() {
-        return Err(ArtifactError::export_denied(
-            "artifact export destination must include a file name",
-        ));
-    }
-    if destination.is_dir() {
-        return Err(ArtifactError::export_denied(
-            "artifact export destination must be a file path",
-        ));
-    }
-    let extension = destination
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(str::to_ascii_lowercase)
-        .ok_or_else(|| {
-            ArtifactError::export_denied("artifact export destination must have a file extension")
-        })?;
-    let allowed = match kind {
-        ArtifactKind::Html => matches!(extension.as_str(), "html" | "htm"),
-        ArtifactKind::Markdown => matches!(extension.as_str(), "md" | "markdown"),
-        ArtifactKind::Text => matches!(extension.as_str(), "txt" | "text"),
-        ArtifactKind::Json => extension == "json",
-        ArtifactKind::Svg => extension == "svg",
-        ArtifactKind::React => matches!(extension.as_str(), "html" | "htm"),
-    };
-    if allowed {
-        Ok(())
-    } else {
-        Err(ArtifactError::export_denied(
-            "artifact export destination extension does not match artifact kind",
+    fn next_delete_token_locked(
+        &self,
+        conversation_id: &str,
+        slug: &str,
+    ) -> ArtifactResult<String> {
+        let digest = sha256_hex(&format!("{conversation_id}:{slug}"));
+        let base = format!("d_{}_{}", unix_epoch_millis(), &digest[..12]);
+        for suffix in 0..1000 {
+            let token = if suffix == 0 {
+                base.clone()
+            } else {
+                format!("{base}_{suffix}")
+            };
+            if !self.deleted_artifact_dir(&token).exists() {
+                return Ok(token);
+            }
+        }
+        Err(ArtifactError::store_unavailable(
+            "could not allocate deleted artifact undo token",
         ))
     }
-}
-
-fn sha256_hex(content: &str) -> String {
-    let digest = Sha256::digest(content.as_bytes());
-    bytes_to_hex(&digest)
-}
-
-fn bytes_to_hex(bytes: &[u8]) -> String {
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        output.push(hex_nibble(byte >> 4));
-        output.push(hex_nibble(byte & 0x0f));
-    }
-    output
-}
-
-fn hex_nibble(value: u8) -> char {
-    match value {
-        0..=9 => (b'0' + value) as char,
-        10..=15 => (b'a' + (value - 10)) as char,
-        _ => '0',
-    }
-}
-
-fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> ArtifactResult<()> {
-    let contents = serde_json::to_vec_pretty(value)
-        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
-    let mut with_newline = contents;
-    with_newline.push(b'\n');
-    write_atomic(path, &with_newline)
-}
-
-fn write_atomic(path: &Path, bytes: &[u8]) -> ArtifactResult<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| ArtifactError::store_unavailable("artifact path has no parent"))?;
-    fs::create_dir_all(parent)
-        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
-    let mut temp = tempfile::NamedTempFile::new_in(parent)
-        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
-    temp.write_all(bytes)
-        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
-    temp.flush()
-        .map_err(|error| ArtifactError::store_unavailable(error.to_string()))?;
-    temp.persist(path)
-        .map_err(|error| ArtifactError::store_unavailable(error.error.to_string()))?;
-    Ok(())
-}
-
-fn now_iso_timestamp() -> String {
-    let millis = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    epoch_millis_to_iso_utc(millis)
-}
-
-fn epoch_millis_to_iso_utc(epoch_millis: u128) -> String {
-    let total_seconds = (epoch_millis / 1_000) as i64;
-    let milliseconds = epoch_millis % 1_000;
-    let days = total_seconds.div_euclid(86_400);
-    let seconds_of_day = total_seconds.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days);
-    let hour = seconds_of_day / 3_600;
-    let minute = (seconds_of_day % 3_600) / 60;
-    let second = seconds_of_day % 60;
-
-    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{milliseconds:03}Z")
-}
-
-fn civil_from_days(days_since_unix_epoch: i64) -> (i64, i64, i64) {
-    let days = days_since_unix_epoch + 719_468;
-    let era = if days >= 0 { days } else { days - 146_096 } / 146_097;
-    let day_of_era = days - era * 146_097;
-    let year_of_era =
-        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
-    let year = year_of_era + era * 400;
-    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
-    let month_index = (5 * day_of_year + 2) / 153;
-    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
-    let month = month_index + if month_index < 10 { 3 } else { -9 };
-    let year = year + if month <= 2 { 1 } else { 0 };
-    (year, month, day)
 }
 
 #[cfg(test)]

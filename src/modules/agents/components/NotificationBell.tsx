@@ -277,8 +277,8 @@ export function NotificationBell({
           title="Agent status"
         >
           <HugeiconsIcon
+            data-icon="inline-start"
             icon={Notification01Icon}
-            size={16}
             strokeWidth={1.75}
           />
           {badge > 0 ? (

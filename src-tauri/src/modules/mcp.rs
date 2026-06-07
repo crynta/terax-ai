@@ -3,7 +3,7 @@ use std::env;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::AppHandle;
 
 use crate::modules::capabilities::ApprovalPolicy;
@@ -232,6 +232,50 @@ impl McpState {
         }
         tools.sort_by(|left, right| left.qualified_name.cmp(&right.qualified_name));
         Ok(tools)
+    }
+
+    pub fn tool_descriptor(
+        &self,
+        qualified_name: &str,
+    ) -> Result<Option<McpToolDescriptor>, String> {
+        let (server_id, tool_key) = parse_qualified_tool_name(qualified_name)?;
+        let connection = {
+            let connections = self
+                .connections
+                .lock()
+                .map_err(|error| format!("MCP registry lock failed: {error}"))?;
+            connections.get(&server_id).cloned()
+        };
+        let Some(connection) = connection else {
+            return Ok(None);
+        };
+        let mut tool = connection
+            .public_tools()?
+            .into_iter()
+            .find(|tool| tool.qualified_name == qualified_name);
+        if let Some(tool) = tool.as_mut() {
+            self.apply_tool_preference(tool);
+            return Ok(Some(tool.clone()));
+        }
+        let Some(preference) = self.tool_preference(qualified_name) else {
+            return Ok(None);
+        };
+        if preference.approval_policy == ApprovalPolicy::Deny || !preference.model_visible {
+            return Ok(None);
+        }
+        let status = connection.status()?;
+        Ok(Some(McpToolDescriptor {
+            server_id,
+            server_name: status.server_name,
+            name: tool_key,
+            qualified_name: qualified_name.to_string(),
+            description: "MCP tool from saved policy preference".to_string(),
+            input_schema: json!({ "type": "object", "properties": {}, "required": [] }),
+            model_visible: true,
+            approval_policy: preference.approval_policy,
+            risk_level: McpToolRiskLevel::Medium,
+            risk_reasons: vec!["Tool metadata was unavailable during policy check".to_string()],
+        }))
     }
 
     pub fn server_statuses(&self) -> Result<Vec<McpServerStatus>, String> {

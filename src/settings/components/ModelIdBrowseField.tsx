@@ -36,6 +36,8 @@ type ModelIdBrowseFieldProps = {
   endpointId?: string;
   apiKey?: string | null;
   inputClassName?: string;
+  inputLabelledBy?: string;
+  name?: string;
 };
 
 export function ModelIdBrowseField({
@@ -49,6 +51,8 @@ export function ModelIdBrowseField({
   endpointId,
   apiKey,
   inputClassName,
+  inputLabelledBy,
+  name,
 }: ModelIdBrowseFieldProps) {
   const [open, setOpen] = useState(false);
   const canBrowse = !!baseURL.trim();
@@ -83,6 +87,9 @@ export function ModelIdBrowseField({
   return (
     <div className="flex flex-1 gap-1.5">
       <Input
+        name={name}
+        autoComplete="off"
+        aria-labelledby={inputLabelledBy}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onBlur={() => commit(value)}
@@ -98,14 +105,19 @@ export function ModelIdBrowseField({
             disabled={!canBrowse}
             className="h-8 gap-1.5 px-2.5 text-[11px]"
             title="Browse models available on this endpoint"
+            aria-label="Browse models available on this endpoint"
           >
-            <HugeiconsIcon icon={Search01Icon} size={12} strokeWidth={1.8} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Search01Icon}
+              strokeWidth={1.8}
+            />
             Browse
           </Button>
         </PopoverTrigger>
         <PopoverContent
           align="end"
-          className="w-[22rem] gap-0 overflow-hidden rounded-3xl border border-border/60 p-0 shadow-xl"
+          className="w-[22rem] gap-0 overflow-hidden rounded-lg border border-border/60 p-0 shadow-xl"
         >
           <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
             <span className="min-w-0">
@@ -122,14 +134,15 @@ export function ModelIdBrowseField({
               onClick={() => void refresh({ force: true })}
               disabled={status === "loading"}
               title="Refresh models"
+              aria-label="Refresh models"
               className="text-muted-foreground"
             >
               {status === "loading" ? (
-                <Spinner className="size-3" />
+                <Spinner data-icon="inline-start" />
               ) : (
                 <HugeiconsIcon
+                  data-icon="inline-start"
                   icon={Refresh01Icon}
-                  size={12}
                   strokeWidth={1.8}
                 />
               )}
@@ -225,7 +238,7 @@ function Message({ text, tone }: { text: string; tone: "muted" | "error" }) {
   return (
     <div
       className={cn(
-        "m-2 rounded-2xl border px-3 py-3 text-[11px] leading-relaxed",
+        "m-2 rounded-lg border px-3 py-3 text-[11px] leading-relaxed",
         tone === "error"
           ? "border-destructive/20 bg-destructive/5 text-destructive/80"
           : "border-border/50 bg-muted/30 text-muted-foreground",

@@ -5,14 +5,7 @@ import CheckmarkCircle01Icon from "@hugeicons/core-free-icons/CheckmarkCircle01I
 import CopyIcon from "@hugeicons/core-free-icons/CopyIcon";
 import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  createContext,
-  memo,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { createContext, memo, use, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/modules/ai/store/chatStore";
@@ -69,7 +62,7 @@ export type ChatCodeBlockProps = {
 };
 
 export function ChatCodeBlock({ code, lang }: ChatCodeBlockProps) {
-  const streaming = useContext(StreamingCtx);
+  const streaming = use(StreamingCtx);
   const label = normalizeLangLabel(lang ?? "");
 
   if (streaming) {
@@ -243,8 +236,8 @@ function RunInTerminalButton({ command }: { command: string }) {
       title="Run in active terminal"
     >
       <HugeiconsIcon
+        data-icon="inline-start"
         icon={sent ? TerminalIcon : ArrowRight01Icon}
-        size={11}
         strokeWidth={1.75}
       />
       <span>{sent ? "Sent" : "Run"}</span>
@@ -279,8 +272,8 @@ function CopyButton({ text }: { text: string }) {
       aria-label="Copy code"
     >
       <HugeiconsIcon
+        data-icon="inline-start"
         icon={copied ? CheckmarkCircle01Icon : CopyIcon}
-        size={11}
         strokeWidth={1.75}
       />
     </Button>

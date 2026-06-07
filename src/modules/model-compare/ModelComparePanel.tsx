@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { artifactsNative } from "@/modules/artifacts/lib/native";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { SidebarPanelFrame, SidebarPanelScrollRegion } from "@/modules/sidebar";
 import { saveModelCompareArtifact } from "./lib/artifacts";
 import {
   aggregateModelCompareScores,
@@ -31,17 +32,12 @@ import {
 } from "./lib/modelCompareHistory";
 import { modelCompareHistoryNative } from "./lib/native";
 import {
-  ModelCompareHistorySection,
-  ModelCompareResultsSection,
-  ModelCompareScoreboard,
-} from "./ModelCompareRunSections";
-import { ModelCompareSetupSections } from "./ModelCompareSetupSections";
-import {
   buildCompareLocalConfig,
   probeModelCompareModel,
   runModelComparePane,
 } from "./lib/runModelCompare";
 import {
+  appendModelComparePaneDeltaForRun,
   candidateById,
   copyText,
   DEFAULT_JUDGE_RUBRIC,
@@ -52,19 +48,28 @@ import {
   modelCompareRunCanTie,
   modelCompareRunCanVote,
   normalizeSelection,
-  patchModelComparePaneForRun,
-  appendModelComparePaneDeltaForRun,
   type ProbeUiState,
+  patchModelComparePaneForRun,
   probeStateFromResult,
   promptCompareCandidates,
   promptVariantsFromRun,
   readRunHistory,
   SAMPLE_PROMPT,
   selectionIdsFromRun,
-  shouldClearModelCompareHistory,
   winnerLabel,
   writeRunHistory,
 } from "./ModelComparePanelUtils";
+import { ModelCompareClearHistoryDialog } from "./ModelCompareClearHistoryDialog";
+import {
+  ModelCompareHistorySection,
+  ModelCompareResultsSection,
+  ModelCompareScoreboard,
+} from "./ModelCompareRunSections";
+import {
+  ModelCompareSetupProvider,
+  ModelCompareSetupSections,
+} from "./ModelCompareSetupSections";
+
 export {
   appendModelComparePaneDeltaForRun,
   modelCompareErrorMessage,
@@ -83,6 +88,12 @@ type ModelComparePanelProps = {
     slug?: string | null,
   ) => void;
 };
+
+function reportModelCompareHistoryError(action: string, error: unknown): void {
+  toast.error(`Model compare history ${action} failed`, {
+    description: modelCompareErrorMessage(error),
+  });
+}
 
 export function ModelComparePanel({
   activeCwd = null,
@@ -123,6 +134,7 @@ export function ModelComparePanel({
   const [probing, setProbing] = useState(false);
   const [judging, setJudging] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [clearHistoryDialogOpen, setClearHistoryDialogOpen] = useState(false);
   const [judgeModelId, setJudgeModelId] = useState<string>("");
   const [judgeRubric, setJudgeRubric] = useState(DEFAULT_JUDGE_RUBRIC);
   const [probeResults, setProbeResults] = useState<
@@ -133,6 +145,11 @@ export function ModelComparePanel({
   );
   const abortControllersRef = useRef<AbortController[]>([]);
   const activeExecutionRunIdRef = useRef<string | null>(null);
+  const currentRunRef = useRef<ModelCompareRun | null>(null);
+
+  useEffect(() => {
+    currentRunRef.current = run;
+  }, [run]);
 
   const candidates = useMemo(
     () =>
@@ -245,10 +262,16 @@ export function ModelComparePanel({
           setRunHistory(nativeHistory);
           writeRunHistory(nativeHistory);
         } else if (localHistory.length > 0) {
-          void modelCompareHistoryNative.save(localHistory).catch(() => {});
+          void modelCompareHistoryNative
+            .save(localHistory)
+            .catch((error) =>
+              reportModelCompareHistoryError("migration save", error),
+            );
         }
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (!cancelled) reportModelCompareHistoryError("load", error);
+      });
     return () => {
       cancelled = true;
     };
@@ -265,7 +288,9 @@ export function ModelComparePanel({
     setRunHistory((current) => {
       const next = upsertModelCompareHistory(current, nextRun, Date.now());
       writeRunHistory(next);
-      void modelCompareHistoryNative.save(next).catch(() => {});
+      void modelCompareHistoryNative
+        .save(next)
+        .catch((error) => reportModelCompareHistoryError("save", error));
       return next;
     });
   }, []);
@@ -467,7 +492,7 @@ export function ModelComparePanel({
 
   const rerunPane = useCallback(
     async (paneId: string) => {
-      if (!run || run.vote || running) return;
+      if (!run || run.vote || running || judging) return;
       const pane = run.panes.find((item) => item.id === paneId);
       if (!pane) return;
       const controller = new AbortController();
@@ -484,7 +509,7 @@ export function ModelComparePanel({
         }
       }
     },
-    [executePane, run, running],
+    [executePane, judging, run, running],
   );
 
   const probeSelected = useCallback(async () => {
@@ -548,10 +573,16 @@ export function ModelComparePanel({
   );
 
   const clearHistory = useCallback(() => {
-    if (!shouldClearModelCompareHistory()) return;
+    setClearHistoryDialogOpen(true);
+  }, []);
+
+  const confirmClearHistory = useCallback(() => {
+    setClearHistoryDialogOpen(false);
     setRunHistory([]);
     writeRunHistory([]);
-    void modelCompareHistoryNative.clear().catch(() => {});
+    void modelCompareHistoryNative
+      .clear()
+      .catch((error) => reportModelCompareHistoryError("clear", error));
   }, []);
 
   const copyAll = useCallback(async () => {
@@ -627,6 +658,7 @@ export function ModelComparePanel({
     const currentRun = run;
     if (
       !currentRun ||
+      judging ||
       !modelCompareRunCanJudge(currentRun, running) ||
       !judgeModelId
     )
@@ -647,23 +679,31 @@ export function ModelComparePanel({
         judgeModelId,
         rubric,
       );
-      setRun(applyModelCompareEvaluation(currentRun, evaluation));
+      if (currentRunRef.current?.id !== currentRun.id) {
+        toast.error("Judge result ignored because the compare run changed.");
+        return;
+      }
+      setRun((latest) =>
+        latest?.id === currentRun.id
+          ? applyModelCompareEvaluation(latest, evaluation)
+          : latest,
+      );
       toast.success("Judge evaluation complete.");
     } catch (error) {
       toast.error(modelCompareErrorMessage(error));
     } finally {
       setJudging(false);
     }
-  }, [apiKeys, judgeModelId, judgeRubric, local, run, running]);
+  }, [apiKeys, judgeModelId, judgeRubric, judging, local, run, running]);
 
   const reveal = useCallback(() => {
-    if (running) return;
+    if (running || judging) return;
     setRun((current) => (current ? revealModelCompareRun(current) : current));
-  }, [running]);
+  }, [judging, running]);
 
   const vote = useCallback(
     (paneId: string | "tie") => {
-      if (running) return;
+      if (running || judging) return;
       setRun((current) => {
         if (!current || !modelCompareRunCanVote(current, false)) return current;
         return voteModelCompareRun(
@@ -673,11 +713,11 @@ export function ModelComparePanel({
         );
       });
     },
-    [running],
+    [judging, running],
   );
 
   const saveArtifact = useCallback(async () => {
-    if (!run || running) return;
+    if (!run || running || judging) return;
     setSaving(true);
     try {
       const artifact = await saveModelCompareArtifact(run, artifactsNative);
@@ -691,9 +731,10 @@ export function ModelComparePanel({
     } finally {
       setSaving(false);
     }
-  }, [onOpenArtifactWorkspace, run, running]);
+  }, [judging, onOpenArtifactWorkspace, run, running]);
 
   const busy = running || probing || judging;
+  const resultActionsLocked = running || judging;
   const unsupportedMode = compareMode === "research";
   const hasRunnablePrompt =
     compareMode === "prompts"
@@ -705,105 +746,118 @@ export function ModelComparePanel({
     hasRunnablePrompt &&
     !busy &&
     !unsupportedMode;
-  const canVote = modelCompareRunCanVote(run, running);
-  const canTie = modelCompareRunCanTie(run, running);
-  const canJudge = modelCompareRunCanJudge(run, running);
+  const canVote = modelCompareRunCanVote(run, resultActionsLocked);
+  const canTie = modelCompareRunCanTie(run, resultActionsLocked);
+  const canJudge = modelCompareRunCanJudge(run, resultActionsLocked);
   const hasDuplicateSelection =
     (compareMode === "models" || compareMode === "agent") &&
     new Set(selectedIds).size !== selectedIds.length;
 
   return (
-    <aside
-      aria-label="Model compare"
-      className="flex h-full min-h-0 flex-col bg-card/80 text-foreground"
-    >
-      <div className="border-b border-border/60 px-3 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <HugeiconsIcon
-                aria-hidden="true"
-                focusable="false"
-                icon={GitCompareIcon}
-                size={16}
-                strokeWidth={2}
-              />
-              <span>Model Compare</span>
+    <>
+      <SidebarPanelFrame aria-label="Model compare" className="text-foreground">
+        <div className="border-b border-border/60 px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <HugeiconsIcon
+                  aria-hidden="true"
+                  focusable="false"
+                  icon={GitCompareIcon}
+                  size={16}
+                  strokeWidth={2}
+                />
+                <span>Model Compare</span>
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Blind 2-4 models with a tool-free default.
+              </p>
             </div>
-            <p className="mt-0.5 text-[11px] text-muted-foreground">
-              Blind 2-4 models with a tool-free default.
-            </p>
+            <Badge variant="secondary" className="shrink-0 text-[10px]">
+              SOTA
+            </Badge>
           </div>
-          <Badge variant="secondary" className="shrink-0 text-[10px]">
-            SOTA
-          </Badge>
         </div>
-      </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        <ModelCompareSetupSections
-          compareMode={compareMode}
-          setCompareMode={setCompareMode}
-          unsupportedMode={unsupportedMode}
-          prompt={prompt}
-          setPrompt={setPrompt}
-          promptVariants={promptVariants}
-          setPromptVariants={setPromptVariants}
-          copyPrompt={copyPrompt}
-          copyPromptVariant={copyPromptVariant}
-          candidates={candidates}
-          selectedIds={selectedIds}
-          selectedCandidates={selectedCandidates}
-          updateSelection={updateSelection}
-          removeModel={removeModel}
-          addModel={addModel}
-          probeResults={probeResults}
-          hasDuplicateSelection={hasDuplicateSelection}
-          blind={blind}
-          setBlind={setBlind}
-          parallel={parallel}
-          setParallel={setParallel}
-          canStart={canStart}
-          running={running}
-          start={start}
-          probeCandidateCount={probeCandidates.length}
-          busy={busy}
-          probing={probing}
-          probeSelected={probeSelected}
-          stop={stop}
-          run={run}
-          copyAll={copyAll}
-          copyWinner={copyWinner}
-          saving={saving}
-          saveArtifact={saveArtifact}
-          canJudge={canJudge}
-          judgeModelId={judgeModelId}
-          setJudgeModelId={setJudgeModelId}
-          judging={judging}
-          judgeRun={judgeRun}
-          judgeRubric={judgeRubric}
-          setJudgeRubric={setJudgeRubric}
-        />
+        <SidebarPanelScrollRegion
+          className="flex-1"
+          viewportClassName="px-3 py-3"
+        >
+          <ModelCompareSetupProvider
+            state={{
+              blind,
+              busy,
+              canJudge,
+              canStart,
+              compareMode,
+              hasDuplicateSelection,
+              judgeModelId,
+              judgeRubric,
+              judging,
+              parallel,
+              probing,
+              probeCandidateCount: probeCandidates.length,
+              probeResults,
+              prompt,
+              promptVariants,
+              run,
+              running,
+              saving,
+              selectedCandidates,
+              selectedIds,
+              unsupportedMode,
+            }}
+            actions={{
+              addModel,
+              copyAll,
+              copyPrompt,
+              copyPromptVariant,
+              copyWinner,
+              judgeRun,
+              probeSelected,
+              removeModel,
+              saveArtifact,
+              setBlind,
+              setCompareMode,
+              setJudgeModelId,
+              setJudgeRubric,
+              setParallel,
+              setPrompt,
+              setPromptVariants,
+              start,
+              stop,
+              updateSelection,
+            }}
+            meta={{ candidates }}
+          >
+            <ModelCompareSetupSections />
+          </ModelCompareSetupProvider>
 
-        <ModelCompareResultsSection
-          run={run}
-          running={running}
-          canVote={canVote}
-          canTie={canTie}
-          onReveal={reveal}
-          onRerunPane={rerunPane}
-          onCopyPane={copyPane}
-          onVote={vote}
-        />
+          <ModelCompareResultsSection
+            run={run}
+            running={resultActionsLocked}
+            canVote={canVote}
+            canTie={canTie}
+            onReveal={reveal}
+            onRerunPane={rerunPane}
+            onCopyPane={copyPane}
+            onVote={vote}
+          />
 
-        <ModelCompareScoreboard scores={scores} />
+          <ModelCompareScoreboard scores={scores} />
 
-        <ModelCompareHistorySection
-          runHistory={runHistory}
-          onClearHistory={clearHistory}
-          onOpenHistoryEntry={openHistoryEntry}
-        />
-      </div>
-    </aside>
+          <ModelCompareHistorySection
+            runHistory={runHistory}
+            onClearHistory={clearHistory}
+            onOpenHistoryEntry={openHistoryEntry}
+          />
+        </SidebarPanelScrollRegion>
+      </SidebarPanelFrame>
+      <ModelCompareClearHistoryDialog
+        open={clearHistoryDialogOpen}
+        onOpenChange={setClearHistoryDialogOpen}
+        onConfirm={confirmClearHistory}
+      />
+    </>
   );
 }

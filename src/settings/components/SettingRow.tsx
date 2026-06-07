@@ -1,30 +1,55 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldTitle,
+} from "@/components/ui/field";
 import { cn } from "@/lib/utils";
+
+export type SettingRowControlIds = {
+  descriptionId?: string;
+  labelId: string;
+};
 
 type Props = {
   title: ReactNode;
   description?: string;
-  children: React.ReactNode;
+  children: ReactNode | ((ids: SettingRowControlIds) => ReactNode);
   className?: string;
 };
 
 export function SettingRow({ title, description, children, className }: Props) {
+  const generatedId = useId();
+  const labelId = `${generatedId}-label`;
+  const descriptionId = description ? `${generatedId}-description` : undefined;
+  const control =
+    typeof children === "function"
+      ? children({ labelId, descriptionId })
+      : children;
+
   return (
-    <div
+    <Field
+      orientation="horizontal"
       className={cn(
         "flex items-start justify-between gap-4 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5",
         className,
       )}
     >
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-[12.5px] font-medium">{title}</span>
+      <FieldContent className="min-w-0 gap-0.5">
+        <FieldTitle id={labelId} className="text-[12.5px] font-medium">
+          {title}
+        </FieldTitle>
         {description ? (
-          <span className="text-[10.5px] leading-relaxed text-muted-foreground">
+          <FieldDescription
+            id={descriptionId}
+            className="text-[10.5px] leading-relaxed text-muted-foreground"
+          >
             {description}
-          </span>
+          </FieldDescription>
         ) : null}
-      </div>
-      <div className="flex shrink-0 items-center">{children}</div>
-    </div>
+      </FieldContent>
+      <div className="flex shrink-0 items-center">{control}</div>
+    </Field>
   );
 }

@@ -21,9 +21,27 @@ describe("FileExplorer", () => {
       />,
     );
 
+    expect(html).toContain(
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden",
+    );
     expect(html).toContain('aria-label="Search files"');
     expect(html).toContain('aria-label="New file"');
     expect(html).toContain('aria-label="New folder"');
     expect(html).toContain('aria-label="Refresh"');
+  });
+
+  it("bounds the empty workspace state inside the sidebar slot", () => {
+    const html = renderToStaticMarkup(
+      <FileExplorer
+        ref={createRef<FileExplorerHandle>()}
+        rootPath={null}
+        onOpenFile={() => {}}
+      />,
+    );
+
+    expect(html).toContain("No current directory");
+    expect(html).toContain(
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden",
+    );
   });
 });

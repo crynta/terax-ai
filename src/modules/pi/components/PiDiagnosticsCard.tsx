@@ -88,7 +88,6 @@ function IssueAction({
         <HugeiconsIcon
           data-icon="inline-start"
           icon={Settings01Icon}
-          size={11}
           strokeWidth={1.75}
         />
       ) : null}
@@ -211,12 +210,11 @@ export function PiDiagnosticsCard({
             onClick={onRefresh}
           >
             {isRefreshing ? (
-              <Spinner className="size-2.5" />
+              <Spinner data-icon="inline-start" />
             ) : (
               <HugeiconsIcon
                 data-icon="inline-start"
                 icon={Refresh01Icon}
-                size={11}
                 strokeWidth={1.75}
               />
             )}
@@ -238,7 +236,6 @@ export function PiDiagnosticsCard({
               icon={
                 copyStatus === "copied" ? CheckmarkCircle01Icon : Copy01Icon
               }
-              size={11}
               strokeWidth={1.75}
             />
             {copyStatusLabel(copyStatus, "Copy")}
@@ -254,7 +251,6 @@ export function PiDiagnosticsCard({
               <HugeiconsIcon
                 data-icon="inline-start"
                 icon={Settings01Icon}
-                size={11}
                 strokeWidth={1.75}
               />
               Settings

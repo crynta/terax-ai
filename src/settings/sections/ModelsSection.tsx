@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   type CustomEndpoint,
   compatModelIdForEndpoint,
   DEFAULT_MODEL_ID,
@@ -47,17 +57,29 @@ import {
   LocalProviderCard,
 } from "./ModelsSectionProviders";
 import {
-  type KeysMap,
-  type LocalConfig,
-  LOCAL_META,
-  Label,
   isLocalProvider,
+  type KeysMap,
+  Label,
+  LOCAL_META,
+  type LocalConfig,
 } from "./ModelsSectionShared";
+
+function providerLabel(id: ProviderId): string {
+  return PROVIDERS.find((provider) => provider.id === id)?.label ?? id;
+}
+
+type PendingModelsDestructiveAction =
+  | { kind: "provider-key"; provider: ProviderId; label: string }
+  | { kind: "endpoint-key"; endpointId: string; name: string }
+  | { kind: "endpoint"; endpointId: string; name: string }
+  | { kind: "provider"; provider: ProviderId; label: string };
 
 export function ModelsSection() {
   const [keys, setKeys] = useState<KeysMap | null>(null);
   const [epKeys, setEpKeys] = useState<CustomEndpointKeys>({});
   const [adding, setAdding] = useState<Set<ProviderId>>(new Set());
+  const [pendingDestructiveAction, setPendingDestructiveAction] =
+    useState<PendingModelsDestructiveAction | null>(null);
 
   const defaultModel = usePreferencesStore((s) => s.defaultModelId);
   const piAuthMode = usePreferencesStore((s) => s.piAuthMode);
@@ -84,28 +106,55 @@ export function ModelsSection() {
     void getAllCustomEndpointKeys(customEndpoints).then(setEpKeys);
   }, [customEndpoints]);
 
-  const onSaveKey = async (provider: ProviderId, value: string) => {
+  const saveProviderKey = async (provider: ProviderId, value: string) => {
     await setKey(provider, value);
     setKeys((prev) => (prev ? { ...prev, [provider]: value } : prev));
     await emitKeysChanged();
   };
 
-  const onClearKey = async (provider: ProviderId) => {
+  const clearProviderKey = async (provider: ProviderId) => {
     await clearKey(provider);
     setKeys((prev) => (prev ? { ...prev, [provider]: null } : prev));
     await emitKeysChanged();
   };
 
-  const onSaveEndpointKey = async (endpointId: string, value: string) => {
+  const onSaveKey = async (provider: ProviderId, value: string) => {
+    await saveProviderKey(provider, value);
+  };
+
+  const onClearKey = (provider: ProviderId) => {
+    setPendingDestructiveAction({
+      kind: "provider-key",
+      provider,
+      label: providerLabel(provider),
+    });
+  };
+
+  const saveEndpointKey = async (endpointId: string, value: string) => {
     await setCustomEndpointKey(endpointId, value);
     setEpKeys((prev) => ({ ...prev, [endpointId]: value }));
     await emitKeysChanged();
   };
 
-  const onClearEndpointKey = async (endpointId: string) => {
+  const clearEndpointKey = async (endpointId: string) => {
     await clearCustomEndpointKey(endpointId);
     setEpKeys((prev) => ({ ...prev, [endpointId]: null }));
     await emitKeysChanged();
+  };
+
+  const onSaveEndpointKey = async (endpointId: string, value: string) => {
+    await saveEndpointKey(endpointId, value);
+  };
+
+  const onClearEndpointKey = (endpointId: string) => {
+    const endpointName =
+      customEndpoints.find((endpoint) => endpoint.id === endpointId)?.name ||
+      "custom endpoint";
+    setPendingDestructiveAction({
+      kind: "endpoint-key",
+      endpointId,
+      name: endpointName,
+    });
   };
 
   const addCustomEndpoint = async () => {
@@ -128,8 +177,19 @@ export function ModelsSection() {
     );
   };
 
-  const removeCustomEndpoint = async (id: string) => {
-    await clearCustomEndpointKey(id);
+  const removeCustomEndpoint = (id: string) => {
+    const endpointName =
+      customEndpoints.find((endpoint) => endpoint.id === id)?.name ||
+      "custom endpoint";
+    setPendingDestructiveAction({
+      kind: "endpoint",
+      endpointId: id,
+      name: endpointName,
+    });
+  };
+
+  const removeCustomEndpointNow = async (id: string) => {
+    await clearEndpointKey(id);
     setEpKeys((prev) => {
       const next = { ...prev };
       delete next[id];
@@ -278,18 +338,26 @@ export function ModelsSection() {
   );
 
   const removeProvider = (id: ProviderId) => {
+    setPendingDestructiveAction({
+      kind: "provider",
+      provider: id,
+      label: providerLabel(id),
+    });
+  };
+
+  const removeProviderNow = (id: ProviderId) => {
     if (id === "openrouter") {
       void setOpenrouterModelId("");
-      void onClearKey(id);
+      void clearProviderKey(id);
     } else if (isLocalProvider(id)) {
       const cfg = localConfig(id);
       if (cfg) {
         void cfg.setModelId("");
         if (id === "openai-compatible") void cfg.setBaseURL("");
       }
-      if (id === "openai-compatible") void onClearKey(id);
+      if (id === "openai-compatible") void clearProviderKey(id);
     } else {
-      void onClearKey(id);
+      void clearProviderKey(id);
     }
     setAdding((prev) => {
       const next = new Set(prev);
@@ -300,6 +368,51 @@ export function ModelsSection() {
 
   const addProvider = (id: ProviderId) => {
     setAdding((prev) => new Set(prev).add(id));
+  };
+
+  const pendingDestructiveCopy = (() => {
+    if (!pendingDestructiveAction) return null;
+    switch (pendingDestructiveAction.kind) {
+      case "provider-key":
+        return {
+          title: "Remove API key?",
+          description: `This removes the saved ${pendingDestructiveAction.label} API key from your keychain.`,
+          action: "Remove key",
+        };
+      case "endpoint-key":
+        return {
+          title: "Remove endpoint API key?",
+          description: `This removes the saved API key for ${pendingDestructiveAction.name}.`,
+          action: "Remove key",
+        };
+      case "endpoint":
+        return {
+          title: "Remove custom endpoint?",
+          description: `This removes ${pendingDestructiveAction.name}, clears its key, and removes dependent favorites, recents, and active selections.`,
+          action: "Remove endpoint",
+        };
+      case "provider":
+        return {
+          title: "Remove provider?",
+          description: `This removes ${pendingDestructiveAction.label}, clears its saved key, and resets provider settings.`,
+          action: "Remove provider",
+        };
+    }
+  })();
+
+  const confirmPendingDestructiveAction = () => {
+    const action = pendingDestructiveAction;
+    setPendingDestructiveAction(null);
+    if (!action) return;
+    if (action.kind === "provider-key") {
+      void clearProviderKey(action.provider);
+    } else if (action.kind === "endpoint-key") {
+      void clearEndpointKey(action.endpointId);
+    } else if (action.kind === "endpoint") {
+      void removeCustomEndpointNow(action.endpointId);
+    } else {
+      removeProviderNow(action.provider);
+    }
   };
 
   return (
@@ -386,6 +499,32 @@ export function ModelsSection() {
           </div>
         )}
       </div>
+      <AlertDialog
+        open={pendingDestructiveAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDestructiveAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDestructiveCopy?.title ?? "Confirm removal"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDestructiveCopy?.description ?? ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={confirmPendingDestructiveAction}
+            >
+              {pendingDestructiveCopy?.action ?? "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

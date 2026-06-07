@@ -14,7 +14,6 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
         "executeNativeTool",
         "createTeraxNativeToolDefinitions",
         "Terax Rust",
-        "create_artifact",
       ],
     ],
     [
@@ -24,8 +23,15 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
         "executeNativeTool",
         "createTeraxNativeToolDefinitions",
         "Terax Rust",
-        "create_artifact",
       ],
+    ],
+    [
+      "sidecars/pi-host/fallback-capability-manifest.generated.js",
+      ["create_artifact", "edit_artifact", "read_artifact", "list_artifacts"],
+    ],
+    [
+      "sidecars/pi-host/dist/fallback-capability-manifest.generated.js",
+      ["create_artifact", "edit_artifact", "read_artifact", "list_artifacts"],
     ],
     [
       "sidecars/pi-host/host.js",
@@ -86,14 +92,14 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
       ["nativeTools.execute", "round-trips Rust native tool requests"],
     ],
     [
-      "sidecars/pi-host/sessions.test.js",
+      "sidecars/pi-host/session-approvals.test.js",
       [
-        "rust-mediated",
         "delegates read-only faux tool calls to the Rust native tool bridge",
         "requires approval before running shell faux tool calls",
         "PI_APPROVAL_NOT_FOUND",
       ],
     ],
+    ["sidecars/pi-host/session-utils.test.js", ["rust-mediated"]],
     [
       "sidecars/pi-host/protocol.test.js",
       ["rust-mediated", "sessions.tool.respond"],
@@ -110,21 +116,27 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
     ],
     [
       "src-tauri/src/modules/pi/host.rs",
+      ["native_tool_sessions", "NativeToolContext"],
+    ],
+    [
+      "src-tauri/src/modules/pi/host/bridge.rs",
       [
         "nativeTools.execute",
         "execute_verified_native_tool",
         "native_tool_sessions",
-        "NativeToolContext",
-        "host_handles_reverse_native_tool_requests",
       ],
     ],
     [
+      "src-tauri/src/modules/pi/host/tests.rs",
+      ["host_handles_reverse_native_tool_requests"],
+    ],
+    [
       "src-tauri/src/modules/pi/mod.rs",
-      [
-        "PiSessionToolRespondResult",
-        "pi_session_tool_respond",
-        "session_tool_respond_with_resource_dir",
-      ],
+      ["PiSessionToolRespondResult", "pi_session_tool_respond"],
+    ],
+    [
+      "src-tauri/src/modules/pi/state/compat.rs",
+      ["session_tool_respond_with_resource_dir"],
     ],
     ["src-tauri/src/lib.rs", ["pi::pi_session_tool_respond"]],
     [
@@ -145,7 +157,7 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
       ],
     ],
     ["src/modules/pi/lib/native.test.ts", ["responds to Pi tool approvals"]],
-    ["src/modules/pi/lib/sessions.ts", ["PiSessionToolRespondResult"]],
+    ["src/modules/pi/lib/sessions/types.ts", ["PiSessionToolRespondResult"]],
     ["src/modules/pi/PiPanel.tsx", ["respondToToolApproval", "onToolApproval"]],
     [
       "src/modules/pi/components/PiTranscript.tsx",
@@ -201,7 +213,7 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
       ],
     ],
     [
-      "sidecars/pi-host/sessions.test.js",
+      "sidecars/pi-host/session-approvals.test.js",
       ["while tools are disabled", "Method not found"],
     ],
     [

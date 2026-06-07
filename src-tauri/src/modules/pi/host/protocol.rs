@@ -93,6 +93,8 @@ pub(super) struct HostRequest {
 #[derive(Deserialize)]
 pub(super) struct PingResult {
     pub(super) pong: bool,
+    #[serde(rename = "protocolVersion")]
+    pub(super) protocol_version: Option<u32>,
 }
 
 #[derive(Deserialize)]

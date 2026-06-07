@@ -284,8 +284,7 @@ export function modelCompareErrorMessage(error: unknown): string {
 }
 
 export function shouldClearModelCompareHistory(
-  confirm: (message: string) => boolean = (message) =>
-    typeof window === "undefined" ? true : window.confirm(message),
+  confirm: (message: string) => boolean = () => false,
 ): boolean {
   return confirm(
     "Clear all saved model compare history? This removes local and native history and cannot be undone.",

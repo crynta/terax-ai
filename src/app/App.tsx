@@ -1,5 +1,5 @@
 import type { SearchAddon } from "@xterm/addon-search";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, MotionConfig } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -49,6 +49,10 @@ import {
   AppFloatingSurfaces,
   AppWorkspaceSurface,
 } from "./AppWorkspaceSurface";
+import {
+  piSessionActivationPlan,
+  resolveCodeSurfaceAfterWorkspaceClose,
+} from "./codeSurface";
 import { useAppActiveContext } from "./useAppActiveContext";
 import { useAppAiBootstrap } from "./useAppAiBootstrap";
 import { useAppAiSelection } from "./useAppAiSelection";
@@ -60,16 +64,13 @@ import { useAppManagedAgents } from "./useAppManagedAgents";
 import { useAppShortcuts } from "./useAppShortcuts";
 import { useAppSourceControl } from "./useAppSourceControl";
 import { useAppSurfaceHandles } from "./useAppSurfaceHandles";
+import { useAppTabLifecycle } from "./useAppTabLifecycle";
 import { useAppThemeEditing } from "./useAppThemeEditing";
 import { useAppWorkspaceBootstrap } from "./useAppWorkspaceBootstrap";
-import { useSidebarManager } from "./useSidebarManager";
-import { useAppTabLifecycle } from "./useAppTabLifecycle";
-import { useWorkflowTabPersistence } from "./useWorkflowTabPersistence";
-import {
-  piSessionActivationPlan,
-  resolveCodeSurfaceAfterWorkspaceClose,
-} from "./codeSurface";
 import { useCodeSurfaceManager } from "./useCodeSurfaceManager";
+import { useSidebarManager } from "./useSidebarManager";
+import { useWorkflowTabPersistence } from "./useWorkflowTabPersistence";
+
 function pathBasename(path: string | null | undefined): string | null {
   const cleaned = path?.replace(/[\\/]+$/, "");
   if (!cleaned) return null;
@@ -93,6 +94,7 @@ export default function App() {
     newPreviewTab,
     newMarkdownTab,
     openPiWorkspaceTab,
+    openArtifactHubTab,
     openArtifactWorkspaceTab,
     openAiDiffTab,
     closeAiDiffTab,
@@ -290,7 +292,8 @@ export default function App() {
     activeTab?.kind === "git-diff" || activeTab?.kind === "git-commit-file";
   const isGitHistoryTab = activeTab?.kind === "git-history";
   const isPiWorkspaceTab = activeTab?.kind === "pi-workspace";
-  const isArtifactTab = activeTab?.kind === "artifact";
+  const isArtifactTab =
+    activeTab?.kind === "artifact" || activeTab?.kind === "artifact-hub";
   const isWorkflowTab = activeTab?.kind === "workflow";
 
   useEffect(() => {
@@ -542,6 +545,10 @@ export default function App() {
     setChatFocusRequest,
   });
 
+  const openNewArtifactsTab = useCallback(() => {
+    openArtifactHubTab();
+  }, [openArtifactHubTab]);
+
   const handleLeafExit = useCallback(
     (leafId: number, _code: number) => {
       const all = tabsRef.current;
@@ -664,6 +671,7 @@ export default function App() {
         onOpenWorkflowPath: (path) => handleOpenFile(path, true),
       }}
       artifact={{
+        onOpenArtifact: openArtifactWorkspace,
         onSelectedSlugChange: (tabId, slug) =>
           updateTab(tabId, { selectedSlug: slug }),
       }}
@@ -681,6 +689,12 @@ export default function App() {
       <PiControllerProvider>
         <TooltipProvider>
           <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
+            <a
+              href="#main-content"
+              className="sr-only z-[100] rounded-md bg-background px-3 py-2 text-sm text-foreground shadow focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:ring-2 focus:ring-ring"
+            >
+              Skip to main content
+            </a>
             {!zenMode && (
               <Header
                 tabs={tabs}
@@ -690,6 +704,7 @@ export default function App() {
                 onNewPrivate={openNewPrivateTab}
                 onNewPreview={() => openPreviewTab("")}
                 onNewEditor={() => setNewEditorOpen(true)}
+                onNewArtifacts={openNewArtifactsTab}
                 onNewWorkflow={openNewWorkflowTab}
                 onNewGitGraph={openGitGraphFromContext}
                 onClose={handleClose}
@@ -712,7 +727,11 @@ export default function App() {
               />
             )}
 
-            <main className="zoom-content flex min-h-0 flex-1 flex-col">
+            <main
+              id="main-content"
+              tabIndex={-1}
+              className="zoom-content flex min-h-0 flex-1 flex-col focus:outline-none"
+            >
               <AppSidebars
                 primary={{
                   activeFilePath: explorerActiveFilePath,
@@ -737,6 +756,7 @@ export default function App() {
                 }}
                 secondary={{
                   activeView: secondarySidebarView,
+                  chatContext: activeCodeContext,
                   chatFocusRequest,
                   codeContext: codePanelContext,
                   codeSurface,
@@ -767,28 +787,28 @@ export default function App() {
                     </div>
 
                     {keysLoaded ? (
-                      <motion.div
+                      <div
                         data-ai-input-bar
-                        initial={false}
-                        animate={{
-                          height: panelOpen ? "auto" : 0,
-                          opacity: panelOpen ? 1 : 0,
-                        }}
-                        transition={{
-                          duration: 0.18,
-                          ease: [0.16, 1, 0.3, 1],
-                        }}
-                        className="overflow-hidden"
+                        className={`overflow-hidden ${panelOpen ? "" : "h-0"}`}
                         aria-hidden={!panelOpen}
+                        inert={panelOpen ? undefined : true}
                       >
-                        {hasComposer ? (
-                          <AiInputBar />
-                        ) : (
-                          <AiInputBarConnect
-                            onAdd={() => void openSettingsWindow("models")}
-                          />
-                        )}
-                      </motion.div>
+                        <div
+                          className={`transition-[opacity,transform] duration-150 ease-out ${
+                            panelOpen
+                              ? "translate-y-0 opacity-100"
+                              : "translate-y-1 opacity-0"
+                          }`}
+                        >
+                          {hasComposer ? (
+                            <AiInputBar />
+                          ) : (
+                            <AiInputBarConnect
+                              onAdd={() => void openSettingsWindow("models")}
+                            />
+                          )}
+                        </div>
+                      </div>
                     ) : null}
                   </div>
                 }
@@ -890,5 +910,9 @@ export default function App() {
     </ThemeProvider>
   );
 
-  return <AiComposerProvider>{shell}</AiComposerProvider>;
+  return (
+    <AiComposerProvider>
+      <MotionConfig reducedMotion="user">{shell}</MotionConfig>
+    </AiComposerProvider>
+  );
 }

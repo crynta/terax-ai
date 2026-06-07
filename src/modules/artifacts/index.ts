@@ -1,4 +1,8 @@
 export {
+  ArtifactHubPanel,
+  ArtifactHubPanelView,
+} from "@/modules/artifacts/ArtifactHubPanel";
+export {
   ArtifactWorkspacePanel,
   ArtifactWorkspacePanelView,
 } from "@/modules/artifacts/ArtifactWorkspacePanel";

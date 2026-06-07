@@ -1,7 +1,7 @@
 import {
   createContext,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -79,6 +79,20 @@ function resolveTheme(id: string, custom: Theme[]): Theme {
   );
 }
 
+function syncNativeThemeChrome(mode: "dark" | "light"): void {
+  const root = document.documentElement;
+  root.style.colorScheme = mode;
+  const computedBackground = getComputedStyle(root)
+    .getPropertyValue("--background")
+    .trim();
+  const fallback = mode === "dark" ? "#0a0a0a" : "#ffffff";
+  const themeColor = computedBackground || fallback;
+  root.style.backgroundColor = themeColor;
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", themeColor);
+}
+
 export function ThemeProvider({
   children,
   defaultMode = "system",
@@ -149,6 +163,7 @@ export function ThemeProvider({
     const root = document.documentElement;
     root.classList.remove("light", "dark");
     root.classList.add(resolvedMode);
+    syncNativeThemeChrome(resolvedMode);
   }, [resolvedMode]);
 
   const lastEditorPairRef = useRef<string | null>(null);
@@ -156,10 +171,12 @@ export function ThemeProvider({
     if (themeId === DEFAULT_THEME_ID) {
       clearTheme();
       lastEditorPairRef.current = null;
+      syncNativeThemeChrome(resolvedMode);
       return;
     }
     const theme = resolveTheme(themeId, customThemes);
     applyTheme(theme, resolvedMode);
+    syncNativeThemeChrome(resolvedMode);
     const editorPair = theme.editorTheme?.[resolvedMode];
     if (
       editorPair &&
@@ -197,7 +214,7 @@ export function ThemeProvider({
 }
 
 export function useTheme(): ThemeProviderState {
-  const ctx = useContext(ThemeProviderContext);
+  const ctx = use(ThemeProviderContext);
   if (!ctx) throw new Error("useTheme must be used within a <ThemeProvider>");
   return ctx;
 }

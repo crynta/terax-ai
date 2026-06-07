@@ -8,6 +8,7 @@ import {
 } from "@/components/ai-elements/conversation";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { statusBorderSurfaceClass, statusDotClass } from "@/lib/statusTone";
 import { cn } from "@/lib/utils";
 import {
   type AgentMeta,
@@ -61,6 +62,7 @@ const EMPTY_TOOL_ACTIVITY: AgentToolActivitySummary = {
   latestToolName: null,
   items: [],
 };
+const MAX_RENDERED_CHAT_MESSAGES = 80;
 
 function isToolPart(part: AnyPart): boolean {
   return part.type === "dynamic-tool" || part.type.startsWith("tool-");
@@ -175,8 +177,8 @@ function runReasonLabel(reason: AgentMeta["stopReason"]): string {
 
 function toolStatusClass(status: AgentToolActivityItem["status"]): string {
   if (status === "failed") return "bg-destructive";
-  if (status === "awaiting") return "bg-amber-500";
-  if (status === "running") return "bg-primary";
+  if (status === "awaiting") return statusDotClass("warning");
+  if (status === "running") return statusDotClass("active");
   return "bg-foreground/65";
 }
 
@@ -204,6 +206,12 @@ export function AiChatView({
   const markAgentRunPaused = useChatStore((s) => s.markAgentRunPaused);
   const showContinue =
     !isBusy && hitStepCap && lastMessage?.role === "assistant";
+  const hiddenMessageCount = Math.max(
+    0,
+    messages.length - MAX_RENDERED_CHAT_MESSAGES,
+  );
+  const renderedMessages =
+    hiddenMessageCount > 0 ? messages.slice(hiddenMessageCount) : messages;
 
   const onApproval = useCallback(
     (id: string, approved: boolean) =>
@@ -227,7 +235,17 @@ export function AiChatView({
   return (
     <Conversation>
       <ConversationContent className="gap-5 p-3">
-        {messages.map((m) => (
+        {hiddenMessageCount > 0 ? (
+          <div
+            role="note"
+            className="rounded-md border border-border/45 bg-card/55 px-3 py-2 text-xs text-muted-foreground"
+          >
+            Showing latest {renderedMessages.length.toLocaleString()} messages.
+            {hiddenMessageCount.toLocaleString()} older messages are retained in
+            chat history.
+          </div>
+        ) : null}
+        {renderedMessages.map((m) => (
           <RenderedMessage
             key={m.id}
             message={m}
@@ -367,11 +385,11 @@ export const AgentRunTimeline = memo(function AgentRunTimeline({
   const statusTone = error
     ? "bg-destructive"
     : awaitingApproval
-      ? "bg-amber-500"
+      ? statusDotClass("warning")
       : isBusy
-        ? "bg-primary"
+        ? statusDotClass("active")
         : meta.stopReason === "paused"
-          ? "bg-amber-500"
+          ? statusDotClass("warning")
           : meta.stopReason === "cancelled"
             ? "bg-muted-foreground"
             : "bg-foreground/65";
@@ -458,7 +476,12 @@ export const AgentRunTimeline = memo(function AgentRunTimeline({
               </span>
             ) : null}
             {activity.awaitingApproval > 0 ? (
-              <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 tabular-nums text-amber-600 dark:text-amber-300">
+              <span
+                className={cn(
+                  "rounded-md border px-1.5 py-0.5 tabular-nums",
+                  statusBorderSurfaceClass("warning"),
+                )}
+              >
                 {activity.awaitingApproval} needs approval
               </span>
             ) : null}
@@ -540,7 +563,12 @@ const CompactionNotice = memo(function CompactionNotice({
 }) {
   return (
     <div className="flex items-center gap-2 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1.5 text-[11px] text-muted-foreground">
-      <span className="size-1.5 shrink-0 rounded-full bg-amber-500/80" />
+      <span
+        className={cn(
+          "size-1.5 shrink-0 rounded-full opacity-80",
+          statusDotClass("warning"),
+        )}
+      />
       <span className="flex-1 truncate">
         Context compacted: {droppedCount} older tool result
         {droppedCount === 1 ? "" : "s"} elided to save tokens.

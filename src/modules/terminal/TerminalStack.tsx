@@ -91,6 +91,7 @@ export function TerminalStack({
               pointerEvents: tabVisible ? "auto" : "none",
             }}
             aria-hidden={!tabVisible}
+            inert={tabVisible ? undefined : true}
           >
             <PaneTreeView
               node={t.paneTree}

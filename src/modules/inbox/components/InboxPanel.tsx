@@ -10,6 +10,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { InboxRow, InboxScope } from "@/modules/inbox/lib/model";
+import { SidebarPanelFrame } from "@/modules/sidebar";
 
 export type InboxFilter = "all" | "unread" | InboxScope;
 
@@ -74,10 +75,7 @@ export function InboxPanel({
   );
 
   return (
-    <aside
-      aria-label="Inbox"
-      className="flex h-full min-w-0 flex-col bg-card/80 backdrop-blur [contain:layout_style]"
-    >
+    <SidebarPanelFrame aria-label="Inbox">
       <header className="flex min-h-10 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -193,6 +191,6 @@ export function InboxPanel({
           </div>
         </ScrollArea>
       )}
-    </aside>
+    </SidebarPanelFrame>
   );
 }

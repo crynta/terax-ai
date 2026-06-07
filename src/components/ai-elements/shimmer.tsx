@@ -1,7 +1,7 @@
 "use client";
 
 import type { MotionProps } from "motion/react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import type { CSSProperties, ElementType, JSX } from "react";
 import { memo, useMemo } from "react";
 import { cn } from "@/lib/utils";
@@ -38,13 +38,20 @@ const ShimmerComponent = ({
   duration = 2,
   spread = 2,
 }: TextShimmerProps) => {
-  const MotionComponent = getMotionComponent(
-    Component as keyof JSX.IntrinsicElements,
-  );
+  const shouldReduceMotion = useReducedMotion();
 
   const dynamicSpread = useMemo(
     () => (children?.length ?? 0) * spread,
     [children, spread],
+  );
+
+  if (shouldReduceMotion) {
+    const StaticComponent = Component;
+    return <StaticComponent className={className}>{children}</StaticComponent>;
+  }
+
+  const MotionComponent = getMotionComponent(
+    Component as keyof JSX.IntrinsicElements,
   );
 
   return (

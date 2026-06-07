@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
+import { diffTextClass } from "@/lib/statusTone";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   commitDiffKey,
@@ -280,12 +281,8 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
           <span className="truncate max-w-80 font-mono">{repoRoot}</span>
           {useFallback ? (
             <>
-              <span className="text-emerald-600 dark:text-emerald-400">
-                +{stats.added}
-              </span>
-              <span className="text-rose-600 dark:text-rose-400">
-                −{stats.removed}
-              </span>
+              <span className={diffTextClass("add")}>+{stats.added}</span>
+              <span className={diffTextClass("remove")}>−{stats.removed}</span>
             </>
           ) : null}
         </div>

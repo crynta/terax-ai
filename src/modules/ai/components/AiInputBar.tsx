@@ -68,6 +68,7 @@ function detectFileTrigger(value: string, caret: number): FileTrigger | null {
 
 export function AiInputBar() {
   const c = useComposer();
+  const { actions, meta, state } = c;
   const snippets = useSnippetsStore((s) => s.snippets);
   const workspaceRoot = useChatStore((s) => s.live.getWorkspaceRoot());
 
@@ -88,22 +89,22 @@ export function AiInputBar() {
   }, [fileTrigger]);
 
   useEffect(() => {
-    autoresize(c.textareaRef.current);
-  }, [c.value, c.textareaRef]);
+    autoresize(meta.textareaRef.current);
+  }, [state.value, meta.textareaRef]);
 
   const updateTrigger = () => {
-    const el = c.textareaRef.current;
+    const el = meta.textareaRef.current;
     if (!el) {
       setTrigger(null);
       setFileTrigger(null);
       return;
     }
     const caret = el.selectionStart ?? 0;
-    setTrigger(detectSnippetTrigger(c.value, caret));
-    setFileTrigger(detectFileTrigger(c.value, caret));
+    setTrigger(detectSnippetTrigger(state.value, caret));
+    setFileTrigger(detectFileTrigger(state.value, caret));
   };
 
-  useEffect(updateTrigger, [c.value, c.textareaRef]);
+  useEffect(updateTrigger, [state.value, meta.textareaRef]);
 
   const filteredItems = useMemo<PickerItem[]>(() => {
     if (!trigger) return [];
@@ -151,23 +152,23 @@ export function AiInputBar() {
 
   const onPickItem = (item: PickerItem) => {
     if (!trigger) return;
-    const before = c.value.slice(0, trigger.start);
-    const afterRaw = c.value.slice(trigger.end);
+    const before = state.value.slice(0, trigger.start);
+    const afterRaw = state.value.slice(trigger.end);
     let insert = "";
     if (item.kind === "snippet") {
       const needsSpace = afterRaw.length === 0 || !/^\s/.test(afterRaw);
       insert = `#${item.snippet.handle}${needsSpace ? " " : ""}`;
-      c.addSnippet(item.snippet);
+      actions.addSnippet(item.snippet);
     } else {
-      c.addCommand(item.command);
+      actions.addCommand(item.command);
     }
     const after =
       item.kind === "command" ? afterRaw.replace(/^\s+/, "") : afterRaw;
-    c.setValue(`${before}${insert}${after}`);
+    actions.setValue(`${before}${insert}${after}`);
     setTrigger(null);
     setActiveIndex(0);
     requestAnimationFrame(() => {
-      const el = c.textareaRef.current;
+      const el = meta.textareaRef.current;
       if (!el) return;
       const caret = before.length + insert.length;
       el.focus();
@@ -177,17 +178,17 @@ export function AiInputBar() {
 
   const onPickFile = async (filePath: string) => {
     if (!fileTrigger || !workspaceRoot) return;
-    const before = c.value.slice(0, fileTrigger.start);
-    const after = c.value.slice(fileTrigger.end);
-    c.setValue(`${before}${after}`);
+    const before = state.value.slice(0, fileTrigger.start);
+    const after = state.value.slice(fileTrigger.end);
+    actions.setValue(`${before}${after}`);
     setFileTrigger(null);
     setActiveIndex(0);
     const fullPath = workspaceRoot.endsWith("/")
       ? `${workspaceRoot}${filePath}`
       : `${workspaceRoot}/${filePath}`;
-    await c.attachFileByPath(fullPath);
+    await actions.attachFileByPath(fullPath);
     requestAnimationFrame(() => {
-      const el = c.textareaRef.current;
+      const el = meta.textareaRef.current;
       if (!el) return;
       el.focus();
       el.setSelectionRange(before.length, before.length);
@@ -204,9 +205,9 @@ export function AiInputBar() {
     if (it) onPickItem(it);
   };
 
-  const voiceLabel = c.voice.recording
+  const voiceLabel = meta.voice.recording
     ? "Listening…"
-    : c.voice.transcribing
+    : meta.voice.transcribing
       ? "Transcribing…"
       : null;
 
@@ -219,27 +220,27 @@ export function AiInputBar() {
         )}
       >
         <ChipsRow
-          files={c.files}
-          onRemoveFile={c.removeFile}
-          snippets={c.pickedSnippets}
+          files={state.files}
+          onRemoveFile={actions.removeFile}
+          snippets={state.pickedSnippets}
           onRemoveSnippet={(id) => {
-            const snip = c.pickedSnippets.find((s) => s.id === id);
-            c.removeSnippet(id);
+            const snip = state.pickedSnippets.find((s) => s.id === id);
+            actions.removeSnippet(id);
             if (!snip) return;
             const re = new RegExp(`(^|\\s)#${snip.handle}\\b ?`);
-            c.setValue((v) => v.replace(re, (_m, lead: string) => lead));
+            actions.setValue((v) => v.replace(re, (_m, lead: string) => lead));
           }}
-          commands={c.pickedCommands}
-          onRemoveCommand={(name) => c.removeCommand(name)}
+          commands={state.pickedCommands}
+          onRemoveCommand={(name) => actions.removeCommand(name)}
         />
 
         <Popover open={pickerOpen}>
           <PopoverAnchor asChild>
             <div className="flex items-start gap-2">
               <textarea
-                ref={c.textareaRef}
-                value={c.value}
-                onChange={(e) => c.setValue(e.target.value)}
+                ref={meta.textareaRef}
+                value={state.value}
+                onChange={(e) => actions.setValue(e.target.value)}
                 onKeyUp={updateTrigger}
                 onClick={updateTrigger}
                 onSelect={updateTrigger}
@@ -268,9 +269,9 @@ export function AiInputBar() {
                     if (e.key === "Escape") {
                       e.preventDefault();
                       if (fileTrigger) {
-                        const before = c.value.slice(0, fileTrigger.start);
-                        const after = c.value.slice(fileTrigger.end);
-                        c.setValue(`${before}${after}`);
+                        const before = state.value.slice(0, fileTrigger.start);
+                        const after = state.value.slice(fileTrigger.end);
+                        actions.setValue(`${before}${after}`);
                         setFileTrigger(null);
                       } else {
                         setTrigger(null);
@@ -280,14 +281,14 @@ export function AiInputBar() {
                   }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    c.submit();
+                    actions.submit();
                   }
                 }}
                 placeholder="Ask Terax anything   -   # for snippets and commands, @ for files"
                 rows={1}
                 className={cn(
                   "max-h-40 flex-1 resize-none bg-transparent text-[13px] leading-relaxed outline-none",
-                  "placeholder:text-muted-foreground/60",
+                  "placeholder:text-muted-foreground",
                 )}
               />
               <AgentSwitcher />
@@ -317,13 +318,13 @@ export function AiInputBar() {
           {voiceLabel && (
             <motion.div
               key={voiceLabel}
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.12 }}
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
               className="flex items-center gap-1.5 px-1 text-[11px] text-muted-foreground"
             >
-              {c.voice.recording ? (
+              {meta.voice.recording ? (
                 <span className="size-1.5 animate-pulse rounded-full bg-destructive" />
               ) : (
                 <Spinner className="size-3" />
@@ -378,8 +379,8 @@ function ChipsRow({
             <button
               type="button"
               onClick={() => onRemoveCommand(cmd.name)}
-              className="ml-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="Remove command"
+              className="ml-0.5 rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+              aria-label={`Remove command ${cmd.name}`}
             >
               <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
             </button>
@@ -406,8 +407,8 @@ function ChipsRow({
             <button
               type="button"
               onClick={() => onRemoveSnippet(s.id)}
-              className="ml-0.5 opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="Remove snippet"
+              className="ml-0.5 rounded-sm opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+              aria-label={`Remove snippet ${s.handle}`}
             >
               <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
             </button>
@@ -424,7 +425,13 @@ function ChipsRow({
             className="group flex items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 py-0.5 text-[11px]"
           >
             {f.kind === "image" && f.url ? (
-              <img src={f.url} alt="" className="size-4 rounded object-cover" />
+              <img
+                src={f.url}
+                alt=""
+                width={16}
+                height={16}
+                className="size-4 rounded object-cover"
+              />
             ) : f.kind === "selection" ? (
               <HugeiconsIcon
                 icon={f.source === "editor" ? CodeIcon : TerminalIcon}
@@ -448,8 +455,8 @@ function ChipsRow({
             <button
               type="button"
               onClick={() => onRemoveFile(f.id)}
-              className="ml-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-              aria-label="Remove"
+              className="ml-0.5 rounded-sm text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+              aria-label={`Remove file ${f.name}`}
             >
               <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2} />
             </button>
@@ -489,7 +496,7 @@ export function AiInputBarConnect({ onAdd }: { onAdd: () => void }) {
           OS keychain.
         </span>
         <Button size="xs" onClick={onAdd}>
-          <HugeiconsIcon icon={Key01Icon} />
+          <HugeiconsIcon data-icon="inline-start" icon={Key01Icon} />
           Connect provider
         </Button>
       </div>

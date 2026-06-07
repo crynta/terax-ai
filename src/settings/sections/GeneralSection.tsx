@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -133,15 +134,21 @@ export function GeneralSection() {
             <button
               key={o.id}
               type="button"
+              aria-pressed={mode === o.id}
               onClick={() => setMode(o.id)}
               className={cn(
-                "group flex h-20 flex-col items-center justify-center gap-1.5 rounded-lg border bg-card transition-all",
+                "group flex h-20 flex-col items-center justify-center gap-1.5 rounded-lg border bg-card transition-[background-color,border-color,box-shadow]",
                 mode === o.id
                   ? "border-foreground/60 ring-1 ring-foreground/20"
                   : "border-border/60 hover:border-border",
               )}
             >
-              <HugeiconsIcon icon={o.icon} size={18} strokeWidth={1.5} />
+              <HugeiconsIcon
+                icon={o.icon}
+                size={18}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
               <span className="text-[11.5px]">{o.label}</span>
             </button>
           ))}
@@ -164,6 +171,7 @@ export function GeneralSection() {
             </span>
           </div>
           <Slider
+            aria-label="UI zoom level"
             value={[zoomLevel]}
             min={ZOOM_MIN}
             max={ZOOM_MAX}
@@ -214,19 +222,27 @@ export function GeneralSection() {
           title="Vim mode"
           description="Enable Vim keybindings in the code editor."
         >
-          <Switch
-            checked={vimMode}
-            onCheckedChange={(v) => void setVimMode(v)}
-          />
+          {({ labelId, descriptionId }) => (
+            <Switch
+              aria-labelledby={labelId}
+              aria-describedby={descriptionId}
+              checked={vimMode}
+              onCheckedChange={(v) => void setVimMode(v)}
+            />
+          )}
         </SettingRow>
         <SettingRow
           title="Auto save"
           description="Automatically save files after a delay when changes are detected."
         >
-          <Switch
-            checked={editorAutoSave}
-            onCheckedChange={(v) => void setEditorAutoSave(v)}
-          />
+          {({ labelId, descriptionId }) => (
+            <Switch
+              aria-labelledby={labelId}
+              aria-describedby={descriptionId}
+              checked={editorAutoSave}
+              onCheckedChange={(v) => void setEditorAutoSave(v)}
+            />
+          )}
         </SettingRow>
         {editorAutoSave && (
           <AutoSaveDelayInput
@@ -242,10 +258,14 @@ export function GeneralSection() {
           title="Show hidden files"
           description="Include dot-prefixed files and folders (.env, .gitignore, .config) in the file explorer and search."
         >
-          <Switch
-            checked={showHidden}
-            onCheckedChange={(v) => void setShowHidden(v)}
-          />
+          {({ labelId, descriptionId }) => (
+            <Switch
+              aria-labelledby={labelId}
+              aria-describedby={descriptionId}
+              checked={showHidden}
+              onCheckedChange={(v) => void setShowHidden(v)}
+            />
+          )}
         </SettingRow>
       </div>
 
@@ -278,87 +298,128 @@ export function GeneralSection() {
           }
           description="Hardware-accelerated rendering. Turn off if text shows corruption or blank tiles."
         >
-          <Switch
-            checked={terminalWebglEnabled}
-            onCheckedChange={(v) => void setTerminalWebglEnabled(v)}
-          />
+          {({ labelId, descriptionId }) => (
+            <Switch
+              aria-labelledby={labelId}
+              aria-describedby={descriptionId}
+              checked={terminalWebglEnabled}
+              onCheckedChange={(v) => void setTerminalWebglEnabled(v)}
+            />
+          )}
         </SettingRow>
         <SettingRow
           title="Font family"
           description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
         >
-          <input
-            type="text"
-            value={terminalFontFamily}
-            placeholder="Auto-detect"
-            onChange={(e) => void setTerminalFontFamily(e.target.value)}
-            className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
-          />
+          {({ labelId, descriptionId }) => (
+            <Input
+              type="text"
+              name="terminal-font-family"
+              autoComplete="off"
+              aria-labelledby={labelId}
+              aria-describedby={descriptionId}
+              value={terminalFontFamily}
+              placeholder="Auto-detect"
+              onChange={(e) => void setTerminalFontFamily(e.target.value)}
+              className="h-8 w-48 border-border bg-background px-2.5 text-[12px] focus-visible:ring-2"
+            />
+          )}
         </SettingRow>
         <SettingRow
           title="Letter spacing"
           description="Extra horizontal space between characters (px). Use negative values to tighten Nerd Fonts."
         >
-          <Select
-            value={String(terminalLetterSpacing)}
-            onValueChange={(v) => void setTerminalLetterSpacing(Number(v))}
-          >
-            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LETTER_SPACINGS.map((v) => (
-                <SelectItem key={v} value={String(v)} className="text-[12px]">
-                  {v > 0 ? `+${v}` : v} px
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {({ labelId, descriptionId }) => (
+            <Select
+              value={String(terminalLetterSpacing)}
+              onValueChange={(v) => void setTerminalLetterSpacing(Number(v))}
+            >
+              <SelectTrigger
+                aria-labelledby={labelId}
+                aria-describedby={descriptionId}
+                size="sm"
+                className="h-8 w-28 text-[12px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {LETTER_SPACINGS.map((v) => (
+                    <SelectItem
+                      key={v}
+                      value={String(v)}
+                      className="text-[12px]"
+                    >
+                      {v > 0 ? `+${v}` : v} px
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
         </SettingRow>
         <SettingRow title="Font size" description="Terminal text size.">
-          <Select
-            value={String(terminalFontSize)}
-            onValueChange={(v) => void setTerminalFontSize(Number(v))}
-          >
-            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TERMINAL_FONT_SIZES.map((size) => (
-                <SelectItem
-                  key={size}
-                  value={String(size)}
-                  className="text-[12px]"
-                >
-                  {size} px
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {({ labelId, descriptionId }) => (
+            <Select
+              value={String(terminalFontSize)}
+              onValueChange={(v) => void setTerminalFontSize(Number(v))}
+            >
+              <SelectTrigger
+                aria-labelledby={labelId}
+                aria-describedby={descriptionId}
+                size="sm"
+                className="h-8 w-28 text-[12px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {TERMINAL_FONT_SIZES.map((size) => (
+                    <SelectItem
+                      key={size}
+                      value={String(size)}
+                      className="text-[12px]"
+                    >
+                      {size} px
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
         </SettingRow>
         <SettingRow
           title="Scrollback"
           description="Lines of history kept per terminal. Higher uses more RAM (~3 KB / line)."
         >
-          <Select
-            value={String(terminalScrollback)}
-            onValueChange={(v) => void setTerminalScrollback(Number(v))}
-          >
-            <SelectTrigger size="sm" className="h-8 w-36 text-[12px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TERMINAL_SCROLLBACK_PRESETS.map((lines) => (
-                <SelectItem
-                  key={lines}
-                  value={String(lines)}
-                  className="text-[12px]"
-                >
-                  {lines.toLocaleString()} lines
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {({ labelId, descriptionId }) => (
+            <Select
+              value={String(terminalScrollback)}
+              onValueChange={(v) => void setTerminalScrollback(Number(v))}
+            >
+              <SelectTrigger
+                aria-labelledby={labelId}
+                aria-describedby={descriptionId}
+                size="sm"
+                className="h-8 w-36 text-[12px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {TERMINAL_SCROLLBACK_PRESETS.map((lines) => (
+                    <SelectItem
+                      key={lines}
+                      value={String(lines)}
+                      className="text-[12px]"
+                    >
+                      {lines.toLocaleString()} lines
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
         </SettingRow>
       </div>
 
@@ -368,10 +429,14 @@ export function GeneralSection() {
           title="Agent and Pi notifications"
           description="Alert when Claude Code, Codex, Terax, or Pi needs attention, finishes, or fails. Desktop notification when Terax is unfocused, in-app otherwise."
         >
-          <Switch
-            checked={agentNotifications}
-            onCheckedChange={(v) => void setAgentNotifications(v)}
-          />
+          {({ labelId, descriptionId }) => (
+            <Switch
+              aria-labelledby={labelId}
+              aria-describedby={descriptionId}
+              checked={agentNotifications}
+              onCheckedChange={(v) => void setAgentNotifications(v)}
+            />
+          )}
         </SettingRow>
       </div>
 
@@ -382,19 +447,27 @@ export function GeneralSection() {
             title="Launch at login"
             description="Open Terax automatically when you sign in."
           >
-            <Switch
-              checked={autostart}
-              onCheckedChange={(v) => void onToggleAutostart(v)}
-            />
+            {({ labelId, descriptionId }) => (
+              <Switch
+                aria-labelledby={labelId}
+                aria-describedby={descriptionId}
+                checked={autostart}
+                onCheckedChange={(v) => void onToggleAutostart(v)}
+              />
+            )}
           </SettingRow>
           <SettingRow
             title="Restore window position & size"
             description="Reopen the main window where you left it. Applies on next launch."
           >
-            <Switch
-              checked={restoreWindowState}
-              onCheckedChange={(v) => void setRestoreWindowState(v)}
-            />
+            {({ labelId, descriptionId }) => (
+              <Switch
+                aria-labelledby={labelId}
+                aria-describedby={descriptionId}
+                checked={restoreWindowState}
+                onCheckedChange={(v) => void setRestoreWindowState(v)}
+              />
+            )}
           </SettingRow>
         </div>
       </div>
@@ -442,24 +515,31 @@ function AutoSaveDelayInput({
       title="Auto save delay"
       description="Delay before unsaved changes are saved automatically."
     >
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          min={AUTO_SAVE_MIN}
-          max={AUTO_SAVE_MAX}
-          step={AUTO_SAVE_STEP}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.currentTarget.blur();
-            }
-          }}
-          className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-        />
-        <span className="text-[11px] text-muted-foreground">ms</span>
-      </div>
+      {({ labelId, descriptionId }) => (
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            name="editor-auto-save-delay"
+            inputMode="numeric"
+            autoComplete="off"
+            aria-labelledby={labelId}
+            aria-describedby={descriptionId}
+            min={AUTO_SAVE_MIN}
+            max={AUTO_SAVE_MAX}
+            step={AUTO_SAVE_STEP}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }}
+            className="h-8 w-20 border-border bg-background px-2.5 text-right text-[12px] tabular-nums focus-visible:ring-2 [appearance:textfield] md:text-[12px] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
+          <span className="text-[11px] text-muted-foreground">ms</span>
+        </div>
+      )}
     </SettingRow>
   );
 }

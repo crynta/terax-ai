@@ -6,7 +6,7 @@ import type {
   WorkflowScreenPoint,
 } from "./WorkflowCanvasTypes";
 
-const workflowEdgeColor = "#3b82f6";
+const workflowEdgeColor = "var(--primary)";
 
 export function WorkflowFallbackEdgeLayer({
   document,

@@ -456,7 +456,11 @@ function BranchControls({
         variant="ghost"
         onClick={onPrevious}
       >
-        <HugeiconsIcon icon={ArrowLeft01Icon} size={11} strokeWidth={1.8} />
+        <HugeiconsIcon
+          data-icon="inline-start"
+          icon={ArrowLeft01Icon}
+          strokeWidth={1.8}
+        />
       </Button>
       <ButtonGroupText className="h-5 border-none bg-transparent px-1 text-[10px] text-muted-foreground shadow-none">
         Version {current + 1} of {total}
@@ -469,7 +473,11 @@ function BranchControls({
         variant="ghost"
         onClick={onNext}
       >
-        <HugeiconsIcon icon={ArrowRight01Icon} size={11} strokeWidth={1.8} />
+        <HugeiconsIcon
+          data-icon="inline-start"
+          icon={ArrowRight01Icon}
+          strokeWidth={1.8}
+        />
       </Button>
     </ButtonGroup>
   );
@@ -778,8 +786,8 @@ export function PiTranscript({
                 onClick={onPopOut}
               >
                 <HugeiconsIcon
+                  data-icon="inline-start"
                   icon={WindowsNewIcon}
-                  size={11}
                   strokeWidth={1.8}
                 />
               </Button>
@@ -795,8 +803,8 @@ export function PiTranscript({
                 onClick={onOpenWorkspace}
               >
                 <HugeiconsIcon
+                  data-icon="inline-start"
                   icon={FullscreenIcon}
-                  size={11}
                   strokeWidth={1.8}
                 />
               </Button>

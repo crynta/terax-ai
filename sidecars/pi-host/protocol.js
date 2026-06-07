@@ -9,6 +9,7 @@ import {
 } from "./protocol-schema.js";
 import {
   APPROVAL_TOOL_NAMES,
+  configureSession,
   createSession,
   deleteSession,
   ENABLED_TOOL_NAMES,
@@ -503,6 +504,11 @@ export async function handleJsonRpcLine(line) {
     case "sessions.create":
       return {
         response: await sessionResponse(request.id, createSession, params),
+        shutdown: false,
+      };
+    case "sessions.configure":
+      return {
+        response: await sessionResponse(request.id, configureSession, params),
         shutdown: false,
       };
     case "sessions.send":

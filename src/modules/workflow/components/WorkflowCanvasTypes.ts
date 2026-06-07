@@ -1,5 +1,5 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
 import type { Edge, Node } from "@xyflow/react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import type { WorkflowDiscoveredProviderModels } from "../lib/providerConfigUi";
 import type {
   WorkflowArtifact,

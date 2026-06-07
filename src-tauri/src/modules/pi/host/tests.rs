@@ -181,6 +181,34 @@ fn pending_responses_deliver_out_of_order_lines_by_id() {
 }
 
 #[test]
+fn host_rejects_protocol_mismatch_on_ping() {
+    let temp = tempdir().unwrap();
+    let script = temp.path().join("host.js");
+    fs::write(
+        &script,
+        r#"
+import { createInterface } from 'node:readline';
+const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+for await (const line of lines) {
+  const request = JSON.parse(line);
+  if (request.method === 'ping') {
+    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { pong: true, protocolVersion: 1 } })}\n`);
+  }
+}
+"#,
+    )
+    .unwrap();
+
+    let error =
+        match PiHost::spawn_inner(PathBuf::from("node"), script, Duration::from_secs(5), None) {
+            Ok(_) => panic!("host should reject a protocol mismatch"),
+            Err(error) => error,
+        };
+
+    assert!(error.contains("Unsupported Pi host protocol version: 1"));
+}
+
+#[test]
 fn host_matches_concurrent_out_of_order_responses_by_id() {
     let temp = tempdir().unwrap();
     let script = temp.path().join("host.js");
@@ -208,7 +236,7 @@ function resultFor(request) {
 for await (const line of lines) {
   const request = JSON.parse(line);
   if (request.method === 'ping') {
-    write({ jsonrpc: '2.0', id: request.id, result: { pong: true } });
+    write({ jsonrpc: '2.0', id: request.id, result: { pong: true, protocolVersion: request.params.protocolVersion } });
     continue;
   }
   if (request.method === 'shutdown') {
@@ -265,7 +293,7 @@ function write(envelope) {
 for await (const line of lines) {
   const request = JSON.parse(line);
   if (request.method === 'ping') {
-    write({ jsonrpc: '2.0', id: request.id, result: { pong: true } });
+    write({ jsonrpc: '2.0', id: request.id, result: { pong: true, protocolVersion: request.params.protocolVersion } });
     continue;
   }
   if (request.method === 'shutdown') {
@@ -416,7 +444,7 @@ function write(envelope) { process.stdout.write(`${JSON.stringify(envelope)}\n`)
 for await (const line of lines) {
   const request = JSON.parse(line);
   if (request.method === 'ping') {
-    write({ jsonrpc: '2.0', id: request.id, result: { pong: true } });
+    write({ jsonrpc: '2.0', id: request.id, result: { pong: true, protocolVersion: request.params.protocolVersion } });
     continue;
   }
   if (request.method === 'shutdown') {
@@ -446,6 +474,40 @@ for await (const line of lines) {
         events: []
       }
     });
+    continue;
+  }
+  if (request.method === 'sessions.configure') {
+    const tools = request.params.capabilityManifest?.tools ?? [];
+    const hasMcp = tools.some((tool) => tool.name === 'mcp__echo__say' && tool.approval === 'ask' && tool.modelVisible === true);
+    if (!hasMcp) {
+      write({ jsonrpc: '2.0', id: request.id, error: { code: -32602, message: 'missing configured MCP capability' } });
+      continue;
+    }
+    write({ jsonrpc: '2.0', id: request.id, result: { session: { id: request.params.sessionId } } });
+    continue;
+  }
+  if (request.method === 'sessions.send') {
+    if (request.params.capabilityManifest !== undefined) {
+      write({ jsonrpc: '2.0', id: request.id, error: { code: -32602, message: 'send must not carry capability manifest' } });
+      continue;
+    }
+    write({
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        accepted: true,
+        session: {
+          id: 'pi-mcp-manifest',
+          title: 'MCP manifest',
+          cwd,
+          status: 'running',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:01.000Z',
+          lastPrompt: request.params.prompt
+        },
+        events: []
+      }
+    });
   }
 }
 "#
@@ -471,6 +533,119 @@ for await (const line of lines) {
         .unwrap();
 
     assert_eq!(created.session.id, "pi-mcp-manifest");
+    let sent = host
+        .session_send(
+            "pi-mcp-manifest".to_string(),
+            "call mcp".to_string(),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    assert!(sent.accepted);
+    assert_eq!(sent.session.last_prompt.as_deref(), Some("call mcp"));
+    host.shutdown();
+}
+
+#[test]
+fn session_send_skips_unchanged_capability_configure() {
+    let temp = tempdir().unwrap();
+    let workspace = temp.path().join("workspace");
+    fs::create_dir(&workspace).unwrap();
+    let host_script = temp.path().join("host.js");
+    let cwd_json = serde_json::to_string(&workspace.to_string_lossy()).unwrap();
+    let source = r#"
+import { createInterface } from 'node:readline';
+const cwd = __CWD__;
+const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
+function write(envelope) { process.stdout.write(`${JSON.stringify(envelope)}\n`); }
+for await (const line of lines) {
+  const request = JSON.parse(line);
+  if (request.method === 'ping') {
+    write({ jsonrpc: '2.0', id: request.id, result: { pong: true, protocolVersion: request.params.protocolVersion } });
+    continue;
+  }
+  if (request.method === 'shutdown') {
+    write({ jsonrpc: '2.0', id: request.id, result: { ok: true } });
+    process.exit(0);
+  }
+  if (request.method === 'sessions.create') {
+    write({
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        session: {
+          id: 'pi-cache',
+          title: 'Cache',
+          cwd,
+          status: 'idle',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          lastPrompt: null
+        },
+        events: []
+      }
+    });
+    continue;
+  }
+  if (request.method === 'sessions.configure') {
+    write({ jsonrpc: '2.0', id: request.id, error: { code: -32602, message: 'unexpected configure' } });
+    continue;
+  }
+  if (request.method === 'sessions.send') {
+    write({
+      jsonrpc: '2.0',
+      id: request.id,
+      result: {
+        accepted: true,
+        session: {
+          id: 'pi-cache',
+          title: 'Cache',
+          cwd,
+          status: 'running',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:01.000Z',
+          lastPrompt: request.params.prompt
+        },
+        events: []
+      }
+    });
+  }
+}
+"#
+    .replace("__CWD__", &cwd_json);
+    fs::write(&host_script, source).unwrap();
+
+    let host = PiHost::spawn_inner(
+        PathBuf::from("node"),
+        host_script,
+        Duration::from_secs(5),
+        None,
+    )
+    .unwrap();
+    let created = host
+        .session_create(
+            Some("Cache".to_string()),
+            Some(workspace.to_string_lossy().into_owned()),
+            None,
+            None,
+            WorkspaceEnv::Local,
+        )
+        .unwrap();
+
+    for prompt in ["first", "second"] {
+        let sent = host
+            .session_send(
+                created.session.id.clone(),
+                prompt.to_string(),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(sent.session.last_prompt.as_deref(), Some(prompt));
+    }
+
     host.shutdown();
 }
 
@@ -602,6 +777,118 @@ fn native_bridge_allows_approved_ask_capability_once() {
 }
 
 #[test]
+fn native_bridge_allows_auto_mcp_capability_without_approval() {
+    let temp = tempdir().unwrap();
+    let workspace = temp.path().join("workspace");
+    fs::create_dir(&workspace).unwrap();
+    let script = temp.path().join("mcp-server.js");
+    fs::write(
+        &script,
+        r#"
+const readline = require('node:readline');
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+function write(message) { process.stdout.write(JSON.stringify(message) + '\n'); }
+(async () => {
+for await (const line of rl) {
+  const request = JSON.parse(line);
+  if (request.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'auto-test', version: '1.0.0' } } });
+  } else if (request.method === 'tools/list') {
+    write({ jsonrpc: '2.0', id: request.id, result: { tools: [{ name: 'query', description: 'Query docs', inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } }] } });
+  } else if (request.method === 'tools/call') {
+    write({ jsonrpc: '2.0', id: request.id, result: { content: [{ type: 'text', text: `query: ${request.params.arguments.query}` }], isError: false } });
+  }
+}
+})();
+"#,
+    )
+    .unwrap();
+    let sessions: NativeToolSessions = Arc::new(Mutex::new(HashMap::new()));
+    sessions.lock().unwrap().insert(
+        "pi-auto-mcp".to_string(),
+        NativeToolSession {
+            cwd: std::fs::canonicalize(&workspace).unwrap(),
+            workspace_env: WorkspaceEnv::Local,
+        },
+    );
+    let mcp_state = Arc::new(crate::modules::mcp::McpState::default());
+    mcp_state
+        .connect_stdio(crate::modules::mcp::McpServerConfig {
+            id: "auto".to_string(),
+            name: "Auto".to_string(),
+            transport: crate::modules::mcp::McpTransport::Stdio,
+            command: "node".to_string(),
+            args: vec![script.to_string_lossy().into_owned()],
+            cwd: Some(temp.path().to_string_lossy().into_owned()),
+            url: None,
+            oauth_token_env: None,
+            env: vec![],
+        })
+        .unwrap();
+    mcp_state.set_tool_preference(crate::modules::mcp::McpToolPreference {
+        qualified_name: "mcp__auto__query".to_string(),
+        model_visible: true,
+        approval_policy: crate::modules::capabilities::ApprovalPolicy::Auto,
+    });
+    let approvals = NativeToolApprovals::default();
+    let audit = crate::modules::capabilities::audit::CapabilityAuditLog::default();
+    let context = native_tools::NativeToolContext::with_mcp_state(Arc::clone(&mcp_state));
+
+    let result = execute_verified_native_tool_with_policy(
+        &sessions,
+        &approvals,
+        &audit,
+        NativeToolRequest {
+            session_id: "pi-auto-mcp".to_string(),
+            tool_call_id: "call-query".to_string(),
+            tool_name: "mcp__auto__query".to_string(),
+            cwd: workspace.to_string_lossy().into_owned(),
+            workspace_env: Some(WorkspaceEnv::Local),
+            input: json!({ "query": "hooks" }),
+        },
+        &context,
+    )
+    .unwrap();
+
+    assert_eq!(
+        serde_json::to_value(&result).unwrap()["content"][0]["text"],
+        "query: hooks"
+    );
+    let entries = audit.entries();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].tool_name, "mcp__auto__query");
+    assert!(!entries[0].approved);
+    assert!(entries[0].allowed);
+    assert_eq!(
+        entries[0].outcome,
+        crate::modules::capabilities::audit::CapabilityAuditOutcome::Succeeded
+    );
+
+    mcp_state.set_tool_preference(crate::modules::mcp::McpToolPreference {
+        qualified_name: "mcp__auto__query-docs".to_string(),
+        model_visible: true,
+        approval_policy: crate::modules::capabilities::ApprovalPolicy::Auto,
+    });
+    let error = execute_verified_native_tool_with_policy(
+        &sessions,
+        &approvals,
+        &audit,
+        NativeToolRequest {
+            session_id: "pi-auto-mcp".to_string(),
+            tool_call_id: "call-stale-query".to_string(),
+            tool_name: "mcp__auto__query-docs".to_string(),
+            cwd: workspace.to_string_lossy().into_owned(),
+            workspace_env: Some(WorkspaceEnv::Local),
+            input: json!({ "query": "hooks" }),
+        },
+        &context,
+    )
+    .unwrap_err();
+    assert!(error.contains("MCP tool not found"), "{error}");
+    assert!(!error.contains("unknown capability tool"), "{error}");
+}
+
+#[test]
 fn native_bridge_audits_blocked_and_successful_capability_calls() {
     let temp = tempdir().unwrap();
     let workspace = temp.path().join("workspace");
@@ -720,7 +1007,7 @@ const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 for await (const line of lines) {
   const request = JSON.parse(line);
   if (request.method === 'ping') {
-    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { pong: true } })}\n`);
+    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { pong: true, protocolVersion: request.params.protocolVersion } })}\n`);
     continue;
   }
   process.stdout.write(`${JSON.stringify({
@@ -775,7 +1062,7 @@ const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 for await (const line of lines) {
   const request = JSON.parse(line);
   if (request.method === 'ping') {
-    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { pong: true } })}\n`);
+    process.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: request.id, result: { pong: true, protocolVersion: request.params.protocolVersion } })}\n`);
   }
 }
 "#,

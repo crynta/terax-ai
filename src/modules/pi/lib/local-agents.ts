@@ -235,8 +235,13 @@ export const PI_LOCAL_AGENT_DEFS = [
   },
 ] as const satisfies readonly PiLocalAgentDef[];
 
-export function piLocalAgentHookCommand(agentId: PiLocalAgentId): string | null {
-  return PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === agentId)?.hookCommand ?? null;
+export function piLocalAgentHookCommand(
+  agentId: PiLocalAgentId,
+): string | null {
+  return (
+    PI_LOCAL_AGENT_DEFS.find((agent) => agent.id === agentId)?.hookCommand ??
+    null
+  );
 }
 
 export function buildPiLocalAgentLaunchCommand(

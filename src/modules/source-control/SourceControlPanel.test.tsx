@@ -109,6 +109,9 @@ describe("SourceControlPanel", () => {
     );
 
     expect(html).toContain('aria-label="Source control"');
+    expect(html).toContain(
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card/80",
+    );
     expect(html).toContain('aria-label="Commit message"');
     expect(html).toContain('placeholder="Commit message…"');
   });

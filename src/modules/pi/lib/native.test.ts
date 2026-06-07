@@ -252,7 +252,9 @@ describe("piNative", () => {
 
   it("manages MCP env secrets without exposing values in config storage", async () => {
     vi.mocked(invoke)
-      .mockResolvedValueOnce([{ serverId: "fs", name: "SAFE_TOKEN", configured: true }])
+      .mockResolvedValueOnce([
+        { serverId: "fs", name: "SAFE_TOKEN", configured: true },
+      ])
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined);
 
@@ -321,8 +323,12 @@ describe("piNative", () => {
   });
 
   it("runs MCP OAuth start, callback waiting, and completion through native commands", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ authorizationUrl: "https://auth" });
-    vi.mocked(invoke).mockResolvedValueOnce({ codeOrRedirectUrl: "http://127.0.0.1/cb?code=abc&state=s" });
+    vi.mocked(invoke).mockResolvedValueOnce({
+      authorizationUrl: "https://auth",
+    });
+    vi.mocked(invoke).mockResolvedValueOnce({
+      codeOrRedirectUrl: "http://127.0.0.1/cb?code=abc&state=s",
+    });
     vi.mocked(invoke).mockResolvedValueOnce({ accessTokenStored: true });
 
     await piNative.mcpOAuthStart({ serverId: "remote", scopes: ["mcp"] });

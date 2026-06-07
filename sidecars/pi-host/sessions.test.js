@@ -7,7 +7,11 @@ import {
   setNativeToolExecutorForTests,
 } from "./native-tools.js";
 import { handleJsonRpcLine, resetProtocolForTests } from "./protocol.js";
-import { setSessionEventSink } from "./sessions.js";
+import {
+  disposeSessionHandlesForTests,
+  setSessionCleanupErrorReporterForTests,
+  setSessionEventSink,
+} from "./sessions.js";
 
 async function request(id, method, params) {
   return handleJsonRpcLine(
@@ -60,6 +64,7 @@ describe("Pi host session protocol", () => {
   afterEach(async () => {
     await resetProtocolForTests();
     setSessionEventSink(null);
+    setSessionCleanupErrorReporterForTests(null);
     resetNativeToolExecutorForTests();
     delete process.env.TERAX_PI_HOST_ENABLE_TEST_FAUX;
     delete process.env.TERAX_PI_HOST_TEST_FAUX_RESPONSE;
@@ -78,6 +83,36 @@ describe("Pi host session protocol", () => {
       id: 1,
       result: { sessions: [], events: [] },
     });
+  });
+
+  it("reports cleanup handle failures without skipping remaining cleanup", () => {
+    const reports = [];
+    const calls = [];
+    setSessionCleanupErrorReporterForTests((report) => reports.push(report));
+
+    disposeSessionHandlesForTests({
+      unsubscribe: () => {
+        calls.push("unsubscribe");
+        throw new Error("unsubscribe down");
+      },
+      agentSession: {
+        dispose: () => {
+          calls.push("dispose");
+          throw new Error("dispose down");
+        },
+      },
+      cleanup: () => {
+        calls.push("cleanup");
+        throw new Error("cleanup down");
+      },
+    });
+
+    expect(calls).toEqual(["unsubscribe", "dispose", "cleanup"]);
+    expect(reports).toEqual([
+      { source: "unsubscribe", message: "unsubscribe down" },
+      { source: "dispose", message: "dispose down" },
+      { source: "cleanup", message: "cleanup down" },
+    ]);
   });
 
   it("creates real Pi AgentSessions with an explicit cwd", async () => {

@@ -7,5 +7,8 @@ describe("ModelComparePanel lazy export", () => {
     const html = renderToStaticMarkup(<ModelComparePanel />);
 
     expect(html).toContain("Loading model compare…");
+    expect(html).toContain(
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card/80",
+    );
   });
 });

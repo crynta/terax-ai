@@ -71,6 +71,7 @@ export function WorkflowStack({
               !visible && "invisible pointer-events-none",
             )}
             aria-hidden={!visible}
+            inert={visible ? undefined : true}
           >
             <div
               className="zoom-exempt h-full w-full"

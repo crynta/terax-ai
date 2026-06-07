@@ -62,8 +62,8 @@ export function PiPanelHeader({
           className="size-5 rounded-md text-muted-foreground hover:text-foreground"
         >
           <HugeiconsIcon
+            data-icon="inline-start"
             icon={MenuCollapseIcon}
-            size={11}
             strokeWidth={1.8}
             className={cn(
               "transition-transform duration-150",

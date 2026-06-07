@@ -229,7 +229,7 @@ describe("WorkflowCanvas DOM workflow", () => {
     const fallbackEdge = container.querySelector<SVGPathElement>(
       ".workflow-fallback-edge-path",
     );
-    expect(fallbackEdge?.getAttribute("stroke")).toBe("#3b82f6");
+    expect(fallbackEdge?.getAttribute("stroke")).toBe("var(--primary)");
     expect(fallbackEdge?.getAttribute("stroke-width")).toBe("3");
   });
 
@@ -303,6 +303,7 @@ describe("WorkflowCanvas DOM workflow", () => {
       ).toHaveLength(2),
     );
     await clickByTestId(container, "workflow-delete-node-node_image");
+    await clickButton(document.body, "Delete Node");
 
     await waitFor(() =>
       expect(
@@ -322,18 +323,13 @@ describe("WorkflowCanvas DOM workflow", () => {
       id: "wf_dom",
       title: "DOM workflow",
     });
-    const confirm = vi.fn(() => true);
-    Object.defineProperty(window, "confirm", {
-      configurable: true,
-      value: confirm,
-    });
     const { container } = await renderWorkflowCanvas(undefined, starter);
 
     await clickByTestId(container, "workflow-clear-canvas");
-
-    expect(confirm).toHaveBeenCalledWith(
+    expect(document.body.textContent).toContain(
       "Clear all workflow nodes, edges, and artifacts?",
     );
+    await clickButton(document.body, "Clear Canvas");
     await waitFor(() =>
       expect(container.querySelectorAll(".react-flow__node")).toHaveLength(0),
     );
@@ -341,7 +337,7 @@ describe("WorkflowCanvas DOM workflow", () => {
       container.querySelectorAll(".workflow-fallback-edge-path"),
     ).toHaveLength(0);
     expect(container.textContent).toContain("Canvas cleared");
-    expect(container.textContent).toContain("0 ready");
+    expect(container.textContent).toContain("0 safe ready");
   });
 
   it("surfaces discovered provider models and settings affordance", async () => {
@@ -601,13 +597,39 @@ describe("WorkflowCanvas DOM workflow", () => {
 
     await clickButton(container, "Preview");
     await waitFor(() =>
-      expect(container.textContent).toContain("Artifact preview"),
+      expect(document.body.textContent).toContain("Artifact preview"),
     );
-    expect(container.textContent).toContain("Generated image");
-    await clickButton(container, "Close preview");
+    expect(document.body.textContent).toContain("Generated image");
+    await clickButton(document.body, "Close preview");
     await clickButton(container, "Delete");
+    await clickButton(document.body, "Delete Artifact");
 
     await waitFor(() => expect(container.textContent).toContain("0 artifacts"));
+  });
+
+  it("keeps Run safe from starting unsafe workflow nodes", async () => {
+    const shellExecutor = vi.fn();
+    const { container } = await renderWorkflowCanvas({
+      executeShellCommand: shellExecutor,
+    });
+
+    await clickButton(container, "Command");
+    await waitFor(() =>
+      expect(container.textContent).toContain("Shell Command"),
+    );
+    await changeValue(
+      getField(container, "Command, requires approval"),
+      "echo should-not-run",
+    );
+    await clickButton(container, "Run safe");
+
+    await waitFor(() =>
+      expect(container.textContent).toContain(
+        "Run safe stopped at nodes that need approval",
+      ),
+    );
+    expect(shellExecutor).not.toHaveBeenCalled();
+    expect(findButton(container, "Approve")).toBeNull();
   });
 
   it("approves and cancels an unsafe shell run from the UI", async () => {
@@ -642,7 +664,7 @@ describe("WorkflowCanvas DOM workflow", () => {
       getField(container, "Command, requires approval"),
       "sleep 30",
     );
-    await clickButton(container, "Run safe");
+    await clickButton(container, "Run selected");
 
     await waitFor(() => expect(container.textContent).toContain("Approve"));
     await clickButton(container, "Approve");

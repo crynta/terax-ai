@@ -57,6 +57,7 @@ type PrimarySidebarProps = {
 
 type SecondarySidebarProps = {
   activeView: SecondarySidebarViewId;
+  chatContext: CodePanelContext;
   chatFocusRequest: PiChatFocusRequest | null;
   codeContext: CodePanelContext;
   codeSurface: CodeSurface;
@@ -144,6 +145,10 @@ export function AppSidebars({
     if (secondary.activeView === "chat") {
       return (
         <PiChatPanel
+          workspaceRoot={secondary.chatContext.workspaceRoot}
+          activeCwd={secondary.chatContext.activeCwd}
+          activeFile={secondary.chatContext.activeFile}
+          activeTerminalPrivate={secondary.chatContext.activeTerminalPrivate}
           focusRequest={secondary.chatFocusRequest}
           onOpenArtifacts={secondary.onOpenArtifactWorkspace}
           onSelectedSessionChange={secondary.onChatSelectedSessionChange}

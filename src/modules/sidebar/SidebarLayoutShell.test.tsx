@@ -3,6 +3,40 @@ import { describe, expect, it } from "vitest";
 import { SidebarLayoutShell } from "./SidebarLayoutShell";
 
 describe("SidebarLayoutShell", () => {
+  it("clips panel content so each sidebar view owns its scroll region", () => {
+    const html = renderToStaticMarkup(
+      <SidebarLayoutShell
+        primary={{
+          activeView: "explorer",
+          defaultSize: 260,
+          items: [{ id: "explorer", label: "Files" }],
+          panelRef: { current: null },
+          visible: true,
+          onResize: () => {},
+          onSelectView: () => {},
+          renderContent: () => <aside aria-label="Files">Primary</aside>,
+        }}
+        secondary={{
+          activeView: "code",
+          defaultSize: 260,
+          items: [{ id: "code", label: "Code" }],
+          panelRef: { current: null },
+          visible: true,
+          onResize: () => {},
+          onSelectView: () => {},
+          renderContent: () => <aside aria-label="Code">Secondary</aside>,
+        }}
+        sidebarPosition="left"
+        workspace={<section>Workspace</section>}
+      />,
+    );
+
+    expect(html).toContain(
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card",
+    );
+    expect(html).toContain('class="min-h-0 min-w-0 flex-1 overflow-hidden"');
+  });
+
   it("orders primary, workspace, and secondary according to sidebar position", () => {
     const html = renderToStaticMarkup(
       <SidebarLayoutShell

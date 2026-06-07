@@ -1,4 +1,12 @@
 import {
+  artifactForNode,
+  httpArtifactForOutput,
+  httpRequestForNode,
+  placeholderArtifactForNode,
+  runtimeStateForReadyNode,
+  shouldCreateArtifactForReadyNode,
+} from "./execution/artifacts";
+import {
   createWorkflowProviderArtifactAsync,
   getWorkflowProviderAdapter,
   type WorkflowProgressUpdate,
@@ -14,20 +22,15 @@ import type {
   WorkflowNode,
   WorkflowRuntimeStatus,
 } from "./schema";
-import {
-  artifactForNode,
-  httpArtifactForOutput,
-  httpRequestForNode,
-  placeholderArtifactForNode,
-  runtimeStateForReadyNode,
-  shouldCreateArtifactForReadyNode,
-} from "./execution/artifacts";
+import { isUnsafeWorkflowNode } from "./workflowSafety";
+
 export {
   approveWorkflowNode,
   executeApprovedWorkflowNode,
   rejectWorkflowNode,
   startApprovedWorkflowNodeExecution,
 } from "./execution/approved";
+
 import {
   appendRuntimeLog,
   clampProgress,
@@ -44,6 +47,7 @@ import type {
   WorkflowStepExecution,
   WorkflowStepExecutionOptions,
 } from "./execution/types";
+
 export type {
   ApprovedWorkflowNodeExecutionOptions,
   WorkflowAgentExecutor,
@@ -70,10 +74,22 @@ export type {
 
 const runnableStatuses = new Set<WorkflowRuntimeStatus>(["idle", "queued"]);
 
-export function getReadyNodeIds(document: WorkflowDocument): string[] {
+type WorkflowReadyNodeOptions = {
+  includeUnsafe?: boolean;
+  nodeIds?: Iterable<string>;
+};
+
+export function getReadyNodeIds(
+  document: WorkflowDocument,
+  options: WorkflowReadyNodeOptions = {},
+): string[] {
   const byId = new Map(document.nodes.map((node) => [node.id, node]));
+  const allowedNodeIds = options.nodeIds ? new Set(options.nodeIds) : null;
+  const includeUnsafe = options.includeUnsafe ?? true;
   return document.nodes
     .filter((node) => runnableStatuses.has(node.runtimeState.status))
+    .filter((node) => !allowedNodeIds || allowedNodeIds.has(node.id))
+    .filter((node) => includeUnsafe || !isUnsafeWorkflowNode(node))
     .filter((node) => {
       const incoming = document.edges.filter(
         (edge) => edge.targetNodeId === node.id,
@@ -121,7 +137,12 @@ export function startWorkflowStepExecution(
   document: WorkflowDocument,
   options: WorkflowStepExecutionOptions = {},
 ): WorkflowStepExecution {
-  const ready = new Set(getReadyNodeIds(document));
+  const ready = new Set(
+    getReadyNodeIds(document, {
+      includeUnsafe: options.includeUnsafe,
+      nodeIds: options.nodeIds,
+    }),
+  );
   if (ready.size === 0) {
     return { document, finished: Promise.resolve(document) };
   }

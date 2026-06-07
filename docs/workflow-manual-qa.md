@@ -1,6 +1,6 @@
 # Workflow Manual QA Smoke
 
-Use this checklist for a local Tauri smoke run after workflow canvas, runtime, provider, artifact, or restore changes.
+Use this checklist for a local Tauri smoke run after Canvas, runtime, provider, artifact, or restore changes.
 
 ## Setup
 
@@ -25,7 +25,7 @@ Use this checklist for a local Tauri smoke run after workflow canvas, runtime, p
 4. Delete a node and clear a disposable canvas.
    - Expected: each node has a `Delete node` action; deleting a node removes its connected edges and node-owned artifacts.
    - Expected: selecting a node enables `Delete selected`, and Delete/Backspace removes the selected node unless focus is in an input field.
-   - Expected: `Clear canvas` asks for confirmation, then removes all nodes, edges, and artifacts from the workflow canvas.
+   - Expected: `Clear canvas` asks for confirmation, then removes all nodes, edges, and artifacts from the canvas.
 5. Cancel an in-flight HTTP/video/agent/shell run.
    - Expected: runtime status changes to cancelled.
    - Expected: partial runtime logs may remain, but no completed artifact is created after cancellation.

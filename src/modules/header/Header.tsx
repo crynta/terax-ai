@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
   ContextMenuRadioGroup,
   ContextMenuRadioItem,
@@ -19,6 +20,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -49,6 +51,7 @@ type Props = {
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
+  onNewArtifacts: () => void;
   onNewWorkflow: () => void;
   onNewGitGraph: () => void;
   onClose: (id: number) => void;
@@ -80,6 +83,7 @@ export function Header({
   onNewPrivate,
   onNewPreview,
   onNewEditor,
+  onNewArtifacts,
   onNewWorkflow,
   onNewGitGraph,
   onClose,
@@ -134,10 +138,10 @@ export function Header({
       title="Settings"
     >
       <HugeiconsIcon
+        data-icon="inline-start"
         aria-hidden="true"
         focusable="false"
         icon={Settings01Icon}
-        size={15}
         strokeWidth={1.75}
       />
     </Button>
@@ -165,18 +169,20 @@ export function Header({
               className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <HugeiconsIcon
+                data-icon="inline-start"
                 aria-hidden="true"
                 focusable="false"
                 icon={sidebarIcon}
-                size={18}
                 strokeWidth={1.75}
               />
             </Button>
           </ContextMenuTrigger>
           <ContextMenuContent className="min-w-48">
-            <ContextMenuItem onSelect={onToggleSecondarySidebar}>
-              Toggle Code sidebar
-            </ContextMenuItem>
+            <ContextMenuGroup>
+              <ContextMenuItem onSelect={onToggleSecondarySidebar}>
+                Toggle Code sidebar
+              </ContextMenuItem>
+            </ContextMenuGroup>
             <ContextMenuSeparator />
             <ContextMenuRadioGroup
               value={sidebarPosition}
@@ -207,41 +213,35 @@ export function Header({
               disabled={!canSplit}
             >
               <HugeiconsIcon
+                data-icon="inline-start"
                 aria-hidden="true"
                 focusable="false"
                 icon={GridViewIcon}
-                size={16}
                 strokeWidth={1.75}
               />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
-            <DropdownMenuItem onSelect={() => onSplit("row")}>
-              <HugeiconsIcon
-                icon={LayoutTwoColumnIcon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Split right</span>
-              {splitRightTokens && (
-                <span className="text-xs text-muted-foreground">
-                  {splitRightTokens}
-                </span>
-              )}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onSplit("col")}>
-              <HugeiconsIcon
-                icon={LayoutTwoRowIcon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Split down</span>
-              {splitDownTokens && (
-                <span className="text-xs text-muted-foreground">
-                  {splitDownTokens}
-                </span>
-              )}
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={() => onSplit("row")}>
+                <HugeiconsIcon icon={LayoutTwoColumnIcon} strokeWidth={1.75} />
+                <span className="flex-1">Split right</span>
+                {splitRightTokens && (
+                  <span className="text-xs text-muted-foreground">
+                    {splitRightTokens}
+                  </span>
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onSplit("col")}>
+                <HugeiconsIcon icon={LayoutTwoRowIcon} strokeWidth={1.75} />
+                <span className="flex-1">Split down</span>
+                {splitDownTokens && (
+                  <span className="text-xs text-muted-foreground">
+                    {splitDownTokens}
+                  </span>
+                )}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -271,6 +271,7 @@ export function Header({
           onNewPrivate={onNewPrivate}
           onNewPreview={onNewPreview}
           onNewEditor={onNewEditor}
+          onNewArtifacts={onNewArtifacts}
           onNewWorkflow={onNewWorkflow}
           onNewGitGraph={onNewGitGraph}
           onClose={onClose}

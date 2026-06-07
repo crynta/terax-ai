@@ -12,10 +12,64 @@ pub enum ArtifactKind {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArtifactDiagnosticSeverity {
+    Error,
+    Warning,
+    Info,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactDiagnostic {
+    pub code: String,
+    pub severity: ArtifactDiagnosticSeverity,
+    pub message: String,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+    pub end_line: Option<usize>,
+    pub end_column: Option<usize>,
+    pub excerpt: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactError {
     pub code: String,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<ArtifactDiagnostic>,
+}
+
+impl ArtifactDiagnostic {
+    pub fn error(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            severity: ArtifactDiagnosticSeverity::Error,
+            message: message.into(),
+            line: None,
+            column: None,
+            end_line: None,
+            end_column: None,
+            excerpt: None,
+        }
+    }
+
+    pub fn with_location(
+        mut self,
+        line: usize,
+        column: usize,
+        end_line: usize,
+        end_column: usize,
+        excerpt: impl Into<String>,
+    ) -> Self {
+        self.line = Some(line);
+        self.column = Some(column);
+        self.end_line = Some(end_line);
+        self.end_column = Some(end_column);
+        self.excerpt = Some(excerpt.into());
+        self
+    }
 }
 
 impl ArtifactError {
@@ -23,7 +77,13 @@ impl ArtifactError {
         Self {
             code: code.into(),
             message: message.into(),
+            diagnostics: Vec::new(),
         }
+    }
+
+    pub fn with_diagnostics(mut self, diagnostics: Vec<ArtifactDiagnostic>) -> Self {
+        self.diagnostics = diagnostics;
+        self
     }
 
     pub fn not_found(message: impl Into<String>) -> Self {
@@ -60,6 +120,10 @@ impl ArtifactError {
 
     pub fn compile_failed(message: impl Into<String>) -> Self {
         Self::new("ARTIFACT_COMPILE_FAILED", message)
+    }
+
+    pub fn compile_failed_with_diagnostic(diagnostic: ArtifactDiagnostic) -> Self {
+        Self::compile_failed(diagnostic.message.clone()).with_diagnostics(vec![diagnostic])
     }
 
     pub fn store_unavailable(message: impl Into<String>) -> Self {

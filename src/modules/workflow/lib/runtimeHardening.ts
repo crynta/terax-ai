@@ -1,9 +1,6 @@
 import { getReadyNodeIds } from "./execution";
-import type {
-  WorkflowDocument,
-  WorkflowNode,
-  WorkflowRuntimeLogEntry,
-} from "./schema";
+import type { WorkflowDocument, WorkflowRuntimeLogEntry } from "./schema";
+import { isUnsafeWorkflowNode } from "./workflowSafety";
 
 export type WorkflowRuntimeAuditOptions = {
   at?: string;
@@ -107,17 +104,8 @@ export function retryWorkflowNode(
 }
 
 function appendRuntimeLog(
-  node: WorkflowNode,
+  node: WorkflowDocument["nodes"][number],
   entry: WorkflowRuntimeLogEntry,
 ): WorkflowRuntimeLogEntry[] {
   return [...(node.runtimeState.logs ?? []), entry];
-}
-
-function isUnsafeWorkflowNode(node: WorkflowNode): boolean {
-  return (
-    node.type === "shellCommand" ||
-    node.type === "agent" ||
-    node.type === "fileOperation" ||
-    node.type === "browserAutomation"
-  );
 }

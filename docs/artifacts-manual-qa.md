@@ -19,9 +19,9 @@ Ask Pi to create these artifacts in the active Chat session:
 2. Markdown artifact with a heading and raw `<script>` text.
    - Expected: heading renders.
    - Expected: raw script text is escaped, not executed.
-3. React artifact with a simple default component returning static JSX.
+3. React artifact with a default component using static JSX, expressions, `useState`, and an `onClick` counter.
    - Expected: workspace artifact tab shows “Compiling React preview…” briefly.
-   - Expected: compiled preview renders the JSX output.
+   - Expected: compiled preview renders the JSX output, expressions, and updates when the counter is clicked.
    - Expected: raw `export default function` source is only visible on the Code tab.
 
 ## Diagnostics
@@ -32,6 +32,20 @@ Ask Pi to create these artifacts in the active Chat session:
 2. Create an HTML artifact that throws a runtime error from a script.
    - Expected: runtime error appears above the preview.
    - Expected: the preview remains sandboxed without same-origin privileges.
+
+## Artifact Hub
+
+1. Choose `+ → Artifacts` from the main tab menu.
+   - Expected: a main workspace **Artifacts** hub tab opens.
+   - Expected: the left side lists all stored artifact conversations plus an “All sessions” row.
+2. Search by artifact title/slug/session and use the kind filter buttons.
+   - Expected: rows filter without loading full artifact source.
+3. Click **Preview** on an artifact card.
+   - Expected: the preview rail loads only that artifact’s content and shows title/version/content-hash metadata.
+4. Use **Copy ref**, **Select visible**, **Clear**, and **Open first**.
+   - Expected: metadata copy/bulk controls work without loading every artifact’s source.
+5. Click **Open** on an artifact card.
+   - Expected: a per-conversation workspace artifact tab opens and selects that artifact.
 
 ## Edit and Versions
 
@@ -44,6 +58,25 @@ Ask Pi to create these artifacts in the active Chat session:
    - Expected: historical versions are listed as `v1`, `v2`, etc.
    - Expected: selecting an older version updates Preview and Code.
    - Expected: latest/current version labeling remains accurate.
+
+## Delete and Restore
+
+1. Delete a single artifact from the workspace artifact header.
+   - Expected: the artifact disappears from the list and the toast says it moved to trash.
+   - Expected: clicking **Undo** restores the artifact, all versions, and the selected artifact tab state.
+2. Delete another artifact and do not click Undo.
+   - Expected: Artifact Hub no longer lists it in Active mode, but no workspace files are touched.
+3. Open `+ → Artifacts` and switch to **Trash**.
+   - Expected: deleted artifacts are listed with metadata only.
+   - Expected: **Restore** returns the artifact to Active mode with versions intact.
+   - Expected: **Delete forever** purges only the selected deleted artifact.
+4. Select multiple Active artifacts in the Hub.
+   - Expected: **Export selected** asks for a folder and writes one safe filename per artifact.
+   - Expected: **Move to trash** moves selected artifacts only and shows a per-item success/failure count.
+5. Select multiple Trash artifacts.
+   - Expected: **Restore selected** restores selected artifacts only and shows a per-item success/failure count.
+6. Create a React artifact with `export const css = ".card { color: red; }";` and a `.card` element.
+   - Expected: preview/export applies the style inside the sandbox and does not leak CSS to Terax UI.
 
 ## Export
 
@@ -70,3 +103,5 @@ Ask Pi to create these artifacts in the active Chat session:
    - Expected: opening the row opens the main workspace artifact tab and selects that artifact.
 2. Mark artifact/chat rows read.
    - Expected: scoped Chat/Inbox badges update without clearing unrelated Code Pi notifications.
+3. Open `+ → Artifacts` after marking rows read.
+   - Expected: the durable Artifact Hub still lists stored artifacts independently from Inbox read state.

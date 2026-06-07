@@ -3,6 +3,16 @@ import PlusSignIcon from "@hugeicons/core-free-icons/PlusSignIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useMemo, useRef, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
@@ -28,6 +38,10 @@ import { DEFAULT_THEME_ID } from "@/modules/theme/types";
 import { validateTheme } from "@/modules/theme/validateTheme";
 import { SectionHeader } from "../components/SectionHeader";
 
+type PendingThemeDestructiveAction =
+  | { kind: "theme"; id: string; name: string }
+  | { kind: "background" };
+
 export function ThemesSection() {
   const { themeId, setThemeId, resolvedMode, customThemes } = useTheme();
   const builtinThemes = listBuiltinThemes();
@@ -42,6 +56,8 @@ export function ThemesSection() {
 
   const [importError, setImportError] = useState<string | null>(null);
   const [bgError, setBgError] = useState<string | null>(null);
+  const [pendingDestructiveAction, setPendingDestructiveAction] =
+    useState<PendingThemeDestructiveAction | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const bgInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -85,7 +101,12 @@ export function ThemesSection() {
 
   const onPickThemeFile = () => fileInputRef.current?.click();
 
-  const onRemoveCustomTheme = async (id: string) => {
+  const onRemoveCustomTheme = (id: string) => {
+    const themeName = themes.find((theme) => theme.id === id)?.name ?? id;
+    setPendingDestructiveAction({ kind: "theme", id, name: themeName });
+  };
+
+  const removeCustomThemeNow = async (id: string) => {
     if (themeId === id) setThemeId(DEFAULT_THEME_ID);
     await deleteCustomTheme(id);
     void deleteThemeFile(id);
@@ -112,12 +133,27 @@ export function ThemesSection() {
     }
   };
 
-  const onRemoveBackground = async () => {
+  const onRemoveBackground = () => {
+    setPendingDestructiveAction({ kind: "background" });
+  };
+
+  const removeBackgroundNow = async () => {
     setBgError(null);
     const prev = backgroundImageId;
     await setBackgroundKind("none");
     await setBackgroundImageId(null);
     if (prev) await deleteBgImage(prev).catch(() => undefined);
+  };
+
+  const confirmPendingDestructiveAction = () => {
+    const action = pendingDestructiveAction;
+    setPendingDestructiveAction(null);
+    if (!action) return;
+    if (action.kind === "theme") {
+      void removeCustomThemeNow(action.id);
+    } else {
+      void removeBackgroundNow();
+    }
   };
 
   return (
@@ -147,7 +183,11 @@ export function ThemesSection() {
               className="h-7 gap-1.5 px-2 text-[11px]"
               onClick={onCreateTheme}
             >
-              <HugeiconsIcon icon={PlusSignIcon} size={11} strokeWidth={2} />
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={PlusSignIcon}
+                strokeWidth={2}
+              />
               Create
             </Button>
             <Button
@@ -187,50 +227,55 @@ export function ThemesSection() {
             const selected = themeId === t.id;
             const isCustom = customIds.has(t.id);
             return (
-              <button
+              <div
                 key={t.id}
-                type="button"
-                onClick={() => setThemeId(t.id)}
                 className={cn(
-                  "group flex items-center gap-3 rounded-lg border p-2.5 text-left transition-all",
+                  "group flex items-center gap-1 rounded-lg border p-2.5 transition-[border-color,box-shadow]",
                   selected
                     ? "border-foreground/60 ring-1 ring-foreground/20"
                     : "border-border/60 hover:border-border",
                 )}
               >
-                <div
-                  className="flex h-10 w-14 shrink-0 items-center justify-center gap-1 rounded-md border border-border/40"
-                  style={{ background: swatchBg }}
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setThemeId(t.id)}
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
                 >
-                  <span
-                    className="h-5 w-2 rounded-sm"
-                    style={{ background: swatchAccent }}
-                  />
-                  <span
-                    className="h-5 w-2 rounded-sm"
-                    style={{ background: swatchFg, opacity: 0.7 }}
-                  />
-                  <span
-                    className="h-5 w-2 rounded-sm"
-                    style={{ background: swatchMuted }}
-                  />
-                </div>
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-[12.5px] font-medium">
-                    {t.name}
-                  </span>
-                  {t.description ? (
-                    <span className="truncate text-[11px] text-muted-foreground">
-                      {t.description}
-                    </span>
-                  ) : null}
-                </div>
-                {isCustom ? (
-                  <span className="ml-1 flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                  <div
+                    className="flex h-10 w-14 shrink-0 items-center justify-center gap-1 rounded-md border border-border/40"
+                    style={{ background: swatchBg }}
+                  >
                     <span
-                      role="button"
+                      className="h-5 w-2 rounded-sm"
+                      style={{ background: swatchAccent }}
+                    />
+                    <span
+                      className="h-5 w-2 rounded-sm"
+                      style={{ background: swatchFg, opacity: 0.7 }}
+                    />
+                    <span
+                      className="h-5 w-2 rounded-sm"
+                      style={{ background: swatchMuted }}
+                    />
+                  </div>
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-[12.5px] font-medium">
+                      {t.name}
+                    </span>
+                    {t.description ? (
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {t.description}
+                      </span>
+                    ) : null}
+                  </div>
+                </button>
+                {isCustom ? (
+                  <span className="ml-1 flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+                    <button
+                      type="button"
                       aria-label={`Edit ${t.name}`}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35"
                       onClick={(e) => {
                         e.stopPropagation();
                         onEditTheme(t.id);
@@ -241,21 +286,21 @@ export function ThemesSection() {
                         size={12}
                         strokeWidth={1.75}
                       />
-                    </span>
-                    <span
-                      role="button"
+                    </button>
+                    <button
+                      type="button"
                       aria-label={`Remove ${t.name}`}
-                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
+                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/35"
                       onClick={(e) => {
                         e.stopPropagation();
                         void onRemoveCustomTheme(t.id);
                       }}
                     >
                       ×
-                    </span>
+                    </button>
                   </span>
                 ) : null}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -280,7 +325,7 @@ export function ThemesSection() {
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive"
-                onClick={() => void onRemoveBackground()}
+                onClick={onRemoveBackground}
               >
                 Remove
               </Button>
@@ -321,6 +366,7 @@ export function ThemesSection() {
               </span>
             </div>
             <Slider
+              aria-label="Background opacity"
               value={[backgroundOpacity]}
               min={0}
               max={1}
@@ -334,6 +380,7 @@ export function ThemesSection() {
               </span>
             </div>
             <Slider
+              aria-label="Background blur"
               value={[backgroundBlur]}
               min={0}
               max={64}
@@ -348,6 +395,36 @@ export function ThemesSection() {
           </p>
         )}
       </div>
+      <AlertDialog
+        open={pendingDestructiveAction !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDestructiveAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDestructiveAction?.kind === "theme"
+                ? "Remove custom theme?"
+                : "Remove background image?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDestructiveAction?.kind === "theme"
+                ? `This removes "${pendingDestructiveAction.name}" from your custom themes.`
+                : "This clears the current background image and deletes the imported image file when possible."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={confirmPendingDestructiveAction}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

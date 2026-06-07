@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { PiAgentSessionState } from "@/modules/agents/lib/types";
-import { artifactWorkspaceTabInput } from "./artifactWorkspace";
+import {
+  artifactWorkspaceConversationForLauncher,
+  artifactWorkspaceTabInput,
+} from "./artifactWorkspace";
 
-const session = (title: string): PiAgentSessionState => ({
-  lastActivityAt: 100,
-  sessionId: "pi-1",
+const session = (
+  title: string,
+  sessionId = "pi-1",
+  lastActivityAt = 100,
+): PiAgentSessionState => ({
+  lastActivityAt,
+  sessionId,
   status: "idle",
   title,
 });
@@ -50,5 +57,66 @@ describe("artifact workspace routing", () => {
       selectedSlug: null,
       title: "Artifacts",
     });
+  });
+
+  it("prefers the visible Code session for the artifact launcher", () => {
+    expect(
+      artifactWorkspaceConversationForLauncher({
+        chatSelectedSessionId: "chat-1",
+        chatSidebarVisible: true,
+        codePanelVisible: true,
+        codeSelectedSessionId: "code-1",
+        piSessions: {},
+        tabs: [],
+      }),
+    ).toBe("code-1");
+  });
+
+  it("falls back to visible Chat or existing artifact tabs for the launcher", () => {
+    expect(
+      artifactWorkspaceConversationForLauncher({
+        chatSelectedSessionId: "chat-1",
+        chatSidebarVisible: true,
+        codePanelVisible: false,
+        codeSelectedSessionId: "code-1",
+        piSessions: {},
+        tabs: [],
+      }),
+    ).toBe("chat-1");
+
+    expect(
+      artifactWorkspaceConversationForLauncher({
+        chatSelectedSessionId: null,
+        chatSidebarVisible: false,
+        codePanelVisible: false,
+        codeSelectedSessionId: null,
+        piSessions: {},
+        tabs: [
+          {
+            conversationId: "artifact-1",
+            id: 2,
+            kind: "artifact",
+            selectedSlug: null,
+            title: "Artifacts",
+          },
+        ],
+      }),
+    ).toBe("artifact-1");
+  });
+
+  it("uses the most recent Pi session when no surface is selected", () => {
+    expect(
+      artifactWorkspaceConversationForLauncher({
+        chatSelectedSessionId: null,
+        chatSidebarVisible: false,
+        codePanelVisible: false,
+        codeSelectedSessionId: null,
+        piSessions: {
+          old: session("Old", "old", 10),
+          recent: session("Recent", "recent", 20),
+        },
+        tabs: [],
+      }),
+    ).toBe("recent");
   });
 });

@@ -1,5 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type Dispatch,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+  use,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { useWhisperRecording } from "../hooks/useWhisperRecording";
 import { expandSnippetTokens, type Snippet } from "../lib/snippets";
@@ -29,39 +39,51 @@ export const ACCEPTED_FILES =
 
 type Voice = ReturnType<typeof useWhisperRecording>;
 
-type ComposerCtx = {
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+export type ComposerState = {
   value: string;
-  setValue: React.Dispatch<React.SetStateAction<string>>;
   files: FileAttachment[];
+  pickedSnippets: Snippet[];
+  pickedCommands: SlashCommandMeta[];
+  isBusy: boolean;
+  canSend: boolean;
+};
+
+export type ComposerActions = {
+  setValue: Dispatch<SetStateAction<string>>;
   addFiles: (list: FileList | null) => Promise<void>;
   /** Attach a file by absolute path — used by the file explorer's "Attach to Agent". */
   attachFileByPath: (path: string) => Promise<void>;
   removeFile: (id: string) => void;
-  pickedSnippets: Snippet[];
   addSnippet: (s: Snippet) => void;
   removeSnippet: (id: string) => void;
-  pickedCommands: SlashCommandMeta[];
   addCommand: (c: SlashCommandMeta) => void;
   removeCommand: (name: string) => void;
-  isBusy: boolean;
   submit: () => void;
   stop: () => void;
+};
+
+export type ComposerMeta = {
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
   voice: Voice;
-  canSend: boolean;
+};
+
+export type ComposerCtx = {
+  actions: ComposerActions;
+  meta: ComposerMeta;
+  state: ComposerState;
 };
 
 const Ctx = createContext<ComposerCtx | null>(null);
 
 export function useComposer(): ComposerCtx {
-  const ctx = useContext(Ctx);
+  const ctx = use(Ctx);
   if (!ctx)
     throw new Error("useComposer must be used inside <AiComposerProvider>");
   return ctx;
 }
 
 type ProviderProps = {
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
 export function AiComposerProvider({ children }: ProviderProps) {
@@ -326,24 +348,30 @@ export function AiComposerProvider({ children }: ProviderProps) {
       pickedCommands.length > 0);
 
   const ctx: ComposerCtx = {
-    textareaRef,
-    value,
-    setValue,
-    files,
-    addFiles,
-    attachFileByPath,
-    removeFile,
-    pickedSnippets,
-    addSnippet,
-    removeSnippet,
-    pickedCommands,
-    addCommand,
-    removeCommand,
-    isBusy,
-    submit,
-    stop,
-    voice,
-    canSend,
+    state: {
+      canSend,
+      files,
+      isBusy,
+      pickedCommands,
+      pickedSnippets,
+      value,
+    },
+    actions: {
+      addCommand,
+      addFiles,
+      addSnippet,
+      attachFileByPath,
+      removeCommand,
+      removeFile,
+      removeSnippet,
+      setValue,
+      stop,
+      submit,
+    },
+    meta: {
+      textareaRef,
+      voice,
+    },
   };
 
   return <Ctx.Provider value={ctx}>{children}</Ctx.Provider>;

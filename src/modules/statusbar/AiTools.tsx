@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -48,9 +49,14 @@ export function AiTools({ aiOpen, canSubmit, onOpenAi, onSubmit }: Props) {
             size="sm"
             disabled={!canSubmit}
             onClick={onSubmit}
-            className="ml-1 h-6 px-1.5"
+            aria-label="Send AI prompt"
+            className="ml-1 h-8 px-2"
           >
-            <HugeiconsIcon icon={ArrowUp01Icon} size={13} strokeWidth={2} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={ArrowUp01Icon}
+              strokeWidth={2}
+            />
           </Button>
         </motion.div>
       ) : (
@@ -61,7 +67,8 @@ export function AiTools({ aiOpen, canSubmit, onOpenAi, onSubmit }: Props) {
           exit={{ opacity: 0, y: -2 }}
           transition={{ duration: 0.12, ease: "easeOut" }}
           onClick={onOpenAi}
-          className="flex h-7 items-center gap-2 rounded-md border border-border/60 bg-card px-2 text-xs text-muted-foreground hover:text-foreground"
+          type="button"
+          className="flex h-8 items-center gap-2 rounded-md border border-border/60 bg-card px-2 text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30"
         >
           Open AI Agent
           <KbdGroup>
@@ -87,8 +94,9 @@ function ToolButton({
       type="button"
       variant="ghost"
       size="icon"
+      aria-label={title}
       title={title}
-      className="size-7 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+      className="size-8 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
     >
       {children}
     </Button>
@@ -103,27 +111,30 @@ function ModelSelector() {
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          aria-label="Select AI model"
+          className="h-8 gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           {selected.label}
           <HugeiconsIcon
+            data-icon="inline-start"
             icon={ArrowDown01Icon}
-            size={12}
             strokeWidth={2}
             className="opacity-70"
           />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {MODELS.map((m) => (
-          <DropdownMenuItem
-            key={m.id}
-            onSelect={() => setSelected(m)}
-            className="text-xs"
-          >
-            {m.label}
-          </DropdownMenuItem>
-        ))}
+        <DropdownMenuGroup>
+          {MODELS.map((m) => (
+            <DropdownMenuItem
+              key={m.id}
+              onSelect={() => setSelected(m)}
+              className="text-xs"
+            >
+              {m.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

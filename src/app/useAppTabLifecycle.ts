@@ -1,5 +1,11 @@
 import type { SearchAddon } from "@xterm/addon-search";
-import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { EditorPaneHandle } from "@/modules/editor";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import type { Tab } from "@/modules/tabs";

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +33,11 @@ type ArtifactPanelProps = {
   onClose?: () => void;
   onSelectVersion?: (version: number) => void;
   onExportArtifact?: (artifact: Artifact) => void;
+  onRenameArtifact?: (
+    artifact: Artifact,
+    title: string,
+  ) => Promise<void> | void;
+  onDeleteArtifact?: (artifact: Artifact) => Promise<void> | void;
   onSaveArtifact?: (
     artifact: Artifact,
     content: string,
@@ -50,6 +55,8 @@ export function ArtifactPanel({
   onClose,
   onSelectVersion,
   onExportArtifact,
+  onRenameArtifact,
+  onDeleteArtifact,
   onSaveArtifact,
 }: ArtifactPanelProps) {
   if (artifacts.length === 0) {
@@ -125,6 +132,8 @@ export function ArtifactPanel({
             versionsLoading={versionsLoading}
             onSelectVersion={onSelectVersion}
             onExportArtifact={onExportArtifact}
+            onRenameArtifact={onRenameArtifact}
+            onDeleteArtifact={onDeleteArtifact}
             onSaveArtifact={onSaveArtifact}
           />
         ) : (
@@ -181,6 +190,11 @@ type ArtifactDetailProps = {
   versionsLoading: boolean;
   onSelectVersion?: (version: number) => void;
   onExportArtifact?: (artifact: Artifact) => void;
+  onRenameArtifact?: (
+    artifact: Artifact,
+    title: string,
+  ) => Promise<void> | void;
+  onDeleteArtifact?: (artifact: Artifact) => Promise<void> | void;
   onSaveArtifact?: (
     artifact: Artifact,
     content: string,
@@ -194,6 +208,8 @@ function ArtifactDetail({
   versionsLoading,
   onSelectVersion,
   onExportArtifact,
+  onRenameArtifact,
+  onDeleteArtifact,
   onSaveArtifact,
 }: ArtifactDetailProps) {
   const canPreview = isPreviewableArtifactKind(artifact.summary.kind);
@@ -205,14 +221,29 @@ function ArtifactDetail({
   const viewingVersion = selectedVersion ?? artifact.summary.version;
   const canEdit = Boolean(onSaveArtifact) && viewingVersion === latestVersion;
   const [isEditing, setIsEditing] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [draftContent, setDraftContent] = useState(artifact.content);
+  const [draftTitle, setDraftTitle] = useState(artifact.summary.title);
   const [saving, setSaving] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setIsEditing(false);
+    setIsRenaming(false);
+    setConfirmingDelete(false);
     setDraftContent(artifact.content);
+    setDraftTitle(artifact.summary.title);
     setSaving(false);
-  }, [artifact.content, artifact.summary.slug, artifact.summary.version]);
+    setRenaming(false);
+    setDeleting(false);
+  }, [
+    artifact.content,
+    artifact.summary.slug,
+    artifact.summary.title,
+    artifact.summary.version,
+  ]);
 
   async function saveDraft() {
     if (
@@ -227,8 +258,44 @@ function ArtifactDetail({
     try {
       await onSaveArtifact(artifact, draftContent);
       setIsEditing(false);
+    } catch {
+      // The workspace save handler owns user-facing error reporting.
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveTitle() {
+    const nextTitle = draftTitle.trim();
+    if (
+      !onRenameArtifact ||
+      renaming ||
+      nextTitle.length === 0 ||
+      nextTitle === artifact.summary.title
+    ) {
+      return;
+    }
+    setRenaming(true);
+    try {
+      await onRenameArtifact(artifact, nextTitle);
+      setIsRenaming(false);
+    } catch {
+      // The workspace rename handler owns user-facing error reporting.
+    } finally {
+      setRenaming(false);
+    }
+  }
+
+  async function deleteArtifact() {
+    if (!onDeleteArtifact || deleting) return;
+    setDeleting(true);
+    try {
+      await onDeleteArtifact(artifact);
+      setConfirmingDelete(false);
+    } catch {
+      // The workspace delete handler owns user-facing error reporting.
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -236,9 +303,47 @@ function ArtifactDetail({
     <div className="flex min-h-0 flex-col">
       <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
         <div className="min-w-0">
-          <h3 className="truncate font-heading text-sm font-medium">
-            {artifact.summary.title}
-          </h3>
+          {isRenaming ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <input
+                aria-label="Artifact title"
+                className="h-8 min-w-0 rounded-md border bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={draftTitle}
+                onChange={(event) => setDraftTitle(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void saveTitle();
+                  if (event.key === "Escape") {
+                    setDraftTitle(artifact.summary.title);
+                    setIsRenaming(false);
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                disabled={
+                  renaming || draftTitle.trim() === artifact.summary.title
+                }
+                onClick={() => void saveTitle()}
+              >
+                {renaming ? "Saving…" : "Save title"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={renaming}
+                onClick={() => {
+                  setDraftTitle(artifact.summary.title);
+                  setIsRenaming(false);
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <h3 className="truncate font-heading text-sm font-medium">
+              {artifact.summary.title}
+            </h3>
+          )}
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <span>{artifact.summary.kind}</span>
             <span>v{artifact.summary.version}</span>
@@ -246,6 +351,16 @@ function ArtifactDetail({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {onRenameArtifact ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isRenaming}
+              onClick={() => setIsRenaming(true)}
+            >
+              Rename
+            </Button>
+          ) : null}
           {onSaveArtifact ? (
             <Button
               size="sm"
@@ -266,8 +381,50 @@ function ArtifactDetail({
               Export
             </Button>
           ) : null}
+          {onDeleteArtifact ? (
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={confirmingDelete}
+              onClick={() => setConfirmingDelete(true)}
+            >
+              Delete
+            </Button>
+          ) : null}
         </div>
       </div>
+
+      {confirmingDelete ? (
+        <div className="flex items-center justify-between gap-3 border-b bg-destructive/5 px-3 py-2 text-sm">
+          <div className="min-w-0">
+            <div className="font-medium text-destructive">
+              Delete this artifact?
+            </div>
+            <div className="text-muted-foreground text-xs">
+              This removes every version from app storage. Export first if you
+              need a copy.
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={deleting}
+              onClick={() => setConfirmingDelete(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void deleteArtifact()}
+            >
+              {deleting ? "Deleting…" : "Delete permanently"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <ArtifactVersionControls
         currentVersion={artifact.summary.version}

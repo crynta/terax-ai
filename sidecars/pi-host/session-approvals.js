@@ -1,6 +1,15 @@
 import { executeNativeTool } from "./native-tools.js";
-import { publishEvent, pushEvent, SESSION_EVENT, isoNow } from "./session-events.js";
-import { serializableValue, toolPayload, toolResultText } from "./session-payloads.js";
+import {
+  publishEvent,
+  pushEvent,
+  SESSION_EVENT,
+  isoNow,
+} from "./session-events.js";
+import {
+  serializableValue,
+  toolPayload,
+  toolResultText,
+} from "./session-payloads.js";
 import { toolRequiresApproval, validateToolSafety } from "./tool-policy.js";
 
 function toolApprovalPayload(session, approval, approved) {
@@ -126,11 +135,28 @@ async function handleToolApprovalRequest(session, event, signal) {
     : { block: true, reason: `Tool ${toolName} denied by user` };
 }
 
+function isMcpToolResultError(event) {
+  if (typeof event.toolName !== "string" || !event.toolName.startsWith("mcp__")) {
+    return false;
+  }
+  const details = event.details;
+  if (!details || typeof details !== "object") return false;
+  const mcp = details.mcp;
+  return Boolean(mcp && typeof mcp === "object" && mcp.isError === true);
+}
+
+function handleToolResult(event) {
+  if (!isMcpToolResultError(event) || event.isError === true) {
+    return undefined;
+  }
+  return { isError: true };
+}
+
 export function createApprovalExtension(session) {
   return (pi) => {
     pi.on("tool_call", (event, context) =>
       handleToolApprovalRequest(session, event, context.signal),
     );
+    pi.on("tool_result", (event) => handleToolResult(event));
   };
 }
-

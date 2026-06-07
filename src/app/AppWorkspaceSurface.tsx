@@ -1,6 +1,8 @@
 import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 import { AiMiniWindow, SelectionAskAi } from "@/modules/ai/components/lazy";
+import { ArtifactHubPanel } from "@/modules/artifacts/ArtifactHubPanel";
+import { ArtifactWorkspacePanel } from "@/modules/artifacts/ArtifactWorkspacePanel";
 import { AiDiffStack, EditorStack, GitDiffStack } from "@/modules/editor";
 import { GitHistoryStack } from "@/modules/git-history";
 import { MarkdownStack } from "@/modules/markdown";
@@ -11,7 +13,6 @@ import { SidebarPlaceholderPanel } from "@/modules/sidebar";
 import type { Tab } from "@/modules/tabs";
 import { TerminalStack } from "@/modules/terminal";
 import { WorkflowStack } from "@/modules/workflow/WorkflowStackLazy";
-import { ArtifactWorkspacePanel } from "@/modules/artifacts/ArtifactWorkspacePanel";
 import type { CodePanelContext, CodeSurface } from "./codeSurface";
 
 type AppWorkspaceSurfaceProps = {
@@ -58,19 +59,28 @@ type AppWorkspaceSurfaceProps = {
     | "recentWorkflowFiles"
   >;
   artifact: {
+    onOpenArtifact: (conversationId: string, slug: string) => void;
     onSelectedSlugChange: (tabId: number, slug: string | null) => void;
   };
   pi: Pick<
     ComponentProps<typeof PiPanel>,
-    | "focusRequest"
-    | "onOpenLocalAgent"
-    | "onPopOut"
-    | "onSelectedSessionChange"
+    "focusRequest" | "onOpenLocalAgent" | "onPopOut" | "onSelectedSessionChange"
   >;
 };
 
-function surfaceClass(active: boolean, className = "absolute inset-0 px-3 pt-2 pb-2") {
+function surfaceClass(
+  active: boolean,
+  className = "absolute inset-0 px-3 pt-2 pb-2",
+) {
   return cn(className, !active && "invisible pointer-events-none");
+}
+
+function surfaceProps(active: boolean, className?: string) {
+  return {
+    "aria-hidden": !active,
+    className: surfaceClass(active, className),
+    inert: active ? undefined : true,
+  };
 }
 
 export function AppWorkspaceSurface({
@@ -91,34 +101,31 @@ export function AppWorkspaceSurface({
 }: AppWorkspaceSurfaceProps) {
   return (
     <div className="relative h-full min-h-0">
-      <div className={surfaceClass(flags.terminal)} aria-hidden={!flags.terminal}>
+      <div {...surfaceProps(flags.terminal)}>
         <TerminalStack tabs={tabs} activeId={activeId} {...terminal} />
       </div>
-      <div className={surfaceClass(flags.editor)} aria-hidden={!flags.editor}>
+      <div {...surfaceProps(flags.editor)}>
         <EditorStack tabs={tabs} activeId={activeId} {...editor} />
       </div>
-      <div className={surfaceClass(flags.preview)} aria-hidden={!flags.preview}>
+      <div {...surfaceProps(flags.preview)}>
         <PreviewStack tabs={tabs} activeId={activeId} {...preview} />
       </div>
-      <div className={surfaceClass(flags.markdown)} aria-hidden={!flags.markdown}>
+      <div {...surfaceProps(flags.markdown)}>
         <MarkdownStack tabs={tabs} activeId={activeId} />
       </div>
-      <div className={surfaceClass(flags.aiDiff)} aria-hidden={!flags.aiDiff}>
+      <div {...surfaceProps(flags.aiDiff)}>
         <AiDiffStack tabs={tabs} activeId={activeId} {...aiDiff} />
       </div>
-      <div className={surfaceClass(flags.gitDiff)} aria-hidden={!flags.gitDiff}>
+      <div {...surfaceProps(flags.gitDiff)}>
         <GitDiffStack tabs={tabs} activeId={activeId} />
       </div>
-      <div
-        className={surfaceClass(flags.gitHistory, "absolute inset-0")}
-        aria-hidden={!flags.gitHistory}
-      >
+      <div {...surfaceProps(flags.gitHistory, "absolute inset-0")}>
         <GitHistoryStack tabs={tabs} activeId={activeId} {...gitHistory} />
       </div>
-      <div className={surfaceClass(flags.workflow)} aria-hidden={!flags.workflow}>
+      <div {...surfaceProps(flags.workflow)}>
         <WorkflowStack tabs={tabs} activeId={activeId} {...workflow} />
       </div>
-      <div className={surfaceClass(flags.artifact)} aria-hidden={!flags.artifact}>
+      <div {...surfaceProps(flags.artifact)}>
         {activeTab?.kind === "artifact" ? (
           <ArtifactWorkspacePanel
             conversationId={activeTab.conversationId}
@@ -127,12 +134,11 @@ export function AppWorkspaceSurface({
               artifact.onSelectedSlugChange(activeTab.id, slug)
             }
           />
+        ) : activeTab?.kind === "artifact-hub" ? (
+          <ArtifactHubPanel onOpenArtifact={artifact.onOpenArtifact} />
         ) : null}
       </div>
-      <div
-        className={surfaceClass(flags.piWorkspace, "absolute inset-0 p-2")}
-        aria-hidden={!flags.piWorkspace}
-      >
+      <div {...surfaceProps(flags.piWorkspace, "absolute inset-0 p-2")}>
         {codeSurface === "workspace" && flags.piWorkspace ? (
           <PiPanel
             workspaceRoot={codePanelContext.workspaceRoot}
@@ -210,4 +216,3 @@ export function AppFloatingSurfaces({
     </>
   );
 }
-

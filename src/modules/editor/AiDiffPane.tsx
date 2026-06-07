@@ -8,6 +8,7 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { diffTextClass } from "@/lib/statusTone";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { AiDiffStatus } from "@/modules/tabs";
 import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
@@ -64,7 +65,7 @@ const DIFF_THEME = EditorView.theme({
   //   backgroundColor: "#ef4444",
   // },
   ".cm-changedText": {
-    background: "#88ff881a !important",
+    background: "var(--status-success-surface) !important",
   },
 });
 
@@ -158,12 +159,8 @@ export function AiDiffPane({
             {path}
           </span>
           <span className="flex shrink-0 items-center gap-1.5 text-[10.5px] tabular-nums">
-            <span className="text-emerald-600 dark:text-emerald-400">
-              +{stats.added}
-            </span>
-            <span className="text-rose-600 dark:text-rose-400">
-              −{stats.removed}
-            </span>
+            <span className={diffTextClass("add")}>+{stats.added}</span>
+            <span className={diffTextClass("remove")}>−{stats.removed}</span>
           </span>
         </div>
         {status === "pending" ? (
@@ -174,7 +171,11 @@ export function AiDiffPane({
               onClick={onAccept}
               className="h-7 gap-1.5"
             >
-              <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2} />
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={Tick02Icon}
+                strokeWidth={2}
+              />
               Accept
             </Button>
             <Button
@@ -183,7 +184,11 @@ export function AiDiffPane({
               onClick={onReject}
               className="h-7 gap-1.5"
             >
-              <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} />
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={Cancel01Icon}
+                strokeWidth={2}
+              />
               Reject
             </Button>
           </div>

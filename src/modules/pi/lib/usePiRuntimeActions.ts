@@ -18,6 +18,7 @@ export type PiRuntimeAction = "starting" | "stopping" | "restarting" | null;
 
 type UsePiRuntimeActionsInput = {
   isBusy: boolean;
+  onStopRuntimeNeedsConfirmation?: () => void;
   prewarmAttemptedRef: MutableRefObject<boolean>;
   refreshDiagnostics: () => Promise<void>;
   refreshHistory: () => Promise<void>;
@@ -40,6 +41,7 @@ function toErrorState(error: unknown): PiRuntimeState {
 
 export function usePiRuntimeActions({
   isBusy,
+  onStopRuntimeNeedsConfirmation,
   prewarmAttemptedRef,
   refreshDiagnostics,
   refreshHistory,
@@ -123,17 +125,12 @@ export function usePiRuntimeActions({
     const hasRunningSessions = sessions.some(
       (session) => session.status === "running",
     );
-    const confirmed =
-      !hasRunningSessions ||
-      typeof window === "undefined" ||
-      window.confirm(
-        "Stop Pi runtime? Active Pi responses will be interrupted and restored sessions will be marked stopped.",
-      );
-
-    if (confirmed) {
-      void stopRuntime();
+    if (hasRunningSessions) {
+      onStopRuntimeNeedsConfirmation?.();
+      return;
     }
-  }, [sessions, stopRuntime]);
+    void stopRuntime();
+  }, [onStopRuntimeNeedsConfirmation, sessions, stopRuntime]);
 
   const restartRuntime = useCallback(async () => {
     setIsBusy(true);
@@ -172,5 +169,6 @@ export function usePiRuntimeActions({
     restartRuntime,
     runtimeAction,
     startRuntime,
+    stopRuntime,
   };
 }

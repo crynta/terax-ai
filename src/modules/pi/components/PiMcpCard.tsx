@@ -13,13 +13,13 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Spinner } from "@/components/ui/spinner";
-import { McpConfigEditor } from "@/modules/pi/components/PiMcpConfigEditor";
 import {
   buildMcpServerConfigFromDraft,
   draftFromStoredMcpConfig,
   EMPTY_MCP_CONFIG_DRAFT,
   type McpConfigDraft,
 } from "@/modules/pi/components/PiMcpConfig";
+import { McpConfigEditor } from "@/modules/pi/components/PiMcpConfigEditor";
 import {
   auditEntryKey,
   buildServerRows,
@@ -148,9 +148,13 @@ export function PiMcpCard({
           onClick={onRefresh}
         >
           {isRefreshing ? (
-            <Spinner className="size-2.5" />
+            <Spinner data-icon="inline-start" />
           ) : (
-            <HugeiconsIcon icon={Refresh01Icon} size={11} strokeWidth={1.75} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Refresh01Icon}
+              strokeWidth={1.75}
+            />
           )}
           Refresh
         </Button>

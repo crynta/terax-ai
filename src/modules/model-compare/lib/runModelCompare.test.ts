@@ -82,6 +82,27 @@ describe("runModelComparePane", () => {
     });
   });
 
+  it("rejects deferred research mode even when called directly", async () => {
+    const buildModel = vi.fn(async () => ({ id: "fake-language-model" }));
+
+    await expect(
+      runModelComparePane({
+        prompt: "Research this",
+        mode: "research",
+        modelId: "fake-model",
+        keys: {},
+        local: {},
+        buildModel,
+        streamText: () => ({
+          textStream: (async function* () {
+            yield "should not run";
+          })(),
+        }),
+      }),
+    ).rejects.toThrow("Deep Research compare is deferred");
+    expect(buildModel).not.toHaveBeenCalled();
+  });
+
   it("runs explicit agent compare with read-only workspace tools", async () => {
     const streamCalls: Array<{
       system: string;
@@ -138,13 +159,17 @@ describe("runModelComparePane", () => {
     const tools = buildReadOnlyAgentTools({
       activeCwd: "/repo/src",
       workspaceRoot: "/repo",
-    }) as Record<string, { execute: (input: Record<string, unknown>) => Promise<unknown> }>;
+    }) as Record<
+      string,
+      { execute: (input: Record<string, unknown>) => Promise<unknown> }
+    >;
 
-    await expect(tools.read_file.execute({ path: "/tmp/outside.txt" })).resolves
-      .toMatchObject({
-        error: expect.stringContaining("scoped to the current workspace"),
-        workspaceRoot: "/repo",
-      });
+    await expect(
+      tools.read_file.execute({ path: "/tmp/outside.txt" }),
+    ).resolves.toMatchObject({
+      error: expect.stringContaining("scoped to the current workspace"),
+      workspaceRoot: "/repo",
+    });
   });
 
   it("reports probe failures without throwing", async () => {

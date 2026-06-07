@@ -24,6 +24,11 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  statusBadgeClass,
+  statusDotClass,
+  statusTextClass,
+} from "@/lib/statusTone";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 
@@ -50,13 +55,13 @@ const TOOL_META: Record<string, { label: string; icon: typeof File01Icon }> = {
 };
 
 const STATUS_DOT: Record<ToolPart["state"], string> = {
-  "approval-requested": "bg-amber-500",
-  "approval-responded": "bg-sky-500",
+  "approval-requested": statusDotClass("warning"),
+  "approval-responded": statusDotClass("info"),
   "input-streaming": "bg-muted-foreground/40",
-  "input-available": "bg-amber-500",
+  "input-available": statusDotClass("active"),
   "output-available": "bg-transparent border border-muted-foreground/40",
-  "output-denied": "bg-orange-500",
-  "output-error": "bg-destructive",
+  "output-denied": statusDotClass("danger"),
+  "output-error": statusDotClass("danger"),
 };
 
 const STATUS_LABEL: Record<ToolPart["state"], string> = {
@@ -196,7 +201,7 @@ const ToolImpl = ({
 
       {hasDetails && (
         <CollapsibleContent className={cn("terax-collapsible-content")}>
-          <div className="ml-3 mt-1 space-y-2 border-l border-border/60 pl-3 pb-1">
+          <div className="ml-3 mt-1 flex flex-col gap-2 border-l border-border/60 pl-3 pb-1">
             {showInputBody ? (
               <ToolInput toolName={toolName} input={input} />
             ) : null}
@@ -235,7 +240,7 @@ function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
   const preview = renderInputPreview(toolName, input);
   if (preview) {
     return (
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <div className="text-[10px] font-medium text-muted-foreground">
           Input
         </div>
@@ -244,7 +249,7 @@ function ToolInput({ toolName, input }: { toolName: string; input: unknown }) {
     );
   }
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <div className="text-[10px] font-medium text-muted-foreground">Input</div>
       <CodeBlockMini
         code={
@@ -270,7 +275,7 @@ function renderInputPreview(
     const cwd = str("cwd");
     if (!cmd) return null;
     return (
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         {cwd ? (
           <div className="font-mono text-[10px] text-muted-foreground">
             {cwd}
@@ -299,7 +304,7 @@ function renderInputPreview(
     const path = str("path") ?? str("root");
     if (!pat) return null;
     return (
-      <div className="space-y-0.5 font-mono text-[11px]">
+      <div className="flex flex-col gap-0.5 font-mono text-[11px]">
         <div className="text-foreground">{pat}</div>
         {path ? <div className="text-muted-foreground">{path}</div> : null}
       </div>
@@ -319,7 +324,7 @@ function ToolOutput({
 }) {
   if (errorText) {
     return (
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <div className="text-[10px] font-medium text-destructive">Error</div>
         <div className="rounded bg-destructive/10 px-2 py-1.5 font-mono text-[11px] text-destructive whitespace-pre-wrap">
           {errorText}
@@ -344,7 +349,7 @@ function ToolOutput({
   }
 
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <div className="text-[10px] font-medium text-muted-foreground">
         Output
       </div>
@@ -364,7 +369,7 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
     const lines = content ? content.split("\n").length : null;
     return (
       <div className="flex items-center gap-1.5 font-mono text-[11px]">
-        <span className="text-emerald-600 dark:text-emerald-400">✓</span>
+        <span className={statusTextClass("success")}>✓</span>
         <span className="text-foreground">read</span>
         {path ? <span className="text-muted-foreground">· {path}</span> : null}
         {lines != null ? (
@@ -462,7 +467,7 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
     }
 
     return (
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <div className="max-h-72 overflow-auto rounded bg-muted/30 font-mono text-[11px]">
           {hits.slice(0, 200).map((h, idx) => (
             <div
@@ -484,7 +489,12 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
             {filesScanned != null ? ` · ${filesScanned} files` : ""}
           </span>
           {truncated ? (
-            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">
+            <span
+              className={cn(
+                "rounded border px-1.5 py-0.5",
+                statusBadgeClass("warning"),
+              )}
+            >
               truncated
             </span>
           ) : null}
@@ -524,7 +534,7 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
       const path = typeof o.path === "string" ? o.path : "";
       return (
         <div className="flex items-center gap-1.5 font-mono text-[11px]">
-          <span className="text-emerald-600 dark:text-emerald-400">✓</span>
+          <span className={statusTextClass("success")}>✓</span>
           {reps != null ? (
             <span className="text-foreground">
               {reps} replacement{reps === 1 ? "" : "s"}
@@ -543,7 +553,7 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
     const bytes = typeof o.bytesWritten === "number" ? o.bytesWritten : null;
     return (
       <div className="flex items-center gap-1.5 font-mono text-[11px]">
-        <span className="text-emerald-600 dark:text-emerald-400">✓</span>
+        <span className={statusTextClass("success")}>✓</span>
         <span className="text-foreground">
           {toolName === "create_directory" ? "created" : "wrote"}
         </span>
@@ -559,9 +569,14 @@ function renderToolOutput(toolName: string, output: unknown): ReactNode | null {
     const handle = typeof o.handle === "string" ? o.handle : null;
     const cmd = typeof o.command === "string" ? o.command : "";
     return (
-      <div className="space-y-0.5 font-mono text-[11px]">
+      <div className="flex flex-col gap-0.5 font-mono text-[11px]">
         <div className="flex items-center gap-1.5">
-          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span
+            className={cn(
+              "size-1.5 animate-pulse rounded-full",
+              statusDotClass("active"),
+            )}
+          />
           {handle ? <span className="text-foreground">{handle}</span> : null}
           <span className="text-muted-foreground">running</span>
         </div>
@@ -598,7 +613,7 @@ function BashRunOutput({ data }: { data: Record<string, unknown> }) {
   ];
 
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1.5">
         {tabs.map((t) => (
           <button
@@ -626,20 +641,30 @@ function BashRunOutput({ data }: { data: Record<string, unknown> }) {
             className={cn(
               "rounded px-1.5 py-0.5 font-mono text-[10px]",
               exit === 0
-                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                : "bg-destructive/15 text-destructive",
+                ? statusBadgeClass("success")
+                : statusBadgeClass("danger"),
             )}
           >
             exit {exit}
           </span>
         ) : null}
         {timedOut ? (
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-400">
+          <span
+            className={cn(
+              "rounded border px-1.5 py-0.5 font-mono text-[10px]",
+              statusBadgeClass("warning"),
+            )}
+          >
             timed out
           </span>
         ) : null}
         {truncated ? (
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] text-amber-700 dark:text-amber-400">
+          <span
+            className={cn(
+              "rounded border px-1.5 py-0.5 font-mono text-[10px]",
+              statusBadgeClass("warning"),
+            )}
+          >
             truncated
           </span>
         ) : null}
@@ -670,7 +695,7 @@ function highlightMatch(text: string, pattern: string): ReactNode {
   const parts = text.split(re);
   return parts.map((p, i) =>
     i % 2 === 1 ? (
-      <mark key={i} className="rounded bg-amber-500/30 px-0.5 text-foreground">
+      <mark key={i} className="rounded bg-muted px-0.5 text-foreground">
         {p}
       </mark>
     ) : (
@@ -709,7 +734,7 @@ function SuggestCommandCard({
     if (ok) setInserted(true);
   };
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-col gap-1.5">
       {explanation ? (
         <div className="text-[11px] text-muted-foreground">{explanation}</div>
       ) : null}

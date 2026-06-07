@@ -8,12 +8,12 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { Button } from "@/components/ui/button";
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
@@ -21,6 +21,7 @@ import {
   type GitLogEntry,
   native,
 } from "@/modules/ai/lib/native";
+import { normalizeError } from "./GitHistoryUtils";
 import { MAX_VISIBLE_LANES, railWidth } from "./GraphRail";
 import {
   EMPTY_GRAPH_STATE,
@@ -28,11 +29,7 @@ import {
   type GraphState,
   layoutGraph,
 } from "./lib/graph";
-import { normalizeError } from "./GitHistoryUtils";
-import {
-  parseRemoteWebUrl,
-  type RemoteWebInfo,
-} from "./lib/remoteWebUrl";
+import { parseRemoteWebUrl, type RemoteWebInfo } from "./lib/remoteWebUrl";
 
 const RAIL_RESERVED_PX = railWidth(MAX_VISIBLE_LANES);
 // rail | sha | subject(capped) | spacer(absorbs slack) | author(hugs) | date | changes
@@ -48,9 +45,10 @@ import {
   CenterPlaceholder,
   CommitDetail,
   type CommitFileDiffOpenInput,
-  type FilesEntry,
   CommitRow,
+  type FilesEntry,
 } from "./GitHistoryCommitParts";
+
 export type { CommitFileDiffOpenInput } from "./GitHistoryCommitParts";
 
 export type GitHistorySearchHandle = {

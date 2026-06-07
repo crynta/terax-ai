@@ -130,7 +130,7 @@ export function PiComposer({
     >
       <Textarea
         aria-label="Pi prompt"
-        className="max-h-32 min-h-16 overflow-y-auto overscroll-contain rounded-lg border-border/45 bg-background/95 px-2.5 py-2 text-[12px] leading-relaxed shadow-sm placeholder:text-muted-foreground/60 focus-visible:border-primary/45 focus-visible:ring-2 focus-visible:ring-primary/15 disabled:bg-muted/35"
+        className="max-h-32 min-h-16 overflow-y-auto overscroll-contain rounded-lg border-border/45 bg-background/95 px-2.5 py-2 text-[12px] leading-relaxed shadow-sm placeholder:text-muted-foreground focus-visible:border-primary/45 focus-visible:ring-2 focus-visible:ring-primary/15 disabled:bg-muted/35"
         value={prompt}
         placeholder="Ask Pi about this workspace"
         disabled={disabled}
@@ -151,12 +151,12 @@ export function PiComposer({
             <span>Thinking</span>
             <select
               aria-label="Pi thinking level for next reply"
-              title={thinkingTitle}
-              className="h-6 rounded-md border border-border/45 bg-background px-1.5 text-[10px] capitalize text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-60"
-              value={thinkingLevel}
+              className="h-6 min-w-20 rounded-md border border-border/45 bg-background px-1.5 text-[10px] capitalize text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary/45 focus-visible:ring-2 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
               disabled={thinkingDisabled}
+              title={thinkingTitle}
+              value={thinkingLevel}
               onChange={(event) =>
-                onThinkingLevelChange(event.target.value as PiThinkingLevel)
+                onThinkingLevelChange(event.currentTarget.value as PiThinkingLevel)
               }
             >
               {availableThinkingLevels.map((level) => (
@@ -218,7 +218,6 @@ export function PiComposer({
             <HugeiconsIcon
               data-icon="inline-start"
               icon={StopCircleIcon}
-              size={11}
               strokeWidth={1.75}
             />
             Stop
@@ -235,7 +234,6 @@ export function PiComposer({
             <HugeiconsIcon
               data-icon="inline-end"
               icon={ArrowUpIcon}
-              size={11}
               strokeWidth={1.75}
             />
           </Button>

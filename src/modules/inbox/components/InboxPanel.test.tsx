@@ -43,6 +43,9 @@ describe("InboxPanel", () => {
     );
 
     expect(html).toContain("Inbox");
+    expect(html).toContain(
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card/80",
+    );
     expect(html).toContain("Runs");
     expect(html).toContain("Artifacts");
     expect(html).toContain("Pi response ready");

@@ -1,9 +1,9 @@
 import { useMemo } from "react";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   type PiProviderPrefs,
   resolvePiProviderConfig,
 } from "@/modules/pi/lib/provider";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 
 export function usePiProviderConfig() {
   const piAuthMode = usePreferencesStore((state) => state.piAuthMode);

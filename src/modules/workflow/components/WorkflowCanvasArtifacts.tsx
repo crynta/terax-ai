@@ -2,6 +2,13 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
   describeWorkflowArtifactPreview,
@@ -14,7 +21,11 @@ import {
   tauriWorkflowArtifactFileSystem,
   workflowArtifactNativePreviewSource,
 } from "../lib/nativeArtifactStorage";
-import type { WorkflowArtifact, WorkflowDocument, WorkflowNode } from "../lib/schema";
+import type {
+  WorkflowArtifact,
+  WorkflowDocument,
+  WorkflowNode,
+} from "../lib/schema";
 
 export function safeArtifactPreviewSource(source: string): string {
   try {
@@ -385,7 +396,7 @@ export function ArtifactList({
   return (
     <div
       className={cn(
-        "space-y-1 rounded-md border border-border/60 bg-muted/20 p-2",
+        "flex flex-col gap-1 rounded-md border border-border/60 bg-muted/20 p-2",
         compact && "mt-2 max-w-72",
       )}
     >
@@ -426,14 +437,17 @@ export function ArtifactPreviewModal({
   onDelete: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-6 backdrop-blur-sm">
-      <div className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl">
-        <div className="flex items-center justify-between gap-3 border-border border-b px-4 py-3">
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        className="max-h-[calc(100dvh-3rem)] max-w-4xl gap-0 overflow-hidden p-0"
+        showCloseButton={false}
+      >
+        <DialogHeader className="flex-row items-center justify-between gap-3 border-border border-b px-4 py-3">
           <div className="min-w-0">
-            <div className="font-medium text-sm">Artifact preview</div>
-            <div className="truncate text-muted-foreground text-xs">
+            <DialogTitle className="text-sm">Artifact preview</DialogTitle>
+            <DialogDescription className="truncate text-xs">
               {artifact.label}
-            </div>
+            </DialogDescription>
           </div>
           <div className="flex shrink-0 gap-2">
             <Button
@@ -455,17 +469,21 @@ export function ArtifactPreviewModal({
               Close preview
             </Button>
           </div>
-        </div>
+        </DialogHeader>
         <div className="overflow-auto p-4">
           <ArtifactPreview artifact={artifact} expanded />
           <ArtifactPreviewDetails artifact={artifact} />
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-export function ArtifactPreviewDetails({ artifact }: { artifact: WorkflowArtifact }) {
+export function ArtifactPreviewDetails({
+  artifact,
+}: {
+  artifact: WorkflowArtifact;
+}) {
   const details = workflowArtifactPreviewDetails(artifact);
   if (details.length === 0) return null;
   return (
@@ -614,6 +632,8 @@ export function ArtifactPreview({
       <img
         src={source}
         alt={preview.text}
+        width={1024}
+        height={768}
         className={cn(
           "nodrag nowheel mt-2 w-full rounded-md border border-border/60 object-contain",
           expanded ? "max-h-[70vh]" : "max-h-32",
@@ -652,4 +672,3 @@ export function ArtifactPreview({
     </div>
   );
 }
-

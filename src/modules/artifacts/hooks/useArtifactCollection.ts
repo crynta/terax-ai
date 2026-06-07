@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  createArtifactCollectionStore,
   type ArtifactCollectionSnapshot,
+  createArtifactCollectionStore,
 } from "@/modules/artifacts/lib/collection";
 import {
   onArtifactDelete,

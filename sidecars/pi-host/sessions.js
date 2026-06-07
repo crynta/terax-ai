@@ -35,6 +35,8 @@ import { branchPayload } from "./session-payloads.js";
 import { mapAgentSessionEvent } from "./session-event-mapper.js";
 export { mapAgentSessionEvent } from "./session-event-mapper.js";
 import { enabledToolNamesForSession } from "./tool-policy.js";
+
+// Pi sessions expose rust-mediated Terax tools through customTools.
 export {
   APPROVAL_TOOL_NAMES,
   ENABLED_TOOL_NAMES,
@@ -62,6 +64,31 @@ export const MAX_SESSION_TITLE_CHARS = 256;
 
 let nextSessionNumber = 1;
 const sessions = new Map();
+let sessionCleanupErrorReporter = defaultSessionCleanupErrorReporter;
+
+function defaultSessionCleanupErrorReporter(report) {
+  console.warn(
+    `[terax-pi] Session cleanup ${report.source} failed: ${report.message}`,
+  );
+}
+
+function cleanupErrorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function reportSessionCleanupError(source, error) {
+  sessionCleanupErrorReporter({
+    source,
+    message: cleanupErrorMessage(error),
+  });
+}
+
+export function setSessionCleanupErrorReporterForTests(reporter) {
+  sessionCleanupErrorReporter =
+    typeof reporter === "function"
+      ? reporter
+      : defaultSessionCleanupErrorReporter;
+}
 
 function contextWithWorkspace(session, context) {
   return compactContext({
@@ -161,16 +188,76 @@ function assertSendableSession(session) {
   }
 }
 
+function assertConfigurableSession(session) {
+  assertSendableSession(session);
+}
+
+function disposeSessionHandles({ agentSession, unsubscribe, cleanup }) {
+  try {
+    unsubscribe?.();
+  } catch (error) {
+    reportSessionCleanupError("unsubscribe", error);
+  }
+  try {
+    agentSession?.dispose?.();
+  } catch (error) {
+    reportSessionCleanupError("dispose", error);
+  }
+  try {
+    cleanup?.();
+  } catch (error) {
+    reportSessionCleanupError("cleanup", error);
+  }
+}
+
 function disposeSession(session) {
+  disposeSessionHandles(session);
+}
+
+export function disposeSessionHandlesForTests(handles) {
+  disposeSessionHandles(handles);
+}
+
+function capabilityManifestsEqual(left, right) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+async function refreshSessionCapabilityManifest(session, capabilityManifest) {
+  if (capabilityManifest === undefined) return;
+  const nextManifest = capabilityManifest ?? null;
+  if (capabilityManifestsEqual(session.capabilityManifest, nextManifest)) return;
+
+  const previous = {
+    agentSession: session.agentSession,
+    unsubscribe: session.unsubscribe,
+    cleanup: session.cleanup,
+    capabilityManifest: session.capabilityManifest,
+    sdkSessionFile: session.sdkSessionFile,
+    thinkingLevel: session.thinkingLevel,
+    agentGeneration: session.agentGeneration,
+  };
+
+  session.capabilityManifest = nextManifest;
   try {
-    session.unsubscribe?.();
-  } catch {}
-  try {
-    session.agentSession?.dispose?.();
-  } catch {}
-  try {
-    session.cleanup?.();
-  } catch {}
+    await attachAgentSession(session);
+  } catch (error) {
+    if (
+      session.agentSession !== previous.agentSession ||
+      session.unsubscribe !== previous.unsubscribe ||
+      session.cleanup !== previous.cleanup
+    ) {
+      disposeSessionHandles(session);
+    }
+    session.agentSession = previous.agentSession;
+    session.unsubscribe = previous.unsubscribe;
+    session.cleanup = previous.cleanup;
+    session.capabilityManifest = previous.capabilityManifest;
+    session.sdkSessionFile = previous.sdkSessionFile;
+    session.thinkingLevel = previous.thinkingLevel;
+    session.agentGeneration = previous.agentGeneration;
+    throw error;
+  }
+  disposeSessionHandles(previous);
 }
 
 async function createTestFauxOptions(pi) {
@@ -465,6 +552,12 @@ export async function resumeSession(params) {
   );
   const existing = sessions.get(id);
   if (existing) {
+    if (existing.status !== "running") {
+      await refreshSessionCapabilityManifest(
+        existing,
+        options.capabilityManifest,
+      );
+    }
     return { session: sessionSnapshot(existing), events: [] };
   }
   assertSessionCapacity();
@@ -513,6 +606,19 @@ export async function resumeSession(params) {
       ),
     ],
   };
+}
+
+export async function configureSession(params) {
+  const options = assertParamsObject(params, "sessions.configure");
+  const sessionId = requiredString(
+    options,
+    "sessionId",
+    "sessions.configure",
+  );
+  const session = findSession(sessionId);
+  assertConfigurableSession(session);
+  await refreshSessionCapabilityManifest(session, options.capabilityManifest);
+  return { session: sessionSnapshot(session) };
 }
 
 async function runPrompt(session, prompt, context, runId) {
@@ -725,7 +831,9 @@ export async function deleteSession(params) {
   if (wasRunning) {
     try {
       await session.agentSession.abort();
-    } catch {}
+    } catch (error) {
+      reportSessionCleanupError("abort", error);
+    }
   }
   disposeSession(session);
   sessions.delete(sessionId);

@@ -1,9 +1,9 @@
 import { type MutableRefObject, useCallback, useEffect, useState } from "react";
+import { useChatStore } from "@/modules/ai/store/chatStore";
+import type { EditorPaneHandle } from "@/modules/editor";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import type { Tab } from "@/modules/tabs";
-import type { EditorPaneHandle } from "@/modules/editor";
 import type { TerminalPaneHandle } from "@/modules/terminal";
-import { useChatStore } from "@/modules/ai/store/chatStore";
 
 type UseAppAiSelectionInput = {
   activeId: number;

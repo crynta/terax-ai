@@ -6,7 +6,7 @@ import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
-  forwardRef,
+  type Ref,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
@@ -46,6 +47,7 @@ type Props = {
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
+  ref?: Ref<FileExplorerHandle>;
 };
 
 type Row =
@@ -156,439 +158,432 @@ function buildRows(
   return { rows, entryIndexByPath };
 }
 
-export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
-  function FileExplorer(
-    {
-      rootPath,
-      activeFilePath,
-      onOpenFile,
-      onPathRenamed,
-      onPathDeleted,
-      onRevealInTerminal,
-      onAttachToAgent,
-      onOpenMarkdownPreview,
+export function FileExplorer({
+  rootPath,
+  activeFilePath,
+  onOpenFile,
+  onPathRenamed,
+  onPathDeleted,
+  onRevealInTerminal,
+  onAttachToAgent,
+  onOpenMarkdownPreview,
+  ref,
+}: Props) {
+  const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const searchRef = useRef<ExplorerSearchHandle>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const { rows, entryIndexByPath } = useMemo(() => {
+    if (!rootPath)
+      return {
+        rows: [] as Row[],
+        entryIndexByPath: new Map<string, number>(),
+      };
+    return buildRows(rootPath, tree);
+  }, [
+    rootPath,
+    tree.nodes,
+    tree.expanded,
+    tree.renaming,
+    tree.pendingCreate,
+    tree,
+  ]);
+
+  const entryPaths = useMemo<string[]>(() => {
+    const out: string[] = [];
+    for (const row of rows) if (row.kind === "entry") out.push(row.path);
+    return out;
+  }, [rows]);
+
+  useEffect(() => {
+    if (selectedPath && !entryIndexByPath.has(selectedPath)) {
+      setSelectedPath(null);
+    }
+  }, [entryIndexByPath, selectedPath]);
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: OVERSCAN,
+    getItemKey: (index) => rows[index]?.key ?? index,
+  });
+
+  const scrollEntryIntoView = useCallback(
+    (path: string) => {
+      const index = entryIndexByPath.get(path);
+      if (index === undefined) return;
+      virtualizer.scrollToIndex(index, { align: "auto" });
     },
+    [entryIndexByPath, virtualizer],
+  );
+
+  const lastSyncedActivePathRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeFilePath || activeFilePath === lastSyncedActivePathRef.current) {
+      return;
+    }
+    if (!entryIndexByPath.has(activeFilePath)) return;
+    lastSyncedActivePathRef.current = activeFilePath;
+    setSelectedPath(activeFilePath);
+    requestAnimationFrame(() => scrollEntryIntoView(activeFilePath));
+  }, [activeFilePath, entryIndexByPath, scrollEntryIntoView]);
+
+  useImperativeHandle(
     ref,
-  ) {
-    const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
-    const [selectedPath, setSelectedPath] = useState<string | null>(null);
-    const [isSearchOpen, setIsSearchOpen] = useState(false);
-    const [isSearchActive, setIsSearchActive] = useState(false);
-    const searchRef = useRef<ExplorerSearchHandle>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
-    const scrollRef = useRef<HTMLDivElement>(null);
-
-    const { rows, entryIndexByPath } = useMemo(() => {
-      if (!rootPath)
-        return {
-          rows: [] as Row[],
-          entryIndexByPath: new Map<string, number>(),
-        };
-      return buildRows(rootPath, tree);
-    }, [
-      rootPath,
-      tree.nodes,
-      tree.expanded,
-      tree.renaming,
-      tree.pendingCreate,
-      tree,
-    ]);
-
-    const entryPaths = useMemo<string[]>(() => {
-      const out: string[] = [];
-      for (const row of rows) if (row.kind === "entry") out.push(row.path);
-      return out;
-    }, [rows]);
-
-    useEffect(() => {
-      if (selectedPath && !entryIndexByPath.has(selectedPath)) {
-        setSelectedPath(null);
-      }
-    }, [entryIndexByPath, selectedPath]);
-
-    const virtualizer = useVirtualizer({
-      count: rows.length,
-      getScrollElement: () => scrollRef.current,
-      estimateSize: () => ROW_HEIGHT,
-      overscan: OVERSCAN,
-      getItemKey: (index) => rows[index]?.key ?? index,
-    });
-
-    const scrollEntryIntoView = useCallback(
-      (path: string) => {
-        const index = entryIndexByPath.get(path);
-        if (index === undefined) return;
-        virtualizer.scrollToIndex(index, { align: "auto" });
-      },
-      [entryIndexByPath, virtualizer],
-    );
-
-    const lastSyncedActivePathRef = useRef<string | null>(null);
-    useEffect(() => {
-      if (
-        !activeFilePath ||
-        activeFilePath === lastSyncedActivePathRef.current
-      ) {
-        return;
-      }
-      if (!entryIndexByPath.has(activeFilePath)) return;
-      lastSyncedActivePathRef.current = activeFilePath;
-      setSelectedPath(activeFilePath);
-      requestAnimationFrame(() => scrollEntryIntoView(activeFilePath));
-    }, [activeFilePath, entryIndexByPath, scrollEntryIntoView]);
-
-    useImperativeHandle(
-      ref,
-      () => ({
-        focus: () => {
-          containerRef.current?.focus();
-          if (!selectedPath && entryPaths.length > 0) {
-            const first = entryPaths[0];
-            setSelectedPath(first);
-            requestAnimationFrame(() => scrollEntryIntoView(first));
-          }
-        },
-        isFocused: () => {
-          const c = containerRef.current;
-          if (!c) return false;
-          const active = document.activeElement;
-          return active instanceof Node && c.contains(active);
-        },
-        focusSearch: () => {
-          setIsSearchOpen(true);
-          searchRef.current?.focus();
-        },
-      }),
-      [entryPaths, scrollEntryIntoView, selectedPath],
-    );
-
-    useGlobalShortcuts({
-      "explorer.search": () => {
-        if (searchRef.current?.isFocused()) {
-          setIsSearchOpen(false);
-          return;
+    () => ({
+      focus: () => {
+        containerRef.current?.focus();
+        if (!selectedPath && entryPaths.length > 0) {
+          const first = entryPaths[0];
+          setSelectedPath(first);
+          requestAnimationFrame(() => scrollEntryIntoView(first));
         }
+      },
+      isFocused: () => {
+        const c = containerRef.current;
+        if (!c) return false;
+        const active = document.activeElement;
+        return active instanceof Node && c.contains(active);
+      },
+      focusSearch: () => {
         setIsSearchOpen(true);
         searchRef.current?.focus();
       },
-    });
+    }),
+    [entryPaths, scrollEntryIntoView, selectedPath],
+  );
 
-    if (!rootPath) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-          <HugeiconsIcon
-            icon={Folder01Icon}
-            size={24}
-            strokeWidth={1.5}
-            className="text-muted-foreground"
-          />
-          <div className="text-xs text-muted-foreground">
-            No current directory
-          </div>
-        </div>
-      );
-    }
-
-    const root = tree.nodes[rootPath];
-    const pendingAtRoot =
-      tree.pendingCreate?.parentPath === rootPath ? tree.pendingCreate : null;
-
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (tree.renaming || tree.pendingCreate || isSearchOpen) return;
-      const target = e.target as HTMLElement;
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      )
+  useGlobalShortcuts({
+    "explorer.search": () => {
+      if (searchRef.current?.isFocused()) {
+        setIsSearchOpen(false);
         return;
-      if (entryPaths.length === 0) return;
-
-      const currentIdx = selectedPath ? entryPaths.indexOf(selectedPath) : -1;
-      const move = (next: number) => {
-        const clamped = Math.max(0, Math.min(entryPaths.length - 1, next));
-        const path = entryPaths[clamped];
-        setSelectedPath(path);
-        requestAnimationFrame(() => scrollEntryIntoView(path));
-      };
-
-      switch (e.key) {
-        case "ArrowDown":
-          e.preventDefault();
-          move(currentIdx < 0 ? 0 : currentIdx + 1);
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          move(currentIdx < 0 ? entryPaths.length - 1 : currentIdx - 1);
-          break;
-        case "ArrowRight": {
-          if (currentIdx < 0) return;
-          e.preventDefault();
-          const path = entryPaths[currentIdx];
-          const idx = entryIndexByPath.get(path);
-          if (idx === undefined) break;
-          const row = rows[idx];
-          if (row.kind !== "entry") break;
-          if (row.isDir) {
-            if (!row.isExpanded) tree.toggle(row.path);
-            else move(currentIdx + 1);
-          }
-          break;
-        }
-        case "ArrowLeft": {
-          if (currentIdx < 0) return;
-          e.preventDefault();
-          const path = entryPaths[currentIdx];
-          const idx = entryIndexByPath.get(path);
-          if (idx === undefined) break;
-          const row = rows[idx];
-          if (row.kind !== "entry") break;
-          if (row.isDir && row.isExpanded) {
-            tree.toggle(row.path);
-          } else {
-            const parent = row.path.slice(0, row.path.lastIndexOf("/"));
-            if (parent && parent !== rootPath) setSelectedPath(parent);
-          }
-          break;
-        }
-        case "Enter": {
-          if (currentIdx < 0) return;
-          e.preventDefault();
-          const path = entryPaths[currentIdx];
-          const idx = entryIndexByPath.get(path);
-          if (idx === undefined) break;
-          const row = rows[idx];
-          if (row.kind !== "entry") break;
-          if (row.isDir) tree.toggle(row.path);
-          else onOpenFile(row.path);
-          break;
-        }
       }
-    };
+      setIsSearchOpen(true);
+      searchRef.current?.focus();
+    },
+  });
 
-    const renderRow = (row: Row) => {
-      switch (row.kind) {
-        case "entry":
-        case "rename": {
-          return (
-            <EntryRow
-              path={row.path}
-              name={row.name}
-              isDir={row.isDir}
-              isExpanded={row.kind === "entry" ? row.isExpanded : false}
-              depth={row.depth}
-              rootPath={rootPath}
-              tree={tree}
-              isSelected={selectedPath === row.path}
-              isRenaming={row.kind === "rename"}
-              onOpenFile={onOpenFile}
-              onSelectPath={setSelectedPath}
-              onRevealInTerminal={onRevealInTerminal}
-              onAttachToAgent={onAttachToAgent}
-              onOpenMarkdownPreview={onOpenMarkdownPreview}
-            />
-          );
-        }
-        case "pending":
-          return (
-            <PendingRow
-              depth={row.depth}
-              kind={row.pendingKind}
-              onCommit={tree.commitCreate}
-              onCancel={tree.cancelCreate}
-            />
-          );
-        case "status":
-          return (
-            <StatusRow
-              depth={row.depth}
-              message={row.message}
-              tone={row.tone}
-            />
-          );
-      }
-    };
-
+  if (!rootPath) {
     return (
-      <div
-        ref={containerRef}
-        className="flex h-full flex-col outline-none"
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-      >
-        <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
-          <span
-            className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80"
-            title={rootPath}
-          >
-            <img
-              src={folderIconUrl(basename(rootPath), false)}
-              alt=""
-              height={15}
-              width={15}
-              className="mx-1.5"
-            />
-            {basename(rootPath)}
-          </span>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6 text-muted-foreground hover:text-foreground"
-            onClick={() => setIsSearchOpen((v) => !v)}
-            title="Search files"
-            aria-label="Search files"
-          >
-            <HugeiconsIcon
-              aria-hidden="true"
-              focusable="false"
-              icon={Search01Icon}
-              size={13}
-              strokeWidth={2}
-            />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6 text-muted-foreground hover:text-foreground"
-            onClick={() => tree.beginCreate(rootPath, "file")}
-            title="New file"
-            aria-label="New file"
-          >
-            <HugeiconsIcon
-              aria-hidden="true"
-              focusable="false"
-              icon={FileAddIcon}
-              size={13}
-              strokeWidth={2}
-            />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6 text-muted-foreground hover:text-foreground"
-            onClick={() => tree.beginCreate(rootPath, "dir")}
-            title="New folder"
-            aria-label="New folder"
-          >
-            <HugeiconsIcon
-              aria-hidden="true"
-              focusable="false"
-              icon={FolderAddIcon}
-              size={13}
-              strokeWidth={2}
-            />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-6 text-muted-foreground hover:text-foreground"
-            onClick={() => tree.refresh(rootPath)}
-            title="Refresh"
-            aria-label="Refresh"
-          >
-            <HugeiconsIcon
-              aria-hidden="true"
-              focusable="false"
-              icon={Refresh01Icon}
-              size={12}
-              strokeWidth={2}
-            />
-          </Button>
-        </div>
-
-        <ExplorerSearch
-          ref={searchRef}
-          rootPath={rootPath}
-          onOpenFile={onOpenFile}
-          open={isSearchOpen}
-          onRequestClose={() => setIsSearchOpen(false)}
-          onActiveChange={setIsSearchActive}
-          onRevealInTerminal={onRevealInTerminal}
-          onAttachToAgent={onAttachToAgent}
+      <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden items-center justify-center gap-2 p-6 text-center">
+        <HugeiconsIcon
+          icon={Folder01Icon}
+          size={24}
+          strokeWidth={1.5}
+          className="text-muted-foreground"
         />
+        <div className="text-xs text-muted-foreground">
+          No current directory
+        </div>
+      </div>
+    );
+  }
 
-        {!isSearchActive ? (
-          <ContextMenu>
-            <ContextMenuTrigger asChild>
-              <div
-                ref={scrollRef}
-                className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
-              >
-                {pendingAtRoot ? (
-                  <div
-                    className="flex h-6 w-full min-w-0 items-center gap-2 px-1.5 text-[13px]"
-                    style={{ paddingLeft: 6 }}
-                  >
-                    <span className="size-3.5 shrink-0" />
-                    <img
-                      src={
-                        pendingAtRoot.kind === "dir"
-                          ? folderIconUrl("", false)
-                          : fileIconUrl("untitled")
-                      }
-                      alt=""
-                      className="size-4 shrink-0 opacity-70"
-                    />
-                    <InlineInput
-                      initial=""
-                      placeholder={
-                        pendingAtRoot.kind === "dir" ? "New folder" : "New file"
-                      }
-                      onCommit={tree.commitCreate}
-                      onCancel={tree.cancelCreate}
-                    />
-                  </div>
-                ) : null}
-                {root?.status === "loading" && (
-                  <div className="px-3 py-2 text-[11px] text-muted-foreground">
-                    Loading…
-                  </div>
-                )}
-                {root?.status === "error" && (
-                  <div className="px-3 py-2 text-[11px] text-destructive">
-                    {root.message}
-                  </div>
-                )}
-                {root?.status === "loaded" ? (
-                  <div
-                    style={{
-                      height: virtualizer.getTotalSize(),
-                      position: "relative",
-                      width: "100%",
-                    }}
-                  >
-                    {virtualizer.getVirtualItems().map((virtualRow) => {
-                      const row = rows[virtualRow.index];
-                      if (!row) return null;
-                      return (
-                        <div
-                          key={virtualRow.key}
-                          data-virtual-row-index={virtualRow.index}
-                          style={{
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
-                            width: "100%",
-                            height: virtualRow.size,
-                            transform: `translateY(${virtualRow.start}px)`,
-                          }}
-                        >
-                          {renderRow(row)}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            </ContextMenuTrigger>
-            <ContextMenuContent
-              className={COMPACT_CONTENT}
-              onCloseAutoFocus={(e) => {
-                if (tree.renaming || tree.pendingCreate) e.preventDefault();
-              }}
+  const root = tree.nodes[rootPath];
+  const pendingAtRoot =
+    tree.pendingCreate?.parentPath === rootPath ? tree.pendingCreate : null;
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (tree.renaming || tree.pendingCreate || isSearchOpen) return;
+    const target = e.target as HTMLElement;
+    if (
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.isContentEditable
+    )
+      return;
+    if (entryPaths.length === 0) return;
+
+    const currentIdx = selectedPath ? entryPaths.indexOf(selectedPath) : -1;
+    const move = (next: number) => {
+      const clamped = Math.max(0, Math.min(entryPaths.length - 1, next));
+      const path = entryPaths[clamped];
+      setSelectedPath(path);
+      requestAnimationFrame(() => scrollEntryIntoView(path));
+    };
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        move(currentIdx < 0 ? 0 : currentIdx + 1);
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        move(currentIdx < 0 ? entryPaths.length - 1 : currentIdx - 1);
+        break;
+      case "ArrowRight": {
+        if (currentIdx < 0) return;
+        e.preventDefault();
+        const path = entryPaths[currentIdx];
+        const idx = entryIndexByPath.get(path);
+        if (idx === undefined) break;
+        const row = rows[idx];
+        if (row.kind !== "entry") break;
+        if (row.isDir) {
+          if (!row.isExpanded) tree.toggle(row.path);
+          else move(currentIdx + 1);
+        }
+        break;
+      }
+      case "ArrowLeft": {
+        if (currentIdx < 0) return;
+        e.preventDefault();
+        const path = entryPaths[currentIdx];
+        const idx = entryIndexByPath.get(path);
+        if (idx === undefined) break;
+        const row = rows[idx];
+        if (row.kind !== "entry") break;
+        if (row.isDir && row.isExpanded) {
+          tree.toggle(row.path);
+        } else {
+          const parent = row.path.slice(0, row.path.lastIndexOf("/"));
+          if (parent && parent !== rootPath) setSelectedPath(parent);
+        }
+        break;
+      }
+      case "Enter": {
+        if (currentIdx < 0) return;
+        e.preventDefault();
+        const path = entryPaths[currentIdx];
+        const idx = entryIndexByPath.get(path);
+        if (idx === undefined) break;
+        const row = rows[idx];
+        if (row.kind !== "entry") break;
+        if (row.isDir) tree.toggle(row.path);
+        else onOpenFile(row.path);
+        break;
+      }
+    }
+  };
+
+  const renderRow = (row: Row) => {
+    switch (row.kind) {
+      case "entry":
+      case "rename": {
+        return (
+          <EntryRow
+            path={row.path}
+            name={row.name}
+            isDir={row.isDir}
+            isExpanded={row.kind === "entry" ? row.isExpanded : false}
+            depth={row.depth}
+            rootPath={rootPath}
+            tree={tree}
+            isSelected={selectedPath === row.path}
+            isRenaming={row.kind === "rename"}
+            onOpenFile={onOpenFile}
+            onSelectPath={setSelectedPath}
+            onRevealInTerminal={onRevealInTerminal}
+            onAttachToAgent={onAttachToAgent}
+            onOpenMarkdownPreview={onOpenMarkdownPreview}
+          />
+        );
+      }
+      case "pending":
+        return (
+          <PendingRow
+            depth={row.depth}
+            kind={row.pendingKind}
+            onCommit={tree.commitCreate}
+            onCancel={tree.cancelCreate}
+          />
+        );
+      case "status":
+        return (
+          <StatusRow depth={row.depth} message={row.message} tone={row.tone} />
+        );
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden outline-none"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
+        <span
+          className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80"
+          title={rootPath}
+        >
+          <img
+            src={folderIconUrl(basename(rootPath), false)}
+            alt=""
+            height={15}
+            width={15}
+            className="mx-1.5"
+          />
+          {basename(rootPath)}
+        </span>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          onClick={() => setIsSearchOpen((v) => !v)}
+          title="Search files"
+          aria-label="Search files"
+        >
+          <HugeiconsIcon
+            data-icon="inline-start"
+            aria-hidden="true"
+            focusable="false"
+            icon={Search01Icon}
+            strokeWidth={2}
+          />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          onClick={() => tree.beginCreate(rootPath, "file")}
+          title="New file"
+          aria-label="New file"
+        >
+          <HugeiconsIcon
+            data-icon="inline-start"
+            aria-hidden="true"
+            focusable="false"
+            icon={FileAddIcon}
+            strokeWidth={2}
+          />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          onClick={() => tree.beginCreate(rootPath, "dir")}
+          title="New folder"
+          aria-label="New folder"
+        >
+          <HugeiconsIcon
+            data-icon="inline-start"
+            aria-hidden="true"
+            focusable="false"
+            icon={FolderAddIcon}
+            strokeWidth={2}
+          />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 text-muted-foreground hover:text-foreground"
+          onClick={() => tree.refresh(rootPath)}
+          title="Refresh"
+          aria-label="Refresh"
+        >
+          <HugeiconsIcon
+            data-icon="inline-start"
+            aria-hidden="true"
+            focusable="false"
+            icon={Refresh01Icon}
+            strokeWidth={2}
+          />
+        </Button>
+      </div>
+
+      <ExplorerSearch
+        ref={searchRef}
+        rootPath={rootPath}
+        onOpenFile={onOpenFile}
+        open={isSearchOpen}
+        onRequestClose={() => setIsSearchOpen(false)}
+        onActiveChange={setIsSearchActive}
+        onRevealInTerminal={onRevealInTerminal}
+        onAttachToAgent={onAttachToAgent}
+      />
+
+      {!isSearchActive ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div
+              ref={scrollRef}
+              className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
             >
+              {pendingAtRoot ? (
+                <div
+                  className="flex h-6 w-full min-w-0 items-center gap-2 px-1.5 text-[13px]"
+                  style={{ paddingLeft: 6 }}
+                >
+                  <span className="size-3.5 shrink-0" />
+                  <img
+                    src={
+                      pendingAtRoot.kind === "dir"
+                        ? folderIconUrl("", false)
+                        : fileIconUrl("untitled")
+                    }
+                    alt=""
+                    width={16}
+                    height={16}
+                    className="size-4 shrink-0 opacity-70"
+                  />
+                  <InlineInput
+                    initial=""
+                    placeholder={
+                      pendingAtRoot.kind === "dir" ? "New folder" : "New file"
+                    }
+                    onCommit={tree.commitCreate}
+                    onCancel={tree.cancelCreate}
+                  />
+                </div>
+              ) : null}
+              {root?.status === "loading" && (
+                <div className="px-3 py-2 text-[11px] text-muted-foreground">
+                  Loading…
+                </div>
+              )}
+              {root?.status === "error" && (
+                <div className="px-3 py-2 text-[11px] text-destructive">
+                  {root.message}
+                </div>
+              )}
+              {root?.status === "loaded" ? (
+                <div
+                  style={{
+                    height: virtualizer.getTotalSize(),
+                    position: "relative",
+                    width: "100%",
+                  }}
+                >
+                  {virtualizer.getVirtualItems().map((virtualRow) => {
+                    const row = rows[virtualRow.index];
+                    if (!row) return null;
+                    return (
+                      <div
+                        key={virtualRow.key}
+                        data-virtual-row-index={virtualRow.index}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          height: virtualRow.size,
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        {renderRow(row)}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent
+            className={COMPACT_CONTENT}
+            onCloseAutoFocus={(e) => {
+              if (tree.renaming || tree.pendingCreate) e.preventDefault();
+            }}
+          >
+            <ContextMenuGroup>
               {onRevealInTerminal && (
                 <ContextMenuItem
                   className={COMPACT_ITEM}
@@ -603,7 +598,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               >
                 Reveal in Finder
               </ContextMenuItem>
-              <ContextMenuSeparator />
+            </ContextMenuGroup>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
               <ContextMenuItem
                 className={COMPACT_ITEM}
                 onSelect={() => tree.beginCreate(rootPath, "file")}
@@ -616,7 +613,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               >
                 New Folder
               </ContextMenuItem>
-              <ContextMenuSeparator />
+            </ContextMenuGroup>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
               <ContextMenuItem
                 className={COMPACT_ITEM}
                 onSelect={() => void copyToClipboard(rootPath)}
@@ -629,10 +628,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               >
                 Refresh
               </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
-        ) : null}
-      </div>
-    );
-  },
-);
+            </ContextMenuGroup>
+          </ContextMenuContent>
+        </ContextMenu>
+      ) : null}
+    </div>
+  );
+}

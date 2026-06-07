@@ -103,9 +103,9 @@ describe("ArtifactPanel", () => {
     expect(html).toContain("Export");
   });
 
-  it("shows an explicit source edit flow for selected artifacts", async () => {
-    const onSaveArtifact = vi.fn(async () => {});
-
+  async function renderEditableArtifact(
+    onSaveArtifact: (artifact: Artifact, content: string) => Promise<void>,
+  ) {
     await act(async () => {
       root.render(
         <ArtifactPanel
@@ -116,16 +116,9 @@ describe("ArtifactPanel", () => {
       );
     });
 
-    expect(findButton(container, "Edit")).toBeTruthy();
-
     await act(async () => {
       findButton(container, "Edit").click();
     });
-
-    expect(container.textContent).toContain("Editing latest version");
-    expect(
-      container.querySelector("textarea")?.getAttribute("aria-label"),
-    ).toBe("Artifact source");
 
     const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
     await act(async () => {
@@ -136,6 +129,62 @@ describe("ArtifactPanel", () => {
       valueSetter?.call(textarea, "<h1>Updated Hero</h1>");
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
+  }
+
+  it("shows rename and delete management actions for selected artifacts", async () => {
+    const onRenameArtifact = vi.fn(async () => {});
+    const onDeleteArtifact = vi.fn(async () => {});
+
+    await act(async () => {
+      root.render(
+        <ArtifactPanel
+          artifacts={[summary]}
+          selectedArtifact={artifact}
+          onDeleteArtifact={onDeleteArtifact}
+          onRenameArtifact={onRenameArtifact}
+        />,
+      );
+    });
+
+    await act(async () => {
+      findButton(container, "Rename").click();
+    });
+    const titleInput = container.querySelector(
+      'input[aria-label="Artifact title"]',
+    ) as HTMLInputElement;
+    expect(titleInput).toBeTruthy();
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(titleInput, "Marketing Hero");
+      titleInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      findButton(container, "Save title").click();
+    });
+    expect(onRenameArtifact).toHaveBeenCalledWith(artifact, "Marketing Hero");
+
+    await act(async () => {
+      findButton(container, "Delete").click();
+    });
+    expect(container.textContent).toContain("Delete this artifact?");
+    await act(async () => {
+      findButton(container, "Delete permanently").click();
+    });
+    expect(onDeleteArtifact).toHaveBeenCalledWith(artifact);
+  });
+
+  it("shows an explicit source edit flow for selected artifacts", async () => {
+    const onSaveArtifact = vi.fn(async () => {});
+
+    await renderEditableArtifact(onSaveArtifact);
+
+    expect(container.textContent).toContain("Editing latest version");
+    expect(
+      container.querySelector("textarea")?.getAttribute("aria-label"),
+    ).toBe("Artifact source");
     expect(findButton(container, "Save changes").disabled).toBe(false);
     await act(async () => {
       findButton(container, "Save changes").click();
@@ -145,6 +194,21 @@ describe("ArtifactPanel", () => {
       artifact,
       "<h1>Updated Hero</h1>",
     );
+  });
+
+  it("keeps the source editor open when saving fails", async () => {
+    const onSaveArtifact = vi.fn(async () => {
+      throw new Error("disk full");
+    });
+
+    await renderEditableArtifact(onSaveArtifact);
+    await act(async () => {
+      findButton(container, "Save changes").click();
+    });
+
+    expect(onSaveArtifact).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("Editing latest version");
+    expect(findButton(container, "Save changes").disabled).toBe(false);
   });
 
   it("renders version controls for the selected artifact", () => {

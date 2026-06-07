@@ -192,13 +192,19 @@ export const piNative = {
       qualifiedName,
       modelVisible,
     }),
-  mcpToolPolicySet: (qualifiedName: string, approvalPolicy: McpApprovalPolicy) =>
+  mcpToolPolicySet: (
+    qualifiedName: string,
+    approvalPolicy: McpApprovalPolicy,
+  ) =>
     invoke<McpToolPreference>("mcp_tool_policy_set", {
       qualifiedName,
       approvalPolicy,
     }),
   mcpEnvSecretStatuses: (serverId: string, names: string[]) =>
-    invoke<McpEnvSecretStatus[]>("mcp_env_secret_statuses", { serverId, names }),
+    invoke<McpEnvSecretStatus[]>("mcp_env_secret_statuses", {
+      serverId,
+      names,
+    }),
   mcpEnvSecretSet: (serverId: string, name: string, value: string) =>
     invoke<void>("mcp_env_secret_set", { serverId, name, value }),
   mcpEnvSecretRemove: (serverId: string, name: string) =>
@@ -223,7 +229,8 @@ export const piNative = {
   mcpServerStatuses: () => invoke<McpServerStatus[]>("mcp_server_statuses"),
   workflowCapabilityAudit: () =>
     invoke<CapabilityAuditEntry[]>("workflow_capability_audit"),
-  appCapabilityAudit: () => invoke<CapabilityAuditEntry[]>("app_capability_audit"),
+  appCapabilityAudit: () =>
+    invoke<CapabilityAuditEntry[]>("app_capability_audit"),
   sessionsHistory: () => invoke<PiSessionsList>("pi_sessions_history"),
   sessionsList: () => invoke<PiSessionsList>("pi_sessions_list"),
   sessionCreate: (

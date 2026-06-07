@@ -267,7 +267,9 @@ describe("Pi tool safety policy", () => {
       validateToolSafety(manifestSession, "manifest_read", {
         path: "../secret.txt",
       }),
-    ).toBe(`manifest_read can only access files inside the workspace: ${process.cwd()}`);
+    ).toBe(
+      `manifest_read can only access files inside the workspace: ${process.cwd()}`,
+    );
   });
 
   it("enables Rust-mediated workspace and artifact tools", () => {
@@ -317,4 +319,3 @@ describe("Pi tool safety policy", () => {
     );
   });
 });
-

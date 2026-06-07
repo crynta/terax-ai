@@ -6,8 +6,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { ComponentProps } from "react";
 import {
   createContext,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -72,7 +72,7 @@ export type SnippetInputProps = Omit<
 >;
 
 export const SnippetInput = ({ className, ...props }: SnippetInputProps) => {
-  const { code } = useContext(SnippetContext);
+  const { code } = use(SnippetContext);
 
   return (
     <InputGroupInput
@@ -100,7 +100,7 @@ export const SnippetCopyButton = ({
 }: SnippetCopyButtonProps) => {
   const [isCopied, setIsCopied] = useState(false);
   const timeoutRef = useRef<number>(0);
-  const { code } = useContext(SnippetContext);
+  const { code } = use(SnippetContext);
 
   const copyToClipboard = useCallback(async () => {
     if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {

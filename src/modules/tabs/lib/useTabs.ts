@@ -12,10 +12,23 @@ import {
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 
-export { MAX_PANES_PER_TAB } from "./types";
+export type { ArtifactWorkspaceTabInput } from "./tabUtils";
+export {
+  basename,
+  createWorkflowTab,
+  createWorkflowTabFromDocument,
+  replaceWorkflowTabDocument,
+  terminalLeafIdsForTab,
+  titleFromUrl,
+  upsertArtifactHubTab,
+  upsertArtifactWorkspaceTab,
+  upsertPiWorkspaceTab,
+  upsertWorkflowDocumentTab,
+} from "./tabUtils";
 export type {
   AiDiffStatus,
   AiDiffTab,
+  ArtifactHubTab,
   ArtifactWorkspaceTab,
   EditorTab,
   GitCommitFileDiffTab,
@@ -29,41 +42,32 @@ export type {
   TerminalTab,
   WorkflowTab,
 } from "./types";
-export type { ArtifactWorkspaceTabInput } from "./tabUtils";
-export {
+export { MAX_PANES_PER_TAB } from "./types";
+
+import type { WorkflowDocument } from "@/modules/workflow/lib/schema";
+import {
+  type ArtifactWorkspaceTabInput,
   basename,
   createWorkflowTab,
-  createWorkflowTabFromDocument,
   replaceWorkflowTabDocument,
   terminalLeafIdsForTab,
   titleFromUrl,
+  upsertArtifactHubTab,
   upsertArtifactWorkspaceTab,
   upsertPiWorkspaceTab,
   upsertWorkflowDocumentTab,
 } from "./tabUtils";
 import {
-  MAX_PANES_PER_TAB,
   type AiDiffStatus,
   type EditorTab,
   type GitCommitFileDiffTab,
   type GitDiffTab,
   type GitHistoryTab,
+  MAX_PANES_PER_TAB,
   type Tab,
   type TabPatch,
   type TerminalTab,
 } from "./types";
-import type { WorkflowDocument } from "@/modules/workflow/lib/schema";
-import {
-  basename,
-  createWorkflowTab,
-  replaceWorkflowTabDocument,
-  terminalLeafIdsForTab,
-  titleFromUrl,
-  upsertArtifactWorkspaceTab,
-  upsertPiWorkspaceTab,
-  upsertWorkflowDocumentTab,
-  type ArtifactWorkspaceTabInput,
-} from "./tabUtils";
 
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
@@ -392,6 +396,15 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return result.activeId;
   }, []);
 
+  const openArtifactHubTab = useCallback(() => {
+    const id = nextIdRef.current++;
+    const result = upsertArtifactHubTab(tabsRef.current, id);
+    tabsRef.current = result.tabs;
+    setTabs(result.tabs);
+    setActiveId(result.activeId);
+    return result.activeId;
+  }, []);
+
   const openArtifactWorkspaceTab = useCallback(
     (input: ArtifactWorkspaceTabInput) => {
       const id = nextIdRef.current++;
@@ -625,6 +638,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           };
         }
         if (x.kind === "pi-workspace") return x;
+        if (x.kind === "artifact-hub") return x;
         if (x.kind === "artifact") {
           return {
             ...x,
@@ -647,15 +661,18 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           };
         }
 
-        const autoPin =
-          patch.dirty === true && x.preview ? { preview: false } : {};
-        return {
-          ...x,
-          ...autoPin,
-          ...(patch.title !== undefined && { title: patch.title }),
-          ...(patch.dirty !== undefined && { dirty: patch.dirty }),
-          ...(patch.path !== undefined && { path: patch.path }),
-        };
+        if (x.kind === "editor") {
+          const autoPin =
+            patch.dirty === true && x.preview ? { preview: false } : {};
+          return {
+            ...x,
+            ...autoPin,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.dirty !== undefined && { dirty: patch.dirty }),
+            ...(patch.path !== undefined && { path: patch.path }),
+          };
+        }
+        return x;
       }),
     );
   }, []);
@@ -847,6 +864,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     newPreviewTab,
     newMarkdownTab,
     openPiWorkspaceTab,
+    openArtifactHubTab,
     openArtifactWorkspaceTab,
     openAiDiffTab,
     openGitDiffTab,

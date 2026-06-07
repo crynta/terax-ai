@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { lazy, Suspense } from "react";
+import { PaneLoadingFallback } from "@/components/PaneLoadingFallback";
 import type { GitDiffStack as GitDiffStackType } from "./GitDiffStack";
 
 const GitDiffStackInner = lazy(() =>
@@ -10,7 +11,7 @@ type Props = ComponentProps<typeof GitDiffStackType>;
 
 export function GitDiffStack(props: Props) {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PaneLoadingFallback label="Loading Git diff…" />}>
       <GitDiffStackInner {...props} />
     </Suspense>
   );

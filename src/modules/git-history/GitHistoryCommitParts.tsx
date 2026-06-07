@@ -6,11 +6,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { memo, type ReactNode, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { diffTextClass } from "@/lib/statusTone";
 import { cn } from "@/lib/utils";
 import type { GitCommitFileChange, GitLogEntry } from "@/modules/ai/lib/native";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
-import { GraphRail } from "./GraphRail";
-import type { GraphRow } from "./lib/graph";
 import {
   absoluteTime,
   authorInitials,
@@ -21,7 +20,13 @@ import {
   highlight,
   statusTone,
 } from "./GitHistoryUtils";
-import { commitWebUrl, hostLabel, type RemoteWebInfo } from "./lib/remoteWebUrl";
+import { GraphRail } from "./GraphRail";
+import type { GraphRow } from "./lib/graph";
+import {
+  commitWebUrl,
+  hostLabel,
+  type RemoteWebInfo,
+} from "./lib/remoteWebUrl";
 
 const ROW_HEIGHT = 32;
 
@@ -150,12 +155,19 @@ export const CommitRow = memo(function CommitRow({
         {totalStat > 0 ? (
           <span className="inline-flex items-center gap-1">
             {commit.insertions > 0 ? (
-              <span className="font-semibold text-emerald-600/85 dark:text-emerald-400/85">
+              <span
+                className={cn("font-semibold opacity-85", diffTextClass("add"))}
+              >
                 +{commit.insertions}
               </span>
             ) : null}
             {commit.deletions > 0 ? (
-              <span className="font-semibold text-rose-600/85 dark:text-rose-400/85">
+              <span
+                className={cn(
+                  "font-semibold opacity-85",
+                  diffTextClass("remove"),
+                )}
+              >
                 −{commit.deletions}
               </span>
             ) : null}
@@ -235,7 +247,11 @@ export function CommitDetail({
               setCopied(true);
             }}
           >
-            <HugeiconsIcon icon={Copy01Icon} size={11} strokeWidth={1.9} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Copy01Icon}
+              strokeWidth={1.9}
+            />
             {copied ? "Copied" : "Copy SHA"}
           </Button>
           {webUrl ? (
@@ -246,8 +262,8 @@ export function CommitDetail({
               onClick={() => void openUrl(webUrl).catch(console.error)}
             >
               <HugeiconsIcon
+                data-icon="inline-start"
                 icon={LinkSquare02Icon}
-                size={11}
                 strokeWidth={1.9}
               />
               {hostLabel(remoteWeb!)}
@@ -321,7 +337,7 @@ function CommitFiles({
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]">
-        <ul className="space-y-px px-1.5 pb-2">
+        <ul className="flex flex-col gap-px px-1.5 pb-2">
           {filesEntry.files.map((file) => (
             <li key={file.path}>
               <FileRow
@@ -353,7 +369,13 @@ const FileRow = memo(function FileRow({
       className="group flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-accent/40"
     >
       {iconUrl ? (
-        <img src={iconUrl} alt="" className="size-3.5 shrink-0" />
+        <img
+          src={iconUrl}
+          alt=""
+          width={14}
+          height={14}
+          className="size-3.5 shrink-0"
+        />
       ) : (
         <span className="size-3.5 shrink-0" />
       )}
@@ -373,14 +395,10 @@ const FileRow = memo(function FileRow({
         ) : (
           <>
             {file.added > 0 ? (
-              <span className="text-emerald-600 dark:text-emerald-400">
-                +{file.added}
-              </span>
+              <span className={diffTextClass("add")}>+{file.added}</span>
             ) : null}
             {file.removed > 0 ? (
-              <span className="text-rose-600 dark:text-rose-400">
-                −{file.removed}
-              </span>
+              <span className={diffTextClass("remove")}>−{file.removed}</span>
             ) : null}
           </>
         )}

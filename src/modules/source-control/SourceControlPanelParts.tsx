@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
@@ -19,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { IS_MAC } from "@/lib/platform";
+import { statusDotClass } from "@/lib/statusTone";
 import { cn } from "@/lib/utils";
 import {
   copyToClipboard,
@@ -69,17 +71,17 @@ function entryPathLabel(entry: SourceControlFileEntry): string {
 function statusAccent(code: string): string {
   switch (code) {
     case "A":
-      return "bg-emerald-500/85";
+      return cn(statusDotClass("success"), "opacity-85");
     case "U":
-      return "bg-teal-500/85";
+      return cn(statusDotClass("info"), "opacity-85");
     case "M":
-      return "bg-amber-500/85";
+      return cn(statusDotClass("warning"), "opacity-85");
     case "D":
-      return "bg-rose-500/85";
+      return cn(statusDotClass("danger"), "opacity-85");
     case "R":
-      return "bg-sky-500/85";
+      return cn(statusDotClass("info"), "opacity-85");
     default:
-      return "bg-muted-foreground/40";
+      return statusDotClass("muted");
   }
 }
 
@@ -250,7 +252,7 @@ const EntryRow = memo(function EntryRow({
           aria-selected={isSelected}
           onMouseDown={() => onFocusRow(row.key)}
           className={cn(
-            "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-100",
+            "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-[background-color,color] duration-100",
             focused
               ? "bg-accent/60"
               : isSelected
@@ -277,7 +279,13 @@ const EntryRow = memo(function EntryRow({
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
           >
             {iconUrl ? (
-              <img src={iconUrl} alt="" className="size-4 shrink-0" />
+              <img
+                src={iconUrl}
+                alt=""
+                width={16}
+                height={16}
+                className="size-4 shrink-0"
+              />
             ) : (
               <span className="size-4 shrink-0" />
             )}
@@ -339,74 +347,80 @@ const EntryRow = memo(function EntryRow({
       </ContextMenuTrigger>
 
       <ContextMenuContent className={COMPACT_CONTENT}>
-        {/* Open actions */}
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => {
-            onFocusRow(row.key);
-            void onSelectFile(entry);
-          }}
-        >
-          Open Diff
-        </ContextMenuItem>
-        {!isDeleted && onOpenFile && absolutePath ? (
+        <ContextMenuGroup>
           <ContextMenuItem
             className={COMPACT_ITEM}
-            onSelect={() => onOpenFile(absolutePath)}
+            onSelect={() => {
+              onFocusRow(row.key);
+              void onSelectFile(entry);
+            }}
           >
-            Open File
+            Open Diff
           </ContextMenuItem>
-        ) : null}
+          {!isDeleted && onOpenFile && absolutePath ? (
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              onSelect={() => onOpenFile(absolutePath)}
+            >
+              Open File
+            </ContextMenuItem>
+          ) : null}
+        </ContextMenuGroup>
 
         <ContextMenuSeparator />
 
-        {/* Stage / Unstage */}
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          disabled={disabled}
-          onSelect={() => void onToggleStageFile(entry)}
-        >
-          {entry.checkState === "checked" ? "Unstage" : "Stage"}
-        </ContextMenuItem>
-        {entry.unstaged ? (
+        <ContextMenuGroup>
           <ContextMenuItem
             className={COMPACT_ITEM}
-            variant="destructive"
             disabled={disabled}
-            onSelect={() => onDiscardFile(entry)}
+            onSelect={() => void onToggleStageFile(entry)}
           >
-            Discard Changes
+            {entry.checkState === "checked" ? "Unstage" : "Stage"}
           </ContextMenuItem>
-        ) : null}
+          {entry.unstaged ? (
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              variant="destructive"
+              disabled={disabled}
+              onSelect={() => onDiscardFile(entry)}
+            >
+              Discard Changes
+            </ContextMenuItem>
+          ) : null}
+        </ContextMenuGroup>
 
         <ContextMenuSeparator />
 
-        {/* Copy paths */}
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => void copyToClipboard(entry.path.replace(/\\/g, "/"))}
-        >
-          Copy Relative Path
-        </ContextMenuItem>
-        {absolutePath ? (
+        <ContextMenuGroup>
           <ContextMenuItem
             className={COMPACT_ITEM}
-            onSelect={() => void copyToClipboard(absolutePath)}
+            onSelect={() =>
+              void copyToClipboard(entry.path.replace(/\\/g, "/"))
+            }
           >
-            Copy Absolute Path
+            Copy Relative Path
           </ContextMenuItem>
-        ) : null}
+          {absolutePath ? (
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              onSelect={() => void copyToClipboard(absolutePath)}
+            >
+              Copy Absolute Path
+            </ContextMenuItem>
+          ) : null}
+        </ContextMenuGroup>
 
-        {/* Reveal in Finder — only for existing files */}
         {!isDeleted && absolutePath ? (
           <>
             <ContextMenuSeparator />
-            <ContextMenuItem
-              className={COMPACT_ITEM}
-              onSelect={() => void revealInFinder(absolutePath)}
-            >
-              {revealLabel}
-            </ContextMenuItem>
+            <ContextMenuGroup>
+              <ContextMenuItem
+                className={COMPACT_ITEM}
+                onSelect={() => void revealInFinder(absolutePath)}
+              >
+                {revealLabel}
+              </ContextMenuItem>
+            </ContextMenuGroup>
           </>
         ) : null}
       </ContextMenuContent>
@@ -486,7 +500,7 @@ export function CommitFeedback({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-3 top-[calc(100%-0.25rem)] z-20 flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg shadow-black/15 backdrop-blur transition-all duration-200",
+        "pointer-events-none absolute inset-x-3 top-[calc(100%-0.25rem)] z-20 flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg shadow-black/15 backdrop-blur transition-[opacity,transform] duration-200",
         isVisible ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0",
         isError
           ? "border-destructive/30 bg-card/95 text-destructive"

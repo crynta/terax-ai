@@ -25,6 +25,11 @@ export {
   tooltipSideForSidebar,
 } from "./position";
 export { SidebarLayoutShell } from "./SidebarLayoutShell";
+export {
+  SidebarPanelBody,
+  SidebarPanelFrame,
+  SidebarPanelScrollRegion,
+} from "./SidebarPanel";
 export { SidebarPlaceholderPanel } from "./SidebarPlaceholderPanel";
 export { SIDEBAR_RAIL_HEIGHT, SidebarRail } from "./SidebarRail";
 export type {

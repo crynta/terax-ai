@@ -1,8 +1,8 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useId, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type {
   McpApprovalPolicy,
@@ -252,6 +252,7 @@ export function McpServerRow({
     name: string;
     value: string;
   } | null>(null);
+  const secretInputId = useId();
   const submitSecretDraft = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!secretDraft?.value) return;
@@ -409,24 +410,27 @@ export function McpServerRow({
           className="mt-1.5 flex min-w-0 items-end gap-1 rounded-md border border-border/35 bg-background/65 px-2 py-1.5"
           onSubmit={submitSecretDraft}
         >
-          <div className="min-w-0 flex-1">
-            <Label className="text-[9.5px] text-muted-foreground">
+          <Field className="min-w-0 flex-1 gap-1">
+            <FieldLabel
+              htmlFor={secretInputId}
+              className="text-[9.5px] text-muted-foreground"
+            >
               Store value for{" "}
               <span className="font-mono">{secretDraft.name}</span>
-            </Label>
+            </FieldLabel>
             <Input
+              id={secretInputId}
               type="password"
               value={secretDraft.value}
               autoComplete="off"
               spellCheck={false}
-              className="mt-1 h-7 font-mono text-[11px]"
+              className="h-7 font-mono text-[11px]"
               disabled={disabled}
-              aria-label={`Secret value for ${secretDraft.name}`}
               onChange={(event) =>
                 setSecretDraft({ ...secretDraft, value: event.target.value })
               }
             />
-          </div>
+          </Field>
           <Button
             type="submit"
             size="xs"

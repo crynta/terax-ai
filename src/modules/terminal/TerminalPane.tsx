@@ -1,5 +1,5 @@
 import type { SearchAddon } from "@xterm/addon-search";
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { type Ref, useEffect, useImperativeHandle, useRef } from "react";
 import { useTheme } from "@/modules/theme";
 import { useTerminalSession } from "./lib/useTerminalSession";
 
@@ -21,61 +21,58 @@ type Props = {
   onSearchReady?: (leafId: number, addon: SearchAddon) => void;
   onExit?: (leafId: number, code: number) => void;
   onCwd?: (leafId: number, cwd: string) => void;
+  ref?: Ref<TerminalPaneHandle>;
 };
 
-export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
-  function TerminalPane(
-    {
-      leafId,
-      visible,
-      focused = true,
-      initialCwd,
-      onSearchReady,
-      onExit,
-      onCwd,
-    },
+export function TerminalPane({
+  leafId,
+  visible,
+  focused = true,
+  initialCwd,
+  onSearchReady,
+  onExit,
+  onCwd,
+  ref,
+}: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { resolvedMode, themeId, customThemes } = useTheme();
+
+  const session = useTerminalSession({
+    leafId,
+    container: containerRef,
+    visible,
+    focused,
+    initialCwd,
+    onSearchReady: (a) => onSearchReady?.(leafId, a),
+    onExit: (c) => onExit?.(leafId, c),
+    onCwd: (c) => onCwd?.(leafId, c),
+  });
+
+  useEffect(() => {
+    // Defer one frame so CSS-variable token resolution sees the new class.
+    const id = requestAnimationFrame(() => session.applyTheme());
+    return () => cancelAnimationFrame(id);
+  }, [resolvedMode, themeId, customThemes, session]);
+
+  useImperativeHandle(
     ref,
-  ) {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const { resolvedMode, themeId, customThemes } = useTheme();
+    () => ({
+      write: (data: string) => session.write(data),
+      focus: () => session.focus(),
+      getBuffer: (max?: number) => session.getBuffer(max),
+      getSelection: () => session.getSelection(),
+    }),
+    [session],
+  );
 
-    const session = useTerminalSession({
-      leafId,
-      container: containerRef,
-      visible,
-      focused,
-      initialCwd,
-      onSearchReady: (a) => onSearchReady?.(leafId, a),
-      onExit: (c) => onExit?.(leafId, c),
-      onCwd: (c) => onCwd?.(leafId, c),
-    });
-
-    useEffect(() => {
-      // Defer one frame so CSS-variable token resolution sees the new class.
-      const id = requestAnimationFrame(() => session.applyTheme());
-      return () => cancelAnimationFrame(id);
-    }, [resolvedMode, themeId, customThemes, session]);
-
-    useImperativeHandle(
-      ref,
-      () => ({
-        write: (data: string) => session.write(data),
-        focus: () => session.focus(),
-        getBuffer: (max?: number) => session.getBuffer(max),
-        getSelection: () => session.getSelection(),
-      }),
-      [session],
-    );
-
-    return (
-      <div
-        ref={containerRef}
-        className="zoom-exempt h-full w-full"
-        style={{
-          visibility: visible ? "visible" : "hidden",
-          pointerEvents: visible ? "auto" : "none",
-        }}
-      />
-    );
-  },
-);
+  return (
+    <div
+      ref={containerRef}
+      className="zoom-exempt h-full w-full rounded-md outline-none focus-within:ring-2 focus-within:ring-ring/35"
+      style={{
+        visibility: visible ? "visible" : "hidden",
+        pointerEvents: visible ? "auto" : "none",
+      }}
+    />
+  );
+}

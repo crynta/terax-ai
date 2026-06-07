@@ -10,6 +10,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import type { ToolUIPart } from "ai";
 import { memo } from "react";
 import { Button } from "@/components/ui/button";
+import { statusDotClass } from "@/lib/statusTone";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -37,7 +38,12 @@ function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
   return (
     <div className="rounded-lg border border-border bg-card shadow-sm">
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
-        <span className="size-1.5 shrink-0 rounded-full bg-amber-500 animate-pulse" />
+        <span
+          className={cn(
+            "size-1.5 shrink-0 animate-pulse rounded-full",
+            statusDotClass("warning"),
+          )}
+        />
         <HugeiconsIcon
           icon={Icon}
           size={13}
@@ -61,7 +67,11 @@ function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
           onClick={() => onRespond(false)}
           className="h-7 gap-1.5 text-[11px]"
         >
-          <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={2} />
+          <HugeiconsIcon
+            data-icon="inline-start"
+            icon={Cancel01Icon}
+            strokeWidth={2}
+          />
           Deny
         </Button>
         <Button
@@ -70,7 +80,11 @@ function AiToolApprovalImpl({ part, toolName, onRespond }: Props) {
           onClick={() => onRespond(true)}
           className="h-7 gap-1.5 text-[11px]"
         >
-          <HugeiconsIcon icon={Tick02Icon} size={12} strokeWidth={2} />
+          <HugeiconsIcon
+            data-icon="inline-start"
+            icon={Tick02Icon}
+            strokeWidth={2}
+          />
           Approve
         </Button>
       </div>
@@ -99,7 +113,7 @@ function PreviewBlock({
   if (toolName === "bash_run" || toolName === "bash_background") {
     const cwd = typeof input.cwd === "string" ? input.cwd : null;
     return (
-      <div className="space-y-1.5">
+      <div className="flex flex-col gap-1.5">
         {cwd && (
           <div className="font-mono text-[10.5px] text-muted-foreground">
             {cwd}
@@ -123,7 +137,7 @@ function PreviewBlock({
     const content = typeof input.content === "string" ? input.content : "";
     const lines = content ? content.split("\n").length : 0;
     return (
-      <div className="space-y-0.5 font-mono text-[11px]">
+      <div className="flex flex-col gap-0.5 font-mono text-[11px]">
         <div className="text-muted-foreground">{String(input.path ?? "")}</div>
         <div className="text-[10.5px] text-muted-foreground/80">
           {lines} line{lines === 1 ? "" : "s"} · review in the diff tab
@@ -137,7 +151,7 @@ function PreviewBlock({
     const removed = oldStr ? oldStr.split("\n").length : 0;
     const added = newStr ? newStr.split("\n").length : 0;
     return (
-      <div className="space-y-0.5 font-mono text-[11px]">
+      <div className="flex flex-col gap-0.5 font-mono text-[11px]">
         <div className="text-muted-foreground">
           {String(input.path ?? "")}
           {input.replace_all ? " · replace all" : ""}
@@ -154,7 +168,7 @@ function PreviewBlock({
       ? (input.edits as Array<{ old_string?: string; new_string?: string }>)
       : [];
     return (
-      <div className="space-y-0.5 font-mono text-[11px]">
+      <div className="flex flex-col gap-0.5 font-mono text-[11px]">
         <div className="text-muted-foreground">{String(input.path ?? "")}</div>
         <div className="text-[10.5px] text-muted-foreground/80">
           {edits.length} edit{edits.length === 1 ? "" : "s"} · review in the

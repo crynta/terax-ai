@@ -21,11 +21,13 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { statusDotClass } from "@/lib/statusTone";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -100,7 +102,7 @@ export function AiMiniWindow() {
       data-ai-mini-window
       className={cn(
         "no-scrollbar-deep fixed z-40 flex flex-col overflow-hidden",
-        "rounded-2xl border border-border/60 bg-card text-[12px]",
+        "rounded-lg border border-border/60 bg-card text-[12px]",
         "shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_24px_48px_-12px_rgba(0,0,0,0.45),0_8px_16px_-8px_rgba(0,0,0,0.3)]",
         "ring-1 ring-black/5 dark:ring-white/5",
       )}
@@ -224,7 +226,12 @@ function PlanModeStrip() {
   if (!active) return null;
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border/40 bg-muted/40 px-3 py-1.5">
-      <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
+      <span
+        className={cn(
+          "size-1.5 shrink-0 rounded-full",
+          statusDotClass("warning"),
+        )}
+      />
       <span className="text-[11px] font-medium text-foreground">Plan mode</span>
       <span className="text-[11px] text-muted-foreground">
         {queueLen > 0 ? `· ${queueLen} queued` : "· no edits queued"}
@@ -311,7 +318,11 @@ function Header({
           aria-label="Close"
           title="Close (Esc)"
         >
-          <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={1.75} />
+          <HugeiconsIcon
+            data-icon="inline-start"
+            icon={Cancel01Icon}
+            strokeWidth={1.75}
+          />
         </Button>
       </div>
     </div>
@@ -482,23 +493,27 @@ function SessionPicker() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-56">
-        <DropdownMenuItem
-          onSelect={() => newSession()}
-          className="gap-2 text-xs"
-        >
-          <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={1.75} />
-          New session
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            onSelect={() => newSession()}
+            className="gap-2 text-xs"
+          >
+            <HugeiconsIcon icon={Add01Icon} strokeWidth={1.75} />
+            New session
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
         {sorted.length > 0 ? <DropdownMenuSeparator /> : null}
-        {sorted.map((s) => (
-          <SessionRow
-            key={s.id}
-            session={s}
-            active={s.id === activeId}
-            onSelect={() => switchSession(s.id)}
-            onDelete={() => deleteSession(s.id)}
-          />
-        ))}
+        <DropdownMenuGroup>
+          {sorted.map((s) => (
+            <SessionRow
+              key={s.id}
+              session={s}
+              active={s.id === activeId}
+              onSelect={() => switchSession(s.id)}
+              onDelete={() => deleteSession(s.id)}
+            />
+          ))}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -541,10 +556,11 @@ function SessionRow({
           e.stopPropagation();
           onDelete();
         }}
+        aria-label={`Delete ${session.title || "New chat"}`}
         title="Delete session"
-        className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+        className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
       >
-        <HugeiconsIcon icon={Delete02Icon} size={11} strokeWidth={1.75} />
+        <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.75} />
       </button>
     </DropdownMenuItem>
   );
@@ -553,8 +569,14 @@ function SessionRow({
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8 py-10 text-center">
-      <img src="/logo.png" alt="Terax" className="size-14 opacity-90" />
-      <div className="space-y-1.5">
+      <img
+        src="/logo.png"
+        alt="Terax"
+        width={56}
+        height={56}
+        className="size-14 opacity-90"
+      />
+      <div className="flex flex-col gap-1.5">
         <p className="text-[14px] font-semibold tracking-tight">
           Ask Terax anything
         </p>

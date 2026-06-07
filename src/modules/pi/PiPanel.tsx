@@ -1,4 +1,3 @@
-import { listen } from "@tauri-apps/api/event";
 import {
   type FormEvent,
   useCallback,
@@ -8,9 +7,16 @@ import {
   useState,
 } from "react";
 import { PiComposer } from "@/modules/pi/components/PiComposer";
+import {
+  PiDestructiveActionDialog,
+  type PendingPiDestructiveAction,
+} from "@/modules/pi/components/PiDestructiveActionDialog";
 import { PiMcpOAuthDialog } from "@/modules/pi/components/PiMcpOAuthDialog";
 import { PiPanelHeader } from "@/modules/pi/components/PiPanelHeader";
-import { PiPanelSupportingSections } from "@/modules/pi/components/PiPanelSupportingSections";
+import {
+  PiPanelSupportingSections,
+  PiPanelSupportingSectionsProvider,
+} from "@/modules/pi/components/PiPanelSupportingSections";
 import { PiSessionList } from "@/modules/pi/components/PiSessionList";
 import { PiTranscript } from "@/modules/pi/components/PiTranscript";
 import type { PiLocalAgentLaunchRequest } from "@/modules/pi/lib/local-agents";
@@ -28,32 +34,34 @@ import {
   toErrorState,
 } from "@/modules/pi/lib/panel-defaults";
 import { buildPiPanelState } from "@/modules/pi/lib/panel-state";
+import type {
+  PiProviderRuntimeConfig,
+  PiThinkingLevel,
+} from "@/modules/pi/lib/provider";
+import { deletePiSessionWithArtifactCleanup } from "@/modules/pi/lib/sessionLifecycle";
+import type {
+  PiPromptContext,
+  PiSessionBranch,
+} from "@/modules/pi/lib/sessions";
+import {
+  annotatePiSessionEventsBranch,
+  MAX_PI_PROMPT_CHARS,
+  nextPiRegenerateBranchIndex,
+} from "@/modules/pi/lib/sessions";
+import { useMcpSurface } from "@/modules/pi/lib/useMcpSurface";
+import { usePiLocalAgentLaunch } from "@/modules/pi/lib/usePiLocalAgentLaunch";
+import { usePiLocalAgentsPanel } from "@/modules/pi/lib/usePiLocalAgentsPanel";
+import { usePiPanelRefreshers } from "@/modules/pi/lib/usePiPanelRefreshers";
+import { usePiSessionEventStream } from "@/modules/pi/lib/usePiSessionEventStream";
 import { usePiProviderConfig } from "@/modules/pi/lib/usePiProviderConfig";
 import { usePiProviderKeyStatus } from "@/modules/pi/lib/usePiProviderKeyStatus";
 import { usePiRuntimeActions } from "@/modules/pi/lib/usePiRuntimeActions";
-import { usePiLocalAgentLaunch } from "@/modules/pi/lib/usePiLocalAgentLaunch";
-import { usePiPanelRefreshers } from "@/modules/pi/lib/usePiPanelRefreshers";
-import { deletePiSessionWithArtifactCleanup } from "@/modules/pi/lib/sessionLifecycle";
-import { useMcpSurface } from "@/modules/pi/lib/useMcpSurface";
-import { usePiLocalAgentsPanel } from "@/modules/pi/lib/usePiLocalAgentsPanel";
-import type {
-  PiPromptContext,
-  PiSession,
-  PiSessionBranch,
-  PiSessionEvent,
-} from "@/modules/pi/lib/sessions";
-import {
-  annotatePiSessionEventBranch,
-  annotatePiSessionEventsBranch,
-  applyPiSessionEvents,
-  isKnownPiSessionEvent,
-  MAX_PI_PROMPT_CHARS,
-  PI_SESSION_EVENT,
-  mergePiSessionEvents,
-  nextPiRegenerateBranchIndex,
-  upsertPiSession,
-} from "@/modules/pi/lib/sessions";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import {
+  SidebarPanelBody,
+  SidebarPanelFrame,
+  SidebarPanelScrollRegion,
+} from "@/modules/sidebar";
 import { useWorkspaceEnvStore } from "@/modules/workspace";
 
 export type PiFocusRequest = {
@@ -74,6 +82,13 @@ type PiPanelProps = {
   onPopOut?: () => void;
   onSelectedSessionChange?: (sessionId: string | null) => void;
 };
+
+function piProviderConfigWithThinkingLevel(
+  config: PiProviderRuntimeConfig,
+  thinkingLevel: PiThinkingLevel | null,
+): PiProviderRuntimeConfig {
+  return thinkingLevel ? { ...config, thinkingLevel } : config;
+}
 
 export function PiPanel({
   workspaceRoot = null,
@@ -234,44 +249,6 @@ export function PiPanel({
     ? `Show ${surfaceLabel} sidebar sections`
     : `Show only ${surfaceLabel} chat`;
 
-  const applySessionEvents = useCallback((events: PiSessionEvent[]) => {
-    if (events.length === 0) {
-      return;
-    }
-
-    const annotatedEvents = events.map((event) => {
-      const branch = activeRegenerateBranchesRef.current.get(event.sessionId);
-      const nextEvent = branch
-        ? annotatePiSessionEventBranch(event, branch)
-        : event;
-      if (
-        event.type === PI_SESSION_EVENT.Deleted ||
-        event.type === PI_SESSION_EVENT.Error ||
-        event.type === PI_SESSION_EVENT.OutputText ||
-        (isKnownPiSessionEvent(event, PI_SESSION_EVENT.Status) &&
-          event.payload.status !== "running")
-      ) {
-        activeRegenerateBranchesRef.current.delete(event.sessionId);
-      }
-      return nextEvent;
-    });
-
-    setSessionEvents((current) =>
-      mergePiSessionEvents(current, annotatedEvents),
-    );
-
-    setSessions((current) => applyPiSessionEvents(current, annotatedEvents));
-  }, []);
-
-  const applySessionUpdate = useCallback(
-    (session: PiSession, events: PiSessionEvent[]) => {
-      setSessions((current) => upsertPiSession(current, session));
-      applySessionEvents(events);
-      setSelectedSessionId(session.id);
-    },
-    [applySessionEvents],
-  );
-
   const {
     refreshDiagnostics,
     refreshHistory,
@@ -290,6 +267,26 @@ export function PiPanel({
     setWorkflowAuditEntries,
   });
 
+  const { applySessionEvents, applySessionUpdate } = usePiSessionEventStream({
+    activeRegenerateBranchesRef,
+    refreshDiagnostics,
+    setSelectedSessionId,
+    setSessionEvents,
+    setSessions,
+  });
+
+  const [pendingDestructiveAction, setPendingDestructiveAction] =
+    useState<PendingPiDestructiveAction | null>(null);
+  const requestRemoveMcpConfigConfirmation = useCallback(
+    (serverId: string) =>
+      setPendingDestructiveAction({ kind: "mcp-config", serverId }),
+    [],
+  );
+  const requestStopRuntimeConfirmation = useCallback(
+    () => setPendingDestructiveAction({ kind: "stop-runtime" }),
+    [],
+  );
+
   const {
     busyServerId: mcpBusyServerId,
     cancelOAuthDialog: cancelMcpOAuthDialog,
@@ -302,6 +299,7 @@ export function PiPanel({
     oauthDialog: mcpOAuthDialog,
     refresh: refreshMcpSurface,
     removeConfig: removeMcpConfig,
+    removeConfigNow: removeMcpConfigNow,
     removeEnvSecret: removeMcpEnvSecret,
     reopenOAuthAuthorization: reopenMcpOAuthAuthorization,
     restart: restartMcpServer,
@@ -313,7 +311,10 @@ export function PiPanel({
     statuses: mcpStatuses,
     submitOAuthDialog: submitMcpOAuthDialog,
     tools: mcpTools,
-  } = useMcpSurface({ refreshDiagnostics });
+  } = useMcpSurface({
+    onRemoveConfigNeedsConfirmation: requestRemoveMcpConfigConfirmation,
+    refreshDiagnostics,
+  });
 
   useEffect(() => {
     setSelectedSessionId((current) =>
@@ -329,61 +330,85 @@ export function PiPanel({
     }
   }, [focusRequest]);
 
+  const onSelectedSessionChangeRef = useRef(onSelectedSessionChange);
   useEffect(() => {
-    onSelectedSessionChange?.(selectedSessionId);
-  }, [onSelectedSessionChange, selectedSessionId]);
-
+    onSelectedSessionChangeRef.current = onSelectedSessionChange;
+  }, [onSelectedSessionChange]);
   useEffect(() => {
-    let alive = true;
-    let unlisten: (() => void) | undefined;
-    listen<PiSessionEvent>("pi:session-event", (event) => {
-      applySessionEvents([event.payload]);
-    })
-      .then((nextUnlisten) => {
-        if (alive) {
-          unlisten = nextUnlisten;
-        } else {
-          nextUnlisten();
-        }
-      })
-      .catch(() => {});
+    onSelectedSessionChangeRef.current?.(selectedSessionId);
+  }, [selectedSessionId]);
 
-    return () => {
-      alive = false;
-      unlisten?.();
-    };
-  }, [applySessionEvents]);
+  const {
+    requestStopRuntime,
+    restartRuntime,
+    runtimeAction,
+    startRuntime,
+    stopRuntime,
+  } = usePiRuntimeActions({
+    isBusy,
+    onStopRuntimeNeedsConfirmation: requestStopRuntimeConfirmation,
+    prewarmAttemptedRef,
+    refreshDiagnostics,
+    refreshHistory,
+    refreshSessions,
+    runtimeState,
+    sessions,
+    setDiagnostics,
+    setDiagnosticsError,
+    setIsBusy,
+    setRuntimeState,
+    setSessions,
+  });
 
-  const { requestStopRuntime, restartRuntime, runtimeAction, startRuntime } =
-    usePiRuntimeActions({
-      isBusy,
-      prewarmAttemptedRef,
-      refreshDiagnostics,
-      refreshHistory,
-      refreshSessions,
-      runtimeState,
-      sessions,
-      setDiagnostics,
-      setDiagnosticsError,
-      setIsBusy,
-      setRuntimeState,
-      setSessions,
-    });
+  const pendingMcpConfig =
+    pendingDestructiveAction?.kind === "mcp-config"
+      ? mcpConfigs.find(
+          (config) => config.id === pendingDestructiveAction.serverId,
+        )
+      : null;
+  const confirmPendingDestructiveAction = () => {
+    const action = pendingDestructiveAction;
+    setPendingDestructiveAction(null);
+    if (!action) return;
+    if (action.kind === "stop-runtime") {
+      void stopRuntime();
+    } else {
+      void removeMcpConfigNow(action.serverId);
+    }
+  };
+
+  const runPiPanelAction = useCallback(
+    async (
+      action: () => Promise<void>,
+      onError: (error: unknown) => void = (error) =>
+        setRuntimeState(toErrorState(error)),
+    ) => {
+      setIsBusy(true);
+      try {
+        await action();
+      } catch (error) {
+        onError(error);
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [setRuntimeState],
+  );
 
   const createSession = useCallback(async () => {
     if (!piProvider.ok) {
       setDiagnosticsError(piProvider.error);
       return;
     }
+    if (!canCreateSession || workspaceRoot === null) {
+      return;
+    }
 
-    setIsBusy(true);
-    try {
-      const providerConfig = activeThinkingLevel
-        ? {
-            ...piProvider.config,
-            thinkingLevel: activeThinkingLevel,
-          }
-        : piProvider.config;
+    await runPiPanelAction(async () => {
+      const providerConfig = piProviderConfigWithThinkingLevel(
+        piProvider.config,
+        activeThinkingLevel,
+      );
       const result = await piNative.sessionCreate(
         undefined,
         workspaceRoot,
@@ -391,16 +416,14 @@ export function PiPanel({
       );
       applySessionUpdate(result.session, result.events);
       await refreshStatus();
-    } catch (error) {
-      setRuntimeState(toErrorState(error));
-    } finally {
-      setIsBusy(false);
-    }
+    });
   }, [
     applySessionUpdate,
     activeThinkingLevel,
+    canCreateSession,
     piProvider,
     refreshStatus,
+    runPiPanelAction,
     workspaceRoot,
   ]);
 
@@ -412,29 +435,30 @@ export function PiPanel({
         return;
       }
 
-      setIsBusy(true);
-      try {
-        const providerConfig = activeThinkingLevel
-          ? {
-              ...piProvider.config,
-              thinkingLevel: activeThinkingLevel,
-            }
-          : piProvider.config;
-        const result = await piNative.sessionResume(sessionId, providerConfig);
-        applySessionUpdate(result.session, result.events);
-        await refreshStatus();
-      } catch (error) {
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === sessionId
-              ? { ...session, sdkSessionFile: null }
-              : session,
-          ),
-        );
-        setRuntimeState(toErrorState(error));
-      } finally {
-        setIsBusy(false);
-      }
+      await runPiPanelAction(
+        async () => {
+          const providerConfig = piProviderConfigWithThinkingLevel(
+            piProvider.config,
+            activeThinkingLevel,
+          );
+          const result = await piNative.sessionResume(
+            sessionId,
+            providerConfig,
+          );
+          applySessionUpdate(result.session, result.events);
+          await refreshStatus();
+        },
+        (error) => {
+          setSessions((current) =>
+            current.map((session) =>
+              session.id === sessionId
+                ? { ...session, sdkSessionFile: null }
+                : session,
+            ),
+          );
+          setRuntimeState(toErrorState(error));
+        },
+      );
     },
     [
       activeThinkingLevel,
@@ -442,6 +466,9 @@ export function PiPanel({
       isBusy,
       piProvider,
       refreshStatus,
+      runPiPanelAction,
+      setRuntimeState,
+      setSessions,
     ],
   );
 
@@ -458,8 +485,7 @@ export function PiPanel({
         return;
       }
 
-      setIsBusy(true);
-      try {
+      await runPiPanelAction(async () => {
         const result = await piNative.sessionSend(
           selectedSession.id,
           text,
@@ -468,19 +494,17 @@ export function PiPanel({
         );
         applySessionUpdate(result.session, result.events);
         setPrompt("");
-      } catch (error) {
-        setRuntimeState(toErrorState(error));
-      } finally {
-        setIsBusy(false);
-      }
+      });
     },
     [
       activeThinkingLevel,
       applySessionUpdate,
       prompt,
       promptContext,
+      runPiPanelAction,
       selectedSessionSendable,
       selectedSession,
+      setPrompt,
     ],
   );
 
@@ -500,8 +524,7 @@ export function PiPanel({
       .reverse()
       .find((item) => item.kind === "user" && item.text?.trim() === text);
 
-    setIsBusy(true);
-    try {
+    await runPiPanelAction(async () => {
       const result = await piNative.sessionSend(
         selectedSession.id,
         text,
@@ -510,19 +533,17 @@ export function PiPanel({
       );
       applySessionUpdate(result.session, result.events);
       setPrompt("");
-    } catch (error) {
-      setRuntimeState(toErrorState(error));
-    } finally {
-      setIsBusy(false);
-    }
+    });
   }, [
     activeThinkingLevel,
     applySessionUpdate,
     isBusy,
     promptContext,
+    runPiPanelAction,
     selectedSession,
     selectedSessionSendable,
     selectedTranscript,
+    setPrompt,
   ]);
 
   const regenerateResponse = useCallback(
@@ -552,36 +573,38 @@ export function PiPanel({
       } satisfies PiSessionBranch;
 
       activeRegenerateBranchesRef.current.set(selectedSession.id, branch);
-      setIsBusy(true);
-      try {
-        const result = await piNative.sessionSend(
-          selectedSession.id,
-          promptText,
-          context ?? promptContext,
-          {
-            regenerateBranchGroupId: branchGroupId,
-            thinkingLevel: activeThinkingLevel,
-          },
-        );
-        applySessionUpdate(
-          result.session,
-          annotatePiSessionEventsBranch(result.events, branch),
-        );
-      } catch (error) {
-        activeRegenerateBranchesRef.current.delete(selectedSession.id);
-        setRuntimeState(toErrorState(error));
-      } finally {
-        setIsBusy(false);
-      }
+      await runPiPanelAction(
+        async () => {
+          const result = await piNative.sessionSend(
+            selectedSession.id,
+            promptText,
+            context ?? promptContext,
+            {
+              regenerateBranchGroupId: branchGroupId,
+              thinkingLevel: activeThinkingLevel,
+            },
+          );
+          applySessionUpdate(
+            result.session,
+            annotatePiSessionEventsBranch(result.events, branch),
+          );
+        },
+        (error) => {
+          activeRegenerateBranchesRef.current.delete(selectedSession.id);
+          setRuntimeState(toErrorState(error));
+        },
+      );
     },
     [
       activeThinkingLevel,
       applySessionUpdate,
       isBusy,
       promptContext,
+      runPiPanelAction,
       selectedSession,
       selectedSessionSendable,
       selectedTranscript,
+      setRuntimeState,
     ],
   );
 
@@ -590,61 +613,45 @@ export function PiPanel({
       return;
     }
 
-    setIsBusy(true);
-    try {
+    await runPiPanelAction(async () => {
       const result = await piNative.sessionStop(selectedSession.id);
       applySessionUpdate(result.session, result.events);
-    } catch (error) {
-      setRuntimeState(toErrorState(error));
-    } finally {
-      setIsBusy(false);
-    }
-  }, [applySessionUpdate, selectedSession]);
+    });
+  }, [applySessionUpdate, runPiPanelAction, selectedSession]);
 
   const renameSession = useCallback(
     async (sessionId: string, title: string) => {
       if (isBusy) return;
 
-      setIsBusy(true);
-      try {
+      await runPiPanelAction(async () => {
         const result = await piNative.sessionRename(sessionId, title);
         applySessionUpdate(result.session, result.events);
-      } catch (error) {
-        setRuntimeState(toErrorState(error));
-      } finally {
-        setIsBusy(false);
-      }
+      });
     },
-    [applySessionUpdate, isBusy],
+    [applySessionUpdate, isBusy, runPiPanelAction],
   );
 
   const respondToToolApproval = useCallback(
     async (toolCallId: string, approved: boolean) => {
       if (isBusy || selectedSession === null) return;
 
-      setIsBusy(true);
-      try {
+      await runPiPanelAction(async () => {
         const result = await piNative.sessionToolRespond(
           selectedSession.id,
           toolCallId,
           approved,
         );
         applySessionUpdate(result.session, result.events);
-      } catch (error) {
-        setRuntimeState(toErrorState(error));
-      } finally {
-        setIsBusy(false);
-      }
+      });
     },
-    [applySessionUpdate, isBusy, selectedSession],
+    [applySessionUpdate, isBusy, runPiPanelAction, selectedSession],
   );
 
   const deleteSession = useCallback(
     async (sessionId: string) => {
       if (isBusy) return;
 
-      setIsBusy(true);
-      try {
+      await runPiPanelAction(async () => {
         const result = await deletePiSessionWithArtifactCleanup({ sessionId });
         applySessionEvents(result.sessionDelete.events);
         setSelectedSessionId((current) =>
@@ -661,31 +668,28 @@ export function PiPanel({
           return;
         }
         await refreshStatus();
-      } catch (error) {
-        setRuntimeState(toErrorState(error));
-      } finally {
-        setIsBusy(false);
-      }
+      });
     },
-    [applySessionEvents, isBusy, refreshStatus],
+    [
+      applySessionEvents,
+      isBusy,
+      refreshStatus,
+      runPiPanelAction,
+      setRuntimeState,
+      setSelectedSessionId,
+    ],
   );
 
   const openModelSettings = useCallback(() => {
     void openSettingsWindow("models");
   }, []);
 
-  const {
-    launchLocalAgent,
-    launchLocalAgentWithPrompt,
-    openLocalAgentDocs,
-  } = usePiLocalAgentLaunch({ onOpenLocalAgent, prompt, workspaceEnv });
+  const { launchLocalAgent, launchLocalAgentWithPrompt, openLocalAgentDocs } =
+    usePiLocalAgentLaunch({ onOpenLocalAgent, prompt, workspaceEnv });
 
   return (
     <>
-      <aside
-        aria-label={`${surfaceLabel} sessions`}
-        className="flex h-full min-w-0 flex-col bg-card/80 backdrop-blur [contain:layout_style]"
-      >
+      <SidebarPanelFrame aria-label={`${surfaceLabel} sessions`}>
         {hideHeader ? null : (
           <PiPanelHeader
             status={status}
@@ -696,89 +700,103 @@ export function PiPanel({
           />
         )}
 
-        <PiPanelSupportingSections
-          hidden={supportingSectionsHidden}
-          runtimeCard={{
-            isBusy,
-            runtimeAction,
-            runtimeState,
-            status,
-            onStart: () => void startRuntime(),
-            onStop: requestStopRuntime,
-            onRestart: () => void restartRuntime(),
-          }}
-          localAgentsCard={{
-            activeAgents: localAgentActivities,
-            agents: localAgents,
-            collapsed: collapsedSections.localAgents,
-            disabled: isBusy,
-            isRefreshing: isLocalAgentsRefreshing,
-            prompt,
-            onCollapsedChange: (collapsed) =>
-              setSectionCollapsed("localAgents", collapsed),
-            onInstall: openLocalAgentDocs,
-            onLaunch: launchLocalAgent,
-            onLaunchWithPrompt: launchLocalAgentWithPrompt,
-            onRefresh: () => void refreshLocalAgents(),
-          }}
-          diagnosticsCard={{
-            collapsed: collapsedSections.diagnostics,
-            disabled: isBusy || isDiagnosticsRefreshing,
-            isRefreshing: isDiagnosticsRefreshing,
-            view: diagnosticsView,
-            onCollapsedChange: (collapsed) =>
-              setSectionCollapsed("diagnostics", collapsed),
-            onOpenSettings: openModelSettings,
-            onRefresh: () => void refreshPanelDiagnostics(),
-            onRestartRuntime: () => void restartRuntime(),
-            onStartRuntime: () => void startRuntime(),
-          }}
-          capabilityAuditCard={{
-            collapsed: collapsedSections.capabilityAudit ?? true,
-            disabled: isBusy || isDiagnosticsRefreshing,
-            entries: capabilityAuditEntries,
-            expandedEntryKeys: capabilityAuditExpandedKeys,
-            filter: capabilityAuditFilter,
-            onCollapsedChange: (collapsed) =>
-              setSectionCollapsed("capabilityAudit", collapsed),
-            onExpandedEntryKeysChange: setCapabilityAuditExpandedKeys,
-            onFilterChange: setCapabilityAuditFilter,
-          }}
-          mcpCard={{
-            auditEntries: capabilityAuditEntries,
-            collapsed: collapsedSections.mcp ?? true,
-            configs: mcpConfigs,
-            disabled: isBusy || isMcpRefreshing || mcpBusyServerId !== null,
-            envSecretStatuses: mcpEnvSecretStatuses,
-            error: mcpError,
-            isRefreshing: isMcpRefreshing,
-            statuses: mcpStatuses,
-            tools: mcpTools,
-            onCollapsedChange: (collapsed) =>
-              setSectionCollapsed("mcp", collapsed),
-            onConnect: (server) => void connectMcpServer(server),
-            onDisconnect: (serverId) => void disconnectMcpServer(serverId),
-            onEnvSecretRemove: (serverId, name) =>
-              void removeMcpEnvSecret(serverId, name),
-            onEnvSecretSet: (serverId, name, value) =>
-              void setMcpEnvSecret(serverId, name, value),
-            onRefresh: () => void refreshMcpSurface(),
-            onRemoveConfig: (serverId) => void removeMcpConfig(serverId),
-            onRestart: (server) => void restartMcpServer(server),
-            onSaveConfig: (config) => void saveMcpConfig(config),
-            onStartOAuth: (server) => void authorizeMcpServerWithOAuth(server),
-            onToolPolicyChange: (qualifiedName, approvalPolicy) =>
-              void setMcpToolPolicy(qualifiedName, approvalPolicy),
-          }}
-          contextBar={{
-            collapsed: collapsedSections.context,
-            items: contextPreview,
-            onCollapsedChange: (collapsed) =>
-              setSectionCollapsed("context", collapsed),
-          }}
-        />
+        {!supportingSectionsHidden ? (
+          <SidebarPanelScrollRegion
+            role="region"
+            aria-label={`${surfaceLabel} controls`}
+            className="max-h-[min(55%,32rem)] shrink-0 border-b border-border/35 bg-card/30"
+          >
+            <PiPanelSupportingSectionsProvider
+              state={{
+                runtimeCard: {
+                  isBusy,
+                  runtimeAction,
+                  runtimeState,
+                  status,
+                  onStart: () => void startRuntime(),
+                  onStop: requestStopRuntime,
+                  onRestart: () => void restartRuntime(),
+                },
+                localAgentsCard: {
+                  activeAgents: localAgentActivities,
+                  agents: localAgents,
+                  collapsed: collapsedSections.localAgents,
+                  disabled: isBusy,
+                  isRefreshing: isLocalAgentsRefreshing,
+                  prompt,
+                  onCollapsedChange: (collapsed) =>
+                    setSectionCollapsed("localAgents", collapsed),
+                  onInstall: openLocalAgentDocs,
+                  onLaunch: launchLocalAgent,
+                  onLaunchWithPrompt: launchLocalAgentWithPrompt,
+                  onRefresh: () => void refreshLocalAgents(),
+                },
+                diagnosticsCard: {
+                  collapsed: collapsedSections.diagnostics,
+                  disabled: isBusy || isDiagnosticsRefreshing,
+                  isRefreshing: isDiagnosticsRefreshing,
+                  view: diagnosticsView,
+                  onCollapsedChange: (collapsed) =>
+                    setSectionCollapsed("diagnostics", collapsed),
+                  onOpenSettings: openModelSettings,
+                  onRefresh: () => void refreshPanelDiagnostics(),
+                  onRestartRuntime: () => void restartRuntime(),
+                  onStartRuntime: () => void startRuntime(),
+                },
+                capabilityAuditCard: {
+                  collapsed: collapsedSections.capabilityAudit ?? true,
+                  disabled: isBusy || isDiagnosticsRefreshing,
+                  entries: capabilityAuditEntries,
+                  expandedEntryKeys: capabilityAuditExpandedKeys,
+                  filter: capabilityAuditFilter,
+                  onCollapsedChange: (collapsed) =>
+                    setSectionCollapsed("capabilityAudit", collapsed),
+                  onExpandedEntryKeysChange: setCapabilityAuditExpandedKeys,
+                  onFilterChange: setCapabilityAuditFilter,
+                },
+                mcpCard: {
+                  auditEntries: capabilityAuditEntries,
+                  collapsed: collapsedSections.mcp ?? true,
+                  configs: mcpConfigs,
+                  disabled:
+                    isBusy || isMcpRefreshing || mcpBusyServerId !== null,
+                  envSecretStatuses: mcpEnvSecretStatuses,
+                  error: mcpError,
+                  isRefreshing: isMcpRefreshing,
+                  statuses: mcpStatuses,
+                  tools: mcpTools,
+                  onCollapsedChange: (collapsed) =>
+                    setSectionCollapsed("mcp", collapsed),
+                  onConnect: (server) => void connectMcpServer(server),
+                  onDisconnect: (serverId) =>
+                    void disconnectMcpServer(serverId),
+                  onEnvSecretRemove: (serverId, name) =>
+                    void removeMcpEnvSecret(serverId, name),
+                  onEnvSecretSet: (serverId, name, value) =>
+                    void setMcpEnvSecret(serverId, name, value),
+                  onRefresh: () => void refreshMcpSurface(),
+                  onRemoveConfig: (serverId) => void removeMcpConfig(serverId),
+                  onRestart: (server) => void restartMcpServer(server),
+                  onSaveConfig: (config) => void saveMcpConfig(config),
+                  onStartOAuth: (server) =>
+                    void authorizeMcpServerWithOAuth(server),
+                  onToolPolicyChange: (qualifiedName, approvalPolicy) =>
+                    void setMcpToolPolicy(qualifiedName, approvalPolicy),
+                },
+                contextBar: {
+                  collapsed: collapsedSections.context,
+                  items: contextPreview,
+                  onCollapsedChange: (collapsed) =>
+                    setSectionCollapsed("context", collapsed),
+                },
+              }}
+            >
+              <PiPanelSupportingSections />
+            </PiPanelSupportingSectionsProvider>
+          </SidebarPanelScrollRegion>
+        ) : null}
 
-        <div className="flex min-h-0 flex-1 flex-col">
+        <SidebarPanelBody>
           {supportingSectionsHidden ? null : (
             <PiSessionList
               canCreateSession={canCreateSession}
@@ -833,8 +851,8 @@ export function PiPanel({
             onStopSession={() => void stopSelectedSession()}
             onThinkingLevelChange={setThinkingLevelOverride}
           />
-        </div>
-      </aside>
+        </SidebarPanelBody>
+      </SidebarPanelFrame>
 
       <PiMcpOAuthDialog
         dialog={mcpOAuthDialog}
@@ -842,6 +860,12 @@ export function PiPanel({
         onCodeOrRedirectUrlChange={setMcpOAuthCodeOrRedirectUrl}
         onReopenAuthorization={() => void reopenMcpOAuthAuthorization()}
         onSubmit={submitMcpOAuthDialog}
+      />
+      <PiDestructiveActionDialog
+        action={pendingDestructiveAction}
+        mcpConfigName={pendingMcpConfig?.name ?? null}
+        onCancel={() => setPendingDestructiveAction(null)}
+        onConfirm={confirmPendingDestructiveAction}
       />
     </>
   );

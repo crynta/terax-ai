@@ -56,7 +56,9 @@ export function AppCloseDialogs({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={onCancelClose}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={onCancelClose}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction onClick={onConfirmClose}>
               Close Anyway
             </AlertDialogAction>

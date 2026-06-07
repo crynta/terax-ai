@@ -1,4 +1,3 @@
-import { PI_SESSION_EVENT, type PiSession, type PiSessionEvent, type PiSessionStatus } from "./types";
 import {
   chronologicalEvents,
   comparePiSessionEventsAscending,
@@ -6,6 +5,12 @@ import {
   eventSessionSnapshot,
   isPiSessionStatus,
 } from "./events";
+import {
+  PI_SESSION_EVENT,
+  type PiSession,
+  type PiSessionEvent,
+  type PiSessionStatus,
+} from "./types";
 
 export function mergePiSessionEvents(
   current: PiSessionEvent[],

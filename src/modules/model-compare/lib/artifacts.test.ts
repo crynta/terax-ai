@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Artifact } from "@/modules/artifacts/lib/types";
-import { createModelCompareRun } from "./modelCompare";
 import {
   MODEL_COMPARE_ARTIFACT_CONVERSATION_ID,
   saveModelCompareArtifact,
 } from "./artifacts";
+import { createModelCompareRun } from "./modelCompare";
 
 function artifact(slug: string, content: string): Artifact {
   return {
@@ -65,7 +65,10 @@ describe("saveModelCompareArtifact", () => {
       ],
     });
     const create = vi.fn(async () => {
-      throw { code: "ARTIFACT_CONFLICT", message: "artifact slug already exists" };
+      throw {
+        code: "ARTIFACT_CONFLICT",
+        message: "artifact slug already exists",
+      };
     });
     const update = vi.fn(async (_conversationId, slug, content) =>
       artifact(slug, content),

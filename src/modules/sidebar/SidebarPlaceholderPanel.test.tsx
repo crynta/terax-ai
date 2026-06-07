@@ -14,5 +14,8 @@ describe("SidebarPlaceholderPanel", () => {
     expect(html).toContain("Chat");
     expect(html).toContain("Conversation workspace is coming soon.");
     expect(html).toContain("Coming soon");
+    expect(html).toContain(
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card/80",
+    );
   });
 });

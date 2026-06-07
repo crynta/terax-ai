@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::modules::workspace::WorkspaceEnv;
+
 use crate::modules::capabilities::audit::CapabilityAuditEntry;
 
 pub const PI_SESSION_EVENT_NAME: &str = "pi:session-event";
@@ -228,6 +230,8 @@ pub struct PiSession {
     pub created_at: String,
     pub updated_at: String,
     pub last_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_env: Option<WorkspaceEnv>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_level: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

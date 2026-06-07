@@ -97,7 +97,6 @@ export function sessionSnapshot(session) {
     cancelledRunId: _cancelledRunId,
     providerConfig: _providerConfig,
     sessionDir: _sessionDir,
-    workspaceEnv: _workspaceEnv,
     autoTitle: _autoTitle,
     agentGeneration: _agentGeneration,
     branchGroups: _branchGroups,

@@ -1,13 +1,13 @@
 import type { UIMessage } from "@ai-sdk/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { type AgentMeta, useChatStore } from "../store/chatStore";
 import {
   AgentRunTimeline,
   AiChatView,
   selectRecentAgentRuns,
   summarizeAgentToolActivity,
 } from "./AiChat";
-import { type AgentMeta, useChatStore } from "../store/chatStore";
 
 const toolMessages = [
   {

@@ -5,7 +5,9 @@ export type WorkflowNodeTemplate = Pick<
   "title" | "size" | "inputs" | "outputs" | "config" | "uiState"
 >;
 
-export function workflowNodeTemplate(type: WorkflowNodeType): WorkflowNodeTemplate {
+export function workflowNodeTemplate(
+  type: WorkflowNodeType,
+): WorkflowNodeTemplate {
   if (type === "textPrompt") {
     return {
       title: "Prompt",
@@ -128,4 +130,3 @@ export function workflowNodeTemplate(type: WorkflowNodeType): WorkflowNodeTempla
     uiState: {},
   };
 }
-

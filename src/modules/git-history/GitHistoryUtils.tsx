@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { statusTextClass } from "@/lib/statusTone";
 
 export function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -69,7 +70,7 @@ export function compactDate(secs: number): string {
   if (sameYear) {
     const hh = String(d.getHours()).padStart(2, "0");
     const mm = String(d.getMinutes()).padStart(2, "0");
-    return `${month} ${day}  ${hh}:${mm}`;
+    return `${month} ${day} ${hh}:${mm}`;
   }
   return `${month} ${day} ${d.getFullYear()}`;
 }
@@ -77,16 +78,16 @@ export function compactDate(secs: number): string {
 export function statusTone(code: string): string {
   switch (code.toUpperCase()) {
     case "A":
-      return "text-emerald-600 dark:text-emerald-400";
+      return statusTextClass("success");
     case "M":
-      return "text-amber-600 dark:text-amber-300";
+      return statusTextClass("warning");
     case "D":
-      return "text-rose-600 dark:text-rose-400";
+      return statusTextClass("danger");
     case "R":
     case "C":
-      return "text-sky-600 dark:text-sky-300";
+      return statusTextClass("info");
     default:
-      return "text-muted-foreground";
+      return statusTextClass("muted");
   }
 }
 

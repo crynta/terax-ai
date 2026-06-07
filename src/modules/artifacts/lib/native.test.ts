@@ -11,14 +11,16 @@ describe("artifactsNative", () => {
     vi.mocked(invoke).mockReset();
   });
 
-  it("lists artifacts for a Pi conversation", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce([]);
+  it("lists artifacts for one conversation or all durable conversations", async () => {
+    vi.mocked(invoke).mockResolvedValue([]);
 
     await artifactsNative.list("pi-1");
+    await artifactsNative.listAll();
 
-    expect(invoke).toHaveBeenCalledWith("artifacts_list", {
+    expect(invoke).toHaveBeenNthCalledWith(1, "artifacts_list", {
       conversationId: "pi-1",
     });
+    expect(invoke).toHaveBeenNthCalledWith(2, "artifacts_list_all");
   });
 
   it("loads artifact versions and specific version content", async () => {
@@ -49,11 +51,13 @@ describe("artifactsNative", () => {
 
     await artifactsNative.compileReact(
       "export default function App() { return <div /> }",
+      "preview-1",
     );
 
     expect(invoke).toHaveBeenCalledWith("artifacts_compile_react", {
       input: {
         content: "export default function App() { return <div /> }",
+        previewToken: "preview-1",
       },
     });
   });
@@ -81,7 +85,70 @@ describe("artifactsNative", () => {
     );
   });
 
-  it("creates and edits artifacts through typed Rust commands", async () => {
+  it("runs artifact bulk operations through typed Rust commands", async () => {
+    vi.mocked(invoke).mockResolvedValue({
+      requestedCount: 1,
+      successCount: 1,
+      failureCount: 0,
+      items: [],
+    });
+
+    const targets = [{ conversationId: "pi-1", slug: "hero" }];
+    await artifactsNative.deleteMany(targets);
+    await artifactsNative.restoreDeletedMany([
+      { conversationId: "pi-1", slug: "hero", undoToken: "undo-1" },
+    ]);
+    await artifactsNative.exportMany(targets, "/tmp/artifacts");
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "artifacts_delete_many", {
+      targets,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(
+      2,
+      "artifacts_restore_deleted_many",
+      {
+        targets: [
+          { conversationId: "pi-1", slug: "hero", undoToken: "undo-1" },
+        ],
+      },
+    );
+    expect(invoke).toHaveBeenNthCalledWith(3, "artifacts_export_many", {
+      targets,
+      destinationDir: "/tmp/artifacts",
+    });
+  });
+
+  it("lists and purges deleted artifacts through typed Rust commands", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce([]).mockResolvedValueOnce({
+      deleted: true,
+      deletedCount: 1,
+      undoToken: null,
+    });
+
+    await artifactsNative.listDeleted();
+    await artifactsNative.purgeDeleted("pi-1", "hero", "undo-1");
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "artifacts_list_deleted");
+    expect(invoke).toHaveBeenNthCalledWith(2, "artifacts_purge_deleted", {
+      conversationId: "pi-1",
+      slug: "hero",
+      undoToken: "undo-1",
+    });
+  });
+
+  it("restores deleted artifacts through a typed Rust command", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ summary: null, content: "" });
+
+    await artifactsNative.restoreDeleted("pi-1", "hero", "undo-1");
+
+    expect(invoke).toHaveBeenCalledWith("artifacts_restore_deleted", {
+      conversationId: "pi-1",
+      slug: "hero",
+      undoToken: "undo-1",
+    });
+  });
+
+  it("creates, renames, and edits artifacts through typed Rust commands", async () => {
     vi.mocked(invoke).mockResolvedValue({ summary: null, content: "" });
 
     await artifactsNative.create("pi-1", {
@@ -90,6 +157,7 @@ describe("artifactsNative", () => {
       title: "Hero",
       content: "<h1>Hero</h1>",
     });
+    await artifactsNative.renameTitle("pi-1", "hero", "Marketing Hero");
     await artifactsNative.edit(
       "pi-1",
       "hero",
@@ -106,7 +174,12 @@ describe("artifactsNative", () => {
         content: "<h1>Hero</h1>",
       },
     });
-    expect(invoke).toHaveBeenNthCalledWith(2, "artifacts_edit", {
+    expect(invoke).toHaveBeenNthCalledWith(2, "artifacts_rename_title", {
+      conversationId: "pi-1",
+      slug: "hero",
+      title: "Marketing Hero",
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, "artifacts_edit", {
       conversationId: "pi-1",
       slug: "hero",
       edits: [{ oldText: "Hero", newText: "Title" }],

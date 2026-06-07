@@ -40,22 +40,23 @@ import {
 import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { SidebarPanelFrame } from "@/modules/sidebar";
 import { tooltipSideForSidebar } from "@/modules/sidebar/position";
-import type { SourceControlSummary } from "./useSourceControl";
-import {
-  type SourceControlFileEntry,
-  useSourceControlPanel,
-} from "./useSourceControlPanel";
 import {
   CleanTreeHint,
   CommitFeedback,
   IconActionButton,
   PanelCenter,
-  RowRenderer,
   ROW_HEIGHTS,
-  SOURCE_CONTROL_TOOLTIP_CLASS,
   type RowDescriptor,
+  RowRenderer,
+  SOURCE_CONTROL_TOOLTIP_CLASS,
 } from "./SourceControlPanelParts";
+import type { SourceControlSummary } from "./useSourceControl";
+import {
+  type SourceControlFileEntry,
+  useSourceControlPanel,
+} from "./useSourceControlPanel";
 
 type Props = {
   open: boolean;
@@ -350,10 +351,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
 
   return (
     <TooltipProvider delayDuration={800} skipDelayDuration={300}>
-      <aside
-        aria-label="Source control"
-        className="flex h-full min-w-0 flex-col bg-card/80 backdrop-blur [contain:layout_style]"
-      >
+      <SidebarPanelFrame aria-label="Source control">
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3 pb-2.5 pt-3">
           <div className="flex min-w-0 items-center gap-1.5">
             <div className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground transition-colors hover:bg-foreground/10">
@@ -505,7 +503,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
 
         {scm.panelState === "ready" && scm.status ? (
           <>
-            <div className="relative shrink-0 space-y-2 border-b border-border/40 bg-gradient-to-b from-card/65 to-card/30 px-2.5 pb-2.5 pt-2.5">
+            <div className="relative shrink-0 flex flex-col gap-2 border-b border-border/40 bg-gradient-to-b from-card/65 to-card/30 px-2.5 pb-2.5 pt-2.5">
               <div
                 className={cn(
                   "relative rounded-lg border bg-background/95 shadow-sm transition-colors",
@@ -525,7 +523,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                   placeholder="Commit message…"
                   rows={3}
                   className={cn(
-                    "min-h-[72px] border-border resize-none rounded-lg bg-transparent px-3 pb-7 pt-2.5 text-[12.5px] leading-snug shadow-none placeholder:text-muted-foreground/65 focus-visible:ring-0 focus:border-0",
+                    "min-h-[72px] border-border resize-none rounded-lg bg-transparent px-3 pb-7 pt-2.5 text-[12.5px] leading-snug shadow-none placeholder:text-muted-foreground focus-visible:ring-0 focus:border-0",
                   )}
                 />
                 <div className="pointer-events-none absolute inset-x-3 bottom-1.5 flex items-center justify-between p-1 gap-2 text-[10px] tabular-nums text-muted-foreground/55">
@@ -708,7 +706,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             )}
           </>
         ) : null}
-      </aside>
+      </SidebarPanelFrame>
 
       <AlertDialog
         open={scm.pendingDiscard !== null}

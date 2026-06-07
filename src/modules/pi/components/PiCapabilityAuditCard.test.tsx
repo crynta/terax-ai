@@ -80,10 +80,15 @@ describe("PiCapabilityAuditCard", () => {
     ]);
 
     const app = buildCapabilityAuditView(entries, "app");
-    expect(app.entries.map((entry) => entry.toolName)).toEqual(["app.file_write"]);
+    expect(app.entries.map((entry) => entry.toolName)).toEqual([
+      "app.file_write",
+    ]);
 
     const core = buildCapabilityAuditView(entries, "core");
-    expect(core.entries.map((entry) => entry.toolName)).toEqual(["bash", "read"]);
+    expect(core.entries.map((entry) => entry.toolName)).toEqual([
+      "bash",
+      "read",
+    ]);
   });
 
   it("renders summary counts, filters, and complete audit rows", () => {
@@ -109,7 +114,7 @@ describe("PiCapabilityAuditCard", () => {
     expect(html).toContain("workflow.http_request");
     expect(html).toContain("app.file_write");
     expect(html).toContain("capability tool requires approval");
-    expect(html).toContain("aria-label=\"Copy capability audit\"");
+    expect(html).toContain('aria-label="Copy capability audit"');
   });
 
   it("supports controlled filter and expanded audit rows", () => {
@@ -147,6 +152,8 @@ describe("PiCapabilityAuditCard", () => {
     );
 
     expect(html).toContain("No capability events yet");
-    expect(html).toContain("Tool decisions will appear here after Pi or workflows use native capabilities.");
+    expect(html).toContain(
+      "Tool decisions will appear here after Pi or workflows use native capabilities.",
+    );
   });
 });

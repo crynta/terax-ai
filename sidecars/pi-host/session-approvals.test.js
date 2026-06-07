@@ -351,6 +351,293 @@ describe("Pi host session approval protocol", () => {
     );
   });
 
+  it("runs auto manifest MCP tools without approval and surfaces MCP errors", async () => {
+    const nativeToolCalls = [];
+    setNativeToolExecutorForTests(async (request) => {
+      nativeToolCalls.push(request);
+      return {
+        content: [{ type: "text", text: "MCP query failed: missing topic" }],
+        details: {
+          mediatedBy: "rust",
+          mcp: { toolName: request.toolName, isError: true },
+        },
+      };
+    });
+    process.env.TERAX_PI_HOST_TEST_FAUX_TOOL_CALL = JSON.stringify({
+      id: "call-mcp-query",
+      name: "mcp__docs__query",
+      arguments: { query: "hooks" },
+    });
+    const created = await request(96, "sessions.create", {
+      title: "MCP auto query",
+      capabilityManifest: {
+        version: 1,
+        tools: [
+          {
+            name: "mcp__docs__query",
+            label: "Docs: query",
+            description: "Query external MCP documentation through Rust.",
+            promptSnippet: "Query MCP docs through Terax Rust",
+            parameters: {
+              type: "object",
+              properties: { query: { type: "string" } },
+              required: ["query"],
+            },
+            approval: "auto",
+            modelVisible: true,
+          },
+        ],
+      },
+    });
+    const sessionId = created.response.result.session.id;
+
+    await request(97, "sessions.send", {
+      sessionId,
+      prompt: "query mcp docs",
+    });
+    await waitFor(() =>
+      liveEvents.some(
+        (event) =>
+          event.type === "session.tool.result" &&
+          event.payload.toolCallId === "call-mcp-query",
+      ),
+    );
+
+    expect(nativeToolCalls).toEqual([
+      expect.objectContaining({
+        sessionId,
+        toolCallId: "call-mcp-query",
+        toolName: "mcp__docs__query",
+        input: { query: "hooks" },
+      }),
+    ]);
+    expect(
+      liveEvents.some(
+        (event) => event.type === "session.tool.approval.requested",
+      ),
+    ).toBe(false);
+    expect(liveEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "session.tool.result",
+          sessionId,
+          payload: expect.objectContaining({
+            toolCallId: "call-mcp-query",
+            toolName: "mcp__docs__query",
+            errorText: "MCP query failed: missing topic",
+            isError: true,
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("refreshes manifest tools through explicit configure before sending", async () => {
+    const nativeToolCalls = [];
+    setNativeToolExecutorForTests(async (request) => {
+      nativeToolCalls.push(request);
+      return {
+        content: [{ type: "text", text: "hot mcp ran through Rust" }],
+        details: { mediatedBy: "rust", mcp: true },
+      };
+    });
+    process.env.TERAX_PI_HOST_TEST_FAUX_TOOL_CALL = JSON.stringify({
+      id: "call-hot-mcp",
+      name: "mcp__echo__say",
+      arguments: { text: "hello" },
+    });
+    const created = await request(88, "sessions.create", {
+      title: "Hot MCP approval",
+      capabilityManifest: {
+        version: 1,
+        tools: [
+          {
+            name: "read",
+            label: "read",
+            description: "Read files",
+            promptSnippet: "Read files",
+            parameters: { type: "object", properties: {} },
+            approval: "auto",
+            modelVisible: true,
+          },
+        ],
+      },
+    });
+    const sessionId = created.response.result.session.id;
+
+    await request(89, "sessions.configure", {
+      sessionId,
+      capabilityManifest: {
+        version: 1,
+        tools: [
+          {
+            name: "mcp__echo__say",
+            label: "Echo: say",
+            description: "Call an external MCP echo tool through Rust.",
+            promptSnippet: "Call MCP echo through Terax Rust after approval",
+            parameters: {
+              type: "object",
+              properties: { text: { type: "string" } },
+              required: ["text"],
+            },
+            approval: "ask",
+            modelVisible: true,
+          },
+        ],
+      },
+    });
+    await request(90, "sessions.send", {
+      sessionId,
+      prompt: "call hot mcp",
+    });
+    await waitFor(() =>
+      liveEvents.some(
+        (event) =>
+          event.type === "session.tool.approval.requested" &&
+          event.payload.toolName === "mcp__echo__say",
+      ),
+    );
+
+    await request(91, "sessions.tool.respond", {
+      sessionId,
+      toolCallId: "call-hot-mcp",
+      approved: true,
+    });
+    await waitFor(() =>
+      liveEvents.some(
+        (event) =>
+          event.type === "session.tool.result" &&
+          event.payload.toolName === "mcp__echo__say",
+      ),
+    );
+
+    expect(nativeToolCalls).toEqual([
+      expect.objectContaining({
+        sessionId,
+        toolCallId: "call-hot-mcp",
+        toolName: "mcp__echo__say",
+        input: { text: "hello" },
+      }),
+    ]);
+  });
+
+  it("refreshes manifest tools when resuming an already-live session", async () => {
+    const sessionDir = await mkdtemp(join(tmpdir(), "terax-pi-hot-resume-"));
+    try {
+      const nativeToolCalls = [];
+      setNativeToolExecutorForTests(async (request) => {
+        nativeToolCalls.push(request);
+        return {
+          content: [{ type: "text", text: "resume mcp ran through Rust" }],
+          details: { mediatedBy: "rust", mcp: true },
+        };
+      });
+      delete process.env.TERAX_PI_HOST_TEST_FAUX_TOOL_CALL;
+      const created = await request(91, "sessions.create", {
+        title: "Resume hot MCP",
+        sessionDir,
+        capabilityManifest: {
+          version: 1,
+          tools: [
+            {
+              name: "read",
+              label: "read",
+              description: "Read files",
+              promptSnippet: "Read files",
+              parameters: { type: "object", properties: {} },
+              approval: "auto",
+              modelVisible: true,
+            },
+          ],
+        },
+      });
+      const sessionId = created.response.result.session.id;
+      const sdkSessionFile = created.response.result.session.sdkSessionFile;
+      expect(sdkSessionFile).toEqual(expect.stringContaining(sessionDir));
+      await request(92, "sessions.send", {
+        sessionId,
+        prompt: "prime persistent session file",
+      });
+      await waitFor(() =>
+        liveEvents.some(
+          (event) =>
+            event.sessionId === sessionId &&
+            event.type === "session.status" &&
+            event.payload.status === "idle",
+        ),
+      );
+      expect((await stat(sdkSessionFile)).isFile()).toBe(true);
+      liveEvents = [];
+      process.env.TERAX_PI_HOST_TEST_FAUX_TOOL_CALL = JSON.stringify({
+        id: "call-resume-mcp",
+        name: "mcp__echo__say",
+        arguments: { text: "hello" },
+      });
+
+      await request(93, "sessions.resume", {
+        sessionId,
+        title: "Resume hot MCP",
+        cwd: process.cwd(),
+        sessionDir,
+        sdkSessionFile,
+        capabilityManifest: {
+          version: 1,
+          tools: [
+            {
+              name: "mcp__echo__say",
+              label: "Echo: say",
+              description: "Call an external MCP echo tool through Rust.",
+              promptSnippet: "Call MCP echo through Terax Rust after approval",
+              parameters: {
+                type: "object",
+                properties: { text: { type: "string" } },
+                required: ["text"],
+              },
+              approval: "ask",
+              modelVisible: true,
+            },
+          ],
+        },
+      });
+
+      await request(94, "sessions.send", {
+        sessionId,
+        prompt: "call resumed mcp",
+      });
+      await waitFor(() =>
+        liveEvents.some(
+          (event) =>
+            event.type === "session.tool.approval.requested" &&
+            event.payload.toolName === "mcp__echo__say",
+        ),
+      );
+
+      await request(95, "sessions.tool.respond", {
+        sessionId,
+        toolCallId: "call-resume-mcp",
+        approved: true,
+      });
+      await waitFor(() =>
+        liveEvents.some(
+          (event) =>
+            event.type === "session.tool.result" &&
+            event.payload.toolName === "mcp__echo__say",
+        ),
+      );
+
+      expect(nativeToolCalls).toEqual([
+        expect.objectContaining({
+          sessionId,
+          toolCallId: "call-resume-mcp",
+          toolName: "mcp__echo__say",
+          input: { text: "hello" },
+        }),
+      ]);
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true });
+    }
+  });
+
   it("denies shell faux tool calls without executing them", async () => {
     process.env.TERAX_PI_HOST_TEST_FAUX_TOOL_CALL = JSON.stringify({
       id: "call-deny",

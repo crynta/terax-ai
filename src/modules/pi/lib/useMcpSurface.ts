@@ -7,7 +7,6 @@ import {
   useState,
 } from "react";
 import { formatPiErrorDetail } from "@/modules/pi/lib/errors";
-import { piNative } from "@/modules/pi/lib/native";
 import type {
   McpEnvSecretStatus,
   McpOAuthStartResult,
@@ -16,6 +15,7 @@ import type {
   McpStoredServerConfig,
   McpToolDescriptor,
 } from "@/modules/pi/lib/native";
+import { piNative } from "@/modules/pi/lib/native";
 import { usePiControllerState } from "@/modules/pi/lib/PiControllerProvider";
 
 const EMPTY_MCP_CONFIGS: McpStoredServerConfig[] = [];
@@ -33,6 +33,7 @@ export type McpOAuthDialogState = {
 };
 
 type UseMcpSurfaceOptions = {
+  onRemoveConfigNeedsConfirmation?: (serverId: string) => void;
   refreshDiagnostics: () => Promise<void>;
 };
 
@@ -40,7 +41,10 @@ function errorMessage(error: unknown): string {
   return formatPiErrorDetail(error);
 }
 
-export function useMcpSurface({ refreshDiagnostics }: UseMcpSurfaceOptions) {
+export function useMcpSurface({
+  onRemoveConfigNeedsConfirmation,
+  refreshDiagnostics,
+}: UseMcpSurfaceOptions) {
   const [configs, setConfigs] = usePiControllerState(
     "mcpConfigs",
     EMPTY_MCP_CONFIGS,
@@ -294,14 +298,9 @@ export function useMcpSurface({ refreshDiagnostics }: UseMcpSurfaceOptions) {
     [completeOAuth, oauthDialog],
   );
 
-  const removeConfig = useCallback(
+  const removeConfigNow = useCallback(
     async (serverId: string) => {
-      const confirmed =
-        typeof window === "undefined" ||
-        window.confirm(
-          "Remove this saved MCP server config? Connected servers keep running until disconnected.",
-        );
-      if (!confirmed || !beginBusy(serverId)) return;
+      if (!beginBusy(serverId)) return;
 
       setError(null);
       try {
@@ -314,6 +313,17 @@ export function useMcpSurface({ refreshDiagnostics }: UseMcpSurfaceOptions) {
       }
     },
     [beginBusy, clearBusy, refresh, setError],
+  );
+
+  const removeConfig = useCallback(
+    (serverId: string) => {
+      if (onRemoveConfigNeedsConfirmation) {
+        onRemoveConfigNeedsConfirmation(serverId);
+        return;
+      }
+      void removeConfigNow(serverId);
+    },
+    [onRemoveConfigNeedsConfirmation, removeConfigNow],
   );
 
   const setEnvSecret = useCallback(
@@ -377,6 +387,7 @@ export function useMcpSurface({ refreshDiagnostics }: UseMcpSurfaceOptions) {
     oauthDialog,
     refresh,
     removeConfig,
+    removeConfigNow,
     removeEnvSecret,
     reopenOAuthAuthorization,
     restart,

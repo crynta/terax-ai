@@ -202,9 +202,9 @@ describe("model compare judge", () => {
 
     expect(evaluation.winner).toBe("pane_2");
     expect(formatModelCompareEvaluationWinner(evaluated)).toBe("Model B");
-    expect(formatModelCompareEvaluationWinner(revealModelCompareRun(evaluated))).toBe(
-      "Claude Sonnet 4.6",
-    );
+    expect(
+      formatModelCompareEvaluationWinner(revealModelCompareRun(evaluated)),
+    ).toBe("Claude Sonnet 4.6");
     expect(evaluated.evaluation?.summary).toBe("B is stronger");
     expect(evaluated.publicSnapshot.evaluation?.scores).toHaveLength(2);
   });

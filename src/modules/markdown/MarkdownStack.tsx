@@ -22,6 +22,7 @@ export function MarkdownStack({ tabs, activeId }: Props) {
               !visible && "invisible pointer-events-none",
             )}
             aria-hidden={!visible}
+            inert={visible ? undefined : true}
           >
             <MarkdownPreviewPane path={t.path} visible={visible} />
           </div>

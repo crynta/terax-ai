@@ -5,12 +5,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useChatStore } from "@/modules/ai/store/chatStore";
+import { statusBadgeClass } from "@/lib/statusTone";
+import { cn } from "@/lib/utils";
 import { AgentStatusPill } from "@/modules/ai/components/AgentStatusPill";
 import {
   AiOpenButton,
   AiStatusBarControls,
 } from "@/modules/ai/components/AiStatusBarControls";
+import { useChatStore } from "@/modules/ai/store/chatStore";
 import type { WorkspaceEnv } from "@/modules/workspace";
 import { CwdBreadcrumb } from "./CwdBreadcrumb";
 import { WorkspaceEnvSelector } from "./WorkspaceEnvSelector";
@@ -48,7 +50,12 @@ export function StatusBar({
         {privateActive ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="flex shrink-0 cursor-default items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10.5px] font-medium text-amber-700 dark:text-amber-400">
+              <span
+                className={cn(
+                  "flex shrink-0 cursor-default items-center gap-1 rounded-md px-2 py-0.5 text-[10.5px] font-medium",
+                  statusBadgeClass("warning"),
+                )}
+              >
                 <HugeiconsIcon icon={IncognitoIcon} size={11} strokeWidth={2} />
                 <span>Private: hidden from AI</span>
               </span>

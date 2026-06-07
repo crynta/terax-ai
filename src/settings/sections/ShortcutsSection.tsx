@@ -82,8 +82,8 @@ export function ShortcutsSection() {
           onClick={() => setResetDialogOpen(true)}
         >
           <HugeiconsIcon
+            data-icon="inline-start"
             icon={ArrowTurnBackwardIcon}
-            size={12}
             strokeWidth={2}
           />
           Reset All
@@ -194,9 +194,11 @@ function ShortcutRow({
           <Recorder onRecord={onRecord} onCancel={onStopRecording} />
         ) : (
           <>
-            <div
+            <button
+              type="button"
               onClick={onStartRecording}
-              className="flex min-w-[100px] cursor-pointer items-center justify-end gap-1"
+              className="flex min-w-[100px] cursor-pointer items-center justify-end gap-1 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+              aria-label={`Record shortcut for ${shortcut.label}`}
             >
               {hasBindings ? (
                 <KbdGroup>
@@ -214,7 +216,7 @@ function ShortcutRow({
                   Unassigned
                 </span>
               )}
-            </div>
+            </button>
 
             <div className="flex items-center gap-1">
               {isModified && (
@@ -225,17 +227,21 @@ function ShortcutRow({
                   onClick={onReset}
                   title="Reset to default"
                 >
-                  <HugeiconsIcon icon={ArrowTurnBackwardIcon} size={12} />
+                  <HugeiconsIcon
+                    data-icon="inline-start"
+                    icon={ArrowTurnBackwardIcon}
+                  />
                 </Button>
               )}
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7 text-muted-foreground hover:text-destructive opacity-0 transition-opacity group-hover:opacity-100"
+                className="size-7 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
                 onClick={onClear}
                 title="Clear shortcut"
+                aria-label={`Clear ${shortcut.label} shortcut`}
               >
-                <HugeiconsIcon icon={Delete02Icon} size={12} />
+                <HugeiconsIcon data-icon="inline-start" icon={Delete02Icon} />
               </Button>
             </div>
           </>

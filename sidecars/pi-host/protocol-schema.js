@@ -1,4 +1,4 @@
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 const emptyParams = () => ({
   type: "object",
@@ -82,6 +82,13 @@ export const PI_HOST_PROTOCOL_SCHEMA = Object.freeze({
       workspaceEnv: workspaceEnvParam({ nullable: true }),
       capabilityManifest: objectParam({ nullable: true }),
     }),
+    "sessions.configure": methodParams(
+      {
+        sessionId: stringParam({ minLength: 1 }),
+        capabilityManifest: objectParam({ nullable: true }),
+      },
+      ["sessionId", "capabilityManifest"],
+    ),
     "sessions.send": methodParams(
       {
         sessionId: stringParam({ minLength: 1 }),

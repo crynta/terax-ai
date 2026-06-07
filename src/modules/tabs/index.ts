@@ -1,6 +1,7 @@
 export {
   type AiDiffStatus,
   type AiDiffTab,
+  type ArtifactHubTab,
   type ArtifactWorkspaceTab,
   type ArtifactWorkspaceTabInput,
   createWorkflowTab,
@@ -16,6 +17,7 @@ export {
   type Tab,
   type TabPatch,
   type TerminalTab,
+  upsertArtifactHubTab,
   upsertArtifactWorkspaceTab,
   upsertPiWorkspaceTab,
   upsertWorkflowDocumentTab,

@@ -60,7 +60,7 @@ export const ConversationEmptyState = ({
     {children ?? (
       <>
         {icon && <div className="text-muted-foreground">{icon}</div>}
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           <h3 className="font-medium text-sm">{title}</h3>
           {description && (
             <p className="text-muted-foreground text-sm">{description}</p>
@@ -96,7 +96,11 @@ export const ConversationScrollButton = ({
         variant="outline"
         {...props}
       >
-        <HugeiconsIcon icon={ArrowDown01Icon} size={13} strokeWidth={2} />
+        <HugeiconsIcon
+          data-icon="inline-start"
+          icon={ArrowDown01Icon}
+          strokeWidth={2}
+        />
       </Button>
     )
   );
@@ -164,7 +168,9 @@ export const ConversationDownload = ({
       variant="outline"
       {...props}
     >
-      {children ?? <HugeiconsIcon icon={Download01Icon} size={16} />}
+      {children ?? (
+        <HugeiconsIcon data-icon="inline-start" icon={Download01Icon} />
+      )}
     </Button>
   );
 };

@@ -29,7 +29,9 @@ describe("modelCompareHistoryNative", () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined);
 
-    await expect(modelCompareHistoryNative.load()).resolves.toEqual([validEntry]);
+    await expect(modelCompareHistoryNative.load()).resolves.toEqual([
+      validEntry,
+    ]);
     await modelCompareHistoryNative.save([]);
     await modelCompareHistoryNative.clear();
 

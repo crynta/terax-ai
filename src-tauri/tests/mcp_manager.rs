@@ -80,6 +80,30 @@ for await (const line of rl) {
 
     state.set_tool_preference(McpToolPreference {
         qualified_name: "mcp__test__echo".to_string(),
+        model_visible: true,
+        approval_policy: terax_lib::modules::capabilities::ApprovalPolicy::Auto,
+    });
+    let descriptor = state.tool_descriptor("mcp__test__echo").unwrap().unwrap();
+    assert_eq!(descriptor.approval_policy, ApprovalPolicy::Auto);
+    assert!(descriptor.model_visible);
+    assert!(state
+        .tool_descriptor("mcp__missing__echo")
+        .unwrap()
+        .is_none());
+    state.set_tool_preference(McpToolPreference {
+        qualified_name: "mcp__test__query-docs".to_string(),
+        model_visible: true,
+        approval_policy: ApprovalPolicy::Auto,
+    });
+    let stale_descriptor = state
+        .tool_descriptor("mcp__test__query-docs")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stale_descriptor.approval_policy, ApprovalPolicy::Auto);
+    assert_eq!(stale_descriptor.qualified_name, "mcp__test__query-docs");
+
+    state.set_tool_preference(McpToolPreference {
+        qualified_name: "mcp__test__echo".to_string(),
         model_visible: false,
         approval_policy: terax_lib::modules::capabilities::ApprovalPolicy::Deny,
     });

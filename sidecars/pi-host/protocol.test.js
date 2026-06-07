@@ -236,7 +236,7 @@ describe("Pi host protocol", () => {
     expect(protocolSchemaMethods()).toEqual(ALLOWED_METHODS);
   });
 
-  it("accepts capability manifests on session lifecycle params", () => {
+  it("accepts capability manifests on lifecycle and explicit configure params", () => {
     const capabilityManifest = {
       tools: [{ name: "bash", approval: "ask", modelVisible: true }],
     };
@@ -261,6 +261,28 @@ describe("Pi host protocol", () => {
         sessionDir: "/tmp",
         capabilityManifest,
       },
+    });
+    expect(
+      validateProtocolParams("sessions.configure", {
+        sessionId: "pi_1",
+        capabilityManifest,
+      }),
+    ).toEqual({
+      ok: true,
+      params: {
+        sessionId: "pi_1",
+        capabilityManifest,
+      },
+    });
+    expect(
+      validateProtocolParams("sessions.send", {
+        sessionId: "pi_1",
+        prompt: "hello",
+        capabilityManifest,
+      }),
+    ).toEqual({
+      ok: false,
+      message: "sessions.send params contains unsupported field: capabilityManifest",
     });
   });
 
@@ -441,6 +463,7 @@ describe("Pi host protocol", () => {
       "models.list",
       "sessions.list",
       "sessions.create",
+      "sessions.configure",
       "sessions.send",
       "sessions.resume",
       "sessions.tool.respond",

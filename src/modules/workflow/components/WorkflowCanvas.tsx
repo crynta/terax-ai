@@ -68,6 +68,8 @@ import {
   type WorkflowDocument,
   type WorkflowNodeType,
 } from "../lib/schema";
+import { isUnsafeWorkflowNode } from "../lib/workflowSafety";
+import { useWorkflowFileActions } from "./useWorkflowFileActions";
 import {
   decorateWorkflowEdge,
   normalizeWorkflowFlowEdge,
@@ -75,6 +77,10 @@ import {
   workflowDefaultEdgeOptions,
   workflowEdgeFromConnection,
 } from "./WorkflowCanvasEdges";
+import {
+  WorkflowCanvasPanels,
+  WorkflowCanvasPanelsProvider,
+} from "./WorkflowCanvasPanels";
 import {
   approvedRunLabel,
   artifactActionErrorMessage,
@@ -88,19 +94,21 @@ import {
   sameWorkflowHandle,
   WorkflowDragConnectionLine,
   WorkflowFallbackEdgeLayer,
-  workflowConnectionHandleFromPoint,
-  workflowHandleText,
   WorkflowInspectorPanel,
   WorkflowNodeCard,
+  workflowConnectionHandleFromPoint,
+  workflowHandleText,
 } from "./WorkflowCanvasParts";
-import { WorkflowCanvasPanels } from "./WorkflowCanvasPanels";
-import { useWorkflowFileActions } from "./useWorkflowFileActions";
 import type {
   WorkflowConnectionDragState,
   WorkflowConnectionHandle,
   WorkflowFlowEdge,
   WorkflowFlowNode,
 } from "./WorkflowCanvasTypes";
+import {
+  type PendingWorkflowDestructiveAction,
+  WorkflowDestructiveActionDialog,
+} from "./WorkflowDestructiveActionDialog";
 
 export type WorkflowRuntimeExecutors = {
   executeAgent?: WorkflowAgentExecutor;
@@ -152,12 +160,16 @@ export function WorkflowCanvas({
   );
   const [savingFile, setSavingFile] = useState(false);
   const [workflowRunning, setWorkflowRunning] = useState(false);
+  const [pendingDestructiveAction, setPendingDestructiveAction] =
+    useState<PendingWorkflowDestructiveAction | null>(null);
   const [pendingConnection, setPendingConnection] =
     useState<WorkflowConnectionHandle | null>(null);
   const [dragConnection, setDragConnection] =
     useState<WorkflowConnectionDragState | null>(null);
   const canvasRootRef = useRef<HTMLDivElement | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
+  const documentRef = useRef(document);
+  const dragConnectionRef = useRef<WorkflowConnectionDragState | null>(null);
   const runAbortControllerRef = useRef<AbortController | null>(null);
   const runIdRef = useRef(0);
   const handleApproveNode = useCallback(
@@ -256,7 +268,7 @@ export function WorkflowCanvas({
     },
     [document, onDocumentChange],
   );
-  const handleDeleteNode = useCallback(
+  const deleteNodeNow = useCallback(
     (nodeId: string) => {
       const node = document.nodes.find((candidate) => candidate.id === nodeId);
       if (!node) return;
@@ -274,11 +286,49 @@ export function WorkflowCanvas({
     },
     [document, onDocumentChange],
   );
-  const handleDeleteArtifact = useCallback(
+  const handleDeleteNode = useCallback(
+    (nodeId: string) => {
+      const node = document.nodes.find((candidate) => candidate.id === nodeId);
+      if (!node) return;
+      if (!onDocumentChange) {
+        setWorkflowIoMessage("Delete unavailable for this workflow view");
+        return;
+      }
+      setPendingDestructiveAction({
+        kind: "node",
+        nodeId,
+        title: node.title,
+      });
+    },
+    [document.nodes, onDocumentChange],
+  );
+  const deleteArtifactNow = useCallback(
     (artifactId: string) => {
       onDocumentChange?.(removeWorkflowArtifact(document, artifactId));
+      setPreviewArtifactId((current) =>
+        current === artifactId ? null : current,
+      );
+      setWorkflowIoMessage("Deleted artifact");
     },
     [document, onDocumentChange],
+  );
+  const handleDeleteArtifact = useCallback(
+    (artifactId: string) => {
+      const artifact = document.artifacts.find(
+        (candidate) => candidate.id === artifactId,
+      );
+      if (!artifact) return;
+      if (!onDocumentChange) {
+        setWorkflowIoMessage("Delete unavailable for this workflow view");
+        return;
+      }
+      setPendingDestructiveAction({
+        kind: "artifact",
+        artifactId,
+        label: artifact.label,
+      });
+    },
+    [document.artifacts, onDocumentChange],
   );
   const handlePreviewArtifact = useCallback((artifact: WorkflowArtifact) => {
     setPreviewArtifactId(artifact.id);
@@ -339,6 +389,17 @@ export function WorkflowCanvas({
     },
     [document, flow.edges, flow.nodes, onDocumentChange],
   );
+  const connectWorkflowHandlesRef = useRef(connectWorkflowHandles);
+  useEffect(() => {
+    connectWorkflowHandlesRef.current = connectWorkflowHandles;
+  }, [connectWorkflowHandles]);
+  useEffect(() => {
+    documentRef.current = document;
+  }, [document]);
+  useEffect(() => {
+    dragConnectionRef.current = dragConnection;
+  }, [dragConnection]);
+
   const handleWorkflowHandleClick = useCallback(
     (handle: WorkflowConnectionHandle) => {
       if (
@@ -434,6 +495,16 @@ export function WorkflowCanvas({
     null,
   );
   const readyNodeIds = useMemo(() => getReadyNodeIds(document), [document]);
+  const safeReadyNodeIds = useMemo(
+    () => getReadyNodeIds(document, { includeUnsafe: false }),
+    [document],
+  );
+  const selectedNode = useMemo(
+    () => document.nodes.find((node) => node.id === selectedNodeId) ?? null,
+    [document.nodes, selectedNodeId],
+  );
+  const selectedNodeRunAvailable =
+    !!selectedNode && readyNodeIds.includes(selectedNode.id);
   const previewArtifact = useMemo(
     () =>
       previewArtifactId
@@ -459,17 +530,34 @@ export function WorkflowCanvas({
       setWorkflowIoMessage("Clear unavailable for this workflow view");
       return;
     }
-    if (!window.confirm("Clear all workflow nodes, edges, and artifacts?")) {
+    setPendingDestructiveAction({ kind: "clear" });
+  }, [document, onDocumentChange]);
+
+  const confirmPendingDestructiveAction = useCallback(() => {
+    if (!pendingDestructiveAction) return;
+    const action = pendingDestructiveAction;
+    setPendingDestructiveAction(null);
+    if (action.kind === "node") {
+      deleteNodeNow(action.nodeId);
       return;
     }
-
+    if (action.kind === "artifact") {
+      deleteArtifactNow(action.artifactId);
+      return;
+    }
     setPendingConnection(null);
     setDragConnection(null);
     setSelectedNodeId(null);
     setPreviewArtifactId(null);
-    onDocumentChange(clearWorkflowCanvas(document));
+    onDocumentChange?.(clearWorkflowCanvas(document));
     setWorkflowIoMessage("Canvas cleared");
-  }, [document, onDocumentChange]);
+  }, [
+    deleteArtifactNow,
+    deleteNodeNow,
+    document,
+    onDocumentChange,
+    pendingDestructiveAction,
+  ]);
 
   useEffect(() => {
     setNodes(initialNodes);
@@ -518,7 +606,7 @@ export function WorkflowCanvas({
     [],
   );
   useEffect(() => {
-    if (!dragConnection) return;
+    if (!dragConnection?.handle) return;
 
     const handleMouseMove = (event: MouseEvent) => {
       setDragConnection((current) =>
@@ -528,13 +616,15 @@ export function WorkflowCanvas({
       );
     };
     const handleMouseUp = (event: MouseEvent) => {
+      const currentDrag = dragConnectionRef.current;
+      if (!currentDrag) return;
       const target = workflowConnectionHandleFromPoint(
-        document,
+        documentRef.current,
         event.clientX,
         event.clientY,
       );
-      if (target && !sameWorkflowHandle(dragConnection.handle, target)) {
-        connectWorkflowHandles(dragConnection.handle, target);
+      if (target && !sameWorkflowHandle(currentDrag.handle, target)) {
+        connectWorkflowHandlesRef.current(currentDrag.handle, target);
       }
       setDragConnection(null);
     };
@@ -545,7 +635,7 @@ export function WorkflowCanvas({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [connectWorkflowHandles, document, dragConnection]);
+  }, [dragConnection?.handle]);
 
   const persistFlow = useCallback(
     (
@@ -611,10 +701,13 @@ export function WorkflowCanvas({
       current: WorkflowDocument,
       signal: AbortSignal,
       runId: number,
+      options: { includeUnsafe?: boolean; nodeIds?: Iterable<string> } = {},
     ): Promise<WorkflowDocument> => {
       const execution = startWorkflowStepExecution(current, {
         executeHttpRequest:
           runtimeExecutors?.executeHttpRequest ?? workflowNativeHttpExecutor,
+        includeUnsafe: options.includeUnsafe,
+        nodeIds: options.nodeIds,
         onProgress: (progressDocument) => {
           if (isCurrentWorkflowRun(runId)) onDocumentChange?.(progressDocument);
         },
@@ -650,6 +743,9 @@ export function WorkflowCanvas({
         document,
         controller.signal,
         runId,
+        {
+          includeUnsafe: false,
+        },
       );
       if (!isCurrentWorkflowRun(runId)) return;
       if (hasRuntimeStatus(finished, "cancelled")) {
@@ -668,14 +764,72 @@ export function WorkflowCanvas({
     runOneAsyncStep,
   ]);
 
+  const handleRunSelectedNode = useCallback(async () => {
+    if (!selectedNode) {
+      setWorkflowIoMessage("Select a workflow node to run it");
+      return;
+    }
+    if (!readyNodeIds.includes(selectedNode.id)) {
+      setWorkflowIoMessage(`${selectedNode.title} is not ready to run`);
+      return;
+    }
+
+    const { controller, runId } = beginWorkflowRun();
+    try {
+      const finished = await runOneAsyncStep(
+        document,
+        controller.signal,
+        runId,
+        {
+          includeUnsafe: true,
+          nodeIds: [selectedNode.id],
+        },
+      );
+      if (!isCurrentWorkflowRun(runId)) return;
+      const finishedNode = finished.nodes.find(
+        (node) => node.id === selectedNode.id,
+      );
+      if (finishedNode?.runtimeState.status === "waiting-approval") {
+        setWorkflowIoMessage(
+          `${selectedNode.title} needs approval before it can run`,
+        );
+      } else if (finishedNode?.runtimeState.status === "cancelled") {
+        setWorkflowIoMessage(`${selectedNode.title} cancelled`);
+      } else if (finishedNode?.runtimeState.status === "failed") {
+        setWorkflowIoMessage(`${selectedNode.title} failed`);
+      } else if (isUnsafeWorkflowNode(selectedNode)) {
+        setWorkflowIoMessage(`${selectedNode.title} finished after approval`);
+      }
+    } finally {
+      finishWorkflowRun(runId);
+    }
+  }, [
+    beginWorkflowRun,
+    document,
+    finishWorkflowRun,
+    isCurrentWorkflowRun,
+    readyNodeIds,
+    runOneAsyncStep,
+    selectedNode,
+  ]);
+
   const handleRunUntilBlocked = useCallback(async () => {
     const { controller, runId } = beginWorkflowRun();
     try {
       let current = document;
       const maxSteps = Math.max(current.nodes.length * 2, 1);
       for (let step = 0; step < maxSteps; step += 1) {
-        if (getReadyNodeIds(current).length === 0) break;
-        current = await runOneAsyncStep(current, controller.signal, runId);
+        if (getReadyNodeIds(current, { includeUnsafe: false }).length === 0) {
+          if (getReadyNodeIds(current).length > 0) {
+            setWorkflowIoMessage(
+              "Run safe stopped at nodes that need approval. Select one and use Run selected.",
+            );
+          }
+          break;
+        }
+        current = await runOneAsyncStep(current, controller.signal, runId, {
+          includeUnsafe: false,
+        });
         if (!isCurrentWorkflowRun(runId)) return;
         if (hasRuntimeStatus(current, "cancelled")) {
           setWorkflowIoMessage("Run cancelled");
@@ -703,13 +857,15 @@ export function WorkflowCanvas({
 
   const handleAddNode = useCallback(
     (type: WorkflowNodeType) => {
+      const nodeId = nextWorkflowNodeId(document, type);
       onDocumentChange?.(
         addWorkflowNode(document, {
-          id: nextWorkflowNodeId(document, type),
+          id: nodeId,
           type,
           position: nextNodePosition(document),
         }),
       );
+      setSelectedNodeId(nodeId);
     },
     [document, onDocumentChange],
   );
@@ -772,7 +928,7 @@ export function WorkflowCanvas({
   return (
     <ReactFlowProvider>
       <div ref={canvasRootRef} className="relative h-full w-full">
-        <div className="sr-only">Workflow canvas ready</div>
+        <div className="sr-only">Canvas ready</div>
         <WorkflowFallbackEdgeLayer document={document} />
         <WorkflowDragConnectionLine
           dragConnection={dragConnection}
@@ -804,49 +960,68 @@ export function WorkflowCanvas({
           proOptions={{ hideAttribution: true }}
           className="bg-background"
         >
-          <WorkflowCanvasPanels
-            dirty={dirty}
-            document={document}
-            filePath={filePath}
-            importInputRef={importInputRef}
-            previewArtifact={previewArtifact}
-            readyNodeCount={readyNodeIds.length}
-            recentWorkflowFiles={recentWorkflowFiles}
-            savingFile={savingFile}
-            selectedNodeId={selectedNodeId}
-            workflowIoMessage={workflowIoMessage}
-            workflowRunning={workflowRunning}
-            onAddNode={handleAddNode}
-            onArtifactActionError={handleArtifactActionError}
-            onArtifactMaterialized={handleArtifactMaterialized}
-            onCancelRun={handleCancelRun}
-            onClearCanvas={handleClearCanvas}
-            onClosePreview={() => setPreviewArtifactId(null)}
-            onCopyJson={handleCopyJson}
-            onDeleteArtifact={handleDeleteArtifact}
-            onDeleteSelectedNode={handleDeleteSelectedNode}
-            onDownloadJson={handleDownloadJson}
-            onImportJsonChange={handleImportJsonChange}
-            onOpenWorkflowFile={handleOpenWorkflowFile}
-            onOpenWorkflowPath={onOpenWorkflowPath}
-            onPreviewArtifact={handlePreviewArtifact}
-            onResetRuntime={handleResetRuntime}
-            onRunStep={() => void handleRunStep()}
-            onRunUntilBlocked={() => void handleRunUntilBlocked()}
-            onSaveAsFile={() => void handleSaveAsFile()}
-            onSaveAsUnavailable={!onSaveAsDocument}
-            onSaveFile={() => void handleSaveFile()}
-          />
+          <WorkflowCanvasPanelsProvider
+            state={{
+              dirty,
+              document,
+              previewArtifact,
+              readyNodeCount: readyNodeIds.length,
+              safeReadyNodeCount: safeReadyNodeIds.length,
+              saveAsUnavailable: !onSaveAsDocument,
+              savingFile,
+              selectedNodeId,
+              selectedNodeRunAvailable,
+              workflowIoMessage,
+              workflowRunning,
+            }}
+            actions={{
+              addNode: handleAddNode,
+              artifactActionError: handleArtifactActionError,
+              artifactMaterialized: handleArtifactMaterialized,
+              cancelRun: handleCancelRun,
+              clearCanvas: handleClearCanvas,
+              closePreview: () => setPreviewArtifactId(null),
+              copyJson: handleCopyJson,
+              deleteArtifact: handleDeleteArtifact,
+              deleteSelectedNode: handleDeleteSelectedNode,
+              downloadJson: handleDownloadJson,
+              importJsonChange: handleImportJsonChange,
+              openWorkflowFile: handleOpenWorkflowFile,
+              openWorkflowPath: onOpenWorkflowPath,
+              previewArtifact: handlePreviewArtifact,
+              resetRuntime: handleResetRuntime,
+              runSelectedNode: () => void handleRunSelectedNode(),
+              runStep: () => void handleRunStep(),
+              runUntilBlocked: () => void handleRunUntilBlocked(),
+              saveAsFile: () => void handleSaveAsFile(),
+              saveFile: () => void handleSaveFile(),
+            }}
+            meta={{ filePath, importInputRef, recentWorkflowFiles }}
+          >
+            <WorkflowCanvasPanels />
+          </WorkflowCanvasPanelsProvider>
           <WorkflowInspectorPanel state={inspectorState} />
           <Background gap={28} size={1} className="opacity-40" />
           <MiniMap
             pannable
             zoomable
-            className="overflow-hidden rounded-md border border-border/60 bg-card/90"
+            position="bottom-center"
+            className="workflow-minimap overflow-hidden rounded-md border border-border/60 bg-card/95 text-foreground shadow-lg"
+            maskColor="oklch(0.148 0.004 228.8 / 58%)"
+            nodeColor="var(--muted)"
+            nodeStrokeColor="var(--border)"
           />
-          <Controls className="overflow-hidden rounded-md border border-border/60 bg-card/90 text-foreground" />
+          <Controls
+            position="top-center"
+            className="workflow-controls overflow-hidden rounded-md border border-border/60 bg-card/95 text-foreground shadow-lg"
+          />
         </ReactFlow>
       </div>
+      <WorkflowDestructiveActionDialog
+        action={pendingDestructiveAction}
+        onCancel={() => setPendingDestructiveAction(null)}
+        onConfirm={confirmPendingDestructiveAction}
+      />
     </ReactFlowProvider>
   );
 }

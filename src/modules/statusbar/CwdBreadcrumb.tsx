@@ -17,6 +17,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -227,21 +228,25 @@ function CurrentSegmentDropdown({
             {error ?? "No subfolders"}
           </div>
         ) : (
-          children.map((name) => (
-            <DropdownMenuItem
-              key={name}
-              onSelect={() =>
-                onCd(path.endsWith("/") ? `${path}${name}` : `${path}/${name}`)
-              }
-            >
-              <HugeiconsIcon
-                icon={Folder01Icon}
-                className="size-3.5 text-muted-foreground"
-                strokeWidth={1.75}
-              />
-              {name}
-            </DropdownMenuItem>
-          ))
+          <DropdownMenuGroup>
+            {children.map((name) => (
+              <DropdownMenuItem
+                key={name}
+                onSelect={() =>
+                  onCd(
+                    path.endsWith("/") ? `${path}${name}` : `${path}/${name}`,
+                  )
+                }
+              >
+                <HugeiconsIcon
+                  icon={Folder01Icon}
+                  className="text-muted-foreground"
+                  strokeWidth={1.75}
+                />
+                {name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuGroup>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -273,19 +278,23 @@ function CollapsedSegments({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
-            {segments.map((s) => (
-              <DropdownMenuItem
-                key={s.fullPath}
-                onSelect={() => onCd(s.fullPath)}
-              >
-                <HugeiconsIcon
-                  icon={s.isHome ? Home03Icon : Folder01Icon}
-                  className="size-3.5 text-muted-foreground"
-                  strokeWidth={1.75}
-                />
-                <span className="truncate">{s.isHome ? "Home" : s.label}</span>
-              </DropdownMenuItem>
-            ))}
+            <DropdownMenuGroup>
+              {segments.map((s) => (
+                <DropdownMenuItem
+                  key={s.fullPath}
+                  onSelect={() => onCd(s.fullPath)}
+                >
+                  <HugeiconsIcon
+                    icon={s.isHome ? Home03Icon : Folder01Icon}
+                    className="text-muted-foreground"
+                    strokeWidth={1.75}
+                  />
+                  <span className="truncate">
+                    {s.isHome ? "Home" : s.label}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </BreadcrumbItem>

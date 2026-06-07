@@ -4,7 +4,7 @@ import LinkSquare02Icon from "@hugeicons/core-free-icons/LinkSquare02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
-  forwardRef,
+  type Ref,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -14,10 +14,13 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { statusBorderSurfaceClass } from "@/lib/statusTone";
+import { cn } from "@/lib/utils";
 
 type PortPreset = {
   port: number;
@@ -53,98 +56,101 @@ type Props = {
   url: string;
   onSubmit: (url: string) => void;
   onReload: () => void;
+  ref?: Ref<PreviewAddressBarHandle>;
 };
 
-export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
-  function PreviewAddressBar({ url, onSubmit, onReload }, ref) {
-    const [draft, setDraft] = useState(url);
-    const inputRef = useRef<HTMLInputElement>(null);
+export function PreviewAddressBar({ url, onSubmit, onReload, ref }: Props) {
+  const [draft, setDraft] = useState(url);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-    // Keep draft in sync when the parent updates the URL externally
-    // (AI tool, detected localhost chip, etc.).
-    useEffect(() => {
-      setDraft(url);
-    }, [url]);
+  // Keep draft in sync when the parent updates the URL externally
+  // (AI tool, detected localhost chip, etc.).
+  useEffect(() => {
+    setDraft(url);
+  }, [url]);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        focus: () => {
-          const el = inputRef.current;
-          if (!el) return;
-          el.focus();
-          el.select();
-        },
-      }),
-      [],
-    );
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.focus();
+        el.select();
+      },
+    }),
+    [],
+  );
 
-    const [notice, setNotice] = useState<string | null>(null);
-    const [checkingPort, setCheckingPort] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [checkingPort, setCheckingPort] = useState<number | null>(null);
 
-    const submit = () => {
-      const next = normalizeUrl(draft);
-      if (!next) {
-        setNotice("Enter a URL or pick a port preset.");
-        return;
-      }
-      setNotice(null);
-      if (next !== url) onSubmit(next);
-      else onReload();
-    };
+  const submit = () => {
+    const next = normalizeUrl(draft);
+    if (!next) {
+      setNotice("Enter a URL or pick a port preset.");
+      return;
+    }
+    setNotice(null);
+    if (next !== url) onSubmit(next);
+    else onReload();
+  };
 
-    const tryPort = async (port: number) => {
-      setNotice(null);
-      setCheckingPort(port);
-      const url = `http://localhost:${port}`;
-      const ok = await probeUrl(url);
-      setCheckingPort(null);
-      if (!ok) {
-        setNotice(`No server listening on :${port}.`);
-        return;
-      }
-      setDraft(url);
-      onSubmit(url);
-    };
+  const tryPort = async (port: number) => {
+    setNotice(null);
+    setCheckingPort(port);
+    const url = `http://localhost:${port}`;
+    const ok = await probeUrl(url);
+    setCheckingPort(null);
+    if (!ok) {
+      setNotice(`No server listening on :${port}.`);
+      return;
+    }
+    setDraft(url);
+    onSubmit(url);
+  };
 
-    return (
-      <div className="shrink-0 border-b border-border/60">
-        <div className="flex h-9 items-center gap-1 bg-card/40 px-1.5">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={onReload}
-            title="Reload"
-            className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          >
-            <HugeiconsIcon
-              icon={ArrowReloadHorizontalIcon}
-              size={14}
-              strokeWidth={1.75}
-            />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                title="Common dev-server ports"
-                className="h-7 shrink-0 gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-              >
-                <HugeiconsIcon
-                  icon={Globe02Icon}
-                  size={13}
-                  strokeWidth={1.75}
-                />
-                <span className="hidden sm:inline">Ports</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="max-h-80 min-w-56 overflow-y-auto"
+  return (
+    <div className="shrink-0 border-b border-border/60">
+      <div className="flex h-9 items-center gap-1 bg-card/40 px-1.5">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onReload}
+          aria-label="Reload preview"
+          title="Reload"
+          className="size-8 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <HugeiconsIcon
+            data-icon="inline-start"
+            icon={ArrowReloadHorizontalIcon}
+            strokeWidth={1.75}
+          />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label="Common dev-server ports"
+              title="Common dev-server ports"
+              className="h-8 shrink-0 gap-1 rounded-md px-2 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
             >
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={Globe02Icon}
+                strokeWidth={1.75}
+              />
+              <span className="hidden sm:inline">Ports</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="max-h-80 min-w-56 overflow-y-auto"
+          >
+            <DropdownMenuGroup>
               {PORT_PRESETS.map((p) => (
                 <DropdownMenuItem
                   key={p.port}
@@ -159,63 +165,72 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
                   </span>
                 </DropdownMenuItem>
               ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <div className="flex min-w-0 flex-1 items-center">
-            <Input
-              ref={inputRef}
-              value={draft}
-              placeholder="http://localhost:3000"
-              spellCheck={false}
-              autoComplete="off"
-              className="h-7 w-full bg-muted/60 px-2 text-xs placeholder:text-muted-foreground/70 focus-visible:ring-0"
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  submit();
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  setDraft(url);
-                  inputRef.current?.blur();
-                }
-              }}
-            />
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              if (url) void openUrl(url).catch(console.error);
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div className="flex min-w-0 flex-1 items-center">
+          <Input
+            ref={inputRef}
+            value={draft}
+            placeholder="http://localhost:3000"
+            aria-label="Preview URL"
+            spellCheck={false}
+            autoComplete="off"
+            className="h-8 w-full bg-muted/60 px-2 text-xs placeholder:text-muted-foreground focus-visible:ring-0"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setDraft(url);
+                inputRef.current?.blur();
+              }
             }}
-            title="Open in system browser"
-            className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            disabled={!url}
-          >
-            <HugeiconsIcon
-              icon={LinkSquare02Icon}
-              size={14}
-              strokeWidth={1.75}
-            />
-          </Button>
+          />
         </div>
-        {notice ? (
-          <div className="flex items-center gap-1.5 bg-amber-500/8 px-3 py-1 text-[11px] text-amber-600 dark:text-amber-400">
-            <span className="truncate">{notice}</span>
-            <button
-              type="button"
-              onClick={() => setNotice(null)}
-              className="ml-auto rounded px-1 text-[10px] opacity-80 hover:bg-accent hover:opacity-100"
-            >
-              Dismiss
-            </button>
-          </div>
-        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => {
+            if (url) void openUrl(url).catch(console.error);
+          }}
+          aria-label="Open preview in system browser"
+          title="Open in system browser"
+          className="size-8 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          disabled={!url}
+        >
+          <HugeiconsIcon
+            data-icon="inline-start"
+            icon={LinkSquare02Icon}
+            strokeWidth={1.75}
+          />
+        </Button>
       </div>
-    );
-  },
-);
+      {notice ? (
+        <div
+          role="status"
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1 text-[11px]",
+            statusBorderSurfaceClass("warning"),
+          )}
+        >
+          <span className="truncate">{notice}</span>
+          <button
+            type="button"
+            aria-label="Dismiss preview notice"
+            onClick={() => setNotice(null)}
+            className="ml-auto min-h-6 rounded px-1.5 text-[10px] opacity-80 hover:bg-accent hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/30"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 async function probeUrl(url: string): Promise<boolean> {
   try {

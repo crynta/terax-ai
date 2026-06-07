@@ -13,12 +13,13 @@ import {
   invalidateRepoDiffs,
   workingDiffKey,
 } from "@/modules/editor/lib/diffCache";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   buildCommitMessagePrompt,
   buildRepairCommitMessagePrompt,
-  cleanCommitMessage,
   COMMIT_MESSAGE_MAX_OUTPUT_TOKENS,
   COMMIT_MESSAGE_SYSTEM_PROMPT,
+  cleanCommitMessage,
   isValidCommitMessage,
   makeEntry,
   normalizeError,
@@ -30,7 +31,6 @@ import {
   statusCodeForMode,
   truncateDiff,
 } from "./sourceControlPanelUtils";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SourceControlSummary } from "./useSourceControl";
 
 type PanelState = "closed" | "loading" | "no-repo" | "ready" | "error";

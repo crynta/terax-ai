@@ -1,6 +1,7 @@
 import CheckmarkCircle02Icon from "@hugeicons/core-free-icons/CheckmarkCircle02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { ReactNode } from "react";
+import { type ReactNode, useId } from "react";
+import { Field, FieldContent, FieldTitle } from "@/components/ui/field";
 import { type ProviderId, providerNeedsKey } from "@/modules/ai/config";
 
 export type KeysMap = Record<ProviderId, string | null>;
@@ -74,15 +75,27 @@ export function FieldRow({
   children,
 }: {
   label: string;
-  children: ReactNode;
+  children:
+    | ReactNode
+    | ((ids: { descriptionId?: string; labelId: string }) => ReactNode);
 }) {
+  const generatedId = useId();
+  const labelId = `${generatedId}-label`;
+  const control =
+    typeof children === "function" ? children({ labelId }) : children;
+
   return (
-    <div className="flex items-center gap-3">
-      <span className="w-16 shrink-0 text-[11px] tracking-tight text-muted-foreground">
+    <Field orientation="horizontal" className="items-center gap-3">
+      <FieldTitle
+        id={labelId}
+        className="w-16 shrink-0 text-[11px] tracking-tight text-muted-foreground"
+      >
         {label}
-      </span>
-      <div className="flex flex-1 items-center">{children}</div>
-    </div>
+      </FieldTitle>
+      <FieldContent className="flex-row items-center gap-0">
+        {control}
+      </FieldContent>
+    </Field>
   );
 }
 

@@ -1,10 +1,10 @@
 import { type SetStateAction, useCallback } from "react";
 import { piNative } from "@/modules/pi/lib/native";
+import { errorMessage, toErrorState } from "@/modules/pi/lib/panel-defaults";
 import {
   clearPiPanelDiagnostics,
   refreshPiPanelDataForState,
 } from "@/modules/pi/lib/panel-refresh";
-import { errorMessage, toErrorState } from "@/modules/pi/lib/panel-defaults";
 import {
   applyPiSessionEvents,
   mergePiSessionEvents,
@@ -12,9 +12,46 @@ import {
   type PiSession,
   type PiSessionEvent,
 } from "@/modules/pi/lib/sessions";
-import type { CapabilityAuditEntry, PiDiagnostics, PiRuntimeState } from "@/modules/pi/lib/status";
+import type {
+  CapabilityAuditEntry,
+  PiDiagnostics,
+  PiRuntimeState,
+} from "@/modules/pi/lib/status";
 
 type Setter<T> = (next: SetStateAction<T>) => void;
+
+type CapabilityAuditResult = {
+  appAudit: CapabilityAuditEntry[];
+  error: string | null;
+  workflowAudit: CapabilityAuditEntry[];
+};
+
+async function loadCapabilityAudits(): Promise<CapabilityAuditResult> {
+  const [workflowResult, appResult] = await Promise.allSettled([
+    piNative.workflowCapabilityAudit(),
+    piNative.appCapabilityAudit(),
+  ]);
+  const errors: string[] = [];
+  const workflowAudit =
+    workflowResult.status === "fulfilled" ? workflowResult.value : [];
+  const appAudit = appResult.status === "fulfilled" ? appResult.value : [];
+
+  if (workflowResult.status === "rejected") {
+    errors.push(errorMessage(workflowResult.reason));
+  }
+  if (appResult.status === "rejected") {
+    errors.push(errorMessage(appResult.reason));
+  }
+
+  return {
+    appAudit,
+    error:
+      errors.length > 0
+        ? `Capability audit refresh failed: ${errors.join("; ")}`
+        : null,
+    workflowAudit,
+  };
+}
 
 export function usePiPanelRefreshers({
   setAppAuditEntries,
@@ -90,29 +127,28 @@ export function usePiPanelRefreshers({
   }, [applyHistoryList, setHistoryError]);
 
   const refreshCapabilityAudits = useCallback(async () => {
-    const [workflowAudit, appAudit] = await Promise.all([
-      piNative.workflowCapabilityAudit().catch(() => []),
-      piNative.appCapabilityAudit().catch(() => []),
-    ]);
-    setWorkflowAuditEntries(workflowAudit);
-    setAppAuditEntries(appAudit);
+    const result = await loadCapabilityAudits();
+    setWorkflowAuditEntries(result.workflowAudit);
+    setAppAuditEntries(result.appAudit);
+    return result.error;
   }, [setAppAuditEntries, setWorkflowAuditEntries]);
 
   const refreshDiagnostics = useCallback(async () => {
     try {
-      const [nextDiagnostics, workflowAudit, appAudit] = await Promise.all([
+      const [nextDiagnostics, auditResult] = await Promise.all([
         piNative.diagnostics(),
-        piNative.workflowCapabilityAudit().catch(() => []),
-        piNative.appCapabilityAudit().catch(() => []),
+        loadCapabilityAudits(),
       ]);
       setDiagnostics(nextDiagnostics);
-      setWorkflowAuditEntries(workflowAudit);
-      setAppAuditEntries(appAudit);
-      setDiagnosticsError(null);
+      setWorkflowAuditEntries(auditResult.workflowAudit);
+      setAppAuditEntries(auditResult.appAudit);
+      setDiagnosticsError(auditResult.error);
     } catch (error) {
       setDiagnostics(null);
-      await refreshCapabilityAudits();
-      setDiagnosticsError(errorMessage(error));
+      const auditError = await refreshCapabilityAudits();
+      setDiagnosticsError(
+        [errorMessage(error), auditError].filter(Boolean).join("; "),
+      );
     }
   }, [
     refreshCapabilityAudits,

@@ -260,7 +260,6 @@ export function PiCapabilityAuditCard({
           <HugeiconsIcon
             data-icon="inline-start"
             icon={copyStatus === "copied" ? CheckmarkCircle01Icon : Copy01Icon}
-            size={11}
             strokeWidth={1.75}
           />
           {copyStatusLabel(copyStatus, "Copy")}

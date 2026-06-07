@@ -18,6 +18,25 @@ export type ArtifactSummary = {
   contentBytes: number;
 };
 
+export type ArtifactConversationArtifacts = {
+  conversationId: string;
+  artifactCount: number;
+  updatedAt: string | null;
+  artifacts: ArtifactSummary[];
+};
+
+export type DeletedArtifactSummary = {
+  conversationId: string;
+  slug: string;
+  title: string;
+  kind: ArtifactKind;
+  version: number;
+  contentHash: string;
+  deletedAt: string;
+  contentBytes: number;
+  undoToken: string;
+};
+
 export type Artifact = {
   summary: ArtifactSummary;
   content: string;
@@ -37,13 +56,27 @@ export type ArtifactCreateInput = {
   title?: string | null;
 };
 
+export type ArtifactDiagnosticSeverity = "error" | "warning" | "info";
+
+export type ArtifactDiagnostic = {
+  code: string;
+  severity: ArtifactDiagnosticSeverity;
+  message: string;
+  line?: number | null;
+  column?: number | null;
+  endLine?: number | null;
+  endColumn?: number | null;
+  excerpt?: string | null;
+};
+
 export type ReactCompileInput = {
   content: string;
+  previewToken?: string | null;
 };
 
 export type ReactCompileResult = {
   document: string;
-  diagnostics: string[];
+  diagnostics: ArtifactDiagnostic[];
 };
 
 export type ArtifactTextEdit = {
@@ -54,6 +87,33 @@ export type ArtifactTextEdit = {
 export type ArtifactDeleteResult = {
   deleted: boolean;
   deletedCount: number;
+  undoToken?: string | null;
+};
+
+export type ArtifactBulkTarget = {
+  conversationId: string;
+  slug: string;
+  undoToken?: string | null;
+  version?: number | null;
+};
+
+export type ArtifactBulkItemResult = {
+  conversationId: string;
+  slug: string;
+  success: boolean;
+  undoToken?: string | null;
+  path?: string | null;
+  contentHash?: string | null;
+  contentBytes?: number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+};
+
+export type ArtifactBulkResult = {
+  requestedCount: number;
+  successCount: number;
+  failureCount: number;
+  items: ArtifactBulkItemResult[];
 };
 
 export type ArtifactExportResult = {
@@ -65,7 +125,13 @@ export type ArtifactExportResult = {
   contentBytes: number;
 };
 
-export type ArtifactUpdateReason = "create" | "update" | "edit" | "save";
+export type ArtifactUpdateReason =
+  | "create"
+  | "update"
+  | "edit"
+  | "save"
+  | "rename"
+  | "restore";
 
 export type ArtifactUpdateEvent = {
   type: "artifact:update";
@@ -78,6 +144,7 @@ export type ArtifactDeleteEvent = {
   type: "artifact:delete";
   conversationId: string;
   slug: string;
+  undoToken?: string | null;
 };
 
 export type ArtifactConversationDeleteEvent = {

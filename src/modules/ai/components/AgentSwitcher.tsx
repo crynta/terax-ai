@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -57,11 +58,15 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
           )}
           title={`Agent: ${active.name}`}
         >
-          <HugeiconsIcon icon={ActiveIcon} size={11} strokeWidth={1.75} />
+          <HugeiconsIcon
+            data-icon="inline-start"
+            icon={ActiveIcon}
+            strokeWidth={1.75}
+          />
           <span className="max-w-[7rem] truncate">{active.name}</span>
           <HugeiconsIcon
+            data-icon="inline-start"
             icon={ArrowDown01Icon}
-            size={10}
             strokeWidth={2}
             className="opacity-70"
           />
@@ -71,97 +76,99 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
         <div className="px-2 pt-1.5 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
           Built-in
         </div>
-        {builtIn.map((a) => {
-          const Icon = ICONS[a.icon] ?? SparklesIcon;
-          return (
-            <DropdownMenuItem
-              key={a.id}
-              onSelect={() => setActiveId(a.id)}
-              className={cn(
-                "flex items-start gap-2 pr-2 text-[12px]",
-                a.id === activeId && "bg-accent/40",
-              )}
-            >
-              <HugeiconsIcon
-                icon={Icon}
-                size={13}
-                strokeWidth={1.75}
+        <DropdownMenuGroup>
+          {builtIn.map((a) => {
+            const Icon = ICONS[a.icon] ?? SparklesIcon;
+            return (
+              <DropdownMenuItem
+                key={a.id}
+                onSelect={() => setActiveId(a.id)}
                 className={cn(
-                  "mt-0.5",
-                  a.id === activeId
-                    ? "text-foreground"
-                    : "text-muted-foreground",
+                  "flex items-start gap-2 pr-2 text-[12px]",
+                  a.id === activeId && "bg-accent/40",
                 )}
-              />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span>{a.name}</span>
-                <span className="line-clamp-1 text-[10.5px] text-muted-foreground">
-                  {a.description}
-                </span>
-              </span>
-              {a.id === activeId ? (
+              >
                 <HugeiconsIcon
-                  icon={Tick02Icon}
-                  size={12}
-                  strokeWidth={2}
-                  className="mt-0.5 shrink-0 text-foreground"
+                  icon={Icon}
+                  strokeWidth={1.75}
+                  className={cn(
+                    "mt-0.5",
+                    a.id === activeId
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
                 />
-              ) : null}
-            </DropdownMenuItem>
-          );
-        })}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span>{a.name}</span>
+                  <span className="line-clamp-1 text-[10.5px] text-muted-foreground">
+                    {a.description}
+                  </span>
+                </span>
+                {a.id === activeId ? (
+                  <HugeiconsIcon
+                    icon={Tick02Icon}
+                    strokeWidth={2}
+                    className="mt-0.5 shrink-0 text-foreground"
+                  />
+                ) : null}
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuGroup>
         {custom.length > 0 ? (
           <>
             <DropdownMenuSeparator />
             <div className="px-2 pt-1 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
               Custom
             </div>
-            {custom.map((a) => {
-              const Icon = ICONS[a.icon] ?? SparklesIcon;
-              return (
-                <DropdownMenuItem
-                  key={a.id}
-                  onSelect={() => setActiveId(a.id)}
-                  className={cn(
-                    "flex items-start gap-2 text-[12px]",
-                    a.id === activeId && "bg-accent/40",
-                  )}
-                >
-                  <HugeiconsIcon
-                    icon={Icon}
-                    size={13}
-                    strokeWidth={1.75}
-                    className="mt-0.5 text-muted-foreground"
-                  />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate">{a.name}</span>
-                    {a.description ? (
-                      <span className="line-clamp-1 text-[10.5px] text-muted-foreground">
-                        {a.description}
-                      </span>
-                    ) : null}
-                  </span>
-                  {a.id === activeId ? (
+            <DropdownMenuGroup>
+              {custom.map((a) => {
+                const Icon = ICONS[a.icon] ?? SparklesIcon;
+                return (
+                  <DropdownMenuItem
+                    key={a.id}
+                    onSelect={() => setActiveId(a.id)}
+                    className={cn(
+                      "flex items-start gap-2 text-[12px]",
+                      a.id === activeId && "bg-accent/40",
+                    )}
+                  >
                     <HugeiconsIcon
-                      icon={Tick02Icon}
-                      size={12}
-                      strokeWidth={2}
-                      className="mt-0.5 shrink-0 text-foreground"
+                      icon={Icon}
+                      strokeWidth={1.75}
+                      className="mt-0.5 text-muted-foreground"
                     />
-                  ) : null}
-                </DropdownMenuItem>
-              );
-            })}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate">{a.name}</span>
+                      {a.description ? (
+                        <span className="line-clamp-1 text-[10.5px] text-muted-foreground">
+                          {a.description}
+                        </span>
+                      ) : null}
+                    </span>
+                    {a.id === activeId ? (
+                      <HugeiconsIcon
+                        icon={Tick02Icon}
+                        strokeWidth={2}
+                        className="mt-0.5 shrink-0 text-foreground"
+                      />
+                    ) : null}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuGroup>
           </>
         ) : null}
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={() => void openSettingsWindow("agents")}
-          className="gap-2 text-[12px] text-muted-foreground"
-        >
-          <HugeiconsIcon icon={Settings01Icon} size={12} strokeWidth={1.75} />
-          Manage agents…
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            onSelect={() => void openSettingsWindow("agents")}
+            className="gap-2 text-[12px] text-muted-foreground"
+          >
+            <HugeiconsIcon icon={Settings01Icon} strokeWidth={1.75} />
+            Manage agents…
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

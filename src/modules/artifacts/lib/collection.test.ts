@@ -6,9 +6,9 @@ import {
 } from "@/modules/artifacts/lib/collection";
 import type {
   ArtifactDeleteEvent,
+  ArtifactSummary,
   ArtifactUpdateEvent,
 } from "@/modules/artifacts/lib/types";
-import type { ArtifactSummary } from "@/modules/artifacts/lib/types";
 
 function summary(
   conversationId: string,

@@ -50,6 +50,8 @@ use timeouts::RequestTimeouts;
 
 pub type PiSessionEventSink = Arc<dyn Fn(PiSessionEvent) + Send + Sync + 'static>;
 
+const PI_HOST_PROTOCOL_VERSION: u32 = 2;
+
 pub struct PiHost {
     child: Mutex<Child>,
     stdin: Arc<Mutex<ChildStdin>>,
@@ -58,6 +60,7 @@ pub struct PiHost {
     native_tool_approvals: NativeToolApprovals,
     capability_audit: CapabilityAuditLog,
     native_tool_context: NativeToolContextState,
+    configured_capability_manifests: Mutex<HashMap<String, String>>,
     stderr_tail: StderrTail,
     request_timeouts: RequestTimeouts,
     next_id: AtomicU64,
@@ -169,13 +172,27 @@ impl PiHost {
             native_tool_approvals,
             capability_audit,
             native_tool_context,
+            configured_capability_manifests: Mutex::new(HashMap::new()),
             stderr_tail,
             request_timeouts,
             next_id: AtomicU64::new(1),
         };
-        let ping: PingResult = host.call("ping").map_err(HostCallError::message)?;
+        let ping: PingResult = host
+            .call_with_params(
+                "ping",
+                json!({ "protocolVersion": PI_HOST_PROTOCOL_VERSION }),
+            )
+            .map_err(HostCallError::message)?;
         if !ping.pong {
             return Err("Pi host ping failed".to_string());
+        }
+        if ping.protocol_version != Some(PI_HOST_PROTOCOL_VERSION) {
+            return Err(format!(
+                "Unsupported Pi host protocol version: {}",
+                ping.protocol_version
+                    .map(|version| version.to_string())
+                    .unwrap_or_else(|| "missing".to_string())
+            ));
         }
         Ok(host)
     }
@@ -196,6 +213,18 @@ impl PiHost {
             .lock()
             .map(|context| context.capability_manifest())
             .unwrap_or_else(|_| core_capability_manifest())
+    }
+
+    fn capability_manifest_with_hash(
+        &self,
+    ) -> Result<(crate::modules::capabilities::CapabilityManifest, String), HostCallError> {
+        let capability_manifest = self.capability_manifest();
+        let hash = serde_json::to_string(&capability_manifest).map_err(|error| {
+            HostCallError::Transport(format!(
+                "Pi capability manifest was not serializable: {error}"
+            ))
+        })?;
+        Ok((capability_manifest, hash))
     }
 
     pub fn status(&self) -> Result<PiRuntimeSnapshot, HostCallError> {
@@ -244,7 +273,8 @@ impl PiHost {
         session_dir: Option<String>,
         workspace_env: WorkspaceEnv,
     ) -> Result<PiSessionCreateResult, HostCallError> {
-        let capability_manifest = self.capability_manifest();
+        let (capability_manifest, capability_manifest_hash) =
+            self.capability_manifest_with_hash()?;
         let result: PiSessionCreateResult = self.call_with_params(
             "sessions.create",
             json!({
@@ -261,6 +291,7 @@ impl PiHost {
             result.session.cwd.as_deref(),
             workspace_env,
         );
+        self.remember_configured_capability_manifest(&result.session.id, capability_manifest_hash);
         Ok(result)
     }
 
@@ -281,7 +312,8 @@ impl PiHost {
         thinking_level: Option<String>,
         workspace_env: WorkspaceEnv,
     ) -> Result<PiSessionResumeResult, HostCallError> {
-        let capability_manifest = self.capability_manifest();
+        let (capability_manifest, capability_manifest_hash) =
+            self.capability_manifest_with_hash()?;
         let result: PiSessionResumeResult = self.call_with_params(
             "sessions.resume",
             json!({
@@ -303,6 +335,7 @@ impl PiHost {
             result.session.cwd.as_deref(),
             workspace_env,
         );
+        self.remember_configured_capability_manifest(&result.session.id, capability_manifest_hash);
         Ok(result)
     }
 
@@ -314,6 +347,10 @@ impl PiHost {
         regenerate_branch_group_id: Option<String>,
         thinking_level: Option<String>,
     ) -> Result<PiSessionSendResult, HostCallError> {
+        if let Err(error) = self.session_configure_capabilities(&session_id) {
+            log::error!("failed to configure Pi session capabilities before send: {error:?}");
+            return Err(error);
+        }
         self.call_with_params(
             "sessions.send",
             json!({
@@ -324,6 +361,23 @@ impl PiHost {
                 "thinkingLevel": thinking_level,
             }),
         )
+    }
+
+    fn session_configure_capabilities(&self, session_id: &str) -> Result<(), HostCallError> {
+        let (capability_manifest, capability_manifest_hash) =
+            self.capability_manifest_with_hash()?;
+        if self.capability_manifest_is_configured(session_id, &capability_manifest_hash)? {
+            return Ok(());
+        }
+        let _: Value = self.call_with_params(
+            "sessions.configure",
+            json!({
+                "sessionId": session_id,
+                "capabilityManifest": capability_manifest,
+            }),
+        )?;
+        self.remember_configured_capability_manifest(session_id, capability_manifest_hash);
+        Ok(())
     }
 
     pub fn session_tool_respond(
@@ -471,6 +525,30 @@ impl PiHost {
             .unwrap_or(1)
     }
 
+    fn remember_configured_capability_manifest(&self, session_id: &str, manifest_hash: String) {
+        if let Ok(mut configured) = self.configured_capability_manifests.lock() {
+            configured.insert(session_id.to_string(), manifest_hash);
+        }
+    }
+
+    fn capability_manifest_is_configured(
+        &self,
+        session_id: &str,
+        manifest_hash: &str,
+    ) -> Result<bool, HostCallError> {
+        let configured = self
+            .configured_capability_manifests
+            .lock()
+            .map_err(|error| {
+                HostCallError::Transport(format!(
+                    "Pi capability manifest cache lock failed: {error}"
+                ))
+            })?;
+        Ok(configured
+            .get(session_id)
+            .is_some_and(|configured_hash| configured_hash == manifest_hash))
+    }
+
     fn remember_native_tool_session(
         &self,
         session_id: &str,
@@ -495,6 +573,9 @@ impl PiHost {
     fn forget_native_tool_session(&self, session_id: &str) {
         if let Ok(mut sessions) = self.native_tool_sessions.lock() {
             sessions.remove(session_id);
+        }
+        if let Ok(mut configured) = self.configured_capability_manifests.lock() {
+            configured.remove(session_id);
         }
         self.native_tool_approvals.forget_session(session_id);
     }

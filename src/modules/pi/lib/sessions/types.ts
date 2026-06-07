@@ -1,4 +1,5 @@
 import type { PiThinkingLevel } from "@/modules/pi/lib/provider";
+import type { WorkspaceEnv } from "@/modules/workspace";
 
 export const PI_SESSION_EVENT_TYPES = [
   "session.created",
@@ -42,7 +43,9 @@ export const PI_SESSION_EVENT = Object.freeze({
   Error: "session.error",
 } satisfies Record<string, PiSessionEventType>);
 
-export function isPiSessionEventType(value: unknown): value is PiSessionEventType {
+export function isPiSessionEventType(
+  value: unknown,
+): value is PiSessionEventType {
   return (
     typeof value === "string" &&
     (PI_SESSION_EVENT_TYPES as readonly string[]).includes(value)
@@ -59,6 +62,7 @@ export type PiSession = {
   createdAt: string;
   updatedAt: string;
   lastPrompt: string | null;
+  workspaceEnv?: WorkspaceEnv | null;
   thinkingLevel?: PiThinkingLevel | null;
   sdkSessionFile?: string | null;
 };
@@ -115,8 +119,9 @@ export type PiSessionEventPayloadByType = {
     approved: boolean;
   };
   [PI_SESSION_EVENT.ToolResult]: PiSessionToolPayload;
-  [PI_SESSION_EVENT.Status]: { status: PiSessionStatus } &
-    PiSessionEventBranchPayload;
+  [PI_SESSION_EVENT.Status]: {
+    status: PiSessionStatus;
+  } & PiSessionEventBranchPayload;
   [PI_SESSION_EVENT.Renamed]: { title: string };
   [PI_SESSION_EVENT.Deleted]: { sessionId: string };
   [PI_SESSION_EVENT.Error]: { message: string } & PiSessionEventBranchPayload;

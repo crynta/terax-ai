@@ -1,5 +1,6 @@
 import { Panel } from "@xyflow/react";
 import { Badge } from "@/components/ui/badge";
+import { statusBorderSurfaceClass } from "@/lib/statusTone";
 import { cn } from "@/lib/utils";
 import type { WorkflowInspectorState } from "../lib/inspector";
 import {
@@ -41,7 +42,7 @@ export function WorkflowInspectorPanel({
         </div>
       </div>
       {state.selectedNode ? (
-        <div className="mb-2 space-y-2 rounded-md border border-border/60 bg-muted/20 p-2 text-xs">
+        <div className="mb-2 flex flex-col gap-2 rounded-md border border-border/60 bg-muted/20 p-2 text-xs">
           <div>
             <div className="truncate font-medium">
               {state.selectedNode.title}
@@ -65,9 +66,9 @@ export function WorkflowInspectorPanel({
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-muted">
                 <div
-                  className="h-full rounded-full bg-primary transition-all"
+                  className="h-full w-full origin-left rounded-full bg-primary transition-transform"
                   style={{
-                    width: formatPercent(state.selectedNode.progress),
+                    transform: `scaleX(${Math.min(Math.max(state.selectedNode.progress, 0), 1)})`,
                   }}
                 />
               </div>
@@ -91,8 +92,13 @@ export function WorkflowInspectorPanel({
             ) : null}
           </div>
           {state.selectedNode.approval ? (
-            <div className="space-y-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1">
-              <div className="text-[10px] uppercase tracking-wide text-amber-700 dark:text-amber-300">
+            <div
+              className={cn(
+                "flex flex-col gap-1 rounded border px-2 py-1",
+                statusBorderSurfaceClass("warning"),
+              )}
+            >
+              <div className="text-[10px] uppercase tracking-wide">
                 Approval required
               </div>
               <div className="line-clamp-2 text-muted-foreground">
@@ -104,7 +110,7 @@ export function WorkflowInspectorPanel({
             </div>
           ) : null}
           {state.selectedNode.recentLogs.length > 0 ? (
-            <div className="space-y-1">
+            <div className="flex flex-col gap-1">
               <div className="text-muted-foreground text-[10px] uppercase tracking-wide">
                 Runtime log
               </div>
@@ -135,7 +141,7 @@ export function WorkflowInspectorPanel({
         </div>
       )}
       {visibleIssues.length > 0 ? (
-        <div className="space-y-1">
+        <div className="flex flex-col gap-1">
           {visibleIssues.map((issue, index) => (
             <div
               key={`${issue.severity}-${issue.nodeId ?? "graph"}-${index}`}
@@ -144,7 +150,7 @@ export function WorkflowInspectorPanel({
                 issue.severity === "error" &&
                   "border-destructive/30 bg-destructive/10 text-destructive",
                 issue.severity === "warning" &&
-                  "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+                  statusBorderSurfaceClass("warning"),
                 issue.severity === "info" &&
                   "border-border/60 bg-muted/20 text-muted-foreground",
               )}

@@ -96,7 +96,7 @@ describe("createTeraxNativeToolDefinitions", () => {
       return { content: [{ type: "text", text: "ok" }], details: null };
     });
 
-    const mcpTool = createTeraxNativeToolDefinitions(null, {
+    const tools = createTeraxNativeToolDefinitions(null, {
       id: "pi-mcp",
       cwd: "/workspace",
       workspaceEnv: { kind: "local" },
@@ -114,21 +114,44 @@ describe("createTeraxNativeToolDefinitions", () => {
             origin: "mcp",
             modelVisible: true,
           },
+          {
+            name: "mcp__docs__query",
+            label: "Docs: query",
+            description: "External MCP query tool",
+            promptSnippet: "Query MCP docs",
+            parameters: { type: "object", properties: {}, required: [] },
+            approval: "auto",
+            risk: "low",
+            origin: "mcp",
+            modelVisible: true,
+          },
         ],
       },
-    })[0];
+    });
 
-    await mcpTool.execute("call-mcp", { text: "hello" });
+    await tools[0].execute("call-mcp-ask", { text: "hello" });
+    await tools[1].execute("call-mcp-auto", { query: "hooks" });
 
     expect(calls).toEqual([
       expect.objectContaining({
         sessionId: "pi-mcp",
-        toolCallId: "call-mcp",
+        toolCallId: "call-mcp-ask",
         toolName: "mcp__echo__say",
         approval: {
           policy: "ask",
           approved: true,
           risk: "high",
+          origin: "mcp",
+        },
+      }),
+      expect.objectContaining({
+        sessionId: "pi-mcp",
+        toolCallId: "call-mcp-auto",
+        toolName: "mcp__docs__query",
+        approval: {
+          policy: "auto",
+          approved: true,
+          risk: "low",
           origin: "mcp",
         },
       }),

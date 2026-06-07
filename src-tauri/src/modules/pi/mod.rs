@@ -356,6 +356,7 @@ impl WorkflowAgentPolicyRequest {
 pub fn workflow_pi_session_create(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
+    artifacts_state: tauri::State<'_, ArtifactsState>,
     registry: tauri::State<'_, WorkspaceRegistry>,
     secrets_state: tauri::State<'_, SecretsState>,
     mcp_state: tauri::State<'_, Arc<McpState>>,
@@ -372,6 +373,7 @@ pub fn workflow_pi_session_create(
         pi_session_create(
             app,
             state,
+            artifacts_state,
             registry,
             secrets_state,
             mcp_state,
@@ -392,6 +394,7 @@ pub fn workflow_pi_session_create(
 pub fn pi_session_create(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
+    artifacts_state: tauri::State<'_, ArtifactsState>,
     registry: tauri::State<'_, WorkspaceRegistry>,
     secrets_state: tauri::State<'_, SecretsState>,
     mcp_state: tauri::State<'_, Arc<McpState>>,
@@ -406,13 +409,16 @@ pub fn pi_session_create(
     let provider_config = resolve_provider_config(&app, &secrets_state, provider_config)?;
     let session_dir = sdk_session_dir(&app)?;
     let session_dir_text = crate::modules::fs::to_canon(&session_dir);
+    let native_tool_context = artifact_native_tool_context(
+        &app,
+        artifacts_state.inner(),
+        Some(Arc::clone(mcp_state.inner())),
+    )?;
     let context = PiHostContext::new(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
     )
-    .with_native_tool_context(native_tools::NativeToolContext::with_mcp_state(Arc::clone(
-        mcp_state.inner(),
-    )));
+    .with_native_tool_context(native_tool_context);
     let mut result = state.session_create(
         context,
         CreateSessionRequest {
@@ -437,6 +443,7 @@ pub fn pi_session_create(
 pub fn pi_session_resume(
     app: AppHandle,
     state: tauri::State<'_, PiState>,
+    artifacts_state: tauri::State<'_, ArtifactsState>,
     registry: tauri::State<'_, WorkspaceRegistry>,
     secrets_state: tauri::State<'_, SecretsState>,
     mcp_state: tauri::State<'_, Arc<McpState>>,
@@ -456,20 +463,26 @@ pub fn pi_session_resume(
         .sdk_session_file
         .clone()
         .ok_or_else(|| PiCommandError::plain("Pi session has no SDK session file to resume"))?;
-    let workspace_env = WorkspaceEnv::from_option(workspace);
+    let workspace_env = session
+        .workspace_env
+        .clone()
+        .unwrap_or_else(|| WorkspaceEnv::from_option(workspace));
     let cwd = resolve_session_cwd(&registry, session.cwd.as_deref(), &workspace_env)?;
     let provider_config = resolve_provider_config(&app, &secrets_state, provider_config)?;
     let session_dir = sdk_session_dir(&app)?;
     let session_dir_text = crate::modules::fs::to_canon(&session_dir);
     let sdk_session_file =
         validate_existing_sdk_session_file_path(&sdk_session_file, &session_dir)?;
+    let native_tool_context = artifact_native_tool_context(
+        &app,
+        artifacts_state.inner(),
+        Some(Arc::clone(mcp_state.inner())),
+    )?;
     let context = PiHostContext::new(
         resource_dir(&app).as_deref(),
         Some(session_event_sink(&app)),
     )
-    .with_native_tool_context(native_tools::NativeToolContext::with_mcp_state(Arc::clone(
-        mcp_state.inner(),
-    )));
+    .with_native_tool_context(native_tool_context);
     let mut result = state.session_resume(
         context,
         ResumeSessionRequest {

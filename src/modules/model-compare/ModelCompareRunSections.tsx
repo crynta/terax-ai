@@ -109,8 +109,8 @@ export function ModelCompareResultsSection({
                     onClick={() => void onRerunPane(pane.id)}
                   >
                     <HugeiconsIcon
+                      data-icon="inline-start"
                       icon={RefreshIcon}
-                      size={13}
                       strokeWidth={2}
                     />
                     Rerun
@@ -124,8 +124,8 @@ export function ModelCompareResultsSection({
                     onClick={() => void onCopyPane(pane)}
                   >
                     <HugeiconsIcon
+                      data-icon="inline-start"
                       icon={Copy01Icon}
-                      size={13}
                       strokeWidth={2}
                     />
                     Copy
@@ -139,8 +139,8 @@ export function ModelCompareResultsSection({
                     onClick={() => onVote(pane.id)}
                   >
                     <HugeiconsIcon
+                      data-icon="inline-start"
                       icon={CheckmarkCircle02Icon}
-                      size={13}
                       strokeWidth={2}
                     />
                     Vote
@@ -239,7 +239,11 @@ export function ModelCompareHistorySection({
             disabled={runHistory.length === 0}
             onClick={onClearHistory}
           >
-            <HugeiconsIcon icon={Delete02Icon} size={12} strokeWidth={2} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Delete02Icon}
+              strokeWidth={2}
+            />
             Clear
           </Button>
         </div>
@@ -262,7 +266,11 @@ export function ModelCompareHistorySection({
               </span>
               <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
                 <HugeiconsIcon icon={Clock01Icon} size={12} strokeWidth={2} />
-                {new Date(entry.savedAt).toLocaleDateString()}
+                {new Date(entry.savedAt).toLocaleDateString(undefined, {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })}
               </span>
             </button>
           ))}

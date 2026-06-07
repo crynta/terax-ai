@@ -10,7 +10,7 @@ import { keymap } from "@codemirror/view";
 import { vim } from "@replit/codemirror-vim";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
-  forwardRef,
+  type Ref,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -53,6 +53,7 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
+  ref?: Ref<EditorPaneHandle>;
 };
 
 function formatBytes(n: number): string {
@@ -61,277 +62,280 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export const EditorPane = forwardRef<EditorPaneHandle, Props>(
-  function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
-    const { doc, onChange, save, reload } = useDocument({
-      path,
-      onDirtyChange,
+export function EditorPane({
+  path,
+  onDirtyChange,
+  onSaved,
+  onClose,
+  ref,
+}: Props) {
+  const { doc, onChange, save, reload } = useDocument({
+    path,
+    onDirtyChange,
+  });
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  const cmRef = useRef<ReactCodeMirrorRef>(null);
+  const editorThemeId = usePreferencesStore((s) => s.editorTheme);
+  const vimMode = usePreferencesStore((s) => s.vimMode);
+  const languageRef = useRef<string | null>(null);
+  const apiKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const provider = usePreferencesStore.getState().autocompleteProvider;
+      if (
+        provider === "lmstudio" ||
+        provider === "mlx" ||
+        provider === "ollama"
+      ) {
+        apiKeyRef.current = null;
+        return;
+      }
+      const k = await getKey(provider);
+      if (!cancelled) apiKeyRef.current = k;
+    };
+    void refresh();
+    let unlistenKeys: (() => void) | undefined;
+    void onKeysChanged(() => void refresh()).then((un) => {
+      unlistenKeys = un;
     });
-    const reloadRef = useRef(reload);
-    reloadRef.current = reload;
-    const cmRef = useRef<ReactCodeMirrorRef>(null);
-    const editorThemeId = usePreferencesStore((s) => s.editorTheme);
-    const vimMode = usePreferencesStore((s) => s.vimMode);
-    const languageRef = useRef<string | null>(null);
-    const apiKeyRef = useRef<string | null>(null);
+    const unsubPrefs = usePreferencesStore.subscribe((state, prev) => {
+      if (state.autocompleteProvider !== prev.autocompleteProvider) {
+        void refresh();
+      }
+    });
+    return () => {
+      cancelled = true;
+      unlistenKeys?.();
+      unsubPrefs();
+    };
+  }, []);
+  const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
 
-    useEffect(() => {
-      let cancelled = false;
-      const refresh = async () => {
-        const provider = usePreferencesStore.getState().autocompleteProvider;
-        if (
-          provider === "lmstudio" ||
-          provider === "mlx" ||
-          provider === "ollama"
-        ) {
-          apiKeyRef.current = null;
-          return;
-        }
-        const k = await getKey(provider);
-        if (!cancelled) apiKeyRef.current = k;
-      };
-      void refresh();
-      let unlistenKeys: (() => void) | undefined;
-      void onKeysChanged(() => void refresh()).then((un) => {
-        unlistenKeys = un;
-      });
-      const unsubPrefs = usePreferencesStore.subscribe((state, prev) => {
-        if (state.autocompleteProvider !== prev.autocompleteProvider) {
-          void refresh();
-        }
-      });
-      return () => {
-        cancelled = true;
-        unlistenKeys?.();
-        unsubPrefs();
-      };
-    }, []);
-    const themeExt =
-      EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
+  // Stabilize save + onSaved via refs so the extensions array never changes
+  // identity — a new identity makes @uiw/react-codemirror reconfigure the
+  // whole state, wiping the language compartment.
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
-    // Stabilize save + onSaved via refs so the extensions array never changes
-    // identity — a new identity makes @uiw/react-codemirror reconfigure the
-    // whole state, wiping the language compartment.
-    const saveRef = useRef(save);
-    saveRef.current = save;
-    const onSavedRef = useRef(onSaved);
-    onSavedRef.current = onSaved;
-    const onCloseRef = useRef(onClose);
-    onCloseRef.current = onClose;
+  const pathRef = useRef(path);
+  pathRef.current = path;
 
-    const pathRef = useRef(path);
-    pathRef.current = path;
-
-    const extensions = useMemo(
-      () => [
-        // basicSetup is added before user extensions by @uiw/react-codemirror,
-        // so we must elevate vim's precedence to win the keymap.
-        vimCompartment.of(
-          usePreferencesStore.getState().vimMode ? Prec.highest(vim()) : [],
-        ),
-        vimHandlersExtension(() => ({
-          save: () => {
+  const extensions = useMemo(
+    () => [
+      // basicSetup is added before user extensions by @uiw/react-codemirror,
+      // so we must elevate vim's precedence to win the keymap.
+      vimCompartment.of(
+        usePreferencesStore.getState().vimMode ? Prec.highest(vim()) : [],
+      ),
+      vimHandlersExtension(() => ({
+        save: () => {
+          void (async () => {
+            await saveRef.current();
+            onSavedRef.current?.();
+          })();
+        },
+        close: () => onCloseRef.current?.(),
+      })),
+      ...buildSharedExtensions(),
+      languageCompartment.of([]),
+      inlineCompletion({
+        getPrefs: () => {
+          const s = usePreferencesStore.getState();
+          const p = s.autocompleteProvider;
+          const modelId =
+            p === "lmstudio"
+              ? s.lmstudioModelId
+              : p === "mlx"
+                ? s.mlxModelId
+                : p === "ollama"
+                  ? s.ollamaModelId
+                  : p === "openai-compatible"
+                    ? s.openaiCompatibleModelId
+                    : p === "openrouter"
+                      ? s.openrouterModelId
+                      : s.autocompleteModelId;
+          return {
+            enabled: s.autocompleteEnabled,
+            provider: p,
+            modelId,
+            apiKey: apiKeyRef.current,
+            lmstudioBaseURL: s.lmstudioBaseURL,
+            mlxBaseURL: s.mlxBaseURL,
+            ollamaBaseURL: s.ollamaBaseURL,
+            openaiCompatibleBaseURL: s.openaiCompatibleBaseURL,
+          };
+        },
+        getPath: () => pathRef.current,
+        getLanguage: () => languageRef.current,
+      }),
+      keymap.of([
+        {
+          key: "Mod-s",
+          preventDefault: true,
+          run: () => {
             void (async () => {
               await saveRef.current();
               onSavedRef.current?.();
             })();
+            return true;
           },
-          close: () => onCloseRef.current?.(),
-        })),
-        ...buildSharedExtensions(),
-        languageCompartment.of([]),
-        inlineCompletion({
-          getPrefs: () => {
-            const s = usePreferencesStore.getState();
-            const p = s.autocompleteProvider;
-            const modelId =
-              p === "lmstudio"
-                ? s.lmstudioModelId
-                : p === "mlx"
-                  ? s.mlxModelId
-                  : p === "ollama"
-                    ? s.ollamaModelId
-                    : p === "openai-compatible"
-                      ? s.openaiCompatibleModelId
-                      : p === "openrouter"
-                        ? s.openrouterModelId
-                        : s.autocompleteModelId;
-            return {
-              enabled: s.autocompleteEnabled,
-              provider: p,
-              modelId,
-              apiKey: apiKeyRef.current,
-              lmstudioBaseURL: s.lmstudioBaseURL,
-              mlxBaseURL: s.mlxBaseURL,
-              ollamaBaseURL: s.ollamaBaseURL,
-              openaiCompatibleBaseURL: s.openaiCompatibleBaseURL,
-            };
-          },
-          getPath: () => pathRef.current,
-          getLanguage: () => languageRef.current,
-        }),
-        keymap.of([
-          {
-            key: "Mod-s",
-            preventDefault: true,
-            run: () => {
-              void (async () => {
-                await saveRef.current();
-                onSavedRef.current?.();
-              })();
-              return true;
-            },
-          },
-        ]),
-      ],
-      [],
-    );
+        },
+      ]),
+    ],
+    [],
+  );
 
-    useEffect(() => {
+  useEffect(() => {
+    const view = cmRef.current?.view;
+    if (!view) return;
+    view.dispatch({
+      effects: vimCompartment.reconfigure(vimMode ? Prec.highest(vim()) : []),
+    });
+  }, [vimMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ext = path.split(".").pop()?.toLowerCase() ?? null;
+    languageRef.current = ext;
+    const resolve = async (): Promise<Extension> => {
+      if (path.toLowerCase().endsWith(".terax-theme")) {
+        const [{ json }, { colorSwatches }] = await Promise.all([
+          import("@codemirror/lang-json"),
+          import("./lib/colorSwatches"),
+        ]);
+        return [json(), colorSwatches()];
+      }
+      return (await resolveLanguage(path)) ?? [];
+    };
+    void resolve().then((extension) => {
+      if (cancelled) return;
       const view = cmRef.current?.view;
       if (!view) return;
       view.dispatch({
-        effects: vimCompartment.reconfigure(vimMode ? Prec.highest(vim()) : []),
+        effects: languageCompartment.reconfigure(extension),
       });
-    }, [vimMode]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path, doc.status]);
 
-    useEffect(() => {
-      let cancelled = false;
-      const ext = path.split(".").pop()?.toLowerCase() ?? null;
-      languageRef.current = ext;
-      const resolve = async (): Promise<Extension> => {
-        if (path.toLowerCase().endsWith(".terax-theme")) {
-          const [{ json }, { colorSwatches }] = await Promise.all([
-            import("@codemirror/lang-json"),
-            import("./lib/colorSwatches"),
-          ]);
-          return [json(), colorSwatches()];
-        }
-        return (await resolveLanguage(path)) ?? [];
-      };
-      void resolve().then((extension) => {
-        if (cancelled) return;
+  useImperativeHandle(
+    ref,
+    () => ({
+      setQuery: (q: string) => {
         const view = cmRef.current?.view;
         if (!view) return;
         view.dispatch({
-          effects: languageCompartment.reconfigure(extension),
+          effects: setSearchQuery.of(
+            new SearchQuery({ search: q, caseSensitive: false }),
+          ),
         });
-      });
-      return () => {
-        cancelled = true;
-      };
-    }, [path, doc.status]);
+        if (q) findNext(view);
+      },
+      findNext: () => {
+        const view = cmRef.current?.view;
+        if (view) findNext(view);
+      },
+      findPrevious: () => {
+        const view = cmRef.current?.view;
+        if (view) findPrevious(view);
+      },
+      clearQuery: () => {
+        const view = cmRef.current?.view;
+        if (!view) return;
+        view.dispatch({
+          effects: setSearchQuery.of(new SearchQuery({ search: "" })),
+        });
+      },
+      focus: () => {
+        cmRef.current?.view?.focus();
+      },
+      getSelection: () => {
+        const view = cmRef.current?.view;
+        if (!view) return null;
+        const { from, to } = view.state.selection.main;
+        if (from === to) return null;
+        return view.state.sliceDoc(from, to);
+      },
+      getPath: () => path,
+      reload: () => reloadRef.current(),
+      undo: () => {
+        const view = cmRef.current?.view;
+        if (view) undo(view);
+      },
+      redo: () => {
+        const view = cmRef.current?.view;
+        if (view) redo(view);
+      },
+    }),
+    [path],
+  );
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        setQuery: (q: string) => {
-          const view = cmRef.current?.view;
-          if (!view) return;
-          view.dispatch({
-            effects: setSearchQuery.of(
-              new SearchQuery({ search: q, caseSensitive: false }),
-            ),
-          });
-          if (q) findNext(view);
-        },
-        findNext: () => {
-          const view = cmRef.current?.view;
-          if (view) findNext(view);
-        },
-        findPrevious: () => {
-          const view = cmRef.current?.view;
-          if (view) findPrevious(view);
-        },
-        clearQuery: () => {
-          const view = cmRef.current?.view;
-          if (!view) return;
-          view.dispatch({
-            effects: setSearchQuery.of(new SearchQuery({ search: "" })),
-          });
-        },
-        focus: () => {
-          cmRef.current?.view?.focus();
-        },
-        getSelection: () => {
-          const view = cmRef.current?.view;
-          if (!view) return null;
-          const { from, to } = view.state.selection.main;
-          if (from === to) return null;
-          return view.state.sliceDoc(from, to);
-        },
-        getPath: () => path,
-        reload: () => reloadRef.current(),
-        undo: () => {
-          const view = cmRef.current?.view;
-          if (view) undo(view);
-        },
-        redo: () => {
-          const view = cmRef.current?.view;
-          if (view) redo(view);
-        },
-      }),
-      [path],
-    );
-
-    if (doc.status === "loading") {
-      return (
-        <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-          Loading…
-        </div>
-      );
-    }
-    if (doc.status === "error") {
-      return (
-        <div className="flex h-full items-center justify-center px-6 text-center text-xs text-destructive">
-          {doc.message}
-        </div>
-      );
-    }
-    if (doc.status === "binary") {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-          <div className="text-sm text-foreground">Binary file</div>
-          <div className="text-xs text-muted-foreground">
-            {formatBytes(doc.size)} · preview not supported
-          </div>
-        </div>
-      );
-    }
-    if (doc.status === "toolarge") {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-          <div className="text-sm text-foreground">File too large</div>
-          <div className="text-xs text-muted-foreground">
-            {formatBytes(doc.size)} exceeds the {formatBytes(doc.limit)} limit.
-          </div>
-        </div>
-      );
-    }
-
+  if (doc.status === "loading") {
     return (
-      <div className="flex h-full min-h-0 flex-col">
-        <CodeMirror
-          ref={cmRef}
-          value={doc.content}
-          onChange={onChange}
-          theme={themeExt}
-          extensions={extensions}
-          height="100%"
-          className="flex-1 min-h-0 overflow-hidden"
-          basicSetup={{
-            lineNumbers: true,
-            highlightActiveLineGutter: true,
-            foldGutter: true,
-            bracketMatching: true,
-            closeBrackets: true,
-            autocompletion: true,
-            highlightActiveLine: true,
-            highlightSelectionMatches: true,
-            searchKeymap: true,
-          }}
-        />
+      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+        Loading…
       </div>
     );
-  },
-);
+  }
+  if (doc.status === "error") {
+    return (
+      <div className="flex h-full items-center justify-center px-6 text-center text-xs text-destructive">
+        {doc.message}
+      </div>
+    );
+  }
+  if (doc.status === "binary") {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+        <div className="text-sm text-foreground">Binary file</div>
+        <div className="text-xs text-muted-foreground">
+          {formatBytes(doc.size)} · preview not supported
+        </div>
+      </div>
+    );
+  }
+  if (doc.status === "toolarge") {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
+        <div className="text-sm text-foreground">File too large</div>
+        <div className="text-xs text-muted-foreground">
+          {formatBytes(doc.size)} exceeds the {formatBytes(doc.limit)} limit.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <CodeMirror
+        ref={cmRef}
+        value={doc.content}
+        onChange={onChange}
+        theme={themeExt}
+        extensions={extensions}
+        height="100%"
+        className="flex-1 min-h-0 overflow-hidden"
+        basicSetup={{
+          lineNumbers: true,
+          highlightActiveLineGutter: true,
+          foldGutter: true,
+          bracketMatching: true,
+          closeBrackets: true,
+          autocompletion: true,
+          highlightActiveLine: true,
+          highlightSelectionMatches: true,
+          searchKeymap: true,
+        }}
+      />
+    </div>
+  );
+}

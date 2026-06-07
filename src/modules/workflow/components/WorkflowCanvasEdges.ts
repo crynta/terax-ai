@@ -7,7 +7,7 @@ import {
 import type { WorkflowDocument } from "../lib/schema";
 import type { WorkflowFlowEdge } from "./WorkflowCanvasTypes";
 
-const workflowEdgeColor = "#3b82f6";
+const workflowEdgeColor = "var(--primary)";
 const workflowEdgeStyle = {
   stroke: workflowEdgeColor,
   strokeWidth: 2.75,

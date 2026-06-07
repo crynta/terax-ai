@@ -210,9 +210,13 @@ export function PiLocalAgentsCard({
           onClick={onRefresh}
         >
           {isRefreshing ? (
-            <Spinner className="size-2.5" />
+            <Spinner data-icon="inline-start" />
           ) : (
-            <HugeiconsIcon icon={Refresh01Icon} size={11} strokeWidth={1.75} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Refresh01Icon}
+              strokeWidth={1.75}
+            />
           )}
           Refresh
         </Button>

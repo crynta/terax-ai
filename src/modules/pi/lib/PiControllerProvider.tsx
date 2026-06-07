@@ -2,12 +2,13 @@ import {
   createContext,
   type ReactNode,
   type SetStateAction,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
 } from "react";
+import type { CapabilityAuditFilter } from "@/modules/pi/components/PiCapabilityAuditCard";
 import type { PiProviderKeyStatus } from "@/modules/pi/lib/diagnostics";
 import type { PiLocalAgentStatus } from "@/modules/pi/lib/local-agents";
 import type {
@@ -22,7 +23,6 @@ import type {
   PiSessionBranch,
   PiSessionEvent,
 } from "@/modules/pi/lib/sessions";
-import type { CapabilityAuditFilter } from "@/modules/pi/components/PiCapabilityAuditCard";
 import type {
   CapabilityAuditEntry,
   PiDiagnostics,
@@ -144,7 +144,7 @@ export function PiControllerProvider({ children }: PiControllerProviderProps) {
 }
 
 export function usePiControllerStore(): PiControllerStore {
-  return useContext(PiControllerContext);
+  return use(PiControllerContext);
 }
 
 export function usePiControllerState<K extends keyof PiControllerState>(

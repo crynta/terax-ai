@@ -31,5 +31,8 @@ describe("SourceControlPanel lazy export", () => {
     );
 
     expect(html).toContain("Loading source control…");
+    expect(html).toContain(
+      "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card/80",
+    );
   });
 });

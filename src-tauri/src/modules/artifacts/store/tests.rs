@@ -46,6 +46,39 @@ fn creates_lists_gets_and_versions_artifacts_without_loading_content_for_list() 
 }
 
 #[test]
+fn renames_artifact_title_without_changing_slug_or_content_version() {
+    let (_temp, store) = store();
+    store
+        .create(
+            "pi_session_1",
+            ArtifactCreateInput {
+                slug: "hero-card".to_string(),
+                title: Some("Hero Card".to_string()),
+                kind: ArtifactKind::Html,
+                content: "<h1>Hero</h1>".to_string(),
+            },
+        )
+        .unwrap();
+
+    let renamed = store
+        .rename_title("pi_session_1", "hero-card", "Marketing Hero")
+        .unwrap();
+
+    assert_eq!(renamed.summary.slug, "hero-card");
+    assert_eq!(renamed.summary.title, "Marketing Hero");
+    assert_eq!(renamed.summary.version, 1);
+    assert_eq!(renamed.content, "<h1>Hero</h1>");
+    assert_eq!(
+        store.versions("pi_session_1", "hero-card").unwrap().len(),
+        1
+    );
+    assert_eq!(
+        store.list("pi_session_1").unwrap()[0].title,
+        "Marketing Hero"
+    );
+}
+
+#[test]
 fn update_and_edit_create_new_versions_and_reject_stale_base_versions() {
     let (_temp, store) = store();
     store
@@ -86,6 +119,286 @@ fn update_and_edit_create_new_versions_and_reject_stale_base_versions() {
             .code,
         "ARTIFACT_CONFLICT"
     );
+}
+
+#[test]
+fn lists_all_artifact_conversations_without_loading_content() {
+    let (_temp, store) = store();
+    store
+        .create(
+            "pi_session_old",
+            ArtifactCreateInput {
+                slug: "old".to_string(),
+                title: Some("Old".to_string()),
+                kind: ArtifactKind::Markdown,
+                content: "old secret body".to_string(),
+            },
+        )
+        .unwrap();
+    store
+        .create(
+            "pi_session_new",
+            ArtifactCreateInput {
+                slug: "new".to_string(),
+                title: Some("New".to_string()),
+                kind: ArtifactKind::Html,
+                content: "new secret body".to_string(),
+            },
+        )
+        .unwrap();
+
+    let all = store.list_all().unwrap();
+
+    assert_eq!(all.len(), 2);
+    assert_eq!(
+        all.iter().map(|entry| entry.artifact_count).sum::<usize>(),
+        2
+    );
+    assert!(
+        all.iter()
+            .any(|entry| entry.conversation_id == "pi_session_old"
+                && entry.artifacts[0].slug == "old")
+    );
+    assert!(
+        all.iter()
+            .any(|entry| entry.conversation_id == "pi_session_new"
+                && entry.artifacts[0].slug == "new")
+    );
+    let serialized = serde_json::to_string(&all).unwrap();
+    assert!(!serialized.contains("secret body"));
+}
+
+#[test]
+fn delete_moves_artifact_to_recoverable_trash_and_restore_reinserts_it() {
+    let (temp, store) = store();
+    store
+        .create(
+            "pi_session_1",
+            ArtifactCreateInput {
+                slug: "draft".to_string(),
+                title: Some("Draft".to_string()),
+                kind: ArtifactKind::Markdown,
+                content: "# Draft".to_string(),
+            },
+        )
+        .unwrap();
+    store
+        .update("pi_session_1", "draft", "# Draft\n\nSecond", None)
+        .unwrap();
+
+    let deleted = store.delete("pi_session_1", "draft").unwrap();
+
+    assert!(deleted.deleted);
+    assert_eq!(deleted.deleted_count, 1);
+    assert!(deleted.undo_token.is_some());
+    assert!(store.list("pi_session_1").unwrap().is_empty());
+    assert_eq!(
+        store.get("pi_session_1", "draft", None).unwrap_err().code,
+        "ARTIFACT_NOT_FOUND"
+    );
+    let trash_dir = temp.path().join("artifacts/trash");
+    assert!(trash_dir.exists());
+
+    let restored = store
+        .restore_deleted("pi_session_1", "draft", deleted.undo_token.as_deref())
+        .unwrap();
+
+    assert_eq!(restored.summary.slug, "draft");
+    assert_eq!(restored.summary.version, 2);
+    assert_eq!(restored.content, "# Draft\n\nSecond");
+    assert_eq!(store.versions("pi_session_1", "draft").unwrap().len(), 2);
+}
+
+#[test]
+fn failed_delete_physical_move_leaves_manifest_and_cleans_trash_record() {
+    let (_temp, store) = store();
+    store
+        .create(
+            "pi_session_1",
+            ArtifactCreateInput {
+                slug: "draft".to_string(),
+                title: Some("Draft".to_string()),
+                kind: ArtifactKind::Markdown,
+                content: "# Draft".to_string(),
+            },
+        )
+        .unwrap();
+    let key = conversation_key("pi_session_1").unwrap();
+    std::fs::remove_dir_all(store.artifact_dir(&key, "draft")).unwrap();
+
+    let error = store.delete("pi_session_1", "draft").unwrap_err();
+
+    assert_eq!(error.code, "ARTIFACT_STORE_UNAVAILABLE");
+    assert_eq!(store.list("pi_session_1").unwrap()[0].slug, "draft");
+    assert!(store.list_deleted().unwrap().is_empty());
+}
+
+#[test]
+fn lists_deleted_artifacts_as_metadata_without_content() {
+    let (_temp, store) = store();
+    store
+        .create(
+            "pi_session_1",
+            ArtifactCreateInput {
+                slug: "secret-draft".to_string(),
+                title: Some("Secret Draft".to_string()),
+                kind: ArtifactKind::Markdown,
+                content: "# Secret\n\nDo not leak this body".to_string(),
+            },
+        )
+        .unwrap();
+    let deleted = store.delete("pi_session_1", "secret-draft").unwrap();
+
+    let deleted_artifacts = store.list_deleted().unwrap();
+
+    assert_eq!(deleted_artifacts.len(), 1);
+    let summary = &deleted_artifacts[0];
+    assert_eq!(summary.conversation_id, "pi_session_1");
+    assert_eq!(summary.slug, "secret-draft");
+    assert_eq!(summary.title, "Secret Draft");
+    assert_eq!(summary.kind, ArtifactKind::Markdown);
+    assert_eq!(summary.version, 1);
+    assert_eq!(summary.undo_token, deleted.undo_token.unwrap());
+    assert_eq!(summary.content_hash.len(), 64);
+    assert!(summary.deleted_at.ends_with('Z'));
+    let serialized = serde_json::to_string(&deleted_artifacts).unwrap();
+    assert!(!serialized.contains("Do not leak"));
+}
+
+#[test]
+fn purges_deleted_artifact_by_undo_token_without_touching_active_artifacts() {
+    let (_temp, store) = store();
+    store
+        .create(
+            "pi_session_1",
+            ArtifactCreateInput {
+                slug: "draft".to_string(),
+                title: Some("Draft".to_string()),
+                kind: ArtifactKind::Text,
+                content: "deleted".to_string(),
+            },
+        )
+        .unwrap();
+    let deleted = store.delete("pi_session_1", "draft").unwrap();
+    let undo_token = deleted.undo_token.unwrap();
+    store
+        .create(
+            "pi_session_1",
+            ArtifactCreateInput {
+                slug: "active".to_string(),
+                title: Some("Active".to_string()),
+                kind: ArtifactKind::Text,
+                content: "active".to_string(),
+            },
+        )
+        .unwrap();
+
+    let purged = store
+        .purge_deleted("pi_session_1", "draft", &undo_token)
+        .unwrap();
+
+    assert!(purged.deleted);
+    assert_eq!(purged.deleted_count, 1);
+    assert!(purged.undo_token.is_none());
+    assert!(store.list_deleted().unwrap().is_empty());
+    assert_eq!(
+        store.get("pi_session_1", "active", None).unwrap().content,
+        "active"
+    );
+    assert_eq!(
+        store
+            .restore_deleted("pi_session_1", "draft", Some(&undo_token))
+            .unwrap_err()
+            .code,
+        "ARTIFACT_NOT_FOUND"
+    );
+}
+
+#[test]
+fn bulk_delete_restore_and_export_return_per_item_metadata_without_content() {
+    let (temp, store) = store();
+    store
+        .create(
+            "pi_session_1",
+            ArtifactCreateInput {
+                slug: "alpha".to_string(),
+                title: Some("Alpha".to_string()),
+                kind: ArtifactKind::Html,
+                content: "<h1>alpha secret</h1>".to_string(),
+            },
+        )
+        .unwrap();
+    store
+        .create(
+            "pi_session_1",
+            ArtifactCreateInput {
+                slug: "beta".to_string(),
+                title: Some("Beta".to_string()),
+                kind: ArtifactKind::Markdown,
+                content: "# beta secret".to_string(),
+            },
+        )
+        .unwrap();
+
+    let deleted = store
+        .delete_many(&[
+            ArtifactBulkTarget::active("pi_session_1", "alpha"),
+            ArtifactBulkTarget::active("pi_session_1", "missing"),
+        ])
+        .unwrap();
+
+    assert_eq!(deleted.requested_count, 2);
+    assert_eq!(deleted.success_count, 1);
+    assert_eq!(deleted.failure_count, 1);
+    let alpha_delete = deleted
+        .items
+        .iter()
+        .find(|item| item.slug == "alpha")
+        .unwrap();
+    assert!(alpha_delete.success);
+    let undo_token = alpha_delete.undo_token.clone().unwrap();
+    assert!(deleted
+        .items
+        .iter()
+        .any(|item| item.slug == "missing" && !item.success));
+
+    let restored = store
+        .restore_deleted_many(&[ArtifactBulkTarget::deleted(
+            "pi_session_1",
+            "alpha",
+            &undo_token,
+        )])
+        .unwrap();
+
+    assert_eq!(restored.success_count, 1);
+    assert_eq!(
+        store.get("pi_session_1", "alpha", None).unwrap().content,
+        "<h1>alpha secret</h1>"
+    );
+
+    let exported = store
+        .export_many(
+            &[
+                ArtifactBulkTarget::active("pi_session_1", "alpha"),
+                ArtifactBulkTarget::active("pi_session_1", "beta"),
+            ],
+            &temp.path().join("exports"),
+        )
+        .unwrap();
+
+    assert_eq!(exported.success_count, 2);
+    assert_eq!(exported.failure_count, 0);
+    for item in &exported.items {
+        assert!(item.path.as_ref().is_some_and(|path| path.exists()));
+        assert!(item
+            .content_hash
+            .as_ref()
+            .is_some_and(|hash| hash.len() == 64));
+        assert!(item.content_bytes.unwrap_or_default() > 0);
+    }
+    let serialized = serde_json::to_string(&exported).unwrap();
+    assert!(!serialized.contains("alpha secret"));
+    assert!(!serialized.contains("beta secret"));
 }
 
 #[test]

@@ -8,8 +8,8 @@ import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
 import {
   createContext,
   memo,
+  use,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
@@ -54,7 +54,7 @@ export const MessageContent = ({
   <div
     className={cn(
       "select-text flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-[12px] leading-relaxed",
-      "group-[.is-user]:rounded-2xl group-[.is-user]:rounded-br-sm group-[.is-user]:bg-muted/70 group-[.is-user]:px-3 group-[.is-user]:py-2 group-[.is-user]:text-foreground",
+      "group-[.is-user]:rounded-md group-[.is-user]:rounded-br-sm group-[.is-user]:bg-muted/70 group-[.is-user]:px-3 group-[.is-user]:py-2 group-[.is-user]:text-foreground",
       "group-[.is-assistant]:w-full group-[.is-assistant]:max-w-full group-[.is-assistant]:text-foreground",
       className,
     )}
@@ -126,7 +126,7 @@ const MessageBranchContext = createContext<MessageBranchContextType | null>(
 );
 
 const useMessageBranch = () => {
-  const context = useContext(MessageBranchContext);
+  const context = use(MessageBranchContext);
 
   if (!context) {
     throw new Error(
@@ -269,7 +269,9 @@ export const MessageBranchPrevious = ({
       variant="ghost"
       {...props}
     >
-      {children ?? <HugeiconsIcon icon={ArrowLeft01Icon} size={14} />}
+      {children ?? (
+        <HugeiconsIcon data-icon="inline-start" icon={ArrowLeft01Icon} />
+      )}
     </Button>
   );
 };
@@ -292,7 +294,9 @@ export const MessageBranchNext = ({
       variant="ghost"
       {...props}
     >
-      {children ?? <HugeiconsIcon icon={ArrowRight01Icon} size={14} />}
+      {children ?? (
+        <HugeiconsIcon data-icon="inline-start" icon={ArrowRight01Icon} />
+      )}
     </Button>
   );
 };

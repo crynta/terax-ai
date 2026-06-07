@@ -1,6 +1,6 @@
 import type { PiAgentSessionState } from "@/modules/agents/lib/types";
 import { MODEL_COMPARE_ARTIFACT_CONVERSATION_ID } from "@/modules/model-compare/lib/artifacts";
-import type { ArtifactWorkspaceTabInput } from "@/modules/tabs";
+import type { ArtifactWorkspaceTabInput, Tab } from "@/modules/tabs";
 
 type ArtifactWorkspaceTabInputOptions = {
   conversationId: string;
@@ -24,4 +24,35 @@ export function artifactWorkspaceTabInput({
     selectedSlug,
     title: title ? `Artifacts · ${title}` : "Artifacts",
   };
+}
+
+type ArtifactWorkspaceLauncherOptions = {
+  chatSelectedSessionId: string | null;
+  chatSidebarVisible: boolean;
+  codePanelVisible: boolean;
+  codeSelectedSessionId: string | null;
+  piSessions: Record<string, PiAgentSessionState>;
+  tabs: readonly Tab[];
+};
+
+export function artifactWorkspaceConversationForLauncher({
+  chatSelectedSessionId,
+  chatSidebarVisible,
+  codePanelVisible,
+  codeSelectedSessionId,
+  piSessions,
+  tabs,
+}: ArtifactWorkspaceLauncherOptions): string | null {
+  if (codePanelVisible && codeSelectedSessionId) return codeSelectedSessionId;
+  if (chatSidebarVisible && chatSelectedSessionId) return chatSelectedSessionId;
+
+  const existingArtifactTab = tabs.find((tab) => tab.kind === "artifact");
+  if (existingArtifactTab?.kind === "artifact") {
+    return existingArtifactTab.conversationId;
+  }
+
+  const newestSession = Object.values(piSessions).sort(
+    (left, right) => right.lastActivityAt - left.lastActivityAt,
+  )[0];
+  return newestSession?.sessionId ?? null;
 }

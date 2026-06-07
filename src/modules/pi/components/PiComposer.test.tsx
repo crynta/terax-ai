@@ -61,6 +61,12 @@ function renderComposer(
   );
 }
 
+function thinkingSelect(html: string): string | undefined {
+  return html.match(
+    /<select[^>]*aria-label="Pi thinking level for next reply"[^>]*>/,
+  )?.[0];
+}
+
 describe("PiComposer", () => {
   it("shows send as the primary action while a session is idle", () => {
     const html = renderComposer(baseSession);
@@ -118,6 +124,7 @@ describe("PiComposer", () => {
     });
 
     expect(html).toContain('aria-label="Pi thinking level for next reply"');
+    expect(thinkingSelect(html)).toContain('title="Applies to next reply"');
     expect(html).toContain('value="high" selected=""');
     expect(html).toContain("Thinking");
   });
@@ -133,9 +140,7 @@ describe("PiComposer", () => {
       },
       { disabled: true },
     );
-    const select = html.match(
-      /<select[^>]*aria-label="Pi thinking level for next reply"[^>]*>/,
-    )?.[0];
+    const select = thinkingSelect(html);
 
     expect(select).toBeDefined();
     expect(select).not.toMatch(/\sdisabled(?:=|\s|>)/);
@@ -152,9 +157,7 @@ describe("PiComposer", () => {
         level: "high",
       },
     );
-    const select = html.match(
-      /<select[^>]*aria-label="Pi thinking level for next reply"[^>]*>/,
-    )?.[0];
+    const select = thinkingSelect(html);
 
     expect(select).toBeDefined();
     expect(select).toMatch(/\sdisabled(?:=|\s|>)/);
@@ -172,9 +175,7 @@ describe("PiComposer", () => {
       },
       { isBusy: true },
     );
-    const select = html.match(
-      /<select[^>]*aria-label="Pi thinking level for next reply"[^>]*>/,
-    )?.[0];
+    const select = thinkingSelect(html);
 
     expect(select).toBeDefined();
     expect(select).toMatch(/\sdisabled(?:=|\s|>)/);

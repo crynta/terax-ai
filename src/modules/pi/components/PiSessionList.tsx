@@ -279,7 +279,7 @@ export function PiSessionList({
             <div className="px-2 pb-1">
               <input
                 aria-label="Filter Pi sessions"
-                className="h-7 w-full rounded-md border border-border/45 bg-background/85 px-2 text-[11px] outline-none placeholder:text-muted-foreground/55 focus-visible:border-primary/45 focus-visible:ring-2 focus-visible:ring-primary/15"
+                className="h-7 w-full rounded-md border border-border/45 bg-background/85 px-2 text-[11px] outline-none placeholder:text-muted-foreground focus-visible:border-primary/45 focus-visible:ring-2 focus-visible:ring-primary/15"
                 placeholder="Filter sessions"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -354,8 +354,8 @@ export function PiSessionList({
                           aria-label={`Save Pi session ${session.title}`}
                         >
                           <HugeiconsIcon
+                            data-icon="inline-start"
                             icon={Tick02Icon}
-                            size={12}
                             strokeWidth={1.9}
                           />
                         </Button>
@@ -368,8 +368,8 @@ export function PiSessionList({
                           onClick={cancelRename}
                         >
                           <HugeiconsIcon
+                            data-icon="inline-start"
                             icon={Cancel01Icon}
-                            size={12}
                             strokeWidth={1.9}
                           />
                         </Button>
@@ -439,8 +439,8 @@ export function PiSessionList({
                                 onClick={() => setDeleteConfirmSessionId(null)}
                               >
                                 <HugeiconsIcon
+                                  data-icon="inline-start"
                                   icon={Cancel01Icon}
-                                  size={12}
                                   strokeWidth={1.9}
                                 />
                               </Button>
@@ -465,7 +465,7 @@ export function PiSessionList({
                                   size="xs"
                                   variant="ghost"
                                   className="h-6 rounded-md px-1.5 text-[10px] text-muted-foreground hover:text-foreground"
-                                  disabled={disabled}
+                                  disabled={!canCreateSession || disabled}
                                   aria-label={`Continue Pi session ${session.title} in a new session`}
                                   title="Continue in a new session"
                                   onClick={onCreateSession}
@@ -483,8 +483,8 @@ export function PiSessionList({
                                 onClick={() => beginRename(session)}
                               >
                                 <HugeiconsIcon
+                                  data-icon="inline-start"
                                   icon={Edit02Icon}
-                                  size={12}
                                   strokeWidth={1.9}
                                 />
                               </Button>
@@ -511,8 +511,8 @@ export function PiSessionList({
                                 }}
                               >
                                 <HugeiconsIcon
+                                  data-icon="inline-start"
                                   icon={Delete02Icon}
-                                  size={12}
                                   strokeWidth={1.9}
                                 />
                               </Button>

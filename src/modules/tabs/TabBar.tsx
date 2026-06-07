@@ -3,8 +3,8 @@ import CanvasIcon from "@hugeicons/core-free-icons/CanvasIcon";
 import Clock01Icon from "@hugeicons/core-free-icons/Clock01Icon";
 import CodeIcon from "@hugeicons/core-free-icons/CodeIcon";
 import ComputerTerminal02Icon from "@hugeicons/core-free-icons/ComputerTerminal02Icon";
-import GitBranchIcon from "@hugeicons/core-free-icons/GitBranchIcon";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
+import GitBranchIcon from "@hugeicons/core-free-icons/GitBranchIcon";
 import GitCompareIcon from "@hugeicons/core-free-icons/GitCompareIcon";
 import Globe02Icon from "@hugeicons/core-free-icons/Globe02Icon";
 import IncognitoIcon from "@hugeicons/core-free-icons/IncognitoIcon";
@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
@@ -23,6 +24,7 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -41,6 +43,7 @@ type Props = {
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
+  onNewArtifacts: () => void;
   onNewWorkflow: () => void;
   onNewGitGraph: () => void;
   onClose: (id: number) => void;
@@ -59,6 +62,7 @@ export function TabBar({
   onNewPrivate,
   onNewPreview,
   onNewEditor,
+  onNewArtifacts,
   onNewWorkflow,
   onNewGitGraph,
   onClose,
@@ -134,71 +138,82 @@ export function TabBar({
               }
 
               const trigger = (
-                <TabsTrigger
+                <div
                   key={t.id}
-                  value={String(t.id)}
                   data-tab-id={t.id}
-                  onDoubleClick={() => isPreview && onPin(t.id)}
-                  onAuxClick={(e) => {
-                    if (e.button === 1 && tabs.length > 1) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onClose(t.id);
-                    }
-                  }}
-                  onMouseDown={(e) => {
-                    if (e.button === 1) e.preventDefault();
-                  }}
                   className={cn(
-                    "group h-7 shrink-0 gap-1.5 rounded-md text-xs transition-colors hover:text-foreground/80 justify-between",
-                    isActive
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground",
-                    compact
-                      ? "px-1.5!"
-                      : tabs.length === 1
-                        ? "px-2!"
-                        : "ps-2! pe-1!",
+                    "group/tab-cell flex h-7 shrink-0 items-center rounded-md transition-colors",
+                    isActive ? "bg-accent" : "hover:bg-accent/50",
                   )}
                 >
-                  <span
+                  <TabsTrigger
+                    value={String(t.id)}
+                    onDoubleClick={() => isPreview && onPin(t.id)}
+                    onAuxClick={(e) => {
+                      if (e.button === 1 && tabs.length > 1) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onClose(t.id);
+                      }
+                    }}
+                    onMouseDown={(e) => {
+                      if (e.button === 1) e.preventDefault();
+                    }}
                     className={cn(
-                      "flex items-center gap-1.5 truncate",
-                      compact ? "max-w-48" : "max-w-80",
+                      "h-7 min-w-0 shrink gap-1.5 rounded-md bg-transparent text-xs transition-colors hover:bg-transparent hover:text-foreground/80 justify-start",
+                      isActive ? "text-foreground" : "text-muted-foreground",
+                      compact
+                        ? "px-1.5!"
+                        : tabs.length === 1
+                          ? "px-2!"
+                          : "ps-2! pe-1!",
                     )}
                   >
-                    <TabIcon tab={t} />
-                    {/* Preview tabs use italic to signal the transient state,
-                        matching the visual convention from VSCode. */}
-                    <span className={cn("truncate", isPreview && "italic")}>
-                      {labelFor(t)}
-                    </span>
-                    {(t.kind === "editor" || t.kind === "workflow") &&
-                    t.dirty ? (
-                      <span
-                        aria-label="Unsaved changes"
-                        className="size-1.5 shrink-0 rounded-full bg-foreground/70"
-                      />
-                    ) : null}
-                  </span>
-                  {tabs.length > 1 && (
                     <span
-                      role="button"
-                      aria-label="Close tab"
+                      className={cn(
+                        "flex items-center gap-1.5 truncate",
+                        compact ? "max-w-48" : "max-w-80",
+                      )}
+                    >
+                      <TabIcon tab={t} />
+                      {/* Preview tabs use italic to signal the transient state,
+                          matching the visual convention from VSCode. */}
+                      <span className={cn("truncate", isPreview && "italic")}>
+                        {labelFor(t)}
+                      </span>
+                      {(t.kind === "editor" || t.kind === "workflow") &&
+                      t.dirty ? (
+                        <span
+                          aria-label="Unsaved changes"
+                          className="size-1.5 shrink-0 rounded-full bg-foreground/70"
+                        />
+                      ) : null}
+                    </span>
+                  </TabsTrigger>
+                  {tabs.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={`Close ${labelFor(t)} tab`}
+                      className="mr-0.5 size-7 rounded p-0 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground hover:opacity-100 group-hover/tab-cell:opacity-60 focus-visible:opacity-100"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose(t.id);
                       }}
-                      className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
                     >
                       <HugeiconsIcon
+                        data-icon="inline-start"
                         icon={Cancel01Icon}
-                        size={11}
                         strokeWidth={2}
                       />
-                    </span>
+                    </Button>
                   )}
-                </TabsTrigger>
+                </div>
               );
 
               if (t.kind !== "terminal") return trigger;
@@ -210,25 +225,27 @@ export function TabBar({
                     className="min-w-36"
                     onCloseAutoFocus={(e) => e.preventDefault()}
                   >
-                    <ContextMenuItem onSelect={() => setEditingId(t.id)}>
-                      <HugeiconsIcon
-                        icon={PencilEdit02Icon}
-                        size={14}
-                        strokeWidth={1.75}
-                      />
-                      <span className="flex-1">Rename</span>
-                    </ContextMenuItem>
+                    <ContextMenuGroup>
+                      <ContextMenuItem onSelect={() => setEditingId(t.id)}>
+                        <HugeiconsIcon
+                          icon={PencilEdit02Icon}
+                          strokeWidth={1.75}
+                        />
+                        <span className="flex-1">Rename</span>
+                      </ContextMenuItem>
+                    </ContextMenuGroup>
                     {tabs.length > 1 && (
                       <>
                         <ContextMenuSeparator />
-                        <ContextMenuItem onSelect={() => onClose(t.id)}>
-                          <HugeiconsIcon
-                            icon={Cancel01Icon}
-                            size={14}
-                            strokeWidth={1.75}
-                          />
-                          <span className="flex-1">Close</span>
-                        </ContextMenuItem>
+                        <ContextMenuGroup>
+                          <ContextMenuItem onSelect={() => onClose(t.id)}>
+                            <HugeiconsIcon
+                              icon={Cancel01Icon}
+                              strokeWidth={1.75}
+                            />
+                            <span className="flex-1">Close</span>
+                          </ContextMenuItem>
+                        </ContextMenuGroup>
                       </>
                     )}
                   </ContextMenuContent>
@@ -245,62 +262,59 @@ export function TabBar({
               className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               title="New tab"
             >
-              <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={PlusSignIcon}
+                strokeWidth={2}
+              />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
-            <DropdownMenuItem onSelect={() => onNew()}>
-              <HugeiconsIcon
-                icon={ComputerTerminal02Icon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Terminal</span>
-              <span className="text-xs text-muted-foreground">
-                {fmtShortcut(MOD_KEY, "T")}
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onNewPrivate()}>
-              <HugeiconsIcon
-                icon={IncognitoIcon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Privacy</span>
-              <span className="text-xs text-muted-foreground">
-                {fmtShortcut(MOD_KEY, "R")}
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onNewEditor()}>
-              <HugeiconsIcon
-                icon={PencilEdit02Icon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Editor</span>
-              <span className="text-xs text-muted-foreground">
-                {fmtShortcut(MOD_KEY, "E")}
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onNewPreview()}>
-              <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
-              <span className="flex-1">Preview</span>
-              <span className="text-xs text-muted-foreground">
-                {fmtShortcut(MOD_KEY, "P")}
-              </span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onNewWorkflow()}>
-              <HugeiconsIcon icon={CanvasIcon} size={14} strokeWidth={1.75} />
-              <span className="flex-1">Workflow Canvas</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onNewGitGraph()}>
-              <HugeiconsIcon
-                icon={GitBranchIcon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Git Graph</span>
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuItem onSelect={() => onNew()}>
+                <HugeiconsIcon
+                  icon={ComputerTerminal02Icon}
+                  strokeWidth={1.75}
+                />
+                <span className="flex-1">Terminal</span>
+                <span className="text-xs text-muted-foreground">
+                  {fmtShortcut(MOD_KEY, "T")}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNewPrivate()}>
+                <HugeiconsIcon icon={IncognitoIcon} strokeWidth={1.75} />
+                <span className="flex-1">Privacy</span>
+                <span className="text-xs text-muted-foreground">
+                  {fmtShortcut(MOD_KEY, "R")}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNewEditor()}>
+                <HugeiconsIcon icon={PencilEdit02Icon} strokeWidth={1.75} />
+                <span className="flex-1">Editor</span>
+                <span className="text-xs text-muted-foreground">
+                  {fmtShortcut(MOD_KEY, "E")}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNewPreview()}>
+                <HugeiconsIcon icon={Globe02Icon} strokeWidth={1.75} />
+                <span className="flex-1">Preview</span>
+                <span className="text-xs text-muted-foreground">
+                  {fmtShortcut(MOD_KEY, "P")}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNewArtifacts()}>
+                <HugeiconsIcon icon={File01Icon} strokeWidth={1.75} />
+                <span className="flex-1">Artifacts</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNewWorkflow()}>
+                <HugeiconsIcon icon={CanvasIcon} strokeWidth={1.75} />
+                <span className="flex-1">Canvas</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onNewGitGraph()}>
+                <HugeiconsIcon icon={GitBranchIcon} strokeWidth={1.75} />
+                <span className="flex-1">Git Graph</span>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -311,7 +325,15 @@ export function TabBar({
 function TabIcon({ tab }: { tab: Tab }) {
   if (tab.kind === "editor" || tab.kind === "markdown") {
     const url = fileIconUrl(tab.title);
-    return url ? <img src={url} alt="" className="size-3.5 shrink-0" /> : null;
+    return url ? (
+      <img
+        src={url}
+        alt=""
+        width={14}
+        height={14}
+        className="size-3.5 shrink-0"
+      />
+    ) : null;
   }
   if (tab.kind === "preview") {
     return (
@@ -373,7 +395,7 @@ function TabIcon({ tab }: { tab: Tab }) {
       />
     );
   }
-  if (tab.kind === "artifact") {
+  if (tab.kind === "artifact" || tab.kind === "artifact-hub") {
     return (
       <HugeiconsIcon
         icon={File01Icon}

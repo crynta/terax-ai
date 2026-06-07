@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#ffffff" />
     <title>Terax</title>
     <script>
       (function () {
@@ -15,9 +16,13 @@
               : window.matchMedia("(prefers-color-scheme: dark)").matches
                 ? "dark"
                 : "light";
+          var bg = resolved === "dark" ? "#0a0a0a" : "#ffffff";
           document.documentElement.classList.add(resolved);
-          document.documentElement.style.backgroundColor =
-            resolved === "dark" ? "#0a0a0a" : "#ffffff";
+          document.documentElement.style.backgroundColor = bg;
+          document.documentElement.style.colorScheme = resolved;
+          document
+            .querySelector('meta[name="theme-color"]')
+            ?.setAttribute("content", bg);
         } catch (e) {}
       })();
     </script>

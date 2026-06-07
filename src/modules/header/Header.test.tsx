@@ -22,6 +22,7 @@ describe("Header", () => {
         onClose={noop}
         onNew={noop}
         onNewEditor={noop}
+        onNewArtifacts={noop}
         onNewGitGraph={noop}
         onNewPreview={noop}
         onNewPrivate={noop}

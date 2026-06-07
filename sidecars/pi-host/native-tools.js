@@ -116,7 +116,7 @@ function approvalMetadata(definition) {
   if (typeof definition.approval !== "string") return undefined;
   return {
     policy: definition.approval,
-    approved: definition.approval === "ask",
+    approved: definition.approval !== "deny",
     ...(definition.risk ? { risk: definition.risk } : {}),
     ...(definition.origin ? { origin: definition.origin } : {}),
   };

@@ -36,7 +36,8 @@ export function TodoStrip({ sessionId }: Props) {
     }
     return count;
   }, [todos]);
-  const pct = todos.length === 0 ? 0 : Math.round((completed / todos.length) * 100);
+  const pct =
+    todos.length === 0 ? 0 : Math.round((completed / todos.length) * 100);
 
   if (!sessionId || todos.length === 0) return null;
 

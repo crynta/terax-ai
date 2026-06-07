@@ -1,9 +1,17 @@
 import { type FormEvent, useId } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { McpTransport } from "@/modules/pi/lib/native";
 import type { McpConfigDraft } from "./PiMcpConfig";
 
@@ -68,173 +76,186 @@ export function McpConfigEditor({
         </Alert>
       ) : null}
 
-      <div className="flex min-w-0 flex-col gap-1">
-        <Label className="text-[10px] text-muted-foreground">Transport</Label>
-        <div className="flex gap-1">
-          {(["stdio", "http"] as McpTransport[]).map((transport) => (
-            <Button
-              key={transport}
-              type="button"
-              size="xs"
-              variant={draft.transport === transport ? "secondary" : "outline"}
-              className="h-6 rounded-md px-2 text-[10px]"
-              disabled={disabled}
-              onClick={() => updateDraft({ transport })}
+      <FieldGroup className="gap-2">
+        <FieldSet className="gap-1">
+          <FieldLegend
+            variant="label"
+            className="mb-0 text-[10px] text-muted-foreground"
+          >
+            Transport
+          </FieldLegend>
+          <ToggleGroup
+            type="single"
+            value={draft.transport}
+            aria-label="MCP transport"
+            onValueChange={(value) => {
+              if (value) updateDraft({ transport: value as McpTransport });
+            }}
+          >
+            {(["stdio", "http"] as McpTransport[]).map((transport) => (
+              <ToggleGroupItem
+                key={transport}
+                size="sm"
+                variant="outline"
+                value={transport}
+                className="h-6 rounded-md px-2 text-[10px]"
+                disabled={disabled}
+              >
+                {transport === "stdio" ? "stdio" : "HTTP"}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </FieldSet>
+
+        <FieldGroup className="grid grid-cols-2 gap-1.5">
+          <Field data-disabled={disabled || editingId !== null ? true : undefined}>
+            <FieldLabel
+              htmlFor={fieldId("id")}
+              className="text-[10px] text-muted-foreground"
             >
-              {transport === "stdio" ? "stdio" : "HTTP"}
-            </Button>
-          ))}
-        </div>
-      </div>
+              Server id
+            </FieldLabel>
+            <Input
+              id={fieldId("id")}
+              value={draft.id}
+              disabled={disabled || editingId !== null}
+              placeholder="filesystem"
+              className="h-7 text-[11px]"
+              onChange={(event) => updateDraft({ id: event.target.value })}
+            />
+          </Field>
+          <Field data-disabled={disabled ? true : undefined}>
+            <FieldLabel
+              htmlFor={fieldId("name")}
+              className="text-[10px] text-muted-foreground"
+            >
+              Name
+            </FieldLabel>
+            <Input
+              id={fieldId("name")}
+              value={draft.name}
+              disabled={disabled}
+              placeholder="Filesystem"
+              className="h-7 text-[11px]"
+              onChange={(event) => updateDraft({ name: event.target.value })}
+            />
+          </Field>
+        </FieldGroup>
 
-      <div className="grid grid-cols-2 gap-1.5">
-        <div className="flex min-w-0 flex-col gap-1">
-          <Label
-            htmlFor={fieldId("id")}
+        <Field data-disabled={disabled ? true : undefined}>
+          <FieldLabel
+            htmlFor={fieldId("command")}
             className="text-[10px] text-muted-foreground"
           >
-            Server id
-          </Label>
+            Command
+          </FieldLabel>
           <Input
-            id={fieldId("id")}
-            value={draft.id}
-            disabled={disabled || editingId !== null}
-            placeholder="filesystem"
-            className="h-7 text-[11px]"
-            onChange={(event) => updateDraft({ id: event.target.value })}
-          />
-        </div>
-        <div className="flex min-w-0 flex-col gap-1">
-          <Label
-            htmlFor={fieldId("name")}
-            className="text-[10px] text-muted-foreground"
-          >
-            Name
-          </Label>
-          <Input
-            id={fieldId("name")}
-            value={draft.name}
+            id={fieldId("command")}
+            value={draft.command}
             disabled={disabled}
-            placeholder="Filesystem"
-            className="h-7 text-[11px]"
-            onChange={(event) => updateDraft({ name: event.target.value })}
+            placeholder="node"
+            className="h-7 font-mono text-[11px]"
+            onChange={(event) => updateDraft({ command: event.target.value })}
           />
-        </div>
-      </div>
+          <FieldDescription className="text-[9.5px] leading-snug text-muted-foreground/70">
+            Required for stdio. Use an absolute executable path or allowlisted
+            command: node, npx, pnpm, uvx.
+          </FieldDescription>
+        </Field>
 
-      <div className="flex min-w-0 flex-col gap-1">
-        <Label
-          htmlFor={fieldId("command")}
-          className="text-[10px] text-muted-foreground"
-        >
-          Command
-        </Label>
-        <Input
-          id={fieldId("command")}
-          value={draft.command}
-          disabled={disabled}
-          placeholder="node"
-          className="h-7 font-mono text-[11px]"
-          onChange={(event) => updateDraft({ command: event.target.value })}
-        />
-        <div className="text-[9.5px] leading-snug text-muted-foreground/70">
-          Required for stdio. Use an absolute executable path or allowlisted
-          command: node, npx, pnpm, uvx.
-        </div>
-      </div>
+        <Field data-disabled={disabled ? true : undefined}>
+          <FieldLabel
+            htmlFor={fieldId("url")}
+            className="text-[10px] text-muted-foreground"
+          >
+            HTTP URL
+          </FieldLabel>
+          <Input
+            id={fieldId("url")}
+            value={draft.url}
+            disabled={disabled}
+            placeholder="https://mcp.example.com/mcp"
+            className="h-7 font-mono text-[11px]"
+            onChange={(event) => updateDraft({ url: event.target.value })}
+          />
+        </Field>
 
-      <div className="flex min-w-0 flex-col gap-1">
-        <Label
-          htmlFor={fieldId("url")}
-          className="text-[10px] text-muted-foreground"
-        >
-          HTTP URL
-        </Label>
-        <Input
-          id={fieldId("url")}
-          value={draft.url}
-          disabled={disabled}
-          placeholder="https://mcp.example.com/mcp"
-          className="h-7 font-mono text-[11px]"
-          onChange={(event) => updateDraft({ url: event.target.value })}
-        />
-      </div>
+        <Field data-disabled={disabled ? true : undefined}>
+          <FieldLabel
+            htmlFor={fieldId("oauth")}
+            className="text-[10px] text-muted-foreground"
+          >
+            OAuth token env name
+          </FieldLabel>
+          <Input
+            id={fieldId("oauth")}
+            value={draft.oauthTokenEnv}
+            disabled={disabled}
+            placeholder="REMOTE_MCP_TOKEN"
+            className="h-7 font-mono text-[11px]"
+            onChange={(event) =>
+              updateDraft({ oauthTokenEnv: event.target.value })
+            }
+          />
+          <FieldDescription className="text-[9.5px] leading-snug text-muted-foreground/70">
+            Optional bearer token. Store its value with Set or use OAuth after
+            saving.
+          </FieldDescription>
+        </Field>
 
-      <div className="flex min-w-0 flex-col gap-1">
-        <Label
-          htmlFor={fieldId("oauth")}
-          className="text-[10px] text-muted-foreground"
-        >
-          OAuth token env name
-        </Label>
-        <Input
-          id={fieldId("oauth")}
-          value={draft.oauthTokenEnv}
-          disabled={disabled}
-          placeholder="REMOTE_MCP_TOKEN"
-          className="h-7 font-mono text-[11px]"
-          onChange={(event) =>
-            updateDraft({ oauthTokenEnv: event.target.value })
-          }
-        />
-        <div className="text-[9.5px] leading-snug text-muted-foreground/70">
-          Optional bearer token. Store its value with Set or use OAuth after
-          saving.
-        </div>
-      </div>
+        <Field data-disabled={disabled ? true : undefined}>
+          <FieldLabel
+            htmlFor={fieldId("args")}
+            className="text-[10px] text-muted-foreground"
+          >
+            Arguments, one per line
+          </FieldLabel>
+          <Textarea
+            id={fieldId("args")}
+            value={draft.argsText}
+            disabled={disabled}
+            placeholder="server.js\n--stdio"
+            className="min-h-14 resize-none font-mono text-[11px]"
+            onChange={(event) => updateDraft({ argsText: event.target.value })}
+          />
+        </Field>
 
-      <div className="flex min-w-0 flex-col gap-1">
-        <Label
-          htmlFor={fieldId("args")}
-          className="text-[10px] text-muted-foreground"
-        >
-          Arguments, one per line
-        </Label>
-        <Textarea
-          id={fieldId("args")}
-          value={draft.argsText}
-          disabled={disabled}
-          placeholder="server.js\n--stdio"
-          className="min-h-14 resize-none font-mono text-[11px]"
-          onChange={(event) => updateDraft({ argsText: event.target.value })}
-        />
-      </div>
+        <Field data-disabled={disabled ? true : undefined}>
+          <FieldLabel
+            htmlFor={fieldId("cwd")}
+            className="text-[10px] text-muted-foreground"
+          >
+            cwd
+          </FieldLabel>
+          <Input
+            id={fieldId("cwd")}
+            value={draft.cwd}
+            disabled={disabled}
+            placeholder="/Users/me/project"
+            className="h-7 font-mono text-[11px]"
+            onChange={(event) => updateDraft({ cwd: event.target.value })}
+          />
+        </Field>
 
-      <div className="flex min-w-0 flex-col gap-1">
-        <Label
-          htmlFor={fieldId("cwd")}
-          className="text-[10px] text-muted-foreground"
-        >
-          cwd
-        </Label>
-        <Input
-          id={fieldId("cwd")}
-          value={draft.cwd}
-          disabled={disabled}
-          placeholder="/Users/me/project"
-          className="h-7 font-mono text-[11px]"
-          onChange={(event) => updateDraft({ cwd: event.target.value })}
-        />
-      </div>
-
-      <div className="flex min-w-0 flex-col gap-1">
-        <Label
-          htmlFor={fieldId("env")}
-          className="text-[10px] text-muted-foreground"
-        >
-          Env names only, comma or newline separated
-        </Label>
-        <Textarea
-          id={fieldId("env")}
-          value={draft.envNamesText}
-          disabled={disabled}
-          placeholder="SAFE_TOKEN"
-          className="min-h-12 resize-none font-mono text-[11px]"
-          onChange={(event) =>
-            updateDraft({ envNamesText: event.target.value })
-          }
-        />
-      </div>
+        <Field data-disabled={disabled ? true : undefined}>
+          <FieldLabel
+            htmlFor={fieldId("env")}
+            className="text-[10px] text-muted-foreground"
+          >
+            Env names only, comma or newline separated
+          </FieldLabel>
+          <Textarea
+            id={fieldId("env")}
+            value={draft.envNamesText}
+            disabled={disabled}
+            placeholder="SAFE_TOKEN"
+            className="min-h-12 resize-none font-mono text-[11px]"
+            onChange={(event) =>
+              updateDraft({ envNamesText: event.target.value })
+            }
+          />
+        </Field>
+      </FieldGroup>
 
       <Button
         type="submit"

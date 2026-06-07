@@ -107,6 +107,12 @@ export function SettingsApp() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
+      <a
+        href="#settings-main-content"
+        className="sr-only z-[100] rounded-md bg-background px-3 py-2 text-sm text-foreground shadow focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:ring-2 focus:ring-ring"
+      >
+        Skip to main content
+      </a>
       <header
         data-tauri-drag-region
         className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
@@ -136,7 +142,11 @@ export function SettingsApp() {
         {USE_CUSTOM_WINDOW_CONTROLS && <WindowControls closeOnly />}
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <main
+        id="settings-main-content"
+        tabIndex={-1}
+        className="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-7 focus:outline-none"
+      >
         <div className="mx-auto w-full max-w-160">
           {ActiveSection && <ActiveSection />}
         </div>

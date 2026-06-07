@@ -487,6 +487,53 @@ describe("workflow execution planning", () => {
     );
   });
 
+  it("can run safe-only or selected-only workflow steps", async () => {
+    const document = createStarterWorkflowDocument({
+      id: "wf_safe",
+      title: "Safe only",
+    });
+    const withUnsafeNodes = addWorkflowNode(
+      addWorkflowNode(document, {
+        id: "node_shell_1",
+        type: "shellCommand",
+        position: { x: 80, y: 620 },
+      }),
+      {
+        id: "node_agent_1",
+        type: "agent",
+        position: { x: 420, y: 620 },
+      },
+    );
+
+    const safeExecution = startWorkflowStepExecution(withUnsafeNodes, {
+      includeUnsafe: false,
+    });
+    const safeStep = await safeExecution.finished;
+
+    expect(
+      safeStep.nodes.find((node) => node.id === "node_prompt"),
+    ).toMatchObject({ runtimeState: { status: "completed" } });
+    expect(
+      safeStep.nodes.find((node) => node.id === "node_shell_1"),
+    ).toMatchObject({ runtimeState: { status: "idle" } });
+    expect(
+      safeStep.nodes.find((node) => node.id === "node_agent_1"),
+    ).toMatchObject({ runtimeState: { status: "idle" } });
+
+    const selectedExecution = startWorkflowStepExecution(withUnsafeNodes, {
+      includeUnsafe: true,
+      nodeIds: ["node_shell_1"],
+    });
+    const selectedStep = await selectedExecution.finished;
+
+    expect(
+      selectedStep.nodes.find((node) => node.id === "node_shell_1"),
+    ).toMatchObject({ runtimeState: { status: "waiting-approval" } });
+    expect(
+      selectedStep.nodes.find((node) => node.id === "node_prompt"),
+    ).toMatchObject({ runtimeState: { status: "idle" } });
+  });
+
   it("runs HTTP placeholders and gates unsafe automation nodes", () => {
     const document = addWorkflowNode(
       addWorkflowNode(

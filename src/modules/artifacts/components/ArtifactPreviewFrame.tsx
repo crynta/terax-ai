@@ -5,7 +5,10 @@ import {
   loadReactPreviewDocument,
   type ReactPreviewLoadResult,
 } from "@/modules/artifacts/lib/reactPreview";
-import type { Artifact } from "@/modules/artifacts/lib/types";
+import type {
+  Artifact,
+  ArtifactDiagnostic,
+} from "@/modules/artifacts/lib/types";
 
 type ArtifactPreviewFrameProps = {
   artifact: Artifact;
@@ -15,7 +18,7 @@ type ArtifactPreviewFrameProps = {
 type ReactPreviewState =
   | {
       status: "compiling";
-      diagnostics: string[];
+      diagnostics: ArtifactDiagnostic[];
     }
   | ReactPreviewLoadResult;
 
@@ -57,7 +60,7 @@ export function ArtifactPreviewFrame({
     if (!isReactArtifact) return;
     let active = true;
     setReactPreview({ status: "compiling", diagnostics: [] });
-    loadReactPreviewDocument(artifact.content).then((result) => {
+    loadReactPreviewDocument(artifact.content, token).then((result) => {
       if (active) setReactPreview(result);
     });
     return () => {
@@ -87,9 +90,11 @@ export function ArtifactPreviewFrame({
             <div className="font-medium text-destructive">
               React preview failed
             </div>
-            <ul className="m-0 list-disc space-y-1 pl-5 text-muted-foreground">
-              {reactPreview.diagnostics.map((diagnostic) => (
-                <li key={diagnostic}>{diagnostic}</li>
+            <ul className="m-0 list-disc flex flex-col gap-1 pl-5 text-muted-foreground">
+              {reactPreview.diagnostics.map((diagnostic, index) => (
+                <li key={diagnosticKey(diagnostic, index)}>
+                  {formatDiagnostic(diagnostic)}
+                </li>
               ))}
             </ul>
           </div>
@@ -101,7 +106,7 @@ export function ArtifactPreviewFrame({
       <>
         {reactPreview.diagnostics.length > 0 ? (
           <div className="border-b bg-muted/30 px-3 py-2 text-muted-foreground text-xs">
-            {reactPreview.diagnostics.join(" • ")}
+            {reactPreview.diagnostics.map(formatDiagnostic).join(" • ")}
           </div>
         ) : null}
         <PreviewRuntimeErrors errors={runtimeErrors} />
@@ -130,6 +135,18 @@ export function ArtifactPreviewFrame({
   );
 }
 
+function formatDiagnostic(diagnostic: ArtifactDiagnostic): string {
+  const location = diagnostic.line
+    ? `line ${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ""}`
+    : null;
+  const excerpt = diagnostic.excerpt?.trim();
+  return [diagnostic.message, location, excerpt].filter(Boolean).join(" — ");
+}
+
+function diagnosticKey(diagnostic: ArtifactDiagnostic, index: number): string {
+  return `${diagnostic.code}:${diagnostic.line ?? ""}:${diagnostic.column ?? ""}:${index}`;
+}
+
 function PreviewRuntimeErrors({ errors }: { errors: string[] }) {
   if (errors.length === 0) return null;
   return (
@@ -138,7 +155,7 @@ function PreviewRuntimeErrors({ errors }: { errors: string[] }) {
       role="alert"
     >
       <div className="font-medium">Preview runtime error</div>
-      <ul className="m-0 list-disc space-y-1 pl-5">
+      <ul className="m-0 list-disc flex flex-col gap-1 pl-5">
         {errors.map((error, index) => (
           <li key={`${index}:${error}`}>{error}</li>
         ))}

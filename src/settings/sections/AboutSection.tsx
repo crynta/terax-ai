@@ -70,7 +70,14 @@ export function AboutSection() {
       <SectionHeader title="About" description="" />
 
       <div className="flex items-center gap-4 rounded-xl border border-border/60 bg-card/60 p-5">
-        <img src="/logo.png" alt="" className="size-12" draggable={false} />
+        <img
+          src="/logo.png"
+          alt=""
+          width={48}
+          height={48}
+          className="size-12"
+          draggable={false}
+        />
         <div className="flex min-w-0 flex-col">
           <span className="text-[15px] font-semibold tracking-tight">
             {name}
@@ -135,7 +142,11 @@ export function AboutSection() {
             onClick={() => void openUrl(REPO_URL)}
             className="gap-1.5"
           >
-            <HugeiconsIcon icon={GithubIcon} size={12} strokeWidth={1.75} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={GithubIcon}
+              strokeWidth={1.75}
+            />
             View on GitHub
           </Button>
           <Button

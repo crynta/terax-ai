@@ -4,7 +4,17 @@ import Delete02Icon from "@hugeicons/core-free-icons/Delete02Icon";
 import Edit02Icon from "@hugeicons/core-free-icons/Edit02Icon";
 import SparklesIcon from "@hugeicons/core-free-icons/SparklesIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,8 +23,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { AGENT_ICONS } from "@/modules/ai/components/AgentSwitcher";
 import {
@@ -45,6 +64,10 @@ const ICON_OPTIONS: AgentIconId[] = [
   "spark",
 ];
 
+type PendingAgentsDelete =
+  | { kind: "agent"; id: string; name: string }
+  | { kind: "snippet"; id: string; name: string };
+
 export function AgentsSection() {
   const customInstructions = usePreferencesStore((s) => s.customInstructions);
   const customAgents = useAgentsStore((s) => s.customAgents);
@@ -66,6 +89,18 @@ export function AgentsSection() {
 
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [editingSnippet, setEditingSnippet] = useState<Snippet | null>(null);
+  const [pendingDelete, setPendingDelete] =
+    useState<PendingAgentsDelete | null>(null);
+
+  const confirmPendingDelete = () => {
+    if (!pendingDelete) return;
+    if (pendingDelete.kind === "agent") {
+      removeAgent(pendingDelete.id);
+    } else {
+      removeSnippet(pendingDelete.id);
+    }
+    setPendingDelete(null);
+  };
 
   return (
     <div className="flex flex-col gap-7">
@@ -94,7 +129,11 @@ export function AgentsSection() {
               })
             }
           >
-            <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={1.75} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Add01Icon}
+              strokeWidth={1.75}
+            />
             New agent
           </Button>
         </div>
@@ -106,7 +145,16 @@ export function AgentsSection() {
               active={a.id === activeAgentId}
               onActivate={() => setActiveAgentId(a.id)}
               onEdit={a.builtIn ? null : () => setEditingAgent(a)}
-              onDelete={a.builtIn ? null : () => removeAgent(a.id)}
+              onDelete={
+                a.builtIn
+                  ? null
+                  : () =>
+                      setPendingDelete({
+                        kind: "agent",
+                        id: a.id,
+                        name: a.name,
+                      })
+              }
             />
           ))}
         </div>
@@ -138,7 +186,11 @@ export function AgentsSection() {
               })
             }
           >
-            <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={1.75} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Add01Icon}
+              strokeWidth={1.75}
+            />
             New snippet
           </Button>
         </div>
@@ -172,12 +224,13 @@ export function AgentsSection() {
                   size="icon"
                   variant="ghost"
                   className="size-7"
+                  aria-label={`Edit snippet ${s.name}`}
                   onClick={() => setEditingSnippet(s)}
                   title="Edit"
                 >
                   <HugeiconsIcon
+                    data-icon="inline-start"
                     icon={Edit02Icon}
-                    size={12}
                     strokeWidth={1.75}
                   />
                 </Button>
@@ -185,12 +238,19 @@ export function AgentsSection() {
                   size="icon"
                   variant="ghost"
                   className="size-7 text-muted-foreground hover:text-destructive"
-                  onClick={() => removeSnippet(s.id)}
+                  aria-label={`Delete snippet ${s.name}`}
+                  onClick={() =>
+                    setPendingDelete({
+                      kind: "snippet",
+                      id: s.id,
+                      name: s.name,
+                    })
+                  }
                   title="Delete"
                 >
                   <HugeiconsIcon
+                    data-icon="inline-start"
                     icon={Delete02Icon}
-                    size={12}
                     strokeWidth={1.75}
                   />
                 </Button>
@@ -218,6 +278,36 @@ export function AgentsSection() {
           setEditingSnippet(null);
         }}
       />
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {pendingDelete?.kind === "agent" ? "agent" : "snippet"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete
+                ? `This removes "${pendingDelete.name}" from your saved ${
+                    pendingDelete.kind === "agent" ? "agents" : "snippets"
+                  }.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={confirmPendingDelete}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -273,8 +363,8 @@ function AgentCard({
           {active ? (
             <>
               <HugeiconsIcon
+                data-icon="inline-start"
                 icon={CheckmarkCircle02Icon}
-                size={10}
                 strokeWidth={2}
               />
               Active
@@ -283,27 +373,37 @@ function AgentCard({
             "Use agent"
           )}
         </Button>
-        <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           {onEdit ? (
             <Button
               size="icon"
               variant="ghost"
-              className="size-6"
+              className="size-7"
               onClick={onEdit}
               title="Edit"
+              aria-label={`Edit ${agent.name}`}
             >
-              <HugeiconsIcon icon={Edit02Icon} size={11} strokeWidth={1.75} />
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={Edit02Icon}
+                strokeWidth={1.75}
+              />
             </Button>
           ) : null}
           {onDelete ? (
             <Button
               size="icon"
               variant="ghost"
-              className="size-6 text-muted-foreground hover:text-destructive"
+              className="size-7 text-muted-foreground hover:text-destructive"
               onClick={onDelete}
               title="Delete"
+              aria-label={`Delete ${agent.name}`}
             >
-              <HugeiconsIcon icon={Delete02Icon} size={11} strokeWidth={1.75} />
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={Delete02Icon}
+                strokeWidth={1.75}
+              />
             </Button>
           ) : null}
         </div>
@@ -324,9 +424,11 @@ function AgentEditorDialog({
   onSave: (a: Agent) => void;
 }) {
   const [draft, setDraft] = useState<Agent | null>(agent);
+  const fieldPrefix = useId();
   useEffect(() => setDraft(agent), [agent]);
   if (!draft) return null;
 
+  const fieldId = (field: string) => `${fieldPrefix}-${field}`;
   const isNew = !existing.some((a) => a.id === draft.id);
   const canSave =
     draft.name.trim().length > 0 && draft.instructions.trim().length > 0;
@@ -339,45 +441,60 @@ function AgentEditorDialog({
             {isNew ? "New agent" : "Edit agent"}
           </DialogTitle>
         </DialogHeader>
-        <div className="-mx-2 max-h-[calc(100vh-14rem)] overflow-y-auto px-2 flex flex-col gap-3">
+        <FieldGroup className="-mx-2 max-h-[calc(100vh-14rem)] overflow-y-auto px-2 gap-3">
           <div className="flex gap-2">
-            <div className="flex flex-col gap-1">
-              <Label>Icon</Label>
-              <div className="flex flex-wrap gap-1">
+            <FieldSet className="gap-1">
+              <FieldLegend
+                variant="label"
+                className="mb-0 text-[11px] font-medium tracking-tight text-muted-foreground"
+              >
+                Icon
+              </FieldLegend>
+              <ToggleGroup
+                type="single"
+                value={draft.icon}
+                aria-label="Agent icon"
+                className="flex-wrap justify-start"
+                onValueChange={(value) => {
+                  if (value) {
+                    setDraft({ ...draft, icon: value as AgentIconId });
+                  }
+                }}
+              >
                 {ICON_OPTIONS.map((id) => {
                   const Icon = AGENT_ICONS[id] ?? SparklesIcon;
-                  const active = draft.icon === id;
                   return (
-                    <button
+                    <ToggleGroupItem
                       key={id}
-                      type="button"
-                      onClick={() => setDraft({ ...draft, icon: id })}
-                      className={cn(
-                        "flex size-7 items-center justify-center rounded-md border transition-colors",
-                        active
-                          ? "border-foreground/40 bg-accent"
-                          : "border-border/60 hover:bg-accent/40",
-                      )}
+                      aria-label={`Use ${id} icon`}
+                      value={id}
+                      variant="outline"
+                      size="sm"
+                      className="size-8 p-0"
                     >
-                      <HugeiconsIcon icon={Icon} size={13} strokeWidth={1.75} />
-                    </button>
+                      <HugeiconsIcon icon={Icon} strokeWidth={1.75} />
+                    </ToggleGroupItem>
                   );
                 })}
-              </div>
-            </div>
-            <div className="flex flex-1 flex-col gap-1">
-              <Label>Name</Label>
+              </ToggleGroup>
+            </FieldSet>
+            <Field className="flex-1">
+              <FieldLabel htmlFor={fieldId("name")}>Name</FieldLabel>
               <Input
+                id={fieldId("name")}
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 className="h-8 text-[12px]"
                 placeholder="e.g. Test Engineer"
               />
-            </div>
+            </Field>
           </div>
-          <div className="flex flex-col gap-1">
-            <Label>Description</Label>
+          <Field>
+            <FieldLabel htmlFor={fieldId("description")}>
+              Description
+            </FieldLabel>
             <Input
+              id={fieldId("description")}
               value={draft.description}
               onChange={(e) =>
                 setDraft({ ...draft, description: e.target.value })
@@ -385,10 +502,13 @@ function AgentEditorDialog({
               placeholder="One line — shown in the agent picker"
               className="h-8 text-[12px]"
             />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label>Instructions</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={fieldId("instructions")}>
+              Instructions
+            </FieldLabel>
             <Textarea
+              id={fieldId("instructions")}
               value={draft.instructions}
               onChange={(e) =>
                 setDraft({ ...draft, instructions: e.target.value })
@@ -396,8 +516,8 @@ function AgentEditorDialog({
               placeholder="Persona & rules. Appended to Terax's core system prompt."
               className="min-h-40 resize-y text-[12px] leading-relaxed"
             />
-          </div>
-        </div>
+          </Field>
+        </FieldGroup>
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
@@ -427,9 +547,11 @@ function SnippetEditorDialog({
   onSave: (s: Snippet) => void;
 }) {
   const [draft, setDraft] = useState<Snippet | null>(snippet);
+  const fieldPrefix = useId();
   useEffect(() => setDraft(snippet), [snippet]);
   if (!draft) return null;
 
+  const fieldId = (field: string) => `${fieldPrefix}-${field}`;
   const handleErr = !draft.handle
     ? "Required."
     : !isValidHandle(draft.handle)
@@ -452,15 +574,17 @@ function SnippetEditorDialog({
               : "New snippet"}
           </DialogTitle>
         </DialogHeader>
-        <div className="-mx-2 max-h-[calc(100vh-14rem)] overflow-y-auto px-2 flex flex-col gap-3">
+        <FieldGroup className="-mx-2 max-h-[calc(100vh-14rem)] overflow-y-auto px-2 gap-3">
           <div className="flex gap-2">
-            <div className="flex w-32 flex-col gap-1">
-              <Label>Handle</Label>
+            <Field className="w-32" data-invalid={!!handleErr || undefined}>
+              <FieldLabel htmlFor={fieldId("handle")}>Handle</FieldLabel>
               <div className="relative">
                 <span className="absolute top-1/2 left-2 -translate-y-1/2 font-mono text-[11.5px] text-muted-foreground">
                   #
                 </span>
                 <Input
+                  id={fieldId("handle")}
+                  aria-invalid={!!handleErr || undefined}
                   value={draft.handle}
                   onChange={(e) =>
                     setDraft({
@@ -472,25 +596,25 @@ function SnippetEditorDialog({
                   className="h-8 pl-5 font-mono text-[11.5px]"
                 />
               </div>
-              {handleErr ? (
-                <span className="text-[10px] text-destructive">
-                  {handleErr}
-                </span>
-              ) : null}
-            </div>
-            <div className="flex flex-1 flex-col gap-1">
-              <Label>Name</Label>
+              <FieldError className="text-[10px]">{handleErr}</FieldError>
+            </Field>
+            <Field className="flex-1">
+              <FieldLabel htmlFor={fieldId("name")}>Name</FieldLabel>
               <Input
+                id={fieldId("name")}
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 placeholder="e.g. Pre-merge review checklist"
                 className="h-8 text-[12px]"
               />
-            </div>
+            </Field>
           </div>
-          <div className="flex flex-col gap-1">
-            <Label>Description</Label>
+          <Field>
+            <FieldLabel htmlFor={fieldId("description")}>
+              Description
+            </FieldLabel>
             <Input
+              id={fieldId("description")}
               value={draft.description}
               onChange={(e) =>
                 setDraft({ ...draft, description: e.target.value })
@@ -498,17 +622,18 @@ function SnippetEditorDialog({
               placeholder="One line — shown in the # picker"
               className="h-8 text-[12px]"
             />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label>Content</Label>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={fieldId("content")}>Content</FieldLabel>
             <Textarea
+              id={fieldId("content")}
               value={draft.content}
               onChange={(e) => setDraft({ ...draft, content: e.target.value })}
               placeholder="Inserted into the prompt as a <snippet> block when you use #handle."
               className="min-h-40 resize-y font-mono text-[11.5px] leading-relaxed"
             />
-          </div>
-        </div>
+          </Field>
+        </FieldGroup>
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
@@ -524,6 +649,7 @@ function SnippetEditorDialog({
 
 function CustomInstructionsBlock({ value }: { value: string }) {
   const [draft, setDraft] = useState(value);
+  const instructionsId = useId();
   const hadFirstSync = useRef(false);
 
   useEffect(() => {
@@ -534,9 +660,9 @@ function CustomInstructionsBlock({ value }: { value: string }) {
   }, [value]);
 
   return (
-    <div className="flex flex-col gap-2">
+    <Field>
       <div className="flex items-center justify-between">
-        <Label>Custom instructions</Label>
+        <FieldLabel htmlFor={instructionsId}>Custom instructions</FieldLabel>
         {/* {savedTick > 0 ? (
           <span className="text-[10px] text-muted-foreground">Saved</span>
         ) : null} */}
@@ -547,12 +673,13 @@ function CustomInstructionsBlock({ value }: { value: string }) {
         )}
       </div>
       <Textarea
+        id={instructionsId}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         placeholder="e.g. Always reply in concise bullet points. Prefer pnpm over npm. My machine is an M-series Mac."
         className="min-h-[100px] resize-y bg-card/60 font-sans text-[12px] leading-relaxed border border-border"
       />
-    </div>
+    </Field>
   );
 }
 

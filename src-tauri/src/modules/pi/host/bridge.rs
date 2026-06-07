@@ -244,7 +244,18 @@ pub(super) fn execute_verified_native_tool_with_policy(
     };
     let manifest = native_tool_context.capability_manifest();
     let approved = approval_state == CapabilityApprovalState::Approved;
-    if let Err(error) = policy::evaluate(&manifest, &request.tool_name, approval_state) {
+    let mut policy_result = policy::evaluate(&manifest, &request.tool_name, approval_state);
+    if matches!(
+        policy_result,
+        Err(policy::CapabilityPolicyError::UnknownTool(_))
+    ) {
+        if let Some(target_manifest) =
+            native_tool_context.capability_manifest_for_tool(&request.tool_name)
+        {
+            policy_result = policy::evaluate(&target_manifest, &request.tool_name, approval_state);
+        }
+    }
+    if let Err(error) = policy_result {
         let message = error.to_string();
         capability_audit.record(CapabilityAuditEntry::new(
             &request.session_id,

@@ -11,7 +11,7 @@ import type {
   UIMessagePart,
 } from "ai";
 import { motion } from "motion/react";
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   Message,
   MessageContent,
@@ -384,12 +384,15 @@ const PartAppear = memo(function PartAppear({
 }: {
   children: React.ReactNode;
 }) {
+  const [animating, setAnimating] = useState(true);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-      style={{ willChange: "transform, opacity" }}
+      style={animating ? { willChange: "transform, opacity" } : undefined}
+      onAnimationComplete={() => setAnimating(false)}
     >
       {children}
     </motion.div>

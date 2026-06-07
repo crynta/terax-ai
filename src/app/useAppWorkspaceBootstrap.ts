@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
 import { homeDir } from "@tauri-apps/api/path";
+import { useCallback, useEffect, useState } from "react";
 import { native } from "@/modules/ai/lib/native";
 import {
   getWslHome,

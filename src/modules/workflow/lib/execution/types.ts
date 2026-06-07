@@ -26,6 +26,8 @@ export type WorkflowArtifactPersistence = (
 export type WorkflowStepExecutionOptions = {
   createProviderArtifact?: WorkflowProviderArtifactFactory;
   executeHttpRequest?: WorkflowHttpRequestExecutor;
+  includeUnsafe?: boolean;
+  nodeIds?: Iterable<string>;
   persistArtifact?: WorkflowArtifactPersistence;
   onProgress?: (document: WorkflowDocument) => void;
   signal?: AbortSignal;

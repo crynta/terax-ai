@@ -1,12 +1,4 @@
 import {
-  PI_SESSION_EVENT,
-  type PiPromptContext,
-  type PiSessionBranch,
-  type PiSessionEvent,
-  type PiTranscriptBranch,
-  type PiTranscriptItem,
-} from "./types";
-import {
   chronologicalEvents,
   eventBranch,
   eventContext,
@@ -16,6 +8,14 @@ import {
   eventToolOutput,
   joinDeltaText,
 } from "./events";
+import {
+  PI_SESSION_EVENT,
+  type PiPromptContext,
+  type PiSessionBranch,
+  type PiSessionEvent,
+  type PiTranscriptBranch,
+  type PiTranscriptItem,
+} from "./types";
 
 type RegeneratePrompt = {
   branchGroupId: string;
@@ -715,7 +715,8 @@ export function buildPiSessionTranscript(
 
     if (
       event.type === PI_SESSION_EVENT.Error ||
-      (event.type === PI_SESSION_EVENT.Status && event.payload.status !== "running")
+      (event.type === PI_SESSION_EVENT.Status &&
+        event.payload.status !== "running")
     ) {
       lastPromptForRegenerate = undefined;
       expireRequestedToolApprovals(transcript, event);

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
-  parseModelCompareHistoryValue,
   type ModelCompareHistoryEntry,
+  parseModelCompareHistoryValue,
 } from "./modelCompareHistory";
 
 export const modelCompareHistoryNative = {

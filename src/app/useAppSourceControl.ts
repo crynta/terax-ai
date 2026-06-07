@@ -2,8 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useMemo } from "react";
 import { native } from "@/modules/ai/lib/native";
 import {
-  piLocalAgentHookCommand,
   type PiLocalAgentLaunchRequest,
+  piLocalAgentHookCommand,
 } from "@/modules/pi/lib/local-agents";
 import { useSourceControl } from "@/modules/source-control";
 import type { Tab } from "@/modules/tabs";

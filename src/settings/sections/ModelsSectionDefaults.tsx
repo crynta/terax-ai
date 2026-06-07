@@ -7,9 +7,16 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldTitle,
+} from "@/components/ui/field";
 import {
   InputGroup,
   InputGroupAddon,
@@ -55,9 +62,9 @@ import {
 import { ProviderIcon } from "../components/ProviderIcon";
 import {
   FieldRow,
+  isLocalProvider,
   type KeysMap,
   Label,
-  isLocalProvider,
 } from "./ModelsSectionShared";
 
 export function DefaultsBlock({
@@ -88,28 +95,34 @@ export function DefaultsBlock({
           />
         </FieldRow>
         <FieldRow label="Pi profile">
-          <div className="flex flex-1 items-center justify-between gap-3 rounded-md border border-border/50 bg-background/40 px-2.5 py-2">
-            <div className="min-w-0">
-              <p className="text-[11.5px] text-foreground">
-                Use existing Pi profile
-              </p>
-              <p className="mt-0.5 text-[10px] text-muted-foreground">
-                Uses terminal Pi auth/catalog. Terax model keys stay separate.
-              </p>
+          {({ labelId }) => (
+            <div
+              className="flex flex-1 items-center justify-between gap-3 rounded-md border border-border/50 bg-background/40 px-2.5 py-2"
+              aria-labelledby={labelId}
+            >
+              <div className="min-w-0">
+                <p className="text-[11.5px] text-foreground">
+                  Use existing Pi profile
+                </p>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  Uses terminal Pi auth/catalog. Terax model keys stay separate.
+                </p>
+              </div>
+              <Switch
+                aria-label="Use existing Pi profile"
+                checked={piProviderPrefs.piAuthMode === "profile"}
+                onCheckedChange={(checked) => {
+                  void setPiAuthMode(checked ? "profile" : "terax");
+                  if (
+                    !checked &&
+                    isProfileModelSourceId(piProviderPrefs.piModelId)
+                  ) {
+                    void setPiModelId(DEFAULT_MODEL_ID);
+                  }
+                }}
+              />
             </div>
-            <Switch
-              checked={piProviderPrefs.piAuthMode === "profile"}
-              onCheckedChange={(checked) => {
-                void setPiAuthMode(checked ? "profile" : "terax");
-                if (
-                  !checked &&
-                  isProfileModelSourceId(piProviderPrefs.piModelId)
-                ) {
-                  void setPiModelId(DEFAULT_MODEL_ID);
-                }
-              }}
-            />
-          </div>
+          )}
         </FieldRow>
         <AutocompleteRow keys={keys} configuredIds={configuredIds} />
       </div>
@@ -154,8 +167,8 @@ function DefaultModelPicker({
             <span className="text-muted-foreground">· {m.hint}</span>
           </span>
           <HugeiconsIcon
+            data-icon="inline-start"
             icon={ArrowDown01Icon}
-            size={11}
             strokeWidth={2}
             className="opacity-70"
           />
@@ -177,13 +190,15 @@ function DefaultModelPicker({
         />
         <div className="max-h-72 overflow-y-auto overscroll-contain pr-1">
           {!hasResults ? (
-            <DropdownMenuItem disabled className="text-[12px]">
-              {modelQuery
-                ? hiddenModelCount > 0
-                  ? "No matching usable chat models."
-                  : "No matching chat models."
-                : "No usable chat models."}
-            </DropdownMenuItem>
+            <DropdownMenuGroup>
+              <DropdownMenuItem disabled className="text-[12px]">
+                {modelQuery
+                  ? hiddenModelCount > 0
+                    ? "No matching usable chat models."
+                    : "No matching chat models."
+                  : "No usable chat models."}
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
           ) : null}
           {providerGroups.map((group) => (
             <div key={group.provider.id} className="px-1 pt-1.5 first:pt-1">
@@ -196,28 +211,30 @@ function DefaultModelPicker({
                   </span>
                 ) : null}
               </div>
-              {group.models.map((mod) => (
-                <DropdownMenuItem
-                  key={mod.id}
-                  disabled={group.setupRequired}
-                  onSelect={() => {
-                    if (!group.setupRequired) {
-                      void setDefaultModel(mod.id as ModelId);
-                    }
-                  }}
-                  className={cn(
-                    "flex items-start gap-2 text-[12px]",
-                    mod.id === defaultModel && "bg-accent/50",
-                  )}
-                >
-                  <span className="flex flex-1 flex-col">
-                    <span>{mod.label}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {group.setupRequired ? "Needs setup" : mod.description}
+              <DropdownMenuGroup>
+                {group.models.map((mod) => (
+                  <DropdownMenuItem
+                    key={mod.id}
+                    disabled={group.setupRequired}
+                    onSelect={() => {
+                      if (!group.setupRequired) {
+                        void setDefaultModel(mod.id as ModelId);
+                      }
+                    }}
+                    className={cn(
+                      "flex items-start gap-2 text-[12px]",
+                      mod.id === defaultModel && "bg-accent/50",
+                    )}
+                  >
+                    <span className="flex flex-1 flex-col">
+                      <span>{mod.label}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {group.setupRequired ? "Needs setup" : mod.description}
+                      </span>
                     </span>
-                  </span>
-                </DropdownMenuItem>
-              ))}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
             </div>
           ))}
           <HiddenModelsFooter count={hiddenModelCount} />
@@ -242,7 +259,7 @@ function ModelSearchControls({
 }) {
   return (
     <div className="border-b border-border/50 p-1.5">
-      <InputGroup className="h-8 rounded-3xl bg-input/50">
+      <InputGroup className="h-8 rounded-lg bg-input/50">
         <InputGroupAddon align="inline-start" className="pl-2.5">
           <HugeiconsIcon
             icon={Search01Icon}
@@ -252,6 +269,9 @@ function ModelSearchControls({
           />
         </InputGroupAddon>
         <InputGroupInput
+          name="model-search"
+          autoComplete="off"
+          aria-label={searchPlaceholder}
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           onKeyDown={(event) => event.stopPropagation()}
@@ -259,21 +279,25 @@ function ModelSearchControls({
           className="h-8 text-[11.5px]"
         />
       </InputGroup>
-      <label className="mt-1.5 flex items-center justify-between gap-3 rounded-2xl px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-muted/40">
-        <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="font-medium text-foreground/85">
+      <Field
+        orientation="horizontal"
+        className="mt-1.5 items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-muted/40"
+      >
+        <FieldContent className="min-w-0 gap-0.5">
+          <FieldTitle className="text-[11px] font-medium text-foreground/85">
             Show unavailable
-          </span>
-          <span className="text-[10px] leading-tight">
+          </FieldTitle>
+          <FieldDescription className="text-[10px] leading-tight">
             Reveal setup/auth-required models as disabled.
-          </span>
-        </span>
+          </FieldDescription>
+        </FieldContent>
         <Switch
+          aria-label="Show unavailable models"
           size="sm"
           checked={showUnavailable}
           onCheckedChange={onShowUnavailableChange}
         />
-      </label>
+      </Field>
     </div>
   );
 }
@@ -377,8 +401,8 @@ function PiModelPicker({
             <span className="text-muted-foreground">· {modeLabel}</span>
           </span>
           <HugeiconsIcon
+            data-icon="inline-start"
             icon={ArrowDown01Icon}
-            size={11}
             strokeWidth={2}
             className="opacity-70"
           />
@@ -411,61 +435,59 @@ function PiModelPicker({
                     {profileCatalog.profileAgentDir}
                   </p>
                 ) : null}
-                <DropdownMenuItem
-                  disabled={profileLoading}
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    void refreshProfileCatalog();
-                  }}
-                  className="flex items-center gap-2 text-[12px]"
-                >
-                  <HugeiconsIcon
-                    icon={Refresh01Icon}
-                    size={12}
-                    strokeWidth={1.8}
-                  />
-                  {profileLoading
-                    ? "Refreshing profile models…"
-                    : "Refresh profile models"}
-                </DropdownMenuItem>
-                {profileLoading ? (
-                  <DropdownMenuItem disabled className="text-[12px]">
-                    Loading Pi profile models…
+                <DropdownMenuGroup>
+                  <DropdownMenuItem
+                    disabled={profileLoading}
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void refreshProfileCatalog();
+                    }}
+                    className="flex items-center gap-2 text-[12px]"
+                  >
+                    <HugeiconsIcon icon={Refresh01Icon} strokeWidth={1.8} />
+                    {profileLoading
+                      ? "Refreshing profile models…"
+                      : "Refresh profile models"}
                   </DropdownMenuItem>
-                ) : null}
-                {profileError ? (
-                  <DropdownMenuItem disabled className="text-[12px]">
-                    {profileError}
-                  </DropdownMenuItem>
-                ) : null}
-                {profileCatalog?.loadError ? (
-                  <DropdownMenuItem disabled className="text-[12px]">
-                    {profileCatalog.loadError}
-                  </DropdownMenuItem>
-                ) : null}
-                {profileCatalog &&
-                !profileLoading &&
-                !profileError &&
-                !profileCatalog.loadError &&
-                profileCatalog.models.length === 0 ? (
-                  <DropdownMenuItem disabled className="text-[12px]">
-                    No Pi profile models found.
-                  </DropdownMenuItem>
-                ) : null}
-                {profileCatalog &&
-                !profileLoading &&
-                !profileError &&
-                !profileCatalog.loadError &&
-                profileCatalog.models.length > 0 &&
-                profileGroups.length === 0 ? (
-                  <DropdownMenuItem disabled className="text-[12px]">
-                    {isSearchingModels
-                      ? hiddenProfileModelCount > 0
-                        ? "No matching usable Pi profile models."
-                        : "No matching Pi profile models."
-                      : "No usable Pi profile models."}
-                  </DropdownMenuItem>
-                ) : null}
+                  {profileLoading ? (
+                    <DropdownMenuItem disabled className="text-[12px]">
+                      Loading Pi profile models…
+                    </DropdownMenuItem>
+                  ) : null}
+                  {profileError ? (
+                    <DropdownMenuItem disabled className="text-[12px]">
+                      {profileError}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {profileCatalog?.loadError ? (
+                    <DropdownMenuItem disabled className="text-[12px]">
+                      {profileCatalog.loadError}
+                    </DropdownMenuItem>
+                  ) : null}
+                  {profileCatalog &&
+                  !profileLoading &&
+                  !profileError &&
+                  !profileCatalog.loadError &&
+                  profileCatalog.models.length === 0 ? (
+                    <DropdownMenuItem disabled className="text-[12px]">
+                      No Pi profile models found.
+                    </DropdownMenuItem>
+                  ) : null}
+                  {profileCatalog &&
+                  !profileLoading &&
+                  !profileError &&
+                  !profileCatalog.loadError &&
+                  profileCatalog.models.length > 0 &&
+                  profileGroups.length === 0 ? (
+                    <DropdownMenuItem disabled className="text-[12px]">
+                      {isSearchingModels
+                        ? hiddenProfileModelCount > 0
+                          ? "No matching usable Pi profile models."
+                          : "No matching Pi profile models."
+                        : "No usable Pi profile models."}
+                    </DropdownMenuItem>
+                  ) : null}
+                </DropdownMenuGroup>
               </div>
               {profileGroups.map((group) => (
                 <div key={group.provider} className="px-1 pt-1.5 first:pt-1">
@@ -473,31 +495,33 @@ function PiModelPicker({
                     <ProviderIcon provider={group.provider} size={11} />
                     <span>{group.providerLabel}</span>
                   </div>
-                  {group.models.map((model) => {
-                    const id = profileModelSourceId(model.provider, model.id);
-                    return (
-                      <DropdownMenuItem
-                        key={id}
-                        disabled={!model.available}
-                        onSelect={() => {
-                          if (model.available) void setPiModelId(id);
-                        }}
-                        className={cn(
-                          "flex items-start gap-2 text-[12px]",
-                          id === prefs.piModelId && "bg-accent/50",
-                        )}
-                      >
-                        <span className="flex flex-1 flex-col">
-                          <span>{model.label}</span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {model.available
-                              ? model.providerLabel
-                              : "Needs auth in Pi profile"}
+                  <DropdownMenuGroup>
+                    {group.models.map((model) => {
+                      const id = profileModelSourceId(model.provider, model.id);
+                      return (
+                        <DropdownMenuItem
+                          key={id}
+                          disabled={!model.available}
+                          onSelect={() => {
+                            if (model.available) void setPiModelId(id);
+                          }}
+                          className={cn(
+                            "flex items-start gap-2 text-[12px]",
+                            id === prefs.piModelId && "bg-accent/50",
+                          )}
+                        >
+                          <span className="flex flex-1 flex-col">
+                            <span>{model.label}</span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {model.available
+                                ? model.providerLabel
+                                : "Needs auth in Pi profile"}
+                            </span>
                           </span>
-                        </span>
-                      </DropdownMenuItem>
-                    );
-                  })}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuGroup>
                 </div>
               ))}
               <HiddenModelsFooter count={hiddenProfileModelCount} />
@@ -505,13 +529,15 @@ function PiModelPicker({
           ) : (
             <>
               {!hasTeraxResults ? (
-                <DropdownMenuItem disabled className="text-[12px]">
-                  {isSearchingModels
-                    ? hiddenTeraxModelCount > 0
-                      ? "No matching usable Terax models."
-                      : "No matching Terax models."
-                    : "No usable Terax models."}
-                </DropdownMenuItem>
+                <DropdownMenuGroup>
+                  <DropdownMenuItem disabled className="text-[12px]">
+                    {isSearchingModels
+                      ? hiddenTeraxModelCount > 0
+                        ? "No matching usable Terax models."
+                        : "No matching Terax models."
+                      : "No usable Terax models."}
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
               ) : null}
               {providerGroups.map((group) => (
                 <div key={group.provider.id} className="px-1 pt-1.5 first:pt-1">
@@ -524,28 +550,30 @@ function PiModelPicker({
                       </span>
                     ) : null}
                   </div>
-                  {group.models.map((model) => (
-                    <DropdownMenuItem
-                      key={model.id}
-                      disabled={group.setupRequired}
-                      onSelect={() => {
-                        if (!group.setupRequired) void setPiModelId(model.id);
-                      }}
-                      className={cn(
-                        "flex items-start gap-2 text-[12px]",
-                        model.id === prefs.piModelId && "bg-accent/50",
-                      )}
-                    >
-                      <span className="flex flex-1 flex-col">
-                        <span>{model.label}</span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {group.setupRequired
-                            ? "Needs setup"
-                            : model.description}
+                  <DropdownMenuGroup>
+                    {group.models.map((model) => (
+                      <DropdownMenuItem
+                        key={model.id}
+                        disabled={group.setupRequired}
+                        onSelect={() => {
+                          if (!group.setupRequired) void setPiModelId(model.id);
+                        }}
+                        className={cn(
+                          "flex items-start gap-2 text-[12px]",
+                          model.id === prefs.piModelId && "bg-accent/50",
+                        )}
+                      >
+                        <span className="flex flex-1 flex-col">
+                          <span>{model.label}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {group.setupRequired
+                              ? "Needs setup"
+                              : model.description}
+                          </span>
                         </span>
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuGroup>
                 </div>
               ))}
               {visibleCustomEndpointOptions.length > 0 ? (
@@ -554,35 +582,37 @@ function PiModelPicker({
                     <ProviderIcon provider="openai-compatible" size={11} />
                     <span>Custom endpoints</span>
                   </div>
-                  {visibleCustomEndpointOptions.map(({ endpoint, ready }) => {
-                    const id = compatModelIdForEndpoint(endpoint.id);
-                    return (
-                      <DropdownMenuItem
-                        key={endpoint.id}
-                        disabled={!ready}
-                        onSelect={() => {
-                          if (ready) void setPiModelId(id);
-                        }}
-                        className={cn(
-                          "flex items-start gap-2 text-[12px]",
-                          id === prefs.piModelId && "bg-accent/50",
-                        )}
-                      >
-                        <span className="flex flex-1 flex-col">
-                          <span>
-                            {endpoint.name.trim() ||
-                              endpoint.modelId ||
-                              "Custom endpoint"}
+                  <DropdownMenuGroup>
+                    {visibleCustomEndpointOptions.map(({ endpoint, ready }) => {
+                      const id = compatModelIdForEndpoint(endpoint.id);
+                      return (
+                        <DropdownMenuItem
+                          key={endpoint.id}
+                          disabled={!ready}
+                          onSelect={() => {
+                            if (ready) void setPiModelId(id);
+                          }}
+                          className={cn(
+                            "flex items-start gap-2 text-[12px]",
+                            id === prefs.piModelId && "bg-accent/50",
+                          )}
+                        >
+                          <span className="flex flex-1 flex-col">
+                            <span>
+                              {endpoint.name.trim() ||
+                                endpoint.modelId ||
+                                "Custom endpoint"}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {ready
+                                ? endpoint.baseURL
+                                : "Add a base URL and model id"}
+                            </span>
                           </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {ready
-                              ? endpoint.baseURL
-                              : "Add a base URL and model id"}
-                          </span>
-                        </span>
-                      </DropdownMenuItem>
-                    );
-                  })}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuGroup>
                 </div>
               ) : null}
               <HiddenModelsFooter count={hiddenTeraxModelCount} />
@@ -612,9 +642,11 @@ function customEndpointMatchesSearch(
 function HiddenModelsFooter({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <DropdownMenuItem disabled className="text-[11px] text-muted-foreground">
-      {hiddenModelsText(count)}
-    </DropdownMenuItem>
+    <DropdownMenuGroup>
+      <DropdownMenuItem disabled className="text-[11px] text-muted-foreground">
+        {hiddenModelsText(count)}
+      </DropdownMenuItem>
+    </DropdownMenuGroup>
   );
 }
 
@@ -678,77 +710,83 @@ function AutocompleteRow({
   return (
     <>
       <FieldRow label="Autocomplete">
-        <div className="flex flex-1 items-center gap-2">
-          <Switch
-            checked={enabled}
-            onCheckedChange={(v) => void setAutocompleteEnabled(v)}
-          />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                disabled={!enabled}
-                className="h-8 flex-1 justify-between gap-2 px-2.5 text-[11.5px]"
-              >
-                <span className="flex items-center gap-2 truncate">
-                  <ProviderIcon provider={currentModel.provider} size={12} />
-                  <span className="truncate">{currentModel.label}</span>
-                  <span className="text-muted-foreground">
-                    · {currentModel.hint}
+        {({ labelId }) => (
+          <div className="flex flex-1 items-center gap-2">
+            <Switch
+              aria-labelledby={labelId}
+              checked={enabled}
+              onCheckedChange={(v) => void setAutocompleteEnabled(v)}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  aria-label="Choose autocomplete model"
+                  variant="outline"
+                  disabled={!enabled}
+                  className="h-8 flex-1 justify-between gap-2 px-2.5 text-[11.5px]"
+                >
+                  <span className="flex items-center gap-2 truncate">
+                    <ProviderIcon provider={currentModel.provider} size={12} />
+                    <span className="truncate">{currentModel.label}</span>
+                    <span className="text-muted-foreground">
+                      · {currentModel.hint}
+                    </span>
                   </span>
-                </span>
-                <HugeiconsIcon
-                  icon={ArrowDown01Icon}
-                  size={11}
-                  strokeWidth={2}
-                  className="opacity-70"
-                />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              collisionPadding={12}
-              className="max-h-72 min-w-70 overflow-y-auto"
-            >
-              {PROVIDERS.map((p) => {
-                const list = grouped.get(p.id);
-                if (!list || list.length === 0) return null;
-                const pConfigured = configuredIds.has(p.id);
-                return (
-                  <div key={p.id} className="px-1 pt-1.5 first:pt-1">
-                    <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-                      <ProviderIcon provider={p.id} size={11} />
-                      <span>{p.label}</span>
-                      {!pConfigured ? (
-                        <span className="ml-auto text-[9.5px] normal-case tracking-normal text-muted-foreground/70">
-                          not connected
-                        </span>
-                      ) : null}
-                    </div>
-                    {list.map((m) => (
-                      <DropdownMenuItem
-                        key={m.id}
-                        disabled={!pConfigured}
-                        onSelect={() => pConfigured && setModel(m.id, p.id)}
-                        className={cn(
-                          "text-[11.5px]",
-                          m.id === modelId && "bg-accent/50",
-                        )}
-                      >
-                        <span className="flex flex-col">
-                          <span>{m.label}</span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {m.description}
+                  <HugeiconsIcon
+                    data-icon="inline-start"
+                    icon={ArrowDown01Icon}
+                    strokeWidth={2}
+                    className="opacity-70"
+                  />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                collisionPadding={12}
+                className="max-h-72 min-w-70 overflow-y-auto"
+              >
+                {PROVIDERS.map((p) => {
+                  const list = grouped.get(p.id);
+                  if (!list || list.length === 0) return null;
+                  const pConfigured = configuredIds.has(p.id);
+                  return (
+                    <div key={p.id} className="px-1 pt-1.5 first:pt-1">
+                      <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                        <ProviderIcon provider={p.id} size={11} />
+                        <span>{p.label}</span>
+                        {!pConfigured ? (
+                          <span className="ml-auto text-[9.5px] normal-case tracking-normal text-muted-foreground/70">
+                            not connected
                           </span>
-                        </span>
-                      </DropdownMenuItem>
-                    ))}
-                  </div>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+                        ) : null}
+                      </div>
+                      <DropdownMenuGroup>
+                        {list.map((m) => (
+                          <DropdownMenuItem
+                            key={m.id}
+                            disabled={!pConfigured}
+                            onSelect={() => pConfigured && setModel(m.id, p.id)}
+                            className={cn(
+                              "text-[11.5px]",
+                              m.id === modelId && "bg-accent/50",
+                            )}
+                          >
+                            <span className="flex flex-col">
+                              <span>{m.label}</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {m.description}
+                              </span>
+                            </span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuGroup>
+                    </div>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </FieldRow>
       {enabled && !hasKey ? (
         <p className="pl-19 text-[10.5px] text-muted-foreground">

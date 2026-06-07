@@ -1,6 +1,9 @@
-import type { PiPanelSectionCollapseState } from "@/modules/pi/lib/PiControllerProvider";
 import { formatPiErrorDetail } from "@/modules/pi/lib/errors";
-import type { CapabilityAuditEntry, PiRuntimeState } from "@/modules/pi/lib/status";
+import type { PiPanelSectionCollapseState } from "@/modules/pi/lib/PiControllerProvider";
+import type {
+  CapabilityAuditEntry,
+  PiRuntimeState,
+} from "@/modules/pi/lib/status";
 
 export const INITIAL_PI_STATE: PiRuntimeState = {
   phase: "disconnected",

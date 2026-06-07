@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { lazy, Suspense } from "react";
+import { PaneLoadingFallback } from "@/components/PaneLoadingFallback";
 import type { WorkflowStack as WorkflowStackType } from "./WorkflowStack";
 
 const WorkflowStackInner = lazy(() =>
@@ -12,7 +13,7 @@ type Props = ComponentProps<typeof WorkflowStackType>;
 
 export function WorkflowStack(props: Props) {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PaneLoadingFallback label="Loading workflow…" />}>
       <WorkflowStackInner {...props} />
     </Suspense>
   );

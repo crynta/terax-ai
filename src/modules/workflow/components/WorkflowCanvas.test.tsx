@@ -7,7 +7,7 @@ import {
 import { WorkflowCanvas } from "./WorkflowCanvas";
 
 describe("WorkflowCanvas UI smoke", () => {
-  it("renders palette and runtime controls for the workflow canvas", () => {
+  it("renders palette and runtime controls for the canvas", () => {
     const html = renderToStaticMarkup(
       <WorkflowCanvas
         document={createStarterWorkflowDocument({
@@ -18,7 +18,7 @@ describe("WorkflowCanvas UI smoke", () => {
       />,
     );
 
-    expect(html).toContain("Workflow canvas ready");
+    expect(html).toContain("Canvas ready");
     expect(html).toContain("Command");
     expect(html).toContain("HTTP");
     expect(html).toContain("Browser");

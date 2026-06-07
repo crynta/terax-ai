@@ -95,6 +95,7 @@ export function EditorStack({
               !visible && "invisible pointer-events-none",
             )}
             aria-hidden={!visible}
+            inert={visible ? undefined : true}
           >
             <div className="h-full overflow-hidden rounded-md border border-border/60 bg-background">
               <EditorPane

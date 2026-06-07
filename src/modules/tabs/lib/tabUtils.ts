@@ -20,7 +20,7 @@ export function titleFromUrl(url: string): string {
   }
 }
 
-export function createWorkflowTab(id: number, title = "Workflow"): WorkflowTab {
+export function createWorkflowTab(id: number, title = "Canvas"): WorkflowTab {
   return createWorkflowTabFromDocument(
     id,
     createStarterWorkflowDocument({
@@ -79,6 +79,18 @@ export function upsertPiWorkspaceTab(
   return {
     activeId: nextId,
     tabs: [...tabs, { id: nextId, kind: "pi-workspace", title: "Code" }],
+  };
+}
+
+export function upsertArtifactHubTab(
+  tabs: Tab[],
+  nextId: number,
+): { activeId: number; tabs: Tab[] } {
+  const existing = tabs.find((tab) => tab.kind === "artifact-hub");
+  if (existing) return { activeId: existing.id, tabs };
+  return {
+    activeId: nextId,
+    tabs: [...tabs, { id: nextId, kind: "artifact-hub", title: "Artifacts" }],
   };
 }
 

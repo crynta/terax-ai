@@ -19,7 +19,7 @@ type Props = {
   provider: ProviderInfo;
   currentKey: string | null;
   onSave: (key: string) => Promise<void>;
-  onClear: () => Promise<void>;
+  onClear: () => Promise<void> | void;
   onRemove?: () => void;
 };
 
@@ -40,6 +40,8 @@ export function ProviderKeyCard({
   const [reveal, setReveal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inputId = `${provider.id}-api-key`;
+  const errorId = `${provider.id}-api-key-error`;
 
   useEffect(() => {
     setEditing(!currentKey);
@@ -89,7 +91,7 @@ export function ProviderKeyCard({
         <button
           type="button"
           onClick={() => void openUrl(provider.consoleUrl)}
-          className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
+          className="ml-auto inline-flex min-h-7 items-center gap-0.5 rounded-md px-1 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
         >
           Get key
           <HugeiconsIcon
@@ -102,11 +104,16 @@ export function ProviderKeyCard({
           <Button
             size="icon"
             variant="ghost"
+            aria-label={`Remove ${provider.label}`}
             onClick={onRemove}
             title="Remove provider"
             className="size-7 text-muted-foreground hover:text-destructive"
           >
-            <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Cancel01Icon}
+              strokeWidth={1.75}
+            />
           </Button>
         ) : null}
       </div>
@@ -116,8 +123,12 @@ export function ProviderKeyCard({
           <div className="flex gap-1.5">
             <div className="relative flex-1">
               <Input
+                id={inputId}
+                name={`${provider.id}-api-key`}
                 type={reveal ? "text" : "password"}
                 autoComplete="off"
+                aria-label={`${provider.label} API key`}
+                aria-describedby={error ? errorId : undefined}
                 spellCheck={false}
                 placeholder={
                   provider.keyPrefix
@@ -146,8 +157,7 @@ export function ProviderKeyCard({
               <button
                 type="button"
                 onClick={() => setReveal((v) => !v)}
-                tabIndex={-1}
-                className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground"
+                className="absolute top-1/2 right-1 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
                 aria-label={reveal ? "Hide key" : "Show key"}
               >
                 <HugeiconsIcon
@@ -163,12 +173,14 @@ export function ProviderKeyCard({
               disabled={saving || !value.trim()}
               className="h-8 gap-1 px-3 text-[11px]"
             >
-              {saving ? <Spinner className="size-3" /> : null}
-              Save
+              {saving ? <Spinner data-icon="inline-start" /> : null}
+              Save API Key
             </Button>
           </div>
           {error ? (
-            <p className="text-[10.5px] text-destructive">{error}</p>
+            <p id={errorId} className="text-[10.5px] text-destructive">
+              {error}
+            </p>
           ) : null}
         </div>
       ) : (
@@ -183,21 +195,31 @@ export function ProviderKeyCard({
           <Button
             size="icon"
             variant="ghost"
+            aria-label={`Replace ${provider.label} API key`}
             onClick={() => setEditing(true)}
             title="Replace"
             className="size-7"
           >
-            <HugeiconsIcon icon={Edit02Icon} size={12} strokeWidth={1.75} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Edit02Icon}
+              strokeWidth={1.75}
+            />
           </Button>
           {!onRemove ? (
             <Button
               size="icon"
               variant="ghost"
+              aria-label={`Remove ${provider.label} API key`}
               onClick={() => void onClear()}
               title="Remove"
               className="size-7 text-muted-foreground hover:text-destructive"
             >
-              <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={Cancel01Icon}
+                strokeWidth={1.75}
+              />
             </Button>
           ) : null}
         </div>

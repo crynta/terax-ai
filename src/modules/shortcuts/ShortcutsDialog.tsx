@@ -43,7 +43,11 @@ export function ShortcutsDialog({ open, onOpenChange }: Props) {
             className="h-8 gap-1.5 px-2.5 text-[11px] font-medium"
             onClick={onOpenSettings}
           >
-            <HugeiconsIcon icon={Settings01Icon} size={12} strokeWidth={2} />
+            <HugeiconsIcon
+              data-icon="inline-start"
+              icon={Settings01Icon}
+              strokeWidth={2}
+            />
             <span>Customize</span>
           </Button>
         </DialogHeader>

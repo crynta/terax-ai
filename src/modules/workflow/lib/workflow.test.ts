@@ -698,4 +698,3 @@ describe("workflow document schema", () => {
     });
   });
 });
-

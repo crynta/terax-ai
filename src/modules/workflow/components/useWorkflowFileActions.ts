@@ -105,7 +105,13 @@ export function useWorkflowFileActions({
     } finally {
       setSavingFile(false);
     }
-  }, [document, filePath, onSaveAsDocument, setSavingFile, setWorkflowIoMessage]);
+  }, [
+    document,
+    filePath,
+    onSaveAsDocument,
+    setSavingFile,
+    setWorkflowIoMessage,
+  ]);
 
   const handleOpenWorkflowFile = useCallback(async () => {
     if (!onOpenWorkflowPath) {

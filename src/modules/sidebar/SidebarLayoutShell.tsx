@@ -74,14 +74,17 @@ export function SidebarLayoutShell({
       >
         <div
           className={cn(
-            "flex h-full min-h-0 flex-col bg-card",
+            "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card",
             position === "right"
               ? "border-l border-border/60"
               : "border-r border-border/60",
           )}
         >
-          <div className="min-h-0 flex-1">{config.renderContent()}</div>
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            {config.renderContent()}
+          </div>
           <nav
+            className="shrink-0"
             aria-label={
               primarySlot ? "Primary sidebar views" : "Secondary sidebar views"
             }

@@ -32,7 +32,11 @@ describe("model compare history", () => {
   it("upserts runs by id, sorts newest first, and enforces a limit", () => {
     const runA = sampleRun("cmp_a");
     const runB = sampleRun("cmp_b");
-    const votedA = voteModelCompareRun(runA, { kind: "pane", paneId: runA.panes[1].id }, 30);
+    const votedA = voteModelCompareRun(
+      runA,
+      { kind: "pane", paneId: runA.panes[1].id },
+      30,
+    );
 
     const history = upsertModelCompareHistory(
       upsertModelCompareHistory(
@@ -75,13 +79,21 @@ describe("model compare history", () => {
         { id: run.id, savedAt: 40, run },
         { id: "bad", savedAt: "nope", run },
         { id: run.id, savedAt: 41, run: { ...run, mode: "invalid" } },
-        { id: run.id, savedAt: 42, run: { ...run, panes: run.panes.slice(0, 1) } },
+        {
+          id: run.id,
+          savedAt: 42,
+          run: { ...run, panes: run.panes.slice(0, 1) },
+        },
       ]),
     ).toEqual([{ id: run.id, savedAt: 40, run }]);
   });
 
   it("builds compact history labels", () => {
-    const run = voteModelCompareRun(sampleRun("cmp_title"), { kind: "tie" }, 20);
+    const run = voteModelCompareRun(
+      sampleRun("cmp_title"),
+      { kind: "tie" },
+      20,
+    );
     const title = modelCompareHistoryTitle({ id: run.id, savedAt: 30, run });
 
     expect(title).toContain("Compare this.");

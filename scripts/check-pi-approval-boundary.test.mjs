@@ -15,7 +15,9 @@ async function writeFixture(root, files) {
 const hostSource =
   "nativeTools.execute setNativeToolExecutor tryResolveHostResponse";
 const nativeToolsSource =
-  "RUST_MEDIATED_TOOL_NAMES executeNativeTool createTeraxNativeToolDefinitions Terax Rust create_artifact";
+  "RUST_MEDIATED_TOOL_NAMES executeNativeTool createTeraxNativeToolDefinitions Terax Rust";
+const fallbackManifestSource =
+  "create_artifact edit_artifact read_artifact list_artifacts";
 const sessionsSource =
   'export const TOOL_MODE = "rust-mediated"; createTeraxNativeToolDefinitions(); function respondToToolApproval(){} function createApprovalExtension(){} function validateToolSafety(){}';
 const protocolSource =
@@ -27,6 +29,10 @@ const healthyFiles = {
   "sidecars/pi-host/dist/host.js": hostSource,
   "sidecars/pi-host/native-tools.js": nativeToolsSource,
   "sidecars/pi-host/dist/native-tools.js": nativeToolsSource,
+  "sidecars/pi-host/fallback-capability-manifest.generated.js":
+    fallbackManifestSource,
+  "sidecars/pi-host/dist/fallback-capability-manifest.generated.js":
+    fallbackManifestSource,
   "sidecars/pi-host/sessions.js": sessionsSource,
   "sidecars/pi-host/dist/sessions.js": sessionsSource,
   "sidecars/pi-host/protocol.js": protocolSource,
@@ -40,22 +46,29 @@ const healthyFiles = {
     'const code = "PI_APPROVAL_NOT_FOUND";',
   "sidecars/pi-host/host.test.js":
     "nativeTools.execute round-trips Rust native tool requests",
-  "sidecars/pi-host/sessions.test.js":
-    "rust-mediated delegates read-only faux tool calls to the Rust native tool bridge requires approval before running shell faux tool calls PI_APPROVAL_NOT_FOUND",
+  "sidecars/pi-host/session-approvals.test.js":
+    "delegates read-only faux tool calls to the Rust native tool bridge requires approval before running shell faux tool calls PI_APPROVAL_NOT_FOUND",
+  "sidecars/pi-host/session-utils.test.js": "rust-mediated",
   "sidecars/pi-host/protocol.test.js": "rust-mediated sessions.tool.respond",
   "src-tauri/src/modules/pi/native_tools.rs":
     "NativeToolRequest execute_with_context mediatedBy create_artifact grep_skips_sensitive_files_inside_workspace",
   "src-tauri/src/modules/pi/host.rs":
-    "nativeTools.execute execute_verified_native_tool native_tool_sessions NativeToolContext host_handles_reverse_native_tool_requests",
+    "native_tool_sessions NativeToolContext",
+  "src-tauri/src/modules/pi/host/bridge.rs":
+    "nativeTools.execute execute_verified_native_tool native_tool_sessions",
+  "src-tauri/src/modules/pi/host/tests.rs":
+    "host_handles_reverse_native_tool_requests",
   "src-tauri/src/modules/pi/mod.rs":
-    "PiSessionToolRespondResult pi_session_tool_respond session_tool_respond_with_resource_dir",
+    "PiSessionToolRespondResult pi_session_tool_respond",
+  "src-tauri/src/modules/pi/state/compat.rs":
+    "session_tool_respond_with_resource_dir",
   "src-tauri/src/lib.rs": "pi::pi_session_tool_respond",
   "src-tauri/tests/pi_state.rs":
     "rust-mediated tool_approval_responses_are_forwarded_to_the_sidecar wait_for_event",
   "src/modules/pi/lib/native.ts":
     "PiSessionToolRespondResult sessionToolRespond sessionRename sessionDelete",
   "src/modules/pi/lib/native.test.ts": "responds to Pi tool approvals",
-  "src/modules/pi/lib/sessions.ts": "PiSessionToolRespondResult",
+  "src/modules/pi/lib/sessions/types.ts": "PiSessionToolRespondResult",
   "src/modules/pi/PiPanel.tsx": "respondToToolApproval onToolApproval",
   "src/modules/pi/components/PiTranscript.tsx": "onToolApproval Approve Deny",
   "src/modules/pi/components/PiTranscript.test.tsx":

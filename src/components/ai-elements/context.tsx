@@ -2,7 +2,7 @@
 
 import type { LanguageModelUsage } from "ai";
 import type { ComponentProps } from "react";
-import { createContext, useContext, useMemo } from "react";
+import { createContext, use, useMemo } from "react";
 import { getUsage } from "tokenlens";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,7 +31,7 @@ interface ContextSchema {
 const ContextContext = createContext<ContextSchema | null>(null);
 
 const useContextValue = () => {
-  const context = useContext(ContextContext);
+  const context = use(ContextContext);
 
   if (!context) {
     throw new Error("Context components must be used within Context");
@@ -159,7 +159,7 @@ export const ContextContentHeader = ({
   }).format(maxTokens);
 
   return (
-    <div className={cn("w-full space-y-2 p-3", className)} {...props}>
+    <div className={cn("w-full flex flex-col gap-2 p-3", className)} {...props}>
       {children ?? (
         <>
           <div className="flex items-center justify-between gap-3 text-xs">
@@ -168,7 +168,7 @@ export const ContextContentHeader = ({
               {used} / {total}
             </p>
           </div>
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Progress className="bg-muted" value={usedPercent * PERCENT_MAX} />
           </div>
         </>

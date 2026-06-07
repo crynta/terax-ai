@@ -21,10 +21,13 @@ function session(input: Partial<PiSession> & Pick<PiSession, "id">): PiSession {
   };
 }
 
-function renderList(sessions: PiSession[]) {
+function renderList(
+  sessions: PiSession[],
+  options: { canCreateSession?: boolean } = {},
+) {
   return renderToStaticMarkup(
     <PiSessionList
-      canCreateSession
+      canCreateSession={options.canCreateSession ?? true}
       collapsed={false}
       disabled={false}
       runtimeReady
@@ -99,6 +102,28 @@ describe("PiSessionList", () => {
 
     expect(html).toContain('aria-label="Resume Pi session Planning"');
     expect(html).toContain("Resume");
+  });
+
+  it("disables stopped-session new when session creation is unavailable", () => {
+    const html = renderList(
+      [
+        session({
+          id: "pi-1",
+          title: "Planning",
+          status: "stopped",
+          sdkSessionFile: null,
+        }),
+      ],
+      { canCreateSession: false },
+    );
+
+    expect(html).toContain(
+      'aria-label="Continue Pi session Planning in a new session"',
+    );
+    const continueButton = html.match(
+      /<button[^>]*aria-label="Continue Pi session Planning in a new session"[^>]*>/,
+    )?.[0];
+    expect(continueButton).toContain('disabled=""');
   });
 
   it("keeps option semantics on the focusable session button", () => {

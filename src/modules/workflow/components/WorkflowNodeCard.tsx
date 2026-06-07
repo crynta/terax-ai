@@ -2,10 +2,13 @@ import { Handle, type NodeProps, Position } from "@xyflow/react";
 import {
   type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   useState,
 } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
@@ -29,6 +32,33 @@ import type {
   WorkflowConnectionHandle,
   WorkflowFlowNode,
 } from "./WorkflowCanvasTypes";
+
+const workflowInputClassName =
+  "nodrag nowheel h-7 rounded-md border-border/60 bg-background px-2 text-xs focus-visible:ring-2";
+const workflowMonoInputClassName = cn(workflowInputClassName, "font-mono");
+const workflowTextareaClassName =
+  "nodrag nowheel rounded-md border-border/60 bg-muted/30 p-2 text-xs focus-visible:ring-2";
+const workflowMonoTextareaClassName = cn(
+  workflowTextareaClassName,
+  "font-mono",
+);
+const workflowSelectClassName =
+  "nodrag nowheel h-7 w-full rounded-md border border-border/60 bg-background px-2 text-xs outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30";
+
+function ConfigField({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <label className="flex flex-col gap-1 text-muted-foreground text-[10px] uppercase tracking-wide">
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
 
 export function WorkflowNodeCard({
   data,
@@ -101,7 +131,7 @@ export function WorkflowNodeCard({
           </Badge>
         </div>
       </div>
-      <div className="space-y-2 p-3 text-sm">
+      <div className="flex flex-col gap-2 p-3 text-sm">
         <NodeBody
           node={node}
           artifacts={data.artifacts}
@@ -121,7 +151,7 @@ export function WorkflowNodeCard({
           onReject={() => data.onRejectNode(node.id)}
         />
         {node.type === "terminal" ? (
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Button
               type="button"
               size="sm"
@@ -169,15 +199,17 @@ export function RuntimeDetails({
     <div className="rounded-md border border-border/60 bg-muted/20 p-2 text-xs">
       {message ? <div className="text-muted-foreground">{message}</div> : null}
       {progressPercent !== null ? (
-        <div className="mt-2 space-y-1">
+        <div className="mt-2 flex flex-col gap-1">
           <div className="flex justify-between text-[10px] text-muted-foreground">
             <span>Progress</span>
             <span>{progressPercent}%</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full rounded-full bg-primary transition-all"
-              style={{ width: `${progressPercent}%` }}
+              className="h-full w-full origin-left rounded-full bg-primary transition-transform"
+              style={{
+                transform: `scaleX(${Math.min(Math.max(progressPercent, 0), 100) / 100})`,
+              }}
             />
           </div>
         </div>
@@ -360,12 +392,17 @@ export function NodeBody({
 }) {
   if (node.type === "textPrompt") {
     return (
-      <textarea
-        className="nodrag nowheel min-h-20 w-full resize-none rounded-md border border-border/60 bg-muted/30 p-2 text-xs outline-none focus:border-ring"
-        value={String(node.config.prompt ?? "")}
-        placeholder="Prompt text"
-        onChange={(event) => onConfigChange({ prompt: event.target.value })}
-      />
+      <ConfigField label="Prompt text">
+        <Textarea
+          name={`workflow-${node.id}-prompt`}
+          autoComplete="off"
+          aria-label="Prompt text"
+          className={cn(workflowTextareaClassName, "min-h-20")}
+          value={String(node.config.prompt ?? "")}
+          placeholder="Prompt text"
+          onChange={(event) => onConfigChange({ prompt: event.target.value })}
+        />
+      </ConfigField>
     );
   }
   if (node.type === "imageGeneration") {
@@ -421,108 +458,169 @@ export function NodeBody({
   }
   if (node.type === "agent") {
     return (
-      <textarea
-        className="nodrag nowheel min-h-20 w-full resize-none rounded-md border border-border/60 bg-muted/30 p-2 text-xs outline-none focus:border-ring"
-        value={String(node.config.prompt ?? "")}
-        placeholder="Agent prompt"
-        onChange={(event) => onConfigChange({ prompt: event.target.value })}
-      />
+      <ConfigField label="Agent prompt">
+        <Textarea
+          name={`workflow-${node.id}-agent-prompt`}
+          autoComplete="off"
+          aria-label="Agent prompt"
+          className={cn(workflowTextareaClassName, "min-h-20")}
+          value={String(node.config.prompt ?? "")}
+          placeholder="Agent prompt"
+          onChange={(event) => onConfigChange({ prompt: event.target.value })}
+        />
+      </ConfigField>
     );
   }
   if (node.type === "httpRequest") {
     return (
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         <div className="grid grid-cols-[80px_1fr] gap-1">
-          <select
-            className="nodrag nowheel h-7 rounded border border-border/60 bg-background px-2 text-xs outline-none focus:border-ring"
-            value={String(node.config.method ?? "GET")}
-            onChange={(event) => onConfigChange({ method: event.target.value })}
-          >
-            {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
-              <option key={method} value={method}>
-                {method}
-              </option>
-            ))}
-          </select>
-          <input
-            className="nodrag nowheel h-7 rounded border border-border/60 bg-background px-2 text-xs outline-none focus:border-ring"
-            value={String(node.config.url ?? "")}
-            placeholder="https://api.example.com"
-            onChange={(event) => onConfigChange({ url: event.target.value })}
-          />
+          <ConfigField label="Method">
+            <select
+              name={`workflow-${node.id}-http-method`}
+              aria-label="HTTP method"
+              className={workflowSelectClassName}
+              value={String(node.config.method ?? "GET")}
+              onChange={(event) =>
+                onConfigChange({ method: event.target.value })
+              }
+            >
+              {["GET", "POST", "PUT", "PATCH", "DELETE"].map((method) => (
+                <option key={method} value={method}>
+                  {method}
+                </option>
+              ))}
+            </select>
+          </ConfigField>
+          <ConfigField label="Request URL">
+            <Input
+              type="url"
+              name={`workflow-${node.id}-request-url`}
+              inputMode="url"
+              autoComplete="off"
+              aria-label="Request URL"
+              className={workflowInputClassName}
+              value={String(node.config.url ?? "")}
+              placeholder="https://api.example.com"
+              onChange={(event) => onConfigChange({ url: event.target.value })}
+            />
+          </ConfigField>
         </div>
-        <textarea
-          className="nodrag nowheel min-h-14 w-full resize-none rounded-md border border-border/60 bg-muted/30 p-2 font-mono text-xs outline-none focus:border-ring"
-          value={String(node.config.headers ?? "")}
-          placeholder="Headers JSON, optional"
-          onChange={(event) => onConfigChange({ headers: event.target.value })}
-        />
+        <ConfigField label="Headers JSON">
+          <Textarea
+            name={`workflow-${node.id}-request-headers`}
+            autoComplete="off"
+            aria-label="Request headers JSON"
+            className={cn(workflowMonoTextareaClassName, "min-h-14")}
+            value={String(node.config.headers ?? "")}
+            placeholder="Headers JSON, optional"
+            onChange={(event) =>
+              onConfigChange({ headers: event.target.value })
+            }
+          />
+        </ConfigField>
       </div>
     );
   }
   if (node.type === "fileOperation") {
     return (
-      <div className="space-y-2">
-        <select
-          className="nodrag nowheel h-7 w-full rounded border border-border/60 bg-background px-2 text-xs outline-none focus:border-ring"
-          value={String(node.config.operation ?? "read")}
-          onChange={(event) =>
-            onConfigChange({ operation: event.target.value })
-          }
-        >
-          <option value="read">Read file</option>
-          <option value="write">Write file</option>
-          <option value="append">Append file</option>
-          <option value="delete">Delete file</option>
-        </select>
-        <input
-          className="nodrag nowheel h-7 w-full rounded border border-border/60 bg-background px-2 font-mono text-xs outline-none focus:border-ring"
-          value={String(node.config.path ?? "")}
-          placeholder="workspace/path.txt"
-          onChange={(event) => onConfigChange({ path: event.target.value })}
-        />
+      <div className="flex flex-col gap-2">
+        <ConfigField label="Operation">
+          <select
+            name={`workflow-${node.id}-file-operation`}
+            aria-label="File operation"
+            className={workflowSelectClassName}
+            value={String(node.config.operation ?? "read")}
+            onChange={(event) =>
+              onConfigChange({ operation: event.target.value })
+            }
+          >
+            <option value="read">Read file</option>
+            <option value="write">Write file</option>
+            <option value="append">Append file</option>
+            <option value="delete">Delete file</option>
+          </select>
+        </ConfigField>
+        <ConfigField label="File path">
+          <Input
+            name={`workflow-${node.id}-file-path`}
+            autoComplete="off"
+            aria-label="File path"
+            className={workflowMonoInputClassName}
+            value={String(node.config.path ?? "")}
+            placeholder="workspace/path.txt"
+            onChange={(event) => onConfigChange({ path: event.target.value })}
+          />
+        </ConfigField>
       </div>
     );
   }
   if (node.type === "browserAutomation") {
     return (
-      <div className="space-y-2">
-        <input
-          className="nodrag nowheel h-7 w-full rounded border border-border/60 bg-background px-2 text-xs outline-none focus:border-ring"
-          value={String(node.config.url ?? "")}
-          placeholder="https://example.com"
-          onChange={(event) => onConfigChange({ url: event.target.value })}
-        />
-        <textarea
-          className="nodrag nowheel min-h-16 w-full resize-none rounded-md border border-border/60 bg-muted/30 p-2 text-xs outline-none focus:border-ring"
-          value={String(node.config.instructions ?? "")}
-          placeholder="Automation instructions"
-          onChange={(event) =>
-            onConfigChange({ instructions: event.target.value })
-          }
-        />
+      <div className="flex flex-col gap-2">
+        <ConfigField label="Browser URL">
+          <Input
+            type="url"
+            name={`workflow-${node.id}-browser-url`}
+            inputMode="url"
+            autoComplete="off"
+            aria-label="Browser URL"
+            className={workflowInputClassName}
+            value={String(node.config.url ?? "")}
+            placeholder="https://example.com"
+            onChange={(event) => onConfigChange({ url: event.target.value })}
+          />
+        </ConfigField>
+        <ConfigField label="Instructions">
+          <Textarea
+            name={`workflow-${node.id}-browser-instructions`}
+            autoComplete="off"
+            aria-label="Automation instructions"
+            className={cn(workflowTextareaClassName, "min-h-16")}
+            value={String(node.config.instructions ?? "")}
+            placeholder="Automation instructions"
+            onChange={(event) =>
+              onConfigChange({ instructions: event.target.value })
+            }
+          />
+        </ConfigField>
       </div>
     );
   }
   if (node.type === "shellCommand") {
     return (
-      <div className="space-y-2">
-        <textarea
-          className="nodrag nowheel min-h-16 w-full resize-none rounded-md border border-border/60 bg-muted/30 p-2 font-mono text-xs outline-none focus:border-ring"
-          value={String(node.config.command ?? "")}
-          placeholder="Command, requires approval"
-          onChange={(event) => onConfigChange({ command: event.target.value })}
-        />
-        <input
-          className="nodrag nowheel h-7 w-full rounded border border-border/60 bg-background px-2 font-mono text-xs outline-none focus:border-ring"
-          value={String(node.config.cwd ?? "")}
-          placeholder="cwd, optional"
-          onChange={(event) => onConfigChange({ cwd: event.target.value })}
-        />
+      <div className="flex flex-col gap-2">
+        <ConfigField label="Command">
+          <Textarea
+            name={`workflow-${node.id}-shell-command`}
+            autoComplete="off"
+            aria-label="Shell command"
+            className={cn(workflowMonoTextareaClassName, "min-h-16")}
+            value={String(node.config.command ?? "")}
+            placeholder="Command, requires approval"
+            onChange={(event) =>
+              onConfigChange({ command: event.target.value })
+            }
+          />
+        </ConfigField>
+        <ConfigField label="Working directory">
+          <Input
+            name={`workflow-${node.id}-working-directory`}
+            autoComplete="off"
+            aria-label="Working directory"
+            className={workflowMonoInputClassName}
+            value={String(node.config.cwd ?? "")}
+            placeholder="cwd, optional"
+            onChange={(event) => onConfigChange({ cwd: event.target.value })}
+          />
+        </ConfigField>
         <label className="block text-muted-foreground text-[10px] uppercase tracking-wide">
           Timeout seconds
-          <input
-            className="nodrag nowheel mt-1 h-7 w-full rounded border border-border/60 bg-background px-2 font-mono text-xs normal-case outline-none focus:border-ring"
+          <Input
+            className={cn(workflowMonoInputClassName, "mt-1 normal-case")}
+            name={`workflow-${node.id}-timeout-seconds`}
+            inputMode="numeric"
+            autoComplete="off"
             min={1}
             type="number"
             value={String(node.config.timeoutSecs ?? "")}
@@ -572,7 +670,7 @@ export function ProviderConfigFields({
     credential.status === "missing" ? "destructive" : "secondary";
 
   return (
-    <div className="space-y-2 rounded-md border border-border/60 bg-muted/30 p-2">
+    <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-muted/30 p-2">
       <div className="flex items-center justify-between gap-2">
         <div className="text-muted-foreground text-xs">{detail}</div>
         <div className="flex shrink-0 items-center gap-1">
@@ -592,27 +690,36 @@ export function ProviderConfigFields({
           ) : null}
         </div>
       </div>
-      <select
-        className="nodrag nowheel h-7 w-full rounded border border-border/60 bg-background px-2 text-xs outline-none focus:border-ring"
-        value={String(node.config.provider ?? "")}
-        onChange={(event) => onConfigChange({ provider: event.target.value })}
-      >
-        {!providerKnown && provider ? (
-          <option value={provider}>{provider}</option>
-        ) : null}
-        {providerOptions.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <input
-        className="nodrag nowheel h-7 w-full rounded border border-border/60 bg-background px-2 text-xs outline-none focus:border-ring"
-        list={`${node.id}-models`}
-        value={String(node.config.model ?? "")}
-        placeholder="Model"
-        onChange={(event) => onConfigChange({ model: event.target.value })}
-      />
+      <ConfigField label="Provider">
+        <select
+          name={`workflow-${node.id}-provider`}
+          aria-label="Provider"
+          className={workflowSelectClassName}
+          value={String(node.config.provider ?? "")}
+          onChange={(event) => onConfigChange({ provider: event.target.value })}
+        >
+          {!providerKnown && provider ? (
+            <option value={provider}>{provider}</option>
+          ) : null}
+          {providerOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </ConfigField>
+      <ConfigField label="Model">
+        <Input
+          name={`workflow-${node.id}-model`}
+          autoComplete="off"
+          aria-label="Model"
+          className={workflowInputClassName}
+          list={`${node.id}-models`}
+          value={String(node.config.model ?? "")}
+          placeholder="Model"
+          onChange={(event) => onConfigChange({ model: event.target.value })}
+        />
+      </ConfigField>
       {modelOptions.length > 0 ? (
         <datalist id={`${node.id}-models`}>
           {modelOptions.map((model) => (
@@ -680,50 +787,63 @@ export function ProviderAdvancedField({
   value: unknown;
   onConfigChange: (patch: Record<string, unknown>) => void;
 }) {
-  const className =
-    "nodrag nowheel h-7 rounded border border-border/60 bg-background px-2 text-xs outline-none focus:border-ring";
+  const className = workflowSelectClassName;
   if (field.kind === "select") {
     return (
-      <select
-        className={className}
-        value={String(value ?? "")}
-        onChange={(event) =>
-          onConfigChange({ [field.key]: event.target.value })
-        }
-        aria-label={field.label}
-      >
-        <option value="">{field.label}</option>
-        {(field.options ?? []).map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
-      </select>
+      <ConfigField label={field.label}>
+        <select
+          name={`workflow-provider-${field.key}`}
+          className={className}
+          value={String(value ?? "")}
+          onChange={(event) =>
+            onConfigChange({ [field.key]: event.target.value })
+          }
+          aria-label={field.label}
+        >
+          <option value="">{field.label}</option>
+          {(field.options ?? []).map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      </ConfigField>
     );
   }
   if (field.kind === "number") {
     return (
-      <input
-        aria-label={field.label}
-        className={className}
-        min={1}
-        placeholder={field.placeholder ?? field.label}
-        type="number"
-        value={String(value ?? "")}
-        onChange={(event) =>
-          onConfigChange({ [field.key]: positiveNumberInput(event) })
-        }
-      />
+      <ConfigField label={field.label}>
+        <Input
+          name={`workflow-provider-${field.key}`}
+          inputMode="numeric"
+          autoComplete="off"
+          aria-label={field.label}
+          className={workflowInputClassName}
+          min={1}
+          placeholder={field.placeholder ?? field.label}
+          type="number"
+          value={String(value ?? "")}
+          onChange={(event) =>
+            onConfigChange({ [field.key]: positiveNumberInput(event) })
+          }
+        />
+      </ConfigField>
     );
   }
   return (
-    <input
-      aria-label={field.label}
-      className={className}
-      value={String(value ?? "")}
-      placeholder={field.placeholder ?? field.label}
-      onChange={(event) => onConfigChange({ [field.key]: event.target.value })}
-    />
+    <ConfigField label={field.label}>
+      <Input
+        name={`workflow-provider-${field.key}`}
+        autoComplete="off"
+        aria-label={field.label}
+        className={workflowInputClassName}
+        value={String(value ?? "")}
+        placeholder={field.placeholder ?? field.label}
+        onChange={(event) =>
+          onConfigChange({ [field.key]: event.target.value })
+        }
+      />
+    </ConfigField>
   );
 }
 

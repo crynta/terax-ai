@@ -12,6 +12,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
@@ -234,11 +235,7 @@ export function CommandPalette({
                       onSelect={retry}
                       className="text-[12.5px]"
                     >
-                      <HugeiconsIcon
-                        icon={Refresh01Icon}
-                        size={14}
-                        strokeWidth={1.75}
-                      />
+                      <HugeiconsIcon icon={Refresh01Icon} strokeWidth={1.75} />
                       <span>Retry file search</span>
                     </CommandItem>
                   </>
@@ -255,6 +252,8 @@ export function CommandPalette({
                       <img
                         src={fileIconUrl(hit.name)}
                         alt=""
+                        width={16}
+                        height={16}
                         className="size-4 shrink-0"
                       />
                       <span className="min-w-0 flex-1 truncate">
@@ -312,14 +311,13 @@ function ActionItem({
     >
       <HugeiconsIcon
         icon={action.icon}
-        size={14}
         strokeWidth={1.75}
         className="text-muted-foreground"
       />
       <span className="truncate">{action.label}</span>
       {rightLabel ? (
         <CommandShortcut
-          className={action.disabledReason ? "normal-case tracking-normal" : ""}
+          className={cn(action.disabledReason && "normal-case tracking-normal")}
         >
           {rightLabel}
         </CommandShortcut>
@@ -344,7 +342,6 @@ function StatusItem({
       {tone === "error" ? (
         <HugeiconsIcon
           icon={AlertCircleIcon}
-          size={14}
           strokeWidth={1.75}
           className="text-destructive"
         />

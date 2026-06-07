@@ -1,12 +1,12 @@
 import { type MutableRefObject, useCallback, useState } from "react";
 import { toast } from "sonner";
+import type { Tab } from "@/modules/tabs";
 import {
   isWorkflowFilePath,
   readWorkflowDocumentFile,
   writeWorkflowDocumentFile,
 } from "@/modules/workflow/lib/filePersistence";
 import type { WorkflowDocument } from "@/modules/workflow/lib/schema";
-import type { Tab } from "@/modules/tabs";
 
 type UseAppFileTabsInput = {
   disposeTab: (id: number) => void;

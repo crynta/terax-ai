@@ -49,10 +49,14 @@ const piNativeMock = vi.hoisted(() => ({
 }));
 
 const openerMock = vi.hoisted(() => ({ openUrl: vi.fn() }));
+const tauriEventMock = vi.hoisted(() => ({
+  listen: vi.fn(),
+  listeners: [] as Array<(event: { payload: unknown }) => void>,
+}));
 
 vi.mock("@/modules/pi/lib/native", () => ({ piNative: piNativeMock }));
 vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn(async () => vi.fn()),
+  listen: tauriEventMock.listen,
 }));
 vi.mock("@tauri-apps/plugin-opener", () => openerMock);
 vi.mock("@/modules/ai/lib/keyring", () => ({
@@ -61,9 +65,10 @@ vi.mock("@/modules/ai/lib/keyring", () => ({
   getKey: vi.fn(async () => null),
 }));
 
-import { PiPanel } from "@/modules/pi/PiPanel";
 import { PiControllerProvider } from "@/modules/pi/lib/PiControllerProvider";
+import type { PiSession } from "@/modules/pi/lib/sessions";
 import type { PiDiagnostics } from "@/modules/pi/lib/status";
+import { PiPanel } from "@/modules/pi/PiPanel";
 
 const httpConfig = {
   id: "remote",
@@ -98,6 +103,19 @@ const remoteTool = {
   riskLevel: "medium" as const,
   riskReasons: ["remote HTTP MCP server"],
 };
+
+function session(input: Partial<PiSession> & Pick<PiSession, "id">): PiSession {
+  return {
+    id: input.id,
+    title: input.title ?? input.id,
+    cwd: input.cwd ?? "/repo",
+    status: input.status ?? "idle",
+    createdAt: input.createdAt ?? "2026-01-01T00:00:00.000Z",
+    updatedAt: input.updatedAt ?? "2026-01-01T00:00:00.000Z",
+    lastPrompt: input.lastPrompt ?? null,
+    sdkSessionFile: input.sdkSessionFile,
+  };
+}
 
 function diagnostics(): PiDiagnostics {
   return {
@@ -254,6 +272,12 @@ describe("PiPanel", () => {
       value: ResizeObserverStub,
     });
     resetPiNativeMocks();
+    tauriEventMock.listeners = [];
+    tauriEventMock.listen.mockReset();
+    tauriEventMock.listen.mockImplementation(async (_event, listener) => {
+      tauriEventMock.listeners.push(listener);
+      return vi.fn();
+    });
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -283,6 +307,17 @@ describe("PiPanel", () => {
 
     expect(html).toContain('aria-label="Show only Code chat"');
     expect(html).toContain('aria-pressed="false"');
+  });
+
+  it("bounds supporting sections in their own scroll region", () => {
+    const html = renderToStaticMarkup(<PiPanel />);
+
+    expect(html).toContain('aria-label="Code controls"');
+    expect(html).toContain('data-slot="scroll-area"');
+    expect(html).toContain(
+      "relative overflow-hidden min-h-0 min-w-0 overscroll-contain",
+    );
+    expect(html).toContain("max-h-[min(55%,32rem)]");
   });
 
   it("retains MCP and audit state across PiPanel remounts", async () => {
@@ -325,6 +360,206 @@ describe("PiPanel", () => {
     expect(document.body.textContent).toContain("workflow.agent_prompt");
     expect(document.body.textContent).toContain("workflow audit detail");
     expect(document.body.textContent).not.toContain("app.file_read");
+  });
+
+  it("refreshes capability audit after tool result events", async () => {
+    await act(async () => {
+      root.render(
+        <PiControllerProvider>
+          <PiPanel />
+        </PiControllerProvider>,
+      );
+    });
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("2 events"),
+    );
+    const diagnosticCallsBeforeEvent =
+      piNativeMock.diagnostics.mock.calls.length;
+    piNativeMock.diagnostics.mockResolvedValue({
+      ...diagnostics(),
+      capabilityAudit: [
+        {
+          sequence: 2,
+          sessionId: "pi-smoke",
+          toolCallId: "call-read-note",
+          toolName: "mcp__smoke__read_note",
+          approved: true,
+          allowed: true,
+          outcome: "succeeded",
+          message: "smoke audit detail",
+        },
+      ],
+    });
+
+    await act(async () => {
+      tauriEventMock.listeners.forEach((listener) =>
+        listener({
+          payload: {
+            id: "event-tool-result",
+            type: "session.tool.result",
+            sessionId: "pi-smoke",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            payload: {
+              toolCallId: "call-read-note",
+              toolName: "mcp__smoke__read_note",
+            },
+          },
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(piNativeMock.diagnostics.mock.calls.length).toBeGreaterThan(
+        diagnosticCallsBeforeEvent,
+      ),
+    );
+    await clickButton("Capability audit");
+    await clickButton("MCP");
+
+    expect(document.body.textContent).toContain("mcp__smoke__read_note");
+    expect(document.body.textContent).toContain("MCP 1");
+  });
+
+  it("creates workspace-bound sessions from the New action", async () => {
+    const created = session({ id: "pi-created", title: "New chat" });
+    piNativeMock.sessionCreate.mockResolvedValue({
+      session: created,
+      events: [],
+    });
+
+    await act(async () => {
+      root.render(
+        <PiControllerProvider>
+          <PiPanel
+            workspaceRoot="/repo"
+            activeCwd="/repo/src"
+            activeFile="/repo/src/App.tsx"
+          />
+        </PiControllerProvider>,
+      );
+    });
+
+    await waitFor(() => expect(document.body.textContent).toContain("Ready"));
+    await clickButton("New");
+
+    await waitFor(() => expect(piNativeMock.sessionCreate).toHaveBeenCalled());
+    expect(piNativeMock.sessionCreate).toHaveBeenCalledWith(
+      undefined,
+      "/repo",
+      expect.objectContaining({ modelId: expect.any(String) }),
+    );
+  });
+
+  it("resumes stopped sessions with SDK history", async () => {
+    const stopped = session({
+      id: "pi-stopped",
+      title: "Planning",
+      status: "stopped",
+      sdkSessionFile: "/repo/.pi/session.jsonl",
+    });
+    piNativeMock.sessionsHistory.mockResolvedValue({
+      sessions: [stopped],
+      events: [],
+    });
+    piNativeMock.sessionResume.mockResolvedValue({
+      session: { ...stopped, status: "idle" },
+      events: [],
+    });
+
+    await act(async () => {
+      root.render(
+        <PiControllerProvider>
+          <PiPanel workspaceRoot="/repo" />
+        </PiControllerProvider>,
+      );
+    });
+
+    await waitFor(() => expect(document.body.textContent).toContain("Planning"));
+    await clickButton("Sessions");
+    await clickButton("Resume");
+
+    await waitFor(() => expect(piNativeMock.sessionResume).toHaveBeenCalled());
+    expect(piNativeMock.sessionResume).toHaveBeenCalledWith(
+      "pi-stopped",
+      expect.objectContaining({ modelId: expect.any(String) }),
+    );
+  });
+
+  it("sends prompts with workspace and active context", async () => {
+    const active = session({ id: "pi-active", title: "Active" });
+    piNativeMock.sessionsHistory.mockResolvedValue({
+      sessions: [active],
+      events: [],
+    });
+    piNativeMock.sessionsList.mockResolvedValue({
+      sessions: [active],
+      events: [],
+    });
+    piNativeMock.sessionSend.mockResolvedValue({
+      session: active,
+      events: [],
+    });
+
+    await act(async () => {
+      root.render(
+        <PiControllerProvider>
+          <PiPanel
+            workspaceRoot="/repo"
+            activeCwd="/repo/src"
+            activeFile="/repo/src/App.tsx"
+            activeTerminalPrivate
+          />
+        </PiControllerProvider>,
+      );
+    });
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain(
+        "Enter to send · Shift Enter for newline",
+      ),
+    );
+    changeTextArea("Pi prompt", "Explain the active file");
+    await clickButton("Send");
+
+    await waitFor(() => expect(piNativeMock.sessionSend).toHaveBeenCalled());
+    expect(piNativeMock.sessionSend).toHaveBeenCalledWith(
+      "pi-active",
+      "Explain the active file",
+      {
+        workspaceRoot: "/repo",
+        activeTerminalCwd: "/repo/src",
+        activeFile: "/repo/src/App.tsx",
+        activeTerminalPrivate: true,
+      },
+      { thinkingLevel: null },
+    );
+  });
+
+  it("surfaces capability audit refresh failures in diagnostics", async () => {
+    piNativeMock.workflowCapabilityAudit.mockRejectedValue(
+      new Error("workflow audit down"),
+    );
+    piNativeMock.appCapabilityAudit.mockRejectedValue(
+      new Error("app audit down"),
+    );
+
+    await act(async () => {
+      root.render(
+        <PiControllerProvider>
+          <PiPanel workspaceRoot="/repo" />
+        </PiControllerProvider>,
+      );
+    });
+
+    await waitFor(() => expect(piNativeMock.diagnostics).toHaveBeenCalled());
+    await clickButton("Diagnostics");
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain(
+        "Capability audit refresh failed: workflow audit down; app audit down",
+      ),
+    );
   });
 
   it("completes MCP OAuth with an inline dialog instead of window.prompt", async () => {

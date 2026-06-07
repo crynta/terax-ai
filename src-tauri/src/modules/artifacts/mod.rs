@@ -13,8 +13,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub use edits::{apply_exact_edits, ArtifactTextEdit};
 pub use react::{compile_react_artifact, ReactCompileInput, ReactCompileResult};
 pub use store::{
-    Artifact, ArtifactCreateInput, ArtifactDeleteResult, ArtifactExportResult, ArtifactStore,
-    ArtifactSummary, ArtifactVersionSummary,
+    Artifact, ArtifactBulkResult, ArtifactBulkTarget, ArtifactConversationArtifacts,
+    ArtifactCreateInput, ArtifactDeleteResult, ArtifactExportResult, ArtifactStore,
+    ArtifactSummary, ArtifactVersionSummary, DeletedArtifactSummary,
 };
 pub use types::{
     conversation_key, normalize_slug, validate_conversation_id, ArtifactError, ArtifactKind,
@@ -42,6 +43,8 @@ pub enum ArtifactUpdateReason {
     Update,
     Edit,
     Save,
+    Rename,
+    Restore,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -61,6 +64,7 @@ pub struct ArtifactDeleteEvent {
     pub event_type: String,
     pub conversation_id: String,
     pub slug: String,
+    pub undo_token: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -94,6 +98,22 @@ pub fn artifacts_list(
 ) -> ArtifactResult<Vec<ArtifactSummary>> {
     let conversation_id = ensure_conversation_exists(&app, &conversation_id)?;
     state.store_for_app(&app)?.list(&conversation_id)
+}
+
+#[tauri::command]
+pub fn artifacts_list_all(
+    app: AppHandle,
+    state: State<'_, ArtifactsState>,
+) -> ArtifactResult<Vec<ArtifactConversationArtifacts>> {
+    state.store_for_app(&app)?.list_all()
+}
+
+#[tauri::command]
+pub fn artifacts_list_deleted(
+    app: AppHandle,
+    state: State<'_, ArtifactsState>,
+) -> ArtifactResult<Vec<DeletedArtifactSummary>> {
+    state.store_for_app(&app)?.list_deleted()
 }
 
 #[tauri::command]
@@ -147,6 +167,22 @@ pub fn artifacts_update(
 }
 
 #[tauri::command]
+pub fn artifacts_rename_title(
+    app: AppHandle,
+    state: State<'_, ArtifactsState>,
+    conversation_id: String,
+    slug: String,
+    title: String,
+) -> ArtifactResult<Artifact> {
+    let conversation_id = ensure_conversation_exists(&app, &conversation_id)?;
+    let artifact = state
+        .store_for_app(&app)?
+        .rename_title(&conversation_id, &slug, &title)?;
+    emit_artifact_update(&app, artifact.summary.clone(), ArtifactUpdateReason::Rename);
+    Ok(artifact)
+}
+
+#[tauri::command]
 pub fn artifacts_edit(
     app: AppHandle,
     state: State<'_, ArtifactsState>,
@@ -192,6 +228,25 @@ pub fn artifacts_export(
 }
 
 #[tauri::command]
+pub fn artifacts_delete_many(
+    app: AppHandle,
+    state: State<'_, ArtifactsState>,
+    targets: Vec<ArtifactBulkTarget>,
+) -> ArtifactResult<ArtifactBulkResult> {
+    let targets = validate_bulk_targets(&app, targets)?;
+    let result = state.store_for_app(&app)?.delete_many(&targets)?;
+    for item in result.items.iter().filter(|item| item.success) {
+        emit_artifact_delete(
+            &app,
+            item.conversation_id.clone(),
+            item.slug.clone(),
+            item.undo_token.clone(),
+        );
+    }
+    Ok(result)
+}
+
+#[tauri::command]
 pub fn artifacts_delete(
     app: AppHandle,
     state: State<'_, ArtifactsState>,
@@ -201,8 +256,67 @@ pub fn artifacts_delete(
     let conversation_id = ensure_conversation_exists(&app, &conversation_id)?;
     let slug = normalize_slug(&slug)?;
     let result = state.store_for_app(&app)?.delete(&conversation_id, &slug)?;
-    emit_artifact_delete(&app, conversation_id, slug);
+    emit_artifact_delete(&app, conversation_id, slug, result.undo_token.clone());
     Ok(result)
+}
+
+#[tauri::command]
+pub fn artifacts_restore_deleted(
+    app: AppHandle,
+    state: State<'_, ArtifactsState>,
+    conversation_id: String,
+    slug: String,
+    undo_token: Option<String>,
+) -> ArtifactResult<Artifact> {
+    let conversation_id = ensure_conversation_exists(&app, &conversation_id)?;
+    let slug = normalize_slug(&slug)?;
+    let artifact = state.store_for_app(&app)?.restore_deleted(
+        &conversation_id,
+        &slug,
+        undo_token.as_deref(),
+    )?;
+    emit_artifact_update(
+        &app,
+        artifact.summary.clone(),
+        ArtifactUpdateReason::Restore,
+    );
+    Ok(artifact)
+}
+
+#[tauri::command]
+pub fn artifacts_restore_deleted_many(
+    app: AppHandle,
+    state: State<'_, ArtifactsState>,
+    targets: Vec<ArtifactBulkTarget>,
+) -> ArtifactResult<ArtifactBulkResult> {
+    let targets = validate_bulk_targets(&app, targets)?;
+    state.store_for_app(&app)?.restore_deleted_many(&targets)
+}
+
+#[tauri::command]
+pub fn artifacts_export_many(
+    app: AppHandle,
+    state: State<'_, ArtifactsState>,
+    targets: Vec<ArtifactBulkTarget>,
+    destination_dir: String,
+) -> ArtifactResult<ArtifactBulkResult> {
+    let targets = validate_bulk_targets(&app, targets)?;
+    state
+        .store_for_app(&app)?
+        .export_many(&targets, &PathBuf::from(destination_dir))
+}
+
+#[tauri::command]
+pub fn artifacts_purge_deleted(
+    app: AppHandle,
+    state: State<'_, ArtifactsState>,
+    conversation_id: String,
+    slug: String,
+    undo_token: String,
+) -> ArtifactResult<ArtifactDeleteResult> {
+    state
+        .store_for_app(&app)?
+        .purge_deleted(&conversation_id, &slug, &undo_token)
 }
 
 #[tauri::command]
@@ -217,6 +331,23 @@ pub fn artifacts_delete_for_conversation(
         .delete_conversation(&conversation_id)?;
     emit_artifact_conversation_delete(&app, conversation_id, result.deleted_count);
     Ok(result)
+}
+
+fn validate_bulk_targets(
+    app: &AppHandle,
+    targets: Vec<ArtifactBulkTarget>,
+) -> ArtifactResult<Vec<ArtifactBulkTarget>> {
+    targets
+        .into_iter()
+        .map(|target| {
+            Ok(ArtifactBulkTarget {
+                conversation_id: ensure_conversation_exists(app, &target.conversation_id)?,
+                slug: normalize_slug(&target.slug)?,
+                undo_token: target.undo_token,
+                version: target.version,
+            })
+        })
+        .collect()
 }
 
 fn artifacts_root(app: &AppHandle) -> ArtifactResult<PathBuf> {
@@ -290,11 +421,17 @@ pub fn emit_artifact_update(
     }
 }
 
-fn emit_artifact_delete(app: &AppHandle, conversation_id: String, slug: String) {
+fn emit_artifact_delete(
+    app: &AppHandle,
+    conversation_id: String,
+    slug: String,
+    undo_token: Option<String>,
+) {
     let payload = ArtifactDeleteEvent {
         event_type: ARTIFACT_DELETE_EVENT_NAME.to_string(),
         conversation_id,
         slug,
+        undo_token,
     };
     if let Err(error) = app.emit(ARTIFACT_DELETE_EVENT_NAME, payload) {
         log::warn!("failed to emit artifact delete event: {error}");
@@ -331,6 +468,7 @@ mod tests {
             created_at: "2026-01-01T00:00:00.000Z".to_string(),
             updated_at: "2026-01-01T00:00:00.000Z".to_string(),
             last_prompt: None,
+            workspace_env: None,
             thinking_level: None,
             sdk_session_file: None,
         }
