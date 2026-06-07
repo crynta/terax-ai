@@ -347,3 +347,62 @@ html *::-webkit-scrollbar {
 .terax-collapsible-content[data-state="closed"] {
   animation: terax-collapsible-up 160ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* Height auto<->0 reveal without JS measuring: animate the grid track from 0fr
+ * to 1fr. The inner child must be the sole grid row with min-height:0. Used by
+ * the docked AI input bar and the composer voice-status row. */
+.terax-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition:
+    grid-template-rows 180ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0;
+}
+.terax-reveal[data-state="open"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.terax-reveal > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Text shimmer loop (replaces motion background-position animation). Driven by
+ * --shimmer-duration / --shimmer-spread set inline per instance. */
+@keyframes terax-shimmer {
+  from {
+    background-position: 100% center;
+  }
+  to {
+    background-position: 0% center;
+  }
+}
+.terax-shimmer {
+  background-repeat: no-repeat, padding-box;
+  background-size:
+    250% 100%,
+    auto;
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent calc(50% - var(--shimmer-spread)),
+      var(--color-background),
+      transparent calc(50% + var(--shimmer-spread))
+    ),
+    linear-gradient(
+      var(--color-muted-foreground),
+      var(--color-muted-foreground)
+    );
+  animation: terax-shimmer var(--shimmer-duration, 2s) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terax-reveal {
+    transition: none;
+  }
+  .terax-shimmer {
+    animation: none;
+    background-position: 0% center;
+  }
+}

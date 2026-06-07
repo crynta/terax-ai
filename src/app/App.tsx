@@ -6,13 +6,12 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getLaunchDir } from "@/lib/launchDir";
+import { usePresence } from "@/lib/usePresence";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
 import { AgentNotificationsBridge } from "@/modules/agents";
 import {
   AgentRunBridge,
-  AiInputBar,
-  AiInputBarConnect,
   AiMiniWindow,
   LocalAgentNotificationsBridge,
   SelectionAskAi,
@@ -25,7 +24,7 @@ import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { native } from "@/modules/ai/lib/native";
 import {
   CommandPalette,
-  createCommandPaletteActions,
+  createCommandItems,
 } from "@/modules/command-palette";
 import {
   NewEditorDialog,
@@ -42,7 +41,6 @@ import {
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
-  ShortcutsDialog,
   useGlobalShortcuts,
   type ShortcutHandlers,
   type ShortcutId,
@@ -59,7 +57,6 @@ import {
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
 import {
-  MAX_PANES_PER_TAB,
   useTabs,
   useWindowTitle,
   useWorkspaceCwd,
@@ -73,14 +70,18 @@ import {
   respawnSession,
   type TerminalPaneHandle,
   useTerminalFileDrop,
+  writeToSession,
 } from "@/modules/terminal";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { useWorkspaceEnvStore } from "@/modules/workspace";
 import type { SearchAddon } from "@xterm/addon-search";
-import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloseDialogs } from "./components/CloseDialogs";
+import {
+  TOGGLE_BLOCK_INPUT_EVENT,
+  WorkspaceInputBar,
+} from "./components/WorkspaceInputBar";
 import { WorkspaceSurface } from "./components/WorkspaceSurface";
 import { useTabCloseGuards } from "./hooks/useTabCloseGuards";
 import { useWorkspaceSwitcher } from "./hooks/useWorkspaceSwitcher";
@@ -91,6 +92,7 @@ export default function App() {
     activeId,
     setActiveId,
     newTab,
+    newBlockTab,
     newAgentTab,
     newPrivateTab,
     openFileTab,
@@ -176,10 +178,20 @@ export default function App() {
     toggleExplorerFocus,
   } = useSidebarPanel(explorerRef);
 
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [paletteInitialMode, setPaletteInitialMode] = useState<
+    "commands" | "content"
+  >("commands");
+  const openCommandPalette = useCallback(
+    (mode: "commands" | "content" = "commands") => {
+      setPaletteInitialMode(mode);
+      setCommandPaletteOpen(true);
+    },
+    [],
+  );
   const miniOpen = useChatStore((s) => s.mini.open);
+  const miniPresence = usePresence(miniOpen, 200);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
   const openPanel = useChatStore((s) => s.openPanel);
@@ -191,6 +203,7 @@ export default function App() {
 
   const activeTab = tabs.find((t) => t.id === activeId);
   const isTerminalTab = activeTab?.kind === "terminal";
+  const isBlockTab = activeTerminalTab?.blocks === true;
   const isEditorTab = activeTab?.kind === "editor";
   const isGitHistoryTab = activeTab?.kind === "git-history";
 
@@ -345,6 +358,7 @@ export default function App() {
     captureActiveSelection,
     askFromSelection,
   });
+  const askPresence = usePresence(Boolean(askPopup), 120);
 
   const openNewTab = useCallback(() => {
     newTab(inheritedCwdForNewTab());
@@ -353,6 +367,10 @@ export default function App() {
   const openNewPrivateTab = useCallback(() => {
     newPrivateTab(inheritedCwdForNewTab());
   }, [newPrivateTab, inheritedCwdForNewTab]);
+
+  const openNewBlockTab = useCallback(() => {
+    newBlockTab(inheritedCwdForNewTab());
+  }, [newBlockTab, inheritedCwdForNewTab]);
 
   const sendCd = useCallback(
     (path: string) => {
@@ -491,7 +509,8 @@ export default function App() {
 
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
-      "commandPalette.open": () => setCommandPaletteOpen(true),
+      "commandPalette.open": () => openCommandPalette("commands"),
+      "commandPalette.content": () => openCommandPalette("content"),
       "tab.new": openNewTab,
       "tab.newPrivate": openNewPrivateTab,
       "tab.newPreview": () => openPreviewTab(""),
@@ -508,10 +527,11 @@ export default function App() {
       "terminal.clear": () => {
         clearFocusedTerminal();
       },
+      "terminal.toggleInput": () =>
+        window.dispatchEvent(new CustomEvent(TOGGLE_BLOCK_INPUT_EVENT)),
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
-      "shortcuts.open": () => setShortcutsOpen((v) => !v),
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
       "explorer.focus": toggleExplorerFocus,
@@ -524,6 +544,7 @@ export default function App() {
     }),
     [
       activeId,
+      openCommandPalette,
       cycleTab,
       handleCloseTabOrPane,
       openNewTab,
@@ -565,6 +586,9 @@ export default function App() {
           (e.target as HTMLElement | null) ?? document.activeElement;
         return !(target as HTMLElement | null)?.closest?.(".xterm");
       }
+      if (id === "terminal.toggleInput") {
+        return !(activeTab?.kind === "terminal" && activeTab.blocks === true);
+      }
       if (id === "sidebar.toggle") {
         // Ctrl+B is also Claude Code's "run in background" key. While a terminal
         // is focused, let Ctrl+B reach the shell/Claude instead of toggling the
@@ -595,8 +619,16 @@ export default function App() {
 
   const registerEditorHandle = useCallback(
     (id: number, h: EditorPaneHandle | null) => {
-      if (h) editorRefs.current.set(id, h);
-      else editorRefs.current.delete(id);
+      if (h) {
+        editorRefs.current.set(id, h);
+        const line = pendingGotoLine.current.get(id);
+        if (line != null) {
+          pendingGotoLine.current.delete(id);
+          h.gotoLine(line);
+        }
+      } else {
+        editorRefs.current.delete(id);
+      }
       if (id === activeId) setActiveEditorHandle(h);
     },
     [activeId],
@@ -706,33 +738,32 @@ export default function App() {
     gitHistoryHandle,
   ]);
 
-  const commandPaletteActions = useMemo(
+  const commandPaletteItems = useMemo(
     () =>
       commandPaletteOpen
-        ? createCommandPaletteActions({
+        ? createCommandItems({
             tabs,
             activeId,
             searchTarget,
             explorerRoot,
             home,
             openNewTab,
+            openNewBlock: openNewBlockTab,
             openNewPrivate: openNewPrivateTab,
             openNewEditor: () => setNewEditorOpen(true),
             openNewPreview: () => openPreviewTab(""),
+            openGitGraph: openGitGraphFromContext,
+            toggleSourceControl,
             closeActiveTabOrPane: handleCloseTabOrPane,
-            nextTab: () => cycleTab(1),
-            previousTab: () => cycleTab(-1),
             splitPaneRight: () => splitActivePaneInActiveTab("row"),
             splitPaneDown: () => splitActivePaneInActiveTab("col"),
-            focusNextPane: () => focusNextPaneInTab(activeId, 1),
-            focusPreviousPane: () => focusNextPaneInTab(activeId, -1),
             focusSearch: () => searchInlineRef.current?.focus(),
             focusExplorerSearch: () => explorerRef.current?.focusSearch(),
             toggleSidebar,
             toggleAi: togglePanelAndFocus,
             askAiSelection: askFromSelection,
             openSettings: () => void openSettingsWindow(),
-            openShortcuts: () => setShortcutsOpen(true),
+            openKeyboardShortcuts: () => void openSettingsWindow("shortcuts"),
           })
         : [],
     [
@@ -743,16 +774,40 @@ export default function App() {
       explorerRoot,
       home,
       openNewTab,
+      openNewBlockTab,
       openNewPrivateTab,
       openPreviewTab,
+      openGitGraphFromContext,
+      toggleSourceControl,
       handleCloseTabOrPane,
-      cycleTab,
       splitActivePaneInActiveTab,
-      focusNextPaneInTab,
       toggleSidebar,
       togglePanelAndFocus,
       askFromSelection,
     ],
+  );
+
+  const pendingGotoLine = useRef<Map<number, number>>(new Map());
+  const openContentHit = useCallback(
+    (path: string, line: number) => {
+      const id = openFileTab(path, true);
+      if (id == null) return;
+      const h = editorRefs.current.get(id);
+      if (h) h.gotoLine(line);
+      else pendingGotoLine.current.set(id, line);
+    },
+    [openFileTab],
+  );
+
+  const insertHistoryCommand = useMemo(
+    () =>
+      isTerminalTab && activeLeafId !== null
+        ? (cmd: string) => {
+            writeToSession(activeLeafId, cmd);
+            terminalRefs.current.get(activeLeafId)?.focus();
+          }
+        : null,
+    [isTerminalTab, activeLeafId],
   );
 
   const activeCwd = activeTerminalLeafCwd;
@@ -779,6 +834,7 @@ export default function App() {
               activeId={activeId}
               onSelect={setActiveId}
               onNew={openNewTab}
+              onNewBlock={openNewBlockTab}
               onNewPrivate={openNewPrivateTab}
               onNewPreview={() => openPreviewTab("")}
               onNewEditor={() => setNewEditorOpen(true)}
@@ -787,11 +843,7 @@ export default function App() {
               onPin={pinTab}
               onRename={handleRenameTab}
               onToggleSidebar={toggleSidebar}
-              onSplit={splitActivePaneInActiveTab}
-              canSplit={
-                activeTerminalTab !== null &&
-                leafIds(activeTerminalTab.paneTree).length < MAX_PANES_PER_TAB
-              }
+              onOpenCommandPalette={() => openCommandPalette("commands")}
               onActivateAgent={onActivateAgent}
               onActivateLocalAgent={onActivateLocalAgent}
               onOpenSettings={() => void openSettingsWindow()}
@@ -873,27 +925,17 @@ export default function App() {
                     />
                   </div>
 
-                  {keysLoaded ? (
-                    <motion.div
-                      data-ai-input-bar
-                      initial={false}
-                      animate={{
-                        height: panelOpen ? "auto" : 0,
-                        opacity: panelOpen ? 1 : 0,
-                      }}
-                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-                      className="overflow-hidden"
-                      aria-hidden={!panelOpen}
-                    >
-                      {hasComposer ? (
-                        <AiInputBar />
-                      ) : (
-                        <AiInputBarConnect
-                          onAdd={() => void openSettingsWindow("models")}
-                        />
-                      )}
-                    </motion.div>
-                  ) : null}
+                  <WorkspaceInputBar
+                    isBlockTab={isBlockTab}
+                    isTerminalTab={isTerminalTab}
+                    activeLeafId={activeLeafId}
+                    cwd={activeCwd}
+                    home={home}
+                    hasComposer={hasComposer}
+                    panelOpen={panelOpen}
+                    keysLoaded={keysLoaded}
+                    onConnect={() => void openSettingsWindow("models")}
+                  />
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>
@@ -931,30 +973,27 @@ export default function App() {
             </>
           ) : null}
 
-          <AnimatePresence>
-            {miniOpen && hasComposer ? <AiMiniWindow key="ai-mini" /> : null}
-            {askPopup ? (
-              <SelectionAskAi
-                key="ask-ai-popup"
-                x={askPopup.x}
-                y={askPopup.y}
-                onAsk={onAskFromSelection}
-                onDismiss={() => setAskPopup(null)}
-              />
-            ) : null}
-          </AnimatePresence>
+          {hasComposer && miniPresence.mounted ? (
+            <AiMiniWindow state={miniPresence.state} />
+          ) : null}
+          {askPresence.mounted ? (
+            <SelectionAskAi
+              state={askPresence.state}
+              x={askPopup?.x ?? 0}
+              y={askPopup?.y ?? 0}
+              onAsk={onAskFromSelection}
+              onDismiss={() => setAskPopup(null)}
+            />
+          ) : null}
 
           <CommandPalette
             open={commandPaletteOpen}
             onOpenChange={setCommandPaletteOpen}
-            actions={commandPaletteActions}
+            initialMode={paletteInitialMode}
+            commandItems={commandPaletteItems}
             workspaceRoot={explorerRoot}
-            onOpenFile={handleOpenFile}
-          />
-
-          <ShortcutsDialog
-            open={shortcutsOpen}
-            onOpenChange={setShortcutsOpen}
+            onOpenContentHit={openContentHit}
+            insertCommand={insertHistoryCommand}
           />
 
           <NewEditorDialog
