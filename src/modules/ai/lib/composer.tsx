@@ -9,7 +9,7 @@ import {
 import { useWhisperRecording } from "../hooks/useWhisperRecording";
 import { expandSnippetTokens, type Snippet } from "../lib/snippets";
 import { tryRunSlashCommand, type SlashCommandMeta } from "./slashCommands";
-import { getOrCreateChat, useChatStore } from "../store/chatStore";
+import { getChat, useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 
@@ -95,6 +95,15 @@ export function AiComposerProvider({ children }: ProviderProps) {
       if (text) setValue((v) => (v ? `${text}${v}` : text));
     }
   }, [focusSignal, pendingPrefill, consumePrefill]);
+
+  // Re-focus the textarea whenever the agent finishes a response
+  const prevIsBusyRef = useRef(false);
+  useEffect(() => {
+    if (prevIsBusyRef.current && !isBusy) {
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+    prevIsBusyRef.current = isBusy;
+  }, [isBusy, textareaRef]);
 
   // Listen for explorer's "Attach to Agent" event.
   useEffect(() => {
@@ -295,22 +304,27 @@ export function AiComposerProvider({ children }: ProviderProps) {
     }
 
     if (!sessionId) return;
-    const chat = getOrCreateChat(sessionId);
-    void chat.sendMessage({ role: "user", parts } as Parameters<
-      typeof chat.sendMessage
-    >[0]);
     const store = useChatStore.getState();
     store.patchAgentMeta({ hitStepCap: false, compactionNotice: null });
     if (!store.mini.open) store.openMini();
+    void (async () => {
+      const { getOrCreateChat } = await import("../store/chatRuntime");
+      const chat = getOrCreateChat(sessionId);
+      void chat.sendMessage({ role: "user", parts } as Parameters<
+        typeof chat.sendMessage
+      >[0]);
+    })();
     setValue("");
     setFiles([]);
     setPickedSnippets([]);
     setPickedCommands([]);
+    // Re-focus immediately after submit so the user can type a follow-up
+    requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
   const stop = () => {
     if (!sessionId) return;
-    void getOrCreateChat(sessionId).stop();
+    void getChat(sessionId)?.stop();
   };
 
   const canSend =

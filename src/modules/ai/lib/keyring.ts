@@ -4,10 +4,12 @@ import {
   KEYRING_SERVICE,
   PROVIDERS,
   providerSupportsKey,
+  type CustomEndpoint,
   type ProviderId,
 } from "../config";
 
 export type ProviderKeys = Record<ProviderId, string | null>;
+export type CustomEndpointKeys = Record<string, string | null>;
 
 export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   openai: null,
@@ -17,9 +19,12 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   cerebras: null,
   groq: null,
   deepseek: null,
+  mistral: null,
   openrouter: null,
   "openai-compatible": null,
   lmstudio: null,
+  mlx: null,
+  ollama: null,
 };
 
 export async function getKey(provider: ProviderId): Promise<string | null> {
@@ -84,4 +89,69 @@ export async function getAllKeys(): Promise<ProviderKeys> {
 
 export function hasAnyKey(keys: ProviderKeys): boolean {
   return PROVIDERS.some((p) => providerSupportsKey(p.id) && !!keys[p.id]);
+}
+
+function compatKeyringAccount(endpointId: string): string {
+  return `compat-${endpointId}-api-key`;
+}
+
+export async function getCustomEndpointKey(
+  endpointId: string,
+): Promise<string | null> {
+  try {
+    const v = await invoke<string | null>("secrets_get", {
+      service: KEYRING_SERVICE,
+      account: compatKeyringAccount(endpointId),
+    });
+    return v && v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCustomEndpointKey(
+  endpointId: string,
+  key: string,
+): Promise<void> {
+  const trimmed = key.trim();
+  if (!trimmed) throw new Error("API key is empty");
+  await invoke("secrets_set", {
+    service: KEYRING_SERVICE,
+    account: compatKeyringAccount(endpointId),
+    password: trimmed,
+  });
+}
+
+export async function clearCustomEndpointKey(
+  endpointId: string,
+): Promise<void> {
+  try {
+    await invoke("secrets_delete", {
+      service: KEYRING_SERVICE,
+      account: compatKeyringAccount(endpointId),
+    });
+  } catch {}
+}
+
+export async function getAllCustomEndpointKeys(
+  endpoints: readonly CustomEndpoint[],
+): Promise<CustomEndpointKeys> {
+  if (endpoints.length === 0) return {};
+  const out: CustomEndpointKeys = {};
+  try {
+    const accounts = endpoints.map((e) => compatKeyringAccount(e.id));
+    const results = await invoke<(string | null)[]>("secrets_get_all", {
+      service: KEYRING_SERVICE,
+      accounts,
+    });
+    endpoints.forEach((e, i) => {
+      const v = results[i];
+      out[e.id] = v && v.length > 0 ? v : null;
+    });
+  } catch {
+    for (const e of endpoints) {
+      out[e.id] = await getCustomEndpointKey(e.id);
+    }
+  }
+  return out;
 }

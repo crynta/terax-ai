@@ -1,0 +1,51 @@
+import type { Theme } from "../types";
+
+export const tokyoNight: Theme = {
+  id: "tokyo-night",
+  name: "Tokyo Night",
+  description: "Calm, blue-leaning dark theme.",
+  editorTheme: { dark: "tokyo-night" },
+  variants: {
+    dark: {
+      colors: {
+        background: "#1a1b26",
+        foreground: "#c0caf5",
+        card: "#1f2030",
+        cardForeground: "#c0caf5",
+        popover: "#1f2030",
+        popoverForeground: "#c0caf5",
+        primary: "#c0caf5",
+        primaryForeground: "#1a1b26",
+        secondary: "#292e42",
+        secondaryForeground: "#c0caf5",
+        muted: "#292e42",
+        mutedForeground: "#9aa5ce",
+        accent: "#292e42",
+        accentForeground: "#c0caf5",
+        destructive: "#f7768e",
+        border: "rgba(255,255,255,0.08)",
+        input: "rgba(255,255,255,0.12)",
+        ring: "#7aa2f7",
+        sidebar: "#1f2030",
+        sidebarForeground: "#c0caf5",
+        sidebarPrimary: "#7aa2f7",
+        sidebarPrimaryForeground: "#1a1b26",
+        sidebarAccent: "#292e42",
+        sidebarAccentForeground: "#c0caf5",
+        sidebarBorder: "rgba(255,255,255,0.08)",
+        sidebarRing: "#7aa2f7",
+      },
+      terminal: {
+        cursor: "#c0caf5",
+        cursorAccent: "#1a1b26",
+        selection: "rgba(122,162,247,0.25)",
+        ansi: [
+          "#15161e", "#f7768e", "#9ece6a", "#e0af68",
+          "#7aa2f7", "#bb9af7", "#7dcfff", "#a9b1d6",
+          "#414868", "#ff7a93", "#b9f27c", "#ff9e64",
+          "#7da6ff", "#bb9af7", "#0db9d7", "#c0caf5",
+        ],
+      },
+    },
+  },
+};

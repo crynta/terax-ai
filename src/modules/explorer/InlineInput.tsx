@@ -31,8 +31,15 @@ export function InlineInput({
     // tick lands we treat the input as "unsettled" — any blur during that
     // window is the portal teardown stealing focus, not the user dismissing
     // the input, so we refocus instead of committing an empty value.
+    //
+    // preventScroll matters here (#123): the input mounts inside the
+    // sidebar's flex column, which is small enough that focus-scroll can
+    // nudge the parent's scroll position by a fraction of a pixel each
+    // cycle. Repeated open/cancel pairs accumulate and walk the tree off
+    // the left edge. We're already rendering the input where it should be
+    // visible — there is no scroll-into-view we need from focus().
     const focus = () => {
-      el.focus({ preventScroll: false });
+      el.focus({ preventScroll: true });
       const dot = initial.lastIndexOf(".");
       if (dot > 0) el.setSelectionRange(0, dot);
       else el.select();

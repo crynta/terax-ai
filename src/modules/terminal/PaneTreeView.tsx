@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/resizable";
 import type { SearchAddon } from "@xterm/addon-search";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
+import { useTerminalDropStore } from "./lib/dropStore";
 import type { PaneNode } from "./lib/panes";
 
 type LeafBundle = {
@@ -19,6 +20,7 @@ type Props = {
   node: PaneNode;
   tabVisible: boolean;
   activeLeafId: number;
+  blocks: boolean;
   onFocusLeaf: (leafId: number) => void;
   getBundle: (leafId: number) => LeafBundle;
 };
@@ -27,6 +29,7 @@ export function PaneTreeView({
   node,
   tabVisible,
   activeLeafId,
+  blocks,
   onFocusLeaf,
   getBundle,
 }: Props) {
@@ -51,11 +54,13 @@ export function PaneTreeView({
           visible={tabVisible}
           focused={focused}
           initialCwd={node.cwd}
+          blocks={blocks}
           ref={b.setRef}
           onSearchReady={(_id, addon) => b.onSearch(addon)}
           onCwd={(_id, cwd) => b.onCwd(cwd)}
           onExit={(_id, code) => b.onExit(code)}
         />
+        <DropOverlay leafId={node.id} />
       </div>
     );
   }
@@ -72,6 +77,7 @@ export function PaneTreeView({
               node={child}
               tabVisible={tabVisible}
               activeLeafId={activeLeafId}
+              blocks={blocks}
               onFocusLeaf={onFocusLeaf}
               getBundle={getBundle}
             />
@@ -79,5 +85,15 @@ export function PaneTreeView({
         </Fragment>
       ))}
     </ResizablePanelGroup>
+  );
+}
+
+function DropOverlay({ leafId }: { leafId: number }) {
+  const active = useTerminalDropStore((s) => s.targetLeafId === leafId);
+  if (!active) return null;
+  return (
+    <div className="pointer-events-none absolute inset-2 grid place-items-center rounded-lg border border-primary/45 bg-background/70 text-xs font-medium text-foreground shadow-lg backdrop-blur-sm">
+      Drop file path here
+    </div>
   );
 }

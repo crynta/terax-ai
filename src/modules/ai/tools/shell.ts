@@ -3,7 +3,7 @@ import { z } from "zod";
 import { native } from "../lib/native";
 import { checkShellCommand } from "../lib/security";
 import type { ToolContext } from "./context";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { currentWorkspaceEnv, workspaceScopeKey } from "@/modules/workspace";
 
 /**
  * Per-session lazy shell-session id. The agent gets one persistent shell per
@@ -24,8 +24,7 @@ async function getSessionShell(
 }
 
 function workspaceSessionKey(sessionId: string): string {
-  const env = currentWorkspaceEnv();
-  return env.kind === "wsl" ? `${sessionId}:wsl:${env.distro}` : `${sessionId}:local`;
+  return `${sessionId}:${workspaceScopeKey(currentWorkspaceEnv())}`;
 }
 
 export function buildShellTools(ctx: ToolContext) {

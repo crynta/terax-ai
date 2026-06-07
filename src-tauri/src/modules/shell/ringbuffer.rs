@@ -48,14 +48,77 @@ impl BoundedRingBuffer {
         self.buf.extend(data);
     }
 
-    /// Return bytes available since `since`, plus the new offset.
-    /// If `since` is older than the resident window, the returned bytes start
-    /// from the oldest available offset (which is `next_offset - buf.len()`).
     pub fn read_from(&self, since: u64) -> (Vec<u8>, u64, u64) {
         let oldest = self.next_offset.saturating_sub(self.buf.len() as u64);
         let start = since.max(oldest);
         let skip = (start - oldest) as usize;
-        let bytes: Vec<u8> = self.buf.iter().copied().skip(skip).collect();
-        (bytes, self.next_offset, self.dropped)
+        let (front, back) = self.buf.as_slices();
+        let mut out = Vec::with_capacity(self.buf.len().saturating_sub(skip));
+        if skip < front.len() {
+            out.extend_from_slice(&front[skip..]);
+            out.extend_from_slice(back);
+        } else {
+            let back_skip = skip - front.len();
+            if back_skip < back.len() {
+                out.extend_from_slice(&back[back_skip..]);
+            }
+        }
+        (out, self.next_offset, self.dropped)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BoundedRingBuffer;
+
+    #[test]
+    fn read_from_returns_all_when_within_cap() {
+        let mut buf = BoundedRingBuffer::new(16);
+        buf.push(b"hello world");
+        let (bytes, off, dropped) = buf.read_from(0);
+        assert_eq!(bytes, b"hello world");
+        assert_eq!(off, 11);
+        assert_eq!(dropped, 0);
+    }
+
+    #[test]
+    fn read_from_skips_consumed_prefix() {
+        let mut buf = BoundedRingBuffer::new(16);
+        buf.push(b"hello world");
+        let (bytes, off, _) = buf.read_from(6);
+        assert_eq!(bytes, b"world");
+        assert_eq!(off, 11);
+    }
+
+    #[test]
+    fn read_from_handles_wraparound() {
+        let mut buf = BoundedRingBuffer::new(8);
+        buf.push(b"abcdefgh");
+        buf.push(b"ijkl");
+        let (bytes, off, dropped) = buf.read_from(0);
+        assert_eq!(bytes, b"efghijkl");
+        assert_eq!(off, 12);
+        assert_eq!(dropped, 4);
+    }
+
+    #[test]
+    fn read_from_clamps_to_oldest() {
+        let mut buf = BoundedRingBuffer::new(8);
+        buf.push(b"abcdefgh");
+        buf.push(b"ijkl");
+        let (bytes, _, _) = buf.read_from(0);
+        let (bytes2, _, _) = buf.read_from(99);
+        assert_eq!(bytes, b"efghijkl");
+        assert!(bytes2.is_empty());
+    }
+
+    #[test]
+    fn push_larger_than_cap_keeps_tail() {
+        let mut buf = BoundedRingBuffer::new(4);
+        buf.push(b"abcdefgh");
+        let (bytes, off, dropped) = buf.read_from(0);
+        assert_eq!(bytes, b"efgh");
+        assert_eq!(off, 8);
+        assert_eq!(dropped, 4);
     }
 }

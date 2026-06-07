@@ -1,36 +1,38 @@
+import { getKey } from "@/modules/ai/lib/keyring";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { onKeysChanged } from "@/modules/settings/store";
+import { redo, undo } from "@codemirror/commands";
 import {
   findNext,
   findPrevious,
   SearchQuery,
   setSearchQuery,
 } from "@codemirror/search";
-import { keymap } from "@codemirror/view";
-import { usePreferencesStore } from "@/modules/settings/preferences";
+import { type Extension, Prec } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
+import { vim } from "@replit/codemirror-vim";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { EDITOR_THEME_EXT } from "./lib/themes";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
 } from "react";
-import { Prec } from "@codemirror/state";
-import { vim } from "@replit/codemirror-vim";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import {
   buildSharedExtensions,
   languageCompartment,
   vimCompartment,
 } from "./lib/extensions";
+import { resolveLanguage } from "./lib/languageResolver";
+import { EDITOR_THEME_EXT } from "./lib/themes";
+import { useDocument } from "./lib/useDocument";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
 
 initVimGlobals();
-import { resolveLanguage } from "./lib/languageResolver";
-import { useDocument } from "./lib/useDocument";
-import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
-import { getKey } from "@/modules/ai/lib/keyring";
-import { onKeysChanged } from "@/modules/settings/store";
-import { convertFileSrc } from "@tauri-apps/api/core";
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -42,6 +44,11 @@ export type EditorPaneHandle = {
   getPath: () => string;
   /** Re-read the file from disk. Skips silently if the buffer is dirty. */
   reload: () => boolean;
+  /** Move the cursor to a 1-based line and center it, once content is ready. */
+  gotoLine: (line: number) => void;
+  /** Apply CodeMirror's undo/redo commands. */
+  undo: () => void;
+  redo: () => void;
 };
 
 type Props = {
@@ -59,7 +66,10 @@ function formatBytes(n: number): string {
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
   function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
-    const { doc, onChange, save, reload } = useDocument({ path, onDirtyChange });
+    const { doc, onChange, save, reload } = useDocument({
+      path,
+      onDirtyChange,
+    });
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
     const cmRef = useRef<ReactCodeMirrorRef>(null);
@@ -72,7 +82,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       let cancelled = false;
       const refresh = async () => {
         const provider = usePreferencesStore.getState().autocompleteProvider;
-        if (provider === "lmstudio") {
+        if (
+          provider === "lmstudio" ||
+          provider === "mlx" ||
+          provider === "ollama"
+        ) {
           apiKeyRef.current = null;
           return;
         }
@@ -95,7 +109,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         unsubPrefs();
       };
     }, []);
-    const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
+    const themeExt =
+      EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
 
     // Stabilize save + onSaved via refs so the extensions array never changes
     // identity — a new identity makes @uiw/react-codemirror reconfigure the
@@ -109,6 +124,28 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
 
     const pathRef = useRef(path);
     pathRef.current = path;
+
+    const pendingLineRef = useRef<number | null>(null);
+    const statusRef = useRef(doc.status);
+    statusRef.current = doc.status;
+
+    const applyPendingGoto = useCallback(() => {
+      const view = cmRef.current?.view;
+      const line = pendingLineRef.current;
+      if (!view || line == null || statusRef.current !== "ready") return;
+      const target = Math.max(1, Math.min(line, view.state.doc.lines));
+      const at = view.state.doc.line(target).from;
+      view.dispatch({
+        selection: { anchor: at },
+        effects: EditorView.scrollIntoView(at, { y: "center" }),
+      });
+      view.focus();
+      pendingLineRef.current = null;
+    }, []);
+
+    useEffect(() => {
+      if (doc.status === "ready") applyPendingGoto();
+    }, [doc.status, applyPendingGoto]);
 
     const extensions = useMemo(
       () => [
@@ -131,12 +168,28 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         inlineCompletion({
           getPrefs: () => {
             const s = usePreferencesStore.getState();
+            const p = s.autocompleteProvider;
+            const modelId =
+              p === "lmstudio"
+                ? s.lmstudioModelId
+                : p === "mlx"
+                  ? s.mlxModelId
+                  : p === "ollama"
+                    ? s.ollamaModelId
+                    : p === "openai-compatible"
+                      ? s.openaiCompatibleModelId
+                      : p === "openrouter"
+                        ? s.openrouterModelId
+                        : s.autocompleteModelId;
             return {
               enabled: s.autocompleteEnabled,
-              provider: s.autocompleteProvider,
-              modelId: s.autocompleteModelId,
+              provider: p,
+              modelId,
               apiKey: apiKeyRef.current,
               lmstudioBaseURL: s.lmstudioBaseURL,
+              mlxBaseURL: s.mlxBaseURL,
+              ollamaBaseURL: s.ollamaBaseURL,
+              openaiCompatibleBaseURL: s.openaiCompatibleBaseURL,
             };
           },
           getPath: () => pathRef.current,
@@ -163,9 +216,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       const view = cmRef.current?.view;
       if (!view) return;
       view.dispatch({
-        effects: vimCompartment.reconfigure(
-          vimMode ? Prec.highest(vim()) : [],
-        ),
+        effects: vimCompartment.reconfigure(vimMode ? Prec.highest(vim()) : []),
       });
     }, [vimMode]);
 
@@ -173,18 +224,28 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       let cancelled = false;
       const ext = path.split(".").pop()?.toLowerCase() ?? null;
       languageRef.current = ext;
-      resolveLanguage(path).then((ext) => {
+      const resolve = async (): Promise<Extension> => {
+        if (path.toLowerCase().endsWith(".terax-theme")) {
+          const [{ json }, { colorSwatches }] = await Promise.all([
+            import("@codemirror/lang-json"),
+            import("./lib/colorSwatches"),
+          ]);
+          return [json(), colorSwatches()];
+        }
+        return (await resolveLanguage(path)) ?? [];
+      };
+      void resolve().then((extension) => {
         if (cancelled) return;
         const view = cmRef.current?.view;
         if (!view) return;
         view.dispatch({
-          effects: languageCompartment.reconfigure(ext ?? []),
+          effects: languageCompartment.reconfigure(extension),
         });
       });
       return () => {
         cancelled = true;
       };
-    }, [path, doc.status]);
+    }, [path]);
 
     useImperativeHandle(
       ref,
@@ -226,8 +287,20 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         },
         getPath: () => path,
         reload: () => reloadRef.current(),
+        gotoLine: (line: number) => {
+          pendingLineRef.current = line;
+          applyPendingGoto();
+        },
+        undo: () => {
+          const view = cmRef.current?.view;
+          if (view) undo(view);
+        },
+        redo: () => {
+          const view = cmRef.current?.view;
+          if (view) redo(view);
+        },
       }),
-      [path],
+      [path, applyPendingGoto],
     );
 
     if (doc.status === "loading") {
@@ -269,6 +342,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               />
             )}
             {isVideo && (
+              // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
               <video
                 controls
                 preload="metadata"
@@ -277,6 +351,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               />
             )}
             {isAudio && (
+              // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
               <audio
                 controls
                 preload="metadata"

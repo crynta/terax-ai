@@ -8,9 +8,12 @@ export type ProviderId =
   | "cerebras"
   | "groq"
   | "deepseek"
+  | "mistral"
   | "openrouter"
   | "openai-compatible"
-  | "lmstudio";
+  | "lmstudio"
+  | "mlx"
+  | "ollama";
 
 export type ProviderInfo = {
   id: ProviderId;
@@ -73,6 +76,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     consoleUrl: "https://platform.deepseek.com/api_keys",
   },
   {
+    id: "mistral",
+    label: "Mistral",
+    keyringAccount: "mistral-api-key",
+    keyPrefix: null,
+    consoleUrl: "https://console.mistral.ai/api-keys/",
+  },
+  {
     id: "openrouter",
     label: "OpenRouter",
     keyringAccount: "openrouter-api-key",
@@ -94,7 +104,58 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyPrefix: null,
     consoleUrl: "https://lmstudio.ai/docs/basics/server",
   },
+  {
+    id: "mlx",
+    label: "MLX",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md",
+  },
+  {
+    id: "ollama",
+    label: "Ollama",
+    keyringAccount: "",
+    keyPrefix: null,
+    consoleUrl: "https://ollama.com/download",
+  },
 ] as const;
+
+export type CustomEndpoint = {
+  id: string;
+  name: string;
+  baseURL: string;
+  modelId: string;
+  contextLimit: number;
+};
+
+const COMPAT_MODEL_PREFIX = "compat-";
+
+export function compatModelIdForEndpoint(endpointId: string): string {
+  return `${COMPAT_MODEL_PREFIX}${endpointId}`;
+}
+
+export function isCompatModelId(modelId: string): boolean {
+  return modelId.startsWith(COMPAT_MODEL_PREFIX);
+}
+
+export function endpointIdFromCompatModel(modelId: string): string {
+  return isCompatModelId(modelId)
+    ? modelId.slice(COMPAT_MODEL_PREFIX.length)
+    : "";
+}
+
+/** One-shot migration of the legacy single OpenAI-compatible config into the
+ *  named-endpoint list. Returns one endpoint when the old base URL + model id
+ *  were both set, else empty. `id` is supplied by the caller to stay pure. */
+export function migrateLegacyCompatEndpoint(
+  baseURL: string,
+  modelId: string,
+  contextLimit: number,
+  id: string,
+): CustomEndpoint[] {
+  if (!baseURL.trim() || !modelId.trim()) return [];
+  return [{ id, name: "Custom endpoint", baseURL, modelId, contextLimit }];
+}
 
 export function getProvider(id: ProviderId): ProviderInfo {
   const p = PROVIDERS.find((x) => x.id === id);
@@ -213,6 +274,24 @@ export const MODELS = [
 
   // ── Google ────────────────────────────────────────────────────────────────
   {
+    id: "gemini-3.5-flash",
+    provider: "google",
+    label: "Gemini 3.5 Flash",
+    hint: "Fast",
+    description: "High-intelligence, extremely fast multimodal model.",
+    capabilities: { intelligence: 4, speed: 5, cost: 4 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "gemini-3.1-flash-lite",
+    provider: "google",
+    label: "Gemini 3.1 Flash-Lite",
+    hint: "Lite",
+    description: "Extremely fast, cheap, and lightweight multimodal model.",
+    capabilities: { intelligence: 3, speed: 5, cost: 5 },
+    tags: ["vision", "tools"],
+  },
+  {
     id: "gemini-3.1-pro-preview",
     provider: "google",
     label: "Gemini 3.1 Pro",
@@ -295,7 +374,7 @@ export const MODELS = [
     hint: "Fast",
     description: "Cheap and fast everyday tier.",
     capabilities: { intelligence: 4, speed: 5, cost: 5 },
-    tags: ["tools"],
+    tags: ["reasoning", "tools"],
   },
   {
     id: "deepseek-reasoner",
@@ -305,6 +384,35 @@ export const MODELS = [
     description: "Chain-of-thought at open-weight prices.",
     capabilities: { intelligence: 5, speed: 2, cost: 4 },
     tags: ["reasoning", "coding"],
+  },
+
+  // ── Mistral ────────────────────────────────────────────────────────────────
+  {
+    id: "mistral-large-latest",
+    provider: "mistral",
+    label: "Mistral Large 3",
+    hint: "Best",
+    description: "Flagship Mistral model with 128K context.",
+    capabilities: { intelligence: 5, speed: 3, cost: 3 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
+    id: "mistral-medium-latest",
+    provider: "mistral",
+    label: "Mistral Medium 3.5",
+    hint: "Balanced",
+    description: "Good balance of speed and intelligence.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["vision", "tools"],
+  },
+  {
+    id: "codestral-latest",
+    provider: "mistral",
+    label: "Codestral",
+    hint: "Code",
+    description: "Purpose-built coding model from Mistral.",
+    capabilities: { intelligence: 4, speed: 4, cost: 4 },
+    tags: ["coding"],
   },
 
   // ── Cerebras (autocomplete-tier) ──────────────────────────────────────────
@@ -365,141 +473,14 @@ export const MODELS = [
     tags: ["reasoning", "tools"],
   },
 
-  // ── OpenRouter (gateway — curated cross-provider routes) ──────────────────
+  // ── OpenRouter (gateway; model id is user-supplied at runtime) ────────────
   {
-    id: "anthropic/claude-opus-4-7",
+    id: "openrouter-custom",
     provider: "openrouter",
-    label: "Claude Opus 4.7",
-    hint: "OpenRouter",
-    description: "Anthropic flagship via OpenRouter.",
-    capabilities: { intelligence: 5, speed: 2, cost: 1 },
-    tags: ["vision", "reasoning", "tools", "coding"],
-  },
-  {
-    id: "anthropic/claude-sonnet-4-6",
-    provider: "openrouter",
-    label: "Claude Sonnet 4.6",
-    hint: "OpenRouter",
-    description: "Balanced Claude via OpenRouter.",
-    capabilities: { intelligence: 4, speed: 4, cost: 3 },
-    tags: ["vision", "tools", "coding"],
-  },
-  {
-    id: "openai/gpt-5.5",
-    provider: "openrouter",
-    label: "GPT-5.5",
-    hint: "OpenRouter",
-    description: "OpenAI flagship via OpenRouter.",
-    capabilities: { intelligence: 5, speed: 3, cost: 1 },
-    tags: ["vision", "reasoning", "tools", "coding"],
-  },
-  {
-    id: "openai/gpt-5.4-mini",
-    provider: "openrouter",
-    label: "GPT-5.4 mini",
-    hint: "OpenRouter",
-    description: "Snappy GPT via OpenRouter.",
-    capabilities: { intelligence: 4, speed: 4, cost: 4 },
-    tags: ["vision", "tools"],
-  },
-  {
-    id: "google/gemini-3.1-pro-preview",
-    provider: "openrouter",
-    label: "Gemini 3.1 Pro",
-    hint: "OpenRouter",
-    description: "Google flagship via OpenRouter.",
-    capabilities: { intelligence: 5, speed: 3, cost: 2 },
-    tags: ["vision", "reasoning", "tools", "coding"],
-  },
-  {
-    id: "x-ai/grok-4.20-reasoning",
-    provider: "openrouter",
-    label: "Grok 4.20 Reasoning",
-    hint: "OpenRouter",
-    description: "xAI reasoning via OpenRouter.",
-    capabilities: { intelligence: 5, speed: 2, cost: 2 },
-    tags: ["reasoning", "tools", "coding"],
-  },
-  {
-    id: "deepseek/deepseek-v4-pro",
-    provider: "openrouter",
-    label: "DeepSeek V4 Pro",
-    hint: "OpenRouter",
-    description: "Open-weight coding model.",
-    capabilities: { intelligence: 5, speed: 3, cost: 5 },
-    tags: ["reasoning", "tools", "coding"],
-  },
-  {
-    id: "deepseek/deepseek-reasoner",
-    provider: "openrouter",
-    label: "DeepSeek Reasoner",
-    hint: "OpenRouter",
-    description: "Cheap chain-of-thought reasoner.",
-    capabilities: { intelligence: 5, speed: 2, cost: 5 },
-    tags: ["reasoning", "coding"],
-  },
-  {
-    id: "meta-llama/llama-4-scout-17b-16e-instruct",
-    provider: "openrouter",
-    label: "Llama 4 Scout",
-    hint: "OpenRouter",
-    description: "Meta's efficient multimodal model.",
-    capabilities: { intelligence: 4, speed: 4, cost: 5 },
-    tags: ["vision", "tools"],
-  },
-  {
-    id: "meta-llama/llama-4-maverick",
-    provider: "openrouter",
-    label: "Llama 4 Maverick",
-    hint: "OpenRouter",
-    description: "Meta's flagship open multimodal model.",
-    capabilities: { intelligence: 4, speed: 3, cost: 5 },
-    tags: ["vision", "tools", "coding"],
-  },
-  {
-    id: "moonshotai/kimi-k2.5",
-    provider: "openrouter",
-    label: "Kimi K2.5",
-    hint: "OpenRouter",
-    description: "Moonshot's agentic flagship.",
-    capabilities: { intelligence: 5, speed: 3, cost: 4 },
-    tags: ["vision", "tools", "coding"],
-  },
-  {
-    id: "qwen/qwen3-max",
-    provider: "openrouter",
-    label: "Qwen 3 Max",
-    hint: "OpenRouter",
-    description: "Alibaba's multilingual reasoner.",
-    capabilities: { intelligence: 5, speed: 3, cost: 4 },
-    tags: ["reasoning", "tools", "coding"],
-  },
-  {
-    id: "qwen/qwen3-coder",
-    provider: "openrouter",
-    label: "Qwen 3 Coder",
-    hint: "OpenRouter",
-    description: "Qwen tuned for code.",
-    capabilities: { intelligence: 4, speed: 4, cost: 5 },
-    tags: ["tools", "coding"],
-  },
-  {
-    id: "mistralai/mistral-large-latest",
-    provider: "openrouter",
-    label: "Mistral Large",
-    hint: "OpenRouter",
-    description: "EU-hosted general-purpose flagship.",
-    capabilities: { intelligence: 4, speed: 4, cost: 3 },
-    tags: ["tools", "coding"],
-  },
-  {
-    id: "z-ai/glm-4.6",
-    provider: "openrouter",
-    label: "GLM 4.6",
-    hint: "OpenRouter",
-    description: "Zhipu's long-context agentic model.",
-    capabilities: { intelligence: 4, speed: 4, cost: 4 },
-    tags: ["tools", "coding"],
+    label: "OpenRouter",
+    hint: "Configurable",
+    description: "Any model on OpenRouter by id.",
+    capabilities: { intelligence: 3, speed: 3, cost: 3 },
   },
 
   // ── Generic OpenAI-compatible (user-defined endpoint) ─────────────────────
@@ -521,14 +502,78 @@ export const MODELS = [
     description: "Local GGUF models via LM Studio.",
     capabilities: { intelligence: 3, speed: 3, cost: 5 },
   },
+
+  // ── MLX (local; Apple-silicon; model id is user-supplied at runtime) ──────
+  {
+    id: "mlx-local",
+    provider: "mlx",
+    label: "MLX",
+    hint: "Local",
+    description: "Apple-silicon models via mlx_lm.server.",
+    capabilities: { intelligence: 3, speed: 3, cost: 5 },
+  },
+
+  // ── Ollama (local; model id is user-supplied at runtime) ──────────────────
+  {
+    id: "ollama-local",
+    provider: "ollama",
+    label: "Ollama",
+    hint: "Local",
+    description: "Local models via Ollama.",
+    capabilities: { intelligence: 3, speed: 3, cost: 5 },
+  },
 ] as const satisfies readonly ModelInfo[];
 
 export type ModelId = (typeof MODELS)[number]["id"];
+
+export function getCompatModelInfo(
+  modelId: string,
+  endpoints: readonly CustomEndpoint[],
+): ModelInfo {
+  const eid = endpointIdFromCompatModel(modelId);
+  const ep = endpoints.find((e) => e.id === eid);
+  const name = ep?.name || "Custom endpoint";
+  return {
+    id: modelId,
+    provider: "openai-compatible",
+    label: ep?.modelId || name,
+    hint: name,
+    description: ep ? `${name} — ${ep.baseURL}` : "Custom OpenAI-compatible endpoint",
+    capabilities: { intelligence: 3, speed: 3, cost: 3 },
+  };
+}
+
+export function resolveModel(
+  modelId: string,
+  endpoints: readonly CustomEndpoint[] = [],
+): ModelInfo {
+  if (isCompatModelId(modelId)) return getCompatModelInfo(modelId, endpoints);
+  const m = MODELS.find((x) => x.id === modelId);
+  if (!m) throw new Error(`Unknown model: ${modelId}`);
+  return m;
+}
 
 export function getModel(id: ModelId): ModelInfo {
   const m = MODELS.find((x) => x.id === id);
   if (!m) throw new Error(`Unknown model: ${id}`);
   return m;
+}
+
+export function isKnownModelId(id: string): id is ModelId {
+  return MODELS.some((x) => x.id === id);
+}
+
+const FREEFORM_PROVIDERS: ReadonlySet<ProviderId> = new Set([
+  "openrouter",
+  "openai-compatible",
+  "lmstudio",
+  "mlx",
+  "ollama",
+]);
+
+// Reasoning models reject tool-call turns whose reasoning was stripped; keep it.
+export function modelKeepsReasoning(m: ModelInfo): boolean {
+  return (m.tags?.includes("reasoning") ?? false) || FREEFORM_PROVIDERS.has(m.provider);
 }
 
 export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
@@ -546,6 +591,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "claude-sonnet-4-6": 200_000,
   "claude-haiku-4-5": 200_000,
   "claude-opus-4-6": 200_000,
+  "gemini-3.5-flash": 1_000_000,
+  "gemini-3.1-flash-lite": 1_000_000,
   "gemini-3.1-pro-preview": 1_000_000,
   "gemini-3-flash-preview": 1_000_000,
   "gemini-2.5-pro": 1_000_000,
@@ -562,27 +609,24 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "openai/gpt-oss-20b": 128_000,
   "llama-3.3-70b-versatile": 128_000,
   "deepseek-r1-distill-llama-70b": 128_000,
-  "anthropic/claude-opus-4-7": 200_000,
-  "anthropic/claude-sonnet-4-6": 200_000,
-  "openai/gpt-5.5": 1_050_000,
-  "openai/gpt-5.4-mini": 400_000,
-  "google/gemini-3.1-pro-preview": 1_000_000,
-  "x-ai/grok-4.20-reasoning": 2_000_000,
-  "deepseek/deepseek-v4-pro": 1_000_000,
-  "deepseek/deepseek-reasoner": 128_000,
-  "meta-llama/llama-4-scout-17b-16e-instruct": 128_000,
-  "meta-llama/llama-4-maverick": 128_000,
-  "moonshotai/kimi-k2.5": 256_000,
-  "qwen/qwen3-max": 256_000,
-  "qwen/qwen3-coder": 256_000,
-  "mistralai/mistral-large-latest": 128_000,
-  "z-ai/glm-4.6": 128_000,
+  "openrouter-custom": 256_000,
   "openai-compatible-custom": 128_000,
   "lmstudio-local": 32_000,
+  "mlx-local": 32_000,
+  "ollama-local": 32_000,
+  "mistral-large-latest": 131_072,
+  "mistral-medium-latest": 32_768,
+  "codestral-latest": 256_000,
 };
 
-export function getModelContextLimit(modelId: string | undefined): number {
+export function getModelContextLimit(
+  modelId: string | undefined,
+  compatOverride?: number,
+): number {
   if (!modelId) return 128_000;
+  if (isCompatModelId(modelId)) return compatOverride ?? 128_000;
+  if (modelId === "openai-compatible-custom" && compatOverride)
+    return compatOverride;
   return MODEL_CONTEXT_LIMITS[modelId] ?? 128_000;
 }
 
@@ -602,6 +646,8 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "claude-opus-4-6": { input: 15, output: 75, cacheRead: 1.5 },
   "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3 },
   "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1 },
+  "gemini-3.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.075 },
+  "gemini-3.1-flash-lite": { input: 0.075, output: 0.3, cacheRead: 0.015 },
   "gemini-3.1-pro-preview": { input: 1.25, output: 10, cacheRead: 0.31 },
   "gemini-3-flash-preview": { input: 0.3, output: 2.5, cacheRead: 0.075 },
   "gemini-2.5-pro": { input: 1.25, output: 10, cacheRead: 0.31 },
@@ -632,6 +678,8 @@ export function estimateCost(
 /** Providers that do not require an API key (local servers, key-optional). */
 export const KEYLESS_PROVIDERS: readonly ProviderId[] = [
   "lmstudio",
+  "mlx",
+  "ollama",
   "openai-compatible",
 ] as const;
 
@@ -673,6 +721,8 @@ export function getAutocompleteEligibleModels(): readonly ModelInfo[] {
 }
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
+export const MLX_DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1";
+export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434/v1";
 export const OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
