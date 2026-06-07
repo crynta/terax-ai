@@ -63,6 +63,22 @@ pub fn build_command(
     }
 }
 
+pub fn detect_shell_name() -> String {
+    #[cfg(unix)]
+    {
+        let (_, path) = unix::Shell::detect();
+        path.rsplit('/').next().unwrap_or("").to_string()
+    }
+    #[cfg(windows)]
+    {
+        windows_shell_path()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .unwrap_or_default()
+    }
+}
+
 fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
     let is_utf8 = |v: &str| {
         let up = v.to_ascii_uppercase();

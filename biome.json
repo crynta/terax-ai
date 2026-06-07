@@ -19,6 +19,25 @@
     "indentWidth": 2,
     "lineWidth": 80
   },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": {
+          "level": "on",
+          "options": {
+            "groups": [
+              ":NODE:",
+              ["@/**"],
+              ":PACKAGE:",
+              ":ALIAS:",
+              ":PATH:"
+            ]
+          }
+        }
+      }
+    }
+  },
   "javascript": {
     "formatter": {
       "quoteStyle": "double",

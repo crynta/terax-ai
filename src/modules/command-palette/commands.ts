@@ -1,48 +1,35 @@
 import type { SearchTarget } from "@/modules/header";
-import type { ShortcutId } from "@/modules/shortcuts";
 import { MAX_PANES_PER_TAB, type Tab } from "@/modules/tabs";
 import { leafIds } from "@/modules/terminal";
 import {
-  ArrowLeft01Icon,
-  ArrowRight01Icon,
   Cancel01Icon,
+  DashboardSquare01Icon,
   FileEditIcon,
+  FileSearchIcon,
   Globe02Icon,
   IncognitoIcon,
   KeyboardIcon,
   LayoutTwoColumnIcon,
   LayoutTwoRowIcon,
+  PaintBoardIcon,
   Search01Icon,
   Settings01Icon,
   SidebarLeftIcon,
+  SourceCodeIcon,
   SparklesIcon,
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
+import type { PaletteItem } from "./types";
 
-type CommandIcon = typeof TerminalIcon;
-
-export type CommandPaletteActionGroup =
-  | "General"
-  | "Tabs"
-  | "Panes"
-  | "View"
-  | "Search"
-  | "AI";
-
-export type CommandPaletteAction = {
-  id: string;
-  label: string;
-  group: CommandPaletteActionGroup;
-  keywords: string[];
-  icon: CommandIcon;
-  shortcutId?: ShortcutId;
-  disabledReason?: string;
-  run: () => void;
-  deferRun?: boolean;
-};
-
-export const COMMAND_PALETTE_ACTION_GROUPS: readonly CommandPaletteActionGroup[] =
-  ["General", "Tabs", "Panes", "View", "Search", "AI"] as const;
+export const COMMAND_GROUPS = [
+  "General",
+  "Tabs",
+  "Panes",
+  "Git",
+  "Search",
+  "View",
+  "AI",
+] as const;
 
 export type CommandPaletteActionContext = {
   tabs: Tab[];
@@ -51,73 +38,73 @@ export type CommandPaletteActionContext = {
   explorerRoot: string | null;
   home: string | null;
   openNewTab: () => void;
+  openNewBlock: () => void;
   openNewPrivate: () => void;
   openNewEditor: () => void;
   openNewPreview: () => void;
+  openGitGraph: () => void;
+  toggleSourceControl: () => void;
   closeActiveTabOrPane: () => void;
-  nextTab: () => void;
-  previousTab: () => void;
   splitPaneRight: () => void;
   splitPaneDown: () => void;
-  focusNextPane: () => void;
-  focusPreviousPane: () => void;
   focusSearch: () => void;
   focusExplorerSearch: () => void;
   toggleSidebar: () => void;
   toggleAi: () => void;
   askAiSelection: () => void;
   openSettings: () => void;
-  openShortcuts: () => void;
+  openKeyboardShortcuts: () => void;
 };
 
-export function createCommandPaletteActions(
+const noop = () => {};
+
+export function createCommandItems(
   ctx: CommandPaletteActionContext,
-): CommandPaletteAction[] {
+): PaletteItem[] {
   const activeTab = ctx.tabs.find((tab) => tab.id === ctx.activeId);
-  const activeTerminalTab =
-    activeTab?.kind === "terminal" ? activeTab : null;
+  const activeTerminalTab = activeTab?.kind === "terminal" ? activeTab : null;
   const activePaneCount = activeTerminalTab
     ? leafIds(activeTerminalTab.paneTree).length
     : 0;
   const onlyOneTab = ctx.tabs.length < 2;
   const noWorkspaceRoot = !ctx.explorerRoot && !ctx.home;
-  const splitPaneDisabledReason = !activeTerminalTab
+  const splitDisabled = !activeTerminalTab
     ? "No terminal tab"
     : activePaneCount >= MAX_PANES_PER_TAB
       ? "Pane limit"
       : undefined;
-  const focusPaneDisabledReason = !activeTerminalTab
-    ? "No terminal tab"
-    : activePaneCount < 2
-      ? "Only one pane"
-      : undefined;
-  const closeDisabledReason =
+  const closeDisabled =
     onlyOneTab && activePaneCount < 2 ? "Last tab" : undefined;
 
   return [
     {
       id: "settings.open",
-      label: "Open settings",
+      title: "Open settings",
       group: "General",
       keywords: ["preferences", "config"],
       icon: Settings01Icon,
       shortcutId: "settings.open",
       run: ctx.openSettings,
-      deferRun: true,
+    },
+    {
+      id: "theme.pick",
+      title: "Change theme...",
+      group: "General",
+      keywords: ["theme", "appearance", "color", "dark", "light"],
+      icon: PaintBoardIcon,
+      run: noop,
     },
     {
       id: "shortcuts.open",
-      label: "Show keyboard shortcuts",
+      title: "Keyboard shortcuts",
       group: "General",
-      keywords: ["keys", "keybindings", "help"],
+      keywords: ["keys", "keybindings", "settings"],
       icon: KeyboardIcon,
-      shortcutId: "shortcuts.open",
-      run: ctx.openShortcuts,
-      deferRun: true,
+      run: ctx.openKeyboardShortcuts,
     },
     {
       id: "tab.new",
-      label: "New terminal",
+      title: "New terminal",
       group: "Tabs",
       keywords: ["shell", "terminal", "new tab"],
       icon: TerminalIcon,
@@ -125,8 +112,16 @@ export function createCommandPaletteActions(
       run: ctx.openNewTab,
     },
     {
+      id: "tab.newBlock",
+      title: "New block terminal",
+      group: "Tabs",
+      keywords: ["blocks", "warp", "command blocks", "terminal"],
+      icon: DashboardSquare01Icon,
+      run: ctx.openNewBlock,
+    },
+    {
       id: "tab.newPrivate",
-      label: "New private terminal",
+      title: "New private terminal",
       group: "Tabs",
       keywords: ["privacy", "private", "incognito", "hidden from ai"],
       icon: IncognitoIcon,
@@ -135,97 +130,111 @@ export function createCommandPaletteActions(
     },
     {
       id: "tab.newEditor",
-      label: "New editor tab",
+      title: "New editor tab",
       group: "Tabs",
       keywords: ["file", "editor", "create"],
       icon: FileEditIcon,
       shortcutId: "tab.newEditor",
       disabledReason: noWorkspaceRoot ? "No workspace root" : undefined,
       run: ctx.openNewEditor,
-      deferRun: true,
     },
     {
       id: "tab.newPreview",
-      label: "New preview tab",
+      title: "New web preview",
       group: "Tabs",
-      keywords: ["browser", "web", "localhost"],
+      keywords: ["browser", "web", "localhost", "preview"],
       icon: Globe02Icon,
       shortcutId: "tab.newPreview",
       run: ctx.openNewPreview,
     },
     {
       id: "tab.close",
-      label: "Close tab or pane",
+      title: "Close tab or pane",
       group: "Tabs",
       keywords: ["close", "remove", "pane"],
       icon: Cancel01Icon,
       shortcutId: "tab.close",
-      disabledReason: closeDisabledReason,
+      disabledReason: closeDisabled,
       run: ctx.closeActiveTabOrPane,
     },
     {
-      id: "tab.next",
-      label: "Next tab",
-      group: "Tabs",
-      keywords: ["switch", "right"],
-      icon: ArrowRight01Icon,
-      shortcutId: "tab.next",
-      disabledReason: onlyOneTab ? "Only one tab" : undefined,
-      run: ctx.nextTab,
-    },
-    {
-      id: "tab.prev",
-      label: "Previous tab",
-      group: "Tabs",
-      keywords: ["switch", "left"],
-      icon: ArrowLeft01Icon,
-      shortcutId: "tab.prev",
-      disabledReason: onlyOneTab ? "Only one tab" : undefined,
-      run: ctx.previousTab,
-    },
-    {
       id: "pane.splitRight",
-      label: "Split pane right",
+      title: "Split pane right",
       group: "Panes",
       keywords: ["terminal", "pane", "split", "right", "column"],
       icon: LayoutTwoColumnIcon,
       shortcutId: "pane.splitRight",
-      disabledReason: splitPaneDisabledReason,
+      disabledReason: splitDisabled,
       run: ctx.splitPaneRight,
     },
     {
       id: "pane.splitDown",
-      label: "Split pane down",
+      title: "Split pane down",
       group: "Panes",
       keywords: ["terminal", "pane", "split", "down", "row"],
       icon: LayoutTwoRowIcon,
       shortcutId: "pane.splitDown",
-      disabledReason: splitPaneDisabledReason,
+      disabledReason: splitDisabled,
       run: ctx.splitPaneDown,
     },
     {
-      id: "pane.focusNext",
-      label: "Focus next pane",
-      group: "Panes",
-      keywords: ["terminal", "pane", "focus", "next"],
-      icon: ArrowRight01Icon,
-      shortcutId: "pane.focusNext",
-      disabledReason: focusPaneDisabledReason,
-      run: ctx.focusNextPane,
+      id: "git.graph",
+      title: "Open git graph",
+      group: "Git",
+      keywords: ["git", "graph", "history", "log", "commits"],
+      icon: SourceCodeIcon,
+      run: ctx.openGitGraph,
     },
     {
-      id: "pane.focusPrev",
-      label: "Focus previous pane",
-      group: "Panes",
-      keywords: ["terminal", "pane", "focus", "previous"],
-      icon: ArrowLeft01Icon,
-      shortcutId: "pane.focusPrev",
-      disabledReason: focusPaneDisabledReason,
-      run: ctx.focusPreviousPane,
+      id: "git.source",
+      title: "Toggle source control",
+      group: "Git",
+      keywords: ["git", "source control", "changes", "staging", "diff"],
+      icon: SourceCodeIcon,
+      shortcutId: "pane.source",
+      run: ctx.toggleSourceControl,
+    },
+    {
+      id: "search.content",
+      title: "Find content in files",
+      group: "Search",
+      keywords: ["grep", "ripgrep", "text", "contents", "search in files"],
+      icon: FileSearchIcon,
+      trailing: "#",
+      run: noop,
+    },
+    {
+      id: "history.open",
+      title: "Search command history",
+      group: "Search",
+      keywords: ["history", "shell", "rerun", "previous commands"],
+      icon: TerminalIcon,
+      trailing: ">",
+      run: noop,
+    },
+    {
+      id: "search.focus",
+      title: "Find in current tab",
+      group: "Search",
+      keywords: ["find", "terminal", "editor", "current"],
+      icon: Search01Icon,
+      shortcutId: "search.focus",
+      disabledReason: ctx.searchTarget ? undefined : "No searchable view",
+      run: ctx.focusSearch,
+    },
+    {
+      id: "explorer.search",
+      title: "Search files by name",
+      group: "Search",
+      keywords: ["explorer", "workspace", "file", "open"],
+      icon: Search01Icon,
+      shortcutId: "explorer.search",
+      disabledReason: ctx.explorerRoot ? undefined : "No workspace root",
+      run: ctx.focusExplorerSearch,
     },
     {
       id: "sidebar.toggle",
-      label: "Toggle file explorer",
+      title: "Toggle file explorer",
       group: "View",
       keywords: ["sidebar", "files", "explorer"],
       icon: SidebarLeftIcon,
@@ -233,30 +242,8 @@ export function createCommandPaletteActions(
       run: ctx.toggleSidebar,
     },
     {
-      id: "explorer.search",
-      label: "Search files",
-      group: "Search",
-      keywords: ["explorer", "workspace", "file search"],
-      icon: Search01Icon,
-      shortcutId: "explorer.search",
-      disabledReason: ctx.explorerRoot ? undefined : "No workspace root",
-      run: ctx.focusExplorerSearch,
-      deferRun: true,
-    },
-    {
-      id: "search.focus",
-      label: "Focus search",
-      group: "Search",
-      keywords: ["find", "terminal", "editor"],
-      icon: Search01Icon,
-      shortcutId: "search.focus",
-      disabledReason: ctx.searchTarget ? undefined : "No searchable view",
-      run: ctx.focusSearch,
-      deferRun: true,
-    },
-    {
       id: "ai.toggle",
-      label: "Toggle AI agent",
+      title: "Toggle AI agent",
       group: "AI",
       keywords: ["assistant", "chat", "agent"],
       icon: SparklesIcon,
@@ -265,7 +252,7 @@ export function createCommandPaletteActions(
     },
     {
       id: "ai.askSelection",
-      label: "Ask AI about selection",
+      title: "Ask AI about selection",
       group: "AI",
       keywords: ["selection", "explain", "assistant", "chat"],
       icon: SparklesIcon,
