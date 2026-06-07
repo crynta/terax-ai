@@ -1,7 +1,9 @@
-import { Alert02Icon, Globe02Icon } from "@hugeicons/core-free-icons";
+import { Globe02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -11,6 +13,13 @@ import {
   PreviewAddressBar,
   type PreviewAddressBarHandle,
 } from "./PreviewAddressBar";
+import {
+  PREVIEW_NAV_EVENT,
+  type PreviewBounds,
+  type PreviewNavPayload,
+  previewBridge,
+  previewLabel,
+} from "./previewBridge";
 
 export type PreviewPaneHandle = {
   reload: () => void;
@@ -19,178 +28,168 @@ export type PreviewPaneHandle = {
 };
 
 type Props = {
+  id: number;
   url: string;
   visible: boolean;
+  /** A modal/dropdown that overlaps the pane is open; the native webview
+   *  renders above all HTML, so it must be hidden to not cover the overlay. */
+  suppressed: boolean;
   onUrlChange: (url: string) => void;
 };
 
-// Tear the iframe down after this much invisibility — a background dev
-// server page can hold hundreds of MB inside the WebView.
-const SUSPEND_AFTER_MS = 30_000;
-
+/**
+ * Hosts a native Tauri child webview (created/driven from Rust) over the pane's
+ * content area. The webview is a separate native layer positioned to match
+ * `hostRef`; it renders above the HTML, so it is shown only when this preview
+ * is the active tab and nothing overlaps it.
+ */
 export const PreviewPane = forwardRef<PreviewPaneHandle, Props>(
-  function PreviewPane({ url, visible, onUrlChange }, ref) {
-    // `nonce` is part of the iframe `key`. Bumping it remounts the iframe,
-    // which is the only reliable cross-origin reload (calling
-    // contentWindow.location.reload() throws on cross-origin frames).
-    const [nonce, setNonce] = useState(0);
-    const [loaded, setLoaded] = useState(visible);
+  function PreviewPane({ id, url, visible, suppressed, onUrlChange }, ref) {
+    const label = previewLabel(id);
+    const hostRef = useRef<HTMLDivElement>(null);
     const addressRef = useRef<PreviewAddressBarHandle>(null);
+    const [portsOpen, setPortsOpen] = useState(false);
 
-    useEffect(() => {
-      if (visible) {
-        setLoaded(true);
+    // getUrl()/nav handler need the latest values without re-creating effects.
+    const urlRef = useRef(url);
+    urlRef.current = url;
+    const onUrlChangeRef = useRef(onUrlChange);
+    onUrlChangeRef.current = onUrlChange;
+
+    const createdRef = useRef(false);
+    const shownRef = useRef(false);
+    // URL the webview is currently at (updated by nav events). Used to avoid
+    // re-navigating in response to a URL change that the webview itself caused.
+    const lastUrlRef = useRef(url);
+
+    const measure = useCallback((): PreviewBounds | null => {
+      const el = hostRef.current;
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      return { x: r.left, y: r.top, width: r.width, height: r.height };
+    }, []);
+
+    const sync = useCallback(async () => {
+      const wantShow = visible && !suppressed && !portsOpen && !!url;
+
+      if (!wantShow) {
+        if (createdRef.current && shownRef.current) {
+          shownRef.current = false;
+          await previewBridge.hide(label);
+        }
         return;
       }
-      const t = setTimeout(() => setLoaded(false), SUSPEND_AFTER_MS);
-      return () => clearTimeout(t);
-    }, [visible]);
+
+      const bounds = measure();
+      if (!bounds) return; // not laid out yet; ResizeObserver re-runs this
+
+      if (!createdRef.current) {
+        createdRef.current = true;
+        shownRef.current = true;
+        lastUrlRef.current = url;
+        await previewBridge.open(label, url, bounds);
+        return;
+      }
+
+      if (url !== lastUrlRef.current) {
+        lastUrlRef.current = url;
+        await previewBridge.navigate(label, url);
+      }
+      shownRef.current = true;
+      // open() on an existing webview just repositions + shows it.
+      await previewBridge.open(label, url, bounds);
+    }, [visible, suppressed, portsOpen, url, label, measure]);
+
+    // rAF-coalesce the burst of ResizeObserver/resize callbacks during drags.
+    const rafRef = useRef(0);
+    const scheduleSync = useCallback(() => {
+      if (rafRef.current) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = 0;
+        void sync();
+      });
+    }, [sync]);
+
+    // Re-runs whenever any input to `sync` changes (visibility, url, ...).
+    useEffect(() => {
+      void sync();
+    }, [sync]);
+
+    // Track the host element's box (sidebar/pane resize, window resize, zen).
+    useEffect(() => {
+      const el = hostRef.current;
+      if (!el) return;
+      const ro = new ResizeObserver(scheduleSync);
+      ro.observe(el);
+      window.addEventListener("resize", scheduleSync);
+      return () => {
+        ro.disconnect();
+        window.removeEventListener("resize", scheduleSync);
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      };
+    }, [scheduleSync]);
+
+    // Keep the address bar in sync with the webview's real URL (initial load,
+    // auth redirects, in-page navigation).
+    useEffect(() => {
+      let alive = true;
+      let unlisten: UnlistenFn | undefined;
+      void listen<PreviewNavPayload>(PREVIEW_NAV_EVENT, (e) => {
+        if (e.payload.label !== label) return;
+        lastUrlRef.current = e.payload.url;
+        onUrlChangeRef.current(e.payload.url);
+      }).then((un) => {
+        if (alive) unlisten = un;
+        else un();
+      });
+      return () => {
+        alive = false;
+        unlisten?.();
+      };
+    }, [label]);
+
+    // Destroy the webview when the preview tab is closed.
+    useEffect(() => {
+      return () => {
+        void previewBridge.close(label);
+        createdRef.current = false;
+        shownRef.current = false;
+      };
+    }, [label]);
 
     useImperativeHandle(
       ref,
       () => ({
-        reload: () => {
-          setLoaded(true);
-          setNonce((n) => n + 1);
-        },
+        reload: () => void previewBridge.reload(label),
         focusAddressBar: () => addressRef.current?.focus(),
-        getUrl: () => url,
+        getUrl: () => urlRef.current,
       }),
-      [url],
+      [label],
     );
 
-    const showXfoHint = url ? !isLocalUrl(url) : false;
-
     return (
-      <div
-        className="flex h-full w-full flex-col overflow-hidden rounded-md border border-border/60 bg-background"
-        style={{
-          visibility: visible ? "visible" : "hidden",
-          pointerEvents: visible ? "auto" : "none",
-        }}
-      >
+      <div className="flex h-full w-full flex-col overflow-hidden rounded-md border border-border/60 bg-background">
         <PreviewAddressBar
           ref={addressRef}
           url={url}
           onSubmit={onUrlChange}
-          onReload={() => setNonce((n) => n + 1)}
+          onReload={() => void previewBridge.reload(label)}
+          onMenuOpenChange={setPortsOpen}
         />
-        {showXfoHint ? (
-          <div className="flex h-7 shrink-0 items-center gap-1.5 border-b border-border/60 bg-amber-500/8 px-3 text-[11px] text-amber-600 dark:text-amber-400">
-            <HugeiconsIcon
-              icon={Alert02Icon}
-              size={12}
-              strokeWidth={1.75}
-              className="shrink-0"
-            />
-            <span className="truncate">
-              Many public sites refuse to embed (X-Frame-Options). If the page
-              is blank, open it externally.
-            </span>
-          </div>
-        ) : null}
-        <div
-          className={
-            url
-              ? "relative min-h-0 flex-1 bg-white"
-              : "relative min-h-0 flex-1 bg-background"
-          }
-        >
-          {url ? (
-            loaded ? (
-              <iframe
-                key={`${url}#${nonce}`}
-                src={url}
-                title="Preview"
-                className="h-full w-full border-0"
-                // sandbox grants the bare minimum for a dev preview: scripts,
-                // same-origin (cookies/storage for the previewed app), forms,
-                // popups for "open in new tab". Critically OMITS
-                // `allow-top-navigation*` — without it the iframe cannot
-                // navigate the parent Tauri webview to an attacker origin,
-                // which would otherwise expose `window.__TAURI__` IPC.
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
-                referrerPolicy="no-referrer"
-                allow="clipboard-read; clipboard-write; fullscreen"
-              />
-            ) : (
-              <SuspendedState
-                onReload={() => {
-                  setLoaded(true);
-                  setNonce((n) => n + 1);
-                }}
-              />
-            )
-          ) : (
-            <EmptyState />
-          )}
+        <div ref={hostRef} className="relative min-h-0 flex-1 bg-background">
+          {url ? null : <EmptyState />}
         </div>
       </div>
     );
   },
 );
 
-function SuspendedState({ onReload }: { onReload: () => void }) {
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center">
-      <div className="flex size-10 items-center justify-center rounded-2xl border border-border/60 bg-card text-muted-foreground">
-        <HugeiconsIcon icon={Globe02Icon} size={18} strokeWidth={1.5} />
-      </div>
-      <div className="space-y-1">
-        <p className="text-[12.5px] font-medium text-foreground">
-          Preview suspended
-        </p>
-        <p className="max-w-xs text-[11px] leading-relaxed text-muted-foreground">
-          Released to free memory after sitting in the background.
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={onReload}
-        className="rounded-md border border-border/60 bg-card px-3 py-1 text-[11px] hover:bg-accent/50"
-      >
-        Reload
-      </button>
-    </div>
-  );
-}
-
 function EmptyState() {
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-4 px-6 text-center">
-      <div className="flex size-12 items-center justify-center rounded-2xl border border-border/60 bg-card text-muted-foreground">
-        <HugeiconsIcon icon={Globe02Icon} size={20} strokeWidth={1.5} />
-      </div>
-      <div className="space-y-1.5">
-        <p className="text-sm font-medium text-foreground">
-          Nothing to preview yet
-        </p>
-        <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-          Type a URL above, or open the{" "}
-          <span className="rounded bg-muted px-1 py-0.5 font-mono text-[10.5px]">
-            Ports
-          </span>{" "}
-          dropdown to jump straight to your running dev server. Public sites
-          often block embedding — open them in your browser via the link icon
-          if you see a blank page.
-        </p>
-      </div>
+    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
+      <HugeiconsIcon icon={Globe02Icon} size={28} strokeWidth={1.5} />
+      <p className="text-[12px]">Enter a URL or pick a dev-server port.</p>
     </div>
   );
-}
-
-function isLocalUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    const h = u.hostname;
-    return (
-      h === "localhost" ||
-      h === "127.0.0.1" ||
-      h === "0.0.0.0" ||
-      h === "[::1]" ||
-      h.endsWith(".localhost")
-    );
-  } catch {
-    return false;
-  }
 }

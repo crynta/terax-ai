@@ -1,6 +1,6 @@
 pub mod modules;
 
-use modules::{agent, fs, git, history, net, pty, secrets, shell, workspace};
+use modules::{agent, fs, git, history, net, preview, pty, secrets, shell, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -59,7 +59,9 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         .visible(false)
         // Keep settings above the main app window so it doesn't get hidden
         // when the user clicks back into the editor or terminal (#33).
-        .always_on_top(true);
+        .always_on_top(true)
+        // App UI isn't inspectable; only the web preview gets devtools.
+        .devtools(false);
 
     // Tie lifecycle to the main window so settings minimizes/closes with it.
     // macOS: skip parent() — child + always_on_top leaves the settings webview
@@ -240,6 +242,13 @@ pub fn run() {
             history::history_commands,
             history::history_record,
             history::history_list,
+            preview::preview_open,
+            preview::preview_set_bounds,
+            preview::preview_navigate,
+            preview::preview_show,
+            preview::preview_hide,
+            preview::preview_reload,
+            preview::preview_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

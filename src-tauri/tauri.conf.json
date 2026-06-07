@@ -20,6 +20,7 @@
         "minHeight": 280,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
+        "devtools": false,
         "visible": false
       }
     ],

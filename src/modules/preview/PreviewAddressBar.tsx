@@ -55,10 +55,13 @@ type Props = {
   url: string;
   onSubmit: (url: string) => void;
   onReload: () => void;
+  /** Fired when the ports dropdown opens/closes, so the host can hide the
+   *  native preview webview that would otherwise cover the menu. */
+  onMenuOpenChange?: (open: boolean) => void;
 };
 
 export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
-  function PreviewAddressBar({ url, onSubmit, onReload }, ref) {
+  function PreviewAddressBar({ url, onSubmit, onReload, onMenuOpenChange }, ref) {
     const [draft, setDraft] = useState(url);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -126,7 +129,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
             strokeWidth={1.75}
           />
         </Button>
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={onMenuOpenChange}>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"

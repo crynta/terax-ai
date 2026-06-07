@@ -27,6 +27,7 @@ type Props = {
   onEditorCloseTab: EditorStackProps["onCloseTab"];
   registerPreviewHandle: PreviewStackProps["registerHandle"];
   onPreviewUrlChange: PreviewStackProps["onUrlChange"];
+  previewSuppressed: boolean;
   onAiDiffAccept: AiDiffStackProps["onAccept"];
   onAiDiffReject: AiDiffStackProps["onReject"];
   onOpenCommitFile: GitHistoryStackProps["onOpenCommitFile"];
@@ -52,6 +53,7 @@ export function WorkspaceSurface({
   onEditorCloseTab,
   registerPreviewHandle,
   onPreviewUrlChange,
+  previewSuppressed,
   onAiDiffAccept,
   onAiDiffReject,
   onOpenCommitFile,
@@ -110,6 +112,7 @@ export function WorkspaceSurface({
         <PreviewStack
           tabs={tabs}
           activeId={activeId}
+          suppressed={previewSuppressed}
           registerHandle={registerPreviewHandle}
           onUrlChange={onPreviewUrlChange}
         />
