@@ -7,6 +7,7 @@ import {
   setBackgroundImageId,
   setBackgroundKind,
   setBackgroundOpacity,
+  setBackgroundVideoId,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
 import {
@@ -53,6 +54,7 @@ export function ThemesSection() {
 
   const backgroundKind = usePreferencesStore((s) => s.backgroundKind);
   const backgroundImageId = usePreferencesStore((s) => s.backgroundImageId);
+  const backgroundVideoId = usePreferencesStore((s) => s.backgroundVideoId);
   const backgroundOpacity = usePreferencesStore((s) => s.backgroundOpacity);
   const backgroundBlur = usePreferencesStore((s) => s.backgroundBlur);
 
@@ -93,27 +95,41 @@ export function ThemesSection() {
     setBgError(null);
     if (!files || files.length === 0) return;
     const file = files[0];
-    if (!file.type.startsWith("image/")) {
-      setBgError(`${file.name}: not an image`);
+    const t = file.type.toLowerCase();
+    if (!t.startsWith("image/") && !t.startsWith("video/")) {
+      setBgError(`${file.name}: not an image or video`);
       return;
     }
     try {
-      const prev = backgroundImageId;
+      const isVideo = t.startsWith("video/");
+      const prevImageId = backgroundImageId;
+      const prevVideoId = backgroundVideoId;
       const { id } = await importBgImageFromFile(file);
-      await setBackgroundImageId(id);
-      await setBackgroundKind("image");
-      if (prev && prev !== id) await deleteBgImage(prev).catch(() => undefined);
+      if (isVideo) {
+        await setBackgroundVideoId(id);
+        await setBackgroundKind("video");
+        if (prevImageId) await deleteBgImage(prevImageId).catch(() => undefined);
+        if (prevVideoId && prevVideoId !== id) await deleteBgImage(prevVideoId).catch(() => undefined);
+      } else {
+        await setBackgroundImageId(id);
+        await setBackgroundKind("image");
+        if (prevVideoId) await deleteBgImage(prevVideoId).catch(() => undefined);
+        if (prevImageId && prevImageId !== id) await deleteBgImage(prevImageId).catch(() => undefined);
+      }
     } catch (e) {
-      setBgError(e instanceof Error ? e.message : "failed to import image");
+      setBgError(e instanceof Error ? e.message : "failed to import file");
     }
   };
 
   const onRemoveBackground = async () => {
     setBgError(null);
-    const prev = backgroundImageId;
+    const prevImageId = backgroundImageId;
+    const prevVideoId = backgroundVideoId;
     await setBackgroundKind("none");
     await setBackgroundImageId(null);
-    if (prev) await deleteBgImage(prev).catch(() => undefined);
+    await setBackgroundVideoId(null);
+    if (prevImageId) await deleteBgImage(prevImageId).catch(() => undefined);
+    if (prevVideoId) await deleteBgImage(prevVideoId).catch(() => undefined);
   };
 
   return (
@@ -267,7 +283,7 @@ export function ThemesSection() {
         <div className="flex items-center justify-between">
           <Label>Background</Label>
           <div className="flex items-center gap-2">
-            {backgroundKind === "image" && backgroundImageId ? (
+            {(backgroundKind === "image" && backgroundImageId) || (backgroundKind === "video" && backgroundVideoId) ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -283,12 +299,12 @@ export function ThemesSection() {
               className="h-7 px-2 text-[11px]"
               onClick={onPickBgFile}
             >
-              {backgroundKind === "image" ? "Replace image" : "Choose image"}
+              {backgroundKind === "image" || backgroundKind === "video" ? "Replace" : "Choose image or video"}
             </Button>
             <input
               ref={bgInputRef}
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               className="hidden"
               onChange={(e) => {
                 void handleBgFiles(e.target.files);
@@ -302,7 +318,7 @@ export function ThemesSection() {
             {bgError}
           </div>
         ) : null}
-        {backgroundKind === "image" && backgroundImageId ? (
+        {(backgroundKind === "image" && backgroundImageId) || (backgroundKind === "video" && backgroundVideoId) ? (
           <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[11.5px] text-muted-foreground">
@@ -319,23 +335,27 @@ export function ThemesSection() {
               step={0.01}
               onValueChange={(v) => void setBackgroundOpacity(v[0] ?? 0)}
             />
-            <div className="flex items-center justify-between gap-3 pt-1">
-              <span className="text-[11.5px] text-muted-foreground">Blur</span>
-              <span className="tabular-nums text-[11px] text-muted-foreground">
-                {backgroundBlur}px
-              </span>
-            </div>
-            <Slider
-              value={[backgroundBlur]}
-              min={0}
-              max={64}
-              step={1}
-              onValueChange={(v) => void setBackgroundBlur(v[0] ?? 0)}
-            />
+            {backgroundKind === "image" ? (
+              <>
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <span className="text-[11.5px] text-muted-foreground">Blur</span>
+                  <span className="tabular-nums text-[11px] text-muted-foreground">
+                    {backgroundBlur}px
+                  </span>
+                </div>
+                <Slider
+                  value={[backgroundBlur]}
+                  min={0}
+                  max={64}
+                  step={1}
+                  onValueChange={(v) => void setBackgroundBlur(v[0] ?? 0)}
+                />
+              </>
+            ) : null}
           </div>
         ) : (
           <p className="text-[11px] text-muted-foreground">
-            Drop an image here or pick one. Stored locally; doesn't affect the
+            Drop an image or video here or pick one. Stored locally; doesn't affect the
             default look until set.
           </p>
         )}
