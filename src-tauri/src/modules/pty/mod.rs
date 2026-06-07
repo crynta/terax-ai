@@ -241,3 +241,8 @@ pub fn pty_close_all(state: tauri::State<PtyState>) -> Result<usize, String> {
     }
     Ok(count)
 }
+
+#[tauri::command]
+pub fn pty_shell_name() -> String {
+    shell_init::detect_shell_name()
+}

@@ -24,6 +24,7 @@ export type SlotAdapter = {
   resolveLeaf(leafId: number): LeafBridge | null;
   evictLeaf(leafId: number): void;
   isLeafFocused(leafId: number): boolean;
+  isLeafBlocks(leafId: number): boolean;
 };
 
 export type LeafBridge = {
@@ -316,8 +317,14 @@ function pickSlotFor(leafId: number): PickResult {
     const focused =
       s.currentLeafId !== null &&
       (adapter?.isLeafFocused(s.currentLeafId) ?? false);
+    const blocks =
+      s.currentLeafId !== null &&
+      (adapter?.isLeafBlocks(s.currentLeafId) ?? false);
     const score =
-      (isAltScreen(s) ? 100 : 0) + (focused ? 10 : 0) + s.lastUsedAt / 1e12;
+      (isAltScreen(s) ? 100 : 0) +
+      (blocks ? 50 : 0) +
+      (focused ? 10 : 0) +
+      s.lastUsedAt / 1e12;
     if (score < bestScore) {
       bestScore = score;
       best = s;

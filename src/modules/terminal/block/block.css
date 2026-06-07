@@ -1,21 +1,271 @@
-.bt-deco {
-  box-sizing: border-box;
-  border-left: 2px solid transparent;
+/* Tooltips are portaled to <body>, so theme them with global vars here rather
+   than via EditorView.theme (which is scoped to the editor element). */
+.cm-tooltip:has(> .cm-history-popover) {
+  background: transparent;
+  border: none;
+}
+
+.cm-history-popover {
+  display: flex;
+  flex-direction: column;
+  min-width: 22rem;
+  max-width: 40rem;
+  overflow: hidden;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  background: var(--popover, #1b1b1d);
+  color: var(--popover-foreground, #e6e6e6);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.cm-history-list {
+  max-height: 24rem;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.cm-history-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.cm-history-icon {
+  flex: none;
+  opacity: 0.5;
+}
+
+.cm-history-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cm-history-item[aria-selected="true"] {
+  background: var(--accent, rgba(127, 127, 127, 0.22));
+  color: var(--accent-foreground, inherit);
+}
+
+/* Command / path completion dropdown (portaled to <body>). */
+.cm-tooltip.cm-tooltip-autocomplete {
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  background: var(--popover, #1b1b1d);
+  color: var(--popover-foreground, #e6e6e6);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.cm-tooltip-autocomplete > ul {
+  max-height: 21rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.cm-tooltip-autocomplete > ul > li {
+  display: flex;
+  align-items: center;
+  padding: 5px 9px;
+  margin: 1px 4px;
+  border-radius: 6px;
+}
+
+.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--accent, rgba(127, 127, 127, 0.22));
+  color: var(--accent-foreground, inherit);
+}
+
+.cm-opt-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 7px;
+  opacity: 0.6;
+}
+
+.cm-tooltip-autocomplete::after {
+  content: "⇥ complete · ↵ run";
+  display: block;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  font-size: 10px;
+  color: var(--muted-foreground, rgba(160, 160, 160, 0.8));
+}
+
+.cm-ghost::after {
+  content: " →";
+  opacity: 0.5;
+}
+
+/* Block chrome overlay. Premium: muted, color only signals failure. */
+.bt-divider {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: color-mix(in srgb, var(--foreground, #fff) 8%, transparent);
   pointer-events: none;
 }
 
-.bt-deco.bt-ok {
-  border-left-color: rgba(95, 179, 179, 0.45);
+.bt-divider-fail {
+  background: rgba(229, 112, 107, 0.45);
 }
 
-.bt-deco.bt-fail {
-  border-left-color: rgba(229, 112, 107, 0.55);
-  background: rgba(229, 112, 107, 0.05);
-}
-
-.bt-gutter.bt-running {
-  background: #5fb3b3;
-  border-radius: 50%;
-  opacity: 0.8;
+.bt-match {
+  background: rgba(255, 193, 84, 0.5);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 193, 84, 0.7);
   pointer-events: none;
+}
+
+.bt-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 18px;
+  opacity: 0.72;
+  transition: opacity 120ms ease;
+}
+
+.bt-bar-active {
+  opacity: 1;
+}
+
+.bt-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--muted-foreground, rgba(170, 170, 170, 0.85));
+}
+
+.bt-cwd {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.bt-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.bt-dur {
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  padding: 0 5px;
+  opacity: 0.85;
+}
+
+.bt-tools,
+.bt-search {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 1px 3px;
+  border-radius: 7px;
+  pointer-events: auto;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  background: color-mix(in srgb, var(--popover, #1b1b1d) 90%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+  color: var(--muted-foreground, rgba(170, 170, 170, 0.85));
+}
+
+.bt-search {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 4px;
+  background: color-mix(in srgb, var(--popover, #1b1b1d) 96%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.bt-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  border-radius: 5px;
+  color: inherit;
+  transition:
+    background 100ms ease,
+    color 100ms ease;
+}
+
+.bt-btn:hover {
+  background: var(--accent, rgba(127, 127, 127, 0.22));
+  color: var(--foreground, #fff);
+}
+
+.bt-search-input {
+  width: 9rem;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 11px;
+  color: var(--foreground, #e6e6e6);
+  padding: 0 4px;
+}
+
+.bt-search-input::placeholder {
+  color: var(--muted-foreground, rgba(150, 150, 150, 0.6));
+}
+
+.bt-search-count {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  padding: 0 4px;
+}
+
+.bt-sticky {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 6px 3px 10px;
+  background: color-mix(in srgb, var(--popover, #1b1b1d) 82%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+.bt-sticky-icon {
+  flex: none;
+  color: var(--muted-foreground, rgba(170, 170, 170, 0.8));
+}
+
+.bt-sticky-cmd {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--foreground, #e6e6e6);
+  opacity: 0.9;
+}
+
+.cm-history-footer {
+  padding: 5px 10px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.1));
+  font-size: 10px;
+  color: var(--muted-foreground, rgba(160, 160, 160, 0.8));
 }

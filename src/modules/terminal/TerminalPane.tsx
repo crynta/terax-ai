@@ -1,8 +1,14 @@
 import { useTheme } from "@/modules/theme";
 import type { SearchAddon } from "@xterm/addon-search";
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { BlockInputBar, type BlockInputBarHandle } from "./block/BlockInputBar";
-import { useTerminalSession } from "./lib/useTerminalSession";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
+import { BlockOverlay } from "./block/BlockOverlay";
+import { focusLeafInput, useTerminalSession } from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
@@ -41,7 +47,6 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
     ref,
   ) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const barRef = useRef<BlockInputBarHandle>(null);
     const downYRef = useRef<number | null>(null);
     const { resolvedMode, themeId, customThemes } = useTheme();
 
@@ -74,6 +79,24 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
       [session],
     );
 
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
+    const hideHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const cancelHideHover = () => {
+      if (hideHoverTimer.current) {
+        clearTimeout(hideHoverTimer.current);
+        hideHoverTimer.current = null;
+      }
+    };
+    const scheduleHideHover = () => {
+      cancelHideHover();
+      hideHoverTimer.current = setTimeout(() => setHoveredId(null), 120);
+    };
+    useEffect(() => {
+      return () => {
+        if (hideHoverTimer.current) clearTimeout(hideHoverTimer.current);
+      };
+    }, []);
+
     const hideStyle = {
       visibility: visible ? ("visible" as const) : ("hidden" as const),
       pointerEvents: visible ? ("auto" as const) : ("none" as const),
@@ -85,28 +108,41 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, Props>(
           className="zoom-exempt flex h-full w-full flex-col"
           style={hideStyle}
         >
-          <BlockInputBar
-            ref={barRef}
-            mode={session.blockMode}
-            onSubmit={session.submitCommand}
-            onInterrupt={session.interrupt}
-          />
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal surface; pointer selects command blocks */}
-          <div
-            ref={containerRef}
-            className="min-h-0 flex-1"
-            onMouseDown={(e) => {
-              downYRef.current = e.clientY;
-            }}
-            onMouseUp={(e) => {
-              const moved =
-                downYRef.current != null &&
-                Math.abs(e.clientY - downYRef.current) > 4;
-              downYRef.current = null;
-              if (!moved) session.selectBlockAt(e.clientY);
-              if (session.blockMode === "prompt") barRef.current?.focus();
-            }}
-          />
+          <div className="relative min-h-0 flex-1">
+            {/* biome-ignore lint/a11y/noStaticElementInteractions: terminal surface; pointer selects command blocks */}
+            <div
+              ref={containerRef}
+              className="absolute inset-0 z-0"
+              onMouseDown={(e) => {
+                downYRef.current = e.clientY;
+              }}
+              onMouseUp={(e) => {
+                const moved =
+                  downYRef.current != null &&
+                  Math.abs(e.clientY - downYRef.current) > 4;
+                downYRef.current = null;
+                if (!moved) session.selectBlockAt(e.clientY);
+                if (session.blockMode === "prompt") focusLeafInput(leafId);
+              }}
+              onMouseMove={(e) => {
+                cancelHideHover();
+                const id = session.blockHoverAt(e.clientY)?.block.id ?? null;
+                setHoveredId((prev) => (prev === id ? prev : id));
+              }}
+              onMouseLeave={scheduleHideHover}
+            />
+            <BlockOverlay
+              subscribe={session.subscribeBlocks}
+              getVisible={session.visibleBlocks}
+              hoveredId={hoveredId}
+              readOutput={(id) => session.readBlockId(id)?.output ?? null}
+              searchBlock={session.searchBlock}
+              revealMatch={session.revealMatch}
+              clearSearch={session.clearSearch}
+              onHoverKeepAlive={cancelHideHover}
+              onHoverEnd={() => setHoveredId(null)}
+            />
+          </div>
         </div>
       );
     }

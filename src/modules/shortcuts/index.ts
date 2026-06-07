@@ -1,4 +1,3 @@
-export { ShortcutsDialog } from "./ShortcutsDialog";
 export {
   SHORTCUTS,
   SHORTCUT_GROUPS,

@@ -42,7 +42,16 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
     # prompt entirely (keep only the OSC 133 B marker) and add a leading blank
     # line so frozen command blocks get vertical breathing room.
     if [[ -n "$TERAX_BLOCKS" ]]; then
-      PS1=$'\n%{\e]133;B\e\\%}'
+      # Spacing reserved for the host-drawn block header lives in the prompt
+      # (the grid is WebGL, not CSS). Later prompts get two blank rows: the
+      # upper one is the previous block's end gap (above its divider), the lower
+      # one is this command's header row. The very first prompt has no block
+      # above it, so it gets a single row (header only) to avoid a tall top gap.
+      if [[ -n "$_terax_block_seen" ]]; then
+        PS1=$'\n\n%{\e]133;B\e\\%}'
+      else
+        PS1=$'\n%{\e]133;B\e\\%}'
+      fi
       RPROMPT=''
     elif [[ "$PS1" != *$'\e]133;B\e\\'* ]]; then
       # Re-inject prompt-end marker in case a framework rebuilt PS1 (p10k, starship).
@@ -52,6 +61,9 @@ if [[ -z "$__TERAX_HOOKS_LOADED" ]]; then
   }
 
   _terax_preexec() {
+    # Mark that a real command ran, so the next prompt switches from one blank
+    # row (first prompt, no block above) to two (end gap + header row).
+    [[ -n "$TERAX_BLOCKS" ]] && _terax_block_seen=1
     local cmd="${1//[[:cntrl:]]/ }"
     printf '\e]133;C;%s\e\\' "${cmd[1,256]}"
   }

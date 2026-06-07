@@ -5,4 +5,6 @@ export type BlockMeta = {
   exitCode: number | null;
   startLine: number;
   endLine: number;
+  startedAt: number;
+  finishedAt: number;
 };

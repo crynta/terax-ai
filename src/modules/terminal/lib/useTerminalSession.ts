@@ -11,7 +11,11 @@ import {
   registerPromptTracker,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
-import { BlockDecorations } from "../block/lib/blockDecorations";
+import {
+  type BlockMatch,
+  BlockDecorations,
+  type VisibleBlocks,
+} from "../block/lib/blockDecorations";
 import "../block/block.css";
 import {
   acquireSlot,
@@ -65,6 +69,11 @@ type Session = {
   blockMode: BlockMode;
   blockListeners: Set<() => void>;
   blockDecorations: BlockDecorations | null;
+  // Set by the block shell-input; called to pull focus back when the xterm
+  // grid steals it at the prompt (e.g. on a click), so typing stays in the bar.
+  inputFocus: (() => void) | null;
+  // Per-leaf unsent shell-input text; the single workspace bar swaps it on focus change.
+  inputDraft: string;
   // True if the slot was in alt-screen mode (TUI like vim, htop, dofek)
   // at the most recent release. Read once on the next bind to trigger a
   // SIGWINCH-driven repaint instead of replaying dormant bytes.
@@ -72,6 +81,10 @@ type Session = {
 };
 
 const sessions = new Map<number, Session>();
+
+// Block-overlay viewport listeners, keyed by leafId at module scope so the
+// overlay (a child) can subscribe before the parent effect creates the session.
+const blockViewportListeners = new Map<number, Set<() => void>>();
 
 const readyLeaves = new Set<number>();
 const readyWaiters = new Map<
@@ -111,6 +124,59 @@ export function writeToSession(leafId: number, data: string): boolean {
   if (!s || !s.pty) return false;
   void s.pty.write(data);
   return true;
+}
+
+export function submitToLeaf(leafId: number, text: string): void {
+  const pty = sessions.get(leafId)?.pty;
+  if (!pty) return;
+  // Bracketed paste keeps a multiline command atomic; trailing CR runs it.
+  if (text.includes("\n")) pty.write(`\x1b[200~${text}\x1b[201~\r`);
+  else pty.write(`${text}\r`);
+}
+
+export function interruptLeaf(leafId: number): void {
+  sessions.get(leafId)?.pty?.write("\x03");
+}
+
+export function leafCwd(leafId: number): string | null {
+  return sessions.get(leafId)?.lastCwd ?? null;
+}
+
+export function getLeafBlockMode(leafId: number): BlockMode {
+  return sessions.get(leafId)?.blockMode ?? "prompt";
+}
+
+export function subscribeLeafBlockMode(
+  leafId: number,
+  cb: () => void,
+): () => void {
+  const s = sessions.get(leafId);
+  if (!s) return () => {};
+  s.blockListeners.add(cb);
+  return () => {
+    s.blockListeners.delete(cb);
+  };
+}
+
+export function setLeafInputFocus(
+  leafId: number,
+  fn: (() => void) | null,
+): void {
+  const s = sessions.get(leafId);
+  if (s) s.inputFocus = fn;
+}
+
+export function focusLeafInput(leafId: number): void {
+  sessions.get(leafId)?.inputFocus?.();
+}
+
+export function getLeafDraft(leafId: number): string {
+  return sessions.get(leafId)?.inputDraft ?? "";
+}
+
+export function setLeafDraft(leafId: number, text: string): void {
+  const s = sessions.get(leafId);
+  if (s) s.inputDraft = text;
 }
 
 /**
@@ -171,6 +237,9 @@ configureRendererPool({
     const s = sessions.get(leafId);
     return !!s && s.visibleNow && s.focusedNow;
   },
+  isLeafBlocks(leafId) {
+    return sessions.get(leafId)?.blocks ?? false;
+  },
 });
 
 function ensureSession(
@@ -204,6 +273,8 @@ function ensureSession(
     blockMode: "prompt",
     blockListeners: new Set(),
     blockDecorations: null,
+    inputFocus: null,
+    inputDraft: "",
     altScreenAtRelease: false,
   };
   sessions.set(leafId, session);
@@ -256,8 +327,12 @@ function applyBlockMode(leafId: number, mode: BlockMode): void {
   s.blockMode = mode;
   const slot = getSlotForLeaf(leafId);
   if (slot) {
-    slot.term.options.disableStdin = mode === "prompt";
-    if (mode !== "prompt") slot.term.focus();
+    const prompt = mode === "prompt";
+    slot.term.options.disableStdin = prompt;
+    // Disable the helper textarea at the prompt so a grid click can't focus the
+    // xterm (no flashing cursor) and can't steal focus from the shell input.
+    if (slot.term.textarea) slot.term.textarea.disabled = prompt;
+    if (!prompt) slot.term.focus();
   }
   for (const l of s.blockListeners) l();
 }
@@ -286,12 +361,21 @@ function bindLeafToSlot(leafId: number, s: Session): void {
             s.callbacks.onCwd?.(next);
           },
           onMode: (mode) => applyBlockMode(leafId, mode),
+          onViewport: () => {
+            const set = blockViewportListeners.get(leafId);
+            if (set) for (const l of set) l();
+          },
         });
         s.blockDecorations = deco;
+        const onGridFocus = () => {
+          if (s.blockMode === "prompt") s.inputFocus?.();
+        };
+        term.textarea?.addEventListener("focus", onGridFocus);
         return [
           () => {
             s.blockDecorations = null;
             deco.dispose();
+            term.textarea?.removeEventListener("focus", onGridFocus);
           },
         ];
       }
@@ -438,6 +522,7 @@ export function disposeSession(leafId: number): void {
   s.pty?.close();
   s.pty = null;
   sessions.delete(leafId);
+  blockViewportListeners.delete(leafId);
   readyLeaves.delete(leafId);
   const waiters = readyWaiters.get(leafId);
   if (waiters) {
@@ -475,9 +560,15 @@ export function useTerminalSession({
   const cbRef = useRef({ onSearchReady, onExit, onCwd });
   cbRef.current = { onSearchReady, onExit, onCwd };
 
+  // initialCwd seeds the first PTY spawn only. It must NOT be an effect dep:
+  // OSC 7 updates the leaf cwd on every `cd`, and re-running the bind effect
+  // would detach/rebind the renderer slot (disposing block markers) on each cd.
+  const initialCwdRef = useRef(initialCwd);
+  initialCwdRef.current = initialCwd;
+
   useEffect(() => {
     let cancelled = false;
-    const s = ensureSession(leafId, initialCwd, blocks);
+    const s = ensureSession(leafId, initialCwdRef.current, blocks);
     s.ready.then(() => {
       if (cancelled || s.disposed) return;
       const node = container.current;
@@ -493,19 +584,19 @@ export function useTerminalSession({
       cancelled = true;
       detachSession(leafId);
     };
-  }, [leafId, container, initialCwd, blocks]);
+  }, [leafId, container, blocks]);
 
   const [blockMode, setBlockMode] = useState<BlockMode>("prompt");
   useEffect(() => {
     if (!blocks) return;
-    const s = ensureSession(leafId, initialCwd, blocks);
+    const s = ensureSession(leafId, initialCwdRef.current, blocks);
     setBlockMode(s.blockMode);
     const cb = () => setBlockMode(sessions.get(leafId)?.blockMode ?? "prompt");
     s.blockListeners.add(cb);
     return () => {
       s.blockListeners.delete(cb);
     };
-  }, [leafId, blocks, initialCwd]);
+  }, [leafId, blocks]);
 
   const fontSize = usePreferencesStore((p) => p.terminalFontSize);
   const zoomLevel = usePreferencesStore((p) => p.zoomLevel);
@@ -604,20 +695,63 @@ export function useTerminalSession({
     applyPoolTheme();
   }, []);
 
-  const submitCommand = useCallback(
-    (text: string) => {
-      sessions.get(leafId)?.pty?.write(`${text}\r`);
+  const selectBlockAt = useCallback(
+    (clientY: number) =>
+      sessions.get(leafId)?.blockDecorations?.selectBlockAt(clientY),
+    [leafId],
+  );
+
+  const blockHoverAt = useCallback(
+    (clientY: number) =>
+      sessions.get(leafId)?.blockDecorations?.hoverAt(clientY) ?? null,
+    [leafId],
+  );
+
+  const readBlockId = useCallback(
+    (id: string) =>
+      sessions.get(leafId)?.blockDecorations?.readById(id) ?? null,
+    [leafId],
+  );
+
+  const subscribeBlocks = useCallback(
+    (cb: () => void) => {
+      let set = blockViewportListeners.get(leafId);
+      if (!set) {
+        set = new Set();
+        blockViewportListeners.set(leafId, set);
+      }
+      set.add(cb);
+      return () => {
+        const live = blockViewportListeners.get(leafId);
+        live?.delete(cb);
+        if (live && live.size === 0) blockViewportListeners.delete(leafId);
+      };
     },
     [leafId],
   );
 
-  const interrupt = useCallback(() => {
-    sessions.get(leafId)?.pty?.write("\x03");
-  }, [leafId]);
+  const visibleBlocks = useCallback(
+    (): VisibleBlocks =>
+      sessions.get(leafId)?.blockDecorations?.visibleBlocks() ?? {
+        blocks: [],
+        sticky: null,
+      },
+    [leafId],
+  );
 
-  const selectBlockAt = useCallback(
-    (clientY: number) =>
-      sessions.get(leafId)?.blockDecorations?.selectBlockAt(clientY),
+  const searchBlock = useCallback(
+    (id: string, query: string) =>
+      sessions.get(leafId)?.blockDecorations?.searchBlock(id, query) ?? [],
+    [leafId],
+  );
+
+  const revealMatch = useCallback(
+    (m: BlockMatch) => sessions.get(leafId)?.blockDecorations?.revealMatch(m),
+    [leafId],
+  );
+
+  const clearSearch = useCallback(
+    () => sessions.get(leafId)?.blockDecorations?.clearSearch(),
     [leafId],
   );
 
@@ -629,9 +763,14 @@ export function useTerminalSession({
       getSelection,
       applyTheme,
       blockMode,
-      submitCommand,
-      interrupt,
       selectBlockAt,
+      blockHoverAt,
+      readBlockId,
+      subscribeBlocks,
+      visibleBlocks,
+      searchBlock,
+      revealMatch,
+      clearSearch,
     }),
     [
       write,
@@ -640,9 +779,14 @@ export function useTerminalSession({
       getSelection,
       applyTheme,
       blockMode,
-      submitCommand,
-      interrupt,
       selectBlockAt,
+      blockHoverAt,
+      readBlockId,
+      subscribeBlocks,
+      visibleBlocks,
+      searchBlock,
+      revealMatch,
+      clearSearch,
     ],
   );
 }

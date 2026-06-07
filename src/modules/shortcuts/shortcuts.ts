@@ -6,6 +6,7 @@ import { IS_MAC, MOD_PROP } from "@/lib/platform";
 
 export type ShortcutId =
   | "commandPalette.open"
+  | "commandPalette.content"
   | "tab.new"
   | "tab.newPrivate"
   | "tab.newPreview"
@@ -20,6 +21,7 @@ export type ShortcutId =
   | "pane.focusPrev"
   | "pane.source"
   | "terminal.clear"
+  | "terminal.toggleInput"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
@@ -29,7 +31,6 @@ export type ShortcutId =
   | "view.zenMode"
   | "ai.toggle"
   | "ai.askSelection"
-  | "shortcuts.open"
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
@@ -66,6 +67,12 @@ export const SHORTCUTS: Shortcut[] = [
     id: "commandPalette.open",
     label: "Open command palette",
     group: "General",
+    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
+  },
+  {
+    id: "commandPalette.content",
+    label: "Find in files",
+    group: "General",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "p" }],
   },
   {
@@ -73,12 +80,6 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Open settings",
     group: "General",
     defaultBindings: [{ [MOD_PROP]: true, key: "," }],
-  },
-  {
-    id: "shortcuts.open",
-    label: "Show keyboard shortcuts",
-    group: "General",
-    defaultBindings: [{ [MOD_PROP]: true, key: "k" }],
   },
   {
     id: "tab.new",
@@ -94,9 +95,10 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "tab.newPreview",
-    label: "New preview tab",
+    label: "New web preview",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
+    // Cmd/Ctrl+P now opens the command palette, so web preview moves here.
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "o" }],
   },
   {
     id: "tab.newEditor",
@@ -148,6 +150,12 @@ export const SHORTCUTS: Shortcut[] = [
     // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
     // unbound and let users assign their own in settings.
     defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
+  },
+  {
+    id: "terminal.toggleInput",
+    label: "Toggle Shell / AI input",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "u" }],
   },
   {
     id: "tab.next",
