@@ -27,30 +27,46 @@ describe("MiniMax provider registration", () => {
 });
 
 describe("MiniMax model registration", () => {
-  it("registers MiniMax-M2.7", () => {
+  it("registers MiniMax-M3 as the default (first) MiniMax model", () => {
+    const m = MODELS.find((m) => m.id === "MiniMax-M3");
+    expect(m).toBeDefined();
+    expect(m!.provider).toBe("minimax");
+
+    const minimaxModels = MODELS.filter((m) => m.provider === "minimax");
+    expect(minimaxModels[0]!.id).toBe("MiniMax-M3");
+  });
+
+  it("keeps MiniMax-M2.7 as a legacy alternative", () => {
     const m = MODELS.find((m) => m.id === "MiniMax-M2.7");
     expect(m).toBeDefined();
     expect(m!.provider).toBe("minimax");
   });
 
-  it("registers MiniMax-M2.7-highspeed", () => {
+  it("keeps MiniMax-M2.7-highspeed as a legacy alternative", () => {
     const m = MODELS.find((m) => m.id === "MiniMax-M2.7-highspeed");
     expect(m).toBeDefined();
     expect(m!.provider).toBe("minimax");
   });
 
   it("is retrievable via getModel", () => {
-    const m = getModel("MiniMax-M2.7" as ModelId);
+    const m = getModel("MiniMax-M3" as ModelId);
     expect(m.provider).toBe("minimax");
     expect(m.label).toContain("MiniMax");
   });
 
   it("has context limits defined", () => {
+    expect(MODEL_CONTEXT_LIMITS["MiniMax-M3"]).toBe(512_000);
     expect(MODEL_CONTEXT_LIMITS["MiniMax-M2.7"]).toBe(204_800);
     expect(MODEL_CONTEXT_LIMITS["MiniMax-M2.7-highspeed"]).toBe(204_800);
   });
 
   it("has pricing defined", () => {
+    const m3 = MODEL_PRICING["MiniMax-M3"];
+    expect(m3).toBeDefined();
+    expect(m3.input).toBe(0.6);
+    expect(m3.output).toBe(2.4);
+    expect(m3.cacheRead).toBe(0.12);
+
     const pricing = MODEL_PRICING["MiniMax-M2.7"];
     expect(pricing).toBeDefined();
     expect(pricing.input).toBe(0.3);

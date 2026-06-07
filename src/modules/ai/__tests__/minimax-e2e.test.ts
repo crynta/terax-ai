@@ -14,7 +14,7 @@ describe.skipIf(!API_KEY)("MiniMax E2E", () => {
           Authorization: `Bearer ${API_KEY}`,
         },
         body: JSON.stringify({
-          model: "MiniMax-M2.7",
+          model: "MiniMax-M3",
           messages: [{ role: "user", content: 'Say "test passed"' }],
           max_tokens: 20,
           temperature: 1.0,

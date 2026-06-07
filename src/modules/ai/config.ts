@@ -317,11 +317,20 @@ export const MODELS = [
 
   // ── MiniMax ──────────────────────────────────────────────────────────────
   {
+    id: "MiniMax-M3",
+    provider: "minimax",
+    label: "MiniMax M3",
+    hint: "Best",
+    description: "512K context, 128K output, image input.",
+    capabilities: { intelligence: 5, speed: 3, cost: 4 },
+    tags: ["vision", "tools", "coding"],
+  },
+  {
     id: "MiniMax-M2.7",
     provider: "minimax",
     label: "MiniMax M2.7",
-    hint: "Best",
-    description: "Peak performance. Master the complex.",
+    hint: "Legacy",
+    description: "Previous-generation MiniMax.",
     capabilities: { intelligence: 5, speed: 3, cost: 5 },
     tags: ["tools", "coding"],
   },
@@ -330,7 +339,7 @@ export const MODELS = [
     provider: "minimax",
     label: "MiniMax M2.7 Highspeed",
     hint: "Fast",
-    description: "Same performance, faster and more agile.",
+    description: "Previous-generation low-latency variant.",
     capabilities: { intelligence: 5, speed: 4, cost: 4 },
     tags: ["tools", "coding"],
   },
@@ -584,6 +593,7 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "deepseek-v4-pro": 1_000_000,
   "deepseek-v4-flash": 1_000_000,
   "deepseek-reasoner": 128_000,
+  "MiniMax-M3": 512_000,
   "MiniMax-M2.7": 204_800,
   "MiniMax-M2.7-highspeed": 204_800,
   "gpt-oss-120b": 128_000,
@@ -642,6 +652,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "deepseek-v4-pro": { input: 0.28, output: 1.1, cacheRead: 0.028 },
   "deepseek-v4-flash": { input: 0.07, output: 0.27, cacheRead: 0.007 },
   "deepseek-reasoner": { input: 0.55, output: 2.19, cacheRead: 0.14 },
+  "MiniMax-M3": { input: 0.6, output: 2.4, cacheRead: 0.12 },
   "MiniMax-M2.7": { input: 0.3, output: 1.2, cacheRead: 0.06 },
   "MiniMax-M2.7-highspeed": { input: 0.6, output: 2.4, cacheRead: 0.06 },
 };
