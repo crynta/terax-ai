@@ -37,6 +37,7 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
       {items.map((item) => {
         const isActive = item.id === activeView;
         const showBadge = !!item.badge && item.badge > 0;
+        const badgeLabel = item.badge && item.badge > 99 ? "99+" : item.badge;
         return (
           <button
             key={item.id}
@@ -45,7 +46,7 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
             aria-pressed={isActive}
             onClick={() => onSelectView(item.id)}
             className={cn(
-              "group relative flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[11px] font-medium outline-none transition-colors duration-150",
+              "group relative flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-md px-1.5 text-[11px] font-medium outline-none transition-colors duration-150",
               "focus-visible:ring-2 focus-visible:ring-primary/40",
               isActive
                 ? "bg-foreground/[0.07] text-foreground dark:bg-foreground/[0.09]"
@@ -58,10 +59,12 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
               strokeWidth={isActive ? 2 : 1.75}
               className="shrink-0 transition-[stroke-width] duration-150"
             />
-            <span>{item.label}</span>
+            <span className="min-w-0 truncate whitespace-nowrap">
+              {item.label}
+            </span>
             {showBadge ? (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border/60 bg-card px-1 text-[9px] font-semibold leading-none tabular-nums text-muted-foreground/95">
-                {item.badge! > 99 ? "99+" : item.badge}
+              <span className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full border border-border/60 bg-card px-1 text-[9px] font-semibold leading-none tabular-nums text-muted-foreground/95">
+                {badgeLabel}
               </span>
             ) : null}
           </button>

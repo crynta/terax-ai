@@ -9,7 +9,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -17,6 +16,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -48,6 +54,8 @@ import {
   FolderCloudIcon,
   FolderGitTwoIcon,
   GitBranchIcon,
+  MinusSignIcon,
+  PlusSignIcon,
   Refresh01Icon,
   RemoveSquareIcon,
 } from "@hugeicons/core-free-icons";
@@ -64,10 +72,11 @@ import {
   type ReactNode,
 } from "react";
 import type { SourceControlSummary } from "./useSourceControl";
+import { commitPrimaryLabel } from "./sourceControlCommitAction";
 import {
   useSourceControlPanel,
-  type CheckState,
-  type SourceControlFileEntry,
+  type DiffSelection,
+  type SourceControlEntry,
 } from "./useSourceControlPanel";
 
 type Props = {
@@ -95,8 +104,19 @@ const ROW_HEIGHTS = {
 
 type RowDescriptor =
   | { kind: "banner-diverged"; key: string }
-  | { kind: "list-header"; key: string; count: number }
-  | { kind: "entry"; key: string; entry: SourceControlFileEntry };
+  | {
+      kind: "list-header";
+      key: string;
+      count: number;
+      section: "staged" | "unstaged";
+      title: string;
+    }
+  | {
+      kind: "entry";
+      key: string;
+      entry: SourceControlEntry;
+      section: "staged" | "unstaged";
+    };
 
 function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -110,7 +130,7 @@ function dirname(path: string): string {
   return normalized.slice(0, index);
 }
 
-function entryPathLabel(entry: SourceControlFileEntry): string {
+function entryPathLabel(entry: SourceControlEntry): string {
   if (entry.originalPath) return `${entry.originalPath} → ${entry.path}`;
   return dirname(entry.path);
 }
@@ -135,12 +155,6 @@ function statusAccent(code: string): string {
     default:
       return "bg-muted-foreground/40";
   }
-}
-
-function checkboxValue(state: CheckState): boolean | "indeterminate" {
-  if (state === "checked") return true;
-  if (state === "indeterminate") return "indeterminate";
-  return false;
 }
 
 export const SourceControlPanel = memo(function SourceControlPanel({
@@ -187,12 +201,13 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   const commitHint = canCommit
     ? `Commit with ${commitShortcut}.`
     : (commitDisabledReason ?? `Commit with ${commitShortcut}.`);
-  const pushHint = scm.pushHint ?? "Push is unavailable right now.";
-  const pushDisabledReason = scm.actionBusy
-    ? "Wait for the current Git action to finish."
-    : pushHint;
+  const commitPrimaryText = commitPrimaryLabel({
+    committed: scm.commitSucceeded,
+    message: scm.commitMessage,
+    actionBusy: scm.actionBusy,
+  });
   const stagedCount = scm.stagedEntries.length;
-  const changedCount = scm.fileEntries.length;
+  const changedCount = scm.stagedEntries.length + scm.unstagedEntries.length;
   const pushStatusLabel = upstreamBadgeLabel(scm.status?.upstream);
   const hasUpstream = !!scm.status?.upstream;
   const isDiverged =
@@ -264,21 +279,66 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       result.push({ kind: "banner-diverged", key: "banner-diverged" });
     }
     if (changedCount > 0) {
-      result.push({
-        kind: "list-header",
-        key: "list-header",
-        count: changedCount,
-      });
-      for (const entry of scm.fileEntries) {
-        result.push({ kind: "entry", key: entry.key, entry });
+      if (scm.stagedEntries.length > 0) {
+        result.push({
+          kind: "list-header",
+          key: "list-header:staged",
+          count: scm.stagedEntries.length,
+          section: "staged",
+          title: "Staged Changes",
+        });
+        for (const entry of scm.stagedEntries) {
+          result.push({
+            kind: "entry",
+            key: entry.key,
+            entry,
+            section: "staged",
+          });
+        }
+      }
+      if (scm.unstagedEntries.length > 0) {
+        result.push({
+          kind: "list-header",
+          key: "list-header:unstaged",
+          count: scm.unstagedEntries.length,
+          section: "unstaged",
+          title: "Changes",
+        });
+        for (const entry of scm.unstagedEntries) {
+          result.push({
+            kind: "entry",
+            key: entry.key,
+            entry,
+            section: "unstaged",
+          });
+        }
       }
     }
     return result;
-  }, [changedCount, isDiverged, scm.fileEntries]);
+  }, [changedCount, isDiverged, scm.stagedEntries, scm.unstagedEntries]);
+
+  const markedEntryKeys = useMemo(
+    () => new Set(scm.markedEntryKeys),
+    [scm.markedEntryKeys],
+  );
+
+  const markedCounts = useMemo(
+    () => ({
+      staged: scm.stagedEntries.filter((entry) =>
+        markedEntryKeys.has(entry.key),
+      ).length,
+      unstaged: scm.unstagedEntries.filter((entry) =>
+        markedEntryKeys.has(entry.key),
+      ).length,
+    }),
+    [markedEntryKeys, scm.stagedEntries, scm.unstagedEntries],
+  );
 
   const rowKeyToIndex = useMemo(() => {
     const map = new Map<string, number>();
-    rows.forEach((row, index) => map.set(row.key, index));
+    rows.forEach((row, index) => {
+      map.set(row.key, index);
+    });
     return map;
   }, [rows]);
 
@@ -326,7 +386,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       if (focusableIndices.length === 0) return;
       const currentIndex =
         focusedRowKey === null ? -1 : (rowKeyToIndex.get(focusedRowKey) ?? -1);
-      let pos = focusableIndices.findIndex((i) => i === currentIndex);
+      let pos = focusableIndices.indexOf(currentIndex);
       if (pos === -1) pos = direction > 0 ? -1 : focusableIndices.length;
       let nextPos = pos + direction;
       if (nextPos < 0) nextPos = 0;
@@ -341,7 +401,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     [focusableIndices, focusedRowKey, rowKeyToIndex, rows, virtualizer],
   );
 
-  const focusedEntry = useCallback((): SourceControlFileEntry | null => {
+  const focusedEntry = useCallback((): SourceControlEntry | null => {
     if (!focusedRowKey) return null;
     const index = rowKeyToIndex.get(focusedRowKey);
     if (index === undefined) return null;
@@ -379,7 +439,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           const entry = focusedEntry();
           if (entry) {
             event.preventDefault();
-            void scm.selectFile(entry);
+            void scm.selectEntry(entry);
           }
           break;
         }
@@ -390,7 +450,9 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           const entry = focusedEntry();
           if (entry) {
             event.preventDefault();
-            void scm.toggleStageFile(entry);
+            void (entry.mode === "+"
+              ? scm.unstageEntry(entry)
+              : scm.stageEntry(entry));
           }
           break;
         }
@@ -398,9 +460,9 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         case "D": {
           if (meta) break;
           const entry = focusedEntry();
-          if (entry && entry.unstaged) {
+          if (entry && entry.mode === "-") {
             event.preventDefault();
-            scm.requestDiscardFile(entry);
+            scm.requestDiscardEntry(entry);
           }
           break;
         }
@@ -575,7 +637,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                   scm.commitMessage.length > 0
                     ? "border-border/70"
                     : "border-border/45",
-                  "focus-within:border-primary/45 focus-within:shadow-md focus-within:shadow-primary/5",
+                  "focus-within:border-border/70 focus-within:shadow-none focus-within:ring-0",
                 )}
               >
                 <Textarea
@@ -585,7 +647,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                   placeholder="Commit message"
                   rows={3}
                   className={cn(
-                    "min-h-[72px] border-border resize-none rounded-lg bg-transparent px-3 pb-7 pt-2.5 text-[12.5px] leading-snug shadow-none placeholder:text-muted-foreground/65 focus-visible:ring-0 focus:border-0",
+                    "min-h-[72px] resize-none rounded-lg border-0 bg-transparent px-3 pb-7 pt-2.5 text-[12.5px] leading-snug shadow-none outline-none placeholder:text-muted-foreground/65 focus:border-0 focus:shadow-none focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-transparent",
                   )}
                 />
                 <div className="pointer-events-none absolute inset-x-3 bottom-1.5 flex items-center justify-between p-1 gap-2 text-[10px] tabular-nums text-muted-foreground/55">
@@ -656,50 +718,106 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 </span>
               </div>
 
-              <div className="grid w-full grid-cols-2 gap-1.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="xs"
-                      className="h-7 cursor-pointer text-[11.5px] font-semibold tracking-tight shadow-sm disabled:cursor-not-allowed disabled:shadow-none"
-                      disabled={!canCommit}
-                      onClick={() => void scm.commit()}
+              <div className="w-full">
+                <div
+                  className={cn(
+                    "flex h-7 w-full overflow-hidden rounded-md border shadow-sm transition-colors",
+                    canCommit
+                      ? "border-primary/35 bg-primary text-primary-foreground"
+                      : "border-border/55 bg-secondary/70 text-secondary-foreground/75",
+                  )}
+                >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          "min-w-0 flex-1 cursor-pointer px-2.5 text-center text-[11.5px] font-semibold tracking-tight transition-colors",
+                          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/35",
+                          canCommit
+                            ? "hover:bg-primary-foreground/10"
+                            : "cursor-not-allowed opacity-60",
+                        )}
+                        disabled={!canCommit}
+                        onClick={() => void scm.commit()}
+                      >
+                        {commitPrimaryText}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      className={cn(
+                        SOURCE_CONTROL_TOOLTIP_CLASS,
+                        "text-[10.5px]",
+                      )}
                     >
-                      {scm.actionBusy === "commit" ? "Committing…" : "Commit"}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    className={cn(
-                      SOURCE_CONTROL_TOOLTIP_CLASS,
-                      "text-[10.5px]",
-                    )}
-                  >
-                    {commitHint}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="xs"
-                      variant="secondary"
-                      className="h-7 cursor-pointer text-[11.5px] font-medium disabled:cursor-not-allowed"
-                      disabled={!scm.canPush || !!scm.actionBusy}
-                      onClick={() => void scm.push()}
+                      {commitHint}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <DropdownMenu>
+                      <TooltipTrigger asChild>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className={cn(
+                              "flex h-7 w-8 shrink-0 cursor-pointer items-center justify-center border-l transition-colors",
+                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/35",
+                              canCommit
+                                ? "border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/10"
+                                : "border-border/55 text-secondary-foreground/65 hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-60",
+                            )}
+                            disabled={!!scm.actionBusy}
+                            aria-label="More actions..."
+                          >
+                            <HugeiconsIcon
+                              icon={ArrowDown01Icon}
+                              size={13}
+                              strokeWidth={2.35}
+                              className="block"
+                            />
+                          </button>
+                        </DropdownMenuTrigger>
+                      </TooltipTrigger>
+                      <DropdownMenuContent
+                        align="end"
+                        className="min-w-44 rounded-lg border border-border/70 bg-popover p-1 text-[12px] shadow-xl shadow-black/25"
+                      >
+                        <DropdownMenuItem
+                          className="rounded-md px-2 py-1.5 text-[12px]"
+                          disabled={!canCommit}
+                          onSelect={() => void scm.commit()}
+                        >
+                          Commit
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator className="my-1" />
+                        <DropdownMenuItem
+                          className="rounded-md px-2 py-1.5 text-[12px]"
+                          disabled={!canCommit || !scm.canPush}
+                          onSelect={() => void scm.commitAndPush()}
+                        >
+                          Commit & Push
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="rounded-md px-2 py-1.5 text-[12px]"
+                          disabled={!canCommit || !scm.canPush}
+                          onSelect={() => void scm.commitAndSync()}
+                        >
+                          Commit & Sync
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <TooltipContent
+                      side="bottom"
+                      className={cn(
+                        SOURCE_CONTROL_TOOLTIP_CLASS,
+                        "text-[10.5px]",
+                      )}
                     >
-                      {scm.actionBusy === "push" ? "Pushing…" : "Push"}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    className={cn(
-                      SOURCE_CONTROL_TOOLTIP_CLASS,
-                      "max-w-64 text-[10.5px]",
-                    )}
-                  >
-                    {pushDisabledReason}
-                  </TooltipContent>
-                </Tooltip>
+                      More actions...
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
               </div>
 
               <CommitFeedback feedback={footerFeedback} />
@@ -748,15 +866,21 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                           <RowRenderer
                             row={row}
                             focused={focusedRowKey === row.key}
-                            selectedPath={scm.selected?.path ?? null}
+                            selected={scm.selected}
+                            markedEntryKeys={markedEntryKeys}
+                            markedCounts={markedCounts}
                             actionBusy={scm.actionBusy}
-                            headerCheckState={scm.headerCheckState}
                             repoRoot={scm.repo?.repoRoot ?? null}
                             onFocusRow={setFocusedRowKey}
-                            onToggleAll={scm.toggleAll}
-                            onSelectFile={scm.selectFile}
-                            onToggleStageFile={scm.toggleStageFile}
-                            onDiscardFile={scm.requestDiscardFile}
+                            onStageSectionEntries={scm.stageSectionEntries}
+                            onUnstageSectionEntries={scm.unstageSectionEntries}
+                            onToggleMarkedEntry={scm.toggleMarkedEntry}
+                            onClearMarkedEntries={scm.clearMarkedEntries}
+                            onSelectEntry={scm.selectEntry}
+                            onStageEntry={scm.stageEntry}
+                            onUnstageEntry={scm.unstageEntry}
+                            onDiscardEntry={scm.requestDiscardEntry}
+                            onDiscardAll={scm.requestDiscardAll}
                             onOpenFile={onOpenFile}
                           />
                         </div>
@@ -846,15 +970,21 @@ function CleanTreeHint({ repoLabel }: { repoLabel: string }) {
 type RowRendererProps = {
   row: RowDescriptor;
   focused: boolean;
-  selectedPath: string | null;
+  selected: DiffSelection | null;
+  markedEntryKeys: Set<string>;
+  markedCounts: { staged: number; unstaged: number };
   actionBusy: string | null;
-  headerCheckState: CheckState;
   repoRoot: string | null;
   onFocusRow: (key: string | null) => void;
-  onToggleAll: () => Promise<void> | void;
-  onSelectFile: (entry: SourceControlFileEntry) => Promise<void>;
-  onToggleStageFile: (entry: SourceControlFileEntry) => Promise<void>;
-  onDiscardFile: (entry: SourceControlFileEntry) => void;
+  onStageSectionEntries: (section: "staged" | "unstaged") => Promise<void>;
+  onUnstageSectionEntries: (section: "staged" | "unstaged") => Promise<void>;
+  onToggleMarkedEntry: (entry: SourceControlEntry) => void;
+  onClearMarkedEntries: () => void;
+  onSelectEntry: (entry: SourceControlEntry) => Promise<void>;
+  onStageEntry: (entry: SourceControlEntry) => Promise<void>;
+  onUnstageEntry: (entry: SourceControlEntry) => Promise<void>;
+  onDiscardEntry: (entry: SourceControlEntry) => void;
+  onDiscardAll: () => void;
   onOpenFile?: (absolutePath: string) => void;
 };
 
@@ -892,29 +1022,64 @@ function DivergedBanner() {
 function ListHeader({
   row,
   actionBusy,
-  headerCheckState,
-  onToggleAll,
+  markedCounts,
+  onStageSectionEntries,
+  onUnstageSectionEntries,
+  onDiscardAll,
 }: RowRendererProps & {
   row: Extract<RowDescriptor, { kind: "list-header" }>;
 }) {
+  const isStaged = row.section === "staged";
+  const markedCount = isStaged ? markedCounts.staged : markedCounts.unstaged;
+  const scopeLabel =
+    markedCount > 0
+      ? `${markedCount} marked ${markedCount === 1 ? "file" : "files"}`
+      : "all";
+  const primaryLabel = isStaged
+    ? `Unstage ${scopeLabel}`
+    : `Stage ${scopeLabel}`;
+  const discardLabel =
+    markedCount > 0 ? `Discard ${scopeLabel}` : "Discard all changes";
   return (
-    <div className="flex h-7 items-center gap-2 px-3">
-      <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/85">
-        Changes
+    <div className="group/header flex h-7 items-center gap-2 px-3">
+      <span className="min-w-0 flex-1 truncate text-[10.5px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/85">
+        {row.title}
       </span>
-      <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-border/60 px-1 text-[9.5px] font-semibold tabular-nums text-muted-foreground">
+      <div className="flex shrink-0 select-none items-center gap-0.5 opacity-0 transition-opacity group-hover/header:opacity-100 group-focus-within/header:opacity-100">
+        <IconActionButton
+          label={primaryLabel}
+          disabled={actionBusy !== null}
+          side="top"
+          onClick={() =>
+            void (isStaged
+              ? onUnstageSectionEntries("staged")
+              : onStageSectionEntries("unstaged"))
+          }
+        >
+          <HugeiconsIcon
+            icon={isStaged ? MinusSignIcon : PlusSignIcon}
+            size={11}
+            strokeWidth={2.1}
+          />
+        </IconActionButton>
+        {!isStaged ? (
+          <IconActionButton
+            label={discardLabel}
+            disabled={actionBusy !== null}
+            side="top"
+            onClick={onDiscardAll}
+          >
+            <HugeiconsIcon
+              icon={RemoveSquareIcon}
+              size={11}
+              strokeWidth={1.9}
+            />
+          </IconActionButton>
+        ) : null}
+      </div>
+      <span className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full border border-border/60 px-1 text-[9.5px] font-semibold tabular-nums text-muted-foreground">
         {row.count}
       </span>
-      <label className="ml-auto flex shrink-0 cursor-pointer select-none items-center gap-1.5 text-[10.5px] font-medium text-muted-foreground hover:text-foreground">
-        <span>All</span>
-        <Checkbox
-          aria-label="Stage all changes"
-          checked={checkboxValue(headerCheckState)}
-          disabled={actionBusy !== null}
-          onCheckedChange={() => void onToggleAll()}
-          className="size-3.5"
-        />
-      </label>
     </div>
   );
 }
@@ -922,27 +1087,43 @@ function ListHeader({
 const EntryRow = memo(function EntryRow({
   row,
   focused,
-  selectedPath,
+  selected,
+  markedEntryKeys,
+  markedCounts,
   actionBusy,
   repoRoot,
   onFocusRow,
-  onSelectFile,
-  onToggleStageFile,
-  onDiscardFile,
+  onToggleMarkedEntry,
+  onClearMarkedEntries,
+  onSelectEntry,
+  onStageEntry,
+  onUnstageEntry,
+  onStageSectionEntries,
+  onUnstageSectionEntries,
+  onDiscardEntry,
+  onDiscardAll,
   onOpenFile,
 }: RowRendererProps & {
   row: Extract<RowDescriptor, { kind: "entry" }>;
 }) {
   const entry = row.entry;
-  const isSelected = selectedPath === entry.path;
+  const isSelected =
+    selected?.path === entry.path && selected.mode === entry.mode;
+  const isMarked = markedEntryKeys.has(entry.key);
   const fileName = basename(entry.path);
   const iconUrl = fileIconUrl(fileName);
   const pathLabel = entryPathLabel(entry);
-  const showDiscard = entry.unstaged;
+  const isStaged = entry.mode === "+";
+  const showDiscard = !isStaged;
+  const markedCount = isStaged ? markedCounts.staged : markedCounts.unstaged;
   const isStageBusy =
     actionBusy === `stage:${entry.path}` ||
-    actionBusy === `unstage:${entry.path}`;
-  const isDiscardBusy = actionBusy === `discard:${entry.path}`;
+    actionBusy === `unstage:${entry.path}` ||
+    (!isStaged && actionBusy === "stage:unstaged") ||
+    (isStaged && actionBusy === "unstage:staged");
+  const isDiscardBusy =
+    actionBusy === `discard:${entry.path}` ||
+    (!isStaged && actionBusy === "discard:all");
   const disabled = actionBusy !== null;
 
   const absolutePath = repoRoot
@@ -958,8 +1139,10 @@ const EntryRow = memo(function EntryRow({
           id={`scm-row-${row.key}`}
           data-focused={focused || undefined}
           data-selected={isSelected || undefined}
+          data-marked={isMarked || undefined}
           role="option"
-          aria-selected={isSelected}
+          tabIndex={-1}
+          aria-selected={isSelected || isMarked}
           onMouseDown={() => onFocusRow(row.key)}
           className={cn(
             "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-100",
@@ -967,6 +1150,8 @@ const EntryRow = memo(function EntryRow({
               ? "bg-accent/60"
               : isSelected
                 ? "bg-accent/55 text-foreground"
+                : isMarked
+                  ? "bg-primary/10 text-foreground ring-1 ring-primary/25"
                 : "hover:bg-accent/30",
           )}
         >
@@ -980,46 +1165,90 @@ const EntryRow = memo(function EntryRow({
             )}
             aria-hidden
           />
-          <button
-            type="button"
-            onClick={() => {
-              onFocusRow(row.key);
-              void onSelectFile(entry);
-            }}
-            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-          >
-            {iconUrl ? (
-              <img src={iconUrl} alt="" className="size-4 shrink-0" />
-            ) : (
-              <span className="size-4 shrink-0" />
-            )}
-            <div className="flex min-w-0 flex-1 items-baseline gap-1.5 leading-none">
-              <span
-                className={cn(
-                  "truncate text-[12px] leading-tight",
-                  isSelected || focused
-                    ? "font-semibold text-foreground"
-                    : "font-medium text-foreground/95",
-                  pathLabel ? "max-w-[58%] shrink-0" : "min-w-0 flex-1",
-                )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={(event) => {
+                  onFocusRow(row.key);
+                  if (event.altKey) {
+                    event.preventDefault();
+                    onToggleMarkedEntry(entry);
+                    return;
+                  }
+                  void onSelectEntry(entry);
+                }}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
               >
-                {fileName}
-              </span>
-              {pathLabel ? (
-                <span className="min-w-0 flex-1 truncate text-[10.5px] leading-tight text-muted-foreground/75">
-                  {pathLabel}
-                </span>
-              ) : null}
-            </div>
-          </button>
+                {iconUrl ? (
+                  <img src={iconUrl} alt="" className="size-3.5 shrink-0" />
+                ) : (
+                  <span className="size-3.5 shrink-0" />
+                )}
+                <div className="flex min-w-0 flex-1 items-baseline gap-1.5 leading-none">
+                  <span
+                    className={cn(
+                      "truncate text-[12px] leading-tight",
+                      isSelected || focused
+                        ? "font-semibold text-foreground"
+                        : "font-medium text-foreground/95",
+                      pathLabel ? "max-w-[58%] shrink-0" : "min-w-0 flex-1",
+                    )}
+                  >
+                    {fileName}
+                  </span>
+                  {pathLabel ? (
+                    <span className="min-w-0 flex-1 truncate text-[10.5px] leading-tight text-muted-foreground/75">
+                      {pathLabel}
+                    </span>
+                  ) : null}
+                </div>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              className={cn(
+                SOURCE_CONTROL_TOOLTIP_CLASS,
+                "max-w-72 rounded-md text-[10.5px]",
+              )}
+            >
+              {entry.path}
+            </TooltipContent>
+          </Tooltip>
 
-          {showDiscard ? (
-            <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 data-[focused=true]:opacity-100 data-[selected=true]:opacity-100">
+          <div
+            className={cn(
+              "absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-card/95 opacity-0 shadow-sm transition-opacity",
+              "group-hover:opacity-100 group-focus-within:opacity-100",
+              (isStageBusy || isDiscardBusy) && "opacity-100",
+            )}
+          >
+            {isStageBusy ? (
+              <span className="flex size-6 items-center justify-center">
+                <Spinner className="size-3" />
+              </span>
+            ) : (
               <IconActionButton
-                label={`Discard ${entry.path}`}
+                label={isStaged ? "Unstage changes" : "Stage changes"}
                 disabled={disabled}
                 side="top"
-                onClick={() => onDiscardFile(entry)}
+                onClick={() =>
+                  void (isStaged ? onUnstageEntry(entry) : onStageEntry(entry))
+                }
+              >
+                <HugeiconsIcon
+                  icon={isStaged ? MinusSignIcon : PlusSignIcon}
+                  size={11}
+                  strokeWidth={2.1}
+                />
+              </IconActionButton>
+            )}
+            {showDiscard ? (
+              <IconActionButton
+                label="Discard changes"
+                disabled={disabled}
+                side="top"
+                onClick={() => onDiscardEntry(entry)}
               >
                 {isDiscardBusy ? (
                   <Spinner className="size-3" />
@@ -1031,22 +1260,8 @@ const EntryRow = memo(function EntryRow({
                   />
                 )}
               </IconActionButton>
-            </div>
-          ) : null}
-
-          <span className="flex size-5 shrink-0 items-center justify-center">
-            {isStageBusy ? (
-              <Spinner className="size-3" />
-            ) : (
-              <Checkbox
-                aria-label={`Stage ${entry.path}`}
-                checked={checkboxValue(entry.checkState)}
-                disabled={disabled}
-                onCheckedChange={() => void onToggleStageFile(entry)}
-                className="size-3.5"
-              />
-            )}
-          </span>
+            ) : null}
+          </div>
         </div>
       </ContextMenuTrigger>
 
@@ -1056,7 +1271,7 @@ const EntryRow = memo(function EntryRow({
           className={COMPACT_ITEM}
           onSelect={() => {
             onFocusRow(row.key);
-            void onSelectFile(entry);
+            void onSelectEntry(entry);
           }}
         >
           Open Diff
@@ -1073,19 +1288,55 @@ const EntryRow = memo(function EntryRow({
         <ContextMenuSeparator />
 
         {/* Stage / Unstage */}
+        {markedCount > 0 ? (
+          <>
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              disabled={disabled}
+              onSelect={() =>
+                void (isStaged
+                  ? onUnstageSectionEntries("staged")
+                  : onStageSectionEntries("unstaged"))
+              }
+            >
+              {isStaged
+                ? `Unstage marked (${markedCount})`
+                : `Stage marked (${markedCount})`}
+            </ContextMenuItem>
+            {!isStaged ? (
+              <ContextMenuItem
+                className={COMPACT_ITEM}
+                variant="destructive"
+                disabled={disabled}
+                onSelect={() => onDiscardAll()}
+              >
+                Discard marked ({markedCount})
+              </ContextMenuItem>
+            ) : null}
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              onSelect={() => onClearMarkedEntries()}
+            >
+              Clear marks
+            </ContextMenuItem>
+            <ContextMenuSeparator />
+          </>
+        ) : null}
         <ContextMenuItem
           className={COMPACT_ITEM}
           disabled={disabled}
-          onSelect={() => void onToggleStageFile(entry)}
+          onSelect={() =>
+            void (isStaged ? onUnstageEntry(entry) : onStageEntry(entry))
+          }
         >
-          {entry.checkState === "checked" ? "Unstage" : "Stage"}
+          {isStaged ? "Unstage" : "Stage"}
         </ContextMenuItem>
-        {entry.unstaged ? (
+        {!isStaged ? (
           <ContextMenuItem
             className={COMPACT_ITEM}
             variant="destructive"
             disabled={disabled}
-            onSelect={() => onDiscardFile(entry)}
+            onSelect={() => onDiscardEntry(entry)}
           >
             Discard Changes
           </ContextMenuItem>
