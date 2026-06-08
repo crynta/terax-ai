@@ -91,6 +91,7 @@ export default function App() {
     tabs,
     activeId,
     setActiveId,
+    reorderTab,
     newTab,
     newBlockTab,
     newAgentTab,
@@ -842,6 +843,7 @@ export default function App() {
               onClose={handleClose}
               onPin={pinTab}
               onRename={handleRenameTab}
+              onReorder={reorderTab}
               onToggleSidebar={toggleSidebar}
               onOpenCommandPalette={() => openCommandPalette("commands")}
               onActivateAgent={onActivateAgent}

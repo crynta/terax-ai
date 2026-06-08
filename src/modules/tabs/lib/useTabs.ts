@@ -828,10 +828,30 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     for (const lid of toDispose) disposeSession(lid);
   }, []);
 
+  // Move a tab to a new position. `toGapIndex` is the insertion gap measured
+  // against the current array (0..tabs.length); the dragged tab is removed and
+  // re-inserted there (insert-and-shift), not swapped with another tab.
+  const reorderTab = useCallback((fromId: number, toGapIndex: number) => {
+    setTabs((prev) => {
+      const from = prev.findIndex((t) => t.id === fromId);
+      if (from === -1) return prev;
+      const next = prev.slice();
+      const [moved] = next.splice(from, 1);
+      // The gap was measured before removal, so shift it back by one when it
+      // sits past the source slot.
+      let target = toGapIndex > from ? toGapIndex - 1 : toGapIndex;
+      target = Math.max(0, Math.min(target, next.length));
+      if (target === from) return prev; // dropped in place — no change
+      next.splice(target, 0, moved);
+      return next;
+    });
+  }, []);
+
   return {
     tabs,
     activeId,
     setActiveId,
+    reorderTab,
     newTab,
     newBlockTab,
     newAgentTab,
