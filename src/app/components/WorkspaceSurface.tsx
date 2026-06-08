@@ -1,11 +1,19 @@
-import type { ComponentProps } from "react";
+import { lazy, Suspense, useCallback, type ComponentProps } from "react";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { AiDiffStack, EditorStack, GitDiffStack } from "@/modules/editor";
 import { GitHistoryStack } from "@/modules/git-history";
 import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack } from "@/modules/preview";
 import type { Tab } from "@/modules/tabs";
+import type { SettingsSection } from "@/modules/settings/types";
 import { TerminalStack } from "@/modules/terminal";
+
+const SettingsApp = lazy(() =>
+  import("@/settings/SettingsApp").then((mod) => ({
+    default: mod.SettingsApp,
+  })),
+);
 
 type TerminalStackProps = ComponentProps<typeof TerminalStack>;
 type EditorStackProps = ComponentProps<typeof EditorStack>;
@@ -31,6 +39,7 @@ type Props = {
   onAiDiffReject: AiDiffStackProps["onReject"];
   onOpenCommitFile: GitHistoryStackProps["onOpenCommitFile"];
   onGitHistorySearchHandle: GitHistoryStackProps["onSearchHandle"];
+  onSettingsSectionChange: (tabId: number, section: SettingsSection) => void;
 };
 
 /**
@@ -56,8 +65,11 @@ export function WorkspaceSurface({
   onAiDiffReject,
   onOpenCommitFile,
   onGitHistorySearchHandle,
+  onSettingsSectionChange,
 }: Props) {
   const kind = activeTab?.kind;
+  const settingsTab = activeTab?.kind === "settings" ? activeTab : null;
+  const settingsTabId = settingsTab?.id;
   const isTerminalTab = kind === "terminal";
   const isEditorTab = kind === "editor";
   const isPreviewTab = kind === "preview";
@@ -65,6 +77,15 @@ export function WorkspaceSurface({
   const isAiDiffTab = kind === "ai-diff";
   const isGitDiffTab = kind === "git-diff" || kind === "git-commit-file";
   const isGitHistoryTab = kind === "git-history";
+  const isSettingsTab = settingsTab !== null;
+  const handleSettingsSectionChange = useCallback(
+    (section: SettingsSection) => {
+      if (settingsTabId !== undefined) {
+        onSettingsSectionChange(settingsTabId, section);
+      }
+    },
+    [onSettingsSectionChange, settingsTabId],
+  );
 
   return (
     <div className="relative h-full min-h-0">
@@ -159,6 +180,29 @@ export function WorkspaceSurface({
           onOpenCommitFile={onOpenCommitFile}
           onSearchHandle={onGitHistorySearchHandle}
         />
+      </div>
+      <div
+        className={cn(
+          "absolute inset-0",
+          !isSettingsTab && "invisible pointer-events-none",
+        )}
+        aria-hidden={!isSettingsTab}
+      >
+        {settingsTab ? (
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center">
+                <Spinner />
+              </div>
+            }
+          >
+            <SettingsApp
+              embedded
+              activeSection={settingsTab.activeSection}
+              onActiveSectionChange={handleSettingsSectionChange}
+            />
+          </Suspense>
+        ) : null}
       </div>
     </div>
   );

@@ -132,7 +132,7 @@ export function GeneralSection() {
               className={cn(
                 "group flex h-20 flex-col items-center justify-center gap-1.5 rounded-lg border bg-card transition-all",
                 mode === o.id
-                  ? "border-foreground/60 ring-1 ring-foreground/20"
+                  ? "border-foreground/50 ring-1 ring-foreground/15"
                   : "border-border/60 hover:border-border",
               )}
             >

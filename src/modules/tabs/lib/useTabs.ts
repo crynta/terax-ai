@@ -11,6 +11,7 @@ import {
   type PaneNode,
   type SplitDir,
 } from "@/modules/terminal/lib/panes";
+import type { SettingsSection } from "@/modules/settings/types";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 
 // Matches the renderer slot pool size — over this we'd evict an active leaf.
@@ -103,6 +104,13 @@ export type GitCommitFileDiffTab = {
   originalPath: string | null;
 };
 
+export type SettingsWorkspaceTab = {
+  id: number;
+  kind: "settings";
+  title: string;
+  activeSection: SettingsSection;
+};
+
 export type Tab =
   | TerminalTab
   | EditorTab
@@ -111,7 +119,8 @@ export type Tab =
   | AiDiffTab
   | GitDiffTab
   | GitHistoryTab
-  | GitCommitFileDiffTab;
+  | GitCommitFileDiffTab
+  | SettingsWorkspaceTab;
 
 export type TabPatch = Partial<{
   title: string;
@@ -119,6 +128,7 @@ export type TabPatch = Partial<{
   path: string;
   dirty: boolean;
   url: string;
+  activeSection: SettingsSection;
   /** Empty string resets a terminal tab to its cwd-derived name. */
   customTitle: string;
 }>;
@@ -135,6 +145,38 @@ function titleFromUrl(url: string): string {
   } catch {
     return url || "preview";
   }
+}
+
+export type { SettingsSection };
+
+export function applyOpenSettingsTab(
+  tabs: Tab[],
+  nextId: () => number,
+  section: SettingsSection = "general",
+): { tabs: Tab[]; activeId: number } {
+  const existing = tabs.find((t) => t.kind === "settings");
+  if (existing) {
+    return {
+      tabs: tabs.map((t) =>
+        t.kind === "settings" ? { ...t, activeSection: section } : t,
+      ),
+      activeId: existing.id,
+    };
+  }
+
+  const id = nextId();
+  return {
+    tabs: [
+      ...tabs,
+      {
+        id,
+        kind: "settings",
+        title: "Settings",
+        activeSection: section,
+      },
+    ],
+    activeId: id,
+  };
 }
 
 export function useTabs(initial?: Partial<TerminalTab>) {
@@ -589,6 +631,15 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [],
   );
 
+  const openSettingsTab = useCallback((section: SettingsSection = "general") => {
+    const curr = tabsRef.current;
+    const result = applyOpenSettingsTab(curr, () => nextIdRef.current++, section);
+    tabsRef.current = result.tabs;
+    setTabs(result.tabs);
+    setActiveId(result.activeId);
+    return result.activeId;
+  }, []);
+
   const closeTab = useCallback((id: number) => {
     let toDispose: number[] = [];
     setTabs((curr) => {
@@ -635,6 +686,15 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           return {
             ...x,
             ...(patch.title !== undefined && { title: patch.title }),
+          };
+        }
+        if (x.kind === "settings") {
+          return {
+            ...x,
+            ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.activeSection !== undefined && {
+              activeSection: patch.activeSection,
+            }),
           };
         }
         // editor tab: auto-promote from preview the moment the file becomes dirty.
@@ -844,6 +904,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     openGitDiffTab,
     openCommitHistoryTab,
     openCommitFileDiffTab,
+    openSettingsTab,
     setAiDiffStatus,
     closeAiDiffTab,
     closeTab,
