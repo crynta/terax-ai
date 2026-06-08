@@ -16,8 +16,10 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { ThemePref } from "@/modules/settings/store";
+import type { TabBehavior, ThemePref } from "@/modules/settings/store";
 import {
+  TAB_BEHAVIORS,
+  TAB_BEHAVIOR_LABELS,
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
@@ -26,6 +28,7 @@ import {
   setEditorAutoSaveDelay,
   setRestoreWindowState,
   setShowHidden,
+  setTabBehavior,
   setTerminalFontFamily,
   setTerminalLetterSpacing,
   setTerminalFontSize,
@@ -88,6 +91,7 @@ export function GeneralSection() {
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
+  const tabBehavior = usePreferencesStore((s) => s.tabBehavior);
 
   useEffect(() => {
     let alive = true;
@@ -194,6 +198,30 @@ export function GeneralSection() {
             onChange={(v) => void setEditorAutoSaveDelay(v)}
           />
         )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Tabs</Label>
+        <SettingRow
+          title="New tab position"
+          description="Where a newly opened tab appears in the tab strip."
+        >
+          <Select
+            value={tabBehavior}
+            onValueChange={(v) => void setTabBehavior(v as TabBehavior)}
+          >
+            <SelectTrigger size="sm" className="h-8 w-44 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TAB_BEHAVIORS.map((b) => (
+                <SelectItem key={b} value={b} className="text-[12px]">
+                  {TAB_BEHAVIOR_LABELS[b]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">

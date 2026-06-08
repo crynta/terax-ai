@@ -12,6 +12,8 @@ import {
   type SplitDir,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { placeTab } from "./placeTab";
 
 // Matches the renderer slot pool size — over this we'd evict an active leaf.
 export const MAX_PANES_PER_TAB = 4;
@@ -155,25 +157,37 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const [activeId, setActiveId] = useState(1);
   const nextIdRef = useRef(3);
   const tabsRef = useRef(tabs);
+  // The creation callbacks below use `useCallback(…, [])` and so never close
+  // over `activeId`. This ref gives them the current active id at insertion
+  // time (needed by `placeTab` for the "after current tab" behavior).
+  const activeIdRef = useRef(activeId);
 
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
 
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
     const leafId = nextIdRef.current++;
-    setTabs((t) => [
-      ...t,
-      {
-        id: tabId,
-        kind: "terminal",
-        title: "shell",
-        cwd,
-        paneTree: { kind: "leaf", id: leafId, cwd },
-        activeLeafId: leafId,
-      },
-    ]);
+    setTabs((t) =>
+      placeTab(
+        t,
+        {
+          id: tabId,
+          kind: "terminal",
+          title: "shell",
+          cwd,
+          paneTree: { kind: "leaf", id: leafId, cwd },
+          activeLeafId: leafId,
+        },
+        activeIdRef.current,
+        usePreferencesStore.getState().tabBehavior,
+      ),
+    );
     setActiveId(tabId);
     return tabId;
   }, []);
@@ -208,17 +222,21 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     (cwd: string | undefined, title: string) => {
       const tabId = nextIdRef.current++;
       const leafId = nextIdRef.current++;
-      setTabs((t) => [
-        ...t,
-        {
-          id: tabId,
-          kind: "terminal",
-          title,
-          cwd,
-          paneTree: { kind: "leaf", id: leafId, cwd },
-          activeLeafId: leafId,
-        },
-      ]);
+      setTabs((t) =>
+        placeTab(
+          t,
+          {
+            id: tabId,
+            kind: "terminal",
+            title,
+            cwd,
+            paneTree: { kind: "leaf", id: leafId, cwd },
+            activeLeafId: leafId,
+          },
+          activeIdRef.current,
+          usePreferencesStore.getState().tabBehavior,
+        ),
+      );
       setActiveId(tabId);
       return { tabId, leafId };
     },
@@ -228,18 +246,22 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const newPrivateTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
     const leafId = nextIdRef.current++;
-    setTabs((t) => [
-      ...t,
-      {
-        id: tabId,
-        kind: "terminal",
-        title: "private",
-        cwd,
-        paneTree: { kind: "leaf", id: leafId, cwd },
-        activeLeafId: leafId,
-        private: true,
-      },
-    ]);
+    setTabs((t) =>
+      placeTab(
+        t,
+        {
+          id: tabId,
+          kind: "terminal",
+          title: "private",
+          cwd,
+          paneTree: { kind: "leaf", id: leafId, cwd },
+          activeLeafId: leafId,
+          private: true,
+        },
+        activeIdRef.current,
+        usePreferencesStore.getState().tabBehavior,
+      ),
+    );
     setActiveId(tabId);
     return tabId;
   }, []);
@@ -273,8 +295,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         }
         const id = nextIdRef.current++;
         targetId = id;
-        return [
-          ...curr,
+        return placeTab(
+          curr,
           {
             id,
             kind: "editor",
@@ -283,7 +305,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             dirty: false,
             preview: false,
           } satisfies EditorTab,
-        ];
+          activeIdRef.current,
+          usePreferencesStore.getState().tabBehavior,
+        );
       } else {
         // Preview open: persistent tab for this path takes priority.
         const persistent = curr.find(
@@ -317,7 +341,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           dirty: false,
           preview: true,
         };
-        if (previewIdx === -1) return [...curr, tab];
+        if (previewIdx === -1)
+          return placeTab(
+            curr,
+            tab,
+            activeIdRef.current,
+            usePreferencesStore.getState().tabBehavior,
+          );
         const next = [...curr];
         next[previewIdx] = tab;
         return next;
@@ -359,8 +389,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         const id = nextIdRef.current++;
         targetId = id;
         const title = `${basename(input.path)} (AI diff)`;
-        return [
-          ...curr,
+        return placeTab(
+          curr,
           {
             id,
             kind: "ai-diff",
@@ -372,7 +402,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             status: "pending",
             isNewFile: input.isNewFile,
           },
-        ];
+          activeIdRef.current,
+          usePreferencesStore.getState().tabBehavior,
+        );
       });
       if (targetId !== null) setActiveId(targetId);
       return targetId as number | null;
@@ -417,10 +449,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
   const newPreviewTab = useCallback((url: string) => {
     const id = nextIdRef.current++;
-    setTabs((t) => [
-      ...t,
-      { id, kind: "preview", title: titleFromUrl(url), url },
-    ]);
+    setTabs((t) =>
+      placeTab(
+        t,
+        { id, kind: "preview", title: titleFromUrl(url), url },
+        activeIdRef.current,
+        usePreferencesStore.getState().tabBehavior,
+      ),
+    );
     setActiveId(id);
     return id;
   }, []);
@@ -437,7 +473,12 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       }
       const id = nextIdRef.current++;
       targetId = id;
-      return [...curr, { id, kind: "markdown", title: basename(path), path }];
+      return placeTab(
+        curr,
+        { id, kind: "markdown", title: basename(path), path },
+        activeIdRef.current,
+        usePreferencesStore.getState().tabBehavior,
+      );
     });
     if (targetId !== null) setActiveId(targetId);
     return targetId;
@@ -476,8 +517,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       }
 
       const id = nextIdRef.current++;
-      const nextTabs = [
-        ...curr,
+      const nextTabs = placeTab(
+        curr,
         {
           id,
           kind: "git-diff",
@@ -487,7 +528,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           mode: input.mode,
           originalPath,
         } satisfies GitDiffTab,
-      ];
+        activeIdRef.current,
+        usePreferencesStore.getState().tabBehavior,
+      );
       tabsRef.current = nextTabs;
       setTabs(nextTabs);
       setActiveId(id);
@@ -515,15 +558,17 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         return existing.id;
       }
       const id = nextIdRef.current++;
-      const nextTabs = [
-        ...curr,
+      const nextTabs = placeTab(
+        curr,
         {
           id,
           kind: "git-history",
           title,
           repoRoot: input.repoRoot,
         } satisfies GitHistoryTab,
-      ];
+        activeIdRef.current,
+        usePreferencesStore.getState().tabBehavior,
+      );
       tabsRef.current = nextTabs;
       setTabs(nextTabs);
       setActiveId(id);
@@ -567,8 +612,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         return existing.id;
       }
       const id = nextIdRef.current++;
-      const nextTabs = [
-        ...curr,
+      const nextTabs = placeTab(
+        curr,
         {
           id,
           kind: "git-commit-file",
@@ -580,7 +625,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           path: input.path,
           originalPath: input.originalPath,
         } satisfies GitCommitFileDiffTab,
-      ];
+        activeIdRef.current,
+        usePreferencesStore.getState().tabBehavior,
+      );
       tabsRef.current = nextTabs;
       setTabs(nextTabs);
       setActiveId(id);
