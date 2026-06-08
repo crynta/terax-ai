@@ -12,6 +12,14 @@ import { tryRunSlashCommand, type SlashCommandMeta } from "./slashCommands";
 import { getChat, useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  imageAttachmentFromFile,
+  imageAttachmentFromPath,
+  isAcceptedImageName,
+  isAcceptedImageType,
+} from "./imageAttachments";
+import { modelSupportsImages } from "./visionAdapters";
 
 export type FileAttachment = {
   id: string;
@@ -41,6 +49,7 @@ type ComposerCtx = {
   setValue: React.Dispatch<React.SetStateAction<string>>;
   files: FileAttachment[];
   addFiles: (list: FileList | null) => Promise<void>;
+  addImagePaths: (paths: readonly string[]) => Promise<void>;
   /** Attach a file by absolute path — used by the file explorer's "Attach to Agent". */
   attachFileByPath: (path: string) => Promise<void>;
   removeFile: (id: string) => void;
@@ -154,12 +163,42 @@ export function AiComposerProvider({ children }: ProviderProps) {
 
   const addFiles = async (list: FileList | null) => {
     if (!list) return;
-    const next: FileAttachment[] = [];
+    const textAttachments: FileAttachment[] = [];
+    const imageFiles: File[] = [];
     for (const f of Array.from(list)) {
+      if (isAcceptedImageType(f.type) || isAcceptedImageName(f.name)) {
+        imageFiles.push(f);
+        continue;
+      }
       const att = await readAttachment(f);
-      if (att) next.push(att);
+      if (att) textAttachments.push(att);
+    }
+    if (textAttachments.length) setFiles((prev) => [...prev, ...textAttachments]);
+    if (imageFiles.length) await addImageFiles(imageFiles);
+  };
+
+  const addImageFiles = async (list: readonly File[]) => {
+    const working = files;
+    const next: FileAttachment[] = [];
+    for (const f of list) {
+      const result = await imageAttachmentFromFile(f, [...working, ...next]);
+      if (result.ok) next.push(result.attachment);
+      else console.warn("image attachment skipped:", result.message);
     }
     if (next.length) setFiles((prev) => [...prev, ...next]);
+  };
+
+  const addImagePaths = async (paths: readonly string[]) => {
+    const working = files;
+    const next: FileAttachment[] = [];
+    for (const path of paths) {
+      if (!isAcceptedImageName(path)) continue;
+      const result = await imageAttachmentFromPath(path, [...working, ...next]);
+      if (result.ok) next.push(result.attachment);
+      else console.warn("image attachment skipped:", result.message);
+    }
+    if (next.length) setFiles((prev) => [...prev, ...next]);
+    if (next.length) useChatStore.getState().focusInput();
   };
 
   const removeFile = (id: string) =>
@@ -246,6 +285,20 @@ export function AiComposerProvider({ children }: ProviderProps) {
         if (outcome.commandName) {
           commandMarker = `<terax-command name="${outcome.commandName}" />`;
         }
+      }
+    }
+
+    const images = files.filter((f) => f.kind === "image");
+    if (images.length > 0) {
+      const store = useChatStore.getState();
+      if (
+        !modelSupportsImages(
+          store.selectedModelId,
+          usePreferencesStore.getState().customEndpoints,
+        )
+      ) {
+        window.alert("Selected model does not support image context. Pick a vision-capable model before sending.");
+        return;
       }
     }
 
@@ -340,6 +393,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
     setValue,
     files,
     addFiles,
+    addImagePaths,
     attachFileByPath,
     removeFile,
     pickedSnippets,
@@ -360,17 +414,6 @@ export function AiComposerProvider({ children }: ProviderProps) {
 
 async function readAttachment(file: File): Promise<FileAttachment | null> {
   const id = `${file.name}-${file.size}-${file.lastModified}`;
-  if (file.type.startsWith("image/")) {
-    const url = await readAsDataURL(file);
-    return {
-      id,
-      name: file.name,
-      kind: "image",
-      mediaType: file.type || "image/png",
-      url,
-      size: file.size,
-    };
-  }
   if (file.size > MAX_TEXT_INLINE) return null;
   const text = await file.text();
   return {
@@ -381,13 +424,4 @@ async function readAttachment(file: File): Promise<FileAttachment | null> {
     text,
     size: file.size,
   };
-}
-
-function readAsDataURL(file: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
 }

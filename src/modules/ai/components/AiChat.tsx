@@ -42,6 +42,7 @@ import type {
 } from "ai";
 import { memo, useCallback, useMemo } from "react";
 import { AiToolApproval } from "./AiToolApproval";
+import { formatBytes } from "../lib/imageAttachments";
 
 function CommandSnippet({ name }: { name: string }) {
   const meta = SLASH_COMMANDS[name];
@@ -89,6 +90,53 @@ function countLines(s: string): number {
   if (!trimmed) return 0;
   return trimmed.split("\n").length;
 }
+
+type UserImagePart = {
+  type: "file";
+  mediaType: string;
+  url: string;
+  filename?: string;
+  size?: number;
+};
+
+function userImageParts(message: UIMessage): UserImagePart[] {
+  return message.parts
+    .filter((p) => {
+      const part = p as Partial<UserImagePart>;
+      return (
+        part.type === "file" &&
+        typeof part.mediaType === "string" &&
+        part.mediaType.startsWith("image/") &&
+        typeof part.url === "string"
+      );
+    })
+    .map((p) => p as unknown as UserImagePart);
+}
+
+const UserImageStrip = memo(function UserImageStrip({ images }: { images: UserImagePart[] }) {
+  if (images.length === 0) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {images.map((image) => (
+        <div
+          key={`${image.url}-${image.filename ?? "image"}`}
+          className="overflow-hidden rounded-md border border-border/50 bg-card/70"
+          title={image.filename ?? "Attached image"}
+        >
+          <img
+            src={image.url}
+            alt={image.filename ?? "Attached image"}
+            className="h-24 w-24 object-cover"
+            draggable={false}
+          />
+          <div className="max-w-24 truncate px-1.5 py-1 text-[10px] text-muted-foreground">
+            {image.size ? formatBytes(image.size) : image.mediaType?.replace("image/", "image ")}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+});
 
 function stripUserContextBlocks(text: string): {
   text: string;
@@ -345,6 +393,7 @@ const RenderedMessage = memo(function RenderedMessage({
     const commandName = cmdMatch?.[1] ?? null;
     const withoutCmd = cmdMatch ? rawText.slice(cmdMatch[0].length) : rawText;
     const stripped = stripUserContextBlocks(withoutCmd);
+    const images = userImageParts(message);
 
     return (
       <Message from="user">
@@ -358,14 +407,13 @@ const RenderedMessage = memo(function RenderedMessage({
               {stripped.text}
             </p>
           ) : null}
+          <UserImageStrip images={images} />
         </MessageContent>
       </Message>
     );
   }
 
-  const groups = useMemo(() => buildPartGroups(message.parts as AnyPart[]), [
-    message.parts,
-  ]);
+  const groups = buildPartGroups(message.parts as AnyPart[]);
 
   return (
     <Message from={message.role}>
@@ -433,15 +481,16 @@ function buildPartGroups(parts: AnyPart[]): Group[] {
   let run: { parts: AnyPart[]; startIdx: number } | null = null;
   const flushRun = () => {
     if (!run) return;
-    if (run.parts.length >= 2) {
+    const currentRun = run;
+    if (currentRun.parts.length >= 2) {
       out.push({
         kind: "reads",
-        parts: run.parts,
-        key: `reads-${partKey(run.parts[0], run.startIdx)}`,
+        parts: currentRun.parts,
+        key: `reads-${partKey(currentRun.parts[0], currentRun.startIdx)}`,
       });
     } else {
-      run.parts.forEach((p, k) => {
-        const idx = run!.startIdx + k;
+      currentRun.parts.forEach((p, k) => {
+        const idx = currentRun.startIdx + k;
         out.push({ kind: "single", part: p, idx, key: partKey(p, idx) });
       });
     }

@@ -2,6 +2,7 @@ use std::path::Path;
 use std::time::UNIX_EPOCH;
 use std::{fs, io::Write};
 
+use base64::Engine;
 use serde::Serialize;
 use tauri::Emitter;
 use tempfile::NamedTempFile;
@@ -9,6 +10,7 @@ use tempfile::NamedTempFile;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+const MAX_IMAGE_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 
 #[derive(Serialize)]
@@ -75,6 +77,75 @@ pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<Rea
     match String::from_utf8(bytes) {
         Ok(content) => Ok(ReadResult::Text { content, size }),
         Err(_) => Ok(ReadResult::Binary { size }),
+    }
+}
+
+#[derive(Serialize)]
+pub struct ImageAttachmentRead {
+    pub name: String,
+    #[serde(rename = "mediaType")]
+    pub media_type: String,
+    pub size: u64,
+    #[serde(rename = "dataUrl")]
+    pub data_url: String,
+}
+
+#[tauri::command]
+pub fn fs_read_image_attachment(
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<ImageAttachmentRead, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let p = resolve_path(&path, &workspace);
+    let meta = std::fs::metadata(&p).map_err(|e| {
+        log::debug!("fs_read_image_attachment stat({}) failed: {e}", p.display());
+        e.to_string()
+    })?;
+    let size = meta.len();
+    if size > MAX_IMAGE_ATTACHMENT_BYTES {
+        return Err(format!("Image is larger than {MAX_IMAGE_ATTACHMENT_BYTES} bytes"));
+    }
+    let bytes = std::fs::read(&p).map_err(|e| {
+        log::debug!("fs_read_image_attachment read({}) failed: {e}", p.display());
+        e.to_string()
+    })?;
+    let media_type = sniff_image_media_type(&bytes)
+        .or_else(|| media_type_from_path(&p))
+        .ok_or_else(|| "Only PNG, JPG, JPEG, and WebP images are supported".to_string())?;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let name = p
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("image")
+        .to_string();
+    Ok(ImageAttachmentRead {
+        name,
+        media_type: media_type.to_string(),
+        size,
+        data_url: format!("data:{media_type};base64,{encoded}"),
+    })
+}
+
+fn sniff_image_media_type(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some("image/png");
+    }
+    if bytes.starts_with(b"\xff\xd8\xff") {
+        return Some("image/jpeg");
+    }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp");
+    }
+    None
+}
+
+fn media_type_from_path(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    match ext.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "webp" => Some("image/webp"),
+        _ => None,
     }
 }
 

@@ -2,6 +2,7 @@ import { Popover, PopoverAnchor } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { usePresence } from "@/lib/usePresence";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
 import { useComposer } from "../lib/composer";
@@ -10,6 +11,7 @@ import { useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { FilePickerContent } from "./FilePicker";
+import { AttachedImages } from "./AttachedImages";
 import { SnippetPickerContent, type PickerItem } from "./SnippetPicker";
 
 type SnippetTrigger = {
@@ -69,6 +71,9 @@ export function AiComposerInput() {
   const workspaceFiles = useWorkspaceFiles(workspaceRoot, fileTrigger !== null);
 
   const [fileQuery, setFileQuery] = useState("");
+  const [draggingImage, setDraggingImage] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (!fileTrigger) {
       setFileQuery("");
@@ -196,6 +201,38 @@ export function AiComposerInput() {
     if (it) onPickItem(it);
   };
 
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    void getCurrentWebview()
+      .onDragDropEvent((e) => {
+        const p = e.payload;
+        if (p.type === "enter" || p.type === "over") {
+          setDraggingImage(pointInRoot(rootRef.current, p.position.x, p.position.y));
+          return;
+        }
+        if (p.type === "leave") {
+          setDraggingImage(false);
+          return;
+        }
+        if (p.type === "drop") {
+          const inside = pointInRoot(rootRef.current, p.position.x, p.position.y);
+          setDraggingImage(false);
+          if (inside && p.paths.length) void c.addImagePaths(p.paths);
+        }
+      })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch((err) => console.error("[terax] image drag-drop listen failed:", err));
+    return () => {
+      disposed = true;
+      setDraggingImage(false);
+      unlisten?.();
+    };
+  }, [c.addImagePaths]);
+
   const voiceLabel = c.voice.recording
     ? "Listening…"
     : c.voice.transcribing
@@ -206,7 +243,54 @@ export function AiComposerInput() {
   if (voiceLabel) lastVoiceLabel.current = voiceLabel;
 
   return (
-    <>
+    <div
+      ref={rootRef}
+      role="presentation"
+      className="relative space-y-2"
+      onPaste={(e) => {
+        const images = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+        if (images.length === 0) return;
+        e.preventDefault();
+        void c.addFiles(e.clipboardData.files);
+      }}
+      onDragEnter={(e) => {
+        if (hasImageDataTransfer(e.dataTransfer)) setDraggingImage(true);
+      }}
+      onDragOver={(e) => {
+        if (!hasImageDataTransfer(e.dataTransfer)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        setDraggingImage(true);
+      }}
+      onDragLeave={(e) => {
+        if (!rootRef.current?.contains(e.relatedTarget as Node | null)) {
+          setDraggingImage(false);
+        }
+      }}
+      onDrop={(e) => {
+        if (!hasImageDataTransfer(e.dataTransfer)) return;
+        e.preventDefault();
+        setDraggingImage(false);
+        void c.addFiles(e.dataTransfer.files);
+      }}
+    >
+      {draggingImage && (
+        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-xl border border-primary/45 bg-background/75 text-xs font-medium text-foreground shadow-lg backdrop-blur-sm">
+          Drop images to attach
+        </div>
+      )}
+      <AttachedImages files={c.files} onRemove={c.removeFile} />
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          void c.addFiles(e.currentTarget.files);
+          e.currentTarget.value = "";
+        }}
+      />
       <Popover open={pickerOpen}>
         <PopoverAnchor asChild>
           <div className="flex items-start gap-2">
@@ -257,13 +341,21 @@ export function AiComposerInput() {
                   c.submit();
                 }
               }}
-              placeholder="Ask Terax anything   -   # for snippets and commands, @ for files"
+              placeholder="Ask Terax anything   -   paste or drop images, # snippets, @ files"
               rows={1}
               className={cn(
                 "max-h-40 flex-1 resize-none bg-transparent text-[13px] leading-relaxed outline-none",
                 "placeholder:text-muted-foreground/60",
               )}
             />
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              className="shrink-0 rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              title="Attach Image"
+            >
+              Attach Image
+            </button>
             <AgentSwitcher />
           </div>
         </PopoverAnchor>
@@ -301,8 +393,26 @@ export function AiComposerInput() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
+}
+
+function pointInRoot(root: HTMLElement | null, x: number, y: number): boolean {
+  if (!root) return false;
+  let lx = x;
+  let ly = y;
+  if (x > window.innerWidth || y > window.innerHeight) {
+    const dpr = window.devicePixelRatio || 1;
+    lx = x / dpr;
+    ly = y / dpr;
+  }
+  const el = document.elementFromPoint(lx, ly);
+  return Boolean(el && root.contains(el));
+}
+
+function hasImageDataTransfer(data: DataTransfer): boolean {
+  if (Array.from(data.files).some((f) => f.type.startsWith("image/"))) return true;
+  return Array.from(data.items).some((item) => item.kind === "file" && item.type.startsWith("image/"));
 }
 
 function autoresize(el: HTMLTextAreaElement | null) {
