@@ -1,0 +1,161 @@
+name: Build unsigned installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Git tag to create/update for the GitHub release"
+        required: true
+        default: "vision-image-attachments-unsigned"
+      release_name:
+        description: "GitHub release name"
+        required: true
+        default: "Vision image attachments unsigned build"
+      draft:
+        description: "Create release as draft"
+        required: true
+        type: boolean
+        default: true
+  push:
+    branches:
+      - "feature/vision-image-attachments"
+    tags:
+      - "v*"
+      - "*-unsigned"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: unsigned-installers-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS DMG
+            os: macos-14
+            bundle: dmg
+            artifact_name: terax-macos-dmg
+            artifact_path: src-tauri/target/release/bundle/dmg/*.dmg
+          - label: Windows NSIS EXE
+            os: windows-latest
+            bundle: nsis
+            artifact_name: terax-windows-exe
+            artifact_path: src-tauri/target/release/bundle/nsis/*.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable pnpm via Corepack
+        shell: bash
+        run: |
+          corepack enable
+          corepack prepare --activate
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Disable updater artifacts for unsigned CI builds
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("src-tauri/tauri.conf.json")
+          config = json.loads(path.read_text())
+          config.setdefault("bundle", {})["createUpdaterArtifacts"] = False
+          path.write_text(json.dumps(config, indent=2) + "\n")
+          PY
+
+      - name: Typecheck
+        run: pnpm check-types
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build unsigned Tauri bundle
+        run: pnpm tauri build --bundles ${{ matrix.bundle }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/feature/vision-image-attachments' || startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+            echo "name=${{ inputs.release_name }}" >> "$GITHUB_OUTPUT"
+            echo "draft=${{ inputs.draft }}" >> "$GITHUB_OUTPUT"
+          else
+            if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              tag="${GITHUB_REF_NAME}"
+              name="${tag}"
+              draft="false"
+            else
+              safe_ref="${GITHUB_REF_NAME//\//-}"
+              short_sha="${GITHUB_SHA::7}"
+              tag="${safe_ref}-${short_sha}-unsigned"
+              name="Unsigned build ${short_sha} from ${GITHUB_REF_NAME}"
+              draft="true"
+            fi
+            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+            echo "name=${name}" >> "$GITHUB_OUTPUT"
+            echo "draft=${draft}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          draft: ${{ steps.meta.outputs.draft }}
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/*.dmg
+            release-assets/*.exe
+          body: |
+            Unsigned Terax installers built from `${{ github.sha }}`.
+
+            Artifacts:
+            - macOS DMG: unsigned, may require Gatekeeper override on first launch.
+            - Windows NSIS EXE: unsigned, Windows SmartScreen may warn.
