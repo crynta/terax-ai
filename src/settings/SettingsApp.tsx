@@ -144,17 +144,17 @@ export function SettingsApp({
       <header
         data-tauri-drag-region={!embedded ? true : undefined}
         className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
-          IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
+          IS_MAC ? "pr-3 pl-22" : "pr-0 pl-8"
         }`}
       >
         <Tabs
           value={active}
           onValueChange={(v) => setSection(v as SettingsSection)}
           orientation="horizontal"
-          className="flex-1 items-center"
+          className="flex-1 items-start"
           data-tauri-drag-region={!embedded ? true : undefined}
         >
-          <TabsList className="mx-auto h-7 bg-muted/40 px-2">
+          <TabsList variant="line" className="h-7 p-0">
             {TABS.map((t) => (
               <TabsTrigger
                 key={t.id}
