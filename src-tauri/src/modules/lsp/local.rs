@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
@@ -40,10 +40,6 @@ pub fn root() -> PathBuf {
             .join("Terax")
             .join("lsp")
     })
-}
-
-pub fn is_under_root(path: &Path) -> bool {
-    path.starts_with(root())
 }
 
 fn manifest_path() -> PathBuf {
