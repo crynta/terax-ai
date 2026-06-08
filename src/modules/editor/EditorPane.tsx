@@ -384,7 +384,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }
 
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-col zoom-exempt">
         <CodeMirror
           ref={cmRef}
           value={doc.content}
