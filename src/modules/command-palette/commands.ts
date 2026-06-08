@@ -20,6 +20,7 @@ import {
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import type { PaletteItem } from "./types";
+import { LSP_DEV_TOOLS } from "@/modules/editor/lib/lsp/debugStore";
 
 export const COMMAND_GROUPS = [
   "General",
@@ -54,6 +55,7 @@ export type CommandPaletteActionContext = {
   askAiSelection: () => void;
   openSettings: () => void;
   openKeyboardShortcuts: () => void;
+  openLspDebug: () => void;
 };
 
 const noop = () => {};
@@ -102,6 +104,18 @@ export function createCommandItems(
       icon: KeyboardIcon,
       run: ctx.openKeyboardShortcuts,
     },
+    ...(LSP_DEV_TOOLS
+      ? [
+          {
+            id: "lsp.debug",
+            title: "LSP debug log",
+            group: "General" as const,
+            keywords: ["lsp", "language server", "diagnostics", "editor"],
+            icon: SourceCodeIcon,
+            run: ctx.openLspDebug,
+          },
+        ]
+      : []),
     {
       id: "tab.new",
       title: "New terminal",

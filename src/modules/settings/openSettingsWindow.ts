@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type SettingsTab =
   | "general"
+  | "languages"
   | "themes"
   | "shortcuts"
   | "models"

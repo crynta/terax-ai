@@ -10,6 +10,7 @@ import {
 } from "@codemirror/search";
 import { type Extension, Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
+import { setDiagnostics } from "@codemirror/lint";
 import { vim } from "@replit/codemirror-vim";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
@@ -25,12 +26,14 @@ import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import {
   buildSharedExtensions,
   languageCompartment,
+  lspCompartment,
   vimCompartment,
 } from "./lib/extensions";
 import { resolveLanguage } from "./lib/languageResolver";
 import { EDITOR_THEME_EXT } from "./lib/themes";
 import { useDocument } from "./lib/useDocument";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
+import { LspEditorStatus } from "./LspEditorStatus";
 
 initVimGlobals();
 
@@ -56,6 +59,7 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
+  onOpenDefinition?: (path: string, line: number) => void;
 };
 
 function formatBytes(n: number): string {
@@ -65,7 +69,7 @@ function formatBytes(n: number): string {
 }
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
-  function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
+  function EditorPane({ path, onDirtyChange, onSaved, onClose, onOpenDefinition }, ref) {
     const { doc, onChange, save, reload } = useDocument({
       path,
       onDirtyChange,
@@ -75,6 +79,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const editorThemeId = usePreferencesStore((s) => s.editorTheme);
     const vimMode = usePreferencesStore((s) => s.vimMode);
+    const lspEnabled = usePreferencesStore((s) => s.lspEnabled);
     const languageRef = useRef<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
 
@@ -121,6 +126,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     onSavedRef.current = onSaved;
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+    const onOpenDefinitionRef = useRef(onOpenDefinition);
+    onOpenDefinitionRef.current = onOpenDefinition;
 
     const pathRef = useRef(path);
     pathRef.current = path;
@@ -165,6 +172,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         })),
         ...buildSharedExtensions(),
         languageCompartment.of([]),
+        lspCompartment.of([]),
         inlineCompletion({
           getPrefs: () => {
             const s = usePreferencesStore.getState();
@@ -247,6 +255,47 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         cancelled = true;
       };
     }, [path, doc.status]);
+
+    useEffect(() => {
+      if (doc.status !== "ready" || !lspEnabled) {
+        const view = cmRef.current?.view;
+        if (view) {
+          view.dispatch(setDiagnostics(view.state, []));
+          view.dispatch({ effects: lspCompartment.reconfigure([]) });
+        }
+        return;
+      }
+      let cancelled = false;
+      let release: (() => Promise<void>) | undefined;
+
+      void import("./lib/lsp/extension").then(async ({ buildLspExtensions }) => {
+        const view = cmRef.current?.view;
+        const initialText = view?.state.doc.toString() ?? "";
+        const bundle = await buildLspExtensions({
+          path,
+          initialText,
+          onOpenDefinition: (targetPath, line) =>
+            onOpenDefinitionRef.current?.(targetPath, line),
+        });
+        if (cancelled || !bundle) return;
+        release = bundle.release;
+        const active = cmRef.current?.view;
+        if (!active) return;
+        active.dispatch({
+          effects: lspCompartment.reconfigure(bundle.extensions),
+        });
+      });
+
+      return () => {
+        cancelled = true;
+        const view = cmRef.current?.view;
+        if (view) {
+          view.dispatch(setDiagnostics(view.state, []));
+          view.dispatch({ effects: lspCompartment.reconfigure([]) });
+        }
+        void release?.();
+      };
+    }, [path, doc.status, lspEnabled]);
 
     useImperativeHandle(
       ref,
@@ -385,6 +434,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
 
     return (
       <div className="flex h-full min-h-0 flex-col">
+        <LspEditorStatus path={path} />
         <CodeMirror
           ref={cmRef}
           value={doc.content}
@@ -399,7 +449,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
             foldGutter: true,
             bracketMatching: true,
             closeBrackets: true,
-            autocompletion: true,
+            autocompletion: !lspEnabled,
             highlightActiveLine: true,
             highlightSelectionMatches: true,
             searchKeymap: true,

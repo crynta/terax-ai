@@ -41,12 +41,17 @@ tauri-plugin-notification = "2"
 reqwest = { version = "0.12", default-features = false, features = [
 	"rustls-tls",
 	"stream",
+	"blocking",
+	"json",
 ] }
 bytes = "1"
 futures-util = "0.3"
 tokio = { version = "1", default-features = false, features = ["rt"] }
 tempfile = "3"
 notify = "8.2.0"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
 
 [dev-dependencies]
 proptest = "1"

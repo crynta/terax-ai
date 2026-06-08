@@ -27,10 +27,12 @@ import {
   createCommandItems,
 } from "@/modules/command-palette";
 import {
+  LspDebugDialog,
   NewEditorDialog,
   useEditorFileSync,
   type EditorPaneHandle,
 } from "@/modules/editor";
+import { useLspDebugStore } from "@/modules/editor/lib/lsp/debugStore";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import type { GitHistorySearchHandle } from "@/modules/git-history";
 import {
@@ -764,6 +766,7 @@ export default function App() {
             askAiSelection: askFromSelection,
             openSettings: () => void openSettingsWindow(),
             openKeyboardShortcuts: () => void openSettingsWindow("shortcuts"),
+            openLspDebug: () => useLspDebugStore.getState().setPanelOpen(true),
           })
         : [],
     [
@@ -916,6 +919,7 @@ export default function App() {
                       registerEditorHandle={registerEditorHandle}
                       onEditorDirtyChange={handleEditorDirty}
                       onEditorCloseTab={disposeTab}
+                      onOpenDefinition={openContentHit}
                       registerPreviewHandle={registerPreviewHandle}
                       onPreviewUrlChange={handlePreviewUrl}
                       onAiDiffAccept={(id) => respondToApproval(id, true)}
@@ -953,8 +957,11 @@ export default function App() {
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true
               }
+              editorActive={isEditorTab}
             />
           )}
+
+          <LspDebugDialog />
 
           <AgentNotificationsBridge
             tabs={tabs}

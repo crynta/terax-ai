@@ -78,6 +78,7 @@ const loaders: Record<string, LanguageLoader> = {
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
 
   php: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
+  phtml: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
   rb: rubyLoader,
   rake: rubyLoader,
   gemspec: rubyLoader,
@@ -132,6 +133,10 @@ const filenameOverrides: Record<string, LanguageLoader> = {
   fastfile: rubyLoader,
   guardfile: rubyLoader,
   brewfile: rubyLoader,
+  ".prettierrc": jsonLoader,
+  ".babelrc": jsonLoader,
+  ".stylelintrc": jsonLoader,
+  "go.mod": () => import("@codemirror/lang-go").then((m) => m.go()),
 };
 
 function extOf(name: string): string | null {

@@ -9,6 +9,10 @@ import { cn } from "@/lib/utils";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { memo, useState } from "react";
+import {
+  formatDiagnosticCount,
+  useFileDiagnosticCounts,
+} from "@/modules/editor/lib/lsp/diagnosticStore";
 import { InlineInput } from "./InlineInput";
 import {
   copyToClipboard,
@@ -61,6 +65,7 @@ function EntryRowImpl(props: EntryRowProps) {
   } = props;
 
   const [isConfirming, setIsConfirming] = useState(false);
+  const diagnosticCounts = useFileDiagnosticCounts(path);
   const iconUrl = isDir ? folderIconUrl(name, isExpanded) : fileIconUrl(name);
   const createTarget = isDir ? path : path.slice(0, path.lastIndexOf("/")) || rootPath;
   const paddingLeft = 6 + depth * 12;
@@ -123,6 +128,23 @@ function EntryRowImpl(props: EntryRowProps) {
               <span className="size-4 shrink-0" />
             )}
             <span className="min-w-0 flex-1 truncate">{name}</span>
+            {!isDir &&
+              diagnosticCounts &&
+              (diagnosticCounts.errors > 0 ||
+                diagnosticCounts.warnings > 0) && (
+                <span className="ml-auto flex shrink-0 items-center gap-1.5 pl-1 text-[10px] font-semibold tabular-nums leading-none">
+                  {diagnosticCounts.errors > 0 && (
+                    <span className="text-destructive">
+                      {formatDiagnosticCount(diagnosticCounts.errors)}
+                    </span>
+                  )}
+                  {diagnosticCounts.warnings > 0 && (
+                    <span className="text-amber-400">
+                      {formatDiagnosticCount(diagnosticCounts.warnings)}
+                    </span>
+                  )}
+                </span>
+              )}
           </button>
         )}
       </ContextMenuTrigger>

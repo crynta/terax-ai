@@ -60,6 +60,11 @@ export const usePreferencesStore = create<State>((set) => ({
         const s = usePreferencesStore.getState();
         mirrorBgFastPath(s.backgroundKind, s.backgroundImageId);
       }
+      if (key === "lspEnabled" && value === false) {
+        void import("@/modules/editor/lib/lsp/shutdown").then(({ disableLsp }) =>
+          disableLsp(),
+        );
+      }
     });
   },
 }));
