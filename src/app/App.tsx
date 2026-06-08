@@ -38,7 +38,7 @@ import {
   type SearchInlineHandle,
   type SearchTarget,
 } from "@/modules/header";
-import type { PreviewPaneHandle } from "@/modules/preview";
+import { usePreviewShortcuts, type PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
   useGlobalShortcuts,
@@ -608,6 +608,7 @@ export default function App() {
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
+  usePreviewShortcuts();
 
   const registerTerminalHandle = useCallback(
     (leafId: number, h: TerminalPaneHandle | null) => {
@@ -824,6 +825,15 @@ export default function App() {
     terminalRefs,
   });
 
+  // The native preview webview renders above all HTML, so hide it whenever a
+  // centered modal is open that it would otherwise cover.
+  const previewSuppressed =
+    commandPaletteOpen ||
+    newEditorOpen ||
+    pendingCloseTab !== null ||
+    pendingTerminalCloseTab !== null ||
+    pendingDeleteTabs !== null;
+
   const shell = (
     <ThemeProvider>
       <TooltipProvider>
@@ -918,6 +928,7 @@ export default function App() {
                       onEditorCloseTab={disposeTab}
                       registerPreviewHandle={registerPreviewHandle}
                       onPreviewUrlChange={handlePreviewUrl}
+                      previewSuppressed={previewSuppressed}
                       onAiDiffAccept={(id) => respondToApproval(id, true)}
                       onAiDiffReject={(id) => respondToApproval(id, false)}
                       onOpenCommitFile={openCommitFileDiffTab}

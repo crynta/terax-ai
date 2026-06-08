@@ -1,59 +1,64 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { previewLabel } from "./previewBridge";
 
 /**
- * Source-level regression test for the preview iframe's security attributes.
- * Rendering this component for real requires jsdom + a working
- * useImperativeHandle stub; for a focused security check we just verify the
- * static JSX still carries the sandbox/referrerPolicy attributes — if a
- * future change silently removes them, this test fails.
+ * The web preview renders in a native child webview (see
+ * src-tauri/src/modules/preview.rs). Its security model is: the webview is
+ * given NO Tauri capability, so the embedded page can't reach the IPC /
+ * `window.__TAURI__` surface. Capabilities target webviews by label (with glob
+ * support), so if a capability ever lists `*` or a `preview-*` pattern, the
+ * embedded page would gain IPC access. This test locks that invariant.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const src = readFileSync(path.join(here, "PreviewPane.tsx"), "utf8");
-const iframeMatch = src.match(/<iframe[\s\S]*?\/>/);
-// Strip JSX comments (`// …` inside `{…}` and `{/* … */}` blocks) so the
-// assertions only see actual attribute syntax — the source explains in a
-// comment why `allow-top-navigation` is intentionally omitted, which we
-// don't want to match.
-const iframeJsx = (iframeMatch?.[0] ?? "")
-  .replace(/\/\*[\s\S]*?\*\//g, "")
-  .replace(/\/\/[^\n]*/g, "");
+const capsDir = path.join(here, "../../../src-tauri/capabilities");
 
-describe("PreviewPane iframe sandbox", () => {
-  it("declares an iframe in the source", () => {
-    expect(iframeJsx).not.toBe("");
+/** Minimal glob match for Tauri window-label patterns (only `*` is used). */
+function labelMatches(pattern: string, label: string): boolean {
+  const re = new RegExp(
+    `^${pattern.split("*").map(escapeRegExp).join(".*")}$`,
+  );
+  return re.test(label);
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function capabilityWindowPatterns(): string[] {
+  const files = readdirSync(capsDir).filter((f) => f.endsWith(".json"));
+  const patterns: string[] = [];
+  for (const f of files) {
+    const json = JSON.parse(readFileSync(path.join(capsDir, f), "utf8"));
+    if (Array.isArray(json.windows)) patterns.push(...json.windows);
+  }
+  return patterns;
+}
+
+describe("previewLabel", () => {
+  it("is a stable, per-id label", () => {
+    expect(previewLabel(0)).toBe("preview-0");
+    expect(previewLabel(42)).toBe("preview-42");
   });
+});
 
-  it("includes a sandbox attribute", () => {
-    expect(iframeJsx).toMatch(/sandbox="[^"]*"/);
-  });
+describe("preview webview capabilities", () => {
+  it("no capability grants the preview webview Tauri/IPC access", () => {
+    const patterns = capabilityWindowPatterns();
+    // Sanity: we actually parsed real capability files.
+    expect(patterns.length).toBeGreaterThan(0);
 
-  it("grants allow-scripts and allow-same-origin", () => {
-    // These two are what makes a dev preview useful — strip either and dev
-    // servers stop working.
-    expect(iframeJsx).toMatch(/sandbox="[^"]*allow-scripts/);
-    expect(iframeJsx).toMatch(/sandbox="[^"]*allow-same-origin/);
-  });
-
-  it("does NOT include allow-top-navigation* tokens", () => {
-    // The whole point of sandboxing here: forbid the iframe from navigating
-    // the parent Tauri webview to an attacker origin (which would expose
-    // window.__TAURI__). Top-nav permissions must never be added.
-    expect(iframeJsx).not.toMatch(/allow-top-navigation/);
-  });
-
-  it("does NOT include allow-popups-without-allow-popups-to-escape-sandbox combo", () => {
-    // If popups are allowed, they MUST escape the sandbox cleanly — otherwise
-    // a popup window inherits sandbox flags and we get hard-to-debug behavior.
-    if (/allow-popups\b/.test(iframeJsx)) {
-      expect(iframeJsx).toMatch(/allow-popups-to-escape-sandbox/);
+    const sampleLabels = [previewLabel(0), previewLabel(7), previewLabel(123)];
+    for (const pattern of patterns) {
+      for (const label of sampleLabels) {
+        expect(
+          labelMatches(pattern, label),
+          `capability window pattern "${pattern}" must not match preview label "${label}"`,
+        ).toBe(false);
+      }
     }
-  });
-
-  it("sets referrerPolicy to no-referrer", () => {
-    expect(iframeJsx).toMatch(/referrerPolicy="no-referrer"/);
   });
 });

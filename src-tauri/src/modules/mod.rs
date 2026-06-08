@@ -3,6 +3,7 @@ pub mod fs;
 pub mod git;
 pub mod history;
 pub mod net;
+pub mod preview;
 pub mod proc;
 pub mod pty;
 pub mod secrets;
