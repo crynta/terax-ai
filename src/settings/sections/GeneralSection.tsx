@@ -24,6 +24,7 @@ import {
   setAutostart,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
+  setLspEnabled,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
@@ -43,6 +44,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
@@ -73,6 +75,7 @@ export function GeneralSection() {
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
+  const lspEnabled = usePreferencesStore((s) => s.lspEnabled);
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
@@ -194,6 +197,23 @@ export function GeneralSection() {
             onChange={(v) => void setEditorAutoSaveDelay(v)}
           />
         )}
+        <SettingRow
+          title="Language server (LSP)"
+          description="Diagnostics and completions. No external tools required — install servers in the Languages tab."
+        >
+          <Switch
+            checked={lspEnabled}
+            onCheckedChange={async (v) => {
+              await setLspEnabled(v);
+              if (v) {
+                void getCurrentWebviewWindow().emit(
+                  "terax:settings-tab",
+                  "languages",
+                );
+              }
+            }}
+          />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">

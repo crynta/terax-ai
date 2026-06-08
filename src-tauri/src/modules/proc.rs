@@ -1,4 +1,26 @@
+use std::path::Path;
 use std::process::Command;
+
+#[cfg(windows)]
+pub fn command_for_executable(path: &Path) -> Command {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext == "cmd" || ext == "bat" {
+        let path_str = path.to_string_lossy().into_owned();
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", &path_str]);
+        return cmd;
+    }
+    Command::new(path)
+}
+
+#[cfg(not(windows))]
+pub fn command_for_executable(path: &Path) -> Command {
+    Command::new(path)
+}
 
 #[cfg(windows)]
 pub fn hide_console(cmd: &mut Command) {

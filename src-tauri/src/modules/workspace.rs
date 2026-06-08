@@ -327,6 +327,45 @@ pub fn wsl_path_to_host(distro: &str, path: &str) -> PathBuf {
 }
 
 #[cfg(windows)]
+pub fn host_path_to_wsl_cd(distro: &str, host: &Path) -> Result<String, String> {
+    validate_wsl_distro_name(distro)?;
+    let s = host.to_string_lossy();
+    let unc_local = format!(r"\\wsl.localhost\{distro}\");
+    let unc_legacy = format!(r"\\wsl$\{distro}\");
+    for prefix in [&unc_local, &unc_legacy] {
+        if s.starts_with(prefix.as_str()) {
+            let rest = s[prefix.len()..].replace('\\', "/");
+            let linux = if rest.starts_with('/') {
+                rest
+            } else {
+                format!("/{rest}")
+            };
+            return Ok(linux);
+        }
+    }
+    if let Some(mnt) = windows_drive_to_wsl_mnt(host) {
+        return Ok(mnt);
+    }
+    Err(format!(
+        "cannot map Windows path to WSL: {}",
+        host.display()
+    ))
+}
+
+#[cfg(windows)]
+fn windows_drive_to_wsl_mnt(path: &Path) -> Option<String> {
+    let s = path.to_string_lossy();
+    let bytes = s.as_bytes();
+    if bytes.len() >= 3 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/') {
+        let drive = (bytes[0] as char).to_ascii_lowercase();
+        let rest = s[3..].replace('\\', "/");
+        let trimmed = rest.trim_start_matches('/');
+        return Some(format!("/mnt/{drive}/{trimmed}"));
+    }
+    None
+}
+
+#[cfg(windows)]
 pub fn decode_command_output(bytes: &[u8]) -> String {
     if bytes.starts_with(&[0xff, 0xfe]) || looks_utf16le(bytes) {
         let start = if bytes.starts_with(&[0xff, 0xfe]) {

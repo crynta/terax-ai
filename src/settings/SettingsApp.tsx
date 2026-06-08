@@ -7,6 +7,7 @@ import {
   AiScanIcon,
   InformationCircleIcon,
   PaintBoardIcon,
+  SourceCodeIcon,
   Settings01Icon,
   UserMultiple02Icon,
   KeyboardIcon,
@@ -17,14 +18,28 @@ import { type JSX, useEffect, useState } from "react";
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
 import { GeneralSection } from "./sections/GeneralSection";
+import { LanguagesSection } from "./sections/LanguagesSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { ThemesSection } from "./sections/ThemesSection";
 
-const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, component: () => JSX.Element }[] =
-  [
-    { id: "general", label: "General", icon: Settings01Icon, component: GeneralSection },
-    { id: "themes", label: "Themes", icon: PaintBoardIcon, component: ThemesSection },
+const ALL_TABS: {
+  id: SettingsTab;
+  label: string;
+  icon: typeof Settings01Icon;
+  component: () => JSX.Element;
+  /** Shown only when LSP is enabled (Zed-style Languages panel). */
+  lspOnly?: boolean;
+}[] = [
+  { id: "general", label: "General", icon: Settings01Icon, component: GeneralSection },
+  {
+    id: "languages",
+    label: "Languages",
+    icon: SourceCodeIcon,
+    component: LanguagesSection,
+    lspOnly: true,
+  },
+  { id: "themes", label: "Themes", icon: PaintBoardIcon, component: ThemesSection },
     { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon, component: ShortcutsSection },
     { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
     { id: "agents", label: "Agents", icon: UserMultiple02Icon, component: AgentsSection },
@@ -33,6 +48,7 @@ const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, compo
 
 const VALID_TABS: SettingsTab[] = [
   "general",
+  "languages",
   "themes",
   "shortcuts",
   "models",
@@ -53,11 +69,19 @@ function readInitialTab(): SettingsTab {
 export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const init = usePreferencesStore((s) => s.init);
-  const ActiveSection = TABS.find(t => t.id === active)?.component;
+  const lspEnabled = usePreferencesStore((s) => s.lspEnabled);
+  const tabs = ALL_TABS.filter((t) => !t.lspOnly || lspEnabled);
+  const ActiveSection = tabs.find((t) => t.id === active)?.component;
 
   useEffect(() => {
     void init();
   }, [init]);
+
+  useEffect(() => {
+    if (!lspEnabled && active === "languages") {
+      setActive("general");
+    }
+  }, [lspEnabled, active]);
 
   useEffect(() => {
     const apply = (detail: string) => {
@@ -93,7 +117,7 @@ export function SettingsApp() {
           data-tauri-drag-region
         >
           <TabsList className="mx-auto h-7 bg-muted/40 px-2">
-            {TABS.map((t) => (
+            {tabs.map((t) => (
               <TabsTrigger
                 key={t.id}
                 value={t.id}

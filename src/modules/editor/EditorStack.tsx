@@ -9,6 +9,7 @@ type Props = {
   onDirtyChange: (id: number, dirty: boolean) => void;
   registerHandle: (id: number, handle: EditorPaneHandle | null) => void;
   onCloseTab: (id: number) => void;
+  onOpenDefinition?: (path: string, line: number) => void;
 };
 
 export function EditorStack({
@@ -17,6 +18,7 @@ export function EditorStack({
   onDirtyChange,
   registerHandle,
   onCloseTab,
+  onOpenDefinition,
 }: Props) {
   const editors = tabs.filter((t): t is EditorTab => t.kind === "editor");
 
@@ -27,6 +29,7 @@ export function EditorStack({
   const registerRef = useRef(registerHandle);
   const dirtyRef = useRef(onDirtyChange);
   const closeRef = useRef(onCloseTab);
+  const openDefinitionRef = useRef(onOpenDefinition);
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -36,6 +39,9 @@ export function EditorStack({
   useEffect(() => {
     closeRef.current = onCloseTab;
   }, [onCloseTab]);
+  useEffect(() => {
+    openDefinitionRef.current = onOpenDefinition;
+  }, [onOpenDefinition]);
 
   const refCallbacks = useRef(
     new Map<number, (h: EditorPaneHandle | null) => void>(),
@@ -102,6 +108,9 @@ export function EditorStack({
                 path={t.path}
                 onDirtyChange={getDirtyCallback(t.id)}
                 onClose={getCloseCallback(t.id)}
+                onOpenDefinition={(targetPath, line) =>
+                  openDefinitionRef.current?.(targetPath, line)
+                }
               />
             </div>
           </div>

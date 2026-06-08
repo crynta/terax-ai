@@ -1,3 +1,4 @@
+export { LspDebugDialog } from "./LspDebugDialog";
 export type { EditorPaneHandle } from "./EditorPane";
 export { EditorStack } from "./EditorStackLazy";
 export { AiDiffStack } from "./AiDiffStackLazy";
