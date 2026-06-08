@@ -82,14 +82,16 @@ export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
       type="button"
       onClick={onOpen}
       className={cn(
-        "flex h-6 items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs",
+        "flex h-5.5 items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs leading-none",
         "text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground",
         "animate-in slide-in-from-top-2 duration-200 ease-out",
       )}
       title="Open AI agent"
     >
       <span>Open AI agent</span>
-      <Kbd className="h-4 min-w-4 px-1">{fmtShortcut(MOD_KEY, "I")}</Kbd>
+      <Kbd className="h-4 min-w-4 px-1 leading-none">
+        {fmtShortcut(MOD_KEY, "I")}
+      </Kbd>
     </button>
   );
 }
