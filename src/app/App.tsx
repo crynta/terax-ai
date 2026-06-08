@@ -39,7 +39,11 @@ import {
   type SearchTarget,
 } from "@/modules/header";
 import type { PreviewPaneHandle } from "@/modules/preview";
-import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import {
+  SettingsOpenerProvider,
+  type OpenSettings,
+} from "@/modules/settings/opener";
+import type { SettingsSection } from "@/modules/settings/types";
 import {
   useGlobalShortcuts,
   type ShortcutHandlers,
@@ -104,6 +108,7 @@ export default function App() {
     openGitDiffTab,
     openCommitHistoryTab,
     openCommitFileDiffTab,
+    openSettingsTab,
     closeTab,
     updateTab,
     selectByIndex,
@@ -301,9 +306,16 @@ export default function App() {
     return null;
   }, [tabs, activeId]);
 
+  const handleOpenSettings = useCallback<OpenSettings>(
+    (section?: SettingsSection) => {
+      openSettingsTab(section);
+    },
+    [openSettingsTab],
+  );
+
   const togglePanelAndFocus = useCallback(() => {
     if (!hasComposer) {
-      void openSettingsWindow("models");
+      handleOpenSettings("models");
       return;
     }
     if (panelOpen) {
@@ -312,14 +324,14 @@ export default function App() {
       openPanel();
       focusInput(null);
     }
-  }, [hasComposer, panelOpen, openPanel, focusInput]);
+  }, [hasComposer, panelOpen, openPanel, focusInput, handleOpenSettings]);
 
   const attachSelection = useChatStore((s) => s.attachSelection);
 
   const handleAttachFileToAgent = useCallback(
     (path: string) => {
       if (!hasComposer) {
-        void openSettingsWindow("models");
+        handleOpenSettings("models");
         return;
       }
       // Dispatch a window event the composer listens for. Same pattern as
@@ -330,12 +342,12 @@ export default function App() {
       openPanel();
       focusInput(null);
     },
-    [hasComposer, openPanel, focusInput],
+    [hasComposer, openPanel, focusInput, handleOpenSettings],
   );
 
   const askFromSelection = useCallback(() => {
     if (!hasComposer) {
-      void openSettingsWindow("models");
+      handleOpenSettings("models");
       return;
     }
     const selection = captureActiveSelection();
@@ -352,6 +364,7 @@ export default function App() {
     focusInput,
     attachSelection,
     activeTab,
+    handleOpenSettings,
   ]);
 
   const { askPopup, setAskPopup, onAskFromSelection } = useSelectionAskAi({
@@ -532,7 +545,7 @@ export default function App() {
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
-      "settings.open": () => void openSettingsWindow(),
+      "settings.open": () => handleOpenSettings(),
       "sidebar.toggle": toggleSidebar,
       "explorer.focus": toggleExplorerFocus,
       "view.zoomIn": zoomIn,
@@ -556,6 +569,7 @@ export default function App() {
       toggleSourceControl,
       togglePanelAndFocus,
       askFromSelection,
+      handleOpenSettings,
       toggleSidebar,
       toggleExplorerFocus,
       zoomIn,
@@ -762,8 +776,8 @@ export default function App() {
             toggleSidebar,
             toggleAi: togglePanelAndFocus,
             askAiSelection: askFromSelection,
-            openSettings: () => void openSettingsWindow(),
-            openKeyboardShortcuts: () => void openSettingsWindow("shortcuts"),
+            openSettings: () => handleOpenSettings(),
+            openKeyboardShortcuts: () => handleOpenSettings("shortcuts"),
           })
         : [],
     [
@@ -784,6 +798,7 @@ export default function App() {
       toggleSidebar,
       togglePanelAndFocus,
       askFromSelection,
+      handleOpenSettings,
     ],
   );
 
@@ -826,7 +841,8 @@ export default function App() {
 
   const shell = (
     <ThemeProvider>
-      <TooltipProvider>
+      <SettingsOpenerProvider value={handleOpenSettings}>
+        <TooltipProvider>
         <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
           {!zenMode && (
             <Header
@@ -846,7 +862,7 @@ export default function App() {
               onOpenCommandPalette={() => openCommandPalette("commands")}
               onActivateAgent={onActivateAgent}
               onActivateLocalAgent={onActivateLocalAgent}
-              onOpenSettings={() => void openSettingsWindow()}
+              onOpenSettings={() => handleOpenSettings()}
               searchTarget={searchTarget}
               searchRef={searchInlineRef}
             />
@@ -922,6 +938,9 @@ export default function App() {
                       onAiDiffReject={(id) => respondToApproval(id, false)}
                       onOpenCommitFile={openCommitFileDiffTab}
                       onGitHistorySearchHandle={setGitHistoryHandle}
+                      onSettingsSectionChange={(tabId, section) =>
+                        updateTab(tabId, { activeSection: section })
+                      }
                     />
                   </div>
 
@@ -934,7 +953,7 @@ export default function App() {
                     hasComposer={hasComposer}
                     panelOpen={panelOpen}
                     keysLoaded={keysLoaded}
-                    onConnect={() => void openSettingsWindow("models")}
+                    onConnect={() => handleOpenSettings("models")}
                   />
                 </div>
               </ResizablePanel>
@@ -1018,7 +1037,8 @@ export default function App() {
             onConfirmDeleteClose={confirmDeleteClose}
           />
         </div>
-      </TooltipProvider>
+        </TooltipProvider>
+      </SettingsOpenerProvider>
     </ThemeProvider>
   );
 

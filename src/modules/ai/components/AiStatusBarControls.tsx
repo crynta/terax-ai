@@ -9,7 +9,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
-import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import { useOpenSettings } from "@/modules/settings/opener";
 import {
   Add01Icon,
   AiBookIcon,
@@ -211,6 +211,7 @@ function ModelDropdown() {
   const selected = useChatStore((s) => s.selectedModelId);
   const apiKeys = useChatStore((s) => s.apiKeys);
   const setSelected = useChatStore((s) => s.setSelectedModelId);
+  const openSettings = useOpenSettings();
   const favoriteIds = usePreferencesStore((s) => s.favoriteModelIds);
   const recentIds = usePreferencesStore((s) => s.recentModelIds);
   const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
@@ -436,7 +437,7 @@ function ModelDropdown() {
                   showProviderIcon={activeProvider === null}
                   onPick={() => {
                     if (!isCompatModelId(m.id) && !hasKeyFor(m.provider)) {
-                      void openSettingsWindow("models");
+                      openSettings("models");
                       return;
                     }
                     setSelected(m.id);
@@ -536,11 +537,12 @@ function ProviderHeader({ providerId }: { providerId: ProviderId }) {
 
 function ProviderConfigureCTA({ providerId }: { providerId: ProviderId }) {
   const p = PROVIDERS.find((x) => x.id === providerId);
+  const openSettings = useOpenSettings();
   if (!p) return null;
   return (
     <button
       type="button"
-      onClick={() => void openSettingsWindow("models")}
+      onClick={() => openSettings("models")}
       className="group mx-2 mb-1 flex w-[calc(100%-1rem)] items-center gap-2 rounded-md border border-dashed border-border/70 bg-muted/20 px-3 py-2 text-left text-[11px] text-muted-foreground transition-colors hover:border-border hover:bg-accent/40 hover:text-foreground"
     >
       <HugeiconsIcon icon={Settings01Icon} size={13} strokeWidth={1.75} />

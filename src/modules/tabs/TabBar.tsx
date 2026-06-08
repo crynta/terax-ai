@@ -26,6 +26,7 @@ import {
   IncognitoIcon,
   PencilEdit02Icon,
   PlusSignIcon,
+  Settings01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useRef, useState } from "react";
@@ -356,6 +357,16 @@ function TabIcon({ tab }: { tab: Tab }) {
     return (
       <HugeiconsIcon
         icon={Clock01Icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0"
+      />
+    );
+  }
+  if (tab.kind === "settings") {
+    return (
+      <HugeiconsIcon
+        icon={Settings01Icon}
         size={14}
         strokeWidth={2}
         className="shrink-0"
