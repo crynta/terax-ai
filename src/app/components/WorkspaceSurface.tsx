@@ -1,4 +1,5 @@
-import { lazy, Suspense, type ComponentProps } from "react";
+import { lazy, Suspense, useCallback, type ComponentProps } from "react";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { AiDiffStack, EditorStack, GitDiffStack } from "@/modules/editor";
 import { GitHistoryStack } from "@/modules/git-history";
@@ -9,7 +10,9 @@ import type { SettingsSection } from "@/modules/settings/types";
 import { TerminalStack } from "@/modules/terminal";
 
 const SettingsApp = lazy(() =>
-  import("@/settings/SettingsApp").then((mod) => ({ default: mod.SettingsApp })),
+  import("@/settings/SettingsApp").then((mod) => ({
+    default: mod.SettingsApp,
+  })),
 );
 
 type TerminalStackProps = ComponentProps<typeof TerminalStack>;
@@ -65,6 +68,8 @@ export function WorkspaceSurface({
   onSettingsSectionChange,
 }: Props) {
   const kind = activeTab?.kind;
+  const settingsTab = activeTab?.kind === "settings" ? activeTab : null;
+  const settingsTabId = settingsTab?.id;
   const isTerminalTab = kind === "terminal";
   const isEditorTab = kind === "editor";
   const isPreviewTab = kind === "preview";
@@ -72,7 +77,15 @@ export function WorkspaceSurface({
   const isAiDiffTab = kind === "ai-diff";
   const isGitDiffTab = kind === "git-diff" || kind === "git-commit-file";
   const isGitHistoryTab = kind === "git-history";
-  const isSettingsTab = kind === "settings";
+  const isSettingsTab = settingsTab !== null;
+  const handleSettingsSectionChange = useCallback(
+    (section: SettingsSection) => {
+      if (settingsTabId !== undefined) {
+        onSettingsSectionChange(settingsTabId, section);
+      }
+    },
+    [onSettingsSectionChange, settingsTabId],
+  );
 
   return (
     <div className="relative h-full min-h-0">
@@ -175,14 +188,18 @@ export function WorkspaceSurface({
         )}
         aria-hidden={!isSettingsTab}
       >
-        {activeTab?.kind === "settings" ? (
-          <Suspense fallback={null}>
+        {settingsTab ? (
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center">
+                <Spinner />
+              </div>
+            }
+          >
             <SettingsApp
               embedded
-              activeSection={activeTab.activeSection}
-              onActiveSectionChange={(section) =>
-                onSettingsSectionChange(activeTab.id, section)
-              }
+              activeSection={settingsTab.activeSection}
+              onActiveSectionChange={handleSettingsSectionChange}
             />
           </Suspense>
         ) : null}
