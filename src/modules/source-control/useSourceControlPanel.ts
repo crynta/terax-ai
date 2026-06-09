@@ -14,10 +14,19 @@ import {
 } from "@/modules/editor/lib/diffCache";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  buildSourceControlEntryModel,
+  type CheckState,
+  type DiffMode,
+  type SourceControlEntry,
+  type SourceControlFileEntry,
+  type SourceControlSection,
+  entrySelectionKey,
+  resolveSectionBatchEntries,
+} from "./sourceControlEntries";
 import type { SourceControlSummary } from "./useSourceControl";
 
 type PanelState = "closed" | "loading" | "no-repo" | "ready" | "error";
-type DiffMode = "+" | "-";
 type SelectionTransition = "none" | "moved-group" | "reset";
 
 const COMMIT_DIFF_CHAR_LIMIT = 60_000;
@@ -33,31 +42,11 @@ export type DiffSelection = {
   mode: DiffMode;
 };
 
-export type SourceControlEntry = {
-  key: string;
-  path: string;
-  mode: DiffMode;
-  indexStatus: string;
-  worktreeStatus: string;
-  statusLabel: string;
-  statusCode: string;
-  originalPath: string | null;
-  untracked: boolean;
-};
-
-export type CheckState = "checked" | "indeterminate" | "unchecked";
-
-/** One row per changed file (flat list) — merges the staged/unstaged split. */
-export type SourceControlFileEntry = {
-  key: string;
-  path: string;
-  originalPath: string | null;
-  statusCode: string;
-  statusLabel: string;
-  checkState: CheckState;
-  staged: boolean;
-  unstaged: boolean;
-  untracked: boolean;
+export type {
+  CheckState,
+  DiffMode,
+  SourceControlEntry,
+  SourceControlFileEntry,
 };
 
 export type PendingDiscard = {
@@ -72,6 +61,7 @@ type SourceControlPanelState = {
   status: GitStatusSnapshot | null;
   selected: DiffSelection | null;
   commitMessage: string;
+  commitSucceeded: boolean;
   actionBusy: string | null;
   statusError: string | null;
   actionError: string | null;
@@ -81,6 +71,7 @@ type SourceControlPanelState = {
   unstagedEntries: SourceControlEntry[];
   fileEntries: SourceControlFileEntry[];
   headerCheckState: CheckState;
+  markedEntryKeys: string[];
   allClean: boolean;
   canPush: boolean;
   pushHint: string | null;
@@ -96,8 +87,10 @@ type SourceControlPanelState = {
   selectFile: (entry: SourceControlFileEntry) => Promise<void>;
   stageEntry: (entry: SourceControlEntry) => Promise<void>;
   unstageEntry: (entry: SourceControlEntry) => Promise<void>;
-  toggleStageFile: (entry: SourceControlFileEntry) => Promise<void>;
-  toggleAll: () => Promise<void>;
+  toggleMarkedEntry: (entry: SourceControlEntry) => void;
+  clearMarkedEntries: () => void;
+  stageSectionEntries: (section: SourceControlSection) => Promise<void>;
+  unstageSectionEntries: (section: SourceControlSection) => Promise<void>;
   requestDiscardEntry: (entry: SourceControlEntry) => void;
   requestDiscardFile: (entry: SourceControlFileEntry) => void;
   requestDiscardAll: () => void;
@@ -107,6 +100,8 @@ type SourceControlPanelState = {
   unstageAllEntries: () => Promise<void>;
   generateCommitMessage: () => Promise<void>;
   commit: () => Promise<void>;
+  commitAndPush: () => Promise<void>;
+  commitAndSync: () => Promise<void>;
   push: () => Promise<void>;
 };
 
@@ -117,52 +112,6 @@ function normalizeError(error: unknown): string {
     if (typeof message === "string") return message;
   }
   return "Unknown source control error";
-}
-
-function normalizeStatusCode(status: string): string {
-  const code = status.trim().toUpperCase();
-  switch (code) {
-    case "?":
-      return "U";
-    case "A":
-      return "A";
-    case "M":
-      return "M";
-    case "D":
-      return "D";
-    case "R":
-    case "C":
-      return "R";
-    case "U":
-      return "U";
-    default:
-      return code || "M";
-  }
-}
-
-function statusCodeForMode(mode: DiffMode, file: GitChangedFile): string {
-  if (mode === "-" && file.untracked) return "U";
-  const primary = mode === "+" ? file.indexStatus : file.worktreeStatus;
-  const fallback = mode === "+" ? file.worktreeStatus : file.indexStatus;
-  return normalizeStatusCode(primary !== " " ? primary : fallback);
-}
-
-function makeEntry(
-  path: string,
-  mode: DiffMode,
-  file: GitChangedFile,
-): SourceControlEntry {
-  return {
-    key: `${mode}:${path}`,
-    path,
-    mode,
-    indexStatus: file.indexStatus,
-    worktreeStatus: file.worktreeStatus,
-    statusLabel: file.statusLabel,
-    statusCode: statusCodeForMode(mode, file),
-    originalPath: file.originalPath,
-    untracked: file.untracked,
-  };
 }
 
 function sameSelection(
@@ -258,7 +207,8 @@ function optimisticStage(
     if (!paths.has(file.path)) return file;
     if (file.staged && !file.unstaged) return file;
     changed = true;
-    const wt = file.worktreeStatus !== " " ? file.worktreeStatus : file.indexStatus;
+    const wt =
+      file.worktreeStatus !== " " ? file.worktreeStatus : file.indexStatus;
     return {
       ...file,
       indexStatus: wt,
@@ -288,7 +238,8 @@ function optimisticUnstage(
       continue;
     }
     changed = true;
-    const idx = file.indexStatus !== " " ? file.indexStatus : file.worktreeStatus;
+    const idx =
+      file.indexStatus !== " " ? file.indexStatus : file.worktreeStatus;
     if (idx === "R" && file.originalPath) {
       next.push({
         path: file.originalPath,
@@ -389,9 +340,13 @@ export function useSourceControlPanel(
   const [status, setStatus] = useState<GitStatusSnapshot | null>(null);
   const [selected, setSelected] = useState<DiffSelection | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
+  const [commitSucceeded, setCommitSucceeded] = useState(false);
   const [localActionBusy, setLocalActionBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [markedEntryKeys, setMarkedEntryKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [selectionTransition, setSelectionTransition] =
     useState<SelectionTransition>("none");
   const [pendingDiscard, setPendingDiscard] = useState<
@@ -400,65 +355,50 @@ export function useSourceControlPanel(
     | null
   >(null);
   const selectedRef = useRef<DiffSelection | null>(null);
+  const repoRootRef = useRef<string | null>(null);
   const reconcileTimerRef = useRef(0);
 
   useEffect(() => {
     selectedRef.current = selected;
   }, [selected]);
 
-  const stagedEntries = useMemo(
-    () =>
-      (status?.changedFiles ?? [])
-        .filter((file) => file.staged)
-        .map((file) => makeEntry(file.path, "+", file)),
+  useEffect(() => {
+    const nextRoot = repo?.repoRoot ?? null;
+    if (repoRootRef.current === nextRoot) return;
+    repoRootRef.current = nextRoot;
+    setMarkedEntryKeys(new Set());
+  });
+
+  const entryModel = useMemo(
+    () => buildSourceControlEntryModel(status?.changedFiles ?? []),
     [status],
   );
-
-  const unstagedEntries = useMemo(
-    () =>
-      (status?.changedFiles ?? [])
-        .filter((file) => file.unstaged)
-        .map((file) => makeEntry(file.path, "-", file)),
-    [status],
+  const { stagedEntries, unstagedEntries, fileEntries, headerCheckState } =
+    entryModel;
+  const markedKeyList = useMemo(
+    () => Array.from(markedEntryKeys),
+    [markedEntryKeys],
   );
 
-  const fileEntries = useMemo<SourceControlFileEntry[]>(() => {
-    const seen = new Set<string>();
-    const out: SourceControlFileEntry[] = [];
-    for (const file of status?.changedFiles ?? []) {
-      if (seen.has(file.path)) continue;
-      seen.add(file.path);
-      const checkState: CheckState =
-        file.staged && file.unstaged
-          ? "indeterminate"
-          : file.staged
-            ? "checked"
-            : "unchecked";
-      const statusCode = file.unstaged
-        ? statusCodeForMode("-", file)
-        : statusCodeForMode("+", file);
-      out.push({
-        key: file.path,
-        path: file.path,
-        originalPath: file.originalPath,
-        statusCode,
-        statusLabel: file.statusLabel,
-        checkState,
-        staged: file.staged,
-        unstaged: file.unstaged,
-        untracked: file.untracked,
-      });
-    }
-    return out;
-  }, [status]);
-
-  const headerCheckState = useMemo<CheckState>(() => {
-    if (fileEntries.length === 0) return "unchecked";
-    const allChecked = fileEntries.every((e) => e.checkState === "checked");
-    if (allChecked) return "checked";
-    const anyStaged = fileEntries.some((e) => e.staged);
-    return anyStaged ? "indeterminate" : "unchecked";
-  }, [fileEntries]);
+  useEffect(() => {
+    const validKeys = new Set([
+      ...stagedEntries.map(entrySelectionKey),
+      ...unstagedEntries.map(entrySelectionKey),
+    ]);
+    setMarkedEntryKeys((current) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const key of current) {
+        if (validKeys.has(key)) {
+          next.add(key);
+        } else {
+          changed = true;
+        }
+      }
+      if (!changed && next.size === current.size) return current;
+      return next;
+    });
+  }, [stagedEntries, unstagedEntries]);
 
   const allClean = stagedEntries.length === 0 && unstagedEntries.length === 0;
   const canPush = !!status?.upstream && status.behind === 0;
@@ -525,6 +465,11 @@ export function useSourceControlPanel(
   const stagedEmptyText = "No staged changes";
   const unstagedEmptyText = "No unstaged changes";
 
+  const updateCommitMessage = useCallback((value: string) => {
+    setCommitMessage(value);
+    setCommitSucceeded(false);
+  }, []);
+
   const cancelReconcile = useCallback(() => {
     if (reconcileTimerRef.current) {
       window.clearTimeout(reconcileTimerRef.current);
@@ -543,7 +488,11 @@ export function useSourceControlPanel(
   useEffect(() => () => cancelReconcile(), [cancelReconcile]);
 
   const openSelection = useCallback(
-    (sel: DiffSelection, repoRoot: string, file: GitChangedFile | undefined) => {
+    (
+      sel: DiffSelection,
+      repoRoot: string,
+      file: GitChangedFile | undefined,
+    ) => {
       onOpenDiff?.({
         path: sel.path,
         repoRoot,
@@ -621,6 +570,7 @@ export function useSourceControlPanel(
           mode: current.mode === "+" ? "-" : "+",
         };
         setSelected(moved);
+        openSelection(moved, summary.repo.repoRoot, samePathOtherMode);
         setSelectionTransition("moved-group");
       } else {
         setSelected(null);
@@ -636,12 +586,16 @@ export function useSourceControlPanel(
     summary.localError,
     summary.repo,
     summary.status,
+    openSelection,
   ]);
 
   const selectEntry = useCallback(
     async (entry: SourceControlEntry) => {
       if (!repo) return;
-      const nextSelection: DiffSelection = { path: entry.path, mode: entry.mode };
+      const nextSelection: DiffSelection = {
+        path: entry.path,
+        mode: entry.mode,
+      };
       if (sameSelection(selected, nextSelection)) {
         setActionError(null);
         setActionMessage(null);
@@ -664,6 +618,7 @@ export function useSourceControlPanel(
       optimistic: ((status: GitStatusSnapshot) => GitStatusSnapshot) | null,
       ipc: () => Promise<void>,
       affected: string[],
+      afterSuccess?: () => void,
     ) => {
       if (!repo || summary.busyAction) return;
       setLocalActionBusy(busyKey);
@@ -676,6 +631,7 @@ export function useSourceControlPanel(
       }
       try {
         await ipc();
+        afterSuccess?.();
         scheduleReconcile();
       } catch (error) {
         setActionError(normalizeError(error));
@@ -697,6 +653,14 @@ export function useSourceControlPanel(
         (s) => optimisticStage(s, paths),
         () => native.gitStage(repo.repoRoot, [entry.path]),
         [entry.path],
+        () =>
+          setMarkedEntryKeys((current) => {
+            const key = entrySelectionKey(entry);
+            if (!current.has(key)) return current;
+            const next = new Set(current);
+            next.delete(key);
+            return next;
+          }),
       );
     },
     [repo, runMutation],
@@ -711,9 +675,80 @@ export function useSourceControlPanel(
         (s) => optimisticUnstage(s, paths),
         () => native.gitUnstage(repo.repoRoot, [entry.path]),
         [entry.path],
+        () =>
+          setMarkedEntryKeys((current) => {
+            const key = entrySelectionKey(entry);
+            if (!current.has(key)) return current;
+            const next = new Set(current);
+            next.delete(key);
+            return next;
+          }),
       );
     },
     [repo, runMutation],
+  );
+
+  const toggleMarkedEntry = useCallback((entry: SourceControlEntry) => {
+    const key = entrySelectionKey(entry);
+    setMarkedEntryKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const clearMarkedEntries = useCallback(() => {
+    setMarkedEntryKeys((current) => (current.size === 0 ? current : new Set()));
+  }, []);
+
+  const runSectionMutation = useCallback(
+    async (section: SourceControlSection, action: "stage" | "unstage") => {
+      if (!repo) return;
+      const sourceEntries =
+        section === "unstaged" ? unstagedEntries : stagedEntries;
+      const entries = resolveSectionBatchEntries(sourceEntries, markedEntryKeys);
+      if (entries.length === 0) return;
+      const paths = new Set(entries.map((entry) => entry.path));
+      const keys = entries.map(entrySelectionKey);
+      await runMutation(
+        `${action}:${section}`,
+        action === "stage"
+          ? (s) => optimisticStage(s, paths)
+          : (s) => optimisticUnstage(s, paths),
+        () =>
+          action === "stage"
+            ? native.gitStage(repo.repoRoot, [...paths])
+            : native.gitUnstage(repo.repoRoot, [...paths]),
+        [...paths],
+        () =>
+          setMarkedEntryKeys((current) => {
+            let changed = false;
+            const next = new Set(current);
+            for (const key of keys) {
+              if (next.delete(key)) changed = true;
+            }
+            return changed ? next : current;
+          }),
+      );
+    },
+    [markedEntryKeys, repo, runMutation, stagedEntries, unstagedEntries],
+  );
+
+  const stageSectionEntries = useCallback(
+    async (section: SourceControlSection) => {
+      if (section !== "unstaged") return;
+      await runSectionMutation("unstaged", "stage");
+    },
+    [runSectionMutation],
+  );
+
+  const unstageSectionEntries = useCallback(
+    async (section: SourceControlSection) => {
+      if (section !== "staged") return;
+      await runSectionMutation("staged", "unstage");
+    },
+    [runSectionMutation],
   );
 
   const requestDiscardEntry = useCallback(
@@ -726,8 +761,10 @@ export function useSourceControlPanel(
 
   const requestDiscardAll = useCallback(() => {
     if (!repo || summary.busyAction || unstagedEntries.length === 0) return;
-    setPendingDiscard({ scope: "all", entries: unstagedEntries });
-  }, [repo, summary.busyAction, unstagedEntries]);
+    const entries = resolveSectionBatchEntries(unstagedEntries, markedEntryKeys);
+    if (entries.length === 0) return;
+    setPendingDiscard({ scope: "all", entries });
+  }, [markedEntryKeys, repo, summary.busyAction, unstagedEntries]);
 
   const cancelPendingDiscard = useCallback(() => {
     setPendingDiscard(null);
@@ -745,6 +782,7 @@ export function useSourceControlPanel(
       untracked: entry.untracked,
     }));
     const paths = new Set(list.map((entry) => entry.path));
+    const keys = list.map(entrySelectionKey);
     await runMutation(
       pendingDiscard.scope === "single"
         ? `discard:${list[0].path}`
@@ -752,6 +790,15 @@ export function useSourceControlPanel(
       (s) => optimisticDiscard(s, paths),
       () => native.gitDiscard(repo.repoRoot, entries),
       [...paths],
+      () =>
+        setMarkedEntryKeys((current) => {
+          let changed = false;
+          const next = new Set(current);
+          for (const key of keys) {
+            if (next.delete(key)) changed = true;
+          }
+          return changed ? next : current;
+        }),
     );
   }, [pendingDiscard, repo, runMutation]);
 
@@ -797,34 +844,6 @@ export function useSourceControlPanel(
     },
     [openSelection, repo, selected, status],
   );
-
-  const toggleStageFile = useCallback(
-    async (entry: SourceControlFileEntry) => {
-      if (!repo) return;
-      const paths = new Set([entry.path]);
-      if (entry.checkState === "checked") {
-        await runMutation(
-          `unstage:${entry.path}`,
-          (s) => optimisticUnstage(s, paths),
-          () => native.gitUnstage(repo.repoRoot, [entry.path]),
-          [entry.path],
-        );
-      } else {
-        await runMutation(
-          `stage:${entry.path}`,
-          (s) => optimisticStage(s, paths),
-          () => native.gitStage(repo.repoRoot, [entry.path]),
-          [entry.path],
-        );
-      }
-    },
-    [repo, runMutation],
-  );
-
-  const toggleAll = useCallback(async () => {
-    if (headerCheckState === "checked") await unstageAllEntries();
-    else await stageAllEntries();
-  }, [headerCheckState, stageAllEntries, unstageAllEntries]);
 
   const requestDiscardFile = useCallback(
     (entry: SourceControlFileEntry) => {
@@ -908,7 +927,7 @@ export function useSourceControlPanel(
           "AI returned an invalid commit message. Try again or switch models.",
         );
       }
-      setCommitMessage(message);
+      updateCommitMessage(message);
       setActionMessage(null);
     } catch (error) {
       setActionError(normalizeError(error));
@@ -927,27 +946,58 @@ export function useSourceControlPanel(
     repo,
     selectedModelId,
     stagedEntries,
+    updateCommitMessage,
   ]);
 
-  const commit = useCallback(async () => {
+  const runCommitAction = useCallback(async (
+    mode: "commit" | "commit-push" | "commit-sync",
+  ) => {
     if (!repo || summary.busyAction) return;
-    setLocalActionBusy("commit");
+    setLocalActionBusy(mode);
     setActionMessage(null);
     setActionError(null);
+    let didCommit = false;
     try {
       const result = await native.gitCommit(repo.repoRoot, commitMessage);
+      didCommit = true;
       setCommitMessage("");
+      setCommitSucceeded(true);
       setActionMessage(
         `Committed ${result.commitSha.slice(0, 7)} ${result.summary}`,
       );
       invalidateRepoDiffs(repo.repoRoot);
+      if (mode === "commit-sync") {
+        await native.gitFetch(repo.repoRoot);
+      }
+      if (mode === "commit-push" || mode === "commit-sync") {
+        await native.gitPush(repo.repoRoot);
+        setActionMessage(
+          status?.upstream
+            ? `Committed and pushed to ${status.upstream}`
+            : "Committed and pushed",
+        );
+      }
       await summary.refresh({ remote: "never" });
     } catch (error) {
       setActionError(normalizeError(error));
+      setCommitSucceeded(didCommit);
+      await summary.refresh({ remote: "never" }).catch(() => {});
     } finally {
       setLocalActionBusy(null);
     }
-  }, [commitMessage, repo, summary]);
+  }, [commitMessage, repo, status?.upstream, summary]);
+
+  const commit = useCallback(async () => {
+    await runCommitAction("commit");
+  }, [runCommitAction]);
+
+  const commitAndPush = useCallback(async () => {
+    await runCommitAction("commit-push");
+  }, [runCommitAction]);
+
+  const commitAndSync = useCallback(async () => {
+    await runCommitAction("commit-sync");
+  }, [runCommitAction]);
 
   const push = useCallback(async () => {
     if (!repo) return;
@@ -989,6 +1039,7 @@ export function useSourceControlPanel(
     status,
     selected,
     commitMessage,
+    commitSucceeded,
     actionBusy: localActionBusy ?? summary.busyAction,
     statusError: summary.localError,
     actionError,
@@ -998,6 +1049,7 @@ export function useSourceControlPanel(
     unstagedEntries,
     fileEntries,
     headerCheckState,
+    markedEntryKeys: markedKeyList,
     allClean,
     canPush,
     pushHint,
@@ -1007,14 +1059,16 @@ export function useSourceControlPanel(
     stagedEmptyText,
     unstagedEmptyText,
     pendingDiscard: pendingDiscardView,
-    setCommitMessage,
+    setCommitMessage: updateCommitMessage,
     refresh,
     selectEntry,
     selectFile,
     stageEntry,
     unstageEntry,
-    toggleStageFile,
-    toggleAll,
+    toggleMarkedEntry,
+    clearMarkedEntries,
+    stageSectionEntries,
+    unstageSectionEntries,
     requestDiscardEntry,
     requestDiscardFile,
     requestDiscardAll,
@@ -1024,6 +1078,8 @@ export function useSourceControlPanel(
     unstageAllEntries,
     generateCommitMessage,
     commit,
+    commitAndPush,
+    commitAndSync,
     push,
   };
 }
