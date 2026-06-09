@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::mem::ManuallyDrop;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
@@ -48,7 +49,8 @@ pub struct Session {
     pub shell_pid: u32,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    pub master: Mutex<Box<dyn MasterPty + Send>>,
+    // PtyMaster::drop acquires CONPTY_LIFECYCLE_LOCK before ClosePseudoConsole.
+    pub master: PtyMaster,
 }
 
 impl Drop for Session {
@@ -68,9 +70,46 @@ impl Drop for Session {
 static CONPTY_LIFECYCLE_LOCK: Mutex<()> = Mutex::new(());
 
 pub(super) fn drop_session(session: Arc<Session>) {
-    #[cfg(windows)]
-    let _guard = CONPTY_LIFECYCLE_LOCK.lock().unwrap();
+    // CONPTY_LIFECYCLE_LOCK is acquired inside PtyMaster::drop, just before
+    // ClosePseudoConsole, so we no longer need to hold it here for the full drop.
     drop(session);
+}
+
+/// Wraps the PTY master and serializes Windows ConPTY lifecycle around Drop.
+///
+/// `ClosePseudoConsole` (called when the inner `MasterPty` drops) can block up
+/// to ~60 s if conhost hasn't exited.  Holding `CONPTY_LIFECYCLE_LOCK` for
+/// that entire duration prevented concurrent `CreatePseudoConsole` calls in
+/// new terminals, causing a ~60-second input-echo delay for the next terminal
+/// opened while an old one was closing (issue #356 follow-up).
+///
+/// This wrapper acquires the lock only for `ClosePseudoConsole` itself, not
+/// for the whole session tear-down, so new terminals can be created freely
+/// while an old master is still closing.
+pub(super) struct PtyMaster {
+    inner: ManuallyDrop<Mutex<Box<dyn MasterPty + Send>>>,
+}
+
+impl PtyMaster {
+    pub(super) fn new(master: Box<dyn MasterPty + Send>) -> Self {
+        Self { inner: ManuallyDrop::new(Mutex::new(master)) }
+    }
+
+    pub(super) fn lock(
+        &self,
+    ) -> std::sync::LockResult<std::sync::MutexGuard<'_, Box<dyn MasterPty + Send>>> {
+        self.inner.lock()
+    }
+}
+
+impl Drop for PtyMaster {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        let _guard = CONPTY_LIFECYCLE_LOCK.lock().unwrap();
+        // SAFETY: this is the only drop of `inner`; we are inside PtyMaster::drop.
+        // `_guard` (on Windows) is still alive here and releases only after this line.
+        unsafe { ManuallyDrop::drop(&mut self.inner) };
+    }
 }
 
 struct ChildKillGuard {
@@ -108,9 +147,6 @@ pub fn spawn(
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
-    #[cfg(windows)]
-    let _spawn_guard = CONPTY_LIFECYCLE_LOCK.lock().unwrap();
-
     let pty_system = native_pty_system();
     let size = PtySize {
         rows,
@@ -118,7 +154,13 @@ pub fn spawn(
         pixel_width: 0,
         pixel_height: 0,
     };
-    let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
+    // Hold the lock only around CreatePseudoConsole (openpty), not for the
+    // entire spawn which includes slow conda/shell startup.
+    let pair = {
+        #[cfg(windows)]
+        let _spawn_guard = CONPTY_LIFECYCLE_LOCK.lock().unwrap();
+        pty_system.openpty(size).map_err(|e| e.to_string())?
+    };
 
     let cmd = shell_init::build_command(cwd, workspace)?;
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
@@ -154,7 +196,7 @@ pub fn spawn(
         shell_pid,
         killer: Mutex::new(killer),
         writer: writer.clone(),
-        master: Mutex::new(pair.master),
+        master: PtyMaster::new(pair.master),
     });
 
     let pending: Arc<(Mutex<Vec<u8>>, Condvar)> =
