@@ -9,6 +9,7 @@ import { getLaunchDir } from "@/lib/launchDir";
 import { usePresence } from "@/lib/usePresence";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
+import { IS_MAC } from "@/lib/platform";
 import { AgentNotificationsBridge } from "@/modules/agents";
 import {
   AgentRunBridge,
@@ -157,6 +158,16 @@ export default function App() {
   useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
 
+  // Focus the active terminal/editor pane. Used to hand keyboard control back
+  // when the sidebar is collapsed while one of its panels held focus.
+  const focusActivePane = useCallback(() => {
+    if (activeLeafId !== null) {
+      terminalRefs.current.get(activeLeafId)?.focus();
+      return;
+    }
+    activeEditorHandle?.focus();
+  }, [activeLeafId, activeEditorHandle]);
+
   // Drives session disposal off the pane tree, not React lifecycles —
   // split/unsplit re-mount components but the leaf is still live.
   const liveLeavesRef = useRef<Set<number>>(new Set());
@@ -239,7 +250,7 @@ export default function App() {
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
-  } = useSidebarPanel(explorerRef);
+  } = useSidebarPanel(explorerRef, focusActivePane);
 
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -668,17 +679,16 @@ export default function App() {
         return !(activeTab?.kind === "terminal" && activeTab.blocks === true);
       }
       if (id === "sidebar.toggle") {
-        // Ctrl+B is also Claude Code's "run in background" key. While a terminal
-        // is focused, let Ctrl+B reach the shell/Claude instead of toggling the
-        // sidebar. Ctrl+Shift+B (second binding) still toggles it from anywhere.
+        // Ctrl+B is Claude Code's "run in background" key. Only defer a literal
+        // Ctrl+B (no Cmd) while a terminal is focused so it reaches the shell;
+        // the Cmd+B binding (macOS) and the Ctrl/⌘+Shift+B variant always
+        // toggle the sidebar.
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
         const inTerminal = !!(target as HTMLElement | null)?.closest?.(
           ".xterm",
         );
-        // Only defer the plain (no-shift) Ctrl/⌘+B binding; the Shift variant
-        // is the always-on toggle and is never claimed by the terminal.
-        return inTerminal && !e.shiftKey;
+        return inTerminal && !e.shiftKey && e.ctrlKey && !e.metaKey;
       }
       return false;
     },
@@ -1014,6 +1024,13 @@ export default function App() {
             />
           )}
 
+          {/* Zen mode hides the Header, but macOS keeps the native traffic
+              lights from the overlay titlebar. Reserve a draggable top strip so
+              they don't sit on top of the terminal (e.g. tmux's status row). */}
+          {zenMode && IS_MAC && (
+            <div data-tauri-drag-region className="h-7 shrink-0" />
+          )}
+
           <main className="zoom-content flex min-h-0 flex-1 flex-col">
             <ResizablePanelGroup
               orientation="horizontal"
@@ -1031,7 +1048,10 @@ export default function App() {
                   if (size.inPixels > 0) persistSidebarWidth(size.inPixels);
                 }}
               >
-                <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
+                <div
+                  data-sidebar-root
+                  className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card"
+                >
                   <div className="min-h-0 flex-1">
                     {sidebarView === "explorer" ? (
                       <FileExplorer

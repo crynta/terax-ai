@@ -48,13 +48,27 @@ type FocusableExplorer = {
   isFocused: () => boolean;
 };
 
+/** True when keyboard focus is currently inside the sidebar panel. */
+function sidebarHasFocus(): boolean {
+  const active = document.activeElement;
+  return (
+    active instanceof HTMLElement && !!active.closest("[data-sidebar-root]")
+  );
+}
+
 export function useSidebarPanel(
   explorerRef: RefObject<FocusableExplorer | null>,
+  focusActivePane?: () => void,
 ) {
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
   const sidebarWidthRef = useRef(readSidebarWidth());
   const sidebarWidthWriteTimerRef = useRef(0);
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
+  // Latest "focus the active pane" callback; called when the sidebar collapses
+  // while focused so keyboard control returns to the terminal/editor instead of
+  // being stranded on the now-hidden (0-width but still mounted) panel.
+  const focusActivePaneRef = useRef(focusActivePane);
+  focusActivePaneRef.current = focusActivePane;
   const [sidebarView, setSidebarViewState] =
     useState<SidebarViewId>(readSidebarView);
 
@@ -70,8 +84,13 @@ export function useSidebarPanel(
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
     if (!p) return;
-    if (p.getSize().asPercentage <= 0) p.expand();
-    else p.collapse();
+    if (p.getSize().asPercentage <= 0) {
+      p.expand();
+      return;
+    }
+    const refocus = sidebarHasFocus();
+    p.collapse();
+    if (refocus) focusActivePaneRef.current?.();
   }, []);
 
   const cycleSidebarView = useCallback(
@@ -84,7 +103,9 @@ export function useSidebarPanel(
         return;
       }
       if (view === sidebarView) {
+        const refocus = sidebarHasFocus();
         panel?.collapse();
+        if (refocus) focusActivePaneRef.current?.();
         return;
       }
       persistSidebarView(view);
