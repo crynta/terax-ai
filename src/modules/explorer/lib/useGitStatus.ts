@@ -34,6 +34,7 @@ function normalizePath(path: string): string {
 export function useGitStatus(
   workspaceRoot: string | null,
   sharedStatus?: GitStatusSnapshot | null,
+  enabled = true,
 ) {
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const workspaceKey = workspaceScopeKey(workspaceEnv);
@@ -48,6 +49,7 @@ export function useGitStatus(
   >(null);
 
   const pathAliases = useMemo(() => {
+    if (!enabled) return [];
     const roots = [workspaceRoot, canonicalWorkspaceRoot];
     const seen = new Set<string>();
     const out: string[] = [];
@@ -59,10 +61,10 @@ export function useGitStatus(
       out.push(root);
     }
     return out;
-  }, [workspaceRoot, canonicalWorkspaceRoot]);
+  }, [enabled, workspaceRoot, canonicalWorkspaceRoot]);
 
   useEffect(() => {
-    if (!workspaceRoot) {
+    if (!enabled || !workspaceRoot) {
       setCanonicalWorkspaceRoot(null);
       return;
     }
@@ -80,9 +82,10 @@ export function useGitStatus(
     return () => {
       cancelled = true;
     };
-  }, [workspaceRoot, workspaceKey]);
+  }, [enabled, workspaceRoot, workspaceKey]);
 
   const sharedCoversRoot =
+    enabled &&
     !!workspaceRoot &&
     !!sharedStatus &&
     (repoCoversPath(sharedStatus.repoRoot, workspaceRoot, pathAliases) ||
@@ -97,12 +100,13 @@ export function useGitStatus(
   }, [sharedCoversRoot, sharedStatus]);
 
   useEffect(() => {
+    if (!enabled) return;
     requestIdRef.current++;
     setFetched({ repoRoot: null, statusMap: EMPTY_MAP, truncated: false });
-  }, [workspaceKey]);
+  }, [enabled, workspaceKey]);
 
   useEffect(() => {
-    if (!workspaceRoot || sharedCoversRoot) return;
+    if (!enabled || !workspaceRoot || sharedCoversRoot) return;
 
     const requestId = ++requestIdRef.current;
 
@@ -120,16 +124,18 @@ export function useGitStatus(
         if (requestId !== requestIdRef.current) return;
         setFetched({ repoRoot: null, statusMap: EMPTY_MAP, truncated: false });
       });
-  }, [workspaceRoot, sharedCoversRoot, workspaceKey]);
+  }, [enabled, workspaceRoot, sharedCoversRoot, workspaceKey]);
 
-  const { repoRoot, statusMap, truncated } = sharedState ?? fetched;
+  const { repoRoot, statusMap, truncated } = enabled
+    ? (sharedState ?? fetched)
+    : { repoRoot: null, statusMap: EMPTY_MAP, truncated: false };
 
   const lookup = useCallback(
     (path: string): GitStatusCode | null => {
-      if (!repoRoot) return null;
+      if (!enabled || !repoRoot) return null;
       return lookupGitStatus(statusMap, repoRoot, path, pathAliases);
     },
-    [repoRoot, statusMap, pathAliases],
+    [enabled, repoRoot, statusMap, pathAliases],
   );
 
   return { repoRoot, statusMap, truncated, lookup };

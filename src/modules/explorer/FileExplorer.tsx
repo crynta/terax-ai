@@ -34,6 +34,7 @@ import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
 import { useGitStatus } from "./lib/useGitStatus";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
 
 export type FileExplorerHandle = {
@@ -176,8 +177,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
     ref,
   ) {
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
+    const explorerGitDecorations = usePreferencesStore(
+      (s) => s.explorerGitDecorations,
+    );
     const { lookup: lookupGitStatus, truncated: gitDecorationsTruncated } =
-      useGitStatus(rootPath, gitStatus);
+      useGitStatus(
+        rootPath,
+        explorerGitDecorations ? gitStatus : null,
+        explorerGitDecorations,
+      );
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
@@ -379,8 +387,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               onRevealInTerminal={onRevealInTerminal}
               onAttachToAgent={onAttachToAgent}
               onOpenMarkdownPreview={onOpenMarkdownPreview}
-              gitStatusCode={lookupGitStatus(row.path)}
-              gitignored={row.gitignored}
+              gitStatusCode={
+                explorerGitDecorations ? lookupGitStatus(row.path) : null
+              }
+              gitignored={explorerGitDecorations ? row.gitignored : false}
             />
           );
         }
@@ -420,7 +430,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               className="mx-1.5 shrink-0"
             />
             <span className="min-w-0 truncate">{basename(rootPath)}</span>
-            {gitDecorationsTruncated ? (
+            {explorerGitDecorations && gitDecorationsTruncated ? (
               <span
                 className="inline-flex shrink-0"
                 title="Git decorations may be incomplete due to a large number of changes"

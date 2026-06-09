@@ -85,6 +85,7 @@ fn is_under_gitignored_chain(dir: &Path, show_hidden: bool) -> bool {
 pub fn fs_read_dir(
     path: String,
     show_hidden: bool,
+    git_decorations: Option<bool>,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<Vec<DirEntry>, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
@@ -94,8 +95,14 @@ pub fn fs_read_dir(
         e.to_string()
     })?;
 
-    let git_visible = git_non_ignored_names(&root, show_hidden);
-    let parent_gitignored = is_under_gitignored_chain(&root, show_hidden);
+    let git_decorations = git_decorations.unwrap_or(true);
+    let git_visible = if git_decorations {
+        git_non_ignored_names(&root, show_hidden)
+    } else {
+        HashSet::new()
+    };
+    let parent_gitignored =
+        git_decorations && is_under_gitignored_chain(&root, show_hidden);
 
     let mut entries: Vec<DirEntry> = read
         .filter_map(Result::ok)
@@ -133,7 +140,8 @@ pub fn fs_read_dir(
                 .unwrap_or(0);
 
             Some(DirEntry {
-                gitignored: parent_gitignored || !git_visible.contains(&name),
+                gitignored: git_decorations
+                    && (parent_gitignored || !git_visible.contains(&name)),
                 name,
                 kind,
                 size,
