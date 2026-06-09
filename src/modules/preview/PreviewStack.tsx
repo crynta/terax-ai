@@ -16,7 +16,9 @@ export function PreviewStack({
   onUrlChange,
   registerHandle,
 }: Props) {
-  const previews = tabs.filter((t): t is PreviewTab => t.kind === "preview");
+  const previews = tabs.filter(
+    (t): t is PreviewTab => t.kind === "preview" && !t.cold,
+  );
 
   const registerRef = useRef(registerHandle);
   const urlChangeRef = useRef(onUrlChange);

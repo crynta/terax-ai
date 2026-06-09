@@ -15,6 +15,9 @@ export type ShortcutId =
   | "tab.next"
   | "tab.prev"
   | "tab.selectByIndex"
+  | "space.next"
+  | "space.prev"
+  | "space.overview"
   | "pane.splitRight"
   | "pane.splitDown"
   | "pane.focusNext"
@@ -39,6 +42,7 @@ export type ShortcutId =
 export type ShortcutGroup =
   | "General"
   | "Tabs"
+  | "Spaces"
   | "Panes"
   | "Terminal"
   | "Search"
@@ -174,6 +178,24 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Jump to tab 1–9",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
+  },
+  {
+    id: "space.next",
+    label: "Next space",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "]" }],
+  },
+  {
+    id: "space.prev",
+    label: "Previous space",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "[" }],
+  },
+  {
+    id: "space.overview",
+    label: "Open spaces",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "s" }],
   },
   {
     id: "explorer.search",

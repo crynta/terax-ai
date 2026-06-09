@@ -10,7 +10,13 @@ import {
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   SearchInline,
   type SearchInlineHandle,
@@ -37,6 +43,7 @@ type Props = {
   onActivateAgent: (tabId: number, leafId: number) => void;
   onActivateLocalAgent: () => void;
   onOpenSettings: () => void;
+  spaceSwitcher: ReactNode;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
 };
@@ -61,6 +68,7 @@ export function Header({
   onActivateAgent,
   onActivateLocalAgent,
   onOpenSettings,
+  spaceSwitcher,
   searchTarget,
   searchRef,
 }: Props) {
@@ -141,6 +149,8 @@ export function Header({
         className="flex min-w-0 flex-1 items-center gap-2"
         data-tauri-drag-region
       >
+        {spaceSwitcher}
+        <span className="h-5 w-px shrink-0 bg-border/70" />
         <TabBar
           tabs={tabs}
           activeId={activeId}

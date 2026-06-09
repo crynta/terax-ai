@@ -18,7 +18,9 @@ export function EditorStack({
   registerHandle,
   onCloseTab,
 }: Props) {
-  const editors = tabs.filter((t): t is EditorTab => t.kind === "editor");
+  const editors = tabs.filter(
+    (t): t is EditorTab => t.kind === "editor" && !t.cold,
+  );
 
   // Stable per-tab callbacks. Inline arrows in `ref` and `onDirtyChange`
   // change identity every render, which makes React detach+reattach the ref
