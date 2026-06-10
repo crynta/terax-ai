@@ -231,7 +231,10 @@ function createSlot(): Slot {
     // composed string through its own compositionend handler instead.
     // keyCode 229 ("Process") is what Chromium reports for every key
     // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // Thai tone marks also get keyCode 229 in Chromium but carry a real key
+    // value (e.g. '่') — use event.key === 'Process' to distinguish IME from
+    // direct Thai keyboard input.
+    if (event.isComposing || event.key === "Process") return false;
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;

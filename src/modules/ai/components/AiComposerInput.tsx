@@ -68,6 +68,8 @@ export function AiComposerInput() {
   const [activeIndex, setActiveIndex] = useState(0);
   const workspaceFiles = useWorkspaceFiles(workspaceRoot, fileTrigger !== null);
 
+  const isComposingRef = useRef(false);
+
   const [fileQuery, setFileQuery] = useState("");
   useEffect(() => {
     if (!fileTrigger) {
@@ -213,7 +215,14 @@ export function AiComposerInput() {
             <textarea
               ref={c.textareaRef}
               value={c.value}
-              onChange={(e) => c.setValue(e.target.value)}
+              onChange={(e) => {
+                if (!isComposingRef.current) c.setValue(e.target.value);
+              }}
+              onCompositionStart={() => { isComposingRef.current = true; }}
+              onCompositionEnd={(e) => {
+                isComposingRef.current = false;
+                c.setValue((e.target as HTMLTextAreaElement).value);
+              }}
               onKeyUp={updateTrigger}
               onClick={updateTrigger}
               onSelect={updateTrigger}
