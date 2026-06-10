@@ -338,6 +338,12 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           else onOpenFile(row.path);
           break;
         }
+        case "F2": {
+          if (currentIdx < 0) return;
+          e.preventDefault();
+          tree.beginRename(entryPaths[currentIdx]);
+          break;
+        }
       }
     };
 
