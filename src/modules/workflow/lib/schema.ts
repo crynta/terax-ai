@@ -23,7 +23,26 @@ export type WorkflowNodeType =
   | "agent"
   | "httpRequest"
   | "fileOperation"
-  | "browserAutomation";
+  | "browserAutomation"
+  | "textTransform"
+  | "jsonExtract"
+  | "jsonBuild"
+  | "if"
+  | "switch"
+  | "merge"
+  | "retry"
+  | "errorBranch"
+  | "humanApproval"
+  | "forEach"
+  | "setVariable"
+  | "getVariable"
+  | "delay"
+  | "webhook"
+  | "schedule"
+  | "comment"
+  | "reroute"
+  | "group"
+  | "subgraph";
 
 export type WorkflowRuntimeStatus =
   | "idle"
@@ -95,6 +114,7 @@ export type WorkflowNode = {
   uiState: {
     collapsed?: boolean;
     expanded?: boolean;
+    childNodeIds?: string[];
   };
 };
 
@@ -132,6 +152,34 @@ export type WorkflowArtifact = {
   storage?: WorkflowArtifactStorage;
 };
 
+export type WorkflowRunHistoryEntry = {
+  id: string;
+  status: string;
+  nodeCount: number;
+  completedCount: number;
+  failedCount: number;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  completedAt?: string | null;
+  durationMs?: number | null;
+  nodeResults?: Record<
+    string,
+    {
+      status: string;
+      durationMs?: number | null;
+      artifactCount: number;
+    }
+  >;
+  nodeSnapshots?: Array<{
+    nodeId: string;
+    status: string;
+    title?: string;
+    duration?: number | null;
+    artifactCount: number;
+    error?: string | null;
+  }>;
+};
+
 export type WorkflowDocument = {
   id: string;
   title: string;
@@ -141,6 +189,7 @@ export type WorkflowDocument = {
   artifacts: WorkflowArtifact[];
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  runHistory?: WorkflowRunHistoryEntry[];
 };
 
 export type CreateWorkflowNodeInput = {
@@ -353,6 +402,7 @@ function migrateWorkflowDocumentInput(value: unknown): unknown {
       ? value.nodes.map(migrateWorkflowNodeInput)
       : value.nodes,
     edges: Array.isArray(value.edges) ? value.edges : [],
+    runHistory: Array.isArray(value.runHistory) ? value.runHistory : [],
   };
 }
 
@@ -465,6 +515,7 @@ export function createStarterWorkflowDocument(input: {
         targetPortId: "media",
       },
     ],
+    runHistory: [],
   };
 }
 
@@ -489,6 +540,9 @@ function normalizeImportedWorkflowDocument(
       uiState: isRecord(node.uiState) ? { ...node.uiState } : {},
     })),
     edges: document.edges.map((edge) => ({ ...edge })),
+    runHistory: Array.isArray(document.runHistory)
+      ? document.runHistory.map((entry) => ({ ...entry }))
+      : [],
   };
 }
 
@@ -562,6 +616,25 @@ const WORKFLOW_NODE_TYPES: WorkflowNodeType[] = [
   "httpRequest",
   "fileOperation",
   "browserAutomation",
+  "textTransform",
+  "jsonExtract",
+  "jsonBuild",
+  "if",
+  "switch",
+  "merge",
+  "retry",
+  "errorBranch",
+  "humanApproval",
+  "forEach",
+  "setVariable",
+  "getVariable",
+  "delay",
+  "webhook",
+  "schedule",
+  "comment",
+  "reroute",
+  "group",
+  "subgraph",
 ];
 
 const WORKFLOW_PORT_TYPES: WorkflowPortType[] = [
@@ -770,4 +843,110 @@ function isSize(value: unknown): value is WorkflowSize {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function validateSubgraphDepth(
+  document: WorkflowDocument,
+  nodeId: string,
+  maxDepth = 5,
+): string[] {
+  const errors: string[] = [];
+  const visited = new Set<string>();
+
+  function walk(id: string, depth: number): void {
+    if (visited.has(id)) return;
+    visited.add(id);
+    const node = document.nodes.find((n) => n.id === id);
+    if (!node || node.type !== "subgraph") return;
+    if (depth > maxDepth) {
+      errors.push(
+        `Subgraph nesting exceeds maximum depth (${maxDepth}) at node ${id}`,
+      );
+      return;
+    }
+    const childIds = node.uiState.childNodeIds ?? [];
+    for (const childId of childIds) {
+      walk(childId, depth + 1);
+    }
+  }
+
+  walk(nodeId, 0);
+  return errors;
+}
+
+export function workflowConnectionWarnings(
+  document: WorkflowDocument,
+): string[] {
+  const warnings: string[] = [];
+  const nodeIds = new Set(document.nodes.map((n) => n.id));
+  const nodeInputs = new Map<string, Set<string>>();
+  for (const node of document.nodes) {
+    nodeInputs.set(
+      node.id,
+      new Set(node.inputs.map((p) => p.id)),
+    );
+  }
+  const connectedInputs = new Map<string, Set<string>>();
+  for (const edge of document.edges) {
+    if (!nodeIds.has(edge.sourceNodeId) || !nodeIds.has(edge.targetNodeId)) {
+      continue;
+    }
+    let set = connectedInputs.get(edge.targetNodeId);
+    if (!set) {
+      set = new Set();
+      connectedInputs.set(edge.targetNodeId, set);
+    }
+    set.add(edge.targetPortId);
+  }
+  for (const node of document.nodes) {
+    const inputs = nodeInputs.get(node.id);
+    const connected = connectedInputs.get(node.id);
+    if (!inputs) continue;
+    for (const portId of inputs) {
+      if (!connected?.has(portId)) {
+        warnings.push(
+          `Node "${node.title}" (${node.id}) has unconnected input "${portId}"`,
+        );
+      }
+    }
+  }
+  return warnings;
+}
+
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "-";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.round(seconds % 60);
+  return `${minutes}m ${remaining}s`;
+}
+
+export function nodeExecutionDuration(
+  node: WorkflowNode,
+): number {
+  const logs = node.runtimeState.logs ?? [];
+  const started = logs.find((l) => l.event === "running");
+  const completed = logs.find(
+    (l) => l.event === "completed" || l.event === "failed",
+  );
+  if (!started?.at || !completed?.at) return 0;
+  return new Date(completed.at).getTime() - new Date(started.at).getTime();
+}
+
+export function renameWorkflowNode(
+  document: WorkflowDocument,
+  nodeId: string,
+  title: string,
+): WorkflowDocument {
+  if (!document.nodes.some((node) => node.id === nodeId)) return document;
+  const trimmed = typeof title === "string" ? title.trim() : "";
+  if (trimmed.length === 0) return document;
+  return {
+    ...document,
+    nodes: document.nodes.map((node) =>
+      node.id === nodeId ? { ...node, title: trimmed } : node,
+    ),
+  };
 }

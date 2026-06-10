@@ -1,5 +1,7 @@
 import {
   artifactForNode,
+  artifactPreviewForNode,
+  collectNodeInputArtifacts,
   httpArtifactForOutput,
   httpRequestForNode,
   placeholderArtifactForNode,
@@ -21,6 +23,7 @@ import type {
   WorkflowDocument,
   WorkflowNode,
   WorkflowRuntimeStatus,
+  WorkflowVariable,
 } from "./schema";
 import { isUnsafeWorkflowNode } from "./workflowSafety";
 
@@ -96,10 +99,372 @@ export function getReadyNodeIds(
       );
       return incoming.every((edge) => {
         const source = byId.get(edge.sourceNodeId);
-        return source?.runtimeState.status === "completed";
+        if (source?.runtimeState.status !== "completed") return false;
+        const sourceArtifactIds = source.runtimeState.artifactIds ?? [];
+        if (sourceArtifactIds.length === 0) return true;
+        const idSet = new Set(sourceArtifactIds);
+        return document.artifacts.some(
+          (a) => idSet.has(a.id) && a.portId === edge.sourcePortId,
+        );
       });
     })
     .map((node) => node.id);
+}
+
+// ---------------------------------------------------------------------------
+// Expression resolution and condition evaluation
+// ---------------------------------------------------------------------------
+
+function resolveExpressions(
+  text: string,
+  variables: WorkflowVariable[],
+): string {
+  return text.replace(/\{\{variables\.(\w+)\}\}/g, (_match, name: string) => {
+    const variable = variables.find((v) => v.name === name);
+    return variable?.value !== undefined ? String(variable.value) : "";
+  });
+}
+
+function artifactTextValue(artifact: WorkflowArtifact | undefined): string {
+  if (!artifact) return "";
+  return typeof artifact.value === "string"
+    ? artifact.value
+    : artifact.preview;
+}
+
+function evaluateCondition(
+  input: string,
+  operator: string,
+  value: string,
+): boolean {
+  switch (operator) {
+    case "contains":
+      return input.includes(value);
+    case "equals":
+      return input === value;
+    case "startsWith":
+      return input.startsWith(value);
+    case "endsWith":
+      return input.endsWith(value);
+    default:
+      return input === value;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Node-type-specific artifact creation
+// ---------------------------------------------------------------------------
+
+function createNodeArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  switch (node.type) {
+    case "textPrompt":
+      return createTextPromptArtifacts(document, node);
+    case "delay":
+      return createDelayArtifacts(document, node);
+    case "webhook":
+      return createWebhookArtifacts(document, node);
+    case "schedule":
+      return createScheduleArtifacts(document, node);
+    case "if":
+      return createIfArtifacts(document, node);
+    case "switch":
+      return createSwitchArtifacts(document, node);
+    case "merge":
+      return createMergeArtifacts(document, node);
+    case "textTransform":
+      return createTextTransformArtifacts(document, node);
+    case "setVariable":
+      return createSetVariableArtifacts(document, node);
+    case "getVariable":
+      return createGetVariableArtifacts(document, node);
+    default:
+      return [artifactForNode(document, node)];
+  }
+}
+
+function createTextPromptArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const output = node.outputs[0];
+  const prompt = String(node.config.prompt ?? "");
+  return [
+    {
+      id: workflowArtifactId(document, node),
+      nodeId: node.id,
+      portId: output?.id,
+      type: output?.type ?? "text",
+      label: node.title,
+      preview: prompt,
+      value: prompt,
+    },
+  ];
+}
+
+function createDelayArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const seconds = Number(node.config.seconds ?? 0);
+  const output = node.outputs[0];
+  return [
+    {
+      id: workflowArtifactId(document, node),
+      nodeId: node.id,
+      portId: output?.id,
+      type: output?.type ?? "text",
+      label: node.title,
+      preview: `Delayed ${seconds}s`,
+      value: `Delayed ${seconds}s`,
+    },
+  ];
+}
+
+function createWebhookArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const path = String(node.config.path ?? "/");
+  const method = String(node.config.method ?? "POST");
+  const ports = node.outputs;
+  return [
+    {
+      id: `${document.id}:${node.id}:body`,
+      nodeId: node.id,
+      portId: ports.find((p) => p.id === "body")?.id ?? "body",
+      type: "json",
+      label: node.title,
+      preview: "Webhook body",
+      value: { trigger: true, path },
+    },
+    {
+      id: `${document.id}:${node.id}:headers`,
+      nodeId: node.id,
+      portId: ports.find((p) => p.id === "headers")?.id ?? "headers",
+      type: "json",
+      label: node.title,
+      preview: "Webhook headers",
+      value: { "content-type": "application/json", "x-webhook-method": method },
+    },
+    {
+      id: `${document.id}:${node.id}:trigger`,
+      nodeId: node.id,
+      portId: ports.find((p) => p.id === "trigger")?.id ?? "trigger",
+      type: "text",
+      label: node.title,
+      preview: "Webhook trigger",
+      value: "triggered",
+    },
+  ];
+}
+
+function createScheduleArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const cron = String(node.config.cron ?? "");
+  const output = node.outputs[0];
+  return [
+    {
+      id: workflowArtifactId(document, node),
+      nodeId: node.id,
+      portId: output?.id,
+      type: output?.type ?? "text",
+      label: node.title,
+      preview: cron ? `Schedule: ${cron}` : "Schedule trigger ready",
+      value: cron,
+    },
+  ];
+}
+
+function createIfArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const inputArts = collectNodeInputArtifacts(document, node);
+  const textArt = inputArts.find((a) => a.type === "text");
+  const inputText = artifactTextValue(textArt);
+  const operator = String(node.config.operator ?? "equals");
+  const rawValue = String(node.config.value ?? "");
+  const value = resolveExpressions(rawValue, document.variables);
+  const result = evaluateCondition(inputText, operator, value);
+  const portId = result ? "true" : "false";
+  const port = node.outputs.find((p) => p.id === portId) ?? node.outputs[0];
+  return [
+    {
+      id: workflowArtifactId(document, node),
+      nodeId: node.id,
+      portId: port?.id,
+      type: port?.type ?? "text",
+      label: node.title,
+      preview: artifactPreviewForNode(node),
+      value: inputText,
+    },
+  ];
+}
+
+function createSwitchArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const inputArts = collectNodeInputArtifacts(document, node);
+  const textArt = inputArts.find((a) => a.type === "text");
+  const inputText = artifactTextValue(textArt);
+  const operator = String(node.config.operator ?? "equals");
+  const rawCases = String(node.config.cases ?? "");
+  const resolvedCases = resolveExpressions(rawCases, document.variables);
+  const cases = resolvedCases.split("\n");
+
+  let matchPortId = "default";
+  for (let i = 0; i < cases.length; i++) {
+    const caseValue = cases[i];
+    if (caseValue && evaluateCondition(inputText, operator, caseValue)) {
+      matchPortId = `case_${i + 1}`;
+      break;
+    }
+  }
+
+  const port =
+    node.outputs.find((p) => p.id === matchPortId) ?? node.outputs[0];
+  return [
+    {
+      id: workflowArtifactId(document, node),
+      nodeId: node.id,
+      portId: port?.id,
+      type: port?.type ?? "text",
+      label: node.title,
+      preview: artifactPreviewForNode(node),
+      value: inputText,
+    },
+  ];
+}
+
+function createMergeArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const separator = String(node.config.separator ?? "\n");
+  const portA = node.inputs.find((p) => p.id === "text_a");
+  const portB = node.inputs.find((p) => p.id === "text_b");
+
+  const artA = inputArtifactForPort(document, node, portA?.id ?? "text_a");
+  const artB = inputArtifactForPort(document, node, portB?.id ?? "text_b");
+  const textA = artifactTextValue(artA);
+  const textB = artifactTextValue(artB);
+  const merged = [textA, textB].filter((t) => t.length > 0).join(separator);
+
+  const output = node.outputs[0];
+  return [
+    {
+      id: workflowArtifactId(document, node),
+      nodeId: node.id,
+      portId: output?.id,
+      type: output?.type ?? "text",
+      label: node.title,
+      preview: artifactPreviewForNode(node),
+      value: merged,
+    },
+  ];
+}
+
+function createTextTransformArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const inputArts = collectNodeInputArtifacts(document, node);
+  const textArt = inputArts.find((a) => a.type === "text");
+  const inputText = artifactTextValue(textArt);
+  const template = String(node.config.template ?? "{{input}}");
+  const result = template.replace(/\{\{input\}\}/g, inputText);
+
+  const output = node.outputs[0];
+  return [
+    {
+      id: workflowArtifactId(document, node),
+      nodeId: node.id,
+      portId: output?.id,
+      type: output?.type ?? "text",
+      label: node.title,
+      preview: artifactPreviewForNode(node),
+      value: result,
+    },
+  ];
+}
+
+function createSetVariableArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const inputArts = collectNodeInputArtifacts(document, node);
+  const textArt = inputArts.find((a) => a.type === "text");
+  const value = artifactTextValue(textArt);
+
+  const output = node.outputs[0];
+  return [
+    {
+      id: workflowArtifactId(document, node),
+      nodeId: node.id,
+      portId: output?.id,
+      type: output?.type ?? "text",
+      label: node.title,
+      preview: artifactPreviewForNode(node),
+      value,
+    },
+  ];
+}
+
+function createGetVariableArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[] {
+  const varName = String(node.config.variableName ?? "");
+  const variable = document.variables.find((v) => v.name === varName);
+  const value =
+    variable?.value !== undefined ? String(variable.value) : "";
+
+  const output = node.outputs[0];
+  return [
+    {
+      id: workflowArtifactId(document, node),
+      nodeId: node.id,
+      portId: output?.id,
+      type: output?.type ?? "text",
+      label: node.title,
+      preview: artifactPreviewForNode(node),
+      value,
+    },
+  ];
+}
+
+function inputArtifactForPort(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+  portId: string,
+): WorkflowArtifact | undefined {
+  const edge = document.edges.find(
+    (e) => e.targetNodeId === node.id && e.targetPortId === portId,
+  );
+  if (!edge) return undefined;
+  const source = document.nodes.find((n) => n.id === edge.sourceNodeId);
+  if (!source) return undefined;
+  const sourceArtifactIds = new Set(source.runtimeState.artifactIds ?? []);
+  const candidates = document.artifacts.filter((a) =>
+    sourceArtifactIds.has(a.id),
+  );
+  return (
+    candidates.find((a) => a.portId === edge.sourcePortId) ?? candidates[0]
+  );
+}
+
+function workflowArtifactId(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): string {
+  const outputType = node.outputs[0]?.type ?? "json";
+  return `${document.id}:${node.id}:${outputType}`;
 }
 
 export function executeWorkflowStep(
@@ -109,20 +474,62 @@ export function executeWorkflowStep(
   if (ready.size === 0) return document;
 
   const readyNodes = document.nodes.filter((node) => ready.has(node.id));
-  const artifacts = readyNodes.flatMap((node) =>
-    shouldCreateArtifactForReadyNode(node)
-      ? [artifactForNode(document, node)]
-      : [],
-  );
+  const artifactsByNode = new Map<string, WorkflowArtifact[]>();
+  let updatedVariables = document.variables;
+
+  for (const node of readyNodes) {
+    if (!shouldCreateArtifactForReadyNode(node)) continue;
+    const nodeArtifacts = createNodeArtifacts(document, node);
+    artifactsByNode.set(node.id, nodeArtifacts);
+
+    if (node.type === "setVariable") {
+      const varName = String(node.config.variableName ?? "");
+      if (varName) {
+        const inputArts = collectNodeInputArtifacts(document, node);
+        const textArt = inputArts.find((a) => a.type === "text");
+        const value = textArt
+          ? typeof textArt.value === "string"
+            ? textArt.value
+            : textArt.preview
+          : "";
+        const existingIdx = updatedVariables.findIndex(
+          (v) => v.name === varName,
+        );
+        if (existingIdx >= 0) {
+          updatedVariables = updatedVariables.map((v, i) =>
+            i === existingIdx ? { ...v, value } : v,
+          );
+        } else {
+          updatedVariables = [
+            ...updatedVariables,
+            { id: `var_${varName}`, name: varName, type: "text" as const, value },
+          ];
+        }
+      }
+    }
+  }
+
+  const allArtifacts = Array.from(artifactsByNode.values()).flat();
 
   return {
     ...document,
-    artifacts: mergeArtifacts(document.artifacts, artifacts),
-    nodes: document.nodes.map((node) =>
-      ready.has(node.id)
-        ? { ...node, runtimeState: runtimeStateForReadyNode(document, node) }
-        : node,
-    ),
+    variables: updatedVariables,
+    artifacts: mergeArtifacts(document.artifacts, allArtifacts),
+    nodes: document.nodes.map((node) => {
+      if (!ready.has(node.id)) return node;
+      const nodeArts = artifactsByNode.get(node.id);
+      const baseState = runtimeStateForReadyNode(document, node);
+      if (nodeArts && nodeArts.length > 0) {
+        return {
+          ...node,
+          runtimeState: {
+            ...baseState,
+            artifactIds: nodeArts.map((a) => a.id),
+          },
+        };
+      }
+      return { ...node, runtimeState: baseState };
+    }),
   };
 }
 

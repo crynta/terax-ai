@@ -39,6 +39,7 @@ describe("workflow execution planning", () => {
           type: "text",
           label: "Prompt",
           preview: "A cinematic robot pianist in a neon studio",
+          value: "A cinematic robot pianist in a neon studio",
         },
         {
           id: "wf_1:node_terminal:terminal",

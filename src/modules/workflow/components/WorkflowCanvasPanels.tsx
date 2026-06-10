@@ -34,18 +34,21 @@ const nodePalette: Array<{ type: WorkflowNodeType; label: string }> = [
   { type: "output", label: "Output" },
 ];
 
-export type WorkflowCanvasPanelsState = {
+export type WorkflowSavePhase = "idle" | "saving" | "unavailable";
+
+export type WorkflowRunPhase = "idle" | "running";
+
+type WorkflowCanvasPanelsState = {
   dirty: boolean;
   document: WorkflowDocument;
   previewArtifact: WorkflowArtifact | null;
   readyNodeCount: number;
   safeReadyNodeCount: number;
-  saveAsUnavailable: boolean;
-  savingFile: boolean;
+  runPhase: WorkflowRunPhase;
+  savePhase: WorkflowSavePhase;
   selectedNodeId: string | null;
   selectedNodeRunAvailable: boolean;
   workflowIoMessage: string | null;
-  workflowRunning: boolean;
 };
 
 export type WorkflowCanvasPanelsActions = {
@@ -182,11 +185,13 @@ function WorkflowRuntimePanel() {
     state: {
       document,
       readyNodeCount,
+      runPhase,
       safeReadyNodeCount,
       selectedNodeRunAvailable,
-      workflowRunning,
     },
   } = useWorkflowCanvasPanels();
+
+  const workflowRunning = runPhase === "running";
 
   return (
     <Panel
@@ -290,8 +295,11 @@ function WorkflowJsonPanel() {
       saveFile,
     },
     meta: { filePath, importInputRef, recentWorkflowFiles },
-    state: { dirty, saveAsUnavailable, savingFile, workflowIoMessage },
+    state: { dirty, savePhase, workflowIoMessage },
   } = useWorkflowCanvasPanels();
+
+  const savingFile = savePhase === "saving";
+  const saveAsUnavailable = savePhase === "unavailable";
 
   return (
     <Panel

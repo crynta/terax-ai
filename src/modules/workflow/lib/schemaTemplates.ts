@@ -121,6 +121,110 @@ export function workflowNodeTemplate(
       uiState: {},
     };
   }
+  if (type === "delay") {
+    return {
+      title: "Delay",
+      size: { width: 240, height: 140 },
+      inputs: [],
+      outputs: [{ id: "trigger", type: "text", label: "Trigger" }],
+      config: { seconds: 0 },
+      uiState: {},
+    };
+  }
+  if (type === "webhook") {
+    return {
+      title: "Webhook",
+      size: { width: 280, height: 160 },
+      inputs: [],
+      outputs: [
+        { id: "body", type: "json", label: "Body" },
+        { id: "headers", type: "json", label: "Headers" },
+        { id: "trigger", type: "text", label: "Trigger" },
+      ],
+      config: { path: "/", method: "POST" },
+      uiState: {},
+    };
+  }
+  if (type === "schedule") {
+    return {
+      title: "Schedule",
+      size: { width: 280, height: 150 },
+      inputs: [],
+      outputs: [{ id: "trigger", type: "text", label: "Trigger" }],
+      config: { cron: "" },
+      uiState: {},
+    };
+  }
+  if (type === "if") {
+    return {
+      title: "If",
+      size: { width: 260, height: 180 },
+      inputs: [{ id: "input", type: "text", label: "Input" }],
+      outputs: [
+        { id: "true", type: "text", label: "True" },
+        { id: "false", type: "text", label: "False" },
+      ],
+      config: { operator: "equals", value: "" },
+      uiState: {},
+    };
+  }
+  if (type === "switch") {
+    return {
+      title: "Switch",
+      size: { width: 300, height: 200 },
+      inputs: [{ id: "input", type: "text", label: "Input" }],
+      outputs: [
+        { id: "case_1", type: "text", label: "Case 1" },
+        { id: "case_2", type: "text", label: "Case 2" },
+        { id: "default", type: "text", label: "Default" },
+      ],
+      config: { operator: "equals", cases: "" },
+      uiState: {},
+    };
+  }
+  if (type === "merge") {
+    return {
+      title: "Merge",
+      size: { width: 260, height: 160 },
+      inputs: [
+        { id: "text_a", type: "text", label: "Text A" },
+        { id: "text_b", type: "text", label: "Text B" },
+      ],
+      outputs: [{ id: "text", type: "text", label: "Result" }],
+      config: { separator: "\n" },
+      uiState: {},
+    };
+  }
+  if (type === "setVariable") {
+    return {
+      title: "Set Variable",
+      size: { width: 260, height: 150 },
+      inputs: [{ id: "text", type: "text", label: "Input" }],
+      outputs: [{ id: "result", type: "text", label: "Result" }],
+      config: { variableName: "" },
+      uiState: {},
+    };
+  }
+  if (type === "getVariable") {
+    return {
+      title: "Get Variable",
+      size: { width: 260, height: 150 },
+      inputs: [{ id: "trigger", type: "text", label: "Trigger" }],
+      outputs: [{ id: "result", type: "text", label: "Result" }],
+      config: { variableName: "" },
+      uiState: {},
+    };
+  }
+  if (type === "textTransform") {
+    return {
+      title: "Text Transform",
+      size: { width: 280, height: 160 },
+      inputs: [{ id: "text", type: "text", label: "Input" }],
+      outputs: [{ id: "text", type: "text", label: "Result" }],
+      config: { template: "{{input}}" },
+      uiState: {},
+    };
+  }
   return {
     title: "Agent",
     size: { width: 300, height: 180 },

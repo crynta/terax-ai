@@ -24,7 +24,7 @@ export type WorkflowConnectionDragState = {
   toClient: WorkflowScreenPoint;
 };
 
-export type WorkflowNodeData = {
+type WorkflowNodeData = {
   workflowNodeId: string;
   nodeType: WorkflowNode["type"];
   title: string;

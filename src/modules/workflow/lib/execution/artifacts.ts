@@ -570,6 +570,15 @@ export function runtimeMessageForNode(node: WorkflowNode): string {
     return "HTTP request placeholder response ready";
   if (node.type === "fileOperation") return "File operation completed";
   if (node.type === "browserAutomation") return "Browser automation completed";
+  if (node.type === "delay") return "Delay completed";
+  if (node.type === "webhook") return "Webhook trigger ready";
+  if (node.type === "schedule") return "Schedule trigger ready";
+  if (node.type === "if") return "Condition evaluated";
+  if (node.type === "switch") return "Switch evaluated";
+  if (node.type === "merge") return "Inputs merged";
+  if (node.type === "setVariable") return "Variable set";
+  if (node.type === "getVariable") return "Variable read";
+  if (node.type === "textTransform") return "Text transformed";
   return "Node completed";
 }
 
@@ -590,6 +599,21 @@ export function artifactPreviewForNode(node: WorkflowNode): string {
   if (node.type === "browserAutomation") {
     return "Approved placeholder browser automation output";
   }
+  if (node.type === "delay") {
+    const seconds = node.config.seconds ?? 0;
+    return `Delayed ${seconds}s`;
+  }
+  if (node.type === "webhook") return "Webhook trigger ready";
+  if (node.type === "schedule") {
+    const cron = node.config.cron ?? "";
+    return cron ? `Schedule: ${cron}` : "Schedule trigger ready";
+  }
+  if (node.type === "if") return "Condition evaluated";
+  if (node.type === "switch") return "Switch evaluated";
+  if (node.type === "merge") return "Inputs merged";
+  if (node.type === "setVariable") return "Variable set";
+  if (node.type === "getVariable") return "Variable read";
+  if (node.type === "textTransform") return "Text transformed";
   return "Workflow artifact";
 }
 
@@ -605,4 +629,28 @@ export function collectInputArtifactIds(
     .flatMap(
       (edge) => byId.get(edge.sourceNodeId)?.runtimeState.artifactIds ?? [],
     );
+}
+
+export function forEachItemCount(
+  _document: WorkflowDocument,
+  node: WorkflowNode,
+): number {
+  const config = node.config as { items?: unknown[] } | null;
+  const items = config?.items;
+  return Array.isArray(items) ? items.length : 0;
+}
+
+export function forEachItemArtifacts(
+  document: WorkflowDocument,
+  node: WorkflowNode,
+): WorkflowArtifact[][] {
+  const count = forEachItemCount(document, node);
+  const artifacts: WorkflowArtifact[][] = [];
+  for (let i = 0; i < count; i++) {
+    const matching = document.artifacts.filter(
+      (a) => a.nodeId === node.id && (a.portId?.endsWith(`_${i}`) ?? i === 0),
+    );
+    artifacts.push(matching);
+  }
+  return artifacts;
 }

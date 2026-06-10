@@ -989,13 +989,16 @@ export function WorkflowCanvas({
               document,
               previewArtifact,
               readyNodeCount: readyNodeIds.length,
+              runPhase: workflowRunning ? "running" : "idle",
               safeReadyNodeCount: safeReadyNodeIds.length,
-              saveAsUnavailable: !onSaveAsDocument,
-              savingFile,
+              savePhase: savingFile
+                ? "saving"
+                : !onSaveAsDocument
+                  ? "unavailable"
+                  : "idle",
               selectedNodeId,
               selectedNodeRunAvailable,
               workflowIoMessage,
-              workflowRunning,
             }}
             actions={{
               addNode: handleAddNode,
