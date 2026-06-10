@@ -52,6 +52,8 @@ libc = "0.2"
 keyring = { version = "3.6", default-features = false, features = [
 	"apple-native",
 ] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [

@@ -5157,6 +5157,8 @@ dependencies = [
  "keyring",
  "libc",
  "log",
+ "objc2",
+ "objc2-foundation",
  "portable-pty",
  "reqwest 0.12.28",
  "serde",
