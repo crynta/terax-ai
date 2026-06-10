@@ -370,7 +370,7 @@ export function FileExplorer({
           <EntryRow
             path={row.path}
             name={row.name}
-            isDir={row.isDir}
+            kind={row.isDir ? "directory" : "file"}
             isExpanded={row.kind === "entry" ? row.isExpanded : false}
             depth={row.depth}
             rootPath={rootPath}

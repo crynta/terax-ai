@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { buildArtifactPreviewDocument } from "@/modules/artifacts/lib/preview";
 import { artifactPreviewRuntimeError } from "@/modules/artifacts/lib/previewMessages";
 import {
@@ -13,6 +13,7 @@ import type {
 type ArtifactPreviewFrameProps = {
   artifact: Artifact;
   className?: string;
+  iframeRef?: React.RefObject<HTMLIFrameElement | null>;
 };
 
 type ReactPreviewState =
@@ -25,6 +26,7 @@ type ReactPreviewState =
 export function ArtifactPreviewFrame({
   artifact,
   className,
+  iframeRef,
 }: ArtifactPreviewFrameProps) {
   const token = useId();
   const isReactArtifact = artifact.summary.kind === "react";
@@ -40,6 +42,7 @@ export function ArtifactPreviewFrame({
     status: "compiling",
     diagnostics: [],
   });
+  const internalIframeRef = useRef<HTMLIFrameElement>(null);
   const [runtimeErrors, setRuntimeErrors] = useState<string[]>([]);
 
   useEffect(() => {
@@ -116,6 +119,7 @@ export function ArtifactPreviewFrame({
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           srcDoc={reactPreview.document}
+          ref={iframeRef ?? internalIframeRef}
         />
       </>
     );
@@ -130,6 +134,7 @@ export function ArtifactPreviewFrame({
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
         srcDoc={document ?? ""}
+        ref={iframeRef ?? internalIframeRef}
       />
     </>
   );

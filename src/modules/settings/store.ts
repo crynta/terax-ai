@@ -26,6 +26,8 @@ export const DEFAULT_THEME_ID = "terax-default";
 export type BackgroundKind = "none" | "image";
 export type PiAuthMode = "terax" | "profile";
 
+export type PiSkillsMode = "off" | "project" | "selected";
+
 export const EDITOR_THEMES = [
   "atomone",
   "aura",

@@ -748,10 +748,30 @@ export function ModelComparePanel({
     !unsupportedMode;
   const canVote = modelCompareRunCanVote(run, resultActionsLocked);
   const canTie = modelCompareRunCanTie(run, resultActionsLocked);
+  const resultsPhase = resultActionsLocked
+    ? ("running" as const)
+    : canVote && canTie
+      ? ("votable" as const)
+      : canVote
+        ? ("votable-partial" as const)
+        : ("locked" as const);
   const canJudge = modelCompareRunCanJudge(run, resultActionsLocked);
   const hasDuplicateSelection =
     (compareMode === "models" || compareMode === "agent") &&
     new Set(selectedIds).size !== selectedIds.length;
+  const runPhase = saving
+    ? ("saving" as const)
+    : running
+      ? ("running" as const)
+      : busy
+        ? ("busy" as const)
+        : ("idle" as const);
+  const probePhase = probing ? ("probing" as const) : ("idle" as const);
+  const judgePhase = judging
+    ? ("judging" as const)
+    : canJudge
+      ? ("idle" as const)
+      : ("unavailable" as const);
 
   return (
     <>
@@ -786,23 +806,20 @@ export function ModelComparePanel({
           <ModelCompareSetupProvider
             state={{
               blind,
-              busy,
-              canJudge,
               canStart,
               compareMode,
               hasDuplicateSelection,
               judgeModelId,
               judgeRubric,
-              judging,
+              judgePhase,
               parallel,
-              probing,
               probeCandidateCount: probeCandidates.length,
+              probePhase,
               probeResults,
               prompt,
               promptVariants,
               run,
-              running,
-              saving,
+              runPhase,
               selectedCandidates,
               selectedIds,
               unsupportedMode,
@@ -835,9 +852,7 @@ export function ModelComparePanel({
 
           <ModelCompareResultsSection
             run={run}
-            running={resultActionsLocked}
-            canVote={canVote}
-            canTie={canTie}
+            resultsPhase={resultsPhase}
             onReveal={reveal}
             onRerunPane={rerunPane}
             onCopyPane={copyPane}

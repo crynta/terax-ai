@@ -42,25 +42,26 @@ import {
   SAMPLE_PROMPT,
 } from "./ModelComparePanelUtils";
 
+export type ModelCompareRunPhase = "idle" | "running" | "busy" | "saving";
+
+export type ModelCompareJudgePhase = "idle" | "judging" | "unavailable";
+
 export type ModelCompareSetupState = {
   blind: boolean;
-  busy: boolean;
-  canJudge: boolean;
   canStart: boolean;
   compareMode: ModelCompareMode;
   hasDuplicateSelection: boolean;
   judgeModelId: string;
   judgeRubric: string;
-  judging: boolean;
+  judgePhase: ModelCompareJudgePhase;
   parallel: boolean;
-  probing: boolean;
   probeCandidateCount: number;
+  probePhase: "idle" | "probing";
   probeResults: Record<string, ProbeUiState>;
   prompt: string;
   promptVariants: string[];
   run: ModelCompareRun | null;
-  running: boolean;
-  saving: boolean;
+  runPhase: ModelCompareRunPhase;
   selectedCandidates: CompareCandidate[];
   selectedIds: string[];
   unsupportedMode: boolean;
@@ -475,16 +476,19 @@ function ModelCompareActionGrid() {
   const {
     actions: { copyAll, copyWinner, probeSelected, saveArtifact, start, stop },
     state: {
-      busy,
       canStart,
       hasDuplicateSelection,
       probeCandidateCount,
-      probing,
+      probePhase,
       run,
-      running,
-      saving,
+      runPhase,
     },
   } = useModelCompareSetup();
+
+  const running = runPhase === "running";
+  const busy = runPhase === "busy" || runPhase === "saving";
+  const probing = probePhase === "probing";
+  const saving = runPhase === "saving";
 
   return (
     <>
@@ -608,8 +612,12 @@ function ModelCompareJudgeSection() {
   const {
     actions: { judgeRun, setJudgeModelId, setJudgeRubric },
     meta: { candidates },
-    state: { busy, canJudge, judgeModelId, judgeRubric, judging, run },
+    state: { judgeModelId, judgePhase, judgeRubric, run, runPhase },
   } = useModelCompareSetup();
+
+  const busy = runPhase === "busy" || runPhase === "saving";
+  const canJudge = judgePhase === "idle";
+  const judging = judgePhase === "judging";
 
   return (
     <section className="mt-3 flex flex-col gap-2 rounded-xl border border-border/60 bg-background/40 p-2.5">

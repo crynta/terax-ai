@@ -26,13 +26,14 @@ type Props = {
   visible: boolean;
   onUrlChange: (url: string) => void;
   ref?: Ref<PreviewPaneHandle>;
+  iframeRef?: React.RefObject<HTMLIFrameElement | null>;
 };
 
 // Tear the iframe down after this much invisibility — a background dev
 // server page can hold hundreds of MB inside the WebView.
 const SUSPEND_AFTER_MS = 30_000;
 
-export function PreviewPane({ url, visible, onUrlChange, ref }: Props) {
+export function PreviewPane({ url, visible, onUrlChange, ref, iframeRef }: Props) {
   // `nonce` is part of the iframe `key`. Bumping it remounts the iframe,
   // which is the only reliable cross-origin reload (calling
   // contentWindow.location.reload() throws on cross-origin frames).
@@ -119,6 +120,7 @@ export function PreviewPane({ url, visible, onUrlChange, ref }: Props) {
               // which would otherwise expose `window.__TAURI__` IPC.
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
               referrerPolicy="no-referrer"
+              ref={iframeRef}
               allow="clipboard-read; clipboard-write; fullscreen"
             />
           ) : (

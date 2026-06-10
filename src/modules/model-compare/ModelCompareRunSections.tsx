@@ -24,25 +24,31 @@ import {
   winnerLabel,
 } from "./ModelComparePanelUtils";
 
+export type ModelCompareResultsPhase =
+  | "running"
+  | "votable"
+  | "votable-partial"
+  | "locked";
+
 export function ModelCompareResultsSection({
   run,
-  running,
-  canVote,
-  canTie,
+  resultsPhase,
   onReveal,
   onRerunPane,
   onCopyPane,
   onVote,
 }: {
   run: ModelCompareRun | null;
-  running: boolean;
-  canVote: boolean;
-  canTie: boolean;
+  resultsPhase: ModelCompareResultsPhase;
   onReveal: () => void;
   onRerunPane: (paneId: string) => void | Promise<void>;
   onCopyPane: (pane: ModelComparePane) => void | Promise<void>;
   onVote: (paneId: string | "tie") => void;
 }) {
+  const running = resultsPhase === "running";
+  const canVote =
+    resultsPhase === "votable" || resultsPhase === "votable-partial";
+  const canTie = resultsPhase === "votable";
   if (!run) return null;
 
   return (

@@ -22,11 +22,9 @@ import type { useFileTree } from "./lib/useFileTree";
 
 type Tree = ReturnType<typeof useFileTree>;
 
-export type EntryRowProps = {
+type EntryBase = {
   path: string;
   name: string;
-  isDir: boolean;
-  isExpanded: boolean;
   depth: number;
   rootPath: string;
   tree: Tree;
@@ -39,6 +37,17 @@ export type EntryRowProps = {
   onOpenMarkdownPreview?: (path: string) => void;
 };
 
+export type FileEntryRowProps = EntryBase & {
+  kind: "file";
+};
+
+export type DirectoryEntryRowProps = EntryBase & {
+  kind: "directory";
+  isExpanded: boolean;
+};
+
+export type EntryRowProps = FileEntryRowProps | DirectoryEntryRowProps;
+
 function isMarkdownPath(path: string): boolean {
   return /\.(md|markdown|mdx)$/i.test(path);
 }
@@ -47,8 +56,6 @@ function EntryRowImpl(props: EntryRowProps) {
   const {
     path,
     name,
-    isDir,
-    isExpanded,
     depth,
     rootPath,
     tree,
@@ -61,6 +68,8 @@ function EntryRowImpl(props: EntryRowProps) {
     onOpenMarkdownPreview,
   } = props;
 
+  const isDir = props.kind === "directory";
+  const isExpanded = isDir ? props.isExpanded : false;
   const [isConfirming, setIsConfirming] = useState(false);
   const iconUrl = isDir ? folderIconUrl(name, isExpanded) : fileIconUrl(name);
   const createTarget = isDir

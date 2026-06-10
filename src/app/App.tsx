@@ -48,6 +48,7 @@ import { AppSidebars } from "./AppSidebars";
 import {
   AppFloatingSurfaces,
   AppWorkspaceSurface,
+  type SurfaceTabKind,
 } from "./AppWorkspaceSurface";
 import {
   piSessionActivationPlan,
@@ -620,24 +621,39 @@ export default function App() {
     terminalRefs,
   });
 
+  const activeSurfaces = useMemo<ReadonlySet<SurfaceTabKind>>(() => {
+    const kinds: SurfaceTabKind[] = [];
+    if (isTerminalTab) kinds.push("terminal");
+    if (isEditorTab) kinds.push("editor");
+    if (isPreviewTab) kinds.push("preview");
+    if (isMarkdownTab) kinds.push("markdown");
+    if (isAiDiffTab) kinds.push("ai-diff");
+    if (isGitDiffTab) kinds.push("git-diff");
+    if (isGitHistoryTab) kinds.push("git-history");
+    if (isWorkflowTab) kinds.push("workflow");
+    if (isArtifactTab) kinds.push("artifact");
+    if (isPiWorkspaceTab) kinds.push("pi-workspace");
+    return new Set(kinds);
+  }, [
+    isTerminalTab,
+    isEditorTab,
+    isPreviewTab,
+    isMarkdownTab,
+    isAiDiffTab,
+    isGitDiffTab,
+    isGitHistoryTab,
+    isWorkflowTab,
+    isArtifactTab,
+    isPiWorkspaceTab,
+  ]);
+
   const workspaceSurface = (
     <AppWorkspaceSurface
       activeId={activeId}
       activeTab={activeTab}
       codePanelContext={codePanelContext}
       codeSurface={codeSurface}
-      flags={{
-        artifact: isArtifactTab,
-        aiDiff: isAiDiffTab,
-        editor: isEditorTab,
-        gitDiff: isGitDiffTab,
-        gitHistory: isGitHistoryTab,
-        markdown: isMarkdownTab,
-        piWorkspace: isPiWorkspaceTab,
-        preview: isPreviewTab,
-        terminal: isTerminalTab,
-        workflow: isWorkflowTab,
-      }}
+      activeSurfaces={activeSurfaces}
       tabs={tabs}
       terminal={{
         registerHandle: registerTerminalHandle,

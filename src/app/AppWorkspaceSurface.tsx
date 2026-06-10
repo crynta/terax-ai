@@ -15,23 +15,24 @@ import { TerminalStack } from "@/modules/terminal";
 import { WorkflowStack } from "@/modules/workflow/WorkflowStackLazy";
 import type { CodePanelContext, CodeSurface } from "./codeSurface";
 
+export type SurfaceTabKind =
+  | "ai-diff"
+  | "artifact"
+  | "editor"
+  | "git-diff"
+  | "git-history"
+  | "markdown"
+  | "pi-workspace"
+  | "preview"
+  | "terminal"
+  | "workflow";
+
 type AppWorkspaceSurfaceProps = {
   activeId: number;
   activeTab: Tab | undefined;
   codePanelContext: CodePanelContext;
   codeSurface: CodeSurface;
-  flags: {
-    artifact: boolean;
-    aiDiff: boolean;
-    editor: boolean;
-    gitDiff: boolean;
-    gitHistory: boolean;
-    markdown: boolean;
-    piWorkspace: boolean;
-    preview: boolean;
-    terminal: boolean;
-    workflow: boolean;
-  };
+  activeSurfaces: ReadonlySet<SurfaceTabKind>;
   tabs: Tab[];
   terminal: Pick<
     ComponentProps<typeof TerminalStack>,
@@ -90,8 +91,8 @@ export function AppWorkspaceSurface({
   artifact,
   codePanelContext,
   codeSurface,
+  activeSurfaces,
   editor,
-  flags,
   gitHistory,
   pi,
   preview,
@@ -101,31 +102,33 @@ export function AppWorkspaceSurface({
 }: AppWorkspaceSurfaceProps) {
   return (
     <div className="relative h-full min-h-0">
-      <div {...surfaceProps(flags.terminal)}>
+      <div {...surfaceProps(activeSurfaces.has("terminal"))}>
         <TerminalStack tabs={tabs} activeId={activeId} {...terminal} />
       </div>
-      <div {...surfaceProps(flags.editor)}>
+      <div {...surfaceProps(activeSurfaces.has("editor"))}>
         <EditorStack tabs={tabs} activeId={activeId} {...editor} />
       </div>
-      <div {...surfaceProps(flags.preview)}>
+      <div {...surfaceProps(activeSurfaces.has("preview"))}>
         <PreviewStack tabs={tabs} activeId={activeId} {...preview} />
       </div>
-      <div {...surfaceProps(flags.markdown)}>
+      <div {...surfaceProps(activeSurfaces.has("markdown"))}>
         <MarkdownStack tabs={tabs} activeId={activeId} />
       </div>
-      <div {...surfaceProps(flags.aiDiff)}>
+      <div {...surfaceProps(activeSurfaces.has("ai-diff"))}>
         <AiDiffStack tabs={tabs} activeId={activeId} {...aiDiff} />
       </div>
-      <div {...surfaceProps(flags.gitDiff)}>
+      <div {...surfaceProps(activeSurfaces.has("git-diff"))}>
         <GitDiffStack tabs={tabs} activeId={activeId} />
       </div>
-      <div {...surfaceProps(flags.gitHistory, "absolute inset-0")}>
+      <div
+        {...surfaceProps(activeSurfaces.has("git-history"), "absolute inset-0")}
+      >
         <GitHistoryStack tabs={tabs} activeId={activeId} {...gitHistory} />
       </div>
-      <div {...surfaceProps(flags.workflow)}>
+      <div {...surfaceProps(activeSurfaces.has("workflow"))}>
         <WorkflowStack tabs={tabs} activeId={activeId} {...workflow} />
       </div>
-      <div {...surfaceProps(flags.artifact)}>
+      <div {...surfaceProps(activeSurfaces.has("artifact"))}>
         {activeTab?.kind === "artifact" ? (
           <ArtifactWorkspacePanel
             conversationId={activeTab.conversationId}
@@ -138,8 +141,13 @@ export function AppWorkspaceSurface({
           <ArtifactHubPanel onOpenArtifact={artifact.onOpenArtifact} />
         ) : null}
       </div>
-      <div {...surfaceProps(flags.piWorkspace, "absolute inset-0 p-2")}>
-        {codeSurface === "workspace" && flags.piWorkspace ? (
+      <div
+        {...surfaceProps(
+          activeSurfaces.has("pi-workspace"),
+          "absolute inset-0 p-2",
+        )}
+      >
+        {codeSurface === "workspace" && activeSurfaces.has("pi-workspace") ? (
           <PiPanel
             workspaceRoot={codePanelContext.workspaceRoot}
             activeCwd={codePanelContext.activeCwd}
@@ -147,7 +155,7 @@ export function AppWorkspaceSurface({
             activeTerminalPrivate={codePanelContext.activeTerminalPrivate}
             {...pi}
           />
-        ) : flags.piWorkspace ? (
+        ) : activeSurfaces.has("pi-workspace") ? (
           <SidebarPlaceholderPanel
             title="Code"
             description="Code chat is open in another surface."

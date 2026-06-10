@@ -298,9 +298,15 @@ export function AiInputBar() {
             <FilePickerContent
               files={filteredFiles}
               activeIndex={activeIndex}
-              indexing={workspaceFiles.indexing}
-              truncated={workspaceFiles.truncated}
-              hasWorkspace={workspaceRoot !== null}
+              workspace={
+                workspaceRoot === null
+                  ? { open: false }
+                  : {
+                      open: true,
+                      indexing: workspaceFiles.indexing,
+                      truncated: workspaceFiles.truncated,
+                    }
+              }
               onPick={(f) => void onPickFile(f)}
               onHover={setActiveIndex}
             />
