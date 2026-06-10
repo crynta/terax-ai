@@ -45,7 +45,10 @@ impl IdleShutdownController {
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
         let controller = self.clone();
         let timeout = self.timeout;
-        tokio::spawn(async move {
+        // Use Tauri's managed runtime rather than `tokio::spawn`: this is reached
+        // from the synchronous `pi_start` command on the main thread, where there
+        // is no ambient Tokio reactor (tokio::spawn would panic and abort the app).
+        tauri::async_runtime::spawn(async move {
             tokio::time::sleep(timeout).await;
             if controller.generation.load(Ordering::Relaxed) != generation {
                 return;
@@ -571,5 +574,22 @@ fn error_snapshot(detail: String) -> PiRuntimeSnapshot {
     PiRuntimeSnapshot {
         phase: PiPhase::Error,
         detail: Some(detail),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Regression: pi_start is a *synchronous* Tauri command, so the idle-shutdown
+    // scheduler runs on the main thread with no ambient Tokio runtime. It must
+    // spawn on Tauri's managed runtime rather than `tokio::spawn`, which panics
+    // with "there is no reactor running" and aborts the whole app on startup.
+    #[test]
+    fn schedule_idle_shutdown_does_not_require_an_ambient_runtime() {
+        let controller = IdleShutdownController::with_timeout(Duration::from_secs(60));
+        let host_slot = Arc::new(Mutex::new(None));
+        let history_path = Arc::new(Mutex::new(None));
+        controller.schedule(host_slot, history_path);
     }
 }
