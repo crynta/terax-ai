@@ -226,6 +226,36 @@ async function buildLocalNode() {
   };
 }
 
+// Strip debug symbols from the Node binary. The official Node distribution
+// ships an unstripped binary (~120MB on arm64); removing local symbols cuts
+// roughly a third with no runtime impact. macOS arm64 binaries must carry a
+// valid signature to execute, and `strip` invalidates it, so we re-sign
+// ad-hoc afterward (Tauri re-signs with the real identity at bundle time).
+async function stripNodeBinary(binaryPath) {
+  if (process.platform === "win32") {
+    return { stripped: false, reason: "windows-unsupported" };
+  }
+
+  try {
+    if (process.platform === "darwin") {
+      // -x removes local symbols only; keeps the binary fully functional.
+      await run("strip", ["-x", binaryPath]);
+      // strip invalidated the signature — ad-hoc re-sign so it can run.
+      await run("codesign", ["--force", "--sign", "-", binaryPath]);
+    } else {
+      await run("strip", [binaryPath]);
+    }
+    return { stripped: true };
+  } catch (error) {
+    // Never break the build over an optional size optimization; the
+    // unstripped binary remains valid and functional.
+    console.warn(
+      `[node-runtime] Skipped stripping Node binary: ${error.message}`,
+    );
+    return { stripped: false, reason: "strip-failed" };
+  }
+}
+
 async function assertRuntimeFile(relativePath) {
   const path = join(tempDir, relativePath);
   if (!(await pathExists(path))) {
@@ -270,6 +300,9 @@ export async function buildNodeRuntime(argv = process.argv.slice(2)) {
         : await buildLocalNode();
 
     await assertRuntimeFile(nodeBinaryRelativePath());
+    const stripResult = await stripNodeBinary(
+      join(tempDir, nodeBinaryRelativePath()),
+    );
     await writeFile(join(tempDir, ".gitkeep"), "");
     await writeFile(
       join(tempDir, "runtime-manifest.json"),
@@ -280,6 +313,7 @@ export async function buildNodeRuntime(argv = process.argv.slice(2)) {
           platform: process.platform,
           arch: process.arch,
           executable: nodeBinaryRelativePath(),
+          stripped: stripResult.stripped,
           ...manifest,
         },
         null,
