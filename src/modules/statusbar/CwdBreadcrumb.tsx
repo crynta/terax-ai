@@ -34,13 +34,13 @@ type Props = {
 };
 
 function dirname(path: string): string {
-  const i = path.lastIndexOf("/");
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   if (i <= 0) return "/";
   return path.slice(0, i);
 }
 
 function basename(path: string): string {
-  const i = path.lastIndexOf("/");
+  const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   return i === -1 ? path : path.slice(i + 1);
 }
 

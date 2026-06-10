@@ -1,6 +1,8 @@
-export { TabBar } from "./TabBar";
+export { TabBar, TabIcon } from "./TabBar";
+export { labelFor } from "./lib/tabLabel";
 export {
   MAX_PANES_PER_TAB,
+  DEFAULT_SPACE_ID,
   useTabs,
   type Tab,
   type TerminalTab,
@@ -15,3 +17,4 @@ export {
   type TabPatch,
 } from "./lib/useTabs";
 export { useWorkspaceCwd } from "./lib/useWorkspaceCwd";
+export { useWindowTitle } from "./lib/useWindowTitle";

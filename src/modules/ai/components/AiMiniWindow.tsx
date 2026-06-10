@@ -27,12 +27,15 @@ import {
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { motion } from "motion/react";
+import type { PresenceState } from "@/lib/usePresence";
 import { useEffect, useMemo } from "react";
-import { estimateCost, getModel, getModelContextLimit } from "../config";
+import { estimateCost, getModel, getModelContextLimit, type ModelId } from "../config";
+import type { ResizeDir } from "../lib/miniWindowGeometry";
 import type { SessionMeta } from "../lib/sessions";
+import { useMiniWindowGeometry } from "../lib/useMiniWindowGeometry";
 import { useAgentsStore } from "../store/agentsStore";
-import { getOrCreateChat, useChatStore } from "../store/chatStore";
+import { useChatStore } from "../store/chatStore";
+import { getOrCreateChat } from "../store/chatRuntime";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { usePlanStore } from "../store/planStore";
 import { AgentSwitcher } from "./AgentSwitcher";
@@ -61,7 +64,7 @@ const SUGGESTIONS = [
   },
 ];
 
-export function AiMiniWindow() {
+export function AiMiniWindow({ state }: { state: PresenceState }) {
   const closeMini = useChatStore((s) => s.closeMini);
   const sessionId = useChatStore((s) => s.activeSessionId);
   const openPanel = useChatStore((s) => s.openPanel);
@@ -69,6 +72,8 @@ export function AiMiniWindow() {
     closeMini();
     openPanel();
   };
+
+  const { ref, onHeaderPointerDown, startResize } = useMiniWindowGeometry();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -84,35 +89,72 @@ export function AiMiniWindow() {
   }, [closeMini]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 12, scale: 0.98 }}
-      transition={{ type: "spring", stiffness: 320, damping: 32 }}
+    <div
+      ref={ref}
+      data-state={state}
       data-ai-mini-window
       className={cn(
-        "no-scrollbar-deep fixed right-4 bottom-24 z-40 flex flex-col overflow-hidden",
-        "h-[min(42rem,calc(100vh-7rem))] w-[min(34rem,calc(100vw-2rem))]",
+        "no-scrollbar-deep fixed z-40 flex flex-col overflow-hidden",
         "rounded-2xl border border-border/60 bg-card text-[12px]",
         "shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_24px_48px_-12px_rgba(0,0,0,0.45),0_8px_16px_-8px_rgba(0,0,0,0.3)]",
         "ring-1 ring-black/5 dark:ring-white/5",
+        "duration-200 ease-out",
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-bottom-2",
+        "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-bottom-2",
       )}
     >
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-foreground/[0.03] to-transparent"
       />
+      {RESIZE_DIRS.map((dir) => (
+        <ResizeHandle key={dir} dir={dir} onPointerDown={startResize(dir)} />
+      ))}
       {sessionId ? (
         <Body
           sessionId={sessionId}
           onClose={closeMini}
           onExpand={expandToPanel}
+          onHeaderPointerDown={onHeaderPointerDown}
         />
       ) : (
-        <EmptyShell onClose={closeMini} onExpand={expandToPanel} />
+        <EmptyShell
+          onClose={closeMini}
+          onExpand={expandToPanel}
+          onHeaderPointerDown={onHeaderPointerDown}
+        />
       )}
       <PlanDiffReview />
-    </motion.div>
+    </div>
+  );
+}
+
+const RESIZE_HANDLE_CLASS: Record<ResizeDir, string> = {
+  n: "top-0 left-3 right-3 h-1.5 cursor-ns-resize",
+  s: "bottom-0 left-3 right-3 h-1.5 cursor-ns-resize",
+  w: "top-3 bottom-3 left-0 w-1.5 cursor-ew-resize",
+  e: "top-3 bottom-3 right-0 w-1.5 cursor-ew-resize",
+  nw: "top-0 left-0 size-3 cursor-nwse-resize",
+  ne: "top-0 right-0 size-3 cursor-nesw-resize",
+  sw: "bottom-0 left-0 size-3 cursor-nesw-resize",
+  se: "bottom-0 right-0 size-3 cursor-nwse-resize",
+};
+
+const RESIZE_DIRS: ResizeDir[] = ["n", "s", "w", "e", "nw", "ne", "sw", "se"];
+
+function ResizeHandle({
+  dir,
+  onPointerDown,
+}: {
+  dir: ResizeDir;
+  onPointerDown: (e: React.PointerEvent) => void;
+}) {
+  return (
+    <div
+      data-no-drag
+      onPointerDown={onPointerDown}
+      className={cn("absolute z-50 touch-none select-none", RESIZE_HANDLE_CLASS[dir])}
+    />
   );
 }
 
@@ -120,10 +162,12 @@ function Body({
   sessionId,
   onClose,
   onExpand,
+  onHeaderPointerDown,
 }: {
   sessionId: string;
   onClose: () => void;
   onExpand: () => void;
+  onHeaderPointerDown: (e: React.PointerEvent) => void;
 }) {
   const focusInput = useChatStore((s) => s.focusInput);
   const step = useChatStore((s) => s.agentMeta.step);
@@ -141,6 +185,7 @@ function Body({
         onClose={onClose}
         onExpand={onExpand}
         messages={helpers.messages}
+        onHeaderPointerDown={onHeaderPointerDown}
       />
 
       <PlanModeStrip />
@@ -194,9 +239,11 @@ function PlanModeStrip() {
 function EmptyShell({
   onClose,
   onExpand,
+  onHeaderPointerDown,
 }: {
   onClose: () => void;
   onExpand: () => void;
+  onHeaderPointerDown: (e: React.PointerEvent) => void;
 }) {
   return (
     <>
@@ -205,6 +252,7 @@ function EmptyShell({
         isBusy={false}
         onClose={onClose}
         onExpand={onExpand}
+        onHeaderPointerDown={onHeaderPointerDown}
       />
       <div className="flex flex-1 items-center justify-center text-[11px] text-muted-foreground">
         Loading sessions…
@@ -218,18 +266,23 @@ function Header({
   isBusy,
   onClose,
   messages,
+  onHeaderPointerDown,
 }: {
   step: string | null;
   isBusy: boolean;
   onClose: () => void;
   onExpand: () => void;
   messages?: UIMessage[];
+  onHeaderPointerDown: (e: React.PointerEvent) => void;
 }) {
   const customAgents = useAgentsStore((s) => s.customAgents);
   void customAgents;
 
   return (
-    <div className="relative flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
+    <div
+      onPointerDown={onHeaderPointerDown}
+      className="relative flex h-11 shrink-0 cursor-grab items-center justify-between gap-2 border-b border-border/60 px-3 active:cursor-grabbing"
+    >
       <div className="flex min-w-0 items-center gap-1.5">
         <AgentSwitcher isMiniWindow />
         {messages !== undefined ? (
@@ -298,7 +351,7 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   const max = getModelContextLimit(modelId, openaiCompatibleContextLimit);
   const modelLabel = useMemo(() => {
     try {
-      return getModel(modelId).label;
+      return getModel(modelId as ModelId).label;
     } catch {
       return modelId;
     }

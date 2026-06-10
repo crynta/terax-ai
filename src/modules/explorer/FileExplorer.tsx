@@ -36,10 +36,12 @@ import { useGlobalShortcuts } from "@/modules/shortcuts";
 export type FileExplorerHandle = {
   focus: () => void;
   isFocused: () => boolean;
+  focusSearch: () => void;
 };
 
 type Props = {
   rootPath: string | null;
+  activeFilePath?: string | null;
   onOpenFile: (path: string, pin?: boolean) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
@@ -147,6 +149,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
   function FileExplorer(
     {
       rootPath,
+      activeFilePath,
       onOpenFile,
       onPathRenamed,
       onPathDeleted,
@@ -198,6 +201,17 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       [entryIndexByPath, virtualizer],
     );
 
+    const lastSyncedActivePathRef = useRef<string | null>(null);
+    useEffect(() => {
+      if (!activeFilePath || activeFilePath === lastSyncedActivePathRef.current) {
+        return;
+      }
+      if (!entryIndexByPath.has(activeFilePath)) return;
+      lastSyncedActivePathRef.current = activeFilePath;
+      setSelectedPath(activeFilePath);
+      requestAnimationFrame(() => scrollEntryIntoView(activeFilePath));
+    }, [activeFilePath, entryIndexByPath, scrollEntryIntoView]);
+
     useImperativeHandle(
       ref,
       () => ({
@@ -214,6 +228,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
           if (!c) return false;
           const active = document.activeElement;
           return active instanceof Node && c.contains(active);
+        },
+        focusSearch: () => {
+          setIsSearchOpen(true);
+          searchRef.current?.focus();
         },
       }),
       [entryPaths, scrollEntryIntoView, selectedPath],

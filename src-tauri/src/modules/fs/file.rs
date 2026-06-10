@@ -1,6 +1,6 @@
-use std::io::Write;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
+use std::{fs, io::Write};
 
 use serde::Serialize;
 use tauri::Emitter;
@@ -108,12 +108,15 @@ pub fn fs_write_file(
 ) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let target = resolve_path(&path, &workspace);
-
+    let original_permissions = fs::metadata(&target).ok().map(|m| m.permissions());
     write_atomic(&target, content.as_bytes()).map_err(|e| {
         log::warn!("fs_write_file({}) failed: {e}", target.display());
         e.to_string()
     })?;
 
+    if let Some(perms) = original_permissions {
+        let _ = fs::set_permissions(&target, perms);
+    }
     let _ = app.emit(
         "fs:file-written",
         FileWrittenEvent {
@@ -130,11 +133,7 @@ pub fn fs_canonicalize(path: String, workspace: Option<WorkspaceEnv>) -> Result<
     let workspace = WorkspaceEnv::from_option(workspace);
     let p = resolve_path(&path, &workspace);
     let canon = std::fs::canonicalize(&p).map_err(|e| e.to_string())?;
-    // Strip the Windows `\\?\` extended-length prefix so the frontend's
-    // path comparator sees the same form regardless of OS.
-    let s = canon.to_string_lossy().to_string();
-    let s = s.strip_prefix(r"\\?\").unwrap_or(&s).to_string();
-    Ok(s.replace('\\', "/"))
+    Ok(super::to_canon(&canon))
 }
 
 #[tauri::command]
@@ -162,10 +161,46 @@ pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat
     })
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::symlink;
+
+    #[test]
+    fn read_file_classifies_utf8_as_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("a.txt");
+        std::fs::write(&f, b"hello world").unwrap();
+        match fs_read_file(f.to_string_lossy().into_owned(), None).unwrap() {
+            ReadResult::Text { content, size } => {
+                assert_eq!(content, "hello world");
+                assert_eq!(size, 11);
+            }
+            _ => panic!("expected text"),
+        }
+    }
+
+    #[test]
+    fn read_file_detects_binary_via_null_byte() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("a.bin");
+        std::fs::write(&f, b"PNG\0\x89image").unwrap();
+        assert!(matches!(
+            fs_read_file(f.to_string_lossy().into_owned(), None).unwrap(),
+            ReadResult::Binary { .. }
+        ));
+    }
+
+    #[test]
+    fn read_file_detects_binary_via_invalid_utf8() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("a.bin");
+        // Invalid UTF-8 with no null byte: must still classify as binary.
+        std::fs::write(&f, [0xff, 0xfe, 0xfd, 0xfc]).unwrap();
+        assert!(matches!(
+            fs_read_file(f.to_string_lossy().into_owned(), None).unwrap(),
+            ReadResult::Binary { .. }
+        ));
+    }
 
     #[test]
     fn overwrites_existing_target() {
@@ -176,8 +211,10 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"new");
     }
 
+    #[cfg(unix)]
     #[test]
     fn does_not_follow_legacy_staging_symlink() {
+        use std::os::unix::fs::symlink;
         let dir = tempfile::tempdir().unwrap();
         let outside = dir.path().join("outside.txt");
         std::fs::write(&outside, b"untouched").unwrap();

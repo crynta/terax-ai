@@ -71,3 +71,41 @@ impl Drop for PtyJob {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn create_for_invalid_pid_errors() {
+        match PtyJob::create_for(0xFFFFFFFE) {
+            Err(_) => {}
+            Ok(_) => panic!("invalid pid must error"),
+        }
+    }
+
+    #[test]
+    fn drop_kills_assigned_process_tree() {
+        let mut child = Command::new("cmd.exe")
+            .args(["/C", "ping -n 30 127.0.0.1 > nul"])
+            .spawn()
+            .expect("spawn cmd.exe");
+
+        let job = PtyJob::create_for(child.id()).expect("create job");
+        drop(job);
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            match child.try_wait().expect("try_wait") {
+                Some(_) => break,
+                None if Instant::now() >= deadline => {
+                    let _ = child.kill();
+                    panic!("child survived 3s after PtyJob drop");
+                }
+                None => std::thread::sleep(Duration::from_millis(50)),
+            }
+        }
+    }
+}

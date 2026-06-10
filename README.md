@@ -9,6 +9,14 @@
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
   </p>
+
+  <p>
+    <a href="https://terax.app">Website</a>
+    ·
+    <a href="https://terax.app/docs">Docs</a>
+    ·
+    <a href="https://github.com/crynta/Terax-website">Website's source code</a>
+  </p>
 </div>
 
 ---
@@ -89,8 +97,8 @@ Latest installers are on the [Releases](https://github.com/crynta/terax-ai/relea
 
 ### Windows notes
 
-- On first launch Windows shows "Windows protected your PC" because Terax isn't code-signed yet (will be fixed soon). Click **More info** then **Run anyway**.
-- Default shell detection: `pwsh.exe` (PowerShell 7+) -> `powershell.exe` (Windows PowerShell 5.1), -> `cmd.exe`.
+- On first launch Windows shows "Windows protected your PC" because Terax isn't code-signed yet. Click **More info** then **Run anyway**.
+- Default shell detection: `pwsh.exe` (PowerShell 7+) -> `powershell.exe` (Windows PowerShell 5.1) -> `cmd.exe`.
 - WSL is a first-class workspace environment, not a wrapped subprocess.
 
 ### Linux notes
@@ -120,13 +128,14 @@ pnpm tauri build        # production bundle
 
 **Checks**
 ```bash
-pnpm exec tsc --noEmit          # frontend type-check
-cd src-tauri && cargo clippy    # Rust lint
+pnpm exec tsc --noEmit                                            # frontend type-check
+cd src-tauri && cargo clippy --all-targets --locked -D warnings   # Rust lint (matches CI)
+cd src-tauri && cargo test --locked                               # Rust tests
 ```
 
 ## Tech stack
 
-Tauri 2, Rust, `portable-pty`, React 19, TypeScript, xterm.js, CodeMirror 6, Vercel AI SDK v6, Tailwind v4, shadcn/ui, Zustand.
+Tauri 2, Rust, `portable-pty`, React 19, TypeScript, Vite, xterm.js, CodeMirror 6, Vercel AI SDK v6, Tailwind v4, shadcn/ui, Zustand.
 
 ## Contributing
 
@@ -135,3 +144,15 @@ Issues and PRs are welcome! Feel free to open issues, suggest features, or submi
 ## License
 
 Terax is licensed under the Apache-2.0 License. For more information on our dependencies, see [Apache License 2.0](LICENSE).
+
+## Star history
+
+<div align="center">
+  <a href="https://www.star-history.com/#crynta/terax-ai&Date">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=crynta/terax-ai&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=crynta/terax-ai&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=crynta/terax-ai&type=Date" />
+    </picture>
+  </a>
+</div>

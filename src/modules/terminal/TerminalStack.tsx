@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { PaneTreeView } from "./PaneTreeView";
 import type { TerminalPaneHandle } from "./TerminalPane";
 import { leafIds } from "./lib/panes";
+import { selectLiveTerminals } from "./lib/liveTerminals";
 
 type Props = {
   tabs: Tab[];
@@ -32,10 +33,7 @@ export function TerminalStack({
   onExit,
   onFocusLeaf,
 }: Props) {
-  const terminals = useMemo(
-    () => tabs.filter((t) => t.kind === "terminal"),
-    [tabs],
-  );
+  const terminals = useMemo(() => selectLiveTerminals(tabs), [tabs]);
 
   const registerRef = useRef(registerHandle);
   const searchReadyRef = useRef(onSearchReady);
@@ -95,6 +93,7 @@ export function TerminalStack({
               node={t.paneTree}
               tabVisible={tabVisible}
               activeLeafId={t.activeLeafId}
+              blocks={t.blocks ?? false}
               onFocusLeaf={(leafId) => onFocusLeaf(t.id, leafId)}
               getBundle={getBundle}
             />

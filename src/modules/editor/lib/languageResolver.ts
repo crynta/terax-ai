@@ -71,6 +71,10 @@ const loaders: Record<string, LanguageLoader> = {
 
   html: () => import("@codemirror/lang-html").then((m) => m.html()),
   htm: () => import("@codemirror/lang-html").then((m) => m.html()),
+  astro: () =>
+    import("@codemirror/lang-html").then((m) =>
+      m.html({ selfClosingTags: true }),
+    ),
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
 
   php: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
@@ -94,6 +98,10 @@ const loaders: Record<string, LanguageLoader> = {
   // C#
   cs: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.csharp),
 
+  // Swift
+  swift: () =>
+    import("@codemirror/legacy-modes/mode/swift").then((m) => m.swift),
+
   // Legacy-modes: loaders return the raw StreamParser; wrapped below.
   sh: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
   bash: () =>
@@ -106,6 +114,13 @@ const loaders: Record<string, LanguageLoader> = {
     import("@codemirror/legacy-modes/mode/dockerfile").then(
       (m) => m.dockerFile,
     ),
+
+  // LaTeX / TeX
+  tex: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
+  latex: () =>
+    import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
+  sty: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
+  cls: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
 };
 
 const filenameOverrides: Record<string, LanguageLoader> = {
