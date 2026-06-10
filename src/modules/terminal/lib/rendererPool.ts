@@ -10,6 +10,11 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
 import {
+  acceptSuggestion,
+  acceptSuggestionWord,
+  hasActiveSuggestion,
+} from "./suggestionOverlay";
+import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
@@ -236,6 +241,18 @@ function createSlot(): Slot {
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
+    if (hasActiveSuggestion(leafId)) {
+      if (isAcceptSuggestionWord(event)) {
+        event.preventDefault();
+        if (event.type === "keydown") acceptSuggestionWord(leafId);
+        return false;
+      }
+      if (isAcceptSuggestion(event)) {
+        event.preventDefault();
+        if (event.type === "keydown") acceptSuggestion(leafId);
+        return false;
+      }
+    }
     const lineNavigation = terminalLineNavigationSequence(event, {
       isMac: IS_MAC,
     });
@@ -920,5 +937,24 @@ function isTerminalPaste(e: KeyboardEvent): boolean {
 function isShiftEnter(e: KeyboardEvent): boolean {
   return (
     e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
+  );
+}
+
+// Accept an inline suggestion with Right arrow or End at the line end, the
+// fish/zsh-autosuggestions convention. Only consumed when a ghost is showing.
+function isAcceptSuggestion(e: KeyboardEvent): boolean {
+  return (
+    (e.key === "ArrowRight" || e.key === "End") &&
+    !e.altKey &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.shiftKey
+  );
+}
+
+// Accept only the next word with Alt+Right or Ctrl+Right (forward-word).
+function isAcceptSuggestionWord(e: KeyboardEvent): boolean {
+  return (
+    e.key === "ArrowRight" && (e.altKey || e.ctrlKey) && !e.metaKey && !e.shiftKey
   );
 }
