@@ -1,3 +1,5 @@
+//! Pseudo-terminal (PTY) management: session create/write/resize/close, output streaming via Tauri channels, and agent detection (OSC 777).
+
 mod agent_detect;
 mod da_filter;
 #[cfg(windows)]
@@ -171,8 +173,26 @@ pub fn pty_has_foreground_process(state: tauri::State<PtyState>, id: u32) -> Res
     Ok(shell_has_children(shell_pid))
 }
 
-// pgrep -P exits 0 when shell_pid has at least one child, 1 when none.
-#[cfg(unix)]
+#[cfg(all(unix, target_os = "linux"))]
+fn shell_has_children(shell_pid: u32) -> bool {
+    std::fs::read_dir("/proc")
+        .map(|entries| {
+            entries.any(|e| {
+                let name = e.ok()?.file_name();
+                let child_pid: u32 = name.to_string_lossy().parse().ok()?;
+                if child_pid == shell_pid {
+                    return Some(false);
+                }
+                let stat = std::fs::read_to_string(format!("/proc/{}/stat", child_pid)).ok()?;
+                let rest = stat.rsplit(')').next()?;
+                let ppid: u32 = rest.split_whitespace().nth(1)?.parse().ok()?;
+                Some(ppid == shell_pid)
+            })
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(all(unix, target_os = "macos"))]
 fn shell_has_children(shell_pid: u32) -> bool {
     std::process::Command::new("pgrep")
         .args(["-P", &shell_pid.to_string()])

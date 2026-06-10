@@ -383,3 +383,250 @@ where
         env,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::capabilities::ApprovalPolicy;
+    use crate::modules::mcp::McpTransport;
+
+    fn stored_stdio(id: &str, env_names: &[&str]) -> McpStoredServerConfig {
+        McpStoredServerConfig {
+            id: id.to_string(),
+            name: id.to_string(),
+            transport: McpTransport::Stdio,
+            command: "echo".to_string(),
+            args: vec![],
+            cwd: None,
+            url: None,
+            oauth_token_env: None,
+            env: env_names
+                .iter()
+                .map(|name| McpStoredEnvVar {
+                    name: name.to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn sanitize_tool_preference_rejects_invalid_qualified_name() {
+        let pref = McpToolPreference {
+            qualified_name: "bad_name".to_string(),
+            model_visible: true,
+            approval_policy: ApprovalPolicy::Ask,
+        };
+        assert!(sanitize_tool_preference(pref).is_err());
+    }
+
+    #[test]
+    fn sanitize_tool_preference_forces_deny_when_not_visible() {
+        let pref = McpToolPreference {
+            qualified_name: "mcp__srv__tool".to_string(),
+            model_visible: false,
+            approval_policy: ApprovalPolicy::Ask,
+        };
+        let result = sanitize_tool_preference(pref).unwrap();
+        assert_eq!(result.approval_policy, ApprovalPolicy::Deny);
+        assert!(!result.model_visible);
+    }
+
+    #[test]
+    fn sanitize_tool_preference_keeps_ask_when_visible() {
+        let pref = McpToolPreference {
+            qualified_name: "mcp__srv__tool".to_string(),
+            model_visible: true,
+            approval_policy: ApprovalPolicy::Ask,
+        };
+        let result = sanitize_tool_preference(pref).unwrap();
+        assert_eq!(result.approval_policy, ApprovalPolicy::Ask);
+        assert!(result.model_visible);
+    }
+
+    #[test]
+    fn sanitize_runtime_server_config_rejects_bad_id() {
+        let config = McpServerConfig {
+            id: "".to_string(),
+            name: "test".to_string(),
+            transport: McpTransport::Stdio,
+            command: "echo".to_string(),
+            args: vec![],
+            cwd: None,
+            url: None,
+            oauth_token_env: None,
+            env: vec![],
+        };
+        assert!(sanitize_runtime_server_config(config).is_err());
+    }
+
+    #[test]
+    fn sanitize_runtime_server_config_valid_stdio() {
+        let config = McpServerConfig {
+            id: "my_server".to_string(),
+            name: "My Server".to_string(),
+            transport: McpTransport::Stdio,
+            command: "echo".to_string(),
+            args: vec![],
+            cwd: None,
+            url: None,
+            oauth_token_env: None,
+            env: vec![],
+        };
+        let stored = sanitize_runtime_server_config(config).unwrap();
+        assert_eq!(stored.id, "my_server");
+        assert_eq!(stored.name, "My Server");
+        assert_eq!(stored.transport, McpTransport::Stdio);
+        assert_eq!(stored.url, None);
+    }
+
+    #[test]
+    fn sanitize_runtime_server_config_valid_http() {
+        let config = McpServerConfig {
+            id: "http_srv".to_string(),
+            name: "HTTP".to_string(),
+            transport: McpTransport::Http,
+            command: String::new(),
+            args: vec![],
+            cwd: None,
+            url: Some("https://api.example.com/mcp".to_string()),
+            oauth_token_env: None,
+            env: vec![],
+        };
+        let stored = sanitize_runtime_server_config(config).unwrap();
+        assert_eq!(stored.url.as_deref(), Some("https://api.example.com/mcp"));
+        assert!(stored.command.is_empty());
+    }
+
+    #[test]
+    fn sanitize_runtime_server_config_filters_unsafe_env_names() {
+        let config = McpServerConfig {
+            id: "srv".to_string(),
+            name: "S".to_string(),
+            transport: McpTransport::Stdio,
+            command: "echo".to_string(),
+            args: vec![],
+            cwd: None,
+            url: None,
+            oauth_token_env: None,
+            env: vec![
+                McpEnvVar {
+                    name: "GOOD_VAR".to_string(),
+                    value: "val".to_string(),
+                },
+                McpEnvVar {
+                    name: "bad-name".to_string(),
+                    value: "val".to_string(),
+                },
+                McpEnvVar {
+                    name: "TERAX_SECRET".to_string(),
+                    value: "val".to_string(),
+                },
+            ],
+        };
+        let stored = sanitize_runtime_server_config(config).unwrap();
+        assert_eq!(stored.env.len(), 1);
+        assert_eq!(stored.env[0].name, "GOOD_VAR");
+    }
+
+    #[test]
+    fn sanitize_runtime_server_config_deduplicates_env() {
+        let config = McpServerConfig {
+            id: "srv".to_string(),
+            name: "S".to_string(),
+            transport: McpTransport::Stdio,
+            command: "echo".to_string(),
+            args: vec![],
+            cwd: None,
+            url: None,
+            oauth_token_env: None,
+            env: vec![
+                McpEnvVar {
+                    name: "MY_VAR".to_string(),
+                    value: "1".to_string(),
+                },
+                McpEnvVar {
+                    name: "MY_VAR".to_string(),
+                    value: "2".to_string(),
+                },
+            ],
+        };
+        let stored = sanitize_runtime_server_config(config).unwrap();
+        assert_eq!(stored.env.len(), 1);
+    }
+
+    #[test]
+    fn runtime_config_from_stored_injects_env_values() {
+        let record = stored_stdio("srv", &["API_KEY", "OPTIONAL"]);
+        let config = mcp_runtime_config_from_stored_with_env_loader(record, |_server_id, name| {
+            if name == "API_KEY" {
+                Some("secret123".to_string())
+            } else {
+                None
+            }
+        });
+        assert_eq!(config.env.len(), 1);
+        assert_eq!(config.env[0].name, "API_KEY");
+        assert_eq!(config.env[0].value, "secret123");
+    }
+
+    #[test]
+    fn list_at_path_empty_file_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("servers.json");
+        std::fs::write(&path, "").unwrap();
+        let result = mcp_server_configs_list_at_path(&path).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn list_at_path_missing_file_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.json");
+        let result = mcp_server_configs_list_at_path(&path).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn save_and_list_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("servers.json");
+        let config = McpServerConfig {
+            id: "test_srv".to_string(),
+            name: "Test".to_string(),
+            transport: McpTransport::Stdio,
+            command: "echo".to_string(),
+            args: vec![],
+            cwd: None,
+            url: None,
+            oauth_token_env: None,
+            env: vec![],
+        };
+        let saved = mcp_server_config_save_at_path(&path, config).unwrap();
+        assert_eq!(saved.id, "test_srv");
+
+        let list = mcp_server_configs_list_at_path(&path).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "test_srv");
+    }
+
+    #[test]
+    fn remove_returns_false_for_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("servers.json");
+        let config = McpServerConfig {
+            id: "srv1".to_string(),
+            name: "S".to_string(),
+            transport: McpTransport::Stdio,
+            command: "echo".to_string(),
+            args: vec![],
+            cwd: None,
+            url: None,
+            oauth_token_env: None,
+            env: vec![],
+        };
+        mcp_server_config_save_at_path(&path, config).unwrap();
+        assert!(!mcp_server_config_remove_at_path(&path, "nope").unwrap());
+        assert!(mcp_server_config_remove_at_path(&path, "srv1").unwrap());
+        assert!(mcp_server_configs_list_at_path(&path).unwrap().is_empty());
+    }
+}

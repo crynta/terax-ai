@@ -1,8 +1,8 @@
-use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
@@ -135,30 +135,21 @@ pub fn mcp_oauth_wait_for_callback_once(
     let path = parsed.path().to_string();
     let listener = TcpListener::bind((host, port))
         .map_err(|error| format!("MCP OAuth callback listener failed: {error}"))?;
-    listener
-        .set_nonblocking(true)
-        .map_err(|error| format!("MCP OAuth callback listener setup failed: {error}"))?;
     let timeout =
         Duration::from_millis(request.timeout_ms.unwrap_or(120_000).clamp(1_000, 300_000));
-    let deadline = Instant::now() + timeout;
-    loop {
-        match listener.accept() {
-            Ok((mut stream, _addr)) => {
-                let result = handle_oauth_callback_stream(&mut stream, &parsed, &path, &state);
-                let _ = write_oauth_callback_response(&mut stream, result.is_ok());
-                return result.map(|code_or_redirect_url| McpOAuthCallbackWaitResult {
-                    code_or_redirect_url,
-                });
-            }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                if Instant::now() >= deadline {
-                    return Err("MCP OAuth callback timed out".to_string());
-                }
-                thread::sleep(Duration::from_millis(25));
-            }
-            Err(error) => return Err(format!("MCP OAuth callback listener failed: {error}")),
-        }
-    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let _ = tx.send(listener.accept());
+    });
+    let (mut stream, _addr) = rx
+        .recv_timeout(timeout)
+        .map_err(|_| "MCP OAuth callback timed out".to_string())?
+        .map_err(|error| format!("MCP OAuth callback listener failed: {error}"))?;
+    let result = handle_oauth_callback_stream(&mut stream, &parsed, &path, &state);
+    let _ = write_oauth_callback_response(&mut stream, result.is_ok());
+    result.map(|code_or_redirect_url| McpOAuthCallbackWaitResult {
+        code_or_redirect_url,
+    })
 }
 
 fn handle_oauth_callback_stream(
@@ -631,5 +622,185 @@ fn default_oauth_token_env(server_id: &str) -> String {
         "MCP_OAUTH_TOKEN".to_string()
     } else {
         format!("{name}_MCP_OAUTH_TOKEN")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_oauth_code_from_url() {
+        let (code, state) =
+            extract_oauth_code("http://localhost:8080/callback?code=abc123&state=xyz").unwrap();
+        assert_eq!(code, "abc123");
+        assert_eq!(state.as_deref(), Some("xyz"));
+    }
+
+    #[test]
+    fn extract_oauth_code_raw_value() {
+        let (code, state) = extract_oauth_code("  my_code  ").unwrap();
+        assert_eq!(code, "my_code");
+        assert!(state.is_none());
+    }
+
+    #[test]
+    fn extract_oauth_code_rejects_empty() {
+        assert!(extract_oauth_code("").is_err());
+        assert!(extract_oauth_code("  ").is_err());
+    }
+
+    #[test]
+    fn extract_oauth_code_reports_error_param() {
+        let err = extract_oauth_code("http://localhost/cb?error=access_denied").unwrap_err();
+        assert!(err.contains("access_denied"));
+    }
+
+    #[test]
+    fn extract_oauth_code_url_missing_code_errors() {
+        assert!(extract_oauth_code("http://localhost/cb?state=xyz").is_err());
+    }
+
+    #[test]
+    fn pkce_code_challenge_is_deterministic() {
+        let a = pkce_code_challenge("verifier");
+        let b = pkce_code_challenge("verifier");
+        assert_eq!(a, b);
+        assert!(!a.is_empty());
+    }
+
+    #[test]
+    fn pkce_code_challenge_differs_for_different_inputs() {
+        assert_ne!(
+            pkce_code_challenge("verifier_a"),
+            pkce_code_challenge("verifier_b")
+        );
+    }
+
+    #[test]
+    fn sanitize_oauth_scopes_deduplicates_and_falls_back() {
+        let scopes = sanitize_oauth_scopes(vec![]).unwrap();
+        assert_eq!(scopes, vec![MCP_OAUTH_DEFAULT_SCOPE.to_string()]);
+
+        let scopes =
+            sanitize_oauth_scopes(vec!["read".into(), "write".into(), "read".into()]).unwrap();
+        assert_eq!(scopes, vec!["read", "write"]);
+    }
+
+    #[test]
+    fn sanitize_oauth_scopes_skips_whitespace_only_as_error() {
+        let result = sanitize_oauth_scopes(vec!["  ".into(), "good".into()]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn sanitize_oauth_scopes_keeps_valid_ones() {
+        let scopes = sanitize_oauth_scopes(vec!["read".into(), "write".into()]).unwrap();
+        assert_eq!(scopes, vec!["read", "write"]);
+    }
+
+    #[test]
+    fn validate_oauth_client_id_accepts_valid() {
+        assert!(validate_oauth_client_id("my-client_id").is_ok());
+    }
+
+    #[test]
+    fn validate_oauth_client_id_rejects_empty() {
+        assert!(validate_oauth_client_id("").is_err());
+        assert!(validate_oauth_client_id("  ").is_err());
+    }
+
+    #[test]
+    fn validate_oauth_token_env_uses_safe_env_name() {
+        assert!(validate_oauth_token_env("MY_TOKEN").is_ok());
+        assert!(validate_oauth_token_env("bad-name").is_err());
+        assert!(validate_oauth_token_env("TERAX_SECRET").is_err());
+    }
+
+    #[test]
+    fn validate_oauth_redirect_uri_accepts_loopback() {
+        assert!(validate_oauth_redirect_uri("http://localhost:8080/callback").is_ok());
+    }
+
+    #[test]
+    fn validate_oauth_redirect_uri_rejects_ftp() {
+        assert!(validate_oauth_redirect_uri("ftp://localhost/cb").is_err());
+    }
+
+    #[test]
+    fn validate_oauth_redirect_uri_rejects_credentials() {
+        assert!(validate_oauth_redirect_uri("http://user:pass@localhost/cb").is_err());
+    }
+
+    #[test]
+    fn form_urlencoded_encodes_pairs() {
+        let encoded = form_urlencoded(&[("a", "1"), ("b", "hello world")]).unwrap();
+        assert!(encoded.contains("a=1"));
+        assert!(encoded.contains("b=hello+world") || encoded.contains("b=hello%20world"));
+    }
+
+    #[test]
+    fn default_oauth_token_env_uppercases_and_underscores() {
+        assert_eq!(
+            default_oauth_token_env("my-server"),
+            "MY_SERVER_MCP_OAUTH_TOKEN"
+        );
+        assert_eq!(default_oauth_token_env(""), "MCP_OAUTH_TOKEN");
+    }
+
+    #[test]
+    fn oauth_authorization_servers_extracts_issuers() {
+        let value = serde_json::json!({
+            "authorization_server": "https://a.example.com",
+            "authorization_servers": ["https://b.example.com", "https://a.example.com"]
+        });
+        let issuers = oauth_authorization_servers(&value);
+        assert_eq!(issuers, vec!["https://a.example.com", "https://b.example.com"]);
+    }
+
+    #[test]
+    fn oauth_metadata_urls_for_resource_generates_well_known() {
+        let urls = oauth_metadata_urls_for_resource("https://example.com/api").unwrap();
+        assert_eq!(urls.len(), 3);
+        assert!(urls[0].contains(".well-known"));
+    }
+
+    #[test]
+    fn parse_oauth_metadata_value_requires_endpoints() {
+        let no_auth = serde_json::json!({"token_endpoint": "https://example.com/token"});
+        assert!(parse_oauth_metadata_value(&no_auth).unwrap().is_none());
+
+        let both = serde_json::json!({
+            "authorization_endpoint": "https://example.com/auth",
+            "token_endpoint": "https://example.com/token"
+        });
+        let meta = parse_oauth_metadata_value(&both).unwrap().unwrap();
+        assert!(meta.authorization_endpoint.contains("example.com/auth"));
+        assert!(meta.token_endpoint.contains("example.com/token"));
+        assert!(meta.registration_endpoint.is_none());
+    }
+
+    #[test]
+    fn build_oauth_authorization_url_includes_params() {
+        let metadata = McpOAuthMetadata {
+            authorization_endpoint: "https://example.com/auth".into(),
+            token_endpoint: "https://example.com/token".into(),
+            registration_endpoint: None,
+        };
+        let url = build_oauth_authorization_url(
+            &metadata,
+            "https://example.com/api",
+            "client1",
+            "http://localhost:8080/cb",
+            "state123",
+            "verifier",
+            &["read".into()],
+        )
+        .unwrap();
+        assert!(url.contains("client_id=client1"));
+        assert!(url.contains("state=state123"));
+        assert!(url.contains("code_challenge="));
+        assert!(url.contains("S256"));
+        assert!(url.contains("scope=read"));
     }
 }

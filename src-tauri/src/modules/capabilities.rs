@@ -1,3 +1,5 @@
+//! Capability-gated permission system: workflow policies, app-level capabilities, audit logging, and manifest declarations.
+
 pub mod audit;
 mod manifests;
 pub mod policy;

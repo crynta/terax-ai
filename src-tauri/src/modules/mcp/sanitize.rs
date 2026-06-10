@@ -61,6 +61,21 @@ pub(super) fn validate_http_url(url: Option<&str>) -> Result<String, String> {
     Ok(url)
 }
 
+pub(super) fn validate_stdio_args(args: &[String]) -> Result<(), String> {
+    if args.len() > 64 {
+        return Err("MCP stdio args list too long (max 64)".to_string());
+    }
+    for (i, arg) in args.iter().enumerate() {
+        if arg.len() > MCP_STORED_TEXT_LIMIT {
+            return Err(format!("MCP stdio arg[{}] is too long", i));
+        }
+        if arg.chars().any(|c| c == '\0') {
+            return Err(format!("MCP stdio arg[{}] contains null bytes", i));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn validate_stdio_command(command: &str) -> Result<String, String> {
     let command = validate_config_text(
         command,
@@ -395,7 +410,11 @@ pub(super) fn sanitize_text_token(value: &str, limit: usize) -> String {
             previous_space = false;
         }
         if output.len() >= limit {
-            output.truncate(limit);
+            let mut end = limit;
+            while !output.is_char_boundary(end) {
+                end -= 1;
+            }
+            output.truncate(end);
             break;
         }
     }
@@ -426,4 +445,188 @@ pub(super) fn truncate_text(value: &str, limit: usize) -> String {
         end -= 1;
     }
     format!("{}…[truncated {} bytes]", &value[..end], value.len() - end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    #[test]
+    fn sanitize_server_id_accepts_valid() {
+        assert_eq!(sanitize_server_id("my_server-1").unwrap(), "my_server-1");
+    }
+
+    #[test]
+    fn sanitize_server_id_rejects_empty() {
+        assert!(sanitize_server_id("").is_err());
+        assert!(sanitize_server_id("   ").is_err());
+    }
+
+    #[test]
+    fn sanitize_server_id_rejects_overlong() {
+        assert!(sanitize_server_id(&"a".repeat(65)).is_err());
+        assert!(sanitize_server_id(&"a".repeat(64)).is_ok());
+    }
+
+    #[test]
+    fn sanitize_server_id_rejects_special_chars() {
+        assert!(sanitize_server_id("has space").is_err());
+        assert!(sanitize_server_id("has/slash").is_err());
+        assert!(sanitize_server_id("has.dot").is_err());
+    }
+
+    #[test]
+    fn is_safe_env_name_rejects_terax_prefix() {
+        assert!(!is_safe_env_name("TERAX_SECRET"));
+        assert!(is_safe_env_name("MY_VAR"));
+    }
+
+    #[test]
+    fn is_safe_env_name_rejects_empty() {
+        assert!(!is_safe_env_name(""));
+    }
+
+    #[test]
+    fn is_safe_env_name_rejects_special_chars() {
+        assert!(!is_safe_env_name("MY-VAR"));
+        assert!(!is_safe_env_name("MY.VAR"));
+        assert!(is_safe_env_name("MY_VAR"));
+    }
+
+    #[test]
+    fn safe_tool_key_normalizes() {
+        assert_eq!(safe_tool_key("hello world"), "hello_world");
+        assert_eq!(safe_tool_key("foo.bar"), "foo_bar");
+        assert_eq!(safe_tool_key("a/b"), "ab");
+        assert_eq!(safe_tool_key("___"), "");
+    }
+
+    #[test]
+    fn parse_qualified_tool_name_valid() {
+        let (server, key) = parse_qualified_tool_name("mcp__server__tool").unwrap();
+        assert_eq!(server, "server");
+        assert_eq!(key, "tool");
+    }
+
+    #[test]
+    fn parse_qualified_tool_name_rejects_invalid() {
+        assert!(parse_qualified_tool_name("mcpx__s__t").is_err());
+        assert!(parse_qualified_tool_name("mcp___t").is_err());
+        assert!(parse_qualified_tool_name("mcp__s__").is_err());
+    }
+
+    #[test]
+    fn validate_config_text_rejects_control_chars() {
+        assert!(validate_config_text("hello\u{0000}world", "f", 100, false, false).is_err());
+        assert!(validate_config_text("hello\nworld", "f", 100, false, false).is_err());
+    }
+
+    #[test]
+    fn sanitize_text_token_collapses_whitespace() {
+        assert_eq!(sanitize_text_token("  a   b  ", 100), "a b");
+    }
+
+    #[test]
+    fn sanitize_text_token_replaces_control_with_space() {
+        assert_eq!(sanitize_text_token("a\tb", 100), "a b");
+    }
+
+    #[test]
+    fn normalize_tool_result_extracts_content() {
+        let result = normalize_tool_result(serde_json::json!({
+            "isError": true,
+            "content": [{"type": "text", "text": "oops"}]
+        }));
+        assert!(result.is_error);
+        assert_eq!(result.content.len(), 1);
+        assert_eq!(result.content[0].text.as_deref(), Some("oops"));
+    }
+
+    #[test]
+    fn normalize_tool_result_falls_back_to_raw_json() {
+        let result = normalize_tool_result(serde_json::json!({"some": "data"}));
+        assert!(!result.is_error);
+        assert_eq!(result.content.len(), 1);
+        assert!(result.content[0].text.as_ref().unwrap().contains("data"));
+    }
+
+    #[test]
+    fn sanitize_input_schema_non_object_falls_back() {
+        let schema = sanitize_input_schema(serde_json::json!("not an object"));
+        assert_eq!(schema["type"], "object");
+    }
+
+    #[test]
+    fn truncate_text_no_op_under_limit() {
+        assert_eq!(truncate_text("short", 10), "short");
+    }
+
+    #[test]
+    fn truncate_text_truncates_at_limit() {
+        let result = truncate_text("abcdefghij", 5);
+        assert!(result.contains("abcde"));
+        assert!(result.contains("[truncated"));
+    }
+
+    proptest! {
+        #[test]
+        fn sanitize_server_id_never_accepts_spaces_or_special(s in "[A-Za-z0-9_\\- ]{1,64}") {
+            let trimmed = s.trim();
+            if trimmed.contains(' ') {
+                prop_assert!(sanitize_server_id(&s).is_err());
+            }
+        }
+
+        #[test]
+        fn sanitize_server_id_roundtrips_valid(s in "[A-Za-z0-9_-]{1,64}") {
+            let id = sanitize_server_id(&s).unwrap();
+            prop_assert_eq!(id, s.trim());
+        }
+
+        #[test]
+        fn is_safe_env_name_only_accepts_alnum_underscore(name in "[\x00-\x7f]{0,20}") {
+            let valid = !name.is_empty()
+                && name.len() <= 128
+                && name.bytes().all(|b| b == b'_' || b.is_ascii_alphanumeric())
+                && !name.starts_with("TERAX_");
+            prop_assert_eq!(is_safe_env_name(&name), valid);
+        }
+
+        #[test]
+        fn safe_tool_key_produces_only_safe_chars(input in "[A-Za-z0-9 ./\\-_]{0,64}") {
+            let key = safe_tool_key(&input);
+            for ch in key.chars() {
+                prop_assert!(ch.is_ascii_alphanumeric() || ch == '_' || ch == '-');
+            }
+        }
+
+        #[test]
+        fn sanitize_text_token_never_contains_control(input in ".*") {
+            let out = sanitize_text_token(&input, 1024);
+            for ch in out.chars() {
+                prop_assert!(!ch.is_control(), "found control char: {:?}", ch);
+            }
+        }
+
+        #[test]
+        fn sanitize_text_token_respects_limit(input in ".*", limit in 1usize..=256) {
+            let out = sanitize_text_token(&input, limit);
+            prop_assert!(out.len() <= limit);
+        }
+
+        #[test]
+        fn truncate_text_never_exceeds_limit(input in ".*", limit in 1usize..=512) {
+            let out = truncate_text(&input, limit);
+            prop_assert!(out.len() <= limit + 30);
+        }
+
+        #[test]
+        fn parse_qualified_roundtrip(server in "[A-Za-z0-9]{1,32}", tool in "[A-Za-z0-9_-]{1,32}") {
+            let qualified = format!("mcp__{server}__{tool}");
+            let (s, t) = parse_qualified_tool_name(&qualified).unwrap();
+            prop_assert_eq!(s, server);
+            prop_assert_eq!(t, tool);
+        }
+    }
 }

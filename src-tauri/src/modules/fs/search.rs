@@ -124,10 +124,9 @@ pub fn fs_search_inner(
     }
 
     // Rank: filename matches first, then shorter relative paths.
-    out.sort_by(|a, b| {
-        let an = a.name.to_lowercase().contains(&q);
-        let bn = b.name.to_lowercase().contains(&q);
-        bn.cmp(&an).then(a.rel.len().cmp(&b.rel.len()))
+    out.sort_by_cached_key(|hit| {
+        let name_match = hit.name.to_lowercase().contains(&q);
+        (!name_match, hit.rel.len())
     });
 
     Ok(SearchResult {
@@ -231,7 +230,7 @@ pub fn fs_list_files_inner(
         }
     }
 
-    files.sort_by_key(|a| a.to_lowercase());
+    files.sort_by_cached_key(|a| a.to_lowercase());
     Ok(ListFilesResult { files, truncated })
 }
 

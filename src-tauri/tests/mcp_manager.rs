@@ -17,8 +17,10 @@ use terax_lib::modules::mcp::{
     McpTransport,
 };
 
+mod common;
 mod mcp_manager_support;
-use mcp_manager_support::{read_http_request_text, write_http_response, EnvVarGuard};
+use common::env_guard::EnvVarGuard;
+use mcp_manager_support::{read_http_request_text, write_http_response};
 
 #[test]
 fn stdio_server_tools_are_namespaced_and_callable() {

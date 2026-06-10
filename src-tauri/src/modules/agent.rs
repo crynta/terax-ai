@@ -1,3 +1,5 @@
+//! Local AI agent hook management: install/uninstall Claude, Codex, Gemini, and Antigravity hooks into provider configuration files.
+
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
@@ -290,7 +292,9 @@ fn enable_hooks_at(path: PathBuf, spec: ProviderHooks) -> Result<(), String> {
     let tmp = path.with_extension("json.terax-tmp");
     std::fs::write(&tmp, out).map_err(|e| format!("write {}: {e}", tmp.display()))?;
     std::fs::rename(&tmp, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
+        if let Err(cleanup_err) = std::fs::remove_file(&tmp) {
+            log::debug!("agent hook cleanup failed: {cleanup_err}");
+        }
         format!("rename into {}: {e}", path.display())
     })?;
     Ok(())

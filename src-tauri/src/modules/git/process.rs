@@ -390,11 +390,11 @@ fn drain<R: Read>(reader: &mut R, prealloc: usize) -> (Vec<u8>, bool) {
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                if out.len() >= MAX_OUTPUT_BYTES {
-                    truncated = true;
-                    continue;
+                if truncated {
+                    break;
                 }
-                let take = (MAX_OUTPUT_BYTES - out.len()).min(n);
+                let remaining = MAX_OUTPUT_BYTES.saturating_sub(out.len());
+                let take = remaining.min(n);
                 out.extend_from_slice(&buf[..take]);
                 if take < n {
                     truncated = true;

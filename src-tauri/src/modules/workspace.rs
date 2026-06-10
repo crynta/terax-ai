@@ -1,3 +1,5 @@
+//! Workspace authorization: path canonicalization, root registration, WSL path mapping, and launch-directory detection.
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -126,9 +128,13 @@ pub fn authorize_user_spawn_cwd(
 }
 
 pub fn bootstrap_registry(registry: &WorkspaceRegistry) {
-    let _ = registry.authorize(resolve_launch_dir());
+    if let Err(e) = registry.authorize(resolve_launch_dir()) {
+        log::debug!("bootstrap registry: launch dir authorize failed: {e}");
+    }
     if let Some(home) = dirs::home_dir() {
-        let _ = registry.authorize(home);
+        if let Err(e) = registry.authorize(home) {
+            log::debug!("bootstrap registry: home dir authorize failed: {e}");
+        }
     }
 }
 

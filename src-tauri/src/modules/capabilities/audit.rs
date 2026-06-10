@@ -95,3 +95,91 @@ impl CapabilityAuditLog {
             .unwrap_or_default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_assigns_ascending_sequences() {
+        let log = CapabilityAuditLog::with_capacity(100);
+        let e1 = log.record(CapabilityAuditEntry::new(
+            "s1", "c1", "tool1", true, true,
+            CapabilityAuditOutcome::Succeeded, None,
+        ));
+        let e2 = log.record(CapabilityAuditEntry::new(
+            "s1", "c2", "tool2", false, false,
+            CapabilityAuditOutcome::Blocked, Some("msg".into()),
+        ));
+        assert_eq!(e1.sequence, 1);
+        assert_eq!(e2.sequence, 2);
+        assert!(e1.sequence < e2.sequence);
+    }
+
+    #[test]
+    fn entries_returns_all_recorded() {
+        let log = CapabilityAuditLog::with_capacity(100);
+        log.record(CapabilityAuditEntry::new(
+            "s", "c", "t", true, true,
+            CapabilityAuditOutcome::Succeeded, None,
+        ));
+        log.record(CapabilityAuditEntry::new(
+            "s", "c", "t", false, false,
+            CapabilityAuditOutcome::Failed, None,
+        ));
+        assert_eq!(log.entries().len(), 2);
+    }
+
+    #[test]
+    fn capacity_drops_oldest() {
+        let log = CapabilityAuditLog::with_capacity(3);
+        for i in 0..5 {
+            log.record(CapabilityAuditEntry::new(
+                "s", &format!("c{i}"), "t", true, true,
+                CapabilityAuditOutcome::Succeeded, None,
+            ));
+        }
+        let entries = log.entries();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].tool_call_id, "c2");
+        assert_eq!(entries[2].tool_call_id, "c4");
+    }
+
+    #[test]
+    fn entry_new_sets_zero_sequence() {
+        let entry = CapabilityAuditEntry::new(
+            "s", "c", "t", true, false,
+            CapabilityAuditOutcome::Blocked, Some("reason".into()),
+        );
+        assert_eq!(entry.sequence, 0);
+        assert_eq!(entry.session_id, "s");
+        assert_eq!(entry.tool_call_id, "c");
+        assert_eq!(entry.tool_name, "t");
+        assert!(entry.approved);
+        assert!(!entry.allowed);
+        assert_eq!(entry.outcome, CapabilityAuditOutcome::Blocked);
+        assert_eq!(entry.message.as_deref(), Some("reason"));
+    }
+
+    #[test]
+    fn default_capacity_is_used() {
+        let log = CapabilityAuditLog::default();
+        for i in 0..1100 {
+            log.record(CapabilityAuditEntry::new(
+                "s", &format!("c{i}"), "t", true, true,
+                CapabilityAuditOutcome::Succeeded, None,
+            ));
+        }
+        assert_eq!(log.entries().len(), 1000);
+    }
+
+    #[test]
+    fn with_capacity_minimum_is_one() {
+        let log = CapabilityAuditLog::with_capacity(0);
+        log.record(CapabilityAuditEntry::new(
+            "s", "c", "t", true, true,
+            CapabilityAuditOutcome::Succeeded, None,
+        ));
+        assert_eq!(log.entries().len(), 1);
+    }
+}

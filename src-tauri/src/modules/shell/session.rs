@@ -15,7 +15,6 @@ pub struct ShellSession {
     pub cwd: Mutex<String>,
     pub workspace: WorkspaceEnv,
     pub pristine: AtomicBool,
-    #[allow(dead_code)]
     pub started_at_ms: u64,
     sentinel: String,
 }

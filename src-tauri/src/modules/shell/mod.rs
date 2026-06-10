@@ -1,3 +1,5 @@
+//! Shell command execution: one-shot commands, persistent sessions, and background process management with log streaming.
+
 pub mod background;
 pub mod ringbuffer;
 pub mod session;
@@ -28,6 +30,7 @@ use session::{SessionRunOutput, ShellSession};
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const MAX_TIMEOUT_SECS: u64 = 300;
 const MAX_OUTPUT_BYTES: usize = 256 * 1024;
+const MAX_BACKGROUND_PROCS: usize = 64;
 
 #[derive(Serialize)]
 pub struct CommandOutput {
@@ -330,6 +333,14 @@ fn shell_bg_spawn_inner(
     workspace: WorkspaceEnv,
 ) -> Result<u32, String> {
     authorize_spawn_cwd(registry, cwd.as_deref(), &workspace)?;
+    {
+        let bg = sync::read(&state.bg, "shell background processes")?;
+        if bg.len() >= MAX_BACKGROUND_PROCS {
+            return Err(format!(
+                "background process limit reached ({MAX_BACKGROUND_PROCS})"
+            ));
+        }
+    }
     let proc = background::spawn(command, cwd, workspace)?;
     let id = state.next_bg_id.fetch_add(1, Ordering::Relaxed);
     sync::write(&state.bg, "shell background processes")?.insert(id, proc);
@@ -369,36 +380,50 @@ pub fn shell_bg_spawn(
 #[tauri::command]
 pub fn shell_bg_logs(
     state: tauri::State<ShellState>,
+    app_audit: tauri::State<AppCapabilityState>,
     handle: u32,
     since_offset: Option<u64>,
 ) -> Result<BackgroundLogResponse, String> {
-    let proc = sync::read(&state.bg, "shell background processes")?
-        .get(&handle)
-        .cloned()
-        .ok_or_else(|| "no background handle".to_string())?;
-    proc.read_logs(since_offset.unwrap_or(0))
+    app_audit.execute_app_capability("app.shell_background", || {
+        let proc = sync::read(&state.bg, "shell background processes")?
+            .get(&handle)
+            .cloned()
+            .ok_or_else(|| "no background handle".to_string())?;
+        proc.read_logs(since_offset.unwrap_or(0))
+    })
 }
 
 #[tauri::command]
-pub fn shell_bg_kill(state: tauri::State<ShellState>, handle: u32) -> Result<(), String> {
-    let proc = sync::read(&state.bg, "shell background processes")?
-        .get(&handle)
-        .cloned();
-    if let Some(proc) = proc {
-        proc.kill();
-    }
-    Ok(())
+pub fn shell_bg_kill(
+    state: tauri::State<ShellState>,
+    app_audit: tauri::State<AppCapabilityState>,
+    handle: u32,
+) -> Result<(), String> {
+    app_audit.execute_app_capability("app.shell_background", || {
+        let proc = sync::read(&state.bg, "shell background processes")?
+            .get(&handle)
+            .cloned();
+        if let Some(proc) = proc {
+            proc.kill();
+        }
+        Ok(())
+    })
 }
 
 #[tauri::command]
-pub fn shell_bg_list(state: tauri::State<ShellState>) -> Result<Vec<BackgroundProcInfo>, String> {
-    let map = sync::read(&state.bg, "shell background processes")?;
-    let mut out = Vec::with_capacity(map.len());
-    for (id, p) in map.iter() {
-        out.push(p.info(*id));
-    }
-    out.sort_by_key(|i| i.handle);
-    Ok(out)
+pub fn shell_bg_list(
+    state: tauri::State<ShellState>,
+    app_audit: tauri::State<AppCapabilityState>,
+) -> Result<Vec<BackgroundProcInfo>, String> {
+    app_audit.execute_app_capability("app.shell_background", || {
+        let map = sync::read(&state.bg, "shell background processes")?;
+        let mut out = Vec::with_capacity(map.len());
+        for (id, p) in map.iter() {
+            out.push(p.info(*id));
+        }
+        out.sort_by_key(|i| i.handle);
+        Ok(out)
+    })
 }
 
 pub(crate) fn build_oneshot_command(
@@ -449,11 +474,11 @@ fn drain<R: Read>(reader: &mut R) -> (Vec<u8>, bool) {
         match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
-                if out.len() >= MAX_OUTPUT_BYTES {
-                    truncated = true;
-                    continue;
+                if truncated {
+                    break;
                 }
-                let take = (MAX_OUTPUT_BYTES - out.len()).min(n);
+                let remaining = MAX_OUTPUT_BYTES.saturating_sub(out.len());
+                let take = remaining.min(n);
                 out.extend_from_slice(&buf[..take]);
                 if take < n {
                     truncated = true;

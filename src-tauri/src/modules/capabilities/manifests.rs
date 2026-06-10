@@ -367,7 +367,7 @@ pub fn core_capability_manifest() -> CapabilityManifest {
     }
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Workflow capability declarations are compact data rows"
 )]
@@ -424,7 +424,7 @@ fn app_tool(
     }
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "Capability declarations are data rows; named builder fields would add noise"
 )]

@@ -161,12 +161,14 @@ fn drain_loop(rx: mpsc::Receiver<notify::Result<Event>>, app: AppHandle) {
         if paths.is_empty() {
             continue;
         }
-        let _ = app.emit(
+        if let Err(e) = app.emit(
             "fs:changed",
             ChangedPayload {
                 paths: paths.into_iter().collect(),
             },
-        );
+        ) {
+            log::debug!("fs:changed emit failed: {e}");
+        }
     }
 }
 
@@ -254,15 +256,22 @@ pub fn fs_watch_remove(
     paths: Vec<String>,
     workspace: Option<WorkspaceEnv>,
     state: State<'_, FsWatchState>,
+    registry: State<'_, WorkspaceRegistry>,
 ) -> Result<(), String> {
     let workspace = WorkspaceEnv::from_option(workspace);
-    // A removed/renamed dir no longer canonicalizes; fall back so the refcount
-    // entry is still released.
     let prepared: Vec<PathBuf> = paths
         .into_iter()
-        .map(|raw| {
+        .filter_map(|raw| {
             let resolved = resolve_path(&raw, &workspace);
-            std::fs::canonicalize(&resolved).unwrap_or(resolved)
+            let canonical = std::fs::canonicalize(&resolved).unwrap_or(resolved);
+            if !registry.is_authorized(&canonical) {
+                log::debug!(
+                    "fs_watch_remove: skipping unauthorized path {}",
+                    canonical.display()
+                );
+                return None;
+            }
+            Some(canonical)
         })
         .collect();
     let mut guard = sync::mutex(&state.inner, "fs watch state")?;

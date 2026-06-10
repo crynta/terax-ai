@@ -10,8 +10,8 @@ use terax_lib::modules::mcp::{McpEnvVar, McpServerConfig, McpState, McpTransport
 mod mcp_manager_support;
 use mcp_manager_support::{read_http_request, stdio_config, write_http_response};
 
-#[test]
-fn http_mcp_server_uses_streamable_http_oauth_and_session_headers() {
+#[tokio::test(flavor = "current_thread")]
+async fn http_mcp_server_uses_streamable_http_oauth_and_session_headers() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let seen_auth = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -96,7 +96,7 @@ fn http_mcp_server_uses_streamable_http_oauth_and_session_headers() {
 
     let state = McpState::default();
     state
-        .connect_http(McpServerConfig {
+        .connect_http_async(McpServerConfig {
             id: "remote".to_string(),
             name: "Remote MCP".to_string(),
             transport: McpTransport::Http,
@@ -110,13 +110,15 @@ fn http_mcp_server_uses_streamable_http_oauth_and_session_headers() {
                 value: "oauth-secret".to_string(),
             }],
         })
+        .await
         .unwrap();
 
     let tools = state.tools().unwrap();
     assert_eq!(tools[0].qualified_name, "mcp__remote__search_web");
     assert_eq!(tools[0].approval_policy, ApprovalPolicy::Ask);
     let result = state
-        .call_tool("mcp__remote__search_web", json!({ "query": "terax" }))
+        .call_tool_async("mcp__remote__search_web", json!({ "query": "terax" }))
+        .await
         .unwrap();
     assert_eq!(result.content[0].text.as_deref(), Some("remote: terax"));
     server.join().unwrap();

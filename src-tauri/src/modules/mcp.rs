@@ -1,3 +1,5 @@
+//! Model Context Protocol (MCP) bridge: server config management, stdio/HTTP connections, tool discovery, and tool invocation with approval flow.
+
 use std::collections::HashMap;
 use std::env;
 use std::sync::{Arc, Mutex};
@@ -6,7 +8,9 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
-use crate::modules::capabilities::ApprovalPolicy;
+use crate::modules::capabilities::{
+    capability_manifest_with_mcp_tools, ApprovalPolicy, CapabilityManifest,
+};
 use crate::modules::secrets::{
     delete_secret_value, get_secret_value, set_secret_value, SecretsState,
 };
@@ -76,16 +80,25 @@ struct McpRestartBackoff {
 }
 
 impl McpState {
+    /// Connects to an MCP server over stdio, initializing the connection and refreshing tools.
     pub fn connect_stdio(&self, mut config: McpServerConfig) -> Result<(), String> {
         config.transport = McpTransport::Stdio;
         self.connect_config(config)
     }
 
+    /// Connects to an MCP server over HTTP, initializing the connection and refreshing tools.
     pub fn connect_http(&self, mut config: McpServerConfig) -> Result<(), String> {
         config.transport = McpTransport::Http;
         self.connect_config(config)
     }
 
+    /// Connects to an MCP server over HTTP using an async transport.
+    pub async fn connect_http_async(&self, mut config: McpServerConfig) -> Result<(), String> {
+        config.transport = McpTransport::Http;
+        self.connect_config_async(config).await
+    }
+
+    /// Connects to an MCP server using the transport specified in the config.
     pub fn connect_config(&self, config: McpServerConfig) -> Result<(), String> {
         let server_id = sanitize_server_id(&config.id)?;
         self.ensure_restart_allowed(&server_id)?;
@@ -116,6 +129,37 @@ impl McpState {
         Ok(())
     }
 
+    /// Connects to an MCP server asynchronously using the transport specified in the config.
+    pub async fn connect_config_async(&self, config: McpServerConfig) -> Result<(), String> {
+        let server_id = sanitize_server_id(&config.id)?;
+        self.ensure_restart_allowed(&server_id)?;
+        let server_name = sanitize_text_token(&config.name, MCP_NAME_LIMIT);
+        let connection = match McpConnection::spawn(server_id.clone(), server_name, config) {
+            Ok(connection) => Arc::new(connection),
+            Err(error) => {
+                self.record_restart_failure(&server_id);
+                return Err(error);
+            }
+        };
+        connection.initialize_async().await?;
+        let startup_result = connection.refresh_tools_async().await;
+        if let Err(error) = startup_result {
+            self.record_restart_failure(&server_id);
+            connection.shutdown();
+            return Err(error);
+        }
+        self.clear_restart_failures(&server_id);
+        let mut connections = self
+            .connections
+            .lock()
+            .map_err(|error| format!("MCP registry lock failed: {error}"))?;
+        if let Some(previous) = connections.insert(server_id, Arc::clone(&connection)) {
+            previous.shutdown();
+        }
+        Ok(())
+    }
+
+    /// Disconnects from the given MCP server, returning whether a connection was found.
     pub fn disconnect(&self, server_id: &str) -> Result<bool, String> {
         let server_id = sanitize_server_id(server_id)?;
         let mut connections = self
@@ -183,12 +227,14 @@ impl McpState {
         }
     }
 
+    /// Applies a single tool preference override, updating the in-memory preference map.
     pub fn set_tool_preference(&self, preference: McpToolPreference) {
         if let Ok(mut preferences) = self.tool_preferences.lock() {
             preferences.insert(preference.qualified_name.clone(), preference);
         }
     }
 
+    /// Replaces all in-memory tool preferences with the provided list.
     pub fn set_tool_preferences(&self, preferences: Vec<McpToolPreference>) {
         if let Ok(mut stored) = self.tool_preferences.lock() {
             stored.clear();
@@ -218,6 +264,7 @@ impl McpState {
             preference.model_visible && preference.approval_policy != ApprovalPolicy::Deny;
     }
 
+    /// Returns all discovered MCP tools across connected servers, with tool preferences applied.
     pub fn tools(&self) -> Result<Vec<McpToolDescriptor>, String> {
         let connections = self
             .connections
@@ -234,6 +281,7 @@ impl McpState {
         Ok(tools)
     }
 
+    /// Returns the approval policy for a given qualified tool name.
     pub fn approval_policy_for_tool(
         &self,
         qualified_name: &str,
@@ -246,6 +294,7 @@ impl McpState {
             .map(|tool| tool.approval_policy))
     }
 
+    /// Returns the tool descriptor for a given qualified tool name, including any preference overrides.
     pub fn tool_descriptor(
         &self,
         qualified_name: &str,
@@ -290,6 +339,7 @@ impl McpState {
         }))
     }
 
+    /// Returns the status of all connected MCP servers.
     pub fn server_statuses(&self) -> Result<Vec<McpServerStatus>, String> {
         let connections = self
             .connections
@@ -306,6 +356,7 @@ impl McpState {
         Ok(statuses)
     }
 
+    /// Invokes an MCP tool synchronously by its qualified name (stdio transport only).
     pub fn call_tool(
         &self,
         qualified_name: &str,
@@ -323,6 +374,28 @@ impl McpState {
                 .ok_or_else(|| format!("MCP server is not connected: {server_id}"))?
         };
         connection.call_tool_by_key(&tool_key, arguments)
+    }
+
+    /// Invokes an MCP tool asynchronously by its qualified name (supports both stdio and HTTP transports).
+    pub async fn call_tool_async(
+        &self,
+        qualified_name: &str,
+        arguments: Value,
+    ) -> Result<McpToolCallResult, String> {
+        let (server_id, tool_key) = parse_qualified_tool_name(qualified_name)?;
+        let connection = {
+            let connections = self
+                .connections
+                .lock()
+                .map_err(|error| format!("MCP registry lock failed: {error}"))?;
+            connections
+                .get(&server_id)
+                .cloned()
+                .ok_or_else(|| format!("MCP server is not connected: {server_id}"))?
+        };
+        connection
+            .call_tool_by_key_async(&tool_key, arguments)
+            .await
     }
 }
 
@@ -524,13 +597,15 @@ pub async fn mcp_connect_http(
     state: tauri::State<'_, Arc<McpState>>,
     config: McpServerConfig,
 ) -> Result<(), String> {
-    let state = Arc::clone(state.inner());
+    let mcp_state = Arc::clone(state.inner());
+    let sync_state = Arc::clone(&mcp_state);
+    let sync_app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        sync_tool_preferences_from_app(&app, state.as_ref())?;
-        state.connect_http(config)
+        sync_tool_preferences_from_app(&sync_app, sync_state.as_ref())
     })
     .await
-    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())??;
+    mcp_state.connect_http_async(config).await
 }
 
 #[tauri::command]
@@ -550,11 +625,37 @@ pub fn mcp_tools(
     state.tools()
 }
 
+/// Returns the full capability manifest (core native tools + MCP tools with
+/// resolved approval policies). This is the single policy authority the webview
+/// Pi agent consults to decide which tools require approval, matching how the
+/// sidecar enforced policy.
+#[tauri::command]
+pub fn pi_capability_manifest(
+    app: AppHandle,
+    state: tauri::State<'_, Arc<McpState>>,
+) -> Result<CapabilityManifest, String> {
+    sync_tool_preferences_from_app(&app, state.inner().as_ref())?;
+    let tools = state.tools().unwrap_or_default();
+    Ok(capability_manifest_with_mcp_tools(&tools))
+}
+
 #[tauri::command]
 pub fn mcp_server_statuses(
     state: tauri::State<'_, Arc<McpState>>,
 ) -> Result<Vec<McpServerStatus>, String> {
     state.server_statuses()
+}
+
+#[tauri::command]
+pub async fn mcp_call_tool(
+    state: tauri::State<'_, Arc<McpState>>,
+    qualified_name: String,
+    arguments: Value,
+) -> Result<McpToolCallResult, String> {
+    state
+        .inner()
+        .call_tool_async(&qualified_name, arguments)
+        .await
 }
 
 impl Drop for McpState {

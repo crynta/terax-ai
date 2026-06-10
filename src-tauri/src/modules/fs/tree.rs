@@ -80,15 +80,13 @@ pub fn fs_read_dir_inner(
         })
         .collect();
 
-    entries.sort_by(|a, b| {
-        let rank = |k: &EntryKind| match k {
+    entries.sort_by_cached_key(|entry| {
+        let rank = match entry.kind {
             EntryKind::Dir => 0,
             EntryKind::Symlink => 1,
             EntryKind::File => 2,
         };
-        rank(&a.kind)
-            .cmp(&rank(&b.kind))
-            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        (rank, entry.name.to_lowercase())
     });
 
     Ok(entries)
@@ -134,7 +132,7 @@ pub fn list_subdirs_inner(
         .filter(|name| show_hidden || !name.starts_with('.'))
         .collect();
 
-    dirs.sort_by_key(|a| a.to_lowercase());
+    dirs.sort_by_cached_key(|a| a.to_lowercase());
     Ok(dirs)
 }
 

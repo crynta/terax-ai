@@ -1,3 +1,5 @@
+//! HTTP proxy for AI model requests: SSRF protection, DNS-rebinding prevention, streaming with back-pressure, and connection pooling.
+
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;

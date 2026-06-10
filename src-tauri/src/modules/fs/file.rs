@@ -172,14 +172,21 @@ pub fn fs_write_file_inner(
     })?;
 
     if let Some(perms) = original_permissions {
-        let _ = fs::set_permissions(&target, perms);
+        if let Err(e) = fs::set_permissions(&target, perms) {
+            log::debug!(
+                "fs_write_file: failed to restore permissions on {}: {e}",
+                target.display()
+            );
+        }
     }
 
     Ok(())
 }
 
 fn emit_file_written(app: &tauri::AppHandle, path: String, source: Option<String>) {
-    let _ = app.emit("fs:file-written", FileWrittenEvent { path, source });
+    if let Err(e) = app.emit("fs:file-written", FileWrittenEvent { path, source }) {
+        log::debug!("fs:file-written emit failed: {e}");
+    }
 }
 
 #[tauri::command]
@@ -265,7 +272,12 @@ pub fn fs_write_base64_file(
         })?;
 
         if let Some(perms) = original_permissions {
-            let _ = fs::set_permissions(&target, perms);
+            if let Err(e) = fs::set_permissions(&target, perms) {
+                log::debug!(
+                    "fs_write_base64_file: failed to restore permissions on {}: {e}",
+                    target.display()
+                );
+            }
         }
         emit_file_written(&app, path, source);
 

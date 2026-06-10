@@ -48,7 +48,9 @@ fn resolve_repo_in_authorized(
         return Ok(None);
     };
     let canonical_root = canonical_dir(registry, &root_line, &cwd.workspace)?;
-    let _ = registry.authorize(&canonical_root.local_path);
+    if let Err(e) = registry.authorize(&canonical_root.local_path) {
+        log::debug!("git resolve_repo: authorize repo root failed: {e}");
+    }
 
     let head = match git_stdout_lines(
         &canonical_root.workspace,
@@ -106,7 +108,9 @@ pub fn panel_snapshot(
         });
     };
     let canonical_root = canonical_dir(registry, &root_line, &cwd.workspace)?;
-    let _ = registry.authorize(&canonical_root.local_path);
+    if let Err(e) = registry.authorize(&canonical_root.local_path) {
+        log::debug!("git panel_snapshot: authorize repo root failed: {e}");
+    }
 
     let status = status_inner(&canonical_root)?;
     let repo = GitRepoInfo {

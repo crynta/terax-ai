@@ -57,3 +57,87 @@ pub fn evaluate(
         }),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modules::capabilities::{
+        CapabilityKind, CapabilityManifest, CapabilityOrigin, CapabilityTool, RiskLevel,
+    };
+
+    fn test_tool(name: &str, approval: ApprovalPolicy) -> CapabilityTool {
+        CapabilityTool {
+            id: name.to_string(),
+            name: name.to_string(),
+            label: name.to_string(),
+            description: name.to_string(),
+            prompt_snippet: name.to_string(),
+            prompt_guidelines: vec![],
+            parameters: serde_json::json!({}),
+            origin: CapabilityOrigin::TeraxCore,
+            kind: CapabilityKind::FileRead,
+            risk: RiskLevel::Low,
+            scopes: vec![],
+            approval,
+            model_visible: true,
+        }
+    }
+
+    fn manifest_with(tools: Vec<CapabilityTool>) -> CapabilityManifest {
+        CapabilityManifest {
+            version: 1,
+            tools,
+        }
+    }
+
+    #[test]
+    fn auto_tool_passes_without_approval() {
+        let manifest = manifest_with(vec![test_tool("t", ApprovalPolicy::Auto)]);
+        let result = evaluate(&manifest, "t", CapabilityApprovalState::None);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().approval, ApprovalPolicy::Auto);
+    }
+
+    #[test]
+    fn ask_tool_requires_approval() {
+        let manifest = manifest_with(vec![test_tool("t", ApprovalPolicy::Ask)]);
+        let err = evaluate(&manifest, "t", CapabilityApprovalState::None).unwrap_err();
+        assert!(matches!(err, CapabilityPolicyError::ApprovalRequired(_)));
+    }
+
+    #[test]
+    fn ask_tool_passes_when_approved() {
+        let manifest = manifest_with(vec![test_tool("t", ApprovalPolicy::Ask)]);
+        let result = evaluate(&manifest, "t", CapabilityApprovalState::Approved);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn denied_tool_always_fails() {
+        let manifest = manifest_with(vec![test_tool("t", ApprovalPolicy::Deny)]);
+        let err = evaluate(&manifest, "t", CapabilityApprovalState::Approved).unwrap_err();
+        assert!(matches!(err, CapabilityPolicyError::Denied(_)));
+    }
+
+    #[test]
+    fn unknown_tool_errors() {
+        let manifest = manifest_with(vec![test_tool("a", ApprovalPolicy::Auto)]);
+        let err = evaluate(&manifest, "b", CapabilityApprovalState::None).unwrap_err();
+        assert!(matches!(err, CapabilityPolicyError::UnknownTool(_)));
+    }
+
+    #[test]
+    fn decision_preserves_tool_metadata() {
+        let manifest = manifest_with(vec![test_tool("t", ApprovalPolicy::Auto)]);
+        let decision = evaluate(&manifest, "t", CapabilityApprovalState::None).unwrap();
+        assert_eq!(decision.tool_name, "t");
+        assert_eq!(decision.risk, RiskLevel::Low);
+        assert_eq!(decision.origin, CapabilityOrigin::TeraxCore);
+    }
+
+    #[test]
+    fn error_display_includes_tool_name() {
+        let msg = CapabilityPolicyError::Denied("my_tool".into()).to_string();
+        assert!(msg.contains("my_tool"));
+    }
+}

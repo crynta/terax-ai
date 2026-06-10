@@ -243,3 +243,129 @@ fn civil_from_days(days_since_unix_epoch: i64) -> (i64, i64, i64) {
     let year = year + if month <= 2 { 1 } else { 0 };
     (year, month, day)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalized_title_uses_slug_when_empty() {
+        assert_eq!(normalized_title(None, "my-artifact"), "my-artifact");
+        assert_eq!(normalized_title(Some(""), "my-artifact"), "my-artifact");
+        assert_eq!(normalized_title(Some("  "), "my-artifact"), "my-artifact");
+    }
+
+    #[test]
+    fn normalized_title_trims_and_truncates() {
+        assert_eq!(normalized_title(Some("My Title"), "slug"), "My Title");
+    }
+
+    #[test]
+    fn validate_title_rejects_empty() {
+        assert!(validate_title("").is_err());
+        assert!(validate_title("  ").is_err());
+    }
+
+    #[test]
+    fn validate_title_rejects_control_chars() {
+        assert!(validate_title("hello\nworld").is_err());
+    }
+
+    #[test]
+    fn validate_title_accepts_valid() {
+        assert_eq!(validate_title("My Artifact").unwrap(), "My Artifact");
+    }
+
+    #[test]
+    fn validate_content_size_accepts_small() {
+        assert!(validate_content_size("hello").is_ok());
+    }
+
+    #[test]
+    fn validate_content_size_rejects_oversized() {
+        let big = "a".repeat(MAX_ARTIFACT_CONTENT_BYTES + 1);
+        assert!(validate_content_size(&big).is_err());
+    }
+
+    #[test]
+    fn validate_undo_token_accepts_valid() {
+        assert_eq!(validate_undo_token("abc123_-").unwrap(), "abc123_-");
+    }
+
+    #[test]
+    fn validate_undo_token_rejects_empty() {
+        assert!(validate_undo_token("").is_err());
+        assert!(validate_undo_token("  ").is_err());
+    }
+
+    #[test]
+    fn validate_undo_token_rejects_special_chars() {
+        assert!(validate_undo_token("abc!@#").is_err());
+    }
+
+    #[test]
+    fn validate_undo_token_rejects_overlong() {
+        assert!(validate_undo_token(&"a".repeat(97)).is_err());
+        assert!(validate_undo_token(&"a".repeat(96)).is_ok());
+    }
+
+    #[test]
+    fn sha256_hex_produces_deterministic_hash() {
+        let a = sha256_hex("hello");
+        let b = sha256_hex("hello");
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 64);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn sha256_hex_differs_for_different_input() {
+        assert_ne!(sha256_hex("hello"), sha256_hex("world"));
+    }
+
+    #[test]
+    fn export_extension_returns_correct_extensions() {
+        assert_eq!(export_extension(&ArtifactKind::Html), "html");
+        assert_eq!(export_extension(&ArtifactKind::Markdown), "md");
+        assert_eq!(export_extension(&ArtifactKind::Text), "txt");
+        assert_eq!(export_extension(&ArtifactKind::Json), "json");
+        assert_eq!(export_extension(&ArtifactKind::Svg), "svg");
+        assert_eq!(export_extension(&ArtifactKind::React), "html");
+    }
+
+    #[test]
+    fn epoch_millis_to_iso_utc_known_values() {
+        assert_eq!(epoch_millis_to_iso_utc(0), "1970-01-01T00:00:00.000Z");
+        assert_eq!(
+            epoch_millis_to_iso_utc(1_704_067_200_000),
+            "2024-01-01T00:00:00.000Z"
+        );
+        assert_eq!(
+            epoch_millis_to_iso_utc(900_061_200_123),
+            "1998-07-10T09:00:00.123Z"
+        );
+    }
+
+    #[test]
+    fn validate_export_destination_rejects_no_extension() {
+        let err = validate_export_destination(&ArtifactKind::Html, Path::new("noext")).unwrap_err();
+        assert_eq!(err.code, "ARTIFACT_EXPORT_DENIED");
+    }
+
+    #[test]
+    fn validate_export_destination_rejects_wrong_extension() {
+        let err =
+            validate_export_destination(&ArtifactKind::Html, Path::new("file.txt")).unwrap_err();
+        assert_eq!(err.code, "ARTIFACT_EXPORT_DENIED");
+    }
+
+    #[test]
+    fn validate_export_destination_accepts_matching_extension() {
+        assert!(validate_export_destination(&ArtifactKind::Html, Path::new("f.html")).is_ok());
+        assert!(validate_export_destination(&ArtifactKind::Html, Path::new("f.htm")).is_ok());
+        assert!(validate_export_destination(&ArtifactKind::Markdown, Path::new("f.md")).is_ok());
+        assert!(validate_export_destination(&ArtifactKind::Text, Path::new("f.txt")).is_ok());
+        assert!(validate_export_destination(&ArtifactKind::Json, Path::new("f.json")).is_ok());
+        assert!(validate_export_destination(&ArtifactKind::Svg, Path::new("f.svg")).is_ok());
+    }
+}

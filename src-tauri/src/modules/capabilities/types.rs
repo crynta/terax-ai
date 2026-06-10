@@ -96,3 +96,75 @@ pub enum ApprovalPolicy {
     Ask,
     Deny,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tool(name: &str, approval: ApprovalPolicy, visible: bool) -> CapabilityTool {
+        CapabilityTool {
+            id: name.to_string(),
+            name: name.to_string(),
+            label: name.to_string(),
+            description: name.to_string(),
+            prompt_snippet: name.to_string(),
+            prompt_guidelines: vec![],
+            parameters: serde_json::json!({}),
+            origin: CapabilityOrigin::TeraxCore,
+            kind: CapabilityKind::FileRead,
+            risk: RiskLevel::Low,
+            scopes: vec![],
+            approval,
+            model_visible: visible,
+        }
+    }
+
+    #[test]
+    fn enabled_tool_names_filters_visible_non_denied() {
+        let manifest = CapabilityManifest {
+            version: 1,
+            tools: vec![
+                tool("auto_v", ApprovalPolicy::Auto, true),
+                tool("ask_v", ApprovalPolicy::Ask, true),
+                tool("deny_v", ApprovalPolicy::Deny, true),
+                tool("auto_h", ApprovalPolicy::Auto, false),
+            ],
+        };
+        let names = manifest.enabled_tool_names();
+        assert_eq!(names, vec!["auto_v", "ask_v"]);
+    }
+
+    #[test]
+    fn approval_required_tool_names_returns_ask_tools() {
+        let manifest = CapabilityManifest {
+            version: 1,
+            tools: vec![
+                tool("a", ApprovalPolicy::Auto, true),
+                tool("b", ApprovalPolicy::Ask, true),
+                tool("c", ApprovalPolicy::Deny, true),
+            ],
+        };
+        let names = manifest.approval_required_tool_names();
+        assert_eq!(names, vec!["b"]);
+    }
+
+    #[test]
+    fn tool_lookup_by_name() {
+        let manifest = CapabilityManifest {
+            version: 1,
+            tools: vec![tool("x", ApprovalPolicy::Auto, true)],
+        };
+        assert!(manifest.tool("x").is_some());
+        assert!(manifest.tool("y").is_none());
+    }
+
+    #[test]
+    fn tool_mut_allows_modification() {
+        let mut manifest = CapabilityManifest {
+            version: 1,
+            tools: vec![tool("x", ApprovalPolicy::Auto, true)],
+        };
+        manifest.tool_mut("x").unwrap().approval = ApprovalPolicy::Deny;
+        assert_eq!(manifest.tool("x").unwrap().approval, ApprovalPolicy::Deny);
+    }
+}

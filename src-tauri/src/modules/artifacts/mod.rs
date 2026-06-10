@@ -1,3 +1,5 @@
+//! Artifact storage: versioned key-value blobs scoped to Pi conversation IDs, with create/update/edit/export/delete and React compilation support.
+
 pub mod edits;
 pub mod react;
 pub mod store;
@@ -471,6 +473,8 @@ mod tests {
             workspace_env: None,
             thinking_level: None,
             sdk_session_file: None,
+            archived_at: None,
+            forked_from: None,
         }
     }
 

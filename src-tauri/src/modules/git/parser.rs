@@ -148,9 +148,8 @@ fn status_label(index_status: char, worktree_status: char) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
-    // Build one ordinary-change record (`1 ` entry) with the exact field layout
-    // git emits: `XY sub mH mI mW hH hI path`.
     fn ordinary(xy: &str, path: &str) -> String {
         format!("1 {xy} N... 100644 100644 100644 aaaa bbbb {path}\0")
     }
@@ -201,8 +200,6 @@ mod tests {
         assert!(parsed.upstream.is_none());
     }
 
-    // The whole point of skip_fields counting exact fields: a path with spaces
-    // must survive intact. A naive split-on-space would truncate it.
     #[test]
     fn preserves_paths_with_spaces() {
         let parsed = parse_porcelain_v2(&ordinary(".M", "src/my file name.rs"));
@@ -210,8 +207,6 @@ mod tests {
         assert_eq!(parsed.files[0].path, "src/my file name.rs");
     }
 
-    // A rename record consumes the *next* NUL token as its original path. If that
-    // accounting is off, the entry after a rename gets eaten or misread.
     #[test]
     fn rename_consumes_orig_token_without_eating_next_entry() {
         let stdout = format!(
@@ -229,7 +224,6 @@ mod tests {
 
     #[test]
     fn unmerged_entry_parsed_and_labeled() {
-        // `u XY sub m1 m2 m3 mW h1 h2 h3 path` -> skip 9 fields to reach path.
         let parsed =
             parse_porcelain_v2("u UU N... 100644 100644 100644 100644 a b c conflict.rs\0");
         assert_eq!(parsed.files.len(), 1);
@@ -242,11 +236,10 @@ mod tests {
 
     #[test]
     fn staged_unstaged_untracked_matrix() {
-        // (XY, staged, unstaged, untracked, label)
         let cases = [
-            (".M", false, true, false, "Modified"), // unstaged edit
-            ("M.", true, false, false, "Modified"), // staged edit
-            ("MM", true, true, false, "Modified"),  // staged then edited again
+            (".M", false, true, false, "Modified"),
+            ("M.", true, false, false, "Modified"),
+            ("MM", true, true, false, "Modified"),
             ("A.", true, false, false, "Added"),
             ("D.", true, false, false, "Deleted"),
             (".D", false, true, false, "Deleted"),
@@ -275,8 +268,6 @@ mod tests {
 
     #[test]
     fn malformed_entries_are_skipped_without_panic() {
-        // Truncated `1 ` record (no fields/path) and a too-short XY must not panic
-        // and must not produce a file; valid entries around them still parse.
         let parsed = parse_porcelain_v2("1 .M\0? ok.rs\0");
         assert_eq!(parsed.files.len(), 1);
         assert_eq!(parsed.files[0].path, "ok.rs");
@@ -288,5 +279,39 @@ mod tests {
         assert_eq!((ok.ahead, ok.behind), (5, 3));
         let garbage = parse_porcelain_v2("# branch.ab +x -y\0");
         assert_eq!((garbage.ahead, garbage.behind), (0, 0));
+    }
+
+    proptest! {
+        #[test]
+        fn parse_porcelain_never_panics(input in ".*") {
+            let _ = parse_porcelain_v2(&input);
+        }
+
+        #[test]
+        fn parsed_files_paths_are_preserved(
+            path in "[A-Za-z0-9_/\\-. ]{1,80}"
+        ) {
+            let parsed = parse_porcelain_v2(&format!("? {path}\0"));
+            prop_assert!(parsed.files.len() <= 1);
+            if !parsed.files.is_empty() {
+                prop_assert_eq!(&parsed.files[0].path, &path);
+            }
+        }
+
+        #[test]
+        fn xy_dot_maps_to_space(xy in "(\\.|[A-Z?]){2}") {
+            let (a, b) = xy_chars(&xy);
+            prop_assert!(a != '.');
+            prop_assert!(b != '.');
+        }
+
+        #[test]
+        fn ahead_behind_non_negative(ahead in 0u32..=1000, behind in 0u32..=1000) {
+            let parsed = parse_porcelain_v2(&format!(
+                "# branch.ab +{ahead} -{behind}\0"
+            ));
+            prop_assert_eq!(parsed.ahead, ahead);
+            prop_assert_eq!(parsed.behind, behind);
+        }
     }
 }

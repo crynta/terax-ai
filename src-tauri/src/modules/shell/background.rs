@@ -156,8 +156,11 @@ pub fn spawn(
                     Ok(n) => match proc_ref.buffer.lock() {
                         Ok(mut buffer) => buffer.push(&buf[..n]),
                         Err(error) => {
-                            log::error!("background stdout buffer lock failed: {error}");
-                            break;
+                            log::warn!(
+                                "background stdout buffer lock poisoned, recovering: {error}"
+                            );
+                            let mut buffer = error.into_inner();
+                            buffer.push(&buf[..n]);
                         }
                     },
                     Err(_) => break,
@@ -176,8 +179,11 @@ pub fn spawn(
                     Ok(n) => match proc_ref.buffer.lock() {
                         Ok(mut buffer) => buffer.push(&buf[..n]),
                         Err(error) => {
-                            log::error!("background stderr buffer lock failed: {error}");
-                            break;
+                            log::warn!(
+                                "background stderr buffer lock poisoned, recovering: {error}"
+                            );
+                            let mut buffer = error.into_inner();
+                            buffer.push(&buf[..n]);
                         }
                     },
                     Err(_) => break,

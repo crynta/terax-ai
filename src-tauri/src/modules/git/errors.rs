@@ -1,33 +1,45 @@
-use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum GitError {
+    #[error("git is not available on PATH. Install Git and retry.")]
     NotInstalled,
+    #[error("git {found} is too old; Terax needs git {required} or newer.")]
     TooOld {
         found: String,
         required: &'static str,
     },
+    #[error("not a directory: {0}")]
     NotADirectory(String),
+    #[error("path is outside the authorized workspace: {}", .0.display())]
     PathOutsideWorkspace(PathBuf),
+    #[error("invalid path: {0}")]
     InvalidPath(String),
-    FileTooLarge {
-        path: PathBuf,
-        size: u64,
-        max: u64,
-    },
+    #[error("file too large to diff ({size} bytes, max {max}): {}", path.display())]
+    FileTooLarge { path: PathBuf, size: u64, max: u64 },
+    #[error("refusing to follow symlink: {}", .0.display())]
     SymlinkRejected(PathBuf),
+    #[error("no upstream configured. Run `git push -u <remote> <branch>` in the terminal first.")]
     NoUpstream,
+    #[error("authentication required: {0}. Configure a credential helper or SSH key.")]
     AuthRequired(String),
+    #[error(
+        "host key verification failed. Run the command once in the terminal to trust the host."
+    )]
     HostKeyUnverified,
+    #[error("{0} timed out")]
     TimedOut(&'static str),
+    #[error("commit message cannot be empty")]
     EmptyCommitMessage,
+    #[error("{context}: {detail}")]
     CommandFailed {
         context: &'static str,
         detail: String,
     },
+    #[error("failed to spawn git: {0}")]
     Spawn(String),
-    Io(std::io::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl GitError {
@@ -36,67 +48,6 @@ impl GitError {
             context,
             detail: detail.into(),
         }
-    }
-}
-
-impl Display for GitError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GitError::NotInstalled => write!(
-                f,
-                "git is not available on PATH. Install Git and retry."
-            ),
-            GitError::TooOld { found, required } => write!(
-                f,
-                "git {found} is too old; Terax needs git {required} or newer.",
-            ),
-            GitError::NotADirectory(p) => write!(f, "not a directory: {p}"),
-            GitError::PathOutsideWorkspace(p) => write!(
-                f,
-                "path is outside the authorized workspace: {}",
-                p.display()
-            ),
-            GitError::InvalidPath(p) => write!(f, "invalid path: {p}"),
-            GitError::FileTooLarge { path, size, max } => write!(
-                f,
-                "file too large to diff ({size} bytes, max {max}): {}",
-                path.display()
-            ),
-            GitError::SymlinkRejected(p) => {
-                write!(f, "refusing to follow symlink: {}", p.display())
-            }
-            GitError::NoUpstream => write!(
-                f,
-                "no upstream configured. Run `git push -u <remote> <branch>` in the terminal first."
-            ),
-            GitError::AuthRequired(detail) => write!(
-                f,
-                "authentication required: {detail}. Configure a credential helper or SSH key."
-            ),
-            GitError::HostKeyUnverified => write!(
-                f,
-                "host key verification failed. Run the command once in the terminal to trust the host."
-            ),
-            GitError::TimedOut(op) => write!(f, "{op} timed out"),
-            GitError::EmptyCommitMessage => write!(f, "commit message cannot be empty"),
-            GitError::CommandFailed { context, detail } => {
-                if detail.is_empty() {
-                    write!(f, "{context}")
-                } else {
-                    write!(f, "{context}: {detail}")
-                }
-            }
-            GitError::Spawn(err) => write!(f, "failed to spawn git: {err}"),
-            GitError::Io(err) => write!(f, "io error: {err}"),
-        }
-    }
-}
-
-impl std::error::Error for GitError {}
-
-impl From<std::io::Error> for GitError {
-    fn from(value: std::io::Error) -> Self {
-        GitError::Io(value)
     }
 }
 

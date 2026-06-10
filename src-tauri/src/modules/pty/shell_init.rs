@@ -290,9 +290,12 @@ mod unix {
         let tmp = PathBuf::from(tmp);
         fs::write(&tmp, content).map_err(|e| format!("write {}: {e}", tmp.display()))?;
         fs::rename(&tmp, path).map_err(|e| {
-            let _ = fs::remove_file(&tmp);
+            if let Err(cleanup_err) = fs::remove_file(&tmp) {
+                log::debug!("unix shell init cleanup failed: {cleanup_err}");
+            }
             format!("rename {} -> {}: {e}", tmp.display(), path.display())
-        })
+        })?;
+        Ok(())
     }
 }
 
@@ -595,9 +598,11 @@ mod windows {
         let tmp = PathBuf::from(tmp);
         fs::write(&tmp, content).map_err(|e| format!("write {}: {e}", tmp.display()))?;
         fs::rename(&tmp, path).map_err(|e| {
-            let _ = fs::remove_file(&tmp);
+            if let Err(cleanup_err) = fs::remove_file(&tmp) {
+                log::debug!("windows shell init cleanup failed: {cleanup_err}");
+            }
             format!("rename {} -> {}: {e}", tmp.display(), path.display())
-        })
+        })?;
     }
 
     #[cfg(test)]

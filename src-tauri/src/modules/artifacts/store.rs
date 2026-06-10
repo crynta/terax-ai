@@ -363,7 +363,9 @@ impl ArtifactStore {
         };
         write_json_atomic(&trash_dir.join("record.json"), &record)?;
         if let Err(error) = fs::rename(self.artifact_dir(&key, &slug), trash_dir.join("artifact")) {
-            let _ = fs::remove_dir_all(&trash_dir);
+            if let Err(cleanup_err) = fs::remove_dir_all(&trash_dir) {
+                log::debug!("artifact delete rollback cleanup failed: {cleanup_err}");
+            }
             return Err(ArtifactError::store_unavailable(error.to_string()));
         }
         manifest.artifacts.remove(&slug);

@@ -1,3 +1,5 @@
+//! Cross-platform process spawning helpers (e.g. suppress console windows on Windows).
+
 use std::process::Command;
 
 #[cfg(windows)]

@@ -1,3 +1,4 @@
+use std::fs::OpenOptions;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -10,16 +11,24 @@ use crate::modules::capabilities::{
 use crate::modules::fs::safety::ensure_not_sensitive_path;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
-/// Creates a new empty file. Fails if the file already exists.
+/// Creates a new empty file. Uses `O_EXCL` semantics (via `create_new`)
+/// so the operation is atomic — fails if the file already exists, closing
+/// the TOCTOU window between the existence check and the write.
 pub fn fs_create_file_inner(path: String, workspace: WorkspaceEnv) -> Result<(), String> {
     let p = resolve_path(&path, &workspace);
-    if p.exists() {
-        return Err(format!("already exists: {}", p.display()));
-    }
-    std::fs::write(&p, "").map_err(|e| {
-        log::debug!("fs_create_file({}) failed: {e}", p.display());
-        e.to_string()
-    })
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&p)
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                format!("already exists: {}", p.display())
+            } else {
+                log::debug!("fs_create_file({}) failed: {e}", p.display());
+                e.to_string()
+            }
+        })?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -87,7 +96,9 @@ pub fn fs_copy_file(
 ) -> Result<(), String> {
     app_audit.execute_app_capability("app.file_write", || {
         fs_copy_file_inner(from, to.clone(), WorkspaceEnv::from_option(workspace))?;
-        let _ = app.emit("fs:file-written", FileWrittenEvent { path: to, source });
+        if let Err(e) = app.emit("fs:file-written", FileWrittenEvent { path: to, source }) {
+            log::debug!("fs:file-written emit failed: {e}");
+        }
         Ok(())
     })
 }
@@ -163,6 +174,11 @@ struct FileWrittenEvent {
 }
 
 /// Renames (or moves) a path. Refuses to overwrite an existing target.
+///
+/// Uses hard_link + remove_file instead of rename to avoid TOCTOU: `link()`
+/// fails with `EEXIST` if the target already exists, so the check is atomic
+/// even if another process creates the target between our existence check and
+/// the operation.
 pub fn fs_rename_inner(from: String, to: String, workspace: WorkspaceEnv) -> Result<(), String> {
     let from_p = resolve_path(&from, &workspace);
     let to_p = resolve_path(&to, &workspace);
@@ -172,12 +188,17 @@ pub fn fs_rename_inner(from: String, to: String, workspace: WorkspaceEnv) -> Res
     if to_p.exists() {
         return Err(format!("already exists: {}", to_p.display()));
     }
-    std::fs::rename(&from_p, &to_p).map_err(|e| {
+    std::fs::hard_link(&from_p, &to_p).map_err(|e| {
         log::debug!(
-            "fs_rename({} -> {}) failed: {e}",
+            "fs_rename link({} -> {}) failed: {e}",
             from_p.display(),
             to_p.display()
         );
+        e.to_string()
+    })?;
+    std::fs::remove_file(&from_p).map_err(|e| {
+        log::debug!("fs_rename cleanup({}) failed: {e}", from_p.display());
+        let _ = std::fs::remove_file(&to_p);
         e.to_string()
     })
 }

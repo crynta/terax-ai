@@ -1,3 +1,9 @@
+//! Terax — an open-source AI-native terminal emulator.
+//!
+//! This crate contains the Tauri 2 Rust backend: PTY management, filesystem
+//! operations, git integration, Pi AI session lifecycle, MCP tool bridge,
+//! and the workspace authorization layer.
+
 #![cfg_attr(
     not(test),
     deny(
@@ -10,8 +16,11 @@
 pub mod modules;
 
 use modules::{
-    agent, artifacts, fs, git, mcp, model_compare, net, pi, pty, secrets, shell, workspace,
+    agent, artifacts, capture, fs, git, mcp, model_compare, net, overlay, pi, pty, secrets, shell,
+    workspace,
 };
+#[cfg(all(target_os = "macos", feature = "openclicky"))]
+use modules::tray;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -130,15 +139,16 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(target_os = "macos", feature = "openclicky"))]
+    tray::set_activation_policy_accessory();
+
     let cli_dir = parse_launch_dir();
     workspace::init_launch_cwd(cli_dir.as_deref());
 
-    if let Err(error) = tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        // Skip restoring VISIBLE - frontend calls window.show() after first
-        // paint so the user never sees a transparent window-shadow flash on
-        // Windows/Linux.
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
@@ -154,10 +164,20 @@ pub fn run() {
                 .level(tauri_plugin_log::log::LevelFilter::Info)
                 .build(),
         )
-        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_opener::init());
+
+    #[cfg(feature = "openclicky")]
+    {
+        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    }
+
+    if let Err(error) = builder
         .setup(|_app| {
-            // macOS skips parent() for the settings window, so tie its lifecycle
-            // to the main window here instead. Other platforms keep parent().
+            #[cfg(all(target_os = "macos", feature = "openclicky"))]
+            if let Err(e) = tray::setup_tray(_app.handle()) {
+                log::warn!("tray setup failed (non-fatal, continuing with dock icon): {e}");
+            }
+
             #[cfg(target_os = "macos")]
             if let Some(main) = _app.get_webview_window("main") {
                 let handle = _app.handle().clone();
@@ -167,7 +187,9 @@ pub fn run() {
                         WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
                     ) {
                         if let Some(settings) = handle.get_webview_window("settings") {
-                            let _ = settings.close();
+                            if let Err(e) = settings.close() {
+                                log::debug!("settings window close failed: {e}");
+                            }
                         }
                     }
                 });
@@ -192,6 +214,8 @@ pub fn run() {
             registry
         })
         .manage(LaunchDir(Mutex::new(cli_dir)))
+        .manage(overlay::OverlayState::default())
+        .manage(capture::CaptureState::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -217,6 +241,16 @@ pub fn run() {
             pi::pi_session_delete,
             pi::pi_session_delete_with_artifacts,
             pi::pi_session_stop,
+            pi::pi_session_archive,
+            pi::pi_session_restore,
+            pi::pi_session_fork,
+            pi::pi_session_rollback,
+            pi::pi_usage_summary,
+            pi::pi_store_record_session,
+            pi::pi_store_record_events,
+            pi::pi_store_record_transcript,
+            pi::pi_store_load_transcript,
+            pi::pi_store_delete_transcript,
             mcp::mcp_server_configs_list,
             mcp::mcp_server_config_save,
             mcp::mcp_server_config_remove,
@@ -234,7 +268,9 @@ pub fn run() {
             mcp::mcp_connect_http,
             mcp::mcp_disconnect,
             mcp::mcp_tools,
+            mcp::pi_capability_manifest,
             mcp::mcp_server_statuses,
+            mcp::mcp_call_tool,
             artifacts::artifacts_list,
             artifacts::artifacts_list_all,
             artifacts::artifacts_list_deleted,
@@ -329,6 +365,12 @@ pub fn run() {
             net::workflow_http_request,
             net::ai_http_request,
             net::ai_http_stream,
+            #[cfg(feature = "openclicky")]
+            overlay::overlay_show,
+            #[cfg(feature = "openclicky")]
+            overlay::overlay_hide,
+            #[cfg(feature = "openclicky")]
+            capture::capture_screen,
         ])
         .run(tauri::generate_context!())
     {

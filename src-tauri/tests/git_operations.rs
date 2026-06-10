@@ -1,6 +1,6 @@
 mod common;
 
-use common::{git_available, GitRepoFixture};
+use common::GitRepoFixture;
 use tempfile::TempDir;
 use terax_lib::modules::fs::to_canon;
 use terax_lib::modules::git::errors::GitError;
@@ -8,19 +8,18 @@ use terax_lib::modules::git::operations;
 use terax_lib::modules::git::types::DiscardEntry;
 use terax_lib::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
-fn skip_if_no_git() -> bool {
-    if !git_available() {
-        eprintln!("skipping: git not on PATH");
-        return true;
-    }
-    false
+macro_rules! require_git {
+    () => {
+        if !common::git_available() {
+            eprintln!("skipping: git not on PATH (run with --ignored to force)");
+            return;
+        }
+    };
 }
 
 #[test]
 fn resolve_repo_returns_none_outside_repo() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let tmp = TempDir::new().unwrap();
     let canonical = std::fs::canonicalize(tmp.path()).unwrap();
     let registry = WorkspaceRegistry::default();
@@ -33,9 +32,7 @@ fn resolve_repo_returns_none_outside_repo() {
 
 #[test]
 fn resolve_repo_returns_branch_for_real_repo() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("seed.txt", "seed\n");
     fx.run_git(&["add", "seed.txt"]);
@@ -51,9 +48,7 @@ fn resolve_repo_returns_branch_for_real_repo() {
 
 #[test]
 fn resolve_repo_returns_branch_for_unborn_head() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     let info = operations::resolve_repo(&fx.registry, &fx.repo_str(), &fx.workspace)
         .expect("resolve_repo")
@@ -65,9 +60,7 @@ fn resolve_repo_returns_branch_for_unborn_head() {
 
 #[test]
 fn status_on_empty_repo_has_no_files() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     let snap = operations::status(&fx.registry, &fx.repo_str(), &fx.workspace).expect("status");
     assert_eq!(snap.branch, "main");
@@ -78,9 +71,7 @@ fn status_on_empty_repo_has_no_files() {
 
 #[test]
 fn status_lists_untracked_file() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("hello.txt", "hi\n");
     let snap = operations::status(&fx.registry, &fx.repo_str(), &fx.workspace).expect("status");
@@ -95,9 +86,7 @@ fn status_lists_untracked_file() {
 
 #[test]
 fn stage_then_commit_produces_log_entry() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "alpha\n");
     operations::stage(
@@ -131,9 +120,7 @@ fn stage_then_commit_produces_log_entry() {
 
 #[test]
 fn unstage_clears_index_entry() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "alpha\n");
     fx.run_git(&["add", "a.txt"]);
@@ -167,9 +154,7 @@ fn unstage_clears_index_entry() {
 
 #[test]
 fn commit_with_empty_message_is_rejected() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "alpha\n");
     fx.run_git(&["add", "a.txt"]);
@@ -183,9 +168,7 @@ fn commit_with_empty_message_is_rejected() {
 
 #[test]
 fn log_on_empty_repo_returns_empty_list() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     let entries =
         operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace).expect("log");
@@ -194,9 +177,7 @@ fn log_on_empty_repo_returns_empty_list() {
 
 #[test]
 fn diff_shows_worktree_change() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "alpha\n");
     fx.run_git(&["add", "a.txt"]);
@@ -210,9 +191,7 @@ fn diff_shows_worktree_change() {
 
 #[test]
 fn diff_staged_only_shows_index_change() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "alpha\n");
     fx.run_git(&["add", "a.txt"]);
@@ -229,9 +208,7 @@ fn diff_staged_only_shows_index_change() {
 
 #[test]
 fn discard_tracked_restores_worktree() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "alpha\n");
     fx.run_git(&["add", "a.txt"]);
@@ -255,9 +232,7 @@ fn discard_tracked_restores_worktree() {
 
 #[test]
 fn discard_untracked_removes_file() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("garbage.txt", "junk\n");
 
@@ -277,9 +252,7 @@ fn discard_untracked_removes_file() {
 
 #[test]
 fn panel_snapshot_returns_repo_and_status_after_commit() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "alpha\n");
     fx.run_git(&["add", "a.txt"]);
@@ -296,9 +269,7 @@ fn panel_snapshot_returns_repo_and_status_after_commit() {
 
 #[test]
 fn panel_snapshot_outside_repo_is_empty() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let tmp = TempDir::new().unwrap();
     let canonical = std::fs::canonicalize(tmp.path()).unwrap();
     let registry = WorkspaceRegistry::default();
@@ -312,9 +283,7 @@ fn panel_snapshot_outside_repo_is_empty() {
 
 #[test]
 fn show_commit_diff_returns_patch_for_known_sha() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "alpha\n");
     fx.run_git(&["add", "a.txt"]);
@@ -331,9 +300,7 @@ fn show_commit_diff_returns_patch_for_known_sha() {
 
 #[test]
 fn show_commit_diff_rejects_invalid_sha() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     match operations::show_commit_diff(&fx.registry, &fx.repo_str(), "not-a-sha", &fx.workspace) {
         Err(GitError::CommandFailed { .. }) => {}
@@ -344,9 +311,7 @@ fn show_commit_diff_rejects_invalid_sha() {
 
 #[test]
 fn log_paginates_with_before_sha_cursor() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     for i in 0..3 {
         fx.write_file(&format!("f{i}.txt"), &format!("v{i}\n"));
@@ -372,9 +337,7 @@ fn log_paginates_with_before_sha_cursor() {
 
 #[test]
 fn log_with_invalid_cursor_sha_errors() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "x\n");
     fx.run_git(&["add", "a.txt"]);
@@ -395,9 +358,7 @@ fn log_with_invalid_cursor_sha_errors() {
 
 #[test]
 fn commit_files_reports_added_and_modified() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "alpha\n");
     fx.write_file("b.txt", "beta\n");
@@ -420,9 +381,7 @@ fn commit_files_reports_added_and_modified() {
 
 #[test]
 fn commit_file_diff_returns_original_and_modified_text() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.write_file("a.txt", "v1\n");
     fx.run_git(&["add", "a.txt"]);
@@ -450,9 +409,7 @@ fn commit_file_diff_returns_original_and_modified_text() {
 
 #[test]
 fn remote_url_returns_none_for_missing_remote() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     let url =
         operations::remote_url(&fx.registry, &fx.repo_str(), "origin", &fx.workspace).unwrap();
@@ -461,9 +418,7 @@ fn remote_url_returns_none_for_missing_remote() {
 
 #[test]
 fn remote_url_returns_configured_url() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     fx.run_git(&["remote", "add", "origin", "https://example.com/x.git"]);
 
@@ -474,9 +429,7 @@ fn remote_url_returns_configured_url() {
 
 #[test]
 fn remote_url_rejects_unsafe_remote_name() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let fx = GitRepoFixture::new();
     let url = operations::remote_url(
         &fx.registry,
@@ -490,9 +443,7 @@ fn remote_url_rejects_unsafe_remote_name() {
 
 #[test]
 fn unauthorized_path_is_rejected() {
-    if skip_if_no_git() {
-        return;
-    }
+    require_git!();
     let tmp = TempDir::new().unwrap();
     let canonical = std::fs::canonicalize(tmp.path()).unwrap();
     let registry = WorkspaceRegistry::default();

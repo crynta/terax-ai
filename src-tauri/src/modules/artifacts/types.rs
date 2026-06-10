@@ -212,6 +212,7 @@ fn hex_nibble(value: u8) -> char {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn normalizes_display_slug_to_kebab_id() {
@@ -250,5 +251,61 @@ mod tests {
             conversation_key("pi\n1").unwrap_err().code,
             "ARTIFACT_INVALID_ID"
         );
+    }
+
+    proptest! {
+        #[test]
+        fn normalize_slug_only_contains_lowercase_alnum_and_dashes(input in "[A-Za-z0-9 _\\-.]{1,48}") {
+            let slug = normalize_slug(&input);
+            if let Ok(s) = slug {
+                for ch in s.chars() {
+                    prop_assert!(
+                        ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-',
+                        "invalid char {:?} in slug {:?}", ch, s
+                    );
+                }
+            }
+        }
+
+        #[test]
+        fn normalize_slug_never_longer_than_48(input in "[A-Za-z0-9 _\\-./]{0,100}") {
+            let result = normalize_slug(&input);
+            if let Ok(slug) = result {
+                prop_assert!(slug.len() <= 48);
+            }
+        }
+
+        #[test]
+        fn normalize_slug_rejects_path_separators(input in "[A-Za-z0-9 _/\\\\]{1,48}") {
+            if input.contains('/') || input.contains('\\') {
+                prop_assert!(normalize_slug(&input).is_err());
+            }
+        }
+
+        #[test]
+        fn conversation_key_is_hex_prefixed(id in "[A-Za-z0-9_:\\-]{1,64}") {
+            let key = conversation_key(&id).unwrap();
+            prop_assert!(key.starts_with("c_"));
+            let hex = &key[2..];
+            prop_assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+        }
+
+        #[test]
+        fn conversation_key_no_path_chars(id in "[A-Za-z0-9_:\\-]{1,64}") {
+            let key = conversation_key(&id).unwrap();
+            prop_assert!(!key.contains('/'));
+            prop_assert!(!key.contains('\\'));
+            prop_assert!(!key.contains(':'));
+        }
+
+        #[test]
+        fn validate_conversation_id_roundtrips(id in "[A-Za-z0-9_:\\- ]{1,64}") {
+            let trimmed = id.trim();
+            if trimmed.is_empty() || trimmed.chars().any(|c| c.is_control()) {
+                prop_assert!(validate_conversation_id(&id).is_err());
+            } else {
+                prop_assert_eq!(validate_conversation_id(&id).unwrap(), trimmed);
+            }
+        }
     }
 }

@@ -193,35 +193,46 @@ pub(crate) fn delete_secret_value(
     }
 }
 
+use crate::modules::capabilities::AppCapabilityState;
+
 #[tauri::command]
 pub fn secrets_get(
     app: AppHandle,
     state: tauri::State<'_, SecretsState>,
+    app_audit: tauri::State<'_, AppCapabilityState>,
     service: String,
     account: String,
 ) -> Result<Option<String>, String> {
-    get_secret_value(&app, &state, &service, &account)
+    app_audit.execute_app_capability("app.secrets", || {
+        get_secret_value(&app, &state, &service, &account)
+    })
 }
 
 #[tauri::command]
 pub fn secrets_set(
     app: AppHandle,
     state: tauri::State<'_, SecretsState>,
+    app_audit: tauri::State<'_, AppCapabilityState>,
     service: String,
     account: String,
     password: String,
 ) -> Result<(), String> {
-    set_secret_value(&app, &state, &service, &account, &password)
+    app_audit.execute_app_capability("app.secrets", || {
+        set_secret_value(&app, &state, &service, &account, &password)
+    })
 }
 
 #[tauri::command]
 pub fn secrets_delete(
     app: AppHandle,
     state: tauri::State<'_, SecretsState>,
+    app_audit: tauri::State<'_, AppCapabilityState>,
     service: String,
     account: String,
 ) -> Result<(), String> {
-    delete_secret_value(&app, &state, &service, &account)
+    app_audit.execute_app_capability("app.secrets", || {
+        delete_secret_value(&app, &state, &service, &account)
+    })
 }
 
 #[cfg(all(test, target_os = "linux"))]
@@ -312,28 +323,31 @@ mod tests {
 pub fn secrets_get_all(
     app: AppHandle,
     state: tauri::State<'_, SecretsState>,
+    app_audit: tauri::State<'_, AppCapabilityState>,
     service: String,
     accounts: Vec<String>,
 ) -> Result<Vec<Option<String>>, String> {
-    #[cfg(target_os = "linux")]
-    {
-        with_store(&app, &state, |m| {
-            accounts
-                .iter()
-                .map(|a| m.get(&key(&service, a)).cloned())
-                .collect()
-        })
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (app, state);
-        Ok(accounts
-            .into_iter()
-            .map(|a| {
-                keyring::Entry::new(&service, &a)
-                    .ok()
-                    .and_then(|e| e.get_password().ok())
+    app_audit.execute_app_capability("app.secrets", || {
+        #[cfg(target_os = "linux")]
+        {
+            with_store(&app, &state, |m| {
+                accounts
+                    .iter()
+                    .map(|a| m.get(&key(&service, a)).cloned())
+                    .collect()
             })
-            .collect())
-    }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (app, state);
+            Ok(accounts
+                .into_iter()
+                .map(|a| {
+                    keyring::Entry::new(&service, &a)
+                        .ok()
+                        .and_then(|e| e.get_password().ok())
+                })
+                .collect())
+        }
+    })
 }

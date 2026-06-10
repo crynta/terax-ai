@@ -1,3 +1,5 @@
+//! Model comparison history: persist and retrieve side-by-side model comparison results stored as artifacts in the model-compare conversation.
+
 use serde_json::Value;
 use std::{collections::HashMap, fs, path::PathBuf, sync::LazyLock, sync::Mutex};
 use tauri::{AppHandle, Manager};
