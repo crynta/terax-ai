@@ -1,6 +1,7 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
+import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -284,12 +285,7 @@ function createSlot(): Slot {
     }
     if (isTerminalPaste(event)) {
       if (event.type === "keydown") {
-        void navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (text) slot.term.paste(text);
-          })
-          .catch(() => {});
+        void pasteClipboard(slot);
       }
       event.preventDefault();
       return false;
@@ -298,12 +294,15 @@ function createSlot(): Slot {
     // Windows Terminal behaviour where Ctrl+V always pastes).
     if (isCtrlV(event)) {
       if (event.type === "keydown") {
-        void navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (text) slot.term.paste(text);
-          })
-          .catch(() => {});
+        void pasteClipboard(slot);
+      }
+      event.preventDefault();
+      return false;
+    }
+    // Cmd+V on macOS: intercept to support image paste.
+    if (isMacPaste(event)) {
+      if (event.type === "keydown") {
+        void pasteClipboard(slot);
       }
       event.preventDefault();
       return false;
@@ -922,6 +921,7 @@ const IS_MAC =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad/.test(navigator.userAgent);
 
+
 function isTerminalCopy(e: KeyboardEvent): boolean {
   return (
     !IS_MAC &&
@@ -966,8 +966,68 @@ function isCtrlV(e: KeyboardEvent): boolean {
   );
 }
 
+function isMacPaste(e: KeyboardEvent): boolean {
+  return (
+    IS_MAC &&
+    e.metaKey &&
+    !e.ctrlKey &&
+    !e.shiftKey &&
+    !e.altKey &&
+    (e.code === "KeyV" || e.key === "v" || e.key === "V")
+  );
+}
+
 function isShiftEnter(e: KeyboardEvent): boolean {
   return (
     e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
   );
+}
+
+/**
+ * Paste clipboard content into the terminal. Text pastes as usual; when the
+ * clipboard holds only an image, forward a literal ^V to the PTY so CLI tools
+ * that read the OS clipboard themselves (e.g. Claude Code) can pick it up.
+ */
+async function pasteClipboard(slot: Slot): Promise<void> {
+  try {
+    const items = await navigator.clipboard.read();
+    const hasText = items.some((i) =>
+      i.types.some((t) => t.startsWith("text/")),
+    );
+    const hasImage = items.some((i) =>
+      i.types.some((t) => t.startsWith("image/")),
+    );
+    if (!hasText && hasImage) {
+      const imgItem =
+        items.find((i) => i.types.includes("image/png")) ??
+        items.find((i) => i.types.some((t) => t.startsWith("image/")));
+      if (imgItem) {
+        const type = imgItem.types.find((t) => t.startsWith("image/")) ?? "image/png";
+        const blob = await imgItem.getType(type);
+        const b64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const url = e.target!.result as string;
+            resolve(url.split(",")[1] ?? "");
+          };
+          reader.readAsDataURL(blob);
+        });
+        const path = await invoke<string>("write_temp_image", { dataBase64: b64 });
+        if (path) {
+          slot.term.paste(path);
+          setTimeout(
+            () => void invoke("fs_delete", { path, workspace: null }).catch(() => {}),
+            5 * 60 * 1000,
+          );
+          return;
+        }
+      }
+    }
+  } catch {
+    // fall through to plain-text paste
+  }
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) slot.term.paste(text);
+  } catch {}
 }
