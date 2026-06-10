@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { ensureMonoFontsLoaded } from "@/lib/fonts";
+import { ensureMonoFontsLoaded, loadFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +20,7 @@ import "../block/block.css";
 import {
   acquireSlot,
   applyBackgroundActive,
+  applyBoldText,
   applyCursorBlink,
   applyFontFamily,
   applyFontSize,
@@ -281,6 +282,7 @@ function ensureSession(
 
   session.ready = (async () => {
     await ensureMonoFontsLoaded();
+    await loadFontFamily(usePreferencesStore.getState().terminalFontFamily);
     await document.fonts.ready;
   })();
 
@@ -628,6 +630,11 @@ export function useTerminalSession({
   useEffect(() => {
     applyCursorBlink(cursorBlink);
   }, [cursorBlink]);
+
+  const boldText = usePreferencesStore((p) => p.terminalBoldText);
+  useEffect(() => {
+    applyBoldText(boldText);
+  }, [boldText]);
 
   const bgActive = usePreferencesStore(
     (p) => p.backgroundKind === "image" && !!p.backgroundImageId,

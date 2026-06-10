@@ -241,6 +241,10 @@ html[data-chrome="borderless"] #settings-root {
 body {
   -webkit-user-select: none;
   user-select: none;
+  /* macOS WebKit defaults to heavy font smoothing; grayscale AA matches the
+   * weight native apps (and ghostty) render, instead of bolded glyphs. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 input,
 textarea,
