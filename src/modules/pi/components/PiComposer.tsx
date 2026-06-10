@@ -9,15 +9,17 @@ import type { PiComposerContextUsage } from "@/modules/pi/lib/panel-state";
 import type { PiThinkingLevel } from "@/modules/pi/lib/provider";
 import { MAX_PI_PROMPT_CHARS, type PiSession } from "@/modules/pi/lib/sessions";
 
+type PiComposerStatus =
+  | { phase: "offline" }
+  | { phase: "busy" }
+  | { phase: "active"; canCreateSession: boolean };
+
 type PiComposerProps = {
   availableThinkingLevels: PiThinkingLevel[];
-  canCreateSession: boolean;
   contextUsage: PiComposerContextUsage | null;
-  disabled: boolean;
-  isBusy: boolean;
   prompt: string;
-  runtimeReady: boolean;
   selectedSession: PiSession | null;
+  status: PiComposerStatus;
   thinkingLevel: PiThinkingLevel | null;
   onCreateSession: () => void;
   onPromptChange: (prompt: string) => void;
@@ -78,13 +80,10 @@ function thinkingLevelLabel(level: PiThinkingLevel): string {
 
 export function PiComposer({
   availableThinkingLevels,
-  canCreateSession,
   contextUsage,
-  disabled,
-  isBusy,
   prompt,
-  runtimeReady,
   selectedSession,
+  status,
   thinkingLevel,
   onCreateSession,
   onPromptChange,
@@ -93,24 +92,27 @@ export function PiComposer({
   onStopSession,
   onThinkingLevelChange,
 }: PiComposerProps) {
+  const isActive = status.phase === "active";
   const isRunning = selectedSession?.status === "running";
   const isStopped = selectedSession?.status === "stopped";
-  const thinkingDisabled = !runtimeReady || isRunning || isBusy;
+  const thinkingDisabled = !isActive || isRunning;
   const thinkingTitle = isRunning
     ? "Locked during run"
-    : isBusy
+    : status.phase === "busy"
       ? "Wait for current action"
       : "Applies to next reply";
   const canRetryLastPrompt =
-    runtimeReady &&
-    !isBusy &&
+    isActive &&
     selectedSession?.status === "error" &&
     typeof selectedSession.lastPrompt === "string" &&
     selectedSession.lastPrompt.trim() !== "";
+  const textareaDisabled = !isActive;
   const sendDisabled =
-    disabled || prompt.trim() === "" || prompt.length > MAX_PI_PROMPT_CHARS;
-  const stopDisabled =
-    !runtimeReady || selectedSession === null || !isRunning || isBusy;
+    textareaDisabled ||
+    prompt.trim() === "" ||
+    prompt.length > MAX_PI_PROMPT_CHARS;
+  const stopDisabled = !isActive || selectedSession === null || !isRunning;
+  const canCreateSession = status.phase === "active" && status.canCreateSession;
   const limitLabel = promptLimitLabel(prompt);
   const usageLabel = contextUsageLabel(contextUsage);
   const overLimit = prompt.length > MAX_PI_PROMPT_CHARS;
@@ -133,7 +135,7 @@ export function PiComposer({
         className="max-h-32 min-h-16 overflow-y-auto overscroll-contain rounded-lg border-border/45 bg-background/95 px-2.5 py-2 text-[12px] leading-relaxed shadow-sm placeholder:text-muted-foreground focus-visible:border-primary/45 focus-visible:ring-2 focus-visible:ring-primary/15 disabled:bg-muted/35"
         value={prompt}
         placeholder="Ask Pi about this workspace"
-        disabled={disabled}
+        disabled={textareaDisabled}
         onChange={(event) => onPromptChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
@@ -144,7 +146,9 @@ export function PiComposer({
       />
       <div className="mt-1.5 flex items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground/70">
-          {composerHint(runtimeReady, selectedSession, prompt)}
+          {status.phase === "offline"
+            ? "Start Pi to send prompts."
+            : composerHint(true, selectedSession, prompt)}
         </span>
         {availableThinkingLevels.length > 0 && thinkingLevel ? (
           <label className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground/70">
@@ -156,7 +160,9 @@ export function PiComposer({
               title={thinkingTitle}
               value={thinkingLevel}
               onChange={(event) =>
-                onThinkingLevelChange(event.currentTarget.value as PiThinkingLevel)
+                onThinkingLevelChange(
+                  event.currentTarget.value as PiThinkingLevel,
+                )
               }
             >
               {availableThinkingLevels.map((level) => (
@@ -189,7 +195,7 @@ export function PiComposer({
             variant="secondary"
             className="h-6 min-w-20 rounded-md text-[10.5px]"
             aria-label="Create new Pi session"
-            disabled={!canCreateSession || isBusy}
+            disabled={!canCreateSession}
             onClick={onCreateSession}
           >
             New session

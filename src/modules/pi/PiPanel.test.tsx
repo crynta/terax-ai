@@ -35,6 +35,9 @@ const piNativeMock = vi.hoisted(() => ({
   mcpTools: vi.fn(),
   sessionCreate: vi.fn(),
   sessionDelete: vi.fn(),
+  sessionDeleteWithArtifacts: vi.fn(),
+  sessionArchive: vi.fn(),
+  sessionRestore: vi.fn(),
   sessionResume: vi.fn(),
   sessionRename: vi.fn(),
   sessionSend: vi.fn(),
@@ -55,6 +58,30 @@ const tauriEventMock = vi.hoisted(() => ({
 }));
 
 vi.mock("@/modules/pi/lib/native", () => ({ piNative: piNativeMock }));
+vi.mock("@/modules/pi/lib/pi-session-backend", () => {
+  const backend = {
+    useWebview: false,
+    sessionCreate: (...args: unknown[]) => piNativeMock.sessionCreate(...args as [undefined, string, unknown]),
+    sessionResume: (...args: unknown[]) => piNativeMock.sessionResume(...args as [string, unknown]),
+    sessionSend: (...args: unknown[]) => piNativeMock.sessionSend(...args as [string, string, unknown, unknown]),
+    sessionStop: (...args: unknown[]) => piNativeMock.sessionStop(...args as [string]),
+    sessionRename: (...args: unknown[]) => piNativeMock.sessionRename(...args as [string, string]),
+    sessionDelete: (...args: unknown[]) => piNativeMock.sessionDelete(...args as [string]),
+    sessionDeleteWithArtifacts: (...args: unknown[]) => piNativeMock.sessionDeleteWithArtifacts(...args as [string]),
+    sessionArchive: (...args: unknown[]) => piNativeMock.sessionArchive(...args as [string]),
+    sessionRestore: (...args: unknown[]) => piNativeMock.sessionRestore(...args as [string]),
+    sessionToolRespond: (...args: unknown[]) => piNativeMock.sessionToolRespond(...args as [string, string, boolean]),
+    usageSummary: () => Promise.resolve({
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCachedInputTokens: 0,
+      totalCostUsd: 0,
+      turnCount: 0,
+      byModel: null,
+    }),
+  };
+  return { getSessionBackend: () => backend, resetSessionBackend: vi.fn() };
+});
 vi.mock("@tauri-apps/api/event", () => ({
   listen: tauriEventMock.listen,
 }));

@@ -10,6 +10,23 @@ import type {
 
 export const DEFAULT_EVENT_LIMIT = 500;
 
+let piEventSequenceCounter = 0;
+
+/**
+ * Generate a webview event id that embeds a monotonic sequence the
+ * {@link eventSequence} parser understands (`evt_<base36 time>_<seq>_<rand>`).
+ * Random UUIDs carry no sequence, so events emitted in the same millisecond
+ * would otherwise sort by random id comparison — non-deterministic, and a source
+ * of corrupted transcript reconstruction. The sequence makes intra-turn ordering
+ * deterministic and emission-ordered.
+ */
+export function nextPiEventId(): string {
+  piEventSequenceCounter += 1;
+  const time = Date.now().toString(36);
+  const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  return `evt_${time}_${piEventSequenceCounter}_${rand}`;
+}
+
 export function eventTimestamp(event: PiSessionEvent): number {
   const timestamp = Date.parse(event.createdAt);
   return Number.isFinite(timestamp) ? timestamp : 0;

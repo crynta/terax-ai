@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
 
 use super::host::{HostCallError, PiHost, PiSessionEventSink};
@@ -46,8 +45,8 @@ impl IdleShutdownController {
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
         let controller = self.clone();
         let timeout = self.timeout;
-        thread::spawn(move || {
-            thread::sleep(timeout);
+        tokio::spawn(async move {
+            tokio::time::sleep(timeout).await;
             if controller.generation.load(Ordering::Relaxed) != generation {
                 return;
             }
@@ -83,7 +82,9 @@ impl IdleShutdownController {
                         host.shutdown();
                     }
                 }
-                Err(_) => {}
+                Err(e) => {
+                    log::debug!("idle shutdown has_running_sessions error: {e}");
+                }
             }
         });
     }
@@ -108,7 +109,9 @@ fn mark_unfinished_sessions_stopped_for_history_path(history_path: &Arc<Mutex<Op
         Err(_) => None,
     };
     if let Some(path) = path {
-        let _ = store::mark_unfinished_sessions_stopped_at_path(&path);
+        if let Err(e) = store::mark_unfinished_sessions_stopped_at_path(&path) {
+            log::debug!("mark unfinished sessions stopped failed: {e}");
+        }
     }
 }
 
@@ -267,7 +270,9 @@ impl PiState {
                 let clear = error.is_transport();
                 let command_error = error.into_command_error();
                 if clear {
-                    let _ = self.clear_host_if_same(&host);
+                    if let Err(e) = self.clear_host_if_same(&host) {
+                        log::debug!("clear_host_if_same failed: {e}");
+                    }
                 }
                 Err(command_error)
             }
@@ -287,7 +292,9 @@ impl PiState {
             Ok(snapshot) => Ok(snapshot),
             Err(error) => {
                 let message = error.message();
-                let _ = self.clear_host_if_same(&host);
+                if let Err(e) = self.clear_host_if_same(&host) {
+                    log::debug!("snapshot clear_host_if_same failed: {e}");
+                }
                 Ok(error_snapshot(message))
             }
         }

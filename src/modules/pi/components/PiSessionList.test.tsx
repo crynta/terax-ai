@@ -27,10 +27,12 @@ function renderList(
 ) {
   return renderToStaticMarkup(
     <PiSessionList
-      canCreateSession={options.canCreateSession ?? true}
       collapsed={false}
       disabled={false}
-      runtimeReady
+      status={{
+        phase: "ready",
+        canCreateSession: options.canCreateSession ?? true,
+      }}
       selectedSessionId={sessions[0]?.id ?? null}
       sessions={sessions}
       workspaceRoot="/Users/me/project"
@@ -39,6 +41,8 @@ function renderList(
       onDeleteSession={() => {}}
       onRenameSession={() => {}}
       onResumeSession={() => {}}
+      onArchiveSession={() => {}}
+      onRestoreSession={() => {}}
       onSelectSession={() => {}}
     />,
   );

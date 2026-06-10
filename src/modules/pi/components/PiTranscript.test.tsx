@@ -58,6 +58,54 @@ describe("PiTranscript", () => {
     expect(html).toContain('aria-label="Open Code chat in workspace"');
   });
 
+  it("renders an interactive question with its options", () => {
+    const questionItem = {
+      id: "q-1",
+      kind: "question",
+      label: "Question",
+      text: "Which database?",
+      eventIds: ["q-1"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      questionId: "qid",
+      questionOptions: [{ label: "Postgres" }, { label: "SQLite" }],
+      questionState: "pending",
+    } as PiTranscriptItem;
+
+    const html = renderToStaticMarkup(
+      <PiTranscript
+        selectedSession={session}
+        transcript={[questionItem]}
+        onQuestionRespond={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Which database?");
+    expect(html).toContain("Postgres");
+    expect(html).toContain("SQLite");
+  });
+
+  it("shows the chosen answer once a question is answered", () => {
+    const answered = {
+      id: "q-2",
+      kind: "question",
+      label: "Question",
+      text: "Which database?",
+      eventIds: ["q-2"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      questionId: "qid",
+      questionOptions: [{ label: "Postgres" }],
+      questionState: "answered",
+      questionAnswers: [{ label: "Postgres" }],
+    } as PiTranscriptItem;
+
+    const html = renderToStaticMarkup(
+      <PiTranscript selectedSession={session} transcript={[answered]} />,
+    );
+
+    expect(html).toContain("Answered:");
+    expect(html).toContain("Postgres");
+  });
+
   it("keeps user and assistant transcript text selectable and breakable", () => {
     const html = renderToStaticMarkup(
       <PiTranscript

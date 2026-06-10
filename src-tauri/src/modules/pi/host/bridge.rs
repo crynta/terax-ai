@@ -350,7 +350,7 @@ pub(super) fn write_host_response(
         .map_err(|error| format!("Pi host response write failed: {error}"))
 }
 
-#[allow(
+#[expect(
     clippy::too_many_arguments,
     reason = "The host reader owns independent protocol, approval, audit, and event channels"
 )]

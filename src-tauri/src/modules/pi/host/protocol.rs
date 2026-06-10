@@ -41,6 +41,14 @@ pub(crate) enum HostCallError {
     Transport(String),
 }
 
+impl std::fmt::Display for HostCallError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Method { message, .. } | Self::Transport(message) => write!(f, "{message}"),
+        }
+    }
+}
+
 impl HostCallError {
     pub(crate) fn message(self) -> String {
         match self {

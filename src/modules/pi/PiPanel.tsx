@@ -8,8 +8,8 @@ import {
 } from "react";
 import { PiComposer } from "@/modules/pi/components/PiComposer";
 import {
-  PiDestructiveActionDialog,
   type PendingPiDestructiveAction,
+  PiDestructiveActionDialog,
 } from "@/modules/pi/components/PiDestructiveActionDialog";
 import { PiMcpOAuthDialog } from "@/modules/pi/components/PiMcpOAuthDialog";
 import { PiPanelHeader } from "@/modules/pi/components/PiPanelHeader";
@@ -17,11 +17,13 @@ import {
   PiPanelSupportingSections,
   PiPanelSupportingSectionsProvider,
 } from "@/modules/pi/components/PiPanelSupportingSections";
-import { PiSessionList } from "@/modules/pi/components/PiSessionList";
+import {
+  buildSessionKeywordIndex,
+  PiSessionList,
+} from "@/modules/pi/components/PiSessionList";
 import { PiTranscript } from "@/modules/pi/components/PiTranscript";
+import { PiUsageCard } from "@/modules/pi/components/PiUsageCard";
 import type { PiLocalAgentLaunchRequest } from "@/modules/pi/lib/local-agents";
-import { piNative } from "@/modules/pi/lib/native";
-
 import {
   type PiPanelSectionId,
   usePiControllerState,
@@ -34,6 +36,7 @@ import {
   toErrorState,
 } from "@/modules/pi/lib/panel-defaults";
 import { buildPiPanelState } from "@/modules/pi/lib/panel-state";
+import { getSessionBackend } from "@/modules/pi/lib/pi-session-backend";
 import type {
   PiProviderRuntimeConfig,
   PiThinkingLevel,
@@ -41,6 +44,7 @@ import type {
 import { deletePiSessionWithArtifactCleanup } from "@/modules/pi/lib/sessionLifecycle";
 import type {
   PiPromptContext,
+  PiQuestionAnswer,
   PiSessionBranch,
 } from "@/modules/pi/lib/sessions";
 import {
@@ -52,10 +56,10 @@ import { useMcpSurface } from "@/modules/pi/lib/useMcpSurface";
 import { usePiLocalAgentLaunch } from "@/modules/pi/lib/usePiLocalAgentLaunch";
 import { usePiLocalAgentsPanel } from "@/modules/pi/lib/usePiLocalAgentsPanel";
 import { usePiPanelRefreshers } from "@/modules/pi/lib/usePiPanelRefreshers";
-import { usePiSessionEventStream } from "@/modules/pi/lib/usePiSessionEventStream";
 import { usePiProviderConfig } from "@/modules/pi/lib/usePiProviderConfig";
 import { usePiProviderKeyStatus } from "@/modules/pi/lib/usePiProviderKeyStatus";
 import { usePiRuntimeActions } from "@/modules/pi/lib/usePiRuntimeActions";
+import { usePiSessionEventStream } from "@/modules/pi/lib/usePiSessionEventStream";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import {
   SidebarPanelBody,
@@ -137,6 +141,10 @@ export function PiPanel({
   const [sessionEvents, setSessionEvents] = usePiControllerState(
     "sessionEvents",
     [],
+  );
+  const sessionKeywords = useMemo(
+    () => buildSessionKeywordIndex(sessionEvents),
+    [sessionEvents],
   );
   const [selectedSessionId, setSelectedSessionId] = usePiControllerState(
     "selectedSessionId",
@@ -372,6 +380,14 @@ export function PiPanel({
     if (!action) return;
     if (action.kind === "stop-runtime") {
       void stopRuntime();
+    } else if (action.kind === "rollback") {
+      void runPiPanelAction(async () => {
+        const result = await getSessionBackend().sessionRollback(
+          action.sessionId,
+          action.eventId,
+        );
+        applySessionUpdate(result.session, []);
+      });
     } else {
       void removeMcpConfigNow(action.serverId);
     }
@@ -409,7 +425,7 @@ export function PiPanel({
         piProvider.config,
         activeThinkingLevel,
       );
-      const result = await piNative.sessionCreate(
+      const result = await getSessionBackend().sessionCreate(
         undefined,
         workspaceRoot,
         providerConfig,
@@ -441,7 +457,7 @@ export function PiPanel({
             piProvider.config,
             activeThinkingLevel,
           );
-          const result = await piNative.sessionResume(
+          const result = await getSessionBackend().sessionResume(
             sessionId,
             providerConfig,
           );
@@ -486,7 +502,7 @@ export function PiPanel({
       }
 
       await runPiPanelAction(async () => {
-        const result = await piNative.sessionSend(
+        const result = await getSessionBackend().sessionSend(
           selectedSession.id,
           text,
           promptContext,
@@ -525,7 +541,7 @@ export function PiPanel({
       .find((item) => item.kind === "user" && item.text?.trim() === text);
 
     await runPiPanelAction(async () => {
-      const result = await piNative.sessionSend(
+      const result = await getSessionBackend().sessionSend(
         selectedSession.id,
         text,
         lastPromptItem?.context ?? promptContext,
@@ -575,7 +591,7 @@ export function PiPanel({
       activeRegenerateBranchesRef.current.set(selectedSession.id, branch);
       await runPiPanelAction(
         async () => {
-          const result = await piNative.sessionSend(
+          const result = await getSessionBackend().sessionSend(
             selectedSession.id,
             promptText,
             context ?? promptContext,
@@ -614,7 +630,7 @@ export function PiPanel({
     }
 
     await runPiPanelAction(async () => {
-      const result = await piNative.sessionStop(selectedSession.id);
+      const result = await getSessionBackend().sessionStop(selectedSession.id);
       applySessionUpdate(result.session, result.events);
     });
   }, [applySessionUpdate, runPiPanelAction, selectedSession]);
@@ -624,27 +640,123 @@ export function PiPanel({
       if (isBusy) return;
 
       await runPiPanelAction(async () => {
-        const result = await piNative.sessionRename(sessionId, title);
+        const result = await getSessionBackend().sessionRename(
+          sessionId,
+          title,
+        );
         applySessionUpdate(result.session, result.events);
       });
     },
     [applySessionUpdate, isBusy, runPiPanelAction],
   );
 
-  const respondToToolApproval = useCallback(
-    async (toolCallId: string, approved: boolean) => {
+  const archiveSession = useCallback(
+    async (sessionId: string) => {
+      if (isBusy) return;
+
+      await runPiPanelAction(async () => {
+        const result = await getSessionBackend().sessionArchive(sessionId);
+        applySessionUpdate(result.session, []);
+      });
+    },
+    [applySessionUpdate, isBusy, runPiPanelAction],
+  );
+
+  const restoreSession = useCallback(
+    async (sessionId: string) => {
+      if (isBusy) return;
+
+      await runPiPanelAction(async () => {
+        const result = await getSessionBackend().sessionRestore(sessionId);
+        applySessionUpdate(result.session, []);
+      });
+    },
+    [applySessionUpdate, isBusy, runPiPanelAction],
+  );
+
+  const forkFromTurn = useCallback(
+    async (eventId: string) => {
       if (isBusy || selectedSession === null) return;
 
       await runPiPanelAction(async () => {
-        const result = await piNative.sessionToolRespond(
+        const result = await getSessionBackend().sessionFork(
+          selectedSession.id,
+          eventId,
+        );
+        applySessionUpdate(result.session, result.events);
+        setSelectedSessionId(result.session.id);
+      });
+    },
+    [
+      applySessionUpdate,
+      isBusy,
+      runPiPanelAction,
+      selectedSession,
+      setSelectedSessionId,
+    ],
+  );
+
+  const rollbackToTurn = useCallback(
+    (eventId: string) => {
+      if (isBusy || selectedSession === null) return;
+      // Count events after the rollback point from transcript items
+      const rollbackIdx = selectedTranscript.findIndex((item) =>
+        item.eventIds.includes(eventId),
+      );
+      const eventsAfter =
+        rollbackIdx >= 0
+          ? selectedTranscript
+              .slice(rollbackIdx + 1)
+              .reduce((sum, item) => sum + item.eventIds.length, 0)
+          : 0;
+      setPendingDestructiveAction({
+        kind: "rollback",
+        sessionId: selectedSession.id,
+        eventId,
+        eventCount: eventsAfter,
+      });
+    },
+    [isBusy, selectedSession, selectedTranscript],
+  );
+
+  // Tool approvals and question answers are how the user UNBLOCKS an in-flight
+  // agent turn, so they happen precisely while a send is still streaming
+  // (isBusy === true). They must NOT be gated on isBusy, and must NOT go through
+  // runPiPanelAction — doing so would clear the busy state owned by the active
+  // send and re-enable the whole panel mid-run. They do their own error
+  // handling instead.
+  const respondToToolApproval = useCallback(
+    async (toolCallId: string, approved: boolean) => {
+      if (selectedSession === null) return;
+      try {
+        const result = await getSessionBackend().sessionToolRespond(
           selectedSession.id,
           toolCallId,
           approved,
         );
         applySessionUpdate(result.session, result.events);
-      });
+      } catch (error) {
+        setRuntimeState(toErrorState(error));
+      }
     },
-    [applySessionUpdate, isBusy, runPiPanelAction, selectedSession],
+    [applySessionUpdate, selectedSession, setRuntimeState],
+  );
+
+  const respondToQuestion = useCallback(
+    async (questionId: string, answers: PiQuestionAnswer[]) => {
+      if (selectedSession === null) return;
+      try {
+        const result = await getSessionBackend().sessionQuestionRespond(
+          selectedSession.id,
+          questionId,
+          answers,
+        );
+        applySessionUpdate(result.session, result.events);
+      } catch (error) {
+        setRuntimeState(toErrorState(error));
+      }
+    },
+    [applySessionUpdate, selectedSession, setRuntimeState],
   );
 
   const deleteSession = useCallback(
@@ -722,7 +834,7 @@ export function PiPanel({
                   agents: localAgents,
                   collapsed: collapsedSections.localAgents,
                   disabled: isBusy,
-                  isRefreshing: isLocalAgentsRefreshing,
+                  refreshing: isLocalAgentsRefreshing,
                   prompt,
                   onCollapsedChange: (collapsed) =>
                     setSectionCollapsed("localAgents", collapsed),
@@ -734,7 +846,7 @@ export function PiPanel({
                 diagnosticsCard: {
                   collapsed: collapsedSections.diagnostics,
                   disabled: isBusy || isDiagnosticsRefreshing,
-                  isRefreshing: isDiagnosticsRefreshing,
+                  refreshing: isDiagnosticsRefreshing,
                   view: diagnosticsView,
                   onCollapsedChange: (collapsed) =>
                     setSectionCollapsed("diagnostics", collapsed),
@@ -762,7 +874,7 @@ export function PiPanel({
                     isBusy || isMcpRefreshing || mcpBusyServerId !== null,
                   envSecretStatuses: mcpEnvSecretStatuses,
                   error: mcpError,
-                  isRefreshing: isMcpRefreshing,
+                  refreshing: isMcpRefreshing,
                   statuses: mcpStatuses,
                   tools: mcpTools,
                   onCollapsedChange: (collapsed) =>
@@ -798,25 +910,41 @@ export function PiPanel({
 
         <SidebarPanelBody>
           {supportingSectionsHidden ? null : (
-            <PiSessionList
-              canCreateSession={canCreateSession}
-              collapsed={collapsedSections.sessions}
-              disabled={isBusy}
-              runtimeReady={runtimeReady}
-              selectedSessionId={selectedSessionId}
-              sessions={sessions}
-              workspaceRoot={workspaceRoot}
-              onCollapsedChange={(collapsed) =>
-                setSectionCollapsed("sessions", collapsed)
-              }
-              onCreateSession={() => void createSession()}
-              onDeleteSession={(sessionId) => void deleteSession(sessionId)}
-              onRenameSession={(sessionId, title) =>
-                void renameSession(sessionId, title)
-              }
-              onResumeSession={(sessionId) => void resumeSession(sessionId)}
-              onSelectSession={setSelectedSessionId}
-            />
+            <>
+              <PiSessionList
+                collapsed={collapsedSections.sessions}
+                disabled={isBusy}
+                status={
+                  !runtimeReady
+                    ? { phase: "offline" }
+                    : { phase: "ready", canCreateSession }
+                }
+                selectedSessionId={selectedSessionId}
+                sessions={sessions}
+                sessionKeywords={sessionKeywords}
+                workspaceRoot={workspaceRoot}
+                onCollapsedChange={(collapsed) =>
+                  setSectionCollapsed("sessions", collapsed)
+                }
+                onCreateSession={() => void createSession()}
+                onDeleteSession={(sessionId) => void deleteSession(sessionId)}
+                onRenameSession={(sessionId, title) =>
+                  void renameSession(sessionId, title)
+                }
+                onResumeSession={(sessionId) => void resumeSession(sessionId)}
+                onArchiveSession={(sessionId) => void archiveSession(sessionId)}
+                onRestoreSession={(sessionId) => void restoreSession(sessionId)}
+                onSelectSession={setSelectedSessionId}
+              />
+              <PiUsageCard
+                sessionId={selectedSessionId}
+                collapsed={collapsedSections.usage ?? true}
+                disabled={isBusy}
+                onCollapsedChange={(collapsed) =>
+                  setSectionCollapsed("usage", collapsed)
+                }
+              />
+            </>
           )}
 
           <PiTranscript
@@ -826,8 +954,13 @@ export function PiPanel({
             onOpenWorkspace={onOpenWorkspace}
             onPopOut={onPopOut}
             onRegenerate={(request) => void regenerateResponse(request)}
+            onForkFromTurn={(eventId) => void forkFromTurn(eventId)}
+            onRollbackToTurn={(eventId) => void rollbackToTurn(eventId)}
             onToolApproval={(toolCallId, approved) =>
               void respondToToolApproval(toolCallId, approved)
+            }
+            onQuestionRespond={(questionId, answers) =>
+              void respondToQuestion(questionId, answers)
             }
             onUsePrompt={setPrompt}
           />
@@ -836,13 +969,16 @@ export function PiPanel({
             availableThinkingLevels={
               panelState.composer.availableThinkingLevels
             }
-            canCreateSession={canCreateSession}
             contextUsage={panelState.composer.contextUsage}
-            disabled={!runtimeReady || !selectedSessionSendable || isBusy}
-            isBusy={isBusy}
             prompt={prompt}
-            runtimeReady={runtimeReady}
             selectedSession={selectedSession}
+            status={
+              !runtimeReady
+                ? { phase: "offline" }
+                : isBusy
+                  ? { phase: "busy" }
+                  : { phase: "active", canCreateSession }
+            }
             thinkingLevel={activeThinkingLevel}
             onCreateSession={() => void createSession()}
             onPromptChange={setPrompt}

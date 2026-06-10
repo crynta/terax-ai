@@ -11,7 +11,8 @@ import {
 
 export type PendingPiDestructiveAction =
   | { kind: "stop-runtime" }
-  | { kind: "mcp-config"; serverId: string };
+  | { kind: "mcp-config"; serverId: string }
+  | { kind: "rollback"; sessionId: string; eventId: string; eventCount: number };
 
 type PiDestructiveActionDialogProps = {
   action: PendingPiDestructiveAction | null;
@@ -68,6 +69,14 @@ function destructiveActionCopy(
       description:
         "Active Pi responses will be interrupted and restored sessions will be marked stopped.",
       action: "Stop runtime",
+    };
+  }
+  if (action.kind === "rollback") {
+    const plural = action.eventCount === 1 ? "event" : "events";
+    return {
+      title: "Rollback to this turn?",
+      description: `This will remove ${action.eventCount} ${plural} that came after this turn. The session will be reverted to this point in the conversation.`,
+      action: `Remove ${action.eventCount} ${plural}`,
     };
   }
   return {

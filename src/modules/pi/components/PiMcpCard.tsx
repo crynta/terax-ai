@@ -27,7 +27,10 @@ import {
   McpServerRow,
   recentMcpAuditEntries,
 } from "@/modules/pi/components/PiMcpRows";
-import { PiSection } from "@/modules/pi/components/PiSection";
+import {
+  PiSection,
+  type PiSectionShellProps,
+} from "@/modules/pi/components/PiSection";
 import type {
   McpApprovalPolicy,
   McpEnvSecretStatus,
@@ -44,17 +47,13 @@ export {
   draftFromStoredMcpConfig,
 } from "@/modules/pi/components/PiMcpConfig";
 
-type PiMcpCardProps = {
+type PiMcpCardProps = PiSectionShellProps & {
   auditEntries: CapabilityAuditEntry[];
-  collapsed: boolean;
   configs: McpStoredServerConfig[];
-  disabled: boolean;
   error: string | null;
   envSecretStatuses: McpEnvSecretStatus[];
-  isRefreshing: boolean;
   statuses: McpServerStatus[];
   tools: McpToolDescriptor[];
-  onCollapsedChange: (collapsed: boolean) => void;
   onConnect: (server: McpStoredServerConfig) => void;
   onDisconnect: (serverId: string) => void;
   onEnvSecretRemove: (serverId: string, name: string) => void;
@@ -77,7 +76,7 @@ export function PiMcpCard({
   disabled,
   envSecretStatuses,
   error,
-  isRefreshing,
+  refreshing,
   statuses,
   tools,
   onCollapsedChange,
@@ -144,10 +143,10 @@ export function PiMcpCard({
           size="xs"
           variant="ghost"
           className="h-5 rounded-md px-1.5 text-[10px]"
-          disabled={disabled || isRefreshing}
+          disabled={disabled || refreshing}
           onClick={onRefresh}
         >
-          {isRefreshing ? (
+          {refreshing ? (
             <Spinner data-icon="inline-start" />
           ) : (
             <HugeiconsIcon
@@ -207,7 +206,7 @@ export function PiMcpCard({
             {rows.map((row) => (
               <McpServerRow
                 key={row.id}
-                disabled={disabled || isRefreshing}
+                disabled={disabled || refreshing}
                 row={row}
                 onConnect={onConnect}
                 onDisconnect={onDisconnect}
@@ -236,7 +235,7 @@ export function PiMcpCard({
         )}
 
         <McpConfigEditor
-          disabled={disabled || isRefreshing}
+          disabled={disabled || refreshing}
           draft={draft}
           editingId={editingId}
           error={validationError}

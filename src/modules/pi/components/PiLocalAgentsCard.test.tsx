@@ -24,7 +24,7 @@ function renderCard(prompt = "Review the current diff") {
       ])}
       collapsed={false}
       disabled={false}
-      isRefreshing={false}
+      refreshing={false}
       prompt={prompt}
       onCollapsedChange={() => {}}
       onInstall={() => {}}

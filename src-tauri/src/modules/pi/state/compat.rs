@@ -123,7 +123,7 @@ impl PiState {
         )
     }
 
-    #[allow(
+    #[expect(
         clippy::too_many_arguments,
         reason = "Event sink, provider config, and persistent session directory are forwarded"
     )]
@@ -172,7 +172,7 @@ impl PiState {
         )
     }
 
-    #[allow(
+    #[expect(
         clippy::too_many_arguments,
         reason = "Pi resume forwards persisted session metadata to the sidecar"
     )]
@@ -233,7 +233,7 @@ impl PiState {
         })
     }
 
-    #[allow(
+    #[expect(
         clippy::too_many_arguments,
         reason = "Event sink and optional send metadata are forwarded to the Pi host"
     )]
@@ -259,7 +259,7 @@ impl PiState {
         )
     }
 
-    #[allow(
+    #[expect(
         clippy::too_many_arguments,
         reason = "Event sink, native tool context, and optional send metadata are forwarded"
     )]

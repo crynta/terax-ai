@@ -18,6 +18,15 @@ export const SESSION_EVENT = Object.freeze({
   Renamed: "session.renamed",
   Deleted: "session.deleted",
   Error: "session.error",
+  QuestionRequested: "session.question.requested",
+  QuestionResponded: "session.question.responded",
+  QuestionCancelled: "session.question.cancelled",
+  Archived: "session.archived",
+  Restored: "session.restored",
+  Forked: "session.forked",
+  Rollback: "session.rollback",
+  Usage: "session.usage",
+  TurnDiff: "session.turn_diff",
 });
 
 export const SESSION_EVENT_PAYLOAD_FIELDS = Object.freeze({
@@ -59,6 +68,15 @@ export const SESSION_EVENT_PAYLOAD_FIELDS = Object.freeze({
   [SESSION_EVENT.Renamed]: ["title"],
   [SESSION_EVENT.Deleted]: ["sessionId"],
   [SESSION_EVENT.Error]: ["message", "branch"],
+  [SESSION_EVENT.QuestionRequested]: ["questionId", "prompt", "options"],
+  [SESSION_EVENT.QuestionResponded]: ["questionId", "answers"],
+  [SESSION_EVENT.QuestionCancelled]: ["questionId"],
+  [SESSION_EVENT.Archived]: ["sessionId"],
+  [SESSION_EVENT.Restored]: ["sessionId"],
+  [SESSION_EVENT.Forked]: ["sessionId", "parentSessionId", "forkEventId"],
+  [SESSION_EVENT.Rollback]: ["sessionId", "rollbackEventId", "removedEventCount"],
+  [SESSION_EVENT.Usage]: ["inputTokens", "outputTokens", "cachedInputTokens", "costUsd", "modelId", "providerId"],
+  [SESSION_EVENT.TurnDiff]: ["inputEventId", "files", "commands", "usage", "toolCalls"],
 });
 
 let nextEventNumber = 1;
@@ -104,6 +122,8 @@ export function sessionSnapshot(session) {
     toolInputs: _toolInputs,
     pendingApprovals: _pendingApprovals,
     capabilityManifest: _capabilityManifest,
+    _turnEvents: _turnEvents,
+    _turnInputEventId: _turnInputEventId,
     ...snapshot
   } = session;
   return { ...snapshot };

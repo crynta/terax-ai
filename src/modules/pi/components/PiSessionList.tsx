@@ -1,4 +1,5 @@
 import AiChat02Icon from "@hugeicons/core-free-icons/AiChat02Icon";
+import Archive01Icon from "@hugeicons/core-free-icons/Archive01Icon";
 import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import Delete02Icon from "@hugeicons/core-free-icons/Delete02Icon";
 import Edit02Icon from "@hugeicons/core-free-icons/Edit02Icon";
@@ -17,31 +18,41 @@ import {
 } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
 import { sessionStatusDotClass } from "@/modules/pi/components/classes";
-import { PiSection } from "@/modules/pi/components/PiSection";
+import {
+  PiSection,
+  type PiSectionShellProps,
+} from "@/modules/pi/components/PiSection";
 import type { PiSession } from "@/modules/pi/lib/sessions";
 import { pathBasename } from "@/modules/pi/lib/view";
 
-type PiSessionListProps = {
-  canCreateSession: boolean;
-  collapsed: boolean;
-  disabled: boolean;
-  runtimeReady: boolean;
+export type PiSessionListStatus =
+  | { phase: "offline" }
+  | { phase: "ready"; canCreateSession: boolean };
+
+type PiSessionListProps = Pick<
+  PiSectionShellProps,
+  "collapsed" | "disabled" | "onCollapsedChange"
+> & {
+  status: PiSessionListStatus;
   selectedSessionId: string | null;
   sessions: PiSession[];
+  sessionKeywords?: Map<string, string> | null;
   workspaceRoot: string | null;
-  onCollapsedChange: (collapsed: boolean) => void;
   onCreateSession: () => void;
   onDeleteSession: (sessionId: string) => void;
   onRenameSession: (sessionId: string, title: string) => void;
   onResumeSession: (sessionId: string) => void;
+  onArchiveSession: (sessionId: string) => void;
+  onRestoreSession: (sessionId: string) => void;
   onSelectSession: (sessionId: string) => void;
 };
 
 function emptyDescription(
-  runtimeReady: boolean,
+  status: PiSessionListStatus,
   workspaceRoot: string | null,
 ): string {
-  if (!runtimeReady) return "Start Pi to create a workspace-bound session.";
+  if (status.phase === "offline")
+    return "Start Pi to create a workspace-bound session.";
   if (!workspaceRoot) return "Open a workspace before creating a Pi session.";
   return "Create a session to ask Pi about the current workspace.";
 }
@@ -79,6 +90,7 @@ function promptPreview(session: PiSession): string | null {
 export function filterPiSessions(
   sessions: PiSession[],
   query: string,
+  sessionKeywords?: Map<string, string> | null,
 ): PiSession[] {
   const normalizedQuery = query.replace(/\s+/g, " ").trim().toLowerCase();
   if (!normalizedQuery) return sessions;
@@ -90,12 +102,35 @@ export function filterPiSessions(
       session.cwd ?? "",
       pathBasename(session.cwd) ?? "",
       session.lastPrompt ?? "",
+      sessionKeywords?.get(session.id) ?? "",
     ]
       .join(" ")
       .replace(/\s+/g, " ")
       .toLowerCase();
     return haystack.includes(normalizedQuery);
   });
+}
+
+/**
+ * Build a search-keyword index from session events.
+ * Extracts user input text and assistant output text, grouped by session ID.
+ * Truncated to ~500 chars per session to keep search fast.
+ */
+export function buildSessionKeywordIndex(
+  events: Array<{ sessionId: string; type: string; payload?: Record<string, unknown> }>,
+): Map<string, string> {
+  const index = new Map<string, string>();
+  const MAX_LEN = 500;
+  for (const event of events) {
+    if (event.type !== "session.input" && event.type !== "session.output.text") continue;
+    const text = typeof event.payload?.text === "string" ? event.payload.text : "";
+    if (!text) continue;
+    const existing = index.get(event.sessionId) ?? "";
+    if (existing.length >= MAX_LEN) continue;
+    const appended = existing ? existing + " " + text : text;
+    index.set(event.sessionId, appended.slice(0, MAX_LEN));
+  }
+  return index;
 }
 
 function sessionOptionLabel(session: PiSession): string {
@@ -122,21 +157,25 @@ export function reconcilePiSessionDeleteConfirmationId(
 }
 
 export function PiSessionList({
-  canCreateSession,
+  status,
   collapsed,
   disabled,
-  runtimeReady,
   selectedSessionId,
   sessions,
+  sessionKeywords,
   workspaceRoot,
   onCollapsedChange,
   onCreateSession,
   onDeleteSession,
   onRenameSession,
   onResumeSession,
+  onArchiveSession,
+  onRestoreSession,
   onSelectSession,
 }: PiSessionListProps) {
+  const canCreateSession = status.phase === "ready" && status.canCreateSession;
   const [search, setSearch] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [renamingSessionId, setRenamingSessionId] = useState<string | null>(
     null,
   );
@@ -148,9 +187,18 @@ export function PiSessionList({
     () => sortedSessionsByRecency(sessions),
     [sessions],
   );
+  const archivedSessions = useMemo(
+    () => sortedSessions.filter((s) => Boolean(s.archivedAt)),
+    [sortedSessions],
+  );
+  const activeSessions = useMemo(
+    () => sortedSessions.filter((s) => !s.archivedAt),
+    [sortedSessions],
+  );
+  const displaySessions = showArchived ? sortedSessions : activeSessions;
   const visibleSessions = useMemo(
-    () => filterPiSessions(sortedSessions, search),
-    [search, sortedSessions],
+    () => filterPiSessions(displaySessions, search, sessionKeywords),
+    [search, displaySessions, sessionKeywords],
   );
   const selectedIndex = Math.max(
     0,
@@ -224,12 +272,32 @@ export function PiSessionList({
       title="Sessions"
       collapsed={collapsed}
       summary={
-        <Badge
-          variant="outline"
-          className="h-4 min-w-4 rounded-md px-1 text-[9.5px] text-muted-foreground"
-        >
-          {sessions.length}
-        </Badge>
+        <>
+          <Badge
+            variant="outline"
+            className="h-4 min-w-4 rounded-md px-1 text-[9.5px] text-muted-foreground"
+          >
+            {activeSessions.length}
+          </Badge>
+          {archivedSessions.length > 0 ? (
+            <Button
+              type="button"
+              size="xs"
+              variant={showArchived ? "default" : "outline"}
+              className="h-5 rounded-md px-1.5 text-[9.5px]"
+              aria-label={showArchived ? "Hide archived sessions" : `Show ${archivedSessions.length} archived session${archivedSessions.length !== 1 ? "s" : ""}`}
+              onClick={() => setShowArchived((prev) => !prev)}
+            >
+              <HugeiconsIcon
+                data-icon="inline-start"
+                icon={Archive01Icon}
+                size={12}
+                strokeWidth={1.8}
+              />
+              {archivedSessions.length}
+            </Button>
+          ) : null}
+        </>
       }
       actions={
         <Button
@@ -257,7 +325,7 @@ export function PiSessionList({
               No Pi sessions
             </EmptyTitle>
             <EmptyDescription className="max-w-52 text-[10.5px] leading-snug">
-              {emptyDescription(runtimeReady, workspaceRoot)}
+              {emptyDescription(status, workspaceRoot)}
             </EmptyDescription>
           </EmptyHeader>
           {canCreateSession ? (
@@ -488,6 +556,41 @@ export function PiSessionList({
                                   strokeWidth={1.9}
                                 />
                               </Button>
+                              {session.archivedAt ? (
+                                <Button
+                                  type="button"
+                                  size="icon-xs"
+                                  variant="ghost"
+                                  className="size-6 rounded-md text-muted-foreground hover:text-foreground"
+                                  disabled={disabled}
+                                  aria-label={`Restore Pi session ${session.title}`}
+                                  onClick={() => onRestoreSession(session.id)}
+                                >
+                                  <HugeiconsIcon
+                                    data-icon="inline-start"
+                                    icon={AiChat02Icon}
+                                    size={12}
+                                    strokeWidth={1.9}
+                                  />
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  size="icon-xs"
+                                  variant="ghost"
+                                  className="size-6 rounded-md text-muted-foreground hover:text-foreground"
+                                  disabled={disabled}
+                                  aria-label={`Archive Pi session ${session.title}`}
+                                  onClick={() => onArchiveSession(session.id)}
+                                >
+                                  <HugeiconsIcon
+                                    data-icon="inline-start"
+                                    icon={Archive01Icon}
+                                    size={12}
+                                    strokeWidth={1.9}
+                                  />
+                                </Button>
+                              )}
                               <Button
                                 type="button"
                                 size="icon-xs"

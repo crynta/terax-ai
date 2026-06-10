@@ -101,7 +101,7 @@ function renderCard(input?: {
       disabled={false}
       envSecretStatuses={input?.envSecretStatuses ?? []}
       error={input?.error ?? null}
-      isRefreshing={false}
+      refreshing={false}
       statuses={input?.statuses ?? []}
       tools={input?.tools ?? []}
       onCollapsedChange={vi.fn()}

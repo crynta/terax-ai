@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { sessionStatusDotClass } from "@/modules/pi/components/classes";
 import type {
   PiPromptContext,
+  PiQuestionAnswer,
   PiSession,
   PiTranscriptItem,
 } from "@/modules/pi/lib/sessions";
@@ -69,7 +70,10 @@ type PiTranscriptProps = {
   onOpenWorkspace?: () => void;
   onPopOut?: () => void;
   onRegenerate?: (request: PiRegenerateRequest) => void;
+  onForkFromTurn?: (eventId: string) => void;
+  onRollbackToTurn?: (eventId: string) => void;
   onToolApproval?: (toolCallId: string, approved: boolean) => void;
+  onQuestionRespond?: (questionId: string, answers: PiQuestionAnswer[]) => void;
   onUsePrompt?: (prompt: string) => void;
 };
 
@@ -368,6 +372,112 @@ function ToolApprovalPanel({
   );
 }
 
+function formatQuestionAnswerLabels(answers: PiQuestionAnswer[]): string {
+  if (answers.length === 0) return "—";
+  return answers
+    .map((answer) =>
+      answer.customText
+        ? `${answer.label}: ${answer.customText}`
+        : answer.label,
+    )
+    .join(", ");
+}
+
+function QuestionMessage({
+  item,
+  onQuestionRespond,
+}: {
+  item: PiTranscriptItem;
+  onQuestionRespond?: (questionId: string, answers: PiQuestionAnswer[]) => void;
+}) {
+  const questionId = item.questionId;
+  const options = item.questionOptions ?? [];
+  const allowMultiple = item.questionAllowMultiple === true;
+  const answered = item.questionState === "answered";
+  const [selected, setSelected] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  if (!questionId) return null;
+
+  const respond = (labels: string[]) => {
+    if (submitting) return; // guard against double-submit before the answer round-trips
+    setSubmitting(true);
+    onQuestionRespond?.(
+      questionId,
+      labels.map((label) => ({ label })),
+    );
+  };
+  const disabled = !onQuestionRespond || submitting;
+
+  return (
+    <div className="mx-2 mb-2 rounded-md border border-border/60 bg-foreground/[0.04] px-2 py-2">
+      <div className="flex items-start gap-2">
+        <HugeiconsIcon
+          icon={AiChat02Icon}
+          size={13}
+          strokeWidth={1.8}
+          className="mt-0.5 shrink-0 text-muted-foreground"
+        />
+        <div className="min-w-0 flex-1 text-[11px] font-medium text-foreground">
+          {item.text ?? "The agent has a question"}
+        </div>
+      </div>
+
+      {answered ? (
+        <div className="mt-1.5 pl-5 text-[10.5px] text-muted-foreground">
+          Answered: {formatQuestionAnswerLabels(item.questionAnswers ?? [])}
+        </div>
+      ) : (
+        <div className="mt-2 pl-5">
+          <div className="flex flex-wrap gap-1.5">
+            {options.map((option) => {
+              const isSelected = selected.includes(option.label);
+              return (
+                <Button
+                  key={option.label}
+                  type="button"
+                  size="xs"
+                  variant={allowMultiple && isSelected ? "default" : "outline"}
+                  className="h-6 px-2 text-[10.5px]"
+                  aria-pressed={allowMultiple ? isSelected : undefined}
+                  disabled={disabled}
+                  title={option.description}
+                  onClick={() => {
+                    if (allowMultiple) {
+                      setSelected((current) =>
+                        isSelected
+                          ? current.filter((label) => label !== option.label)
+                          : [...current, option.label],
+                      );
+                    } else {
+                      respond([option.label]);
+                    }
+                  }}
+                >
+                  {option.label}
+                </Button>
+              );
+            })}
+          </div>
+          {allowMultiple ? (
+            <div className="mt-2 flex justify-end">
+              <Button
+                type="button"
+                size="xs"
+                className="h-6 px-2 text-[10.5px]"
+                disabled={disabled || selected.length === 0}
+                onClick={() => respond(selected)}
+              >
+                Submit
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolMessage({
   item,
   onToolApproval,
@@ -630,14 +740,20 @@ function unreachableTranscriptKind(kind: never): null {
 function TranscriptItem({
   canRegenerate,
   item,
+  onForkFromTurn,
+  onRollbackToTurn,
   onRegenerate,
   onToolApproval,
+  onQuestionRespond,
   streaming,
 }: {
   canRegenerate: boolean;
   item: PiTranscriptItem;
+  onForkFromTurn?: (eventId: string) => void;
+  onRollbackToTurn?: (eventId: string) => void;
   onRegenerate?: (request: PiRegenerateRequest) => void;
   onToolApproval?: (toolCallId: string, approved: boolean) => void;
+  onQuestionRespond?: (questionId: string, answers: PiQuestionAnswer[]) => void;
   streaming: boolean;
 }) {
   switch (item.kind) {
@@ -651,13 +767,45 @@ function TranscriptItem({
         />
       );
     case "user":
-      return <UserMessage item={item} />;
+      return (
+        <div className="group/turn relative">
+          <UserMessage item={item} />
+          {onForkFromTurn || onRollbackToTurn ? (
+            <div className="absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover/turn:opacity-100">
+              {onForkFromTurn ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-border/35 bg-card/85 px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:bg-card hover:text-foreground"
+                  aria-label="Fork from this turn"
+                  onClick={() => onForkFromTurn(item.id)}
+                >
+                  Fork
+                </button>
+              ) : null}
+              {onRollbackToTurn ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-border/35 bg-card/85 px-1.5 py-0.5 text-[9.5px] text-muted-foreground hover:bg-card hover:text-foreground"
+                  aria-label="Rollback to this turn"
+                  onClick={() => onRollbackToTurn(item.id)}
+                >
+                  Rollback
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      );
     case "error":
       return <ErrorRow item={item} />;
     case "progress":
       return <ProgressRow text={item.text ?? item.label} />;
     case "tool":
       return <ToolMessage item={item} onToolApproval={onToolApproval} />;
+    case "question":
+      return (
+        <QuestionMessage item={item} onQuestionRespond={onQuestionRespond} />
+      );
     case "system":
       return null;
     default:
@@ -727,7 +875,10 @@ export function PiTranscript({
   onOpenWorkspace,
   onPopOut,
   onRegenerate,
+  onForkFromTurn,
+  onRollbackToTurn,
   onToolApproval,
+  onQuestionRespond,
   onUsePrompt,
 }: PiTranscriptProps) {
   const visibleTranscript = useMemo(
@@ -839,8 +990,11 @@ export function PiTranscript({
                     key={item.id}
                     canRegenerate={canRegenerate}
                     item={item}
+                    onForkFromTurn={onForkFromTurn}
+                    onRollbackToTurn={onRollbackToTurn}
                     onRegenerate={onRegenerate}
                     onToolApproval={onToolApproval}
+                    onQuestionRespond={onQuestionRespond}
                     streaming={item.id === streamingAssistantId}
                   />
                 ))}

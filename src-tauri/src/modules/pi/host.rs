@@ -299,7 +299,7 @@ impl PiHost {
         Ok(result)
     }
 
-    #[allow(
+    #[expect(
         clippy::too_many_arguments,
         reason = "Pi resume forwards persisted session metadata to the sidecar"
     )]
@@ -661,10 +661,7 @@ impl PiHost {
 
 impl Drop for PiHost {
     fn drop(&mut self) {
-        if let Ok(mut child) = self.child.lock() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        self.wait_or_kill();
     }
 }
 

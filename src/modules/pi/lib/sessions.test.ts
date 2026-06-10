@@ -682,6 +682,34 @@ describe("mergePiSessionEvents", () => {
       "replacement",
     );
   });
+
+  it("windows per session so a busy session can't evict another's events", () => {
+    const ev = (id: string, sessionId: string, createdAt: string) => ({
+      id,
+      type: "session.output.delta",
+      sessionId,
+      createdAt,
+      payload: { text: id },
+    });
+
+    const merged = mergePiSessionEvents(
+      [ev("b1", "pi-b", "2026-01-01T00:00:01.000Z")],
+      [
+        ev("a1", "pi-a", "2026-01-01T00:00:02.000Z"),
+        ev("a2", "pi-a", "2026-01-01T00:00:03.000Z"),
+        ev("a3", "pi-a", "2026-01-01T00:00:04.000Z"),
+      ],
+      2, // per-session limit
+    );
+
+    const ids = merged.map((next) => next.id);
+    // Session A keeps only its newest 2 …
+    expect(ids).toContain("a3");
+    expect(ids).toContain("a2");
+    expect(ids).not.toContain("a1");
+    // … but session B's lone event is NOT evicted by A's activity.
+    expect(ids).toContain("b1");
+  });
 });
 
 describe("mergePiSessionSnapshots", () => {

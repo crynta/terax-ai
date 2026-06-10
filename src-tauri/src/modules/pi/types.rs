@@ -23,6 +23,13 @@ pub mod session_event_type {
     pub const STATUS: &str = "session.status";
     pub const RENAMED: &str = "session.renamed";
     pub const DELETED: &str = "session.deleted";
+    pub const ARCHIVED: &str = "session.archived";
+    pub const RESTORED: &str = "session.restored";
+    pub const FORKED: &str = "session.forked";
+    pub const ROLLBACK: &str = "session.rollback";
+    pub const USAGE: &str = "session.usage";
+    pub const TURN_DIFF: &str = "session.turn_diff";
+    pub const QUESTION_RESPONDED: &str = "session.question.responded";
     pub const ERROR: &str = "session.error";
 }
 
@@ -236,6 +243,60 @@ pub struct PiSession {
     pub thinking_level: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdk_session_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forked_from: Option<PiSessionForkRef>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiSessionForkRef {
+    pub parent_session_id: String,
+    pub fork_event_id: Option<String>,
+}
+
+/// Per-turn usage telemetry record. Stored as a `session.usage` event payload.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiUsageRecord {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latency_ms: Option<u64>,
+}
+
+/// Aggregated usage summary for a session or across sessions.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiUsageSummary {
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub total_cached_input_tokens: u64,
+    pub total_cost_usd: f64,
+    pub turn_count: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by_model: Option<Vec<PiUsageModelBreakdown>>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiUsageModelBreakdown {
+    pub model_id: String,
+    pub provider_id: Option<String>,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cached_input_tokens: u64,
+    pub cost_usd: f64,
+    pub turn_count: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

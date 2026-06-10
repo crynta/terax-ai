@@ -7,6 +7,9 @@ import type {
   PiSessionCreateResult,
   PiSessionDeleteResult,
   PiSessionDeleteWithArtifactsResult,
+  PiSession as PiSessionType,
+  PiSessionEvent as PiSessionEventType,
+  PiUsageSummary as PiUsageSummaryType,
   PiSessionRenameResult,
   PiSessionResumeResult,
   PiSessionSendResult,
@@ -40,6 +43,34 @@ export type PiProfileModelsList = {
 
 export type PiLocalAgentsStatus = {
   agents: PiLocalAgentBinaryStatus[];
+};
+
+export type PiSkillScope = "project" | "user";
+
+export type PiSkillInfo = {
+  name: string;
+  description: string;
+  heading: string | null;
+  preview: string | null;
+  path: string;
+  baseDir: string;
+  scope: PiSkillScope;
+  warnings: string[];
+};
+
+export type PiSkillRootStatus = {
+  path: string;
+  scope: PiSkillScope;
+  scanned: boolean;
+  warning: string | null;
+};
+
+export type PiSkillsStatus = {
+  skills: PiSkillInfo[];
+  roots: PiSkillRootStatus[];
+  maxSkills: number;
+  maxSkillBytes: number;
+  truncated: boolean;
 };
 
 export type McpTransport = "stdio" | "http";
@@ -227,6 +258,11 @@ export const piNative = {
     invoke<boolean>("mcp_disconnect", { serverId }),
   mcpTools: () => invoke<McpToolDescriptor[]>("mcp_tools"),
   mcpServerStatuses: () => invoke<McpServerStatus[]>("mcp_server_statuses"),
+  mcpCallTool: (qualifiedName: string, args: unknown) =>
+    invoke<{
+      content: Array<{ type: string; text?: string; data?: unknown }>;
+      isError: boolean;
+    }>("mcp_call_tool", { qualifiedName, arguments: args }),
   workflowCapabilityAudit: () =>
     invoke<CapabilityAuditEntry[]>("workflow_capability_audit"),
   appCapabilityAudit: () =>
@@ -294,6 +330,42 @@ export const piNative = {
       "pi_session_delete_with_artifacts",
       { sessionId },
     ),
+  sessionArchive: (sessionId: string) =>
+    invoke<{ session: PiSessionType }>("pi_session_archive", {
+      sessionId,
+    }),
+  sessionRestore: (sessionId: string) =>
+    invoke<{ session: PiSessionType }>("pi_session_restore", {
+      sessionId,
+    }),
+  sessionFork: (
+    parentSessionId: string,
+    forkEventId?: string | null,
+    title?: string | null,
+  ) =>
+    invoke<{
+      session: PiSessionType;
+      events: PiSessionEventType[];
+    }>("pi_session_fork", {
+      parentSessionId,
+      forkEventId: forkEventId ?? null,
+      title: title ?? null,
+    }),
+  sessionRollback: (
+    sessionId: string,
+    rollbackEventId: string,
+  ) =>
+    invoke<{
+      session: PiSessionType;
+      removedEventCount: number;
+    }>("pi_session_rollback", {
+      sessionId,
+      rollbackEventId,
+    }),
+  usageSummary: (sessionId?: string | null) =>
+    invoke<PiUsageSummaryType>("pi_usage_summary", {
+      sessionId: sessionId ?? null,
+    }),
   sessionToolRespond: (
     sessionId: string,
     toolCallId: string,

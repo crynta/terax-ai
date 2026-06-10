@@ -18,6 +18,14 @@ export const PI_SESSION_EVENT_TYPES = [
   "session.status",
   "session.renamed",
   "session.deleted",
+  "session.archived",
+  "session.restored",
+  "session.forked",
+  "session.rollback",
+  "session.usage",
+  "session.turn_diff",
+  "session.question.asked",
+  "session.question.responded",
   "session.error",
 ] as const;
 
@@ -40,6 +48,14 @@ export const PI_SESSION_EVENT = Object.freeze({
   Status: "session.status",
   Renamed: "session.renamed",
   Deleted: "session.deleted",
+  Archived: "session.archived",
+  Restored: "session.restored",
+  Forked: "session.forked",
+  Rollback: "session.rollback",
+  Usage: "session.usage",
+  TurnDiff: "session.turn_diff",
+  QuestionAsked: "session.question.asked",
+  QuestionResponded: "session.question.responded",
   Error: "session.error",
 } satisfies Record<string, PiSessionEventType>);
 
@@ -65,6 +81,58 @@ export type PiSession = {
   workspaceEnv?: WorkspaceEnv | null;
   thinkingLevel?: PiThinkingLevel | null;
   sdkSessionFile?: string | null;
+  archivedAt?: string | null;
+  forkedFrom?: PiSessionForkRef | null;
+};
+
+export type PiSessionForkRef = {
+  parentSessionId: string;
+  forkEventId?: string | null;
+};
+
+export type PiUsageRecord = {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number | null;
+  costUsd?: number | null;
+  modelId?: string | null;
+  providerId?: string | null;
+  latencyMs?: number | null;
+};
+
+export type PiUsageModelBreakdown = {
+  modelId: string;
+  providerId?: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+  costUsd: number;
+  turnCount: number;
+};
+
+export type PiUsageSummary = {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCachedInputTokens: number;
+  totalCostUsd: number;
+  turnCount: number;
+  byModel?: PiUsageModelBreakdown[] | null;
+};
+
+export type PiTurnDiffPayload = {
+  /** The session.input event ID that started this turn */
+  inputEventId: string;
+  files: Array<{
+    path: string;
+    action: "read" | "edited" | "written" | "created" | "deleted";
+  }>;
+  commands: Array<{
+    command: string;
+    exitCode: number | null;
+    durationMs: number | null;
+  }>;
+  usage: PiUsageRecord | null;
+  toolCalls: Array<{ toolName: string; success: boolean }>;
 };
 
 export type PiPromptContext = {
@@ -74,7 +142,17 @@ export type PiPromptContext = {
   activeTerminalPrivate?: boolean;
 };
 
-export type PiSessionEventPayload = Record<string, unknown>;
+export type PiQuestionOption = {
+  label: string;
+  description?: string;
+};
+
+export type PiQuestionAnswer = {
+  label: string;
+  customText?: string | null;
+};
+
+type PiSessionEventPayload = Record<string, unknown>;
 
 export type PiSessionEventBranchPayload = {
   branch?: PiSessionBranch;
@@ -124,6 +202,30 @@ export type PiSessionEventPayloadByType = {
   } & PiSessionEventBranchPayload;
   [PI_SESSION_EVENT.Renamed]: { title: string };
   [PI_SESSION_EVENT.Deleted]: { sessionId: string };
+  [PI_SESSION_EVENT.Archived]: { sessionId: string };
+  [PI_SESSION_EVENT.Restored]: { sessionId: string };
+  [PI_SESSION_EVENT.Forked]: {
+    parentSessionId: string;
+    forkEventId?: string;
+    session: PiSession;
+  };
+  [PI_SESSION_EVENT.Rollback]: {
+    sessionId: string;
+    rollbackEventId: string;
+    removedEventCount: number;
+  };
+  [PI_SESSION_EVENT.Usage]: PiUsageRecord;
+  [PI_SESSION_EVENT.TurnDiff]: PiTurnDiffPayload;
+  [PI_SESSION_EVENT.QuestionAsked]: {
+    questionId: string;
+    question: string;
+    options: PiQuestionOption[];
+    allowMultiple?: boolean;
+  };
+  [PI_SESSION_EVENT.QuestionResponded]: {
+    questionId: string;
+    answers: PiQuestionAnswer[];
+  };
   [PI_SESSION_EVENT.Error]: { message: string } & PiSessionEventBranchPayload;
 };
 
@@ -221,7 +323,7 @@ export type PiTranscriptBranch = {
   createdAt: string;
 };
 
-export type PiToolState =
+type PiToolState =
   | "approval-requested"
   | "approval-responded"
   | "input-available"
@@ -237,7 +339,14 @@ export type PiToolOutput = {
 
 export type PiTranscriptItem = {
   id: string;
-  kind: "assistant" | "error" | "progress" | "system" | "tool" | "user";
+  kind:
+    | "assistant"
+    | "error"
+    | "progress"
+    | "question"
+    | "system"
+    | "tool"
+    | "user";
   label: string;
   text: string | null;
   eventIds: string[];
@@ -258,6 +367,11 @@ export type PiTranscriptItem = {
   toolErrorText?: string | null;
   toolApprovalId?: string;
   toolApproved?: boolean | null;
+  questionId?: string;
+  questionOptions?: PiQuestionOption[];
+  questionAllowMultiple?: boolean;
+  questionAnswers?: PiQuestionAnswer[];
+  questionState?: "pending" | "answered";
 };
 
 export const MAX_PI_PROMPT_CHARS = 20_000;

@@ -9,11 +9,13 @@ use tauri::{AppHandle, Manager};
 use super::{session_event_type, PiSession, PiSessionEvent, PiSessionsList};
 
 const HISTORY_FILE_NAME: &str = "pi-sessions.json";
+const TRANSCRIPTS_DIR_NAME: &str = "pi-transcripts";
 const MAX_EVENTS: usize = 500;
 
 static HISTORY_LOCK: Mutex<()> = Mutex::new(());
+static TRANSCRIPT_LOCK: Mutex<()> = Mutex::new(());
 
-fn history_lock() -> Result<MutexGuard<'static, ()>, String> {
+pub(super) fn history_lock() -> Result<MutexGuard<'static, ()>, String> {
     HISTORY_LOCK.lock().map_err(|e| e.to_string())
 }
 
@@ -49,6 +51,104 @@ pub fn record_event_at_path(path: &Path, event: &PiSessionEvent) -> Result<(), S
 
 pub fn mark_unfinished_sessions_stopped(app: &AppHandle) -> Result<usize, String> {
     mark_unfinished_sessions_stopped_at_path(&history_path(app)?)
+}
+
+// ─── Canonical transcript persistence (webview agent) ───
+// The webview Pi agent keeps its conversation in memory only. To resume, fork,
+// or rollback a session across an app restart we persist its canonical
+// `AgentMessage[]` transcript as an opaque JSON blob, one file per session.
+// This is separate from the capped event log: the transcript is the lossless,
+// provider-ready representation used to reconstruct the agent.
+
+pub fn transcripts_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join(TRANSCRIPTS_DIR_NAME))
+}
+
+pub fn record_transcript(app: &AppHandle, session_id: &str, contents: &str) -> Result<(), String> {
+    record_transcript_at_dir(&transcripts_dir(app)?, session_id, contents)
+}
+
+pub fn load_transcript(app: &AppHandle, session_id: &str) -> Result<Option<String>, String> {
+    load_transcript_at_dir(&transcripts_dir(app)?, session_id)
+}
+
+pub fn delete_transcript(app: &AppHandle, session_id: &str) -> Result<(), String> {
+    delete_transcript_at_dir(&transcripts_dir(app)?, session_id)
+}
+
+/// FNV-1a 64-bit, used only to disambiguate non-filesystem-safe session ids.
+fn fnv1a64(value: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in value.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// Maps a session id to a safe file name. Filesystem-safe ids (UUIDs, `fork_*`)
+/// keep a stable readable name. Anything the sanitizer would alter (path
+/// separators, `.`, empty) gets a deterministic hash of the *raw* id appended,
+/// so two distinct ids can never collide onto the same transcript file.
+fn transcript_file_name(session_id: &str) -> String {
+    let safe: String = session_id
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '-' || character == '_' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if !safe.is_empty() && safe == session_id {
+        format!("{safe}.json")
+    } else {
+        let base = if safe.is_empty() { "session" } else { &safe };
+        format!("{base}-{:016x}.json", fnv1a64(session_id))
+    }
+}
+
+pub(super) fn record_transcript_at_dir(
+    dir: &Path,
+    session_id: &str,
+    contents: &str,
+) -> Result<(), String> {
+    let _guard = TRANSCRIPT_LOCK.lock().map_err(|e| e.to_string())?;
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let name = transcript_file_name(session_id);
+    let path = dir.join(&name);
+    // Write to a temp file then atomically rename, so a crash mid-write can't
+    // leave a truncated "lossless" transcript that resume would silently drop.
+    let tmp = dir.join(format!("{name}.tmp"));
+    fs::write(&tmp, contents).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, &path).map_err(|e| e.to_string())
+}
+
+pub(super) fn load_transcript_at_dir(
+    dir: &Path,
+    session_id: &str,
+) -> Result<Option<String>, String> {
+    let path = dir.join(transcript_file_name(session_id));
+    match fs::read_to_string(path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+pub(super) fn delete_transcript_at_dir(dir: &Path, session_id: &str) -> Result<(), String> {
+    let _guard = TRANSCRIPT_LOCK.lock().map_err(|e| e.to_string())?;
+    let path = dir.join(transcript_file_name(session_id));
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 pub(super) fn mark_unfinished_sessions_stopped_at_path(path: &Path) -> Result<usize, String> {
@@ -188,7 +288,7 @@ fn record_session_events_at_path(path: &Path, events: &[PiSessionEvent]) -> Resu
     Ok(())
 }
 
-fn load_from_path(path: &Path) -> Result<PiSessionsList, String> {
+pub(super) fn load_from_path(path: &Path) -> Result<PiSessionsList, String> {
     match fs::read_to_string(path) {
         Ok(contents) => serde_json::from_str(&contents).map_err(|e| e.to_string()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(PiSessionsList::default()),
@@ -196,7 +296,7 @@ fn load_from_path(path: &Path) -> Result<PiSessionsList, String> {
     }
 }
 
-fn save_to_path(path: &Path, history: &PiSessionsList) -> Result<(), String> {
+pub(super) fn save_to_path(path: &Path, history: &PiSessionsList) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -218,8 +318,9 @@ fn upsert_session(sessions: &mut Vec<PiSession>, session: PiSession) -> bool {
 }
 
 fn append_events(history_events: &mut Vec<PiSessionEvent>, events: &[PiSessionEvent]) {
+    let mut known_ids: HashSet<String> = history_events.iter().map(|e| e.id.clone()).collect();
     for event in events {
-        if !history_events.iter().any(|current| current.id == event.id) {
+        if known_ids.insert(event.id.clone()) {
             history_events.insert(0, event.clone());
         }
     }
@@ -295,6 +396,14 @@ fn apply_event_to_sessions(sessions: &mut Vec<PiSession>, event: &PiSessionEvent
         session.status = "error".to_string();
         session.updated_at = event.created_at.clone();
     }
+    if event.event_type == session_event_type::ARCHIVED {
+        session.archived_at = Some(event.created_at.clone());
+        session.updated_at = event.created_at.clone();
+    }
+    if event.event_type == session_event_type::RESTORED {
+        session.archived_at = None;
+        session.updated_at = event.created_at.clone();
+    }
 }
 
 #[cfg(test)]
@@ -316,6 +425,8 @@ mod tests {
             workspace_env: None,
             thinking_level: None,
             sdk_session_file: None,
+            archived_at: None,
+            forked_from: None,
         }
     }
 
@@ -524,6 +635,83 @@ mod tests {
         assert!(stopped_events
             .iter()
             .any(|event| event.session_id == "pi-idle"));
+    }
+
+    #[test]
+    fn transcript_round_trips_through_disk() {
+        let temp = tempdir().unwrap();
+        let dir = temp.path().join("pi-transcripts");
+        let blob = r#"{"version":1,"messages":[{"role":"user","content":"hi"}]}"#;
+
+        assert_eq!(load_transcript_at_dir(&dir, "pi-1").unwrap(), None);
+
+        record_transcript_at_dir(&dir, "pi-1", blob).unwrap();
+        assert_eq!(
+            load_transcript_at_dir(&dir, "pi-1").unwrap().as_deref(),
+            Some(blob),
+        );
+    }
+
+    #[test]
+    fn record_transcript_overwrites_previous_blob() {
+        let temp = tempdir().unwrap();
+        let dir = temp.path().join("pi-transcripts");
+
+        record_transcript_at_dir(&dir, "pi-1", "first").unwrap();
+        record_transcript_at_dir(&dir, "pi-1", "second").unwrap();
+
+        assert_eq!(
+            load_transcript_at_dir(&dir, "pi-1").unwrap().as_deref(),
+            Some("second"),
+        );
+    }
+
+    #[test]
+    fn delete_transcript_removes_the_blob() {
+        let temp = tempdir().unwrap();
+        let dir = temp.path().join("pi-transcripts");
+        record_transcript_at_dir(&dir, "pi-1", "data").unwrap();
+
+        delete_transcript_at_dir(&dir, "pi-1").unwrap();
+
+        assert_eq!(load_transcript_at_dir(&dir, "pi-1").unwrap(), None);
+        // Deleting a missing transcript is a no-op, not an error.
+        delete_transcript_at_dir(&dir, "pi-1").unwrap();
+    }
+
+    #[test]
+    fn transcript_file_names_do_not_collide_for_distinct_ids() {
+        let temp = tempdir().unwrap();
+        let dir = temp.path().join("pi-transcripts");
+        // These both sanitize to "a_b" with the naive scheme — must NOT collide.
+        record_transcript_at_dir(&dir, "a/b", "first").unwrap();
+        record_transcript_at_dir(&dir, "a.b", "second").unwrap();
+
+        assert_eq!(
+            load_transcript_at_dir(&dir, "a/b").unwrap().as_deref(),
+            Some("first"),
+        );
+        assert_eq!(
+            load_transcript_at_dir(&dir, "a.b").unwrap().as_deref(),
+            Some("second"),
+        );
+    }
+
+    #[test]
+    fn transcript_session_id_is_sanitized_against_path_traversal() {
+        let temp = tempdir().unwrap();
+        let dir = temp.path().join("pi-transcripts");
+
+        // A hostile id must not escape the transcripts directory.
+        record_transcript_at_dir(&dir, "../escape", "x").unwrap();
+
+        assert!(!temp.path().join("escape.json").exists());
+        assert_eq!(
+            load_transcript_at_dir(&dir, "../escape")
+                .unwrap()
+                .as_deref(),
+            Some("x"),
+        );
     }
 
     #[test]

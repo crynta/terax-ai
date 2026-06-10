@@ -32,7 +32,7 @@ import {
   compactContext,
 } from "./session-params.js";
 import { branchPayload } from "./session-payloads.js";
-import { mapAgentSessionEvent } from "./session-event-mapper.js";
+import { mapAgentSessionEvent, initTurnEventCollector } from "./session-event-mapper.js";
 export { mapAgentSessionEvent } from "./session-event-mapper.js";
 import { enabledToolNamesForSession } from "./tool-policy.js";
 
@@ -467,6 +467,7 @@ async function createAgentSessionRecord({
     thinkingLevel,
     capabilityManifest,
   };
+  initTurnEventCollector(session);
   await attachAgentSession(session);
   return session;
 }
@@ -717,6 +718,10 @@ export async function sendToSession(params) {
     updatedAt,
   );
   rememberSessionBranch(session, branch, inputEvent.id);
+
+  // Reset turn event collector for this new turn
+  session._turnEvents = [];
+  session._turnInputEventId = inputEvent.id;
 
   const events = [
     inputEvent,

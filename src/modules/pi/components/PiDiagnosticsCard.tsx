@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { PiSection } from "@/modules/pi/components/PiSection";
+import type { PiSectionShellProps } from "@/modules/pi/components/PiSection";
 import type {
   PiDiagnosticsAction,
   PiDiagnosticsIssue,
@@ -20,12 +21,8 @@ import {
   useCopyToClipboard,
 } from "@/modules/pi/lib/useCopyToClipboard";
 
-type PiDiagnosticsCardProps = {
-  collapsed: boolean;
-  disabled: boolean;
-  isRefreshing: boolean;
+type PiDiagnosticsCardProps = PiSectionShellProps & {
   view: PiDiagnosticsView;
-  onCollapsedChange: (collapsed: boolean) => void;
   onOpenSettings: () => void;
   onRefresh: () => void;
   onRestartRuntime: () => void;
@@ -168,7 +165,7 @@ function IssueRow({
 export function PiDiagnosticsCard({
   collapsed,
   disabled,
-  isRefreshing,
+  refreshing,
   view,
   onCollapsedChange,
   onOpenSettings,
@@ -209,7 +206,7 @@ export function PiDiagnosticsCard({
             disabled={disabled}
             onClick={onRefresh}
           >
-            {isRefreshing ? (
+            {refreshing ? (
               <Spinner data-icon="inline-start" />
             ) : (
               <HugeiconsIcon

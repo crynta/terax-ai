@@ -6,7 +6,10 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { AgentIcon } from "@/modules/agents/lib/agentIcon";
 import type { AgentStatus } from "@/modules/agents/lib/types";
-import { PiSection } from "@/modules/pi/components/PiSection";
+import {
+  PiSection,
+  type PiSectionShellProps,
+} from "@/modules/pi/components/PiSection";
 import {
   PI_LOCAL_AGENT_POLICY,
   type PiLocalAgentId,
@@ -21,14 +24,10 @@ type PiLocalAgentActivity = {
   detail?: string | null;
 };
 
-type PiLocalAgentsCardProps = {
+type PiLocalAgentsCardProps = PiSectionShellProps & {
   activeAgents: PiLocalAgentActivity[];
   agents: PiLocalAgentStatus[];
-  collapsed: boolean;
-  disabled: boolean;
-  isRefreshing: boolean;
   prompt: string;
-  onCollapsedChange: (collapsed: boolean) => void;
   onInstall: (agent: PiLocalAgentStatus) => void;
   onLaunch: (agent: PiLocalAgentStatus) => void;
   onLaunchWithPrompt: (agent: PiLocalAgentStatus) => void;
@@ -178,7 +177,7 @@ export function PiLocalAgentsCard({
   agents,
   collapsed,
   disabled,
-  isRefreshing,
+  refreshing,
   prompt,
   onCollapsedChange,
   onInstall,
@@ -206,10 +205,10 @@ export function PiLocalAgentsCard({
           size="xs"
           variant="ghost"
           className="h-5 rounded-md px-1.5 text-[10px]"
-          disabled={disabled || isRefreshing}
+          disabled={disabled || refreshing}
           onClick={onRefresh}
         >
-          {isRefreshing ? (
+          {refreshing ? (
             <Spinner data-icon="inline-start" />
           ) : (
             <HugeiconsIcon

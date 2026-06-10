@@ -1,5 +1,5 @@
-import { piNative } from "@/modules/pi/lib/native";
 import type { PiSessionDeleteWithArtifactsResult } from "@/modules/pi/lib/sessions";
+import { getSessionBackend } from "@/modules/pi/lib/pi-session-backend";
 
 export type DeletePiSessionWithArtifactCleanupInput = {
   sessionId: string;
@@ -12,7 +12,8 @@ export type DeletePiSessionWithArtifactCleanupResult =
   PiSessionDeleteWithArtifactsResult;
 
 export async function deletePiSessionWithArtifactCleanup({
-  deleteSessionWithArtifacts = piNative.sessionDeleteWithArtifacts,
+  deleteSessionWithArtifacts = (id) =>
+    getSessionBackend().sessionDeleteWithArtifacts(id),
   sessionId,
 }: DeletePiSessionWithArtifactCleanupInput): Promise<DeletePiSessionWithArtifactCleanupResult> {
   return deleteSessionWithArtifacts(sessionId);

@@ -32,6 +32,7 @@ import type {
 export type PiPanelSectionId =
   | "diagnostics"
   | "sessions"
+  | "usage"
   | "context"
   | "localAgents"
   | "capabilityAudit"

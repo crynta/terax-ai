@@ -1,34 +1,14 @@
+mod common;
+
 use std::fs;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use common::env_guard::EnvVarGuard;
 use terax_lib::modules::pi::{PiPhase, PiSession, PiSessionEvent, PiSessionsList, PiState};
 
 static PI_TEST_ENV_LOCK: Mutex<()> = Mutex::new(());
-
-struct EnvVarGuard {
-    key: &'static str,
-    previous: Option<String>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let previous = std::env::var(key).ok();
-        std::env::set_var(key, value);
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        if let Some(value) = self.previous.as_deref() {
-            std::env::set_var(self.key, value);
-        } else {
-            std::env::remove_var(self.key);
-        }
-    }
-}
 
 #[test]
 fn default_state_is_disconnected() {
@@ -58,8 +38,8 @@ fn env_var_guard_restores_values_after_unwind() {
     std::env::remove_var(KEY);
 }
 
-#[test]
-fn start_marks_host_ready() {
+#[tokio::test(flavor = "current_thread")]
+async fn start_marks_host_ready() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -71,8 +51,8 @@ fn start_marks_host_ready() {
     state.stop().unwrap();
 }
 
-#[test]
-fn snapshot_serializes_to_frontend_state_shape() {
+#[tokio::test(flavor = "current_thread")]
+async fn snapshot_serializes_to_frontend_state_shape() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -85,8 +65,8 @@ fn snapshot_serializes_to_frontend_state_shape() {
     state.stop().unwrap();
 }
 
-#[test]
-fn host_info_reports_stub_capabilities() {
+#[tokio::test(flavor = "current_thread")]
+async fn host_info_reports_stub_capabilities() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -104,8 +84,8 @@ fn host_info_reports_stub_capabilities() {
     state.stop().unwrap();
 }
 
-#[test]
-fn diagnostics_report_non_secret_runtime_state() {
+#[tokio::test(flavor = "current_thread")]
+async fn diagnostics_report_non_secret_runtime_state() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -168,8 +148,8 @@ fn diagnostics_report_non_secret_runtime_state() {
     state.stop().unwrap();
 }
 
-#[test]
-fn sessions_can_be_created_sent_and_stopped() {
+#[tokio::test(flavor = "current_thread")]
+async fn sessions_can_be_created_sent_and_stopped() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -237,8 +217,8 @@ fn read_history(path: &Path) -> PiSessionsList {
     serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
 }
 
-#[test]
-fn sessions_resume_from_sdk_session_file_after_host_restart() {
+#[tokio::test(flavor = "current_thread")]
+async fn sessions_resume_from_sdk_session_file_after_host_restart() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -338,8 +318,8 @@ fn wait_for_event(
     panic!("timed out waiting for Pi session event");
 }
 
-#[test]
-fn tool_approval_responses_are_forwarded_to_the_sidecar() {
+#[tokio::test(flavor = "current_thread")]
+async fn tool_approval_responses_are_forwarded_to_the_sidecar() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -412,8 +392,8 @@ fn tool_approval_responses_are_forwarded_to_the_sidecar() {
     state.stop().unwrap();
 }
 
-#[test]
-fn stop_persists_running_sessions_as_stopped() {
+#[tokio::test(flavor = "current_thread")]
+async fn stop_persists_running_sessions_as_stopped() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -456,49 +436,55 @@ fn stop_persists_running_sessions_as_stopped() {
     }));
 }
 
-#[test]
-fn idle_shutdown_persists_idle_sessions_as_stopped() {
-    let _env_guard = PI_TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+#[tokio::test]
+async fn idle_shutdown_persists_idle_sessions_as_stopped() {
     let state = PiState::with_idle_shutdown_timeout(std::time::Duration::from_millis(75));
     let temp = tempfile::tempdir().unwrap();
     let history_path = temp.path().join("pi-sessions.json");
     state.set_history_path(Some(history_path.clone())).unwrap();
     let cwd = terax_lib::modules::fs::to_canon(temp.path());
-    let created = state
-        .session_create_with_resource_dir(None, Some("Idle Stop".to_string()), Some(cwd))
-        .unwrap();
-    write_history(&history_path, created.session.clone(), created.events);
+    let session_id = {
+        let _env_guard = PI_TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let created = state
+            .session_create_with_resource_dir(None, Some("Idle Stop".to_string()), Some(cwd))
+            .unwrap();
+        write_history(&history_path, created.session.clone(), created.events);
+        created.session.id
+    };
 
-    std::thread::sleep(std::time::Duration::from_millis(250));
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
 
     assert_eq!(state.snapshot().unwrap().phase, PiPhase::Disconnected);
     let history = read_history(&history_path);
     assert_eq!(history.sessions[0].status, "stopped");
     assert!(history.events.iter().any(|event| {
         event.event_type == "session.status"
-            && event.session_id == created.session.id
+            && event.session_id == session_id
             && event.payload["status"] == "stopped"
     }));
 }
 
-#[test]
-fn idle_shutdown_stops_unused_started_host() {
-    let _env_guard = PI_TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let state = PiState::with_idle_shutdown_timeout(std::time::Duration::from_millis(75));
-    state.start().unwrap();
+#[tokio::test]
+async fn idle_shutdown_stops_unused_started_host() {
+    let state = {
+        let _env_guard = PI_TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let state = PiState::with_idle_shutdown_timeout(std::time::Duration::from_millis(75));
+        state.start().unwrap();
+        state
+    };
 
-    std::thread::sleep(std::time::Duration::from_millis(250));
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
 
     let snapshot = state.snapshot().unwrap();
     assert_eq!(snapshot.phase, PiPhase::Disconnected);
 }
 
-#[test]
-fn idle_shutdown_does_not_stop_running_sessions() {
+#[tokio::test(flavor = "current_thread")]
+async fn idle_shutdown_does_not_stop_running_sessions() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -523,8 +509,8 @@ fn idle_shutdown_does_not_stop_running_sessions() {
     state.stop().unwrap();
 }
 
-#[test]
-fn stop_resets_to_disconnected() {
+#[tokio::test(flavor = "current_thread")]
+async fn stop_resets_to_disconnected() {
     let _env_guard = PI_TEST_ENV_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());

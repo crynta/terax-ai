@@ -42,7 +42,7 @@ describe("PiDiagnosticsCard", () => {
       <PiDiagnosticsCard
         collapsed={false}
         disabled={false}
-        isRefreshing={false}
+        refreshing={false}
         view={baseView}
         onCollapsedChange={vi.fn()}
         onOpenSettings={vi.fn()}
@@ -63,7 +63,7 @@ describe("PiDiagnosticsCard", () => {
       <PiDiagnosticsCard
         collapsed={false}
         disabled={false}
-        isRefreshing={false}
+        refreshing={false}
         view={{ ...baseView, debugDetail: "boot failed" }}
         onCollapsedChange={vi.fn()}
         onOpenSettings={vi.fn()}

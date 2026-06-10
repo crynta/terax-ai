@@ -28,29 +28,26 @@ function renderComposer(
   },
   options: {
     canCreateSession?: boolean;
-    disabled?: boolean;
-    isBusy?: boolean;
-    runtimeReady?: boolean;
+    offline?: boolean;
+    busy?: boolean;
   } = {},
 ) {
-  const {
-    canCreateSession = true,
-    disabled = false,
-    isBusy = false,
-    runtimeReady = true,
-  } = options;
+  const { canCreateSession = true, offline = false, busy = false } = options;
+
+  const status = offline
+    ? { phase: "offline" as const }
+    : busy
+      ? { phase: "busy" as const }
+      : { phase: "active" as const, canCreateSession };
 
   return renderToStaticMarkup(
     <PiComposer
       availableThinkingLevels={thinking.levels}
-      canCreateSession={canCreateSession}
-      disabled={disabled}
-      isBusy={isBusy}
-      prompt={prompt}
       contextUsage={contextUsage}
-      runtimeReady={runtimeReady}
-      thinkingLevel={thinking.level}
+      prompt={prompt}
       selectedSession={session}
+      status={status}
+      thinkingLevel={thinking.level}
       onCreateSession={vi.fn()}
       onPromptChange={vi.fn()}
       onRetryLastPrompt={vi.fn()}
@@ -78,8 +75,7 @@ describe("PiComposer", () => {
 
   it("asks users to start Pi before sending when the runtime is not ready", () => {
     const html = renderComposer(baseSession, "hello", null, undefined, {
-      disabled: true,
-      runtimeReady: false,
+      offline: true,
     });
 
     expect(html).toContain("Start Pi to send prompts.");
@@ -138,7 +134,7 @@ describe("PiComposer", () => {
         levels: ["off", "minimal", "low", "medium", "high", "xhigh"],
         level: "medium",
       },
-      { disabled: true },
+      { canCreateSession: true },
     );
     const select = thinkingSelect(html);
 
@@ -173,7 +169,7 @@ describe("PiComposer", () => {
         levels: ["off", "minimal", "low", "medium", "high", "xhigh"],
         level: "high",
       },
-      { isBusy: true },
+      { busy: true },
     );
     const select = thinkingSelect(html);
 

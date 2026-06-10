@@ -15,6 +15,7 @@ export const EMPTY_CAPABILITY_AUDIT_ENTRIES: CapabilityAuditEntry[] = [];
 export const INITIAL_SECTION_COLLAPSED = {
   diagnostics: true,
   sessions: true,
+  usage: true,
   context: true,
   localAgents: true,
   capabilityAudit: true,

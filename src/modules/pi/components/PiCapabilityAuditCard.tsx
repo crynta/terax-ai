@@ -13,7 +13,10 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
-import { PiSection } from "@/modules/pi/components/PiSection";
+import {
+  PiSection,
+  type PiSectionShellProps,
+} from "@/modules/pi/components/PiSection";
 import type {
   CapabilityAuditEntry,
   CapabilityAuditSource,
@@ -39,13 +42,13 @@ type CapabilityAuditView = {
   exportText: string;
 };
 
-type PiCapabilityAuditCardProps = {
-  collapsed: boolean;
-  disabled: boolean;
+type PiCapabilityAuditCardProps = Pick<
+  PiSectionShellProps,
+  "collapsed" | "disabled" | "onCollapsedChange"
+> & {
   entries: CapabilityAuditEntry[];
   expandedEntryKeys?: string[];
   filter?: CapabilityAuditFilter;
-  onCollapsedChange: (collapsed: boolean) => void;
   onExpandedEntryKeysChange?: (keys: string[]) => void;
   onFilterChange?: (filter: CapabilityAuditFilter) => void;
 };

@@ -11,6 +11,8 @@ import {
 import {
   PI_SESSION_EVENT,
   type PiPromptContext,
+  type PiQuestionAnswer,
+  type PiQuestionOption,
   type PiSessionBranch,
   type PiSessionEvent,
   type PiTranscriptBranch,
@@ -502,14 +504,69 @@ function expireRequestedToolApprovals(
   event: PiSessionEvent,
 ): void {
   for (const item of transcript) {
-    if (item.kind !== "tool" || item.toolState !== "approval-requested") {
+    if (item.kind === "tool" && item.toolState === "approval-requested") {
+      item.toolApproved = false;
+      item.toolState = "output-denied";
+      item.toolErrorText = "Approval expired when the Pi session stopped.";
+      item.eventIds.push(event.id);
+      item.createdAt = event.createdAt;
       continue;
     }
-    item.toolApproved = false;
-    item.toolState = "output-denied";
-    item.toolErrorText = "Approval expired when the Pi session stopped.";
-    item.eventIds.push(event.id);
-    item.createdAt = event.createdAt;
+    // A question left unanswered when the session stops can no longer be
+    // answered (the agent that asked it is gone). Mark it cancelled so the UI
+    // shows it as closed rather than offering dead buttons.
+    if (item.kind === "question" && item.questionState !== "answered") {
+      item.questionState = "answered";
+      item.questionAnswers = [];
+      item.eventIds.push(event.id);
+      item.createdAt = event.createdAt;
+    }
+  }
+}
+
+function applyQuestionEvent(
+  transcript: PiTranscriptItem[],
+  event: PiSessionEvent,
+): void {
+  const questionId =
+    typeof event.payload.questionId === "string"
+      ? event.payload.questionId
+      : null;
+  if (!questionId) return;
+
+  if (event.type === PI_SESSION_EVENT.QuestionAsked) {
+    transcript.push({
+      id: event.id,
+      kind: "question",
+      label: "Question",
+      text:
+        typeof event.payload.question === "string"
+          ? event.payload.question
+          : null,
+      eventIds: [event.id],
+      createdAt: event.createdAt,
+      questionId,
+      questionOptions: Array.isArray(event.payload.options)
+        ? (event.payload.options as PiQuestionOption[])
+        : [],
+      questionAllowMultiple: event.payload.allowMultiple === true,
+      questionState: "pending",
+    });
+    return;
+  }
+
+  // QuestionResponded — mark the matching question answered.
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const item = transcript[index];
+    if (item.kind === "question" && item.questionId === questionId) {
+      item.questionState = "answered";
+      item.questionAnswers = Array.isArray(event.payload.answers)
+        ? (event.payload.answers as PiQuestionAnswer[])
+        : [];
+      item.eventIds.push(event.id);
+      item.createdAt = event.createdAt;
+      return;
+    }
   }
 }
 
@@ -672,6 +729,13 @@ export function buildPiSessionTranscript(
     }
     if (event.type.startsWith("session.tool.")) {
       applyToolEvent(transcript, event);
+      continue;
+    }
+    if (
+      event.type === PI_SESSION_EVENT.QuestionAsked ||
+      event.type === PI_SESSION_EVENT.QuestionResponded
+    ) {
+      applyQuestionEvent(transcript, event);
       continue;
     }
     if (event.type === PI_SESSION_EVENT.ReasoningDelta) {

@@ -29,9 +29,23 @@ export function mergePiSessionEvents(
     byId.set(event.id, event);
   }
 
-  return Array.from(byId.values())
-    .sort((a, b) => comparePiSessionEventsAscending(b, a))
-    .slice(0, limit);
+  // Newest first, then keep at most `limit` events PER SESSION. A global cap let
+  // a busy session evict an unrelated session's events from the display; the
+  // per-session window keeps each session's most recent history independently.
+  const sorted = Array.from(byId.values()).sort((a, b) =>
+    comparePiSessionEventsAscending(b, a),
+  );
+  const perSessionCount = new Map<string, number>();
+  const kept: PiSessionEvent[] = [];
+  for (const event of sorted) {
+    const count = perSessionCount.get(event.sessionId) ?? 0;
+    if (count >= limit) {
+      continue;
+    }
+    perSessionCount.set(event.sessionId, count + 1);
+    kept.push(event);
+  }
+  return kept;
 }
 
 export function isPiSessionSendable(

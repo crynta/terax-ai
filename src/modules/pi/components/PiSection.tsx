@@ -3,6 +3,13 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { type ReactNode, useId } from "react";
 import { cn } from "@/lib/utils";
 
+export type PiSectionShellProps = {
+  collapsed: boolean;
+  disabled: boolean;
+  refreshing: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
+};
+
 type PiSectionProps = {
   title: string;
   collapsed: boolean;
