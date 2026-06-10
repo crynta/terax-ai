@@ -265,11 +265,38 @@ function createSlot(): Slot {
       if (event.type === "keydown" && slot.term.hasSelection()) {
         const sel = slot.term.getSelection();
         if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        const t = slot.term;
+        requestAnimationFrame(() => { t.clearSelection(); t.refresh(0, t.rows - 1); });
+      }
+      event.preventDefault();
+      return false;
+    }
+    // Ctrl+C: copy when text is selected, otherwise fall through to PTY (SIGINT).
+    if (isCtrlC(event) && slot.term.hasSelection()) {
+      if (event.type === "keydown") {
+        const sel = slot.term.getSelection();
+        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        const t = slot.term;
+        requestAnimationFrame(() => { t.clearSelection(); t.refresh(0, t.rows - 1); });
       }
       event.preventDefault();
       return false;
     }
     if (isTerminalPaste(event)) {
+      if (event.type === "keydown") {
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) slot.term.paste(text);
+          })
+          .catch(() => {});
+      }
+      event.preventDefault();
+      return false;
+    }
+    // Ctrl+V: paste from clipboard (^V / literal-next is sacrificed, matching
+    // Windows Terminal behaviour where Ctrl+V always pastes).
+    if (isCtrlV(event)) {
       if (event.type === "keydown") {
         void navigator.clipboard
           .readText()
@@ -906,11 +933,33 @@ function isTerminalCopy(e: KeyboardEvent): boolean {
   );
 }
 
+function isCtrlC(e: KeyboardEvent): boolean {
+  return (
+    !IS_MAC &&
+    e.ctrlKey &&
+    !e.shiftKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    (e.code === "KeyC" || e.key === "c" || e.key === "C")
+  );
+}
+
 function isTerminalPaste(e: KeyboardEvent): boolean {
   return (
     !IS_MAC &&
     e.ctrlKey &&
     e.shiftKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    (e.code === "KeyV" || e.key === "v" || e.key === "V")
+  );
+}
+
+function isCtrlV(e: KeyboardEvent): boolean {
+  return (
+    !IS_MAC &&
+    e.ctrlKey &&
+    !e.shiftKey &&
     !e.altKey &&
     !e.metaKey &&
     (e.code === "KeyV" || e.key === "v" || e.key === "V")
