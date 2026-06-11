@@ -43,9 +43,6 @@ jobs:
       - name: Pi approval boundary
         run: pnpm check:pi-boundary
 
-      - name: Pi host bundle smoke
-        run: pnpm smoke:pi-host
-
       - name: Test
         run: pnpm test
 

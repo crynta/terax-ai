@@ -11,9 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:node-runtime": "node scripts/build-node-runtime.mjs",
-    "build:sidecars": "pnpm build:node-runtime && node scripts/build-pi-host-bundle.mjs && node scripts/build-speech-recognizer.mjs",
-    "smoke:pi-host": "node scripts/smoke-pi-host-bundle.mjs",
+    "build:sidecars": "node scripts/build-speech-recognizer.mjs",
     "check:pi-boundary": "node scripts/check-pi-approval-boundary.mjs",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "preview": "vite preview",

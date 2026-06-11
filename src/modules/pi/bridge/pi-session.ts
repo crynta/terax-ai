@@ -479,7 +479,10 @@ export async function createTauriAgent(
           // If the grant cannot be recorded, the verified executor will deny
           // Ask-level tools (fail-closed); Auto tools proceed regardless. Log
           // so the cause is visible rather than silently swallowed.
-          console.warn(`pi: failed to record approval grant for ${tool.name}`, e);
+          console.warn(
+            `pi: failed to record approval grant for ${tool.name}`,
+            e,
+          );
         }
         return originalExecute(toolCallId, params, signal);
       };
