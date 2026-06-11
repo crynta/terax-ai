@@ -15,7 +15,7 @@ import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
 import ToolsIcon from "@hugeicons/core-free-icons/ToolsIcon";
 import WindowsNewIcon from "@hugeicons/core-free-icons/WindowsNewIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   Conversation,
   ConversationContent,
@@ -791,7 +791,9 @@ function unreachableTranscriptKind(kind: never): null {
   return null;
 }
 
-function TranscriptItem({
+// Memoized so a streaming token update (which rebuilds the transcript array)
+// only re-renders the rows whose props actually changed, not all ~160 items.
+const TranscriptItem = memo(function TranscriptItem({
   canRegenerate,
   item,
   onForkFromTurn,
@@ -877,7 +879,7 @@ function TranscriptItem({
     default:
       return unreachableTranscriptKind(item.kind);
   }
-}
+});
 
 function latestProgressItem(
   transcript: PiTranscriptItem[],
