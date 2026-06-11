@@ -48,6 +48,7 @@ import { workflowNativeHttpExecutor } from "../lib/httpExecution";
 import { buildWorkflowInspectorState } from "../lib/inspector";
 import { createWorkflowPiAgentExecutor } from "../lib/nativeAgentExecution";
 import { tauriWorkflowArtifactFileSystem } from "../lib/nativeArtifactStorage";
+import { workflowPiWebviewApi } from "../lib/webviewAgentExecution";
 import { createWorkflowBrowserAutomationExecutor } from "../lib/nativeBrowserAutomation";
 import { tauriWorkflowFileOperationExecutor } from "../lib/nativeFileExecution";
 import { tauriWorkflowShellExecutor } from "../lib/nativeShellExecution";
@@ -181,6 +182,7 @@ export function WorkflowCanvas({
       };
     }
     return createWorkflowPiAgentExecutor({
+      pi: workflowPiWebviewApi,
       providerConfig: piProvider.config,
     });
   }, [piProvider]);

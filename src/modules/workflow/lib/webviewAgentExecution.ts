@@ -25,7 +25,16 @@ export const workflowPiWebviewApi: WorkflowPiAgentApi = {
     _policy?: unknown,
     providerConfig?: PiProviderRuntimeConfig | null,
   ): Promise<PiSessionCreateResult> => {
-    return webviewSessionCreate(title, cwd, providerConfig);
+    // Workflow runs are unattended: pre-approve tools (the node was approved at
+    // the workflow execution layer). Rust still records and audits each grant.
+    return webviewSessionCreate(
+      title,
+      cwd,
+      providerConfig,
+      undefined,
+      undefined,
+      true,
+    );
   },
 
   sessionSend: async (

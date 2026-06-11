@@ -291,6 +291,10 @@ export async function webviewSessionCreate(
   providerConfig?: PiProviderRuntimeConfig | null,
   skillsMode?: unknown,
   selectedSkills?: unknown,
+  // Unattended sessions (workflow runs) pre-approve their tools: the workflow
+  // node was already user-approved, matching the old native path's
+  // `policy: { approved: true }`. Rust still records and audits every grant.
+  autoApproveTools = false,
 ): Promise<PiSessionCreateResult> {
   const sessionId = uuid();
   const now = new Date().toISOString();
@@ -321,10 +325,16 @@ export async function webviewSessionCreate(
     modelId,
     baseUrl: providerConfig?.baseUrl,
     thinkingLevel: providerConfig?.thinkingLevel,
-    approvalGate: (toolName, toolCallId, input) =>
-      requestToolApproval(sessionId, toolName, toolCallId, input),
-    questionGate: (toolCallId, params, signal) =>
-      requestQuestion(sessionId, toolCallId, params, signal),
+    // Auto-approve mode skips the interactive gate (and the question tool),
+    // since there is no user to respond during an unattended run.
+    approvalGate: autoApproveTools
+      ? () => Promise.resolve(true)
+      : (toolName, toolCallId, input) =>
+          requestToolApproval(sessionId, toolName, toolCallId, input),
+    questionGate: autoApproveTools
+      ? undefined
+      : (toolCallId, params, signal) =>
+          requestQuestion(sessionId, toolCallId, params, signal),
   });
 
   const session: PiSession = {
