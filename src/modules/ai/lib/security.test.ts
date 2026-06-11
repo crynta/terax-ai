@@ -19,16 +19,11 @@ describe("checkReadable — secret basenames", () => {
   });
 
   it("blocks .env with trailing Windows-stripped characters", () => {
-    // Windows strips trailing dot/space at open time — so `.env.` and `.env `
-    // open the same file as `.env`. The pre-canonicalize deny-list must
-    // refuse these on its first pass.
     expect(checkReadable("C:\\Users\\me\\.env.")).toMatchObject({ ok: false });
     expect(checkReadable("C:\\Users\\me\\.env ")).toMatchObject({ ok: false });
   });
 
   it("blocks NTFS alternate-data-stream notation for .env", () => {
-    // `.env:hidden` and `.env::$DATA` access the same underlying file's
-    // default data stream — must not bypass the deny-list.
     expect(checkReadable("C:\\Users\\me\\.env::$DATA")).toMatchObject({
       ok: false,
     });
@@ -56,8 +51,6 @@ describe("checkReadable — secret basenames", () => {
   });
 
   it("does not block names that merely start with id_rsa- prefix-prefix", () => {
-    // `id_rsax` is not a real key file — make sure the regex doesn't
-    // over-match identifiers that happen to share the prefix.
     expect(checkReadable("/home/me/Documents/id_rsaxyz.txt")).toMatchObject({
       ok: true,
     });
@@ -89,9 +82,6 @@ describe("checkReadable — protected directories", () => {
   });
 
   it("blocks reads under /etc, /proc, /sys (newly added)", () => {
-    // These directories are not WRITE_DENY-only any more — reading them is
-    // also blocked because they hold global config/credentials/process state
-    // with basenames the regex doesn't catch (passwd, shadow, environ, …).
     expect(checkReadable("/etc/shadow")).toMatchObject({ ok: false });
     expect(checkReadable("/etc/nginx/nginx.conf")).toMatchObject({ ok: false });
     expect(checkReadable("/proc/self/environ")).toMatchObject({ ok: false });
@@ -104,7 +94,6 @@ describe("checkReadable — protected directories", () => {
   });
 
   it("rejects path-segment look-alikes (.sshx is not .ssh)", () => {
-    // The comparator must use segment-boundary matching, not raw substring.
     expect(checkReadable("/home/me/.sshx/file")).toMatchObject({ ok: true });
     expect(checkReadable("/home/me/.gitignore-stuff/config")).toMatchObject({
       ok: true,
@@ -147,9 +136,6 @@ describe("checkReadable — path normalization", () => {
 
 describe("checkReadableCanonical — symlink defense + always-recheck", () => {
   it("rechecks even when canonical equals input", async () => {
-    // Regression: previously the recheck was skipped when canonicalize
-    // returned the same string, allowing some OS-specific bypasses to slip
-    // through. Now the recheck always runs.
     const identity = async (p: string) => p;
     const r = await checkReadableCanonical("/etc/nginx/nginx.conf", identity);
     expect(r.ok).toBe(false);
@@ -229,5 +215,28 @@ describe("checkShellCommand — control-character / newline injection", () => {
     expect(checkShellCommand("echo safe\nprintenv")).toMatchObject({
       ok: false,
     });
+  });
+});
+
+describe("checkShellCommand — home directory rm guard", () => {
+  it("blocks rm -rf with ${HOME} (braces variant)", () => {
+    expect(checkShellCommand("rm -rf ${HOME}")).toMatchObject({ ok: false });
+    expect(checkShellCommand('rm -rf "${HOME}"')).toMatchObject({ ok: false });
+    expect(checkShellCommand("rm -rf ${HOME}/")).toMatchObject({ ok: false });
+  });
+
+  it("blocks rm -rf on home subdirectories", () => {
+    expect(checkShellCommand("rm -rf ~/subdir")).toMatchObject({ ok: false });
+    expect(checkShellCommand("rm -rf ~/subdir && ls")).toMatchObject({ ok: false });
+  });
+
+  it("blocks rm -rf when the home target is immediately followed by a pipe", () => {
+    expect(checkShellCommand("rm -rf ~|cat")).toMatchObject({ ok: false });
+    expect(checkShellCommand("rm -rf $HOME|cat")).toMatchObject({ ok: false });
+    expect(checkShellCommand("rm -rf ${HOME}|cat")).toMatchObject({ ok: false });
+  });
+
+  it("does not block rm -rf on explicit absolute paths", () => {
+    expect(checkShellCommand("rm -rf /home/me/safe")).toMatchObject({ ok: true });
   });
 });

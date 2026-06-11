@@ -6,6 +6,7 @@ import { IS_MAC, MOD_PROP } from "@/lib/platform";
 
 export type ShortcutId =
   | "commandPalette.open"
+  | "commandPalette.content"
   | "tab.new"
   | "tab.newPrivate"
   | "tab.newPreview"
@@ -14,12 +15,16 @@ export type ShortcutId =
   | "tab.next"
   | "tab.prev"
   | "tab.selectByIndex"
+  | "space.next"
+  | "space.prev"
+  | "space.overview"
   | "pane.splitRight"
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
   | "pane.source"
   | "terminal.clear"
+  | "terminal.toggleInput"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
@@ -29,7 +34,6 @@ export type ShortcutId =
   | "view.zenMode"
   | "ai.toggle"
   | "ai.askSelection"
-  | "shortcuts.open"
   | "settings.open"
   | "folder.open"
   | "sidebar.toggle"
@@ -39,6 +43,7 @@ export type ShortcutId =
 export type ShortcutGroup =
   | "General"
   | "Tabs"
+  | "Spaces"
   | "Panes"
   | "Terminal"
   | "Search"
@@ -66,6 +71,12 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "commandPalette.open",
     label: "Open command palette",
+    group: "General",
+    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
+  },
+  {
+    id: "commandPalette.content",
+    label: "Find in files",
     group: "General",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "p" }],
   },
@@ -101,9 +112,10 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "tab.newPreview",
-    label: "New preview tab",
+    label: "New web preview",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
+    // Cmd/Ctrl+P now opens the command palette, so web preview moves here.
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "o" }],
   },
   {
     id: "tab.newEditor",
@@ -157,6 +169,12 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
   },
   {
+    id: "terminal.toggleInput",
+    label: "Toggle Shell / AI input",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "u" }],
+  },
+  {
     id: "tab.next",
     label: "Next tab",
     group: "Tabs",
@@ -173,6 +191,24 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Jump to tab 1–9",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
+  },
+  {
+    id: "space.next",
+    label: "Next space",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "]" }],
+  },
+  {
+    id: "space.prev",
+    label: "Previous space",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "[" }],
+  },
+  {
+    id: "space.overview",
+    label: "Open spaces",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "s" }],
   },
   {
     id: "explorer.search",
