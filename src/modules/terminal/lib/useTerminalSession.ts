@@ -11,6 +11,7 @@ import {
 } from "../block/lib/blockDecorations";
 import type { BlockMode } from "../block/lib/modeMachine";
 import { DormantRing } from "./dormantRing";
+import { getSnapshot, putSnapshot, deleteSnapshot } from "./snapshotStore";
 import {
   createShellIntegrationState,
   registerCwdHandler,
@@ -204,6 +205,7 @@ export function clearFocusedTerminal(): boolean {
     const slot = getSlotForLeaf(leafId);
     if (!slot) continue;
     slot.term.clear();
+    void deleteSnapshot(leafId);
     return true;
   }
   return false;
@@ -345,6 +347,7 @@ configureRendererPool({
           .then(() => pty.resize(cols, rows))
           .catch((e) => console.warn("[terax] kickPty failed:", e));
       },
+      getDraft: () => s.inputDraft,
     };
   },
   evictLeaf(leafId) {
@@ -373,6 +376,7 @@ configureRendererPool({
     if (out.cols > 0) s.cols = out.cols;
     if (out.rows > 0) s.rows = out.rows;
     s.altScreenAtRelease = out.altScreen;
+    void putSnapshot(leafId, out);
   },
 });
 
@@ -421,6 +425,15 @@ function ensureSession(
   session.ready = (async () => {
     await ensureMonoFontsLoaded();
     await document.fonts.ready;
+    if (!session.snapshot) {
+      const snap = await getSnapshot(leafId);
+      if (snap && !session.disposed) {
+        session.snapshot = snap.snapshot;
+        if (snap.cols > 0) session.cols = snap.cols;
+        if (snap.rows > 0) session.rows = snap.rows;
+        session.altScreenAtRelease = snap.altScreen;
+      }
+    }
   })();
 
   return session;
@@ -730,6 +743,7 @@ export function disposeSession(leafId: number): void {
       w.resolve();
     }
   }
+  void deleteSnapshot(leafId);
 }
 
 type Options = {

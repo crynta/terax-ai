@@ -3,6 +3,8 @@ import type { Tab } from "@/modules/tabs";
 import { isSerializableTab, serializeTabs } from "./serialize";
 import { saveState } from "./store";
 import { useSpaces } from "./useSpaces";
+import { forEachSlot, serializeSlot } from "@/modules/terminal/lib/rendererPool";
+import { putSnapshot } from "@/modules/terminal/lib/snapshotStore";
 
 const DEBOUNCE_MS = 3000;
 
@@ -40,6 +42,13 @@ export function useSpacePersistence({
   }
 
   const flush = useCallback((snap: Snapshot) => {
+    forEachSlot((slot) => {
+      const leafId = slot.currentLeafId ?? slot.retainedLeafId;
+      if (leafId !== null) {
+        void putSnapshot(leafId, serializeSlot(slot));
+      }
+    });
+
     const groups = new Map<string, Tab[]>();
     for (const t of snap.tabs) {
       const arr = groups.get(t.spaceId);

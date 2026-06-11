@@ -39,6 +39,7 @@ export type LeafBridge = {
   // ioctls that don't actually change the size. Used to make alt-screen
   // TUIs repaint from scratch after they were dormant.
   kickPty(cols: number, rows: number): void;
+  getDraft(): string;
 };
 
 export type Slot = {
@@ -274,6 +275,25 @@ function createSlot(): Slot {
     if (isShiftEnter(event)) {
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty("\x1b\r");
+      return false;
+    }
+    if (event.key === "e" && (IS_MAC ? event.metaKey : event.ctrlKey) && !event.shiftKey && !event.altKey) {
+      if (event.type === "keydown") {
+        const draft = bridge.getDraft();
+        const selection = slot.term.getSelection();
+        const command = (draft || selection).trim();
+        if (command) {
+          import("@/modules/ai/store/chatStore").then(({ useChatStore }) => {
+            useChatStore.getState().focusInput(`Explain this command: \`${command}\``);
+            // Simulate enter press by scheduling a submit on the next tick
+            setTimeout(() => {
+              const e = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true });
+              document.querySelector(".terax-ai-composer textarea")?.dispatchEvent(e);
+            }, 100);
+          });
+        }
+      }
+      event.preventDefault();
       return false;
     }
     if (isTerminalCopy(event)) {
@@ -621,7 +641,7 @@ export function releaseSlot(leafId: number): ReleaseOutput | null {
   return { cols: slot.term.cols, rows: slot.term.rows };
 }
 
-function serializeSlot(slot: Slot): SerializeOutput {
+export function serializeSlot(slot: Slot): SerializeOutput {
   let snapshot: string | null = null;
   try {
     const cap = Math.min(

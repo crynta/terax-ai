@@ -858,6 +858,19 @@ export default function App() {
     [reorderTab],
   );
 
+  const handleReorderTabGap = useCallback(
+    (tabId: number, gapIndex: number) => {
+      if (spaceTabs.length === 0) return;
+      if (gapIndex === 0) {
+        handleReorderTab(tabId, spaceTabs[0].id, "top");
+      } else {
+        const prevTab = spaceTabs[Math.min(gapIndex - 1, spaceTabs.length - 1)];
+        handleReorderTab(tabId, prevTab.id, "bottom");
+      }
+    },
+    [spaceTabs, handleReorderTab],
+  );
+
   const handleNewTabInSpace = useCallback(
     (spaceId: string) => {
       const root = useSpaces.getState().spaces.find((s) => s.id === spaceId)
@@ -1003,6 +1016,7 @@ export default function App() {
               onClose={handleClose}
               onPin={pinTab}
               onRename={handleRenameTab}
+              onReorder={handleReorderTabGap}
               onToggleSidebar={toggleSidebar}
               onOpenCommandPalette={() => openCommandPalette("commands")}
               onActivateAgent={onActivateAgent}

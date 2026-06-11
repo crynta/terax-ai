@@ -53,6 +53,8 @@ type Props = {
   onPin: (id: number) => void;
   /** Set a terminal tab's custom label; empty string resets to default. */
   onRename: (id: number, title: string) => void;
+  /** Reorder a tab to a specific gap index. */
+  onReorder: (id: number, gapIndex: number) => void;
   compact?: boolean;
 };
 
@@ -69,11 +71,34 @@ export function TabBar({
   onClose,
   onPin,
   onRename,
+  onReorder,
   compact,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [dropGap, setDropGap] = useState<number | null>(null);
+  const drag = useRef<{ pointerId: number; startX: number; fromId: number; active: boolean } | null>(null);
+
+  const gapAtX = useCallback((clientX: number) => {
+    const list = listRef.current;
+    if (!list) return null;
+    const items = Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]"));
+    for (let i = 0; i < items.length; i++) {
+      const rect = items[i].getBoundingClientRect();
+      if (clientX < rect.left + rect.width / 2) return i;
+    }
+    return items.length;
+  }, []);
+
+  const endDrag = useCallback((el: HTMLElement, pointerId: number) => {
+    drag.current = null;
+    setDraggingId(null);
+    setDropGap(null);
+    try { el.releasePointerCapture(pointerId); } catch {}
+    document.body.style.userSelect = "";
+  }, []);
 
   // Play the enter animation only for tabs opened after the first paint, never
   // the restored set and never on switch/reorder (triggers are keyed, so they
@@ -216,7 +241,45 @@ export function TabBar({
                   value={String(t.id)}
                   data-tab-id={t.id}
                   data-tab-active={isActive ? "true" : undefined}
-                  onDoubleClick={() => isPreview && onPin(t.id)}
+                  data-no-drag={editingId === t.id ? "true" : undefined}
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
+                    drag.current = {
+                      pointerId: e.pointerId,
+                      startX: e.clientX,
+                      fromId: t.id,
+                      active: false,
+                    };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    const st = drag.current;
+                    if (!st || st.pointerId !== e.pointerId) return;
+                    if (!st.active) {
+                      if (Math.abs(e.clientX - st.startX) < 4) return;
+                      st.active = true;
+                      setDraggingId(st.fromId);
+                      document.body.style.userSelect = "none";
+                    }
+                    e.preventDefault();
+                    setDropGap(gapAtX(e.clientX));
+                  }}
+                  onPointerUp={(e) => {
+                    const st = drag.current;
+                    if (st?.active && dropGap !== null) {
+                      onReorder(st.fromId, dropGap);
+                    }
+                    endDrag(e.currentTarget, e.pointerId);
+                  }}
+                  onPointerCancel={(e) => endDrag(e.currentTarget, e.pointerId)}
+                  onDoubleClick={() => {
+                    if (isPreview) {
+                      onPin(t.id);
+                    } else if (t.kind === "terminal") {
+                      setEditingId(t.id);
+                    }
+                  }}
                   onAuxClick={(e) => {
                     if (e.button === 1 && tabs.length > 1) {
                       e.preventDefault();
@@ -238,6 +301,7 @@ export function TabBar({
                       : tabs.length === 1
                         ? "px-2!"
                         : "ps-2! pe-1!",
+                    draggingId === t.id && "opacity-50",
                   )}
                 >
                   <span
