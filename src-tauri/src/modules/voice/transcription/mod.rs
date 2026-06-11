@@ -19,12 +19,21 @@ pub struct TranscriptionOutput {
     pub confidence: Option<f32>,
 }
 
+/// Upper bound on a single transcription request, to avoid sending an
+/// unbounded blob to the provider or buffering it in memory.
+const MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
+
 pub async fn transcribe_audio(
     app: &tauri::AppHandle,
     audio_data: &[u8],
     mime_type: &str,
     provider: &str,
 ) -> Result<TranscriptionOutput, String> {
+    if audio_data.len() > MAX_AUDIO_BYTES {
+        return Err(format!(
+            "audio exceeds the {MAX_AUDIO_BYTES} byte transcription limit"
+        ));
+    }
     match provider {
         "deepgram" => transcribe_deepgram(app, audio_data, mime_type).await,
         "local" => transcribe_local(app, audio_data).await,

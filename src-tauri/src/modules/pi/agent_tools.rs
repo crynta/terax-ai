@@ -204,10 +204,13 @@ fn evaluate_tool_policy(
     if matches!(result, Err(policy::CapabilityPolicyError::UnknownTool(_))) {
         if let Some(target_manifest) = context.capability_manifest_for_tool(&request.tool_name) {
             result = policy::evaluate(&target_manifest, &request.tool_name, approval_state);
-        } else if let Some(approval_policy) = context
-            .mcp_approval_policy_for_tool(&request.tool_name)
-            .or_else(|| request.mcp_auto_approval_policy())
+        } else if let Some(approval_policy) =
+            context.mcp_approval_policy_for_tool(&request.tool_name)
         {
+            // MCP policy comes only from Rust-side state, never from the
+            // webview-supplied request.approval field (which a prompt-injected
+            // model could set). An MCP tool unknown to Rust stays UnknownTool
+            // and is denied (fail-closed).
             result = mcp_policy_decision(&request.tool_name, approval_policy, approval_state);
         }
     }
@@ -338,6 +341,31 @@ mod tests {
         assert_eq!(audit.len(), 1);
         assert_eq!(audit[0].outcome, CapabilityAuditOutcome::Succeeded);
         assert!(!audit[0].approved);
+    }
+
+    #[test]
+    fn model_supplied_approval_metadata_does_not_authorize_a_tool() {
+        // A prompt-injected model could set the request.approval field; the
+        // verified executor must ignore it. An MCP tool unknown to Rust state
+        // stays denied even when the request claims auto-approval.
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let state = PiAgentToolState::default();
+        let registry = authorized_registry(&root);
+
+        let mut req = request(&root, "mcp__server__danger", json!({}));
+        req.approval = Some(super::super::native_tools::NativeToolApprovalMetadata {
+            policy: Some(crate::modules::capabilities::ApprovalPolicy::Auto),
+            approved: Some(true),
+        });
+
+        let error = state
+            .verify_and_execute(&registry, req, &context(&root))
+            .unwrap_err();
+        assert!(
+            error.contains("unknown") || error.contains("MCP") || error.contains("denied"),
+            "{error}"
+        );
     }
 
     #[test]

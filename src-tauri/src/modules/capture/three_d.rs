@@ -4,7 +4,12 @@ use serde::{Deserialize, Serialize};
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 fn http_client() -> &'static reqwest::Client {
-    HTTP_CLIENT.get_or_init(reqwest::Client::new)
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .build()
+            .unwrap_or_default()
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +65,9 @@ pub async fn generate_3d_model(
 ) -> Result<Model3DResult, String> {
     if prompt.trim().is_empty() {
         return Err("prompt cannot be empty".to_string());
+    }
+    if prompt.chars().count() > 2000 {
+        return Err("prompt exceeds the 2000 character limit".to_string());
     }
 
     let api_key = crate::modules::secrets::get_secret_value(&app, &state, "terax", "tripo-api-key")?
