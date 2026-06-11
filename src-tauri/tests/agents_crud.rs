@@ -1,3 +1,4 @@
+#![cfg(feature = "openclicky")]
 use terax_lib::modules::agents::AgentDefinition;
 
 #[test]

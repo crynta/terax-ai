@@ -1,5 +1,7 @@
+#[cfg(feature = "openclicky")]
 use terax_lib::modules::agents::migrator::{migrate_agent, OpenClickyAgent};
 
+#[cfg(feature = "openclicky")]
 #[test]
 fn openclicky_migration() {
     let oc = OpenClickyAgent {
