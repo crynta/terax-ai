@@ -1,31 +1,20 @@
 import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, MotionConfig } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
-import { AgentNotificationsBridge } from "@/modules/agents";
 import type { AgentStatusContext } from "@/modules/agents/lib/statusSurface";
 import { useAgentStore } from "@/modules/agents/store/agentStore";
-import { LocalAgentNotificationsBridge } from "@/modules/ai/components/LocalAgentNotificationsBridge";
-import {
-  AgentRunBridge,
-  AiInputBar,
-  AiInputBarConnect,
-} from "@/modules/ai/components/lazy";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
-import { CommandPalette } from "@/modules/command-palette";
-import { type EditorPaneHandle, NewEditorDialog } from "@/modules/editor";
+import type { EditorPaneHandle } from "@/modules/editor";
 import type { FileExplorerHandle } from "@/modules/explorer";
 import type { GitHistorySearchHandle } from "@/modules/git-history";
 import { Header, type SearchInlineHandle } from "@/modules/header";
-import { PiNotificationsBridge } from "@/modules/pi/components/PiNotificationsBridge";
 import { PiControllerProvider } from "@/modules/pi/lib/PiControllerProvider";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
-import { ShortcutsDialog } from "@/modules/shortcuts";
 import { StatusBar } from "@/modules/statusbar";
 import {
   MAX_PANES_PER_TAB,
@@ -42,8 +31,9 @@ import {
   useTerminalFileDrop,
 } from "@/modules/terminal";
 import { ThemeProvider } from "@/modules/theme";
-import { UpdaterDialog } from "@/modules/updater";
-import { AppCloseDialogs } from "./AppCloseDialogs";
+import { AppBridges } from "./AppBridges";
+import { AppComposerDock } from "./AppComposerDock";
+import { AppOverlays } from "./AppOverlays";
 import { AppSidebars } from "./AppSidebars";
 import {
   AppFloatingSurfaces,
@@ -797,36 +787,13 @@ export default function App() {
                 }}
                 sidebarPosition={sidebarPosition}
                 workspace={
-                  <div className="flex h-full min-h-0 flex-col">
-                    <div className="relative min-h-0 flex-1">
-                      {workspaceSurface}
-                    </div>
-
-                    {keysLoaded ? (
-                      <div
-                        data-ai-input-bar
-                        className={`overflow-hidden ${panelOpen ? "" : "h-0"}`}
-                        aria-hidden={!panelOpen}
-                        inert={panelOpen ? undefined : true}
-                      >
-                        <div
-                          className={`transition-[opacity,transform] duration-150 ease-out ${
-                            panelOpen
-                              ? "translate-y-0 opacity-100"
-                              : "translate-y-1 opacity-0"
-                          }`}
-                        >
-                          {hasComposer ? (
-                            <AiInputBar />
-                          ) : (
-                            <AiInputBarConnect
-                              onAdd={() => void openSettingsWindow("models")}
-                            />
-                          )}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
+                  <AppComposerDock
+                    keysLoaded={keysLoaded}
+                    panelOpen={panelOpen}
+                    hasComposer={hasComposer}
+                  >
+                    {workspaceSurface}
+                  </AppComposerDock>
                 }
               />
             </main>
@@ -846,26 +813,16 @@ export default function App() {
               />
             )}
 
-            <AgentNotificationsBridge
+            <AppBridges
               tabs={tabs}
               activeId={activeId}
-              onActivate={onActivateAgent}
+              hasComposer={hasComposer}
+              piSidebarVisible={piSidebarVisible}
+              onActivateAgent={onActivateAgent}
+              onActivatePiSession={onActivatePiSession}
+              openAiDiffTab={openAiDiffTab}
+              closeAiDiffTab={closeAiDiffTab}
             />
-            <PiNotificationsBridge
-              visible={piSidebarVisible}
-              onActivateSession={onActivatePiSession}
-            />
-            <Toaster position="bottom-right" />
-
-            {hasComposer ? (
-              <>
-                <AgentRunBridge
-                  openAiDiffTab={openAiDiffTab}
-                  closeAiDiffTab={closeAiDiffTab}
-                />
-                <LocalAgentNotificationsBridge />
-              </>
-            ) : null}
 
             <AnimatePresence>
               <AppFloatingSurfaces
@@ -886,39 +843,36 @@ export default function App() {
               />
             </AnimatePresence>
 
-            <CommandPalette
-              open={commandPaletteOpen}
-              onOpenChange={setCommandPaletteOpen}
-              actions={commandPaletteActions}
-              workspaceRoot={explorerRoot}
-              onOpenFile={handleOpenFile}
-            />
-
-            <ShortcutsDialog
-              open={shortcutsOpen}
-              onOpenChange={setShortcutsOpen}
-            />
-
-            <NewEditorDialog
-              open={newEditorOpen}
-              onOpenChange={setNewEditorOpen}
-              rootPath={explorerRoot ?? home}
-              onCreated={(path) => openFileTab(path)}
-            />
-
-            <UpdaterDialog />
-
-            <AppCloseDialogs
-              pendingCloseTab={pendingCloseTab}
-              pendingDeleteTabs={pendingDeleteTabs}
-              pendingTerminalCloseTab={pendingTerminalCloseTab}
-              tabs={tabs}
-              onCancelClose={cancelClose}
-              onCancelDeleteClose={cancelDeleteClose}
-              onConfirmClose={confirmClose}
-              onConfirmDeleteClose={confirmDeleteClose}
-              onDisposeTab={disposeTab}
-              onTerminalCloseTabChange={setPendingTerminalCloseTab}
+            <AppOverlays
+              commandPalette={{
+                open: commandPaletteOpen,
+                onOpenChange: setCommandPaletteOpen,
+                actions: commandPaletteActions,
+                workspaceRoot: explorerRoot,
+                onOpenFile: handleOpenFile,
+              }}
+              shortcuts={{
+                open: shortcutsOpen,
+                onOpenChange: setShortcutsOpen,
+              }}
+              newEditor={{
+                open: newEditorOpen,
+                onOpenChange: setNewEditorOpen,
+                rootPath: explorerRoot ?? home,
+                onCreated: (path) => openFileTab(path),
+              }}
+              closeDialogs={{
+                pendingCloseTab,
+                pendingDeleteTabs,
+                pendingTerminalCloseTab,
+                tabs,
+                onCancelClose: cancelClose,
+                onCancelDeleteClose: cancelDeleteClose,
+                onConfirmClose: confirmClose,
+                onConfirmDeleteClose: confirmDeleteClose,
+                onDisposeTab: disposeTab,
+                onTerminalCloseTabChange: setPendingTerminalCloseTab,
+              }}
             />
           </div>
         </TooltipProvider>
