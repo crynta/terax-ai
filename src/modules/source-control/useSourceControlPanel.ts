@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { providerNeedsKey, resolveModel } from "@/modules/ai/config";
+import { chatStatusToPhase, isAgentBusy } from "@/modules/ai/lib/agentRun";
 import {
   type GitChangedFile,
   type GitDiscardEntry,
@@ -56,7 +57,7 @@ export type SourceControlEntry = {
 
 export type CheckState = "checked" | "indeterminate" | "unchecked";
 
-/** One row per changed file (flat list) — merges the staged/unstaged split. */
+/** One row per changed file (flat list); merges the staged/unstaged split. */
 export type SourceControlFileEntry = {
   key: string;
   path: string;
@@ -133,7 +134,11 @@ export function useSourceControlPanel(
     | null,
 ): SourceControlPanelState {
   const selectedModelId = useChatStore((state) => state.selectedModelId);
-  const agentStatus = useChatStore((state) => state.agentMeta.status);
+  // Consume the unified run phase rather than the chat-specific status, so the
+  // busy check follows the runtime when it is swapped (Phase C, Stage 2).
+  const agentPhase = useChatStore((state) =>
+    chatStatusToPhase(state.agentMeta.status),
+  );
   const hasApiKeyForSelected = useChatStore((state) => {
     const model = resolveModel(state.selectedModelId);
     return !providerNeedsKey(model.provider) || !!state.apiKeys[model.provider];
@@ -229,7 +234,7 @@ export function useSourceControlPanel(
   const allClean = stagedEntries.length === 0 && unstagedEntries.length === 0;
   const canPush = !!status?.upstream && status.behind === 0;
   const selectedModel = resolveModel(selectedModelId);
-  const aiBusy = agentStatus !== "idle" && agentStatus !== "error";
+  const aiBusy = isAgentBusy(agentPhase);
   const anyActionBusy = localActionBusy !== null || summary.busyAction !== null;
   const aiUnavailableReason = useMemo(() => {
     if (stagedEntries.length === 0) {

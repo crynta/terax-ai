@@ -99,13 +99,31 @@ Without this, none of the surface stages can be regression-tested.
 - This makes the surface a tested surface, which is the precondition for
   changing it.
 
-### Stage 1 - One run-status contract (Layer 2, no surface change)
+### Stage 1 - One run-status contract (Layer 2, no surface change) [DONE 2026-06-12]
 
-- Define a single `AgentRun` view-model (status, meta, usage, tool calls,
-  cancellation) that both `chatStore` and pi sessions can produce.
-- Have `chatStore` and the pi session store both expose it. Repoint the shared
-  consumers (workflow, model-compare, source-control, agents) at the new
-  contract. No UI changes; verified by their existing unit tests plus Stage 0.
+- Define a single `AgentRun` view-model (normalized phase + `busy` + usage +
+  step + error) that both `chatStore` and pi sessions can produce.
+- Have both runtimes expose it; repoint the cross-runtime run-status consumers
+  at the new contract. No UI change; verified by unit tests plus Stage 0.
+
+**Landed.** `src/modules/ai/lib/agentRun.ts` owns the normalized `AgentRunPhase`
+(`idle | preparing | streaming | awaiting-approval | error`) and maps both
+vocabularies onto it: `chatStatusToPhase` (chat's `AgentRunStatus`) and
+`piStatusToPhase` (`PiSessionStatus`), plus `chatMetaToAgentRun` /
+`piSessionToAgentRun` builders and `isAgentBusy`. Status types are imported
+type-only so the module is a dependency-light leaf (no cycle with `chatStore`).
+
+**Scope refinement found while mapping the code:** the plan assumed four shared
+consumers needed repointing. In fact only **source-control**
+(`useSourceControlPanel.ts`) reads run *status* from `chatStore`
+(`agentMeta.status`, used solely to derive `aiBusy`). Workflow, model-compare,
+and agents import `chatStore` for shared *infrastructure* (`apiKeys`,
+`customEndpointKeys`, `selectedModelId`, `getOrCreateChat`) - Layers 1-2, not
+run status - so they do not change in Stage 1. Source-control now selects
+`chatStatusToPhase(state.agentMeta.status)` and derives `aiBusy` via
+`isAgentBusy`, behavior-identical today and runtime-agnostic for Stage 2. The
+pi producer (`piSessionToAgentRun`) is tested and ready, and goes live when the
+composer is pi-backed. 6 mapper tests in `agentRun.test.ts`.
 
 ### Stage 2 - Pi runtime backs the quick-ask composer (Layer 2/3 seam)
 
