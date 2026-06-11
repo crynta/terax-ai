@@ -43,8 +43,7 @@ async fn transcribe_deepgram(
         &secrets_state,
         "terax",
         "deepgram-api-key",
-    )
-    .map_err(|e| e)?
+    )?
     .ok_or("Deepgram API key not configured")?;
 
     let client = http_client();

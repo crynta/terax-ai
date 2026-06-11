@@ -30,7 +30,7 @@ pub fn tray_set_icon(app: AppHandle, status: String) -> Result<(), String> {
     let tooltip = match status.as_str() {
         "thinking" => "Terax - Thinking...",
         "speaking" => "Terax - Speaking...",
-        "idle" | _ => "Terax",
+        _ => "Terax",
     };
 
     tray.set_tooltip(Some(tooltip))

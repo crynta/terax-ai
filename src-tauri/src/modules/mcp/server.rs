@@ -1,15 +1,8 @@
 use crate::modules::mcp::server_tools::McpToolProvider;
 
+#[derive(Default)]
 pub struct McpServerState {
     providers: Vec<Box<dyn McpToolProvider>>,
-}
-
-impl Default for McpServerState {
-    fn default() -> Self {
-        Self {
-            providers: Vec::new(),
-        }
-    }
 }
 
 impl McpServerState {

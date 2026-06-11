@@ -253,6 +253,8 @@ mod avspeech {
         let _mtm = objc2::MainThreadMarker::new()
             .ok_or("AVSpeech must be called on the main thread")?;
 
+        // SAFETY: msg_send alloc/init on the NSAutoreleasePool class, which is
+        // resolved at runtime; the selectors and return type match AppKit's ABI.
         let pool: &objc2::runtime::AnyObject = unsafe {
             let cls = objc2::runtime::AnyClass::get(c"NSAutoreleasePool")
                 .ok_or("NSAutoreleasePool not found")?;
@@ -260,6 +262,8 @@ mod avspeech {
             objc2::msg_send![alloc, init]
         };
 
+        // SAFETY: msg_send alloc/init on the AVSpeechSynthesizer class; selectors
+        // and return type match the AVFoundation ABI.
         let synth: &objc2::runtime::AnyObject = unsafe {
             let cls = objc2::runtime::AnyClass::get(c"AVSpeechSynthesizer")
                 .ok_or("AVSpeechSynthesizer class not found")?;
@@ -267,6 +271,8 @@ mod avspeech {
             objc2::msg_send![alloc, init]
         };
 
+        // SAFETY: msg_send alloc/initWithString on AVSpeechUtterance with a valid
+        // NSString argument; selectors and types match the AVFoundation ABI.
         let utterance: &objc2::runtime::AnyObject = unsafe {
             let cls = objc2::runtime::AnyClass::get(c"AVSpeechUtterance")
                 .ok_or("AVSpeechUtterance class not found")?;
@@ -275,6 +281,8 @@ mod avspeech {
             objc2::msg_send![alloc, initWithString: &*ns_text]
         };
 
+        // SAFETY: synth is a valid AVSpeechSynthesizer; speakUtterance takes the
+        // utterance object and returns void.
         unsafe {
             let () = objc2::msg_send![synth, speakUtterance: utterance];
         }
@@ -285,21 +293,27 @@ mod avspeech {
 
             let cancelled = state.cancel.lock().map_err(|e| e.to_string())?.to_owned();
             if cancelled {
+                // SAFETY: synth is a valid synthesizer; stopSpeakingAtBoundary
+                // takes an NSInteger boundary and returns void.
                 unsafe {
                     let () = objc2::msg_send![synth, stopSpeakingAtBoundary: 0];
                 }
+                // SAFETY: pool is a valid NSAutoreleasePool; drain returns void.
                 unsafe {
                     let () = objc2::msg_send![pool, drain];
                 }
                 return Ok(());
             }
 
+            // SAFETY: synth is a valid synthesizer; isSpeaking returns a BOOL.
             let speaking: bool = unsafe { objc2::msg_send![synth, isSpeaking] };
             if !speaking {
                 break;
             }
 
             if start.elapsed().as_secs() > 120 {
+                // SAFETY: synth is a valid synthesizer; stopSpeakingAtBoundary
+                // takes an NSInteger boundary and returns void.
                 unsafe {
                     let () = objc2::msg_send![synth, stopSpeakingAtBoundary: 0];
                 }
@@ -307,6 +321,7 @@ mod avspeech {
             }
         }
 
+        // SAFETY: pool is a valid NSAutoreleasePool; drain returns void.
         unsafe {
             let () = objc2::msg_send![pool, drain];
         }

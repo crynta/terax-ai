@@ -29,11 +29,15 @@ impl TtsQueue {
     }
 
     pub fn try_next(&self) -> Option<TtsQueueMsg> {
-        self.rx.lock().unwrap().try_recv().ok()
+        self.rx.lock().ok()?.try_recv().ok()
     }
 
     pub fn len(&self) -> usize {
-        self.rx.lock().unwrap().len()
+        self.rx.lock().map(|rx| rx.len()).unwrap_or(0)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 

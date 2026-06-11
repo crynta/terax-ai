@@ -91,7 +91,6 @@ pub fn wake_word_start(
                         continue;
                     }
                 };
-                drop(secrets_state);
 
                 let url = "wss://api.deepgram.com/v1/listen?model=nova-3&smart_format=true&endpointing=500&vad_events=true&encoding=linear16&sample_rate=16000&channels=1";
 
@@ -244,7 +243,7 @@ fn capture_mic_audio(
         },
     };
 
-    let tx_err = tx.clone();
+    let tx_err = tx;
     let stop_flag_closure = stop_flag.clone();
     let active_closure = active.clone();
     let stream = DeviceTrait::build_input_stream(

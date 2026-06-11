@@ -50,10 +50,7 @@ pub fn run_stdio_server() {
 }
 
 fn handle_request(request: Value) -> Option<Value> {
-    if request.get("id").is_none() {
-        return None;
-    }
-    let id = request.get("id").cloned().unwrap_or(Value::Null);
+    let id = request.get("id")?.clone();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
 
     match method {

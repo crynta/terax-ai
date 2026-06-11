@@ -14,6 +14,12 @@ impl PttState {
     }
 }
 
+impl Default for PttState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 fn parse_shortcut(s: &str) -> Result<(Option<tauri_plugin_global_shortcut::Modifiers>, tauri_plugin_global_shortcut::Code), String> {
     use tauri_plugin_global_shortcut::{Code, Modifiers};
@@ -32,15 +38,15 @@ fn parse_shortcut(s: &str) -> Result<(Option<tauri_plugin_global_shortcut::Modif
             "enter" | "return" => code = Some(Code::Enter),
             "tab" => code = Some(Code::Tab),
             "escape" | "esc" => code = Some(Code::Escape),
-            c if c.len() == 1 && c.chars().next().unwrap().is_ascii_alphabetic() => {
-                code = Some(match c.chars().next().unwrap().to_ascii_uppercase() {
-                    'A' => Code::KeyA, 'B' => Code::KeyB, 'C' => Code::KeyC, 'D' => Code::KeyD,
-                    'E' => Code::KeyE, 'F' => Code::KeyF, 'G' => Code::KeyG, 'H' => Code::KeyH,
-                    'I' => Code::KeyI, 'J' => Code::KeyJ, 'K' => Code::KeyK, 'L' => Code::KeyL,
-                    'M' => Code::KeyM, 'N' => Code::KeyN, 'O' => Code::KeyO, 'P' => Code::KeyP,
-                    'Q' => Code::KeyQ, 'R' => Code::KeyR, 'S' => Code::KeyS, 'T' => Code::KeyT,
-                    'U' => Code::KeyU, 'V' => Code::KeyV, 'W' => Code::KeyW, 'X' => Code::KeyX,
-                    'Y' => Code::KeyY, 'Z' => Code::KeyZ,
+            c if c.len() == 1 && c.chars().all(|ch| ch.is_ascii_alphabetic()) => {
+                code = Some(match c.to_ascii_uppercase().as_str() {
+                    "A" => Code::KeyA, "B" => Code::KeyB, "C" => Code::KeyC, "D" => Code::KeyD,
+                    "E" => Code::KeyE, "F" => Code::KeyF, "G" => Code::KeyG, "H" => Code::KeyH,
+                    "I" => Code::KeyI, "J" => Code::KeyJ, "K" => Code::KeyK, "L" => Code::KeyL,
+                    "M" => Code::KeyM, "N" => Code::KeyN, "O" => Code::KeyO, "P" => Code::KeyP,
+                    "Q" => Code::KeyQ, "R" => Code::KeyR, "S" => Code::KeyS, "T" => Code::KeyT,
+                    "U" => Code::KeyU, "V" => Code::KeyV, "W" => Code::KeyW, "X" => Code::KeyX,
+                    "Y" => Code::KeyY, "Z" => Code::KeyZ,
                     _ => return Err(format!("unsupported key: {part}")),
                 });
             }

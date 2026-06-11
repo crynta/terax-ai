@@ -26,7 +26,7 @@ fn agent_definition_validation() {
 
     let traversal = AgentDefinition {
         slug: "../escape".to_string(),
-        ..valid.clone()
+        ..valid
     };
     assert!(traversal.validate().is_err());
 }

@@ -13,18 +13,20 @@ pub fn apply_transparency_shim<R: Runtime>(window: &tauri::WebviewWindow<R>) {
             return;
         }
     };
+    let Some(ns_color_cls) = objc2::runtime::AnyClass::get(c"NSColor") else {
+        log::error!("overlay: NSColor class not found");
+        return;
+    };
 
+    // SAFETY: ns_window_ptr is a valid NSWindow pointer from Tauri; the selectors
+    // (setOpaque/setHasShadow/setBackgroundColor/clearColor) and their argument
+    // and return types match the AppKit ABI.
     unsafe {
         let ns_window: &AnyObject = &*ns_window_ptr.cast();
-
+        let color: &AnyObject = msg_send![ns_color_cls, clearColor];
         let () = msg_send![ns_window, setOpaque: false];
         let () = msg_send![ns_window, setHasShadow: false];
-        let () = msg_send![ns_window, setBackgroundColor: {
-            let cls = objc2::runtime::AnyClass::get(c"NSColor")
-                .expect("NSColor class");
-            let color: &AnyObject = msg_send![cls, clearColor];
-            color
-        }];
+        let () = msg_send![ns_window, setBackgroundColor: color];
     }
 }
 
@@ -37,7 +39,14 @@ pub fn size_to_screen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
         Ok(ptr) => ptr,
         Err(_) => return,
     };
+    let Some(ns_screen_cls) = objc2::runtime::AnyClass::get(c"NSScreen") else {
+        log::error!("overlay: NSScreen class not found");
+        return;
+    };
 
+    // SAFETY: ns_window_ptr is a valid NSWindow pointer from Tauri; the screen /
+    // mainScreen / frame / setFrame selectors and their types match the AppKit
+    // ABI, and the optional returns are checked before use.
     unsafe {
         let ns_window: &AnyObject = &*ns_window_ptr.cast();
 
@@ -45,9 +54,7 @@ pub fn size_to_screen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
         let screen = match screen {
             Some(s) => s,
             None => {
-                let cls = objc2::runtime::AnyClass::get(c"NSScreen")
-                    .expect("NSScreen class");
-                let main: Option<&AnyObject> = msg_send![cls, mainScreen];
+                let main: Option<&AnyObject> = msg_send![ns_screen_cls, mainScreen];
                 match main {
                     Some(s) => s,
                     None => return,

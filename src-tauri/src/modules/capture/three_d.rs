@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 fn http_client() -> &'static reqwest::Client {
-    HTTP_CLIENT.get_or_init(|| reqwest::Client::new())
+    HTTP_CLIENT.get_or_init(reqwest::Client::new)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,8 +62,7 @@ pub async fn generate_3d_model(
         return Err("prompt cannot be empty".to_string());
     }
 
-    let api_key = crate::modules::secrets::get_secret_value(&app, &state, "terax", "tripo-api-key")
-        .map_err(|e| e)?
+    let api_key = crate::modules::secrets::get_secret_value(&app, &state, "terax", "tripo-api-key")?
         .ok_or("Tripo API key not configured. Set it in Settings > Keys.")?;
 
     let client = http_client();
