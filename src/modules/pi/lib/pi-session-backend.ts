@@ -2,14 +2,9 @@
  * Pi Session Backend Abstraction
  *
  * Provides a unified API for PiPanel to create/send/resume/stop/rename/delete
- * sessions, routing to either:
- * - The sidecar-backed `piNative` (when USE_WEBVIEW_AGENT is false)
- * - The webview-backed `webviewSession*` functions (when USE_WEBVIEW_AGENT is true)
- *
- * Runtime and diagnostics always go through piNative (sidecar/Rust) regardless.
+ * sessions. The Pi agent runs entirely in the webview (the Node sidecar was
+ * removed), so this routes to the `webviewSession*` functions.
  */
-import { USE_WEBVIEW_AGENT } from "@/modules/pi/bridge";
-import { piNative } from "@/modules/pi/lib/native";
 import type { PiProviderRuntimeConfig } from "@/modules/pi/lib/provider";
 import type {
   PiPromptContext,
@@ -108,78 +103,6 @@ export type PiSessionBackend = {
   ): Promise<{ session: PiSession; events: PiSessionEvent[] }>;
 };
 
-// ─── Sidecar Backend ───
-
-const sidecarBackend: PiSessionBackend = {
-  useWebview: false,
-
-  async sessionCreate(title, cwd, providerConfig) {
-    return piNative.sessionCreate(title, cwd, providerConfig);
-  },
-
-  async sessionResume(sessionId, providerConfig) {
-    return piNative.sessionResume(sessionId, providerConfig);
-  },
-
-  async sessionSend(sessionId, promptText, context, options) {
-    return piNative.sessionSend(sessionId, promptText, context, {
-      thinkingLevel:
-        options?.thinkingLevel as PiProviderRuntimeConfig["thinkingLevel"],
-      regenerateBranchGroupId: options?.regenerateBranchGroupId,
-    });
-  },
-
-  async sessionStop(sessionId) {
-    return piNative.sessionStop(sessionId);
-  },
-
-  async sessionRename(sessionId, title) {
-    return piNative.sessionRename(sessionId, title);
-  },
-
-  async sessionDelete(sessionId) {
-    return piNative.sessionDelete(sessionId);
-  },
-
-  async sessionDeleteWithArtifacts(sessionId) {
-    return piNative.sessionDeleteWithArtifacts(sessionId);
-  },
-
-  async sessionArchive(sessionId) {
-    return piNative.sessionArchive(sessionId);
-  },
-
-  async sessionRestore(sessionId) {
-    return piNative.sessionRestore(sessionId);
-  },
-
-  async sessionFork(parentSessionId, forkEventId?, title?) {
-    return piNative.sessionFork(
-      parentSessionId,
-      forkEventId ?? null,
-      title ?? null,
-    );
-  },
-
-  async sessionRollback(sessionId, rollbackEventId) {
-    return piNative.sessionRollback(sessionId, rollbackEventId);
-  },
-
-  async usageSummary(sessionId?) {
-    return piNative.usageSummary(sessionId ?? null);
-  },
-
-  async sessionToolRespond(sessionId, toolCallId, approved) {
-    return piNative.sessionToolRespond(sessionId, toolCallId, approved);
-  },
-
-  async sessionQuestionRespond() {
-    throw new Error(
-      "Interactive questions are only supported by the webview Pi agent.",
-    );
-  },
-};
-
 // ─── Webview Backend ───
 
 const webviewBackend: PiSessionBackend = {
@@ -263,17 +186,12 @@ const webviewBackend: PiSessionBackend = {
 let _backend: PiSessionBackend | null = null;
 
 /**
- * Get the active session backend.
- *
- * When USE_WEBVIEW_AGENT is true, returns the webview backend that
- * runs Pi SDK Agent entirely in the webview without a Node.js sidecar.
- * Otherwise returns the sidecar backend that routes through Rust IPC.
- *
- * The backend is cached after first resolution.
+ * Get the active session backend. The Pi agent runs entirely in the webview
+ * (the Node sidecar was removed). Cached after first resolution.
  */
 export function getSessionBackend(): PiSessionBackend {
   if (!_backend) {
-    _backend = USE_WEBVIEW_AGENT ? webviewBackend : sidecarBackend;
+    _backend = webviewBackend;
   }
   return _backend;
 }
