@@ -31,7 +31,6 @@ import {
   setTerminalFontSize,
   setTerminalCursorBlink,
   setTerminalScrollback,
-  setTerminalAutoSuggestEnabled,
   setTerminalWebglEnabled,
   setVimMode,
   setZoomLevel,
@@ -87,9 +86,6 @@ export function GeneralSection() {
   );
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
-  const terminalAutoSuggestEnabled = usePreferencesStore(
-    (s) => s.terminalAutoSuggestEnabled,
-  );
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
 

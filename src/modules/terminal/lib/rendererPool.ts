@@ -9,6 +9,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
+
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
@@ -46,7 +47,7 @@ export type Slot = {
   readonly fitAddon: FitAddon;
   readonly searchAddon: SearchAddon;
   readonly serializeAddon: SerializeAddon;
-  readonly autoSuggestAddon: AutoSuggestAddon;
+
   readonly host: HTMLDivElement;
   webglAddon: WebglAddon | null;
   webglCanvases: HTMLCanvasElement[];
@@ -196,11 +197,9 @@ function createSlot(): Slot {
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
   const serializeAddon = new SerializeAddon();
-  const autoSuggestAddon = new AutoSuggestAddon();
   term.loadAddon(fitAddon);
   term.loadAddon(searchAddon);
   term.loadAddon(serializeAddon);
-  term.loadAddon(autoSuggestAddon);
   term.loadAddon(
     new WebLinksAddon((_e, uri) => openUrl(uri).catch(console.error)),
   );
@@ -217,7 +216,6 @@ function createSlot(): Slot {
     fitAddon,
     searchAddon,
     serializeAddon,
-    autoSuggestAddon,
     host,
     webglAddon: null,
     webglCanvases: [],
@@ -281,37 +279,19 @@ function createSlot(): Slot {
     if (isTerminalCopy(event)) {
       if (event.type === "keydown" && slot.term.hasSelection()) {
         const sel = slot.term.getSelection();
-        if (sel) void writeClipboardText(sel).catch(() => {});
+        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
       }
       event.preventDefault();
       return false;
     }
     if (isTerminalPaste(event)) {
       if (event.type === "keydown") {
-        void readClipboardText().then((text) => {
+        void navigator.clipboard.readText().then((text) => {
           if (text) slot.term.paste(text);
         });
       }
       event.preventDefault();
       return false;
-    }
-    // Tab — accept auto-suggestion if one is active.
-    if (
-      event.key === "Tab" &&
-      !event.shiftKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      !event.metaKey &&
-      event.type === "keydown" &&
-      usePreferencesStore.getState().terminalAutoSuggestEnabled
-    ) {
-      const accepted = slot.autoSuggestAddon.acceptSuggestion((data) => {
-        bridge.writeToPty(data);
-      });
-      if (accepted) {
-        event.preventDefault();
-        return false;
-      }
     }
     return true;
   });
