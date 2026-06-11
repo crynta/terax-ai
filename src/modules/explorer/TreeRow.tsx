@@ -5,6 +5,11 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -15,6 +20,9 @@ import {
   relativePath,
   revealInFinder,
 } from "./lib/contextActions";
+import { GitStatusBadge } from "./GitStatusBadge";
+import { gitStatusLabel } from "@/modules/source-control/gitStatusPalette";
+import type { GitStatusCode } from "./lib/gitStatusUtils";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import type { useFileTree } from "./lib/useFileTree";
@@ -36,6 +44,8 @@ export type EntryRowProps = {
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
+  gitStatusCode?: GitStatusCode | null;
+  gitignored?: boolean;
 };
 
 function isMarkdownPath(path: string): boolean {
@@ -58,12 +68,28 @@ function EntryRowImpl(props: EntryRowProps) {
     onRevealInTerminal,
     onAttachToAgent,
     onOpenMarkdownPreview,
+    gitStatusCode,
+    gitignored = false,
   } = props;
 
   const [isConfirming, setIsConfirming] = useState(false);
+  const [cursorOffset, setCursorOffset] = useState(0);
   const iconUrl = isDir ? folderIconUrl(name, isExpanded) : fileIconUrl(name);
-  const createTarget = isDir ? path : path.slice(0, path.lastIndexOf("/")) || rootPath;
+  const createTarget = isDir
+    ? path
+    : path.slice(0, path.lastIndexOf("/")) || rootPath;
   const paddingLeft = 6 + depth * 12;
+
+  // VS Code-style hover: full path, plus the git status when present. A dirty
+  // folder (its code is a child-rollup) reads "Contains uncommitted changes".
+  const statusLabel = gitignored
+    ? "Ignored"
+    : gitStatusCode
+      ? isDir
+        ? "Contains uncommitted changes"
+        : gitStatusLabel(gitStatusCode)
+      : null;
+  const hoverTitle = statusLabel ? `${path} • ${statusLabel}` : path;
 
   const handleClick = () => {
     if (tree.renaming) return;
@@ -74,8 +100,8 @@ function EntryRowImpl(props: EntryRowProps) {
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>
-        {isRenaming ? (
+      {isRenaming ? (
+        <ContextMenuTrigger asChild>
           <div
             className="flex h-6 w-full min-w-0 items-center gap-2 px-1.5 text-[13px]"
             style={{ paddingLeft }}
@@ -92,40 +118,72 @@ function EntryRowImpl(props: EntryRowProps) {
               onCancel={tree.cancelRename}
             />
           </div>
-        ) : (
-          <button
-            type="button"
-            data-fs-path={path}
-            onClick={handleClick}
-            onDoubleClick={() => !isDir && tree.beginRename(path)}
-            className={cn(
-              "group flex h-6 w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 text-left text-[13px] text-foreground/85 transition-colors hover:bg-accent/70",
-              isSelected && "bg-accent text-foreground",
-            )}
-            style={{ paddingLeft }}
+        </ContextMenuTrigger>
+      ) : (
+        <Tooltip delayDuration={500}>
+          <TooltipTrigger asChild>
+            <ContextMenuTrigger asChild>
+              <button
+                type="button"
+                data-fs-path={path}
+                onPointerEnter={(e) => {
+                  const left = e.currentTarget.getBoundingClientRect().left;
+                  setCursorOffset(Math.max(0, Math.round(e.clientX - left)));
+                }}
+                onClick={handleClick}
+                onDoubleClick={() => !isDir && tree.beginRename(path)}
+                className={cn(
+                  "group flex h-6 w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 text-left text-[13px] transition-colors hover:bg-accent/70",
+                  gitignored && !isSelected
+                    ? "text-muted-foreground/50"
+                    : "text-foreground/85",
+                  isSelected && "bg-accent text-foreground",
+                )}
+                style={{ paddingLeft }}
+              >
+                <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
+                  {isDir ? (
+                    <HugeiconsIcon
+                      icon={ArrowRight01Icon}
+                      size={12}
+                      strokeWidth={2.25}
+                      className={cn(
+                        "transition-transform",
+                        isExpanded && "rotate-90",
+                      )}
+                    />
+                  ) : null}
+                </span>
+                {iconUrl ? (
+                  <img
+                    src={iconUrl}
+                    alt=""
+                    className={cn(
+                      "size-4 shrink-0",
+                      gitignored && !isSelected && "opacity-45",
+                    )}
+                  />
+                ) : (
+                  <span className="size-4 shrink-0" />
+                )}
+                <span className="min-w-0 flex-1 truncate">{name}</span>
+                {gitStatusCode ? (
+                  <GitStatusBadge code={gitStatusCode} isDir={isDir} />
+                ) : null}
+              </button>
+            </ContextMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent
+            side="bottom"
+            align="start"
+            sideOffset={4}
+            alignOffset={cursorOffset}
+            className="max-w-none whitespace-nowrap border border-border bg-card text-foreground"
           >
-            <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
-              {isDir ? (
-                <HugeiconsIcon
-                  icon={ArrowRight01Icon}
-                  size={12}
-                  strokeWidth={2.25}
-                  className={cn(
-                    "transition-transform",
-                    isExpanded && "rotate-90",
-                  )}
-                />
-              ) : null}
-            </span>
-            {iconUrl ? (
-              <img src={iconUrl} alt="" className="size-4 shrink-0" />
-            ) : (
-              <span className="size-4 shrink-0" />
-            )}
-            <span className="min-w-0 flex-1 truncate">{name}</span>
-          </button>
-        )}
-      </ContextMenuTrigger>
+            {hoverTitle}
+          </TooltipContent>
+        </Tooltip>
+      )}
       <ContextMenuContent
         className={COMPACT_CONTENT}
         onCloseAutoFocus={(e) => {
@@ -225,7 +283,12 @@ export type PendingRowProps = {
   onCancel: () => void;
 };
 
-export function PendingRow({ depth, kind, onCommit, onCancel }: PendingRowProps) {
+export function PendingRow({
+  depth,
+  kind,
+  onCommit,
+  onCancel,
+}: PendingRowProps) {
   return (
     <div
       className="flex h-6 w-full min-w-0 items-center gap-2 px-1.5 text-[13px]"
@@ -233,7 +296,9 @@ export function PendingRow({ depth, kind, onCommit, onCancel }: PendingRowProps)
     >
       <span className="size-3.5 shrink-0" />
       <img
-        src={kind === "dir" ? folderIconUrl("", false) : fileIconUrl("untitled")}
+        src={
+          kind === "dir" ? folderIconUrl("", false) : fileIconUrl("untitled")
+        }
         alt=""
         className="size-4 shrink-0 opacity-70"
       />

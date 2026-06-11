@@ -1,6 +1,6 @@
 mod common;
 
-use common::FsFixture;
+use common::{git_available, FsFixture, GitRepoFixture};
 use terax_lib::modules::fs::grep::{fs_glob, fs_grep};
 use terax_lib::modules::fs::search::{fs_list_files, fs_search};
 use terax_lib::modules::fs::tree::{fs_read_dir, list_subdirs, EntryKind};
@@ -246,7 +246,7 @@ fn read_dir_orders_dirs_before_files_then_alpha() {
     fx.write("zfile.txt", "");
     fx.write("afile.txt", "");
 
-    let entries = fs_read_dir(fx.root_str(), false, None).expect("read_dir");
+    let entries = fs_read_dir(fx.root_str(), false, None, None).expect("read_dir");
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     assert_eq!(names, vec!["adir", "zdir", "afile.txt", "zfile.txt"]);
     assert!(matches!(entries[0].kind, EntryKind::Dir));
@@ -259,11 +259,11 @@ fn read_dir_hides_dotfiles_by_default() {
     fx.write(".secret", "");
     fx.write("visible.txt", "");
 
-    let hidden_off = fs_read_dir(fx.root_str(), false, None).expect("read_dir");
+    let hidden_off = fs_read_dir(fx.root_str(), false, None, None).expect("read_dir");
     let names: Vec<&str> = hidden_off.iter().map(|e| e.name.as_str()).collect();
     assert_eq!(names, vec!["visible.txt"]);
 
-    let hidden_on = fs_read_dir(fx.root_str(), true, None).expect("read_dir");
+    let hidden_on = fs_read_dir(fx.root_str(), true, None, None).expect("read_dir");
     let names: Vec<&str> = hidden_on.iter().map(|e| e.name.as_str()).collect();
     assert!(names.contains(&".secret"));
 }
@@ -273,7 +273,7 @@ fn read_dir_returns_size_for_files() {
     let fx = FsFixture::new();
     fx.write("known.txt", "abcdef");
 
-    let entries = fs_read_dir(fx.root_str(), false, None).expect("read_dir");
+    let entries = fs_read_dir(fx.root_str(), false, None, None).expect("read_dir");
     let entry = entries.iter().find(|e| e.name == "known.txt").unwrap();
     assert_eq!(entry.size, 6);
     assert!(matches!(entry.kind, EntryKind::File));
@@ -301,4 +301,36 @@ fn list_subdirs_hides_dot_dirs_by_default() {
 
     let on = list_subdirs(fx.root_str(), true, None).expect("list_subdirs");
     assert!(on.contains(&".hidden".to_string()));
+}
+
+#[test]
+fn read_dir_marks_gitignored_entries() {
+    if !git_available() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    fx.write_file(".gitignore", "node_modules/\ndist/\n");
+    fx.write_file("src/main.ts", "");
+    fx.write_file("node_modules/pkg/index.js", "");
+    fx.write_file("dist/bundle.js", "");
+
+    let entries = fs_read_dir(fx.repo_str(), false, Some(true), None).expect("read_dir");
+    let ignored = |name: &str| {
+        entries
+            .iter()
+            .find(|e| e.name == name)
+            .map(|e| e.gitignored)
+            .unwrap_or(false)
+    };
+
+    assert!(!ignored("src"));
+    assert!(ignored("node_modules"));
+    assert!(ignored("dist"));
+
+    let nested = terax_lib::modules::fs::to_canon(fx.repo_path.join("node_modules/pkg"));
+    let inside = fs_read_dir(nested, false, Some(true), None).expect("read_dir nested");
+    assert!(inside.iter().all(|e| e.gitignored));
+
+    let off = fs_read_dir(fx.repo_str(), false, Some(false), None).expect("read_dir off");
+    assert!(off.iter().all(|e| !e.gitignored));
 }

@@ -7,6 +7,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
+  Alert02Icon,
   FileAddIcon,
   Folder01Icon,
   FolderAddIcon,
@@ -31,7 +32,10 @@ import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
 import { useFileTree } from "./lib/useFileTree";
+import { useGitStatus } from "./lib/useGitStatus";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
 
 export type FileExplorerHandle = {
   focus: () => void;
@@ -48,6 +52,7 @@ type Props = {
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
   onOpenMarkdownPreview?: (path: string) => void;
+  gitStatus?: GitStatusSnapshot | null;
 };
 
 type Row =
@@ -59,8 +64,17 @@ type Row =
       isDir: boolean;
       isExpanded: boolean;
       depth: number;
+      gitignored: boolean;
     }
-  | { kind: "rename"; key: string; path: string; name: string; isDir: boolean; depth: number }
+  | {
+      kind: "rename";
+      key: string;
+      path: string;
+      name: string;
+      isDir: boolean;
+      depth: number;
+      gitignored: boolean;
+    }
   | { kind: "pending"; key: string; depth: number; pendingKind: "file" | "dir" }
   | { kind: "status"; key: string; depth: number; tone: "muted" | "error"; message: string };
 
@@ -95,6 +109,7 @@ function buildRows(
           name: entry.name,
           isDir,
           depth,
+          gitignored: entry.gitignored,
         });
       } else {
         entryIndexByPath.set(path, rows.length);
@@ -106,6 +121,7 @@ function buildRows(
           isDir,
           isExpanded: expanded,
           depth,
+          gitignored: entry.gitignored,
         });
       }
       if (isDir && expanded) {
@@ -156,10 +172,20 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       onRevealInTerminal,
       onAttachToAgent,
       onOpenMarkdownPreview,
+      gitStatus,
     },
     ref,
   ) {
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
+    const explorerGitDecorations = usePreferencesStore(
+      (s) => s.explorerGitDecorations,
+    );
+    const { lookup: lookupGitStatus, truncated: gitDecorationsTruncated } =
+      useGitStatus(
+        rootPath,
+        explorerGitDecorations ? gitStatus : null,
+        explorerGitDecorations,
+      );
     const [selectedPath, setSelectedPath] = useState<string | null>(null);
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [isSearchActive, setIsSearchActive] = useState(false);
@@ -361,6 +387,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               onRevealInTerminal={onRevealInTerminal}
               onAttachToAgent={onAttachToAgent}
               onOpenMarkdownPreview={onOpenMarkdownPreview}
+              gitStatusCode={
+                explorerGitDecorations ? lookupGitStatus(row.path) : null
+              }
+              gitignored={explorerGitDecorations ? row.gitignored : false}
             />
           );
         }
@@ -389,7 +419,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
       >
         <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
           <span
-            className="flex flex-1 items-center truncate text-xs font-medium text-foreground/80"
+            className="flex min-w-0 flex-1 items-center gap-1 truncate text-xs font-medium text-foreground/80"
             title={rootPath}
           >
             <img
@@ -397,9 +427,23 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
               alt=""
               height={15}
               width={15}
-              className="mx-1.5"
+              className="mx-1.5 shrink-0"
             />
-            {basename(rootPath)}
+            <span className="min-w-0 truncate">{basename(rootPath)}</span>
+            {explorerGitDecorations && gitDecorationsTruncated ? (
+              <span
+                className="inline-flex shrink-0"
+                title="Git decorations may be incomplete due to a large number of changes"
+                aria-label="Git decorations may be incomplete"
+              >
+                <HugeiconsIcon
+                  icon={Alert02Icon}
+                  size={11}
+                  strokeWidth={2}
+                  className="text-muted-foreground/70"
+                />
+              </span>
+            ) : null}
           </span>
 
           <Button
