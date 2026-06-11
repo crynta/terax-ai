@@ -8,6 +8,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
+import { readClipboardText, writeClipboardText } from "./clipboard";
 import { shouldCursorBlink } from "./cursorBlink";
 
 import {
@@ -299,14 +300,14 @@ function createSlot(): Slot {
     if (isTerminalCopy(event)) {
       if (event.type === "keydown" && slot.term.hasSelection()) {
         const sel = slot.term.getSelection();
-        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        if (sel) void writeClipboardText(sel).catch(() => {});
       }
       event.preventDefault();
       return false;
     }
     if (isTerminalPaste(event)) {
       if (event.type === "keydown") {
-        void navigator.clipboard.readText().then((text) => {
+        void readClipboardText().then((text) => {
           if (text) slot.term.paste(text);
         });
       }
