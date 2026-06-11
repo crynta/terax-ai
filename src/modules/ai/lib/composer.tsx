@@ -13,8 +13,12 @@ import {
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { useWhisperRecording } from "../hooks/useWhisperRecording";
 import { expandSnippetTokens, type Snippet } from "../lib/snippets";
-import { getOrCreateChat, useChatStore } from "../store/chatStore";
+import { useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
+import {
+  type ComposerMessagePart,
+  useComposerRuntime,
+} from "./composerRuntime";
 import { type SlashCommandMeta, tryRunSlashCommand } from "./slashCommands";
 
 export type FileAttachment = {
@@ -29,9 +33,7 @@ export type FileAttachment = {
   source?: "terminal" | "editor";
 };
 
-type MessagePart =
-  | { type: "text"; text: string }
-  | { type: "file"; mediaType: string; url: string; filename?: string };
+type MessagePart = ComposerMessagePart;
 
 export const MAX_TEXT_INLINE = 200_000;
 export const ACCEPTED_FILES =
@@ -51,7 +53,7 @@ export type ComposerState = {
 export type ComposerActions = {
   setValue: Dispatch<SetStateAction<string>>;
   addFiles: (list: FileList | null) => Promise<void>;
-  /** Attach a file by absolute path — used by the file explorer's "Attach to Agent". */
+  /** Attach a file by absolute path (used by the file explorer's "Attach to Agent"). */
   attachFileByPath: (path: string) => Promise<void>;
   removeFile: (id: string) => void;
   addSnippet: (s: Snippet) => void;
@@ -87,7 +89,8 @@ type ProviderProps = {
 };
 
 export function AiComposerProvider({ children }: ProviderProps) {
-  const sessionId = useChatStore((s) => s.activeSessionId);
+  const runtime = useComposerRuntime();
+  const sessionId = runtime.sessionId;
   const status = useChatStore((s) => s.agentMeta.status);
   const isBusy = status === "thinking" || status === "streaming";
 
@@ -320,13 +323,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
     }
 
     if (!sessionId) return;
-    const chat = getOrCreateChat(sessionId);
-    void chat.sendMessage({ role: "user", parts } as Parameters<
-      typeof chat.sendMessage
-    >[0]);
-    const store = useChatStore.getState();
-    store.patchAgentMeta({ hitStepCap: false, compactionNotice: null });
-    if (!store.mini.open) store.openMini();
+    runtime.send(parts);
     setValue("");
     setFiles([]);
     setPickedSnippets([]);
@@ -336,8 +333,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
   };
 
   const stop = () => {
-    if (!sessionId) return;
-    void getOrCreateChat(sessionId).stop();
+    runtime.stop();
   };
 
   const canSend =

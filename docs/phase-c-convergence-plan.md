@@ -125,12 +125,39 @@ run status - so they do not change in Stage 1. Source-control now selects
 pi producer (`piSessionToAgentRun`) is tested and ready, and goes live when the
 composer is pi-backed. 6 mapper tests in `agentRun.test.ts`.
 
-### Stage 2 - Pi runtime backs the quick-ask composer (Layer 2/3 seam)
+### Stage 2 - Pi runtime backs the quick-ask composer (Layer 2/3 seam) [SEAM LANDED 2026-06-12]
 
 - Make the docked composer (`AppComposerDock` -> `AiInputBar`) able to create a
   lightweight pi session instead of an AI-SDK chat, behind a flag.
 - Keep `AiInputBar`'s look; swap the runtime. Verify with Stage 0 specs on both
   paths, flip the flag default once green.
+
+**Seam landed (the hard, safe half).** `src/modules/ai/lib/composerRuntime.ts`
+defines a `ComposerRuntime` interface (`sessionId`, `send`, `stop`) and lifts
+the composer's send/stop/active-session path off `chatStore`. `composer.tsx`
+now calls `runtime.send(parts)` / `runtime.stop()` instead of
+`getOrCreateChat(sessionId).sendMessage(...)`; the chat-specific side effects
+(`patchAgentMeta`, `openMini`) moved into the default `useChatComposerRuntime`,
+so behavior is byte-for-byte unchanged (850 tests + the `ai-chat` e2e cover it).
+`useComposerRuntime()` is the single selection point where a pi runtime gets
+chosen by flag.
+
+**Deliberately not forced yet (needs the running app):**
+1. *A pi-runtime mock.* The Stage 0 mock targets the AI-SDK `MockLanguageModelV3`.
+   Pi runs on `pi-ai`'s `Model` protocol (different streaming/tool shape), so a
+   deterministic offline pi model is a separate, larger mock than the AI-SDK one.
+   Without it the pi-backed path is not e2e-verifiable.
+2. *Response rendering + focus wiring.* A pi-backed quick-ask must surface its
+   transcript and status somewhere (route to the existing pi sidebar/workspace,
+   or render `PiTranscript` inside the mini window) and thread App-level focus
+   (`openSecondarySidebarView`, `setPiFocusRequest`). That is scroll/focus/UX
+   sensitive and must be verified interactively, not blind.
+3. *`isBusy` semantics.* The composer's `isBusy` excludes `awaiting-approval`
+   (you may type during an approval) while `isAgentBusy` includes it; unifying
+   these is a deliberate UX decision to make with the app open, not a blind swap.
+
+So Stage 2's architectural decoupling is done and safe; the pi implementation +
+flag flip is a contained follow-up gated on items 1-3 above.
 
 ### Stage 3 - Retire duplicate surface pieces
 
