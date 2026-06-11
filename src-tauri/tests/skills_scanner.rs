@@ -1,4 +1,4 @@
-use terax_lib::modules::skills::scanner::{is_valid_skill_name, frontmatter_value};
+use terax_lib::modules::skills::scanner::{frontmatter_value, is_valid_skill_name};
 
 #[test]
 fn skill_name_validation() {
@@ -18,8 +18,14 @@ fn skill_name_validation() {
 #[test]
 fn frontmatter_extraction() {
     let content = "---\nname: test-skill\nversion: \"1.0\"\n---\n\n# Instructions\nDo stuff.";
-    assert_eq!(frontmatter_value(content, "name"), Some("test-skill".to_string()));
-    assert_eq!(frontmatter_value(content, "version"), Some("1.0".to_string()));
+    assert_eq!(
+        frontmatter_value(content, "name"),
+        Some("test-skill".to_string())
+    );
+    assert_eq!(
+        frontmatter_value(content, "version"),
+        Some("1.0".to_string())
+    );
     assert_eq!(frontmatter_value(content, "missing"), None);
 
     let no_fm = "# Just a heading\nNo frontmatter here.";

@@ -2,10 +2,7 @@ use std::sync::Mutex;
 use tokio::sync::mpsc;
 
 pub enum TtsQueueMsg {
-    Speak {
-        text: String,
-        provider: String,
-    },
+    Speak { text: String, provider: String },
 }
 
 pub struct TtsQueue {

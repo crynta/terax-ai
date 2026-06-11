@@ -43,7 +43,9 @@ impl AgentDefinition {
             return Err("slug is required".to_string());
         }
         if !is_valid_slug(&self.slug) {
-            return Err("slug must be lowercase ascii with hyphens, no dots or slashes".to_string());
+            return Err(
+                "slug must be lowercase ascii with hyphens, no dots or slashes".to_string(),
+            );
         }
         if self.display_name.is_empty() {
             return Err("display_name is required".to_string());

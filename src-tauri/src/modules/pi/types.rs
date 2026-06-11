@@ -69,16 +69,6 @@ impl PiCommandError {
             remediation: None,
         }
     }
-
-    pub(super) fn with_data(message: impl Into<String>, data: PiErrorData) -> Self {
-        Self {
-            message: message.into(),
-            code: Some(data.code),
-            category: Some(data.category),
-            retryable: Some(data.retryable),
-            remediation: Some(data.remediation),
-        }
-    }
 }
 
 impl From<String> for PiCommandError {
@@ -462,32 +452,6 @@ pub struct PiProviderConfig {
     pub thinking_level: Option<String>,
     #[serde(default)]
     pub auth_mode: Option<PiAuthMode>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PiResolvedProviderConfig {
-    pub auth_mode: PiAuthMode,
-    pub provider: String,
-    pub model_id: String,
-    #[serde(default)]
-    pub source_model_id: Option<String>,
-    #[serde(default)]
-    pub base_url: Option<String>,
-    #[serde(default)]
-    pub context_limit: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_tokens: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reasoning: Option<bool>,
-    #[serde(default)]
-    pub custom_endpoint_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thinking_level: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile_agent_dir: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

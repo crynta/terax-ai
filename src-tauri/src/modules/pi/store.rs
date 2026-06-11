@@ -46,14 +46,6 @@ pub fn record_session_events(app: &AppHandle, events: &[PiSessionEvent]) -> Resu
     record_session_events_at_path(&history_path(app)?, events)
 }
 
-pub fn record_event_at_path(path: &Path, event: &PiSessionEvent) -> Result<(), String> {
-    record_session_events_at_path(path, std::slice::from_ref(event))
-}
-
-pub fn mark_unfinished_sessions_stopped(app: &AppHandle) -> Result<usize, String> {
-    mark_unfinished_sessions_stopped_at_path(&history_path(app)?)
-}
-
 // ─── Canonical transcript persistence (webview agent) ───
 // The webview Pi agent keeps its conversation in memory only. To resume, fork,
 // or rollback a session across an app restart we persist its canonical
@@ -210,21 +202,6 @@ fn stopped_event(session_id: String, created_at: &str, sequence: usize) -> PiSes
         session_id,
         created_at: created_at.to_string(),
         payload: serde_json::json!({ "status": "stopped" }),
-    }
-}
-
-pub(super) fn deleted_event(session_id: String) -> PiSessionEvent {
-    let created_at = now_iso_timestamp();
-    PiSessionEvent {
-        id: format!(
-            "evt_{}_delete_{}",
-            event_id_component(&created_at),
-            event_id_component(&session_id)
-        ),
-        event_type: session_event_type::DELETED.to_string(),
-        session_id: session_id.clone(),
-        created_at,
-        payload: serde_json::json!({ "sessionId": session_id }),
     }
 }
 
@@ -465,6 +442,10 @@ mod tests {
             created_at: "2026-01-01T00:00:01.000Z".to_string(),
             payload,
         }
+    }
+
+    fn record_event_at_path(path: &Path, event: &PiSessionEvent) -> Result<(), String> {
+        record_session_events_at_path(path, std::slice::from_ref(event))
     }
 
     #[test]

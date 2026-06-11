@@ -1,6 +1,6 @@
 pub mod ptt;
-pub mod tts;
 pub mod transcription;
+pub mod tts;
 pub mod wake_word;
 
 use serde::Serialize;

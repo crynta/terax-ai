@@ -49,15 +49,23 @@ fn annotation_item_serde_roundtrip() {
 #[test]
 fn annotation_item_type_tag() {
     let rect = AnnotationItem::Rect {
-        x: 0.0, y: 0.0, width: 10.0, height: 10.0,
-        color: "#FF0000".to_string(), stroke_width: 1.0,
+        x: 0.0,
+        y: 0.0,
+        width: 10.0,
+        height: 10.0,
+        color: "#FF0000".to_string(),
+        stroke_width: 1.0,
     };
     let json = serde_json::to_string(&rect).expect("serialize");
     assert!(json.contains("\"type\":\"rect\""));
 
     let arrow = AnnotationItem::Arrow {
-        x1: 0.0, y1: 0.0, x2: 10.0, y2: 10.0,
-        color: "#FF4444".to_string(), stroke_width: 2.0,
+        x1: 0.0,
+        y1: 0.0,
+        x2: 10.0,
+        y2: 10.0,
+        color: "#FF4444".to_string(),
+        stroke_width: 2.0,
     };
     let json = serde_json::to_string(&arrow).expect("serialize");
     assert!(json.contains("\"type\":\"arrow\""));

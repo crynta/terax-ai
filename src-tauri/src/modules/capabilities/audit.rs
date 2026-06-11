@@ -104,12 +104,22 @@ mod tests {
     fn record_assigns_ascending_sequences() {
         let log = CapabilityAuditLog::with_capacity(100);
         let e1 = log.record(CapabilityAuditEntry::new(
-            "s1", "c1", "tool1", true, true,
-            CapabilityAuditOutcome::Succeeded, None,
+            "s1",
+            "c1",
+            "tool1",
+            true,
+            true,
+            CapabilityAuditOutcome::Succeeded,
+            None,
         ));
         let e2 = log.record(CapabilityAuditEntry::new(
-            "s1", "c2", "tool2", false, false,
-            CapabilityAuditOutcome::Blocked, Some("msg".into()),
+            "s1",
+            "c2",
+            "tool2",
+            false,
+            false,
+            CapabilityAuditOutcome::Blocked,
+            Some("msg".into()),
         ));
         assert_eq!(e1.sequence, 1);
         assert_eq!(e2.sequence, 2);
@@ -120,12 +130,22 @@ mod tests {
     fn entries_returns_all_recorded() {
         let log = CapabilityAuditLog::with_capacity(100);
         log.record(CapabilityAuditEntry::new(
-            "s", "c", "t", true, true,
-            CapabilityAuditOutcome::Succeeded, None,
+            "s",
+            "c",
+            "t",
+            true,
+            true,
+            CapabilityAuditOutcome::Succeeded,
+            None,
         ));
         log.record(CapabilityAuditEntry::new(
-            "s", "c", "t", false, false,
-            CapabilityAuditOutcome::Failed, None,
+            "s",
+            "c",
+            "t",
+            false,
+            false,
+            CapabilityAuditOutcome::Failed,
+            None,
         ));
         assert_eq!(log.entries().len(), 2);
     }
@@ -135,8 +155,13 @@ mod tests {
         let log = CapabilityAuditLog::with_capacity(3);
         for i in 0..5 {
             log.record(CapabilityAuditEntry::new(
-                "s", &format!("c{i}"), "t", true, true,
-                CapabilityAuditOutcome::Succeeded, None,
+                "s",
+                &format!("c{i}"),
+                "t",
+                true,
+                true,
+                CapabilityAuditOutcome::Succeeded,
+                None,
             ));
         }
         let entries = log.entries();
@@ -148,8 +173,13 @@ mod tests {
     #[test]
     fn entry_new_sets_zero_sequence() {
         let entry = CapabilityAuditEntry::new(
-            "s", "c", "t", true, false,
-            CapabilityAuditOutcome::Blocked, Some("reason".into()),
+            "s",
+            "c",
+            "t",
+            true,
+            false,
+            CapabilityAuditOutcome::Blocked,
+            Some("reason".into()),
         );
         assert_eq!(entry.sequence, 0);
         assert_eq!(entry.session_id, "s");
@@ -166,8 +196,13 @@ mod tests {
         let log = CapabilityAuditLog::default();
         for i in 0..1100 {
             log.record(CapabilityAuditEntry::new(
-                "s", &format!("c{i}"), "t", true, true,
-                CapabilityAuditOutcome::Succeeded, None,
+                "s",
+                &format!("c{i}"),
+                "t",
+                true,
+                true,
+                CapabilityAuditOutcome::Succeeded,
+                None,
             ));
         }
         assert_eq!(log.entries().len(), 1000);
@@ -177,8 +212,13 @@ mod tests {
     fn with_capacity_minimum_is_one() {
         let log = CapabilityAuditLog::with_capacity(0);
         log.record(CapabilityAuditEntry::new(
-            "s", "c", "t", true, true,
-            CapabilityAuditOutcome::Succeeded, None,
+            "s",
+            "c",
+            "t",
+            true,
+            true,
+            CapabilityAuditOutcome::Succeeded,
+            None,
         ));
         assert_eq!(log.entries().len(), 1);
     }

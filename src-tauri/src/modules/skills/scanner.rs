@@ -37,7 +37,13 @@ pub fn frontmatter_value(content: &str, key: &str) -> Option<String> {
         }
         let trimmed = line.trim_start();
         if let Some(value) = trimmed.strip_prefix(&prefix) {
-            return Some(value.trim().trim_matches('"').trim_matches('\'').to_string());
+            return Some(
+                value
+                    .trim()
+                    .trim_matches('"')
+                    .trim_matches('\'')
+                    .to_string(),
+            );
         }
     }
     None

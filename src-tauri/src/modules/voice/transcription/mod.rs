@@ -1,14 +1,16 @@
-use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use tauri::Manager;
 
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 fn http_client() -> &'static reqwest::Client {
-    HTTP_CLIENT.get_or_init(|| reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new()))
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,7 +104,10 @@ async fn transcribe_local(
         .path()
         .resource_dir()
         .map_err(|e| format!("resource dir: {e}"))?;
-    let helper = resource_dir.join("sidecars").join("speech-recognizer").join("SpeechRecognizer");
+    let helper = resource_dir
+        .join("sidecars")
+        .join("speech-recognizer")
+        .join("SpeechRecognizer");
     if !helper.exists() {
         return Err("Local STT helper not found. Build with: cd sidecars/speech-recognizer && swift build -c release".to_string());
     }
@@ -119,11 +124,14 @@ async fn transcribe_local(
             .map_err(|e| format!("spawn helper: {e}"))?;
 
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(&audio_data).map_err(|e| format!("write to helper stdin: {e}"))?;
+            stdin
+                .write_all(&audio_data)
+                .map_err(|e| format!("write to helper stdin: {e}"))?;
             drop(stdin);
         }
 
-        let result = child.wait_with_output()
+        let result = child
+            .wait_with_output()
             .map_err(|e| format!("helper wait: {e}"))?;
 
         if !result.status.success() {
@@ -132,7 +140,9 @@ async fn transcribe_local(
         }
 
         Ok(String::from_utf8_lossy(&result.stdout).trim().to_string())
-    }).await.map_err(|e| format!("task join: {e}"))??;
+    })
+    .await
+    .map_err(|e| format!("task join: {e}"))??;
 
     Ok(TranscriptionOutput {
         text: output,

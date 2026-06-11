@@ -12,8 +12,6 @@ pub mod mcp;
 pub mod model_compare;
 pub mod net;
 pub mod overlay;
-#[cfg(feature = "openclicky")]
-pub mod voice;
 pub mod pi;
 pub mod proc;
 pub mod pty;
@@ -25,6 +23,8 @@ pub mod skills;
 pub(crate) mod sync;
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 pub mod tray;
+#[cfg(feature = "openclicky")]
+pub mod voice;
 #[cfg(feature = "workflow")]
 pub mod webhook;
 pub mod workspace;

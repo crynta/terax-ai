@@ -3,8 +3,8 @@ use tauri::Runtime;
 
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 pub fn apply_transparency_shim<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    use objc2::runtime::AnyObject;
     use objc2::msg_send;
+    use objc2::runtime::AnyObject;
 
     let ns_window_ptr = match window.ns_window() {
         Ok(ptr) => ptr,
@@ -32,8 +32,8 @@ pub fn apply_transparency_shim<R: Runtime>(window: &tauri::WebviewWindow<R>) {
 
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 pub fn size_to_screen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    use objc2::runtime::AnyObject;
     use objc2::msg_send;
+    use objc2::runtime::AnyObject;
 
     let ns_window_ptr = match window.ns_window() {
         Ok(ptr) => ptr,

@@ -46,17 +46,17 @@ const MCP_ALLOWED_COMMANDS: &[&str] = &[
     "node", "npx", "npm", "pnpm", "bun", "deno", "uvx", "uv", "python", "python3",
 ];
 
+#[cfg(feature = "openclicky")]
+pub mod cli;
 mod config_store;
 mod connections;
 mod oauth;
 mod sanitize;
-mod types;
-#[cfg(feature = "openclicky")]
-pub mod cli;
 #[cfg(feature = "openclicky")]
 pub mod server;
 #[cfg(feature = "openclicky")]
 pub mod server_tools;
+mod types;
 use config_store::{mcp_config_path, mcp_tool_preferences_path, sync_tool_preferences_from_app};
 pub use config_store::{
     mcp_connect_saved_stdio_at_path, mcp_connect_saved_stdio_at_path_with_env_loader,

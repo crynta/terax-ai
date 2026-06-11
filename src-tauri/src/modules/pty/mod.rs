@@ -16,8 +16,8 @@ use std::thread;
 use portable_pty::PtySize;
 use tauri::ipc::{Channel, Response};
 
-use crate::modules::sync;
 use crate::modules::capabilities::AppCapabilityState;
+use crate::modules::sync;
 use crate::modules::workspace::{authorize_user_spawn_cwd, WorkspaceEnv, WorkspaceRegistry};
 use session::Session;
 

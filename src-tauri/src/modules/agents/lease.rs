@@ -1,7 +1,7 @@
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use serde::Serialize;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize)]

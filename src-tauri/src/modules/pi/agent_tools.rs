@@ -405,7 +405,11 @@ mod tests {
         state
             .verify_and_execute(
                 &registry,
-                request(&root, "write", json!({ "path": "out.txt", "content": "landed" })),
+                request(
+                    &root,
+                    "write",
+                    json!({ "path": "out.txt", "content": "landed" }),
+                ),
                 &context(&root),
             )
             .unwrap();
@@ -415,7 +419,11 @@ mod tests {
         let error = state
             .verify_and_execute(
                 &registry,
-                request(&root, "write", json!({ "path": "out2.txt", "content": "blocked" })),
+                request(
+                    &root,
+                    "write",
+                    json!({ "path": "out2.txt", "content": "blocked" }),
+                ),
                 &context(&root),
             )
             .unwrap_err();

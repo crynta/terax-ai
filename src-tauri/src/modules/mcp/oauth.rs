@@ -755,7 +755,10 @@ mod tests {
             "authorization_servers": ["https://b.example.com", "https://a.example.com"]
         });
         let issuers = oauth_authorization_servers(&value);
-        assert_eq!(issuers, vec!["https://a.example.com", "https://b.example.com"]);
+        assert_eq!(
+            issuers,
+            vec!["https://a.example.com", "https://b.example.com"]
+        );
     }
 
     #[test]

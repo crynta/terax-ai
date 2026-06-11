@@ -66,12 +66,6 @@ impl NativeToolContext {
         }
     }
 
-    pub(super) fn has_runtime_backends(&self) -> bool {
-        self.artifact_store.is_some()
-            || self.artifact_update_sink.is_some()
-            || self.mcp_state.is_some()
-    }
-
     pub(super) fn capability_manifest(&self) -> CapabilityManifest {
         let Some(mcp_state) = self.mcp_state.as_ref() else {
             return core_capability_manifest();
@@ -123,17 +117,6 @@ pub struct NativeToolRequest {
     pub approval: Option<NativeToolApprovalMetadata>,
     #[serde(default)]
     pub input: Value,
-}
-
-impl NativeToolRequest {
-    pub(super) fn mcp_auto_approval_policy(&self) -> Option<ApprovalPolicy> {
-        if !self.tool_name.starts_with("mcp__") {
-            return None;
-        }
-        let approval = self.approval.as_ref()?;
-        (approval.policy == Some(ApprovalPolicy::Auto) && approval.approved == Some(true))
-            .then_some(ApprovalPolicy::Auto)
-    }
 }
 
 #[derive(Debug, Serialize)]

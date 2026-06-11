@@ -2,7 +2,9 @@ mod definition;
 pub mod lease;
 pub mod migrator;
 
-pub use definition::{AgentDefinition, list_agents, load_agent, save_agent, delete_agent, append_memory};
+pub use definition::{
+    append_memory, delete_agent, list_agents, load_agent, save_agent, AgentDefinition,
+};
 
 use serde::Serialize;
 use tauri::AppHandle;

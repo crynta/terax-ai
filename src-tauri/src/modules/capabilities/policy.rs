@@ -84,10 +84,7 @@ mod tests {
     }
 
     fn manifest_with(tools: Vec<CapabilityTool>) -> CapabilityManifest {
-        CapabilityManifest {
-            version: 1,
-            tools,
-        }
+        CapabilityManifest { version: 1, tools }
     }
 
     #[test]

@@ -1,6 +1,6 @@
-pub mod window_enum;
 #[cfg(feature = "openclicky")]
 pub mod three_d;
+pub mod window_enum;
 
 use tauri::Runtime;
 

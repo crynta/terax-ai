@@ -1,5 +1,5 @@
-use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
@@ -70,8 +70,9 @@ pub async fn generate_3d_model(
         return Err("prompt exceeds the 2000 character limit".to_string());
     }
 
-    let api_key = crate::modules::secrets::get_secret_value(&app, &state, "terax", "tripo-api-key")?
-        .ok_or("Tripo API key not configured. Set it in Settings > Keys.")?;
+    let api_key =
+        crate::modules::secrets::get_secret_value(&app, &state, "terax", "tripo-api-key")?
+            .ok_or("Tripo API key not configured. Set it in Settings > Keys.")?;
 
     let client = http_client();
 
@@ -104,10 +105,7 @@ pub async fn generate_3d_model(
         return Err(format!("Tripo API error code: {}", task.code));
     }
 
-    let task_id = task
-        .data
-        .ok_or("Tripo returned no task data")?
-        .task_id;
+    let task_id = task.data.ok_or("Tripo returned no task data")?.task_id;
 
     let max_polls: u32 = 120;
     let poll_interval = std::time::Duration::from_secs(2);
@@ -119,9 +117,7 @@ pub async fn generate_3d_model(
         let mut retries = 0;
         let status_resp = loop {
             match client
-                .get(format!(
-                    "https://api.tripo3d.ai/v2/openapi/task/{task_id}"
-                ))
+                .get(format!("https://api.tripo3d.ai/v2/openapi/task/{task_id}"))
                 .header("Authorization", format!("Bearer {api_key}"))
                 .send()
                 .await
@@ -130,7 +126,9 @@ pub async fn generate_3d_model(
                 Err(e) => {
                     retries += 1;
                     if retries >= max_retries {
-                        return Err(format!("Tripo status check failed after {max_retries} retries: {e}"));
+                        return Err(format!(
+                            "Tripo status check failed after {max_retries} retries: {e}"
+                        ));
                     }
                     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                 }
@@ -157,10 +155,7 @@ pub async fn generate_3d_model(
                 let model = data.model.ok_or("Tripo returned no model")?;
                 return Ok(Model3DResult {
                     model_url: model.url,
-                    thumbnail_url: model
-                        .rendered_image
-                        .map(|img| img.url)
-                        .unwrap_or_default(),
+                    thumbnail_url: model.rendered_image.map(|img| img.url).unwrap_or_default(),
                 });
             }
             "failed" => {

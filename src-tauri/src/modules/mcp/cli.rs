@@ -88,21 +88,23 @@ fn handle_request(request: Value) -> Option<Value> {
                 .cloned()
                 .unwrap_or(serde_json::json!({}));
 
-            Some(match crate::modules::mcp::server_tools::call_builtin_tool(tool_name, arguments) {
-                Ok(result) => serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "result": { "content": [{ "type": "text", "text": result }] }
-                }),
-                Err(e) => serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "result": {
-                        "isError": true,
-                        "content": [{ "type": "text", "text": format!("Tool error: {e}") }]
-                    }
-                }),
-            })
+            Some(
+                match crate::modules::mcp::server_tools::call_builtin_tool(tool_name, arguments) {
+                    Ok(result) => serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": { "content": [{ "type": "text", "text": result }] }
+                    }),
+                    Err(e) => serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": {
+                            "isError": true,
+                            "content": [{ "type": "text", "text": format!("Tool error: {e}") }]
+                        }
+                    }),
+                },
+            )
         }
         "ping" => Some(serde_json::json!({
             "jsonrpc": "2.0",

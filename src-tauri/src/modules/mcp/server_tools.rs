@@ -5,7 +5,11 @@ use serde_json::{json, Value};
 
 pub trait McpToolProvider: Send + Sync {
     fn tools(&self) -> Vec<McpExposedTool>;
-    fn call(&self, name: &str, params: Value) -> Pin<Box<dyn Future<Output = Result<Value, String>> + Send + '_>>;
+    fn call(
+        &self,
+        name: &str,
+        params: Value,
+    ) -> Pin<Box<dyn Future<Output = Result<Value, String>> + Send + '_>>;
 }
 
 #[derive(Debug, Clone)]

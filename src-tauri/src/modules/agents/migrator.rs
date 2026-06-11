@@ -10,11 +10,7 @@ pub struct OpenClickyAgent {
 }
 
 pub fn migrate_agent(oc: &OpenClickyAgent) -> AgentDefinition {
-    let system_prompt = format!(
-        "{}\n\n{}",
-        oc.soul_md.trim(),
-        oc.instructions_md.trim()
-    );
+    let system_prompt = format!("{}\n\n{}", oc.soul_md.trim(), oc.instructions_md.trim());
 
     AgentDefinition {
         schema_version: 1,
@@ -76,9 +72,7 @@ pub fn scan_openclicky_dir(dir: &Path) -> Vec<OpenClickyAgent> {
 }
 
 #[tauri::command]
-pub async fn agents_import_openclicky(
-    path: String,
-) -> Result<usize, String> {
+pub async fn agents_import_openclicky(path: String) -> Result<usize, String> {
     let dir = Path::new(&path);
     if !dir.is_dir() {
         return Err(format!("not a directory: {path}"));

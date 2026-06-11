@@ -223,10 +223,10 @@ fn capture_mic_audio(
     let supported_config = device
         .supported_input_configs()
         .map_err(|e| format!("failed to query device configs: {e}"))?
-        .find(|c| c.channels() >= 1 && c.min_sample_rate().0 <= 16000 && c.max_sample_rate().0 >= 16000)
-        .or_else(|| {
-            device.supported_input_configs().ok()?.next()
-        });
+        .find(|c| {
+            c.channels() >= 1 && c.min_sample_rate().0 <= 16000 && c.max_sample_rate().0 >= 16000
+        })
+        .or_else(|| device.supported_input_configs().ok()?.next());
 
     let config = match supported_config {
         Some(sc) => {
@@ -266,7 +266,8 @@ fn capture_mic_audio(
             log::warn!("mic capture error: {err}");
         },
         None,
-    ).map_err(|e| format!("mic stream build failed: {e}"))?;
+    )
+    .map_err(|e| format!("mic stream build failed: {e}"))?;
 
     use cpal::traits::StreamTrait;
     StreamTrait::play(&stream).map_err(|e| format!("mic stream start failed: {e}"))?;
@@ -284,7 +285,8 @@ fn capture_mic_audio(
 
 #[tauri::command]
 pub fn wake_word_detected(app: tauri::AppHandle) -> Result<(), String> {
-    app.emit("wake-word-detected", ()).map_err(|e| e.to_string())
+    app.emit("wake-word-detected", ())
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -301,7 +303,9 @@ pub fn wake_word_stop(state: tauri::State<'_, WakeWordDetector>) -> Result<(), S
 }
 
 #[tauri::command]
-pub fn wake_word_status(state: tauri::State<'_, WakeWordDetector>) -> Result<WakeWordState, String> {
+pub fn wake_word_status(
+    state: tauri::State<'_, WakeWordDetector>,
+) -> Result<WakeWordState, String> {
     let active = state.active.lock().map_err(|e| e.to_string())?.to_owned();
     let keyword = state.keyword.lock().map_err(|e| e.to_string())?.to_owned();
     Ok(WakeWordState {

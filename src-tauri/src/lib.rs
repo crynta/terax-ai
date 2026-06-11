@@ -15,16 +15,16 @@
 
 pub mod modules;
 
+#[cfg(feature = "workflow")]
+use modules::schedule;
+#[cfg(all(target_os = "macos", feature = "openclicky"))]
+use modules::tray;
 use modules::{
     agent, artifacts, capture, fs, git, mcp, model_compare, net, overlay, pi, pty, secrets, shell,
     skills, workspace,
 };
 #[cfg(feature = "openclicky")]
 use modules::{agents, voice};
-#[cfg(all(target_os = "macos", feature = "openclicky"))]
-use modules::tray;
-#[cfg(feature = "workflow")]
-use modules::schedule;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -279,20 +279,8 @@ pub fn run() {
             pi::pi_status,
             pi::pi_start,
             pi::pi_stop,
-            pi::pi_host_info,
             pi::pi_diagnostics,
-            pi::pi_models_list,
             pi::pi_sessions_history,
-            pi::pi_sessions_list,
-            pi::workflow_pi_session_create,
-            pi::pi_session_create,
-            pi::pi_session_resume,
-            pi::pi_session_send,
-            pi::pi_session_tool_respond,
-            pi::pi_session_rename,
-            pi::pi_session_delete,
-            pi::pi_session_delete_with_artifacts,
-            pi::pi_session_stop,
             pi::pi_session_archive,
             pi::pi_session_restore,
             pi::pi_session_fork,

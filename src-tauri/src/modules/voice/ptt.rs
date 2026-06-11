@@ -21,7 +21,15 @@ impl Default for PttState {
 }
 
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
-fn parse_shortcut(s: &str) -> Result<(Option<tauri_plugin_global_shortcut::Modifiers>, tauri_plugin_global_shortcut::Code), String> {
+fn parse_shortcut(
+    s: &str,
+) -> Result<
+    (
+        Option<tauri_plugin_global_shortcut::Modifiers>,
+        tauri_plugin_global_shortcut::Code,
+    ),
+    String,
+> {
     use tauri_plugin_global_shortcut::{Code, Modifiers};
 
     let mut mods = None;
@@ -31,22 +39,45 @@ fn parse_shortcut(s: &str) -> Result<(Option<tauri_plugin_global_shortcut::Modif
         let part = part.trim();
         match part.to_lowercase().as_str() {
             "alt" => mods = Some(mods.unwrap_or(Modifiers::empty()) | Modifiers::ALT),
-            "ctrl" | "control" => mods = Some(mods.unwrap_or(Modifiers::empty()) | Modifiers::CONTROL),
+            "ctrl" | "control" => {
+                mods = Some(mods.unwrap_or(Modifiers::empty()) | Modifiers::CONTROL)
+            }
             "shift" => mods = Some(mods.unwrap_or(Modifiers::empty()) | Modifiers::SHIFT),
-            "super" | "cmd" | "meta" => mods = Some(mods.unwrap_or(Modifiers::empty()) | Modifiers::SUPER),
+            "super" | "cmd" | "meta" => {
+                mods = Some(mods.unwrap_or(Modifiers::empty()) | Modifiers::SUPER)
+            }
             "space" => code = Some(Code::Space),
             "enter" | "return" => code = Some(Code::Enter),
             "tab" => code = Some(Code::Tab),
             "escape" | "esc" => code = Some(Code::Escape),
             c if c.len() == 1 && c.chars().all(|ch| ch.is_ascii_alphabetic()) => {
                 code = Some(match c.to_ascii_uppercase().as_str() {
-                    "A" => Code::KeyA, "B" => Code::KeyB, "C" => Code::KeyC, "D" => Code::KeyD,
-                    "E" => Code::KeyE, "F" => Code::KeyF, "G" => Code::KeyG, "H" => Code::KeyH,
-                    "I" => Code::KeyI, "J" => Code::KeyJ, "K" => Code::KeyK, "L" => Code::KeyL,
-                    "M" => Code::KeyM, "N" => Code::KeyN, "O" => Code::KeyO, "P" => Code::KeyP,
-                    "Q" => Code::KeyQ, "R" => Code::KeyR, "S" => Code::KeyS, "T" => Code::KeyT,
-                    "U" => Code::KeyU, "V" => Code::KeyV, "W" => Code::KeyW, "X" => Code::KeyX,
-                    "Y" => Code::KeyY, "Z" => Code::KeyZ,
+                    "A" => Code::KeyA,
+                    "B" => Code::KeyB,
+                    "C" => Code::KeyC,
+                    "D" => Code::KeyD,
+                    "E" => Code::KeyE,
+                    "F" => Code::KeyF,
+                    "G" => Code::KeyG,
+                    "H" => Code::KeyH,
+                    "I" => Code::KeyI,
+                    "J" => Code::KeyJ,
+                    "K" => Code::KeyK,
+                    "L" => Code::KeyL,
+                    "M" => Code::KeyM,
+                    "N" => Code::KeyN,
+                    "O" => Code::KeyO,
+                    "P" => Code::KeyP,
+                    "Q" => Code::KeyQ,
+                    "R" => Code::KeyR,
+                    "S" => Code::KeyS,
+                    "T" => Code::KeyT,
+                    "U" => Code::KeyU,
+                    "V" => Code::KeyV,
+                    "W" => Code::KeyW,
+                    "X" => Code::KeyX,
+                    "Y" => Code::KeyY,
+                    "Z" => Code::KeyZ,
                     _ => return Err(format!("unsupported key: {part}")),
                 });
             }

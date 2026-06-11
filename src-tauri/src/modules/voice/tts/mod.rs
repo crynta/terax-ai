@@ -42,11 +42,7 @@ pub struct TtsState {
     pub last_provider: Arc<Mutex<String>>,
 }
 
-pub async fn speak(
-    app: &tauri::AppHandle,
-    text: &str,
-    provider: &str,
-) -> Result<(), String> {
+pub async fn speak(app: &tauri::AppHandle, text: &str, provider: &str) -> Result<(), String> {
     let state = app.state::<VoiceState>();
 
     {
@@ -147,11 +143,7 @@ mod cartesia {
     const MAX_TTS_CHARS: usize = 4096;
     const REQUEST_TIMEOUT_SECS: u64 = 30;
 
-    pub async fn speak(
-        app: &tauri::AppHandle,
-        text: &str,
-        state: &TtsState,
-    ) -> Result<(), String> {
+    pub async fn speak(app: &tauri::AppHandle, text: &str, state: &TtsState) -> Result<(), String> {
         if text.chars().count() > MAX_TTS_CHARS {
             return Err(format!(
                 "TTS text exceeds the {MAX_TTS_CHARS} character limit"
@@ -199,11 +191,7 @@ mod cartesia {
             .await
             .map_err(|e| format!("Cartesia download failed: {e}"))?;
 
-        let cancelled = state
-            .cancel
-            .lock()
-            .map_err(|e| e.to_string())?
-            .to_owned();
+        let cancelled = state.cancel.lock().map_err(|e| e.to_string())?.to_owned();
         if cancelled {
             return Ok(());
         }
@@ -217,11 +205,14 @@ mod cartesia {
     }
 
     #[cfg(feature = "openclicky")]
-    fn play_pcm_wav(data: &[u8], cancel: &std::sync::Arc<std::sync::Mutex<bool>>) -> Result<(), String> {
-        let (_stream, stream_handle) = rodio::OutputStream::try_default()
-            .map_err(|e| format!("audio output failed: {e}"))?;
-        let sink = rodio::Sink::try_new(&stream_handle)
-            .map_err(|e| format!("audio sink failed: {e}"))?;
+    fn play_pcm_wav(
+        data: &[u8],
+        cancel: &std::sync::Arc<std::sync::Mutex<bool>>,
+    ) -> Result<(), String> {
+        let (_stream, stream_handle) =
+            rodio::OutputStream::try_default().map_err(|e| format!("audio output failed: {e}"))?;
+        let sink =
+            rodio::Sink::try_new(&stream_handle).map_err(|e| format!("audio sink failed: {e}"))?;
 
         let cursor = std::io::Cursor::new(data.to_vec());
         let decoder = rodio::Decoder::new(std::io::BufReader::new(cursor))
@@ -240,7 +231,10 @@ mod cartesia {
     }
 
     #[cfg(not(feature = "openclicky"))]
-    fn play_pcm_wav(_data: &[u8], _cancel: &std::sync::Arc<std::sync::Mutex<bool>>) -> Result<(), String> {
+    fn play_pcm_wav(
+        _data: &[u8],
+        _cancel: &std::sync::Arc<std::sync::Mutex<bool>>,
+    ) -> Result<(), String> {
         Err("audio playback requires the openclicky feature".to_string())
     }
 }
@@ -250,8 +244,8 @@ mod avspeech {
     use crate::modules::voice::tts::TtsState;
 
     pub fn speak(text: &str, state: &TtsState) -> Result<(), String> {
-        let _mtm = objc2::MainThreadMarker::new()
-            .ok_or("AVSpeech must be called on the main thread")?;
+        let _mtm =
+            objc2::MainThreadMarker::new().ok_or("AVSpeech must be called on the main thread")?;
 
         // SAFETY: msg_send alloc/init on the NSAutoreleasePool class, which is
         // resolved at runtime; the selectors and return type match AppKit's ABI.

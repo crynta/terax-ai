@@ -3,9 +3,9 @@ pub mod transparency;
 
 use drawing::AnnotationItem;
 
+use tauri::Runtime;
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
-use tauri::Runtime;
 
 #[derive(Default)]
 pub struct OverlayState {
@@ -95,7 +95,8 @@ pub async fn overlay_draw<R: Runtime>(
         let serialized = serde_json::to_string(&items).map_err(|e| format!("serialize: {e}"))?;
         let mut annotations = state.annotations.lock().map_err(|e| format!("lock: {e}"))?;
         annotations.extend(items);
-        app.emit("overlay:draw", serialized).map_err(|e| e.to_string())?;
+        app.emit("overlay:draw", serialized)
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(())
