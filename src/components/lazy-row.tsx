@@ -27,7 +27,7 @@ export function LazyRow({
 }: {
   children: ReactNode;
   className?: string;
-  /** Render normally (no content-visibility) — use for the on-screen, actively streaming row. */
+  /** Render normally (no content-visibility); use for the on-screen, actively streaming row. */
   eager?: boolean;
 }) {
   return (
