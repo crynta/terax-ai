@@ -71,6 +71,7 @@ const loaders: Record<string, LanguageLoader> = {
 
   html: () => import("@codemirror/lang-html").then((m) => m.html()),
   htm: () => import("@codemirror/lang-html").then((m) => m.html()),
+  twig: () => import("@codemirror/lang-html").then((m) => m.html()),
   astro: () =>
     import("@codemirror/lang-html").then((m) =>
       m.html({ selfClosingTags: true }),
