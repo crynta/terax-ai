@@ -103,6 +103,7 @@ pub fn spawn(
     rows: u16,
     cwd: Option<String>,
     workspace: WorkspaceEnv,
+    blocks: bool,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
@@ -118,7 +119,7 @@ pub fn spawn(
     };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = shell_init::build_command(cwd, workspace)?;
+    let cmd = shell_init::build_command(cwd, workspace, blocks)?;
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -162,9 +163,30 @@ pub fn spawn(
     let done = Arc::new(AtomicBool::new(false));
     let spawn_at = Instant::now();
 
+    let first_byte = Arc::new(AtomicBool::new(false));
+
+    // ConPTY occasionally hands back a console whose output pipe never pumps
+    // (random black tab). Log + notify the frontend instead of staying silent.
+    #[cfg(windows)]
+    {
+        let first_byte_w = first_byte.clone();
+        let app_w = app.clone();
+        thread::Builder::new()
+            .name("terax-pty-watchdog".into())
+            .spawn(move || {
+                thread::sleep(Duration::from_secs(5));
+                if !first_byte_w.load(Ordering::Acquire) {
+                    log::warn!("pty id={id} produced no output within 5s (possible ConPTY stall)");
+                    let _ = app_w.emit("terax:pty-stall", id);
+                }
+            })
+            .expect("spawn pty watchdog thread");
+    }
+
     let pending_r = pending.clone();
     let writer_for_da = writer.clone();
     let app_reader = app.clone();
+    let first_byte_r = first_byte;
     let reader_thread = thread::Builder::new()
         .name("terax-pty-reader".into())
         .spawn(move || {
@@ -173,13 +195,12 @@ pub fn spawn(
             let mut da_filter = DaFilter::new();
             let mut agent_detect = AgentDetector::new();
             let mut dropped_bytes: u64 = 0;
-            let mut logged_first = false;
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if !logged_first {
-                            logged_first = true;
+                        if !first_byte_r.load(Ordering::Relaxed) {
+                            first_byte_r.store(true, Ordering::Release);
                             log::debug!("pty first byte after {}ms", spawn_at.elapsed().as_millis());
                         }
                         agent_detect.process(&buf[..n], |t| {

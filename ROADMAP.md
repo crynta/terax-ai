@@ -2,7 +2,7 @@
 
 Terax direction, what's shipped, what's coming, and what's deliberately out of scope.
 
-This file is updated as direction evolves. For day-to-day work, see [GitHub Issues](https://github.com/crynta/terax-ai/issues) and the Projects board.
+This file is updated as direction evolves. For day-to-day work, see [GitHub Issues](https://github.com/raja2102598/terax-ai/issues) and the Projects board.
 
 ## What Terax is
 
@@ -142,7 +142,7 @@ Categories that will not be built into Terax. Individual feature requests in the
 
 ## Decision authority
 
-Direction and scope decisions are made by [@crynta](https://github.com/crynta). Trusted reviewers (informal, no fixed roles yet) provide input on security, performance, and platform-specific areas.
+Direction and scope decisions are made by [@raja2102598](https://github.com/raja2102598). Trusted reviewers (informal, no fixed roles yet) provide input on security, performance, and platform-specific areas.
 
 If a PR is closed and you disagree, raise it in Discord. Happy to discuss, not happy to be ambushed in a PR comment thread.
 

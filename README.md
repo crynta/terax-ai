@@ -5,7 +5,7 @@
   <p><strong>Lightweight Terminal-first AI-native dev workspace.</strong></p>
 
   <p>
-    <img src="https://img.shields.io/github/v/release/crynta/terax-ai?label=version&color=blue" alt="version" />
+    <img src="https://img.shields.io/github/v/release/raja2102598/terax-ai?label=version&color=blue" alt="version" />
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
   </p>
@@ -15,7 +15,7 @@
     ·
     <a href="https://terax.app/docs">Docs</a>
     ·
-    <a href="https://github.com/crynta/Terax-website">Website's source code</a>
+    <a href="https://github.com/raja2102598/terax-ai">Website's source code</a>
   </p>
 </div>
 
@@ -93,7 +93,7 @@ Terax is a lightweight open-source terminal (ADE) built on Tauri 2 + Rust and Re
 
 ## Install
 
-Latest installers are on the [Releases](https://github.com/crynta/terax-ai/releases/latest) page. Terax auto-updates from there.
+Latest installers are on the [Releases](https://github.com/raja2102598/terax-ai/releases/latest) page. Terax auto-updates from there.
 
 ### Windows notes
 
@@ -148,11 +148,11 @@ Terax is licensed under the Apache-2.0 License. For more information on our depe
 ## Star history
 
 <div align="center">
-  <a href="https://www.star-history.com/#crynta/terax-ai&Date">
+  <a href="https://www.star-history.com/#raja2102598/terax-ai&Date">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=crynta/terax-ai&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=crynta/terax-ai&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=crynta/terax-ai&type=Date" />
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=raja2102598/terax-ai&type=Date&theme=dark" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=raja2102598/terax-ai&type=Date" />
+      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=raja2102598/terax-ai&type=Date" />
     </picture>
   </a>
 </div>

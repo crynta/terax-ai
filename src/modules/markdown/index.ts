@@ -1,2 +1,1 @@
-export { MarkdownStack } from "./MarkdownStack";
-export { MarkdownPreviewPane } from "./MarkdownPreviewPane";
+export { MarkdownStack } from "./MarkdownStackLazy";

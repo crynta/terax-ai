@@ -8,7 +8,9 @@ type Props = {
 };
 
 export function MarkdownStack({ tabs, activeId }: Props) {
-  const markdowns = tabs.filter((t): t is MarkdownTab => t.kind === "markdown");
+  const markdowns = tabs.filter(
+    (t): t is MarkdownTab => t.kind === "markdown" && !t.cold,
+  );
   if (markdowns.length === 0) return null;
   return (
     <div className="relative h-full w-full">

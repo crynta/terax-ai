@@ -29,6 +29,7 @@ import {
   setTerminalFontFamily,
   setTerminalLetterSpacing,
   setTerminalFontSize,
+  setTerminalCursorBlink,
   setTerminalScrollback,
   setTerminalAutoSuggestEnabled,
   setTerminalWebglEnabled,
@@ -76,6 +77,9 @@ export function GeneralSection() {
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
+  );
+  const terminalCursorBlink = usePreferencesStore(
+    (s) => s.terminalCursorBlink,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalLetterSpacing = usePreferencesStore(
@@ -247,12 +251,12 @@ export function GeneralSection() {
           />
         </SettingRow>
         <SettingRow
-          title="Auto-suggestions"
-          description="Show inline history-based auto-suggestions as ghost text. Press Tab to accept."
+          title="Cursor blinking"
+          description="Blink the terminal cursor. Off by default for lower idle CPU, matching VS Code and the macOS terminal."
         >
           <Switch
-            checked={terminalAutoSuggestEnabled}
-            onCheckedChange={(v) => void setTerminalAutoSuggestEnabled(v)}
+            checked={terminalCursorBlink}
+            onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
         </SettingRow>
         <SettingRow

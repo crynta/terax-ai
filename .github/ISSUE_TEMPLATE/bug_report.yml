@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for taking the time to report a bug. Please fill in the fields below — it makes triage much faster.
 
-        For **security issues**, do NOT open an issue. See [SECURITY.md](https://github.com/crynta/Terax-AI/blob/main/SECURITY.md).
+        For **security issues**, do NOT open an issue. See [SECURITY.md](https://github.com/raja2102598/terax-ai/blob/main/SECURITY.md).
 
   - type: input
     id: version

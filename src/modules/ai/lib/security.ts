@@ -357,9 +357,9 @@ export function checkShellCommand(cmd: string): SafetyResult {
         "Refused: command attempts to recursively delete the filesystem root.",
     };
   }
-  // rm -rf ~ / $HOME — wiping the user's home dir
+  // rm -rf ~ / $HOME / ${HOME}, with or without a trailing path — wiping the user's home dir
   if (
-    /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+(['"]?(~|\$HOME)['"]?)(\s|$|;|&|\|)/.test(
+    /\brm\s+-[a-zA-Z]*r[a-zA-Z]*f[a-zA-Z]*\s+(['"]?(~(\/[^\s'"]*)?|\$\{?HOME\}?(\/[^\s'"]*)?)['"]?)(\s|$|;|&|\|)/.test(
       c,
     )
   ) {

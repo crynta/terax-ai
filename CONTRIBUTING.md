@@ -6,7 +6,7 @@ This document helps you decide *whether* and *how* to contribute in a way that's
 
 ## How this project is run
 
-- Terax has one active maintainer ([@crynta](https://github.com/crynta)).
+- Terax has one active maintainer ([@raja2102598](https://github.com/raja2102598)).
 - Review bandwidth is limited.
 - Not every contribution can be accepted, even if it's technically correct. Alignment with project direction matters as much as code quality.
 - For scope and direction, see [ROADMAP.md](ROADMAP.md). Read it before opening anything non-trivial.

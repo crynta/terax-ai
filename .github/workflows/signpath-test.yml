@@ -9,7 +9,7 @@ concurrency:
 
 jobs:
   test-sign-windows:
-    if: github.repository == 'crynta/terax-ai'
+    if: github.repository == 'raja2102598/terax-ai'
     runs-on: windows-latest
     permissions:
       contents: read

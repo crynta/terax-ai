@@ -45,7 +45,7 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
             aria-pressed={isActive}
             onClick={() => onSelectView(item.id)}
             className={cn(
-              "group relative flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[11px] font-medium outline-none transition-colors duration-150",
+              "group relative flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[11px] font-medium outline-none transition-colors duration-[var(--dur-base)]",
               "focus-visible:ring-2 focus-visible:ring-primary/40",
               isActive
                 ? "bg-foreground/[0.07] text-foreground dark:bg-foreground/[0.09]"
@@ -56,7 +56,7 @@ export function SidebarRail({ activeView, onSelectView, changedCount }: Props) {
               icon={item.icon}
               size={14}
               strokeWidth={isActive ? 2 : 1.75}
-              className="shrink-0 transition-[stroke-width] duration-150"
+              className="shrink-0 transition-[stroke-width] duration-[var(--dur-base)]"
             />
             <span>{item.label}</span>
             {showBadge ? (

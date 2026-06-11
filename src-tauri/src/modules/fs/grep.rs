@@ -1,8 +1,9 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use grep_regex::RegexMatcherBuilder;
+use grep_regex::{RegexMatcher, RegexMatcherBuilder};
 use grep_searcher::sinks::UTF8;
 use grep_searcher::{BinaryDetection, SearcherBuilder};
 use ignore::{WalkBuilder, WalkState};
@@ -14,6 +15,15 @@ use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 200;
 const HARD_MAX_RESULTS: usize = 2000;
+
+/// Supersession counter for interactive content search. Each new interactive
+/// query bumps the generation; in-flight walks observe the change and quit,
+/// so fast typing stops superseded searches server-side instead of letting
+/// them run to completion.
+#[derive(Default)]
+pub struct ContentSearchState {
+    generation: AtomicU64,
+}
 
 #[derive(Serialize)]
 pub struct GrepHit {
@@ -43,36 +53,28 @@ fn build_globset(patterns: &[String]) -> Result<Option<GlobSet>, String> {
     Ok(Some(set))
 }
 
-#[tauri::command]
-pub fn fs_grep(
-    pattern: String,
-    root: String,
-    glob: Option<Vec<String>>,
-    case_insensitive: Option<bool>,
-    max_results: Option<usize>,
-    workspace: Option<WorkspaceEnv>,
-) -> Result<GrepResponse, String> {
-    if pattern.is_empty() {
-        return Err("empty pattern".into());
+fn escape_literal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        if "\\.+*?()|[]{}^$".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
     }
-    let workspace = WorkspaceEnv::from_option(workspace);
-    let root_path = resolve_path(&root, &workspace);
-    if !root_path.is_dir() {
-        return Err(format!("not a directory: {root}"));
-    }
-    let cap = max_results
-        .unwrap_or(DEFAULT_MAX_RESULTS)
-        .clamp(1, HARD_MAX_RESULTS);
+    out
+}
 
-    let matcher = RegexMatcherBuilder::new()
-        .case_insensitive(case_insensitive.unwrap_or(false))
-        .line_terminator(Some(b'\n'))
-        .build(&pattern)
-        .map_err(|e| format!("bad regex: {e}"))?;
-
-    let globs = build_globset(glob.as_deref().unwrap_or(&[]))?;
-
-    let walker = WalkBuilder::new(&root_path)
+#[allow(clippy::too_many_arguments)]
+fn search_tree(
+    root_path: &Path,
+    root_display: &str,
+    workspace: &WorkspaceEnv,
+    matcher: &RegexMatcher,
+    globs: &Option<GlobSet>,
+    cap: usize,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> GrepResponse {
+    let walker = WalkBuilder::new(root_path)
         .hidden(true)
         .git_ignore(true)
         .git_global(true)
@@ -92,12 +94,12 @@ pub fn fs_grep(
         let hits = hits.clone();
         let scanned = scanned.clone();
         let truncated = truncated.clone();
-        let root_path = root_path.clone();
-        let root_display = root.clone();
+        let root_path = root_path.to_path_buf();
+        let root_display = root_display.to_string();
         let workspace = workspace.clone();
 
         Box::new(move |dent_res| {
-            if truncated.load(Ordering::Relaxed) {
+            if truncated.load(Ordering::Relaxed) || cancel() {
                 return WalkState::Quit;
             }
             let dent = match dent_res {
@@ -160,11 +162,93 @@ pub fn fs_grep(
         .map(|m| m.into_inner().unwrap())
         .unwrap_or_default();
 
-    Ok(GrepResponse {
+    GrepResponse {
         hits: final_hits,
         truncated: truncated.load(Ordering::Relaxed),
         files_scanned: scanned.load(Ordering::Relaxed),
-    })
+    }
+}
+
+#[tauri::command]
+pub fn fs_grep(
+    pattern: String,
+    root: String,
+    glob: Option<Vec<String>>,
+    case_insensitive: Option<bool>,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<GrepResponse, String> {
+    if pattern.is_empty() {
+        return Err("empty pattern".into());
+    }
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root_path = resolve_path(&root, &workspace);
+    if !root_path.is_dir() {
+        return Err(format!("not a directory: {root}"));
+    }
+    let cap = max_results
+        .unwrap_or(DEFAULT_MAX_RESULTS)
+        .clamp(1, HARD_MAX_RESULTS);
+
+    let matcher = RegexMatcherBuilder::new()
+        .case_insensitive(case_insensitive.unwrap_or(false))
+        .line_terminator(Some(b'\n'))
+        .build(&pattern)
+        .map_err(|e| format!("bad regex: {e}"))?;
+
+    let globs = build_globset(glob.as_deref().unwrap_or(&[]))?;
+
+    Ok(search_tree(
+        &root_path,
+        &root,
+        &workspace,
+        &matcher,
+        &globs,
+        cap,
+        &|| false,
+    ))
+}
+
+/// Interactive content search for the command palette. Treats the query as a
+/// literal (smart-case), and self-cancels when a newer query arrives.
+#[tauri::command]
+pub fn fs_grep_interactive(
+    state: tauri::State<'_, ContentSearchState>,
+    pattern: String,
+    root: String,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<GrepResponse, String> {
+    if pattern.trim().is_empty() {
+        return Err("empty pattern".into());
+    }
+    let my_gen = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let root_path = resolve_path(&root, &workspace);
+    if !root_path.is_dir() {
+        return Err(format!("not a directory: {root}"));
+    }
+    let cap = max_results
+        .unwrap_or(DEFAULT_MAX_RESULTS)
+        .clamp(1, HARD_MAX_RESULTS);
+
+    let matcher = RegexMatcherBuilder::new()
+        .case_smart(true)
+        .line_terminator(Some(b'\n'))
+        .build(&escape_literal(&pattern))
+        .map_err(|e| format!("bad pattern: {e}"))?;
+
+    let cancel = || state.generation.load(Ordering::SeqCst) != my_gen;
+    Ok(search_tree(
+        &root_path,
+        &root,
+        &workspace,
+        &matcher,
+        &None,
+        cap,
+        &cancel,
+    ))
 }
 
 #[derive(Serialize)]
@@ -257,4 +341,31 @@ fn display_path(
         }
     }
     to_canon(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_literal_escapes_regex_meta() {
+        assert_eq!(escape_literal("a.b(c)"), "a\\.b\\(c\\)");
+        assert_eq!(escape_literal("plain text"), "plain text");
+    }
+
+    #[test]
+    fn search_tree_respects_cancellation() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), "hello\nfind me here\n").unwrap();
+        let matcher = RegexMatcherBuilder::new().build("find").unwrap();
+        let ws = WorkspaceEnv::from_option(None);
+        let root_display = dir.path().to_string_lossy().to_string();
+
+        let live = search_tree(dir.path(), &root_display, &ws, &matcher, &None, 100, &|| false);
+        assert_eq!(live.hits.len(), 1, "uncancelled search finds the match");
+
+        let stopped =
+            search_tree(dir.path(), &root_display, &ws, &matcher, &None, 100, &|| true);
+        assert!(stopped.hits.is_empty(), "cancelled search yields nothing");
+    }
 }

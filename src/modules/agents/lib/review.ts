@@ -1,4 +1,4 @@
-import { getOrCreateChat, useChatStore } from "@/modules/ai/store/chatStore";
+import { useChatStore } from "@/modules/ai/store/chatStore";
 import {
   useManagedAgentsStore,
   type ManagedAgent,
@@ -28,11 +28,14 @@ function fireReview(m: ManagedAgent): void {
   const store = useManagedAgentsStore.getState();
   store.markReviewed(m.leafId);
   store.setPhase(m.leafId, "reviewing");
-  const chat = getOrCreateChat(m.sessionId);
-  void chat.sendMessage({
-    role: "user",
-    parts: [{ type: "text", text: buildReviewDirective(m) }],
-  } as Parameters<typeof chat.sendMessage>[0]);
+  void (async () => {
+    const { getOrCreateChat } = await import("@/modules/ai/store/chatRuntime");
+    const chat = getOrCreateChat(m.sessionId);
+    void chat.sendMessage({
+      role: "user",
+      parts: [{ type: "text", text: buildReviewDirective(m) }],
+    } as Parameters<typeof chat.sendMessage>[0]);
+  })();
 }
 
 export function maybeTriggerManagedReview(leafId: number): void {
