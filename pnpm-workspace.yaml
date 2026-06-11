@@ -8,6 +8,8 @@ minimumReleaseAgeStrict: true
 verifyDepsBeforeRun: false
 allowBuilds:
   "@google/genai": true
+  edgedriver: false
   esbuild: true
+  geckodriver: false
   msw: true
   protobufjs: true

@@ -118,6 +118,53 @@ jobs:
         working-directory: src-tauri
         run: cargo nextest run --locked --retries 2
 
+  e2e:
+    name: e2e (linux)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            webkit2gtk-driver \
+            xvfb
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.16.0
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: e2e
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-driver
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Build release binary
+        working-directory: src-tauri
+        run: cargo build --release --locked
+
+      - name: Run e2e specs
+        run: xvfb-run -a pnpm e2e
+
   coverage:
     runs-on: ubuntu-22.04
     needs: rust

@@ -68,6 +68,7 @@ export function TerminalPane({
   return (
     <div
       ref={containerRef}
+      data-testid="terminal-pane"
       className="zoom-exempt h-full w-full rounded-md outline-none focus-within:ring-2 focus-within:ring-ring/35"
       style={{
         visibility: visible ? "visible" : "hidden",

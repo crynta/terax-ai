@@ -21,7 +21,8 @@
     "format": "biome format --write ./src",
     "format:check": "biome format ./src",
     "lint": "biome lint ./src",
-    "lint:fix": "biome lint --write ./src"
+    "lint:fix": "biome lint --write ./src",
+    "e2e": "wdio run ./wdio.conf.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.71",
@@ -134,6 +135,11 @@
     "@biomejs/biome": "^2.4.16",
     "@tailwindcss/vite": "^4.2.3",
     "@tauri-apps/cli": "^2.11.2",
+    "@wdio/cli": "^9.4.1",
+    "@wdio/globals": "^9.4.1",
+    "@wdio/local-runner": "^9.4.1",
+    "@wdio/mocha-framework": "^9.4.1",
+    "@wdio/spec-reporter": "^9.4.1",
     "@types/dagre": "^0.7.54",
     "@types/node": "^25.6.0",
     "@types/react": "^19.1.8",

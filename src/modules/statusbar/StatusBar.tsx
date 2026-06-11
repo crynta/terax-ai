@@ -44,7 +44,10 @@ export function StatusBar({
 
   return (
     <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/60 px-3 text-[11px]">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div
+        data-testid="cwd-breadcrumb"
+        className="flex min-w-0 flex-1 items-center gap-2"
+      >
         <WorkspaceEnvSelector onSelect={onWorkspaceChange} />
         <CwdBreadcrumb cwd={cwd} filePath={filePath} home={home} onCd={onCd} />
         {privateActive ? (
