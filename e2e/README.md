@@ -27,10 +27,25 @@ Golden flows that need no AI provider, secrets, or network:
   tab count; closing a tab decreases it.
 - `terminal.e2e.mjs` - a PTY-backed xterm mounts, accepts keystrokes through
   its helper textarea, and the UI stays responsive after a command.
+- `command-palette.e2e.mjs` - Ctrl+Shift+P opens the cmdk palette (the global
+  shortcut fires even with the terminal focused), typing filters, Escape closes.
+- `new-editor.e2e.mjs` - Ctrl+E opens the new-file dialog; typing a name and
+  pressing Escape cancels without writing a file.
 
 xterm renders to a WebGL canvas, so on-screen terminal text is not readable
 through the DOM. The terminal spec asserts the input plumbing structurally
 rather than scraping rendered output.
+
+### Not yet covered (and why)
+
+- **Theme switching** lives in a separate settings window; `tauri-driver`
+  drives one WebView session at a time, so cross-window flows need extra
+  plumbing.
+- **Git history / git graph** needs a seeded git repository and a workspace
+  with source-control context; worth adding once a fixture repo is wired into
+  the CI job.
+- **Breadcrumb cd navigation** depends on shell-integration OSC 7 sequences,
+  which vary by the CI shell; it would be flaky without a pinned shell.
 
 ## Running locally (Linux)
 
