@@ -9,6 +9,8 @@ import File01Icon from "@hugeicons/core-free-icons/File01Icon";
 import Folder01Icon from "@hugeicons/core-free-icons/Folder01Icon";
 import FullscreenIcon from "@hugeicons/core-free-icons/FullscreenIcon";
 import IncognitoIcon from "@hugeicons/core-free-icons/IncognitoIcon";
+import Speaker01Icon from "@hugeicons/core-free-icons/Speaker01Icon";
+import StopCircleIcon from "@hugeicons/core-free-icons/StopCircleIcon";
 import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
 import ToolsIcon from "@hugeicons/core-free-icons/ToolsIcon";
 import WindowsNewIcon from "@hugeicons/core-free-icons/WindowsNewIcon";
@@ -56,6 +58,7 @@ import {
   useCopyToClipboard,
 } from "@/modules/pi/lib/useCopyToClipboard";
 import { pathBasename } from "@/modules/pi/lib/view";
+import { useTts } from "@/modules/pi/lib/useTts";
 
 type PiRegenerateRequest = {
   branchGroupId: string;
@@ -218,6 +221,36 @@ function CopyMessageAction({
         <span aria-live="polite" className="sr-only" role="status">
           {statusLabel}
         </span>
+      </MessageAction>
+    </MessageActions>
+  );
+}
+
+function TtsMessageAction({
+  speaking,
+  onSpeak,
+  onStop,
+}: {
+  speaking: boolean;
+  onSpeak: () => void;
+  onStop: () => void;
+}) {
+  return (
+    <MessageActions className="opacity-70 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+      <MessageAction
+        aria-label={speaking ? "Stop reading aloud" : "Read aloud"}
+        label="Read aloud"
+        tooltip={speaking ? "Stop" : "Read aloud"}
+        size="icon-xs"
+        variant="ghost"
+        className="size-5 text-muted-foreground hover:text-foreground"
+        onClick={speaking ? onStop : onSpeak}
+      >
+        <HugeiconsIcon
+          icon={speaking ? StopCircleIcon : Speaker01Icon}
+          size={11}
+          strokeWidth={1.8}
+        />
       </MessageAction>
     </MessageActions>
   );
@@ -642,11 +675,19 @@ function AssistantMessage({
   item,
   onRegenerate,
   streaming,
+  ttsSpeaking,
+  ttsActiveMessageId,
+  onTtsSpeak,
+  onTtsStop,
 }: {
   canRegenerate: boolean;
   item: PiTranscriptItem;
   onRegenerate?: (request: PiRegenerateRequest) => void;
   streaming: boolean;
+  ttsSpeaking: boolean;
+  ttsActiveMessageId: string | null;
+  onTtsSpeak: (text: string, messageId: string) => void;
+  onTtsStop: () => void;
 }) {
   const branches = item.branches?.length ? item.branches : null;
   const defaultBranch = branches ? branches.length - 1 : 0;
@@ -654,6 +695,9 @@ function AssistantMessage({
 
   useEffect(() => {
     setCurrentBranch(defaultBranch);
+    // Reset to the default branch when switching items, even if defaultBranch
+    // happens to match the previous item's value.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: item.id intentionally resets branch
   }, [defaultBranch, item.id]);
 
   const activeBranch = branches?.[currentBranch] ?? null;
@@ -661,6 +705,9 @@ function AssistantMessage({
   const reasoningText = activeBranch?.reasoningText ?? item.reasoningText;
   const reasoningStreaming =
     streaming && Boolean(reasoningText) && !responseText;
+
+  const ttsDisabled = streaming || !responseText;
+  const isTtsSpeakingThis = ttsSpeaking && ttsActiveMessageId === item.id;
 
   return (
     <Message from="assistant" className="gap-1">
@@ -714,6 +761,13 @@ function AssistantMessage({
           onRegenerate={onRegenerate}
         />
         <CopyMessageAction label="Copy response" text={responseText} />
+        {!ttsDisabled ? (
+          <TtsMessageAction
+            speaking={isTtsSpeakingThis}
+            onSpeak={() => onTtsSpeak(responseText, item.id)}
+            onStop={onTtsStop}
+          />
+        ) : null}
       </div>
     </Message>
   );
@@ -746,6 +800,10 @@ function TranscriptItem({
   onToolApproval,
   onQuestionRespond,
   streaming,
+  ttsSpeaking,
+  ttsActiveMessageId,
+  onTtsSpeak,
+  onTtsStop,
 }: {
   canRegenerate: boolean;
   item: PiTranscriptItem;
@@ -755,6 +813,10 @@ function TranscriptItem({
   onToolApproval?: (toolCallId: string, approved: boolean) => void;
   onQuestionRespond?: (questionId: string, answers: PiQuestionAnswer[]) => void;
   streaming: boolean;
+  ttsSpeaking: boolean;
+  ttsActiveMessageId: string | null;
+  onTtsSpeak: (text: string, messageId: string) => void;
+  onTtsStop: () => void;
 }) {
   switch (item.kind) {
     case "assistant":
@@ -764,6 +826,10 @@ function TranscriptItem({
           item={item}
           onRegenerate={onRegenerate}
           streaming={streaming}
+          ttsSpeaking={ttsSpeaking}
+          ttsActiveMessageId={ttsActiveMessageId}
+          onTtsSpeak={onTtsSpeak}
+          onTtsStop={onTtsStop}
         />
       );
     case "user":
@@ -909,6 +975,8 @@ export function PiTranscript({
   const progressText = latestProgress?.text ?? "Pi is thinking…";
   const hasVisibleTranscript = visibleTranscript.length > 0;
 
+  const tts = useTts();
+
   return (
     <div className="flex min-h-0 flex-1 flex-col px-2 py-2">
       <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-border/40 bg-background/70">
@@ -996,6 +1064,10 @@ export function PiTranscript({
                     onToolApproval={onToolApproval}
                     onQuestionRespond={onQuestionRespond}
                     streaming={item.id === streamingAssistantId}
+                    ttsSpeaking={tts.speaking}
+                    ttsActiveMessageId={tts.activeMessageId}
+                    onTtsSpeak={tts.speak}
+                    onTtsStop={tts.stop}
                   />
                 ))}
                 {showProgress ? <ProgressRow text={progressText} /> : null}

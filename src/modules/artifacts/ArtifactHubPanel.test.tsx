@@ -235,7 +235,9 @@ describe("ArtifactHubPanel", () => {
       root.render(<ArtifactHubPanel onOpenArtifact={() => {}} />);
       await Promise.resolve();
     });
-    await waitFor(() => expect(document.body.textContent).toContain("Landing Hero"));
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Landing Hero"),
+    );
     await clickButton("Select visible");
 
     await clickButton("Move to trash");

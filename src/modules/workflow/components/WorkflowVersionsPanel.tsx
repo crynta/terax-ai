@@ -7,7 +7,10 @@ import {
   deleteWorkflowVersion,
   type WorkflowVersionSnapshot,
 } from "../lib/versionSnapshots";
-import { diffWorkflowDocuments, summarizeStructureDiff } from "../lib/structureDiff";
+import {
+  diffWorkflowDocuments,
+  summarizeStructureDiff,
+} from "../lib/structureDiff";
 import { useState, useCallback } from "react";
 
 export function WorkflowVersionsPanel({

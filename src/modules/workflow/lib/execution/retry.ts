@@ -1,4 +1,8 @@
-import type { WorkflowArtifact, WorkflowDocument, WorkflowNode } from "../schema";
+import type {
+  WorkflowArtifact,
+  WorkflowDocument,
+  WorkflowNode,
+} from "../schema";
 
 /**
  * Find the primary upstream source node for a retry node.
@@ -23,7 +27,14 @@ export function resetNodeForRetry(
     ...document,
     nodes: document.nodes.map((n) =>
       n.id === nodeId
-        ? { ...n, runtimeState: { status: "idle", attempt: (n.runtimeState.attempt ?? 0) + 1, logs: n.runtimeState.logs } }
+        ? {
+            ...n,
+            runtimeState: {
+              status: "idle",
+              attempt: (n.runtimeState.attempt ?? 0) + 1,
+              logs: n.runtimeState.logs,
+            },
+          }
         : n,
     ),
   };
@@ -42,9 +53,8 @@ export function retryShouldReExecute(
   const source = retrySourceNode(document, node);
   if (!source) return false;
   if (source.runtimeState.status !== "failed") return false;
-  const maxAttempts = typeof node.config.maxAttempts === "number"
-    ? node.config.maxAttempts
-    : 3;
+  const maxAttempts =
+    typeof node.config.maxAttempts === "number" ? node.config.maxAttempts : 3;
   const currentAttempt = source.runtimeState.attempt ?? 1;
   return currentAttempt < maxAttempts;
 }
@@ -60,9 +70,8 @@ export function retryExhausted(
   const source = retrySourceNode(document, node);
   if (!source) return true;
   if (source.runtimeState.status !== "failed") return false;
-  const maxAttempts = typeof node.config.maxAttempts === "number"
-    ? node.config.maxAttempts
-    : 3;
+  const maxAttempts =
+    typeof node.config.maxAttempts === "number" ? node.config.maxAttempts : 3;
   const currentAttempt = source.runtimeState.attempt ?? 1;
   return currentAttempt >= maxAttempts;
 }
@@ -75,10 +84,10 @@ export function retryErrorArtifact(
   node: WorkflowNode,
 ): WorkflowArtifact {
   const source = retrySourceNode(document, node);
-  const errorMessage = source?.runtimeState.message ?? "All retry attempts failed";
-  const maxAttempts = typeof node.config.maxAttempts === "number"
-    ? node.config.maxAttempts
-    : 3;
+  const errorMessage =
+    source?.runtimeState.message ?? "All retry attempts failed";
+  const maxAttempts =
+    typeof node.config.maxAttempts === "number" ? node.config.maxAttempts : 3;
   const attempt = source?.runtimeState.attempt ?? maxAttempts;
   return {
     id: `retry-error-${node.id}`,
@@ -100,7 +109,9 @@ export function retrySuccessArtifact(
 ): WorkflowArtifact {
   const source = retrySourceNode(document, node);
   const sourceArtifactIds = new Set(source?.runtimeState.artifactIds ?? []);
-  const sourceArtifacts = document.artifacts.filter((a) => sourceArtifactIds.has(a.id));
+  const sourceArtifacts = document.artifacts.filter((a) =>
+    sourceArtifactIds.has(a.id),
+  );
   const text = sourceArtifacts
     .filter((a) => a.type === "text")
     .map((a) => (typeof a.value === "string" ? a.value : a.preview))

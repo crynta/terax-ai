@@ -4,5 +4,9 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Terax uses your microphone for AI voice input.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Terax uses speech recognition to transcribe your voice input.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Terax can capture your screen to provide visual context to the AI.</string>
 </dict>
 </plist>

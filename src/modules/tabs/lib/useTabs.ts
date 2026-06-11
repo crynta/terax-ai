@@ -767,7 +767,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       const tab = curr.find(
         (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
       );
-      if (!tab || tab.kind !== "terminal") return curr;
+      if (tab?.kind !== "terminal") return curr;
       const newTree = removeLeaf(tab.paneTree, leafId);
       if (newTree === null) {
         if (curr.length <= 1) return curr;
@@ -800,7 +800,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     let removedLeaf: number | null = null;
     setTabs((curr) => {
       const t = curr.find((x) => x.id === tabId);
-      if (!t || t.kind !== "terminal") return curr;
+      if (t?.kind !== "terminal") return curr;
       const target = t.activeLeafId;
       const newTree = removeLeaf(t.paneTree, target);
       if (newTree === null) {

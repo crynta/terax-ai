@@ -15,11 +15,7 @@ import {
  * Panel for managing webhook HTTP routes.
  * Shown when the webhook trigger node is selected.
  */
-export function WebhookPanel({
-  visible,
-}: {
-  visible: boolean;
-}) {
+export function WebhookPanel({ visible }: { visible: boolean }) {
   const [routes, setRoutes] = useState<WebhookRoute[]>([]);
   const [serverUrl, setServerUrl] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("/webhook");
@@ -28,7 +24,9 @@ export function WebhookPanel({
 
   useEffect(() => {
     if (!visible) return;
-    webhookListRoutes().then(setRoutes).catch(() => {});
+    webhookListRoutes()
+      .then(setRoutes)
+      .catch(() => {});
 
     const unlisten = listenWebhook((payload) => {
       setRecentPayloads((prev) => [payload, ...prev.slice(0, 9)]);
@@ -86,13 +84,25 @@ export function WebhookPanel({
       <div className="flex items-center gap-2">
         {serverUrl ? (
           <>
-            <Badge variant="default" className="text-[10px]">{serverUrl}</Badge>
-            <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={handleStopServer}>
+            <Badge variant="default" className="text-[10px]">
+              {serverUrl}
+            </Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-[10px]"
+              onClick={handleStopServer}
+            >
               Stop
             </Button>
           </>
         ) : (
-          <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={handleStartServer}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px]"
+            onClick={handleStartServer}
+          >
             Start Server :3456
           </Button>
         )}
@@ -117,7 +127,12 @@ export function WebhookPanel({
           onChange={(e) => setNewPath(e.target.value)}
           placeholder="/path"
         />
-        <Button size="sm" variant="default" className="h-7 text-[10px]" onClick={handleAddRoute}>
+        <Button
+          size="sm"
+          variant="default"
+          className="h-7 text-[10px]"
+          onClick={handleAddRoute}
+        >
           Add
         </Button>
       </div>
@@ -131,10 +146,14 @@ export function WebhookPanel({
               className="flex items-center justify-between rounded border border-border/40 bg-muted/20 px-2 py-1"
             >
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-[9px]">{route.method}</Badge>
+                <Badge variant="outline" className="text-[9px]">
+                  {route.method}
+                </Badge>
                 <span className="font-mono text-[10px]">{route.path}</span>
                 {route.auth_token && (
-                  <Badge variant="secondary" className="text-[9px]">Auth</Badge>
+                  <Badge variant="secondary" className="text-[9px]">
+                    Auth
+                  </Badge>
                 )}
               </div>
               <Button
@@ -149,20 +168,31 @@ export function WebhookPanel({
           ))}
         </div>
       ) : (
-        <div className="text-muted-foreground text-[10px] italic">No routes registered</div>
+        <div className="text-muted-foreground text-[10px] italic">
+          No routes registered
+        </div>
       )}
 
       {/* Recent payloads */}
       {recentPayloads.length > 0 && (
         <div>
-          <h4 className="mb-1 text-muted-foreground text-[10px] uppercase tracking-wider">Recent Requests</h4>
+          <h4 className="mb-1 text-muted-foreground text-[10px] uppercase tracking-wider">
+            Recent Requests
+          </h4>
           <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
             {recentPayloads.map((p, i) => (
-              <div key={i} className="rounded border border-border/40 bg-muted/10 px-2 py-1">
+              <div
+                key={i}
+                className="rounded border border-border/40 bg-muted/10 px-2 py-1"
+              >
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-[9px]">{p.method}</Badge>
+                  <Badge variant="outline" className="text-[9px]">
+                    {p.method}
+                  </Badge>
                   <span className="font-mono text-[10px]">{p.path}</span>
-                  <span className="text-muted-foreground text-[9px]">{p.received_at.slice(11, 19)}</span>
+                  <span className="text-muted-foreground text-[9px]">
+                    {p.received_at.slice(11, 19)}
+                  </span>
                 </div>
               </div>
             ))}

@@ -1,7 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { WorkflowNodeType } from "../lib/schema";
 
-const NODE_TYPES: { type: WorkflowNodeType; label: string; category: string }[] = [
+const NODE_TYPES: {
+  type: WorkflowNodeType;
+  label: string;
+  category: string;
+}[] = [
   { type: "textPrompt", label: "Text Prompt", category: "Input" },
   { type: "output", label: "Output", category: "Input" },
   { type: "terminal", label: "Terminal", category: "Input" },
@@ -26,7 +30,11 @@ const NODE_TYPES: { type: WorkflowNodeType; label: string; category: string }[] 
   { type: "httpRequest", label: "HTTP Request", category: "Runtime" },
   { type: "shellCommand", label: "Shell Command", category: "Runtime" },
   { type: "agent", label: "Agent", category: "Runtime" },
-  { type: "browserAutomation", label: "Browser Automation", category: "Runtime" },
+  {
+    type: "browserAutomation",
+    label: "Browser Automation",
+    category: "Runtime",
+  },
   { type: "fileOperation", label: "File Operation", category: "Runtime" },
   { type: "imageGeneration", label: "Image Generation", category: "AI/Media" },
   { type: "videoGeneration", label: "Video Generation", category: "AI/Media" },
@@ -80,10 +88,7 @@ export function WorkflowQuickAddPalette({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[20vh]">
-      <div
-        className="absolute inset-0 bg-black/30"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
       <div className="relative w-[360px] rounded-xl border border-border/60 bg-card shadow-2xl overflow-hidden">
         <div className="flex items-center border-border/40 border-b px-3 py-2">
           <span className="text-muted-foreground text-sm mr-2">+</span>
@@ -96,7 +101,9 @@ export function WorkflowQuickAddPalette({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
           />
-          <span className="text-muted-foreground text-[10px]">ESC to close</span>
+          <span className="text-muted-foreground text-[10px]">
+            ESC to close
+          </span>
         </div>
         <div className="max-h-64 overflow-y-auto p-1">
           {filtered.length === 0 ? (
@@ -120,7 +127,9 @@ export function WorkflowQuickAddPalette({
                 onMouseEnter={() => setSelectedIndex(i)}
               >
                 <span className="font-medium">{node.label}</span>
-                <span className="text-muted-foreground text-[10px]">{node.category}</span>
+                <span className="text-muted-foreground text-[10px]">
+                  {node.category}
+                </span>
               </button>
             ))
           )}

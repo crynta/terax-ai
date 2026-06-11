@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createStarterWorkflowDocument,
-  type WorkflowDocument,
-} from "./schema";
+import { createStarterWorkflowDocument, type WorkflowDocument } from "./schema";
 
 /**
  * Minimal undo/redo stack test — the hook itself is tested via integration

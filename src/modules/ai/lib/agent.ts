@@ -419,7 +419,14 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.projectMemory ?? null,
   );
 
-  const history = await convertToModelMessages(opts.uiMessages);
+  const { compactIfNeeded } = await import("./agentArchive");
+  const archived = compactIfNeeded(opts.uiMessages);
+  const effectiveMessages = archived.active;
+  const archivePrefix = archived.archive
+    ? `\n\n<conversation-archive>\n${archived.archive}\n</conversation-archive>`
+    : "";
+
+  const history = await convertToModelMessages(effectiveMessages);
   const keepsReasoning = modelKeepsReasoning(info);
   const prunedHistory = pruneMessages({
     messages: history,
@@ -439,7 +446,9 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.onCompact?.({ droppedCount: compact.droppedCount });
   }
 
-  const messages: ModelMessage[] = [{ role: "system", content: stableSystem }];
+  const messages: ModelMessage[] = [
+    { role: "system", content: stableSystem + archivePrefix },
+  ];
   if (opts.planMode) {
     messages.push({ role: "system", content: PLAN_MODE_PROMPT });
   }

@@ -47,7 +47,9 @@ export function useWhisperRecording({
     typeof MediaRecorder !== "undefined";
 
   const teardownStream = () => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current?.getTracks().forEach((t) => {
+      t.stop();
+    });
     streamRef.current = null;
   };
 

@@ -83,7 +83,7 @@ export function pasteIntoLeaf(leafId: number, text: string): boolean {
 }
 
 function getRecycler(): HTMLDivElement {
-  if (recyclerEl && recyclerEl.isConnected) return recyclerEl;
+  if (recyclerEl?.isConnected) return recyclerEl;
   const el = document.createElement("div");
   el.setAttribute("data-terax-recycler", "");
   el.style.cssText =

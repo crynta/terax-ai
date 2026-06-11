@@ -1,9 +1,12 @@
 import ChatIcon from "@hugeicons/core-free-icons/ChatIcon";
 import CodeIcon from "@hugeicons/core-free-icons/CodeIcon";
+import FlashIcon from "@hugeicons/core-free-icons/FlashIcon";
 import FolderGitTwoIcon from "@hugeicons/core-free-icons/FolderGitTwoIcon";
 import FolderTreeIcon from "@hugeicons/core-free-icons/FolderTreeIcon";
 import GitCompareIcon from "@hugeicons/core-free-icons/GitCompareIcon";
 import InboxIcon from "@hugeicons/core-free-icons/InboxIcon";
+import Timer02Icon from "@hugeicons/core-free-icons/Timer02Icon";
+import UserCircleIcon from "@hugeicons/core-free-icons/UserCircleIcon";
 import type { HugeiconsIcon } from "@hugeicons/react";
 
 export type SidebarViewSlot = "primary" | "secondary";
@@ -34,6 +37,24 @@ export const SIDEBAR_VIEW_REGISTRY = {
     label: "Git",
     slot: "primary",
     icon: FolderGitTwoIcon,
+  },
+  automation: {
+    id: "automation",
+    label: "Automation",
+    slot: "primary",
+    icon: Timer02Icon,
+  },
+  "agent-manager": {
+    id: "agent-manager",
+    label: "Agents",
+    slot: "primary",
+    icon: UserCircleIcon,
+  },
+  "skill-browser": {
+    id: "skill-browser",
+    label: "Skills",
+    slot: "primary",
+    icon: FlashIcon,
   },
   code: {
     id: "code",
@@ -81,6 +102,9 @@ function sidebarItemForId<T extends SidebarViewId>(id: T): SidebarViewItem<T> {
 export const PRIMARY_SIDEBAR_VIEW_ITEMS = [
   sidebarItemForId("explorer"),
   sidebarItemForId("source-control"),
+  sidebarItemForId("automation"),
+  sidebarItemForId("agent-manager"),
+  sidebarItemForId("skill-browser"),
 ] as const satisfies readonly SidebarViewItem<PrimarySidebarViewId>[];
 
 export const SECONDARY_SIDEBAR_VIEW_ITEMS = [

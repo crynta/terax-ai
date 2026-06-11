@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { workflowToSvg } from "./svgExport";
-import {
-  createStarterWorkflowDocument,
-  addWorkflowNode,
-} from "./schema";
+import { createStarterWorkflowDocument, addWorkflowNode } from "./schema";
 
 describe("workflowToSvg", () => {
   it("generates valid SVG for empty workflow", () => {

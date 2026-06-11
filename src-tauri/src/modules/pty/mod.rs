@@ -17,6 +17,7 @@ use portable_pty::PtySize;
 use tauri::ipc::{Channel, Response};
 
 use crate::modules::sync;
+use crate::modules::capabilities::AppCapabilityState;
 use crate::modules::workspace::{authorize_user_spawn_cwd, WorkspaceEnv, WorkspaceRegistry};
 use session::Session;
 
@@ -45,6 +46,7 @@ pub async fn pty_open(
     app: tauri::AppHandle,
     state: tauri::State<'_, PtyState>,
     registry: tauri::State<'_, WorkspaceRegistry>,
+    app_audit: tauri::State<'_, AppCapabilityState>,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
@@ -57,22 +59,29 @@ pub async fn pty_open(
         log::warn!("pty_open: cwd rejected: {e}");
         e
     })?;
-    let id = state.next_id.fetch_add(1, Ordering::Relaxed);
-    let session = tauri::async_runtime::spawn_blocking(move || {
-        session::spawn(id, app, cols, rows, cwd, workspace, on_data, on_exit).map(|(s, _)| s)
-    })
-    .await
-    .map_err(|e| {
-        log::error!("pty_open join failed: {e}");
-        e.to_string()
-    })?
-    .map_err(|e| {
-        log::error!("pty_open failed: {e}");
-        e
-    })?;
-    sync::write(&state.sessions, "pty sessions")?.insert(id, session);
-    log::info!("pty opened id={id} cols={cols} rows={rows}");
-    Ok(id)
+    // Opening an interactive shell is the highest-risk OS surface; record it in
+    // the capability audit so the ledger accounts for every shell spawn.
+    app_audit
+        .execute_app_capability_async("app.pty_session", || async move {
+            let id = state.next_id.fetch_add(1, Ordering::Relaxed);
+            let session = tauri::async_runtime::spawn_blocking(move || {
+                session::spawn(id, app, cols, rows, cwd, workspace, on_data, on_exit)
+                    .map(|(s, _)| s)
+            })
+            .await
+            .map_err(|e| {
+                log::error!("pty_open join failed: {e}");
+                e.to_string()
+            })?
+            .map_err(|e| {
+                log::error!("pty_open failed: {e}");
+                e
+            })?;
+            sync::write(&state.sessions, "pty sessions")?.insert(id, session);
+            log::info!("pty opened id={id} cols={cols} rows={rows}");
+            Ok(id)
+        })
+        .await
 }
 
 #[tauri::command]

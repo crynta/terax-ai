@@ -41,7 +41,7 @@ function resolveExpression(
     const portId = parts[1];
 
     const node = document.nodes.find((n) => n.id === nodeId);
-    if (!node || node.runtimeState.status !== "completed") return null;
+    if (node?.runtimeState.status !== "completed") return null;
 
     const artifactIds = new Set(node.runtimeState.artifactIds ?? []);
     const artifacts = document.artifacts.filter((a) => artifactIds.has(a.id));

@@ -1,3 +1,8 @@
+pub mod drawing;
+pub mod transparency;
+
+use drawing::AnnotationItem;
+
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri::Runtime;
@@ -6,30 +11,8 @@ use tauri::Runtime;
 pub struct OverlayState {
     #[cfg(all(target_os = "macos", feature = "openclicky"))]
     visible: std::sync::Mutex<bool>,
-}
-
-#[cfg(all(target_os = "macos", feature = "openclicky"))]
-fn apply_transparency_shim<R: Runtime>(window: &tauri::WebviewWindow<R>) {
-    use objc2::runtime::AnyObject;
-    use objc2::msg_send;
-
-    let ns_window_ptr = match window.ns_window() {
-        Ok(ptr) => ptr,
-        Err(e) => {
-            log::error!("overlay: failed to get ns_window: {e}");
-            return;
-        }
-    };
-
-    // SAFETY: ns_window_ptr comes from Tauri's ns_window() which returns a
-    // valid NSWindow pointer. cast() reinterprets as AnyObject which is safe
-    // for objc2 message sending. setOpaque: and setHasShadow: are simple
-    // boolean property setters with no side effects.
-    unsafe {
-        let ns_window: &AnyObject = &*ns_window_ptr.cast();
-        let () = msg_send![ns_window, setOpaque: false];
-        let () = msg_send![ns_window, setHasShadow: false];
-    }
+    #[cfg(all(target_os = "macos", feature = "openclicky"))]
+    annotations: std::sync::Mutex<Vec<AnnotationItem>>,
 }
 
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
@@ -53,7 +36,8 @@ fn create_overlay_window<R: Runtime>(
         .build()
         .map_err(|e: tauri::Error| e.to_string())?;
 
-    apply_transparency_shim(&window);
+    transparency::apply_transparency_shim(&window);
+    transparency::size_to_screen(&window);
 
     Ok(window)
 }
@@ -69,9 +53,8 @@ pub async fn overlay_show<R: Runtime>(
         let window = create_overlay_window(&app)?;
         window.show().map_err(|e| e.to_string())?;
 
-        if let Ok(mut vis) = state.visible.lock() {
-            *vis = true;
-        }
+        let mut vis = state.visible.lock().map_err(|e| e.to_string())?;
+        *vis = true;
 
         app.emit("overlay:shown", ()).map_err(|e| e.to_string())?;
     }
@@ -91,12 +74,62 @@ pub async fn overlay_hide<R: Runtime>(
             window.hide().map_err(|e| e.to_string())?;
         }
 
-        if let Ok(mut vis) = state.visible.lock() {
-            *vis = false;
-        }
+        let mut vis = state.visible.lock().map_err(|e| e.to_string())?;
+        *vis = false;
 
         app.emit("overlay:hidden", ()).map_err(|e| e.to_string())?;
     }
 
     Ok(())
+}
+
+#[tauri::command]
+#[allow(unused_variables)]
+pub async fn overlay_draw<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    state: tauri::State<'_, OverlayState>,
+    items: Vec<AnnotationItem>,
+) -> Result<(), String> {
+    #[cfg(all(target_os = "macos", feature = "openclicky"))]
+    {
+        let serialized = serde_json::to_string(&items).map_err(|e| format!("serialize: {e}"))?;
+        let mut annotations = state.annotations.lock().map_err(|e| format!("lock: {e}"))?;
+        annotations.extend(items);
+        app.emit("overlay:draw", serialized).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+#[allow(unused_variables)]
+pub async fn overlay_clear<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    state: tauri::State<'_, OverlayState>,
+) -> Result<(), String> {
+    #[cfg(all(target_os = "macos", feature = "openclicky"))]
+    {
+        let mut annotations = state.annotations.lock().map_err(|e| format!("lock: {e}"))?;
+        annotations.clear();
+        app.emit("overlay:clear", ()).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+#[allow(unused_variables)]
+pub fn overlay_get_annotations(
+    state: tauri::State<'_, OverlayState>,
+) -> Result<Vec<AnnotationItem>, String> {
+    #[cfg(all(target_os = "macos", feature = "openclicky"))]
+    {
+        let annotations = state.annotations.lock().map_err(|e| e.to_string())?;
+        Ok(annotations.clone())
+    }
+
+    #[cfg(not(all(target_os = "macos", feature = "openclicky")))]
+    {
+        Ok(Vec::new())
+    }
 }

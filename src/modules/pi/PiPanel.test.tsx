@@ -61,24 +61,35 @@ vi.mock("@/modules/pi/lib/native", () => ({ piNative: piNativeMock }));
 vi.mock("@/modules/pi/lib/pi-session-backend", () => {
   const backend = {
     useWebview: false,
-    sessionCreate: (...args: unknown[]) => piNativeMock.sessionCreate(...args as [undefined, string, unknown]),
-    sessionResume: (...args: unknown[]) => piNativeMock.sessionResume(...args as [string, unknown]),
-    sessionSend: (...args: unknown[]) => piNativeMock.sessionSend(...args as [string, string, unknown, unknown]),
-    sessionStop: (...args: unknown[]) => piNativeMock.sessionStop(...args as [string]),
-    sessionRename: (...args: unknown[]) => piNativeMock.sessionRename(...args as [string, string]),
-    sessionDelete: (...args: unknown[]) => piNativeMock.sessionDelete(...args as [string]),
-    sessionDeleteWithArtifacts: (...args: unknown[]) => piNativeMock.sessionDeleteWithArtifacts(...args as [string]),
-    sessionArchive: (...args: unknown[]) => piNativeMock.sessionArchive(...args as [string]),
-    sessionRestore: (...args: unknown[]) => piNativeMock.sessionRestore(...args as [string]),
-    sessionToolRespond: (...args: unknown[]) => piNativeMock.sessionToolRespond(...args as [string, string, boolean]),
-    usageSummary: () => Promise.resolve({
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      totalCachedInputTokens: 0,
-      totalCostUsd: 0,
-      turnCount: 0,
-      byModel: null,
-    }),
+    sessionCreate: (...args: unknown[]) =>
+      piNativeMock.sessionCreate(...(args as [undefined, string, unknown])),
+    sessionResume: (...args: unknown[]) =>
+      piNativeMock.sessionResume(...(args as [string, unknown])),
+    sessionSend: (...args: unknown[]) =>
+      piNativeMock.sessionSend(...(args as [string, string, unknown, unknown])),
+    sessionStop: (...args: unknown[]) =>
+      piNativeMock.sessionStop(...(args as [string])),
+    sessionRename: (...args: unknown[]) =>
+      piNativeMock.sessionRename(...(args as [string, string])),
+    sessionDelete: (...args: unknown[]) =>
+      piNativeMock.sessionDelete(...(args as [string])),
+    sessionDeleteWithArtifacts: (...args: unknown[]) =>
+      piNativeMock.sessionDeleteWithArtifacts(...(args as [string])),
+    sessionArchive: (...args: unknown[]) =>
+      piNativeMock.sessionArchive(...(args as [string])),
+    sessionRestore: (...args: unknown[]) =>
+      piNativeMock.sessionRestore(...(args as [string])),
+    sessionToolRespond: (...args: unknown[]) =>
+      piNativeMock.sessionToolRespond(...(args as [string, string, boolean])),
+    usageSummary: () =>
+      Promise.resolve({
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCachedInputTokens: 0,
+        totalCostUsd: 0,
+        turnCount: 0,
+        byModel: null,
+      }),
   };
   return { getSessionBackend: () => backend, resetSessionBackend: vi.fn() };
 });
@@ -419,7 +430,7 @@ describe("PiPanel", () => {
     });
 
     await act(async () => {
-      tauriEventMock.listeners.forEach((listener) =>
+      for (const listener of tauriEventMock.listeners) {
         listener({
           payload: {
             id: "event-tool-result",
@@ -431,8 +442,8 @@ describe("PiPanel", () => {
               toolName: "mcp__smoke__read_note",
             },
           },
-        }),
-      );
+        });
+      }
       await Promise.resolve();
     });
 
@@ -502,7 +513,9 @@ describe("PiPanel", () => {
       );
     });
 
-    await waitFor(() => expect(document.body.textContent).toContain("Planning"));
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Planning"),
+    );
     await clickButton("Sessions");
     await clickButton("Resume");
 

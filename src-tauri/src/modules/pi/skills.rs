@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::modules::skills::scanner;
+
 const MAX_SKILLS: usize = 200;
 const MAX_SKILL_BYTES: u64 = 64 * 1024;
 
@@ -71,38 +73,11 @@ fn canonical_root(root: &Path) -> Result<PathBuf, String> {
 }
 
 fn is_valid_skill_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 64
-        && !name.starts_with('-')
-        && !name.ends_with('-')
-        && !name.contains("--")
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    scanner::is_valid_skill_name(name)
 }
 
 fn frontmatter_value(content: &str, key: &str) -> Option<String> {
-    let mut lines = content.lines();
-    if lines.next()? != "---" {
-        return None;
-    }
-    let prefix = format!("{key}:");
-    for line in lines {
-        if line.trim() == "---" {
-            break;
-        }
-        let trimmed = line.trim_start();
-        if let Some(value) = trimmed.strip_prefix(&prefix) {
-            return Some(
-                value
-                    .trim()
-                    .trim_matches('"')
-                    .trim_matches('\'')
-                    .to_string(),
-            );
-        }
-    }
-    None
+    scanner::frontmatter_value(content, key)
 }
 
 fn first_heading(content: &str) -> Option<String> {

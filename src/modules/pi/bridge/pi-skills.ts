@@ -37,7 +37,11 @@ export async function resolveSkillFiles(
   let valid = status.skills.filter((s: PiSkillInfo) => s.warnings.length === 0);
 
   // In "selected" mode, only keep explicitly selected skills
-  if (skillsMode === "selected" && Array.isArray(selectedSkills) && selectedSkills.length > 0) {
+  if (
+    skillsMode === "selected" &&
+    Array.isArray(selectedSkills) &&
+    selectedSkills.length > 0
+  ) {
     const selected = new Set(selectedSkills as string[]);
     valid = valid.filter((s: PiSkillInfo) => selected.has(s.path));
   }

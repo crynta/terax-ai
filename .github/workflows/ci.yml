@@ -25,12 +25,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Audit (advisory)
+      - name: Audit (blocking on high/critical)
         run: pnpm audit --prod --audit-level high
-        continue-on-error: true
 
       - name: Type-check
         run: pnpm exec tsc --noEmit
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
 
       - name: Build sidecars
         run: pnpm build:sidecars
@@ -46,6 +51,9 @@ jobs:
 
       - name: Build frontend
         run: pnpm build
+
+      - name: Bundle-size budget
+        run: pnpm check:bundle-size
 
   rust:
     runs-on: ubuntu-22.04

@@ -1,21 +1,21 @@
-export type SubagentType = "explore" | "code-review" | "security" | "general";
+export type SubagentType =
+  | "explore"
+  | "code-review"
+  | "security"
+  | "general"
+  | string;
 
 export type SubagentDef = {
   id: SubagentType;
   label: string;
   description: string;
-  /**
-   * Whitelist of tools the subagent may call. Excludes mutating tools and
-   * `run_subagent` itself to prevent recursion. The runner filters down the
-   * main toolset to this list before constructing the inner Agent.
-   */
   tools: string[];
   systemPrompt: string;
 };
 
 const READ_ONLY_TOOLS = ["read_file", "list_directory", "grep", "glob"];
 
-export const SUBAGENTS: Record<SubagentType, SubagentDef> = {
+export const SUBAGENTS: Record<string, SubagentDef> = {
   explore: {
     id: "explore",
     label: "Explore",
@@ -49,3 +49,49 @@ export const SUBAGENTS: Record<SubagentType, SubagentDef> = {
     systemPrompt: `You are a general-purpose research subagent. Answer the spawn question by reading the codebase. Don't speculate — verify. Return a tight summary with the evidence you used (paths, line numbers).`,
   },
 };
+
+export function registerDynamicAgent(def: SubagentDef): void {
+  if (!SUBAGENTS[def.id]) {
+    SUBAGENTS[def.id] = def;
+  }
+}
+
+export async function loadDynamicAgents(): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const agents =
+      await invoke<
+        Array<{
+          slug: string;
+          displayName: string;
+          description: string;
+          systemPrompt: string;
+          toolWhitelist: string[];
+        }>
+      >("agent_list");
+
+    for (const agent of agents) {
+      try {
+        const full = await invoke<{
+          systemPrompt: string;
+          toolWhitelist: string[];
+        }>("agent_load", { slug: agent.slug });
+
+        registerDynamicAgent({
+          id: agent.slug,
+          label: agent.displayName,
+          description: agent.description,
+          tools:
+            full.toolWhitelist.length > 0
+              ? full.toolWhitelist
+              : READ_ONLY_TOOLS,
+          systemPrompt: full.systemPrompt,
+        });
+      } catch (e) {
+        console.warn(`failed to load dynamic agent ${agent.slug}:`, e);
+      }
+    }
+  } catch {
+    // agent commands not available (no openclicky feature)
+  }
+}

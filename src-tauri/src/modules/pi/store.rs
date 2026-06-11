@@ -11,6 +11,7 @@ use super::{session_event_type, PiSession, PiSessionEvent, PiSessionsList};
 const HISTORY_FILE_NAME: &str = "pi-sessions.json";
 const TRANSCRIPTS_DIR_NAME: &str = "pi-transcripts";
 const MAX_EVENTS: usize = 500;
+const MAX_TRANSCRIPT_BYTES: usize = 10 * 1024 * 1024;
 
 static HISTORY_LOCK: Mutex<()> = Mutex::new(());
 static TRANSCRIPT_LOCK: Mutex<()> = Mutex::new(());
@@ -118,6 +119,18 @@ pub(super) fn record_transcript_at_dir(
     session_id: &str,
     contents: &str,
 ) -> Result<(), String> {
+    // The transcript is an opaque blob supplied by the webview. Bound it and
+    // confirm it is well-formed JSON before persisting, so a malformed or
+    // oversized payload can neither exhaust disk nor silently corrupt the
+    // "lossless" history that resume/fork depend on.
+    if contents.len() > MAX_TRANSCRIPT_BYTES {
+        return Err(format!(
+            "transcript exceeds the {MAX_TRANSCRIPT_BYTES} byte limit"
+        ));
+    }
+    serde_json::from_str::<serde_json::Value>(contents)
+        .map_err(|e| format!("transcript is not valid JSON: {e}"))?;
+
     let _guard = TRANSCRIPT_LOCK.lock().map_err(|e| e.to_string())?;
     fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let name = transcript_file_name(session_id);
@@ -297,11 +310,20 @@ pub(super) fn load_from_path(path: &Path) -> Result<PiSessionsList, String> {
 }
 
 pub(super) fn save_to_path(path: &Path, history: &PiSessionsList) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "session history path has no parent".to_string())?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let contents = serde_json::to_string_pretty(history).map_err(|e| e.to_string())?;
-    fs::write(path, format!("{contents}\n")).map_err(|e| e.to_string())
+    // Write to a temp file then atomically rename so a crash mid-write cannot
+    // truncate the session history (losing the last event or the whole list).
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "session history path has no file name".to_string())?;
+    let tmp = parent.join(format!("{file_name}.tmp"));
+    fs::write(&tmp, format!("{contents}\n")).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
 }
 
 fn upsert_session(sessions: &mut Vec<PiSession>, session: PiSession) -> bool {
@@ -657,20 +679,36 @@ mod tests {
         let temp = tempdir().unwrap();
         let dir = temp.path().join("pi-transcripts");
 
-        record_transcript_at_dir(&dir, "pi-1", "first").unwrap();
-        record_transcript_at_dir(&dir, "pi-1", "second").unwrap();
+        record_transcript_at_dir(&dir, "pi-1", r#""first""#).unwrap();
+        record_transcript_at_dir(&dir, "pi-1", r#""second""#).unwrap();
 
         assert_eq!(
             load_transcript_at_dir(&dir, "pi-1").unwrap().as_deref(),
-            Some("second"),
+            Some(r#""second""#),
         );
+    }
+
+    #[test]
+    fn record_transcript_rejects_non_json_and_oversized_blobs() {
+        let temp = tempdir().unwrap();
+        let dir = temp.path().join("pi-transcripts");
+
+        let bad = record_transcript_at_dir(&dir, "pi-1", "not json").unwrap_err();
+        assert!(bad.contains("not valid JSON"), "{bad}");
+
+        let huge = format!("\"{}\"", "x".repeat(MAX_TRANSCRIPT_BYTES));
+        let oversize = record_transcript_at_dir(&dir, "pi-1", &huge).unwrap_err();
+        assert!(oversize.contains("byte limit"), "{oversize}");
+
+        // Neither rejected write left a file behind.
+        assert_eq!(load_transcript_at_dir(&dir, "pi-1").unwrap(), None);
     }
 
     #[test]
     fn delete_transcript_removes_the_blob() {
         let temp = tempdir().unwrap();
         let dir = temp.path().join("pi-transcripts");
-        record_transcript_at_dir(&dir, "pi-1", "data").unwrap();
+        record_transcript_at_dir(&dir, "pi-1", r#""data""#).unwrap();
 
         delete_transcript_at_dir(&dir, "pi-1").unwrap();
 
@@ -684,16 +722,16 @@ mod tests {
         let temp = tempdir().unwrap();
         let dir = temp.path().join("pi-transcripts");
         // These both sanitize to "a_b" with the naive scheme — must NOT collide.
-        record_transcript_at_dir(&dir, "a/b", "first").unwrap();
-        record_transcript_at_dir(&dir, "a.b", "second").unwrap();
+        record_transcript_at_dir(&dir, "a/b", r#""first""#).unwrap();
+        record_transcript_at_dir(&dir, "a.b", r#""second""#).unwrap();
 
         assert_eq!(
             load_transcript_at_dir(&dir, "a/b").unwrap().as_deref(),
-            Some("first"),
+            Some(r#""first""#),
         );
         assert_eq!(
             load_transcript_at_dir(&dir, "a.b").unwrap().as_deref(),
-            Some("second"),
+            Some(r#""second""#),
         );
     }
 
@@ -703,14 +741,14 @@ mod tests {
         let dir = temp.path().join("pi-transcripts");
 
         // A hostile id must not escape the transcripts directory.
-        record_transcript_at_dir(&dir, "../escape", "x").unwrap();
+        record_transcript_at_dir(&dir, "../escape", r#""x""#).unwrap();
 
         assert!(!temp.path().join("escape.json").exists());
         assert_eq!(
             load_transcript_at_dir(&dir, "../escape")
                 .unwrap()
                 .as_deref(),
-            Some("x"),
+            Some(r#""x""#),
         );
     }
 

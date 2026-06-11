@@ -1,7 +1,13 @@
 import LayoutTwoColumnIcon from "@hugeicons/core-free-icons/LayoutTwoColumnIcon";
 import ViewIcon from "@hugeicons/core-free-icons/ViewIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ArtifactPreviewFrame } from "@/modules/artifacts/components/ArtifactPreviewFrame";
@@ -30,7 +36,12 @@ type DiffMode = "side-by-side" | "overlay";
 type ScreenshotState =
   | { status: "idle" }
   | { status: "capturing" }
-  | { status: "done"; artifact: CaptureResult; browser: CaptureResult; diff?: PixelDiffResult }
+  | {
+      status: "done";
+      artifact: CaptureResult;
+      browser: CaptureResult;
+      diff?: PixelDiffResult;
+    }
   | { status: "error"; message: string };
 
 export function ArtifactComparePanel({
@@ -44,7 +55,9 @@ export function ArtifactComparePanel({
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [screenshotState, setScreenshotState] = useState<ScreenshotState>({ status: "idle" });
+  const [screenshotState, setScreenshotState] = useState<ScreenshotState>({
+    status: "idle",
+  });
   const [diffMode, setDiffMode] = useState<DiffMode>("side-by-side");
 
   const artifactIframeRef = useRef<HTMLIFrameElement>(null);
@@ -80,7 +93,10 @@ export function ArtifactComparePanel({
     const artifactEl = artifactIframeRef.current;
     const browserEl = browserIframeRef.current;
     if (!artifactEl || !browserEl) {
-      setScreenshotState({ status: "error", message: "Preview iframes not mounted." });
+      setScreenshotState({
+        status: "error",
+        message: "Preview iframes not mounted.",
+      });
       return;
     }
 
@@ -91,11 +107,17 @@ export function ArtifactComparePanel({
       const browserCapture = captureIframeScreenshot(browserEl);
 
       if (artifactCapture.status === "error") {
-        setScreenshotState({ status: "error", message: `Artifact: ${artifactCapture.message}` });
+        setScreenshotState({
+          status: "error",
+          message: `Artifact: ${artifactCapture.message}`,
+        });
         return;
       }
       if (browserCapture.status === "error") {
-        setScreenshotState({ status: "error", message: `Browser: ${browserCapture.message}` });
+        setScreenshotState({
+          status: "error",
+          message: `Browser: ${browserCapture.message}`,
+        });
         return;
       }
 
@@ -106,7 +128,12 @@ export function ArtifactComparePanel({
         // Diff is best-effort; still show screenshots without it
       }
 
-      setScreenshotState({ status: "done", artifact: artifactCapture, browser: browserCapture, diff });
+      setScreenshotState({
+        status: "done",
+        artifact: artifactCapture,
+        browser: browserCapture,
+        diff,
+      });
     } catch (err) {
       setScreenshotState({
         status: "error",
@@ -147,14 +174,21 @@ export function ArtifactComparePanel({
             <Button
               size="xs"
               variant="outline"
-              disabled={screenshotState.status === "capturing" || !artifact || !url}
+              disabled={
+                screenshotState.status === "capturing" || !artifact || !url
+              }
               onClick={handleCaptureDiff}
             >
               {screenshotState.status === "capturing" ? (
                 "Capturing…"
               ) : (
                 <>
-                  <HugeiconsIcon icon={ViewIcon} size={14} strokeWidth={1.75} className="mr-1" />
+                  <HugeiconsIcon
+                    icon={ViewIcon}
+                    size={14}
+                    strokeWidth={1.75}
+                    className="mr-1"
+                  />
                   Visual diff
                 </>
               )}
@@ -182,7 +216,9 @@ export function ArtifactComparePanel({
             {loading ? (
               <StatusMessage>Loading artifact…</StatusMessage>
             ) : error ? (
-              <StatusMessage tone="error">Artifact failed to load: {error}</StatusMessage>
+              <StatusMessage tone="error">
+                Artifact failed to load: {error}
+              </StatusMessage>
             ) : artifact ? (
               <ArtifactPreviewFrame
                 artifact={artifact}
@@ -281,30 +317,52 @@ function ScreenshotCard({
 function DiffSummary({ diff }: { diff: PixelDiffResult }) {
   return (
     <div className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2 text-xs">
-      <HugeiconsIcon icon={LayoutTwoColumnIcon} size={14} strokeWidth={1.75} className="shrink-0 text-muted-foreground" />
+      <HugeiconsIcon
+        icon={LayoutTwoColumnIcon}
+        size={14}
+        strokeWidth={1.75}
+        className="shrink-0 text-muted-foreground"
+      />
       <span className="text-muted-foreground">
         {formatMismatchPercent(diff.mismatchPercent)} pixels differ
         <span className="ml-2 text-muted-foreground/60">
-          ({diff.mismatchedPixels.toLocaleString()} of {diff.totalPixels.toLocaleString()})
+          ({diff.mismatchedPixels.toLocaleString()} of{" "}
+          {diff.totalPixels.toLocaleString()})
         </span>
       </span>
     </div>
   );
 }
 
-function DiffModeToggle({ mode, onChange }: { mode: DiffMode; onChange: (m: DiffMode) => void }) {
+function DiffModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: DiffMode;
+  onChange: (m: DiffMode) => void;
+}) {
   return (
     <div className="flex rounded-md border text-xs">
       <button
         type="button"
-        className={cn("px-2 py-1", mode === "side-by-side" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/30")}
+        className={cn(
+          "px-2 py-1",
+          mode === "side-by-side"
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground hover:bg-accent/30",
+        )}
         onClick={() => onChange("side-by-side")}
       >
         Side by side
       </button>
       <button
         type="button"
-        className={cn("px-2 py-1 border-l", mode === "overlay" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/30")}
+        className={cn(
+          "px-2 py-1 border-l",
+          mode === "overlay"
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground hover:bg-accent/30",
+        )}
         onClick={() => onChange("overlay")}
       >
         Overlay

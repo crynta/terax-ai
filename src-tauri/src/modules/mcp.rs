@@ -51,6 +51,12 @@ mod connections;
 mod oauth;
 mod sanitize;
 mod types;
+#[cfg(feature = "openclicky")]
+pub mod cli;
+#[cfg(feature = "openclicky")]
+pub mod server;
+#[cfg(feature = "openclicky")]
+pub mod server_tools;
 use config_store::{mcp_config_path, mcp_tool_preferences_path, sync_tool_preferences_from_app};
 pub use config_store::{
     mcp_connect_saved_stdio_at_path, mcp_connect_saved_stdio_at_path_with_env_loader,
@@ -649,12 +655,20 @@ pub fn mcp_server_statuses(
 #[tauri::command]
 pub async fn mcp_call_tool(
     state: tauri::State<'_, Arc<McpState>>,
+    app_audit: tauri::State<'_, crate::modules::capabilities::AppCapabilityState>,
     qualified_name: String,
     arguments: Value,
 ) -> Result<McpToolCallResult, String> {
-    state
-        .inner()
-        .call_tool_async(&qualified_name, arguments)
+    // Record every direct MCP tool invocation in the capability audit. Agent
+    // MCP calls route through pi_agent_tool_execute (which audits separately);
+    // this covers direct UI-driven calls so the ledger is complete.
+    app_audit
+        .execute_app_capability_async("app.mcp_tool", || async move {
+            state
+                .inner()
+                .call_tool_async(&qualified_name, arguments)
+                .await
+        })
         .await
 }
 

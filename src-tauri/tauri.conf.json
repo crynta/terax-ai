@@ -75,7 +75,9 @@
     "category": "DeveloperTool",
     "resources": {
       "../sidecars/node/dist": "sidecars/node",
-      "../sidecars/pi-host/dist": "sidecars/pi-host"
+      "../sidecars/pi-host/dist": "sidecars/pi-host",
+      "resources/skills": "skills",
+      "resources/sidecars": "sidecars"
     },
     "shortDescription": "AI-native terminal emulator",
     "longDescription": "Terax - an open-source AI-native terminal emulator with multi-tab, file explorer, code editor, web preview, voice input, and AI agents."

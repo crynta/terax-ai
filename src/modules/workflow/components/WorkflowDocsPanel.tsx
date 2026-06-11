@@ -3,9 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { WorkflowDocument, WorkflowNode } from "../lib/schema";
 import { exportWorkflowMarkdown } from "../lib/exportMarkdown";
-import {
-  workflowStatistics,
-} from "../lib/workflowStatistics";
+import { workflowStatistics } from "../lib/workflowStatistics";
 
 export function WorkflowDocsPanel({
   document,
@@ -225,7 +223,9 @@ function StatsGrid({ document }: { document: WorkflowDocument }) {
 
       {/* Status breakdown */}
       <div className="mt-1">
-        <h5 className="mb-1 text-muted-foreground text-[10px] uppercase tracking-wider">Status</h5>
+        <h5 className="mb-1 text-muted-foreground text-[10px] uppercase tracking-wider">
+          Status
+        </h5>
         <div className="flex flex-wrap gap-1">
           {Object.entries(stats.statusCounts).map(([status, count]) => (
             <Badge
@@ -243,18 +243,23 @@ function StatsGrid({ document }: { document: WorkflowDocument }) {
             </Badge>
           ))}
           {Object.keys(stats.statusCounts).length === 0 && (
-            <span className="text-muted-foreground text-[10px] italic">All idle</span>
+            <span className="text-muted-foreground text-[10px] italic">
+              All idle
+            </span>
           )}
         </div>
       </div>
 
       {/* Node types breakdown */}
       <div className="mt-1">
-        <h5 className="mb-1 text-muted-foreground text-[10px] uppercase tracking-wider">Node Types</h5>
+        <h5 className="mb-1 text-muted-foreground text-[10px] uppercase tracking-wider">
+          Node Types
+        </h5>
         <div className="flex flex-wrap gap-1">
           {Object.entries(stats.nodeTypeCounts).map(([type, count]) => (
             <Badge key={type} variant="outline" className="text-[9px]">
-              {type}{count > 1 ? ` ×${count}` : ""}
+              {type}
+              {count > 1 ? ` ×${count}` : ""}
             </Badge>
           ))}
         </div>
@@ -263,7 +268,8 @@ function StatsGrid({ document }: { document: WorkflowDocument }) {
       {/* Safety warning */}
       {stats.unsafeNodeCount > 0 && (
         <div className="mt-1 rounded border border-yellow-500/30 bg-yellow-500/10 px-2 py-1 text-[10px] text-yellow-700">
-          ⚠ {stats.unsafeNodeCount} unsafe node{stats.unsafeNodeCount > 1 ? "s" : ""} (require approval)
+          ⚠ {stats.unsafeNodeCount} unsafe node
+          {stats.unsafeNodeCount > 1 ? "s" : ""} (require approval)
         </div>
       )}
     </div>
@@ -273,7 +279,9 @@ function StatsGrid({ document }: { document: WorkflowDocument }) {
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded border border-border/40 bg-muted/20 px-2 py-1.5">
-      <div className="text-muted-foreground text-[9px] uppercase tracking-wider">{label}</div>
+      <div className="text-muted-foreground text-[9px] uppercase tracking-wider">
+        {label}
+      </div>
       <div className="font-medium text-foreground text-sm">{value}</div>
     </div>
   );

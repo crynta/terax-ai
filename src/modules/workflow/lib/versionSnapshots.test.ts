@@ -12,9 +12,15 @@ const localStorageMock = (() => {
   let store: Record<string, string> = {};
   return {
     getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => { store[key] = value; },
-    removeItem: (key: string) => { delete store[key]; },
-    clear: () => { store = {}; },
+    setItem: (key: string, value: string) => {
+      store[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
   };
 })();
 
@@ -60,7 +66,15 @@ describe("versionSnapshots", () => {
         ...n,
         runtimeState: { status: "completed" as const, artifactIds: ["a1"] },
       })),
-      artifacts: [{ id: "a1", nodeId: "n1", type: "text", label: "Test", preview: "test" }],
+      artifacts: [
+        {
+          id: "a1",
+          nodeId: "n1",
+          type: "text",
+          label: "Test",
+          preview: "test",
+        },
+      ],
     };
     const snapshot = saveWorkflowVersion(doc, "v1");
     const loaded = loadWorkflowVersionDocument(snapshot.id);

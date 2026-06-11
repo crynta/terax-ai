@@ -487,7 +487,7 @@ export function ArtifactHubPanelView({
                 <Button
                   size="xs"
                   variant="secondary"
-                    disabled={bulkBusy || deletedSelectedCount === 0}
+                  disabled={bulkBusy || deletedSelectedCount === 0}
                   onClick={() =>
                     onRestoreDeletedArtifacts?.(deletedBulkTargets)
                   }

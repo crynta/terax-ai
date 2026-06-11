@@ -226,7 +226,9 @@ export function ArtifactWorkspacePanel({
                     if (mountedRef.current) {
                       setSelectedVersion(null);
                       setSelectedArtifact(restored);
-                      latestSelectionHandlerRef.current?.(restored.summary.slug);
+                      latestSelectionHandlerRef.current?.(
+                        restored.summary.slug,
+                      );
                       setVersionRefreshKey((key) => key + 1);
                       await refresh();
                     }

@@ -1,10 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { toggleGroupCollapse, collapsedGroupChildIds, documentVisibleNodes, documentVisibleEdges } from "./grouping";
-import { createStarterWorkflowDocument, addWorkflowNode, type WorkflowDocument } from "./schema";
+import {
+  toggleGroupCollapse,
+  collapsedGroupChildIds,
+  documentVisibleNodes,
+  documentVisibleEdges,
+} from "./grouping";
+import {
+  createStarterWorkflowDocument,
+  addWorkflowNode,
+  type WorkflowDocument,
+} from "./schema";
 
 describe("workflow grouping", () => {
   it("toggles group collapsed state and resizes", () => {
-    const base = createStarterWorkflowDocument({ id: "wf_grp", title: "Group" });
+    const base = createStarterWorkflowDocument({
+      id: "wf_grp",
+      title: "Group",
+    });
     const withGroup = addWorkflowNode(base, {
       id: "node_group_1",
       type: "group",
@@ -32,7 +44,10 @@ describe("workflow grouping", () => {
   });
 
   it("hides child nodes when group is collapsed", () => {
-    const base = createStarterWorkflowDocument({ id: "wf_hide", title: "Hide" });
+    const base = createStarterWorkflowDocument({
+      id: "wf_hide",
+      title: "Hide",
+    });
     const withGroup = addWorkflowNode(base, {
       id: "node_group_1",
       type: "group",
@@ -60,7 +75,10 @@ describe("workflow grouping", () => {
   });
 
   it("filters edges connecting to hidden nodes", () => {
-    const base = createStarterWorkflowDocument({ id: "wf_edges", title: "Edges" });
+    const base = createStarterWorkflowDocument({
+      id: "wf_edges",
+      title: "Edges",
+    });
     const doc: WorkflowDocument = {
       ...base,
       nodes: [

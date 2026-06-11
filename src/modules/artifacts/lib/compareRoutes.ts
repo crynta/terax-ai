@@ -7,7 +7,9 @@ export function loadArtifactCompareRecentRoutes(): string[] {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "[]");
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((value): value is string => isValidCompareRoute(value));
+    return parsed.filter((value): value is string =>
+      isValidCompareRoute(value),
+    );
   } catch {
     return [];
   }
@@ -22,7 +24,9 @@ export function rememberArtifactCompareRoute(route: string): string[] {
   if (!normalized) return loadArtifactCompareRecentRoutes();
   const next = [
     normalized,
-    ...loadArtifactCompareRecentRoutes().filter((entry) => entry !== normalized),
+    ...loadArtifactCompareRecentRoutes().filter(
+      (entry) => entry !== normalized,
+    ),
   ].slice(0, MAX_RECENT_ROUTES);
   if (typeof window !== "undefined") {
     try {

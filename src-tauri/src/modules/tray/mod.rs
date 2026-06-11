@@ -21,6 +21,31 @@ pub fn set_activation_policy_accessory() {
 }
 
 #[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn tray_set_icon(app: AppHandle, status: String) -> Result<(), String> {
+    let Some(tray) = app.tray_by_id("main-tray") else {
+        return Err("tray not found".to_string());
+    };
+
+    let tooltip = match status.as_str() {
+        "thinking" => "Terax - Thinking...",
+        "speaking" => "Terax - Speaking...",
+        "idle" | _ => "Terax",
+    };
+
+    tray.set_tooltip(Some(tooltip))
+        .map_err(|e| format!("set tooltip failed: {e}"))?;
+
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn tray_set_icon(_app: tauri::AppHandle, _status: String) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
 pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), Box<dyn std::error::Error>> {
     let show = MenuItemBuilder::with_id("show", "Show Terax").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;

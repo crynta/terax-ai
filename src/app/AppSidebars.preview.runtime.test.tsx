@@ -9,15 +9,23 @@ import PreviewWrapper from "../../.forma/preview/wrapper";
 import AppSidebarsPreview from "./AppSidebars.preview.mocks";
 
 vi.mock("@/modules/explorer", () => import("./AppSidebars.preview.panels"));
-vi.mock("@/modules/inbox/components/InboxPanelLazy", () =>
-  import("./AppSidebars.preview.panels"),
+vi.mock(
+  "@/modules/inbox/components/InboxPanelLazy",
+  () => import("./AppSidebars.preview.panels"),
 );
-vi.mock("@/modules/model-compare/ModelComparePanelLazy", () =>
-  import("./AppSidebars.preview.panels"),
+vi.mock(
+  "@/modules/model-compare/ModelComparePanelLazy",
+  () => import("./AppSidebars.preview.panels"),
 );
-vi.mock("@/modules/pi/PiChatPanel", () => import("./AppSidebars.preview.panels"));
+vi.mock(
+  "@/modules/pi/PiChatPanel",
+  () => import("./AppSidebars.preview.panels"),
+);
 vi.mock("@/modules/pi/PiPanel", () => import("./AppSidebars.preview.panels"));
-vi.mock("@/modules/source-control", () => import("./AppSidebars.preview.panels"));
+vi.mock(
+  "@/modules/source-control",
+  () => import("./AppSidebars.preview.panels"),
+);
 
 class ResizeObserverStub {
   observe() {}
@@ -68,7 +76,11 @@ describe("AppSidebars preview runtime", () => {
 
     expect(container.textContent).toContain("Editor workspace");
     expect(container.textContent).toContain("File Explorer");
-    expect(container.querySelector('[data-slot="resizable-panel-group"]')).not.toBeNull();
-    expect(container.querySelector('[data-slot="resizable-handle"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-slot="resizable-panel-group"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-slot="resizable-handle"]'),
+    ).not.toBeNull();
   });
 });

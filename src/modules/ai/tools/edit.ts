@@ -48,10 +48,10 @@ async function applyEdits(
           (e.old_string.length - e.new_string.length || 1) || 0;
       // Recover count via direct search to avoid divide-by-zero edge cases.
       let n = 0;
-      let i = 0;
-      while ((i = before.indexOf(e.old_string, i)) !== -1) {
+      let i = before.indexOf(e.old_string, 0);
+      while (i !== -1) {
         n++;
-        i += e.old_string.length;
+        i = before.indexOf(e.old_string, i + e.old_string.length);
       }
       if (n === 0) {
         return {

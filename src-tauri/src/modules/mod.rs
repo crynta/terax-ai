@@ -1,6 +1,8 @@
 //! Application modules: each sub-module owns a domain (PTY, filesystem, git, Pi AI, etc.) and exposes Tauri IPC commands plus shared state types.
 
 pub mod agent;
+#[cfg(feature = "openclicky")]
+pub mod agents;
 pub mod artifacts;
 pub mod capabilities;
 pub mod capture;
@@ -10,6 +12,8 @@ pub mod mcp;
 pub mod model_compare;
 pub mod net;
 pub mod overlay;
+#[cfg(feature = "openclicky")]
+pub mod voice;
 pub mod pi;
 pub mod proc;
 pub mod pty;

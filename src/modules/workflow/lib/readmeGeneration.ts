@@ -29,9 +29,7 @@ export function generateWorkflowReadme(document: WorkflowDocument): string {
     lines.push("|---|------|------|--------|");
     document.nodes.forEach((node, i) => {
       const status = node.runtimeState.status;
-      lines.push(
-        `| ${i + 1} | ${node.title} | \`${node.type}\` | ${status} |`,
-      );
+      lines.push(`| ${i + 1} | ${node.title} | \`${node.type}\` | ${status} |`);
     });
     lines.push("");
   }
@@ -60,9 +58,7 @@ export function generateWorkflowReadme(document: WorkflowDocument): string {
     lines.push("|------|------|-------|");
     document.variables.forEach((v) => {
       const value =
-        typeof v.value === "string"
-          ? v.value
-          : JSON.stringify(v.value ?? "");
+        typeof v.value === "string" ? v.value : JSON.stringify(v.value ?? "");
       lines.push(`| ${v.name} | ${v.type} | ${value.slice(0, 50)} |`);
     });
     lines.push("");
@@ -75,17 +71,19 @@ export function generateWorkflowReadme(document: WorkflowDocument): string {
     lines.push(`### ${node.title}`);
     lines.push("");
     lines.push(`- **Type:** \`${node.type}\``);
-    lines.push(
-      `- **Position:** (${node.position.x}, ${node.position.y})`,
-    );
+    lines.push(`- **Position:** (${node.position.x}, ${node.position.y})`);
 
     if (node.inputs.length > 0) {
       lines.push("- **Inputs:**");
-      node.inputs.forEach((p) => lines.push(`  - \`${p.id}\` (${p.type}) — ${p.label}`));
+      for (const p of node.inputs) {
+        lines.push(`  - \`${p.id}\` (${p.type}) — ${p.label}`);
+      }
     }
     if (node.outputs.length > 0) {
       lines.push("- **Outputs:**");
-      node.outputs.forEach((p) => lines.push(`  - \`${p.id}\` (${p.type}) — ${p.label}`));
+      for (const p of node.outputs) {
+        lines.push(`  - \`${p.id}\` (${p.type}) — ${p.label}`);
+      }
     }
 
     const configEntries = Object.entries(node.config).filter(

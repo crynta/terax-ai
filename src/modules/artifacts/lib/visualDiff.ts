@@ -58,7 +58,12 @@ export function captureIframeScreenshot(
     };
   }
 
-  return { status: "ok", dataUrl: canvas.toDataURL("image/png"), width: cw, height: ch };
+  return {
+    status: "ok",
+    dataUrl: canvas.toDataURL("image/png"),
+    width: cw,
+    height: ch,
+  };
 }
 
 export type PixelDiffResult = {
@@ -154,7 +159,8 @@ export function pixelDiff(
         height: h,
         mismatchedPixels: mismatched,
         totalPixels: total,
-        mismatchPercent: total > 0 ? Math.round((mismatched / total) * 10000) / 100 : 0,
+        mismatchPercent:
+          total > 0 ? Math.round((mismatched / total) * 10000) / 100 : 0,
       });
     };
 

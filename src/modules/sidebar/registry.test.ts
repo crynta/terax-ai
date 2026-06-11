@@ -10,6 +10,9 @@ describe("sidebar registry", () => {
     expect(sidebarViewItemsForSlot("primary").map((item) => item.id)).toEqual([
       "explorer",
       "source-control",
+      "automation",
+      "agent-manager",
+      "skill-browser",
     ]);
     expect(sidebarViewItemsForSlot("secondary").map((item) => item.id)).toEqual(
       ["code", "chat", "compare", "inbox"],
@@ -18,11 +21,10 @@ describe("sidebar registry", () => {
   });
 
   it("exposes icon metadata for every rail item", () => {
-    expect(sidebarViewMetadataForId("explorer").icon).toBeDefined();
-    expect(sidebarViewMetadataForId("source-control").icon).toBeDefined();
-    expect(sidebarViewMetadataForId("code").icon).toBeDefined();
-    expect(sidebarViewMetadataForId("chat").icon).toBeDefined();
-    expect(sidebarViewMetadataForId("compare").icon).toBeDefined();
-    expect(sidebarViewMetadataForId("inbox").icon).toBeDefined();
+    for (const id of Object.keys(SIDEBAR_VIEW_REGISTRY) as Array<
+      keyof typeof SIDEBAR_VIEW_REGISTRY
+    >) {
+      expect(sidebarViewMetadataForId(id).icon).toBeDefined();
+    }
   });
 });

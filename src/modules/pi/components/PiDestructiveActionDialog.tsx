@@ -12,7 +12,12 @@ import {
 export type PendingPiDestructiveAction =
   | { kind: "stop-runtime" }
   | { kind: "mcp-config"; serverId: string }
-  | { kind: "rollback"; sessionId: string; eventId: string; eventCount: number };
+  | {
+      kind: "rollback";
+      sessionId: string;
+      eventId: string;
+      eventCount: number;
+    };
 
 type PiDestructiveActionDialogProps = {
   action: PendingPiDestructiveAction | null;

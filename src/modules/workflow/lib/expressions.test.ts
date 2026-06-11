@@ -4,10 +4,7 @@ import {
   resolveWorkflowConfigExpressions,
   resolveWorkflowExpressions,
 } from "./expressions";
-import {
-  createStarterWorkflowDocument,
-  type WorkflowDocument,
-} from "./schema";
+import { createStarterWorkflowDocument, type WorkflowDocument } from "./schema";
 
 describe("workflow expressions", () => {
   it("resolves variable references", () => {
@@ -17,9 +14,9 @@ describe("workflow expressions", () => {
         { id: "var_greeting", name: "greeting", type: "text", value: "Hello" },
       ],
     };
-    expect(resolveWorkflowExpressions("Say: {{variables.greeting}}!", doc)).toBe(
-      "Say: Hello!",
-    );
+    expect(
+      resolveWorkflowExpressions("Say: {{variables.greeting}}!", doc),
+    ).toBe("Say: Hello!");
   });
 
   it("resolves node artifact references", () => {
@@ -54,12 +51,12 @@ describe("workflow expressions", () => {
         },
       ],
     };
-    expect(
-      resolveWorkflowExpressions("Hello {{node.node_a}}!", doc),
-    ).toBe("Hello world!");
-    expect(
-      resolveWorkflowExpressions("Hello {{node.node_a.text}}!", doc),
-    ).toBe("Hello world!");
+    expect(resolveWorkflowExpressions("Hello {{node.node_a}}!", doc)).toBe(
+      "Hello world!",
+    );
+    expect(resolveWorkflowExpressions("Hello {{node.node_a.text}}!", doc)).toBe(
+      "Hello world!",
+    );
   });
 
   it("leaves unknown references unchanged", () => {
@@ -67,9 +64,9 @@ describe("workflow expressions", () => {
       id: "wf_unknown",
       title: "Unknown",
     });
-    expect(
-      resolveWorkflowExpressions("{{variables.missing}} stays", doc),
-    ).toBe("{{variables.missing}} stays");
+    expect(resolveWorkflowExpressions("{{variables.missing}} stays", doc)).toBe(
+      "{{variables.missing}} stays",
+    );
   });
 
   it("resolves config object expressions", () => {

@@ -1,6 +1,7 @@
 import CheckListIcon from "@hugeicons/core-free-icons/CheckListIcon";
 import ClaudeIcon from "@hugeicons/core-free-icons/ClaudeIcon";
 import SparklesIcon from "@hugeicons/core-free-icons/SparklesIcon";
+import AiMagicIcon from "@hugeicons/core-free-icons/AiMagicIcon";
 import { usePlanStore } from "../store/planStore";
 
 /**
@@ -65,6 +66,12 @@ export const SLASH_COMMANDS: Record<string, SlashCommandMeta> = {
     label: "Delegate to Claude Code",
     icon: ClaudeIcon,
   },
+  "3d": {
+    name: "3d",
+    invocation: "/3d",
+    label: "Generate 3D model",
+    icon: AiMagicIcon,
+  },
 };
 
 export const TERAX_CMD_RE =
@@ -111,6 +118,16 @@ export function tryRunSlashCommand(input: string): SlashOutcome {
         kind: "send-prompt",
         prompt: claudeCodeDirective(tail),
         commandName: "claude-code",
+      };
+    }
+    case "3d": {
+      if (!tail) {
+        return { kind: "handled", toast: "Usage: /3d <description of model>" };
+      }
+      return {
+        kind: "send-prompt",
+        prompt: `Generate a 3D model based on this description: "${tail}". Use the generate_3d_model tool if available, otherwise describe what the model would look like.`,
+        commandName: "3d",
       };
     }
     default:

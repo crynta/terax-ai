@@ -49,7 +49,7 @@ const PROVIDER_ENV_KEYS: Record<string, string> = {
   "azure-openai-responses": "AZURE_OPENAI_API_KEY",
 
   // Providers not in SDK's native env map (added for compatibility)
-  "openai-codex": "OPENAI_API_KEY",           // Codex uses subscription auth, env key is fallback
+  "openai-codex": "OPENAI_API_KEY", // Codex uses subscription auth, env key is fallback
   perplexity: "PERPLEXITY_API_KEY",
   cohere: "CO_API_KEY",
   ai21: "AI21_API_KEY",
@@ -77,16 +77,20 @@ export const piEnv = {
     // Try env var first
     const envName = PROVIDER_ENV_KEYS[provider];
     if (envName) {
-      const value = await invoke<string | null>("pi_env_api_key", { name: envName });
+      const value = await invoke<string | null>("pi_env_api_key", {
+        name: envName,
+      });
       if (value) return value;
     }
 
     // Fall back to secrets store
     try {
-      return (await invoke<string | null>("secrets_get", {
-        service: "terax-pi",
-        account: `${provider}-api-key`,
-      })) ?? undefined;
+      return (
+        (await invoke<string | null>("secrets_get", {
+          service: "terax-pi",
+          account: `${provider}-api-key`,
+        })) ?? undefined
+      );
     } catch {
       return undefined;
     }
@@ -102,7 +106,11 @@ export const piEnv = {
   },
 
   /** Store an API key in the OS keychain */
-  async setApiKey(service: string, account: string, key: string): Promise<void> {
+  async setApiKey(
+    service: string,
+    account: string,
+    key: string,
+  ): Promise<void> {
     await invoke("secrets_set", { service, account, password: key });
   },
 

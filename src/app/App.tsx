@@ -364,7 +364,7 @@ export default function App() {
       const tabId = newTab(path);
       setTimeout(() => {
         const tab = tabsRef.current.find((x) => x.id === tabId);
-        if (!tab || tab.kind !== "terminal") return;
+        if (tab?.kind !== "terminal") return;
         const term = terminalRefs.current.get(tab.activeLeafId);
         if (!term) return;
         term.write(`cd ${quoteShellArg(path)}
@@ -556,7 +556,7 @@ export default function App() {
       const tab = all.find(
         (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
       );
-      if (!tab || tab.kind !== "terminal") return;
+      if (tab?.kind !== "terminal") return;
       const isLast =
         leafIds(tab.paneTree).length === 1 &&
         all.filter((t) => t.kind === "terminal").length === 1;

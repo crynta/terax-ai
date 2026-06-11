@@ -351,10 +351,7 @@ export const piNative = {
       forkEventId: forkEventId ?? null,
       title: title ?? null,
     }),
-  sessionRollback: (
-    sessionId: string,
-    rollbackEventId: string,
-  ) =>
+  sessionRollback: (sessionId: string, rollbackEventId: string) =>
     invoke<{
       session: PiSessionType;
       removedEventCount: number;

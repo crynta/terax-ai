@@ -4,13 +4,19 @@
 // This stub exists so imports resolve — it should never be called at runtime.
 
 export function readFile(..._args: unknown[]) {
-  throw new Error("fs.readFile not available in browser — use Tauri bridge tools");
+  throw new Error(
+    "fs.readFile not available in browser — use Tauri bridge tools",
+  );
 }
 export function writeFile(..._args: unknown[]) {
-  throw new Error("fs.writeFile not available in browser — use Tauri bridge tools");
+  throw new Error(
+    "fs.writeFile not available in browser — use Tauri bridge tools",
+  );
 }
 export function readdir(..._args: unknown[]) {
-  throw new Error("fs.readdir not available in browser — use Tauri bridge tools");
+  throw new Error(
+    "fs.readdir not available in browser — use Tauri bridge tools",
+  );
 }
 export function stat(..._args: unknown[]) {
   throw new Error("fs.stat not available in browser — use Tauri bridge tools");
@@ -22,19 +28,27 @@ export function rm(..._args: unknown[]) {
   throw new Error("fs.rm not available in browser — use Tauri bridge tools");
 }
 export function access(..._args: unknown[]) {
-  throw new Error("fs.access not available in browser — use Tauri bridge tools");
+  throw new Error(
+    "fs.access not available in browser — use Tauri bridge tools",
+  );
 }
 export function appendFile(..._args: unknown[]) {
-  throw new Error("fs.appendFile not available in browser — use Tauri bridge tools");
+  throw new Error(
+    "fs.appendFile not available in browser — use Tauri bridge tools",
+  );
 }
 export function realpath(..._args: unknown[]) {
-  throw new Error("fs.realpath not available in browser — use Tauri bridge tools");
+  throw new Error(
+    "fs.realpath not available in browser — use Tauri bridge tools",
+  );
 }
 export function lstat(..._args: unknown[]) {
   throw new Error("fs.lstat not available in browser — use Tauri bridge tools");
 }
 export function mkdtemp(..._args: unknown[]) {
-  throw new Error("fs.mkdtemp not available in browser — use Tauri bridge tools");
+  throw new Error(
+    "fs.mkdtemp not available in browser — use Tauri bridge tools",
+  );
 }
 export function open(..._args: unknown[]) {
   throw new Error("fs.open not available in browser — use Tauri bridge tools");

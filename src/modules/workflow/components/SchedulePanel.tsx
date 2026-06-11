@@ -16,11 +16,7 @@ import {
  * Panel for managing scheduled cron jobs.
  * Shown when the schedule trigger node is selected.
  */
-export function SchedulePanel({
-  visible,
-}: {
-  visible: boolean;
-}) {
+export function SchedulePanel({ visible }: { visible: boolean }) {
   const [jobs, setJobs] = useState<ScheduleJob[]>([]);
   const [daemonRunning, setDaemonRunning] = useState(false);
   const [newName, setNewName] = useState("Daily check");
@@ -30,7 +26,9 @@ export function SchedulePanel({
 
   useEffect(() => {
     if (!visible) return;
-    scheduleListJobs().then(setJobs).catch(() => {});
+    scheduleListJobs()
+      .then(setJobs)
+      .catch(() => {});
 
     const unlisten = listenSchedule((trigger) => {
       setRecentTriggers((prev) => [trigger, ...prev.slice(0, 9)]);
@@ -84,9 +82,7 @@ export function SchedulePanel({
   const handleToggle = useCallback(async (id: string, enabled: boolean) => {
     try {
       await scheduleToggleJob(id, enabled);
-      setJobs((prev) =>
-        prev.map((j) => (j.id === id ? { ...j, enabled } : j)),
-      );
+      setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, enabled } : j)));
     } catch {
       // Ignore
     }
@@ -102,13 +98,25 @@ export function SchedulePanel({
       <div className="flex items-center gap-2">
         {daemonRunning ? (
           <>
-            <Badge variant="default" className="text-[10px]">● Running</Badge>
-            <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={handleStopDaemon}>
+            <Badge variant="default" className="text-[10px]">
+              ● Running
+            </Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-[10px]"
+              onClick={handleStopDaemon}
+            >
               Stop Daemon
             </Button>
           </>
         ) : (
-          <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={handleStartDaemon}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px]"
+            onClick={handleStartDaemon}
+          >
             Start Daemon
           </Button>
         )}
@@ -131,13 +139,16 @@ export function SchedulePanel({
             onChange={(e) => setNewCron(e.target.value)}
             placeholder="0 9 * * *"
           />
-          <Button size="sm" variant="default" className="h-7 text-[10px]" onClick={handleAddJob}>
+          <Button
+            size="sm"
+            variant="default"
+            className="h-7 text-[10px]"
+            onClick={handleAddJob}
+          >
             Add
           </Button>
         </div>
-        {error && (
-          <div className="text-destructive text-[10px]">{error}</div>
-        )}
+        {error && <div className="text-destructive text-[10px]">{error}</div>}
       </div>
 
       {/* Job list */}
@@ -157,7 +168,9 @@ export function SchedulePanel({
                 />
                 <div className="flex flex-col">
                   <span className="text-[10px] font-medium">{job.name}</span>
-                  <span className="font-mono text-muted-foreground text-[9px]">{job.cron_expression}</span>
+                  <span className="font-mono text-muted-foreground text-[9px]">
+                    {job.cron_expression}
+                  </span>
                 </div>
               </div>
               <Button
@@ -172,19 +185,28 @@ export function SchedulePanel({
           ))}
         </div>
       ) : (
-        <div className="text-muted-foreground text-[10px] italic">No scheduled jobs</div>
+        <div className="text-muted-foreground text-[10px] italic">
+          No scheduled jobs
+        </div>
       )}
 
       {/* Recent triggers */}
       {recentTriggers.length > 0 && (
         <div>
-          <h4 className="mb-1 text-muted-foreground text-[10px] uppercase tracking-wider">Recent Triggers</h4>
+          <h4 className="mb-1 text-muted-foreground text-[10px] uppercase tracking-wider">
+            Recent Triggers
+          </h4>
           <div className="flex flex-col gap-1 max-h-32 overflow-y-auto">
             {recentTriggers.map((t, i) => (
-              <div key={i} className="rounded border border-border/40 bg-muted/10 px-2 py-1">
+              <div
+                key={i}
+                className="rounded border border-border/40 bg-muted/10 px-2 py-1"
+              >
                 <div className="flex items-center gap-2">
                   <span className="text-[10px]">{t.name}</span>
-                  <span className="text-muted-foreground text-[9px]">{t.fired_at.slice(11, 19)}</span>
+                  <span className="text-muted-foreground text-[9px]">
+                    {t.fired_at.slice(11, 19)}
+                  </span>
                 </div>
               </div>
             ))}

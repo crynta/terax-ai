@@ -39,7 +39,11 @@ export async function extractVideoThumbnail(
     function onLoaded() {
       // Seek to offset (default 1s to skip black frames)
       // Handle zero/invalid duration
-      if (!video.duration || !isFinite(video.duration) || video.duration < 0.1) {
+      if (
+        !video.duration ||
+        !Number.isFinite(video.duration) ||
+        video.duration < 0.1
+      ) {
         // Very short or unknown duration — seek to start
         video.currentTime = 0;
       } else {
@@ -116,7 +120,7 @@ export async function extractVideoStoryboard(
     }
 
     function onMeta() {
-      if (!video.duration || !isFinite(video.duration)) {
+      if (!video.duration || !Number.isFinite(video.duration)) {
         cleanup();
         resolve([]);
         return;

@@ -34,7 +34,9 @@ export function workflowToSvg(document: WorkflowDocument): string {
   const parts: string[] = [];
 
   // Background
-  parts.push(`<rect width="${width}" height="${height}" fill="#fafafa" rx="8" />`);
+  parts.push(
+    `<rect width="${width}" height="${height}" fill="#fafafa" rx="8" />`,
+  );
 
   // Title
   parts.push(
@@ -102,17 +104,13 @@ export function workflowToSvg(document: WorkflowDocument): string {
     // Input ports (left)
     node.inputs.forEach((_port, i) => {
       const py = y + 14 + i * 16;
-      parts.push(
-        `<circle cx="${x}" cy="${py}" r="4" fill="#6366f1" />`,
-      );
+      parts.push(`<circle cx="${x}" cy="${py}" r="4" fill="#6366f1" />`);
     });
 
     // Output ports (right)
     node.outputs.forEach((_port, i) => {
       const py = y + 14 + i * 16;
-      parts.push(
-        `<circle cx="${x + w}" cy="${py}" r="4" fill="#6366f1" />`,
-      );
+      parts.push(`<circle cx="${x + w}" cy="${py}" r="4" fill="#6366f1" />`);
     });
   }
 

@@ -1,11 +1,11 @@
 import type { ReactNode, RefObject } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
+import { AutomationPanel } from "@/modules/ai/components/AutomationPanel";
+import { AgentManager } from "@/modules/ai/components/AgentManager";
+import { SkillBrowser } from "@/modules/ai/components/SkillBrowser";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import { InboxPanel } from "@/modules/inbox/components/InboxPanelLazy";
-import {
-  type InboxRow,
-  type InboxUnreadCounts,
-} from "@/modules/inbox/lib/model";
+import type { InboxRow, InboxUnreadCounts } from "@/modules/inbox/lib/model";
 import { ModelComparePanel } from "@/modules/model-compare/ModelComparePanelLazy";
 import type { PiLocalAgentLaunchRequest } from "@/modules/pi/lib/local-agents";
 import type { PiChatFocusRequest } from "@/modules/pi/PiChatPanel";
@@ -93,20 +93,32 @@ export function AppSidebars({
   sidebarPosition,
   workspace,
 }: AppSidebarsProps) {
-  const renderPrimaryPanelContent = () =>
-    primary.activeView === "explorer" ? (
-      <FileExplorer
-        ref={primary.explorerRef}
-        rootPath={primary.rootPath}
-        activeFilePath={primary.activeFilePath}
-        onOpenFile={primary.onOpenFile}
-        onPathRenamed={primary.onPathRenamed}
-        onPathDeleted={primary.onPathDeleted}
-        onRevealInTerminal={primary.onRevealInTerminal}
-        onAttachToAgent={primary.onAttachFileToAgent}
-        onOpenMarkdownPreview={primary.onOpenMarkdownPreview}
-      />
-    ) : (
+  const renderPrimaryPanelContent = () => {
+    if (primary.activeView === "explorer") {
+      return (
+        <FileExplorer
+          ref={primary.explorerRef}
+          rootPath={primary.rootPath}
+          activeFilePath={primary.activeFilePath}
+          onOpenFile={primary.onOpenFile}
+          onPathRenamed={primary.onPathRenamed}
+          onPathDeleted={primary.onPathDeleted}
+          onRevealInTerminal={primary.onRevealInTerminal}
+          onAttachToAgent={primary.onAttachFileToAgent}
+          onOpenMarkdownPreview={primary.onOpenMarkdownPreview}
+        />
+      );
+    }
+    if (primary.activeView === "automation") {
+      return <AutomationPanel open />;
+    }
+    if (primary.activeView === "agent-manager") {
+      return <AgentManager open />;
+    }
+    if (primary.activeView === "skill-browser") {
+      return <SkillBrowser open />;
+    }
+    return (
       <SourceControlPanel
         open
         sourceControl={primary.sourceControl}
@@ -115,6 +127,7 @@ export function AppSidebars({
         onOpenFile={primary.onOpenFile}
       />
     );
+  };
 
   const renderSecondaryPanelContent = () => {
     if (secondary.activeView === "code") {

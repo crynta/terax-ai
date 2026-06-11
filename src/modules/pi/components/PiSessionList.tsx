@@ -117,17 +117,23 @@ export function filterPiSessions(
  * Truncated to ~500 chars per session to keep search fast.
  */
 export function buildSessionKeywordIndex(
-  events: Array<{ sessionId: string; type: string; payload?: Record<string, unknown> }>,
+  events: Array<{
+    sessionId: string;
+    type: string;
+    payload?: Record<string, unknown>;
+  }>,
 ): Map<string, string> {
   const index = new Map<string, string>();
   const MAX_LEN = 500;
   for (const event of events) {
-    if (event.type !== "session.input" && event.type !== "session.output.text") continue;
-    const text = typeof event.payload?.text === "string" ? event.payload.text : "";
+    if (event.type !== "session.input" && event.type !== "session.output.text")
+      continue;
+    const text =
+      typeof event.payload?.text === "string" ? event.payload.text : "";
     if (!text) continue;
     const existing = index.get(event.sessionId) ?? "";
     if (existing.length >= MAX_LEN) continue;
-    const appended = existing ? existing + " " + text : text;
+    const appended = existing ? `${existing} ${text}` : text;
     index.set(event.sessionId, appended.slice(0, MAX_LEN));
   }
   return index;
@@ -285,7 +291,11 @@ export function PiSessionList({
               size="xs"
               variant={showArchived ? "default" : "outline"}
               className="h-5 rounded-md px-1.5 text-[9.5px]"
-              aria-label={showArchived ? "Hide archived sessions" : `Show ${archivedSessions.length} archived session${archivedSessions.length !== 1 ? "s" : ""}`}
+              aria-label={
+                showArchived
+                  ? "Hide archived sessions"
+                  : `Show ${archivedSessions.length} archived session${archivedSessions.length !== 1 ? "s" : ""}`
+              }
               onClick={() => setShowArchived((prev) => !prev)}
             >
               <HugeiconsIcon

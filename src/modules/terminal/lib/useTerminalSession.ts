@@ -97,7 +97,7 @@ export function whenSessionReady(
 
 export function writeToSession(leafId: number, data: string): boolean {
   const s = sessions.get(leafId);
-  if (!s || !s.pty) return false;
+  if (!s?.pty) return false;
   void s.pty.write(data);
   return true;
 }

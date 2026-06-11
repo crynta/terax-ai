@@ -71,8 +71,7 @@ const SHELL_TOOL_NAMES = new Set(["bash_run", "bash", "shell"]);
 function extractFilePath(input: unknown): string | null {
   if (!input || typeof input !== "object") return null;
   const obj = input as Record<string, unknown>;
-  const raw =
-    obj.path ?? obj.file_path ?? obj.filePath ?? obj.file ?? null;
+  const raw = obj.path ?? obj.file_path ?? obj.filePath ?? obj.file ?? null;
   return typeof raw === "string" && raw.length > 0 ? raw : null;
 }
 
@@ -244,7 +243,6 @@ export function computeTurnDiff(
       }
 
       toolStarts.delete(callId);
-      continue;
     }
   }
 
@@ -289,7 +287,9 @@ export function computeTurnDiff(
 export function turnDiffSummaryLabel(diff: PiTurnDiff): string | null {
   const parts: string[] = [];
   if (diff.files.length > 0) {
-    parts.push(`${diff.files.length} file${diff.files.length !== 1 ? "s" : ""}`);
+    parts.push(
+      `${diff.files.length} file${diff.files.length !== 1 ? "s" : ""}`,
+    );
   }
   if (diff.commands.length > 0) {
     parts.push(

@@ -14,7 +14,9 @@ export function exportWorkflowMarkdown(document: WorkflowDocument): string {
   lines.push(`**Nodes:** ${document.nodes.length}`);
   lines.push(`**Connections:** ${document.edges.length}`);
   if (document.variables.length > 0) {
-    lines.push(`**Variables:** ${document.variables.map((v) => v.name).join(", ")}`);
+    lines.push(
+      `**Variables:** ${document.variables.map((v) => v.name).join(", ")}`,
+    );
   }
   lines.push("");
 
@@ -43,9 +45,10 @@ export function exportWorkflowMarkdown(document: WorkflowDocument): string {
       for (const key of configKeys) {
         const val = node.config[key];
         if (val !== undefined && val !== "") {
-          const display = typeof val === "string" && val.length > 100
-            ? val.slice(0, 100) + "\u2026"
-            : String(val);
+          const display =
+            typeof val === "string" && val.length > 100
+              ? `${val.slice(0, 100)}\u2026`
+              : String(val);
           lines.push(`  - \`${key}\`: ${display}`);
         }
       }

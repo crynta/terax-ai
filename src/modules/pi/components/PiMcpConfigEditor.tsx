@@ -108,7 +108,9 @@ export function McpConfigEditor({
         </FieldSet>
 
         <FieldGroup className="grid grid-cols-2 gap-1.5">
-          <Field data-disabled={disabled || editingId !== null ? true : undefined}>
+          <Field
+            data-disabled={disabled || editingId !== null ? true : undefined}
+          >
             <FieldLabel
               htmlFor={fieldId("id")}
               className="text-[10px] text-muted-foreground"

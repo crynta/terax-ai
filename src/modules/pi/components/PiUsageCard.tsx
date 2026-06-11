@@ -29,10 +29,7 @@ export function PiUsageCard({
   sessionId,
   collapsed: collapsedProp,
   onCollapsedChange,
-}: Pick<
-  PiSectionShellProps,
-  "collapsed" | "disabled" | "onCollapsedChange"
-> & {
+}: Pick<PiSectionShellProps, "collapsed" | "disabled" | "onCollapsedChange"> & {
   sessionId: string | null;
 }) {
   const [summary, setSummary] = useState<PiUsageSummary | null>(null);
@@ -62,20 +59,30 @@ export function PiUsageCard({
    */
   const effectiveSummary = useMemo(() => {
     if (!summary) return null;
-    const hasTokens = summary.totalInputTokens > 0 || summary.totalOutputTokens > 0;
+    const hasTokens =
+      summary.totalInputTokens > 0 || summary.totalOutputTokens > 0;
     // Only re-estimate when: no cost was computed AND tokens were used AND we have per-model data.
     // This handles sidecar sessions where costUsd is null (becomes 0 after Rust unwrap_or).
     // For legitimately free models, estimateCost returns null → cost stays 0.
     // Note: We cannot distinguish "cost not computed" from "legitimately $0" from the summary alone,
     // so we re-estimate conservatively — estimateCost returns null for unknown/free models.
-    if (summary.totalCostUsd > 0 || !hasTokens || !summary.byModel || summary.byModel.length === 0) return summary;
+    if (
+      summary.totalCostUsd > 0 ||
+      !hasTokens ||
+      !summary.byModel ||
+      summary.byModel.length === 0
+    )
+      return summary;
 
     // Check if ANY model has a non-null cost estimate — if so, the cost was computed
-    const anyEstimated = summary.byModel.some((model) => estimateCost(model.modelId, {
-      inputTokens: model.inputTokens,
-      outputTokens: model.outputTokens,
-      cachedInputTokens: model.cachedInputTokens,
-    }) !== null);
+    const anyEstimated = summary.byModel.some(
+      (model) =>
+        estimateCost(model.modelId, {
+          inputTokens: model.inputTokens,
+          outputTokens: model.outputTokens,
+          cachedInputTokens: model.cachedInputTokens,
+        }) !== null,
+    );
     if (!anyEstimated) return summary; // All models unknown/free — can't estimate
 
     // Re-estimate from per-model token counts
@@ -101,7 +108,10 @@ export function PiUsageCard({
       collapsed={collapsedProp}
       summary={
         <span className="text-[9.5px] text-muted-foreground">
-          {formatTokenCount(effectiveSummary.totalInputTokens + effectiveSummary.totalOutputTokens)}{" "}
+          {formatTokenCount(
+            effectiveSummary.totalInputTokens +
+              effectiveSummary.totalOutputTokens,
+          )}{" "}
           tokens · {formatCost(effectiveSummary.totalCostUsd)}
         </span>
       }

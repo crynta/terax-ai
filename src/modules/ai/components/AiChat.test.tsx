@@ -294,12 +294,16 @@ describe("AiChatView agent timeline", () => {
     await act(async () => {
       header?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(container.querySelector("[data-testid='agent-run-timeline-body']")).toBeNull();
+    expect(
+      container.querySelector("[data-testid='agent-run-timeline-body']"),
+    ).toBeNull();
 
     await act(async () => {
       header?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(container.querySelector("[data-testid='agent-run-timeline-body']")).not.toBeNull();
+    expect(
+      container.querySelector("[data-testid='agent-run-timeline-body']"),
+    ).not.toBeNull();
 
     act(() => {
       root.unmount();
@@ -385,7 +389,9 @@ describe("AiChatView agent timeline", () => {
     expect(latestFailedToggle).not.toBeNull();
 
     await act(async () => {
-      latestFailedToggle?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      latestFailedToggle?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
     });
 
     expect(

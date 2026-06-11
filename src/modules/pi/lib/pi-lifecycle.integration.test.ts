@@ -35,7 +35,14 @@ vi.mock("@/modules/pi/bridge/pi-skills", () => ({
 
 // Mock estimateCost
 vi.mock("@/modules/ai/config", () => ({
-  estimateCost: (modelId: string | undefined, usage: { inputTokens: number; outputTokens: number; cachedInputTokens: number }) => {
+  estimateCost: (
+    modelId: string | undefined,
+    usage: {
+      inputTokens: number;
+      outputTokens: number;
+      cachedInputTokens: number;
+    },
+  ) => {
     if (!modelId) return null;
     // Only return cost for known models
     if (!modelId.startsWith("claude-")) return null;
@@ -63,7 +70,10 @@ function createMockAgent() {
   };
 }
 
-function extractEventsByType(events: PiSessionEvent[], type: string): PiSessionEvent[] {
+function extractEventsByType(
+  events: PiSessionEvent[],
+  type: string,
+): PiSessionEvent[] {
   return events.filter((e) => e.type === type);
 }
 
@@ -94,7 +104,8 @@ describe("Pi session lifecycle integration", () => {
 
   describe("archive → restore lifecycle", () => {
     it("archives and restores a session via Rust backend", async () => {
-      const { session } = await webviewSession.webviewSessionCreate("Archive Test");
+      const { session } =
+        await webviewSession.webviewSessionCreate("Archive Test");
 
       // Verify session exists and is not archived
       expect(session.archivedAt).toBeUndefined();
@@ -110,21 +121,27 @@ describe("Pi session lifecycle integration", () => {
       const { session } = await webviewSession.webviewSessionCreate(
         "Usage Test",
         "/workspace",
-        { provider: "anthropic", modelId: "claude-sonnet-4-20250514" } as unknown as import("@/modules/pi/lib/provider").PiProviderRuntimeConfig,
+        {
+          provider: "anthropic",
+          modelId: "claude-sonnet-4-20250514",
+        } as unknown as import("@/modules/pi/lib/provider").PiProviderRuntimeConfig,
       );
 
       // Simulate a send that produces usage data
       agent.prompt.mockImplementation(async () => {
         // Agent emits usage event during the stream
-        agent._emit({
-          type: "agent_end",
-          totalUsage: {
-            inputTokens: 1000,
-            outputTokens: 500,
-            inputTokenDetails: { cacheReadTokens: 200 },
+        agent._emit(
+          {
+            type: "agent_end",
+            totalUsage: {
+              inputTokens: 1000,
+              outputTokens: 500,
+              inputTokenDetails: { cacheReadTokens: 200 },
+            },
+            messages: [],
           },
-          messages: [],
-        }, {});
+          {},
+        );
       });
 
       const result = await webviewSession.webviewSessionSend(
@@ -158,15 +175,21 @@ describe("Pi session lifecycle integration", () => {
       const { session } = await webviewSession.webviewSessionCreate(
         "Unknown Model",
         "/workspace",
-        { provider: "custom", modelId: "unknown-model-xyz" } as unknown as import("@/modules/pi/lib/provider").PiProviderRuntimeConfig,
+        {
+          provider: "custom",
+          modelId: "unknown-model-xyz",
+        } as unknown as import("@/modules/pi/lib/provider").PiProviderRuntimeConfig,
       );
 
       agent.prompt.mockImplementation(async () => {
-        agent._emit({
-          type: "agent_end",
-          totalUsage: { inputTokens: 100, outputTokens: 50 },
-          messages: [],
-        }, {});
+        agent._emit(
+          {
+            type: "agent_end",
+            totalUsage: { inputTokens: 100, outputTokens: 50 },
+            messages: [],
+          },
+          {},
+        );
       });
 
       await webviewSession.webviewSessionSend(session.id, "Hello", null);
@@ -186,40 +209,56 @@ describe("Pi session lifecycle integration", () => {
       const agent = createMockAgent();
       mockCreateTauriAgent.mockResolvedValueOnce(agent);
 
-      const { session } = await webviewSession.webviewSessionCreate("TurnDiff Test");
+      const { session } =
+        await webviewSession.webviewSessionCreate("TurnDiff Test");
 
       agent.prompt.mockImplementation(async () => {
         // Simulate tool usage via SDK event types
-        agent._emit({
-          type: "tool_execution_start",
-          toolCallId: "call_1",
-          toolName: "read",
-          args: { path: "/workspace/foo.ts" },
-        }, {});
-        agent._emit({
-          type: "tool_execution_end",
-          toolCallId: "call_1",
-          toolName: "read",
-          result: "file contents",
-          isError: false,
-        }, {});
+        agent._emit(
+          {
+            type: "tool_execution_start",
+            toolCallId: "call_1",
+            toolName: "read",
+            args: { path: "/workspace/foo.ts" },
+          },
+          {},
+        );
+        agent._emit(
+          {
+            type: "tool_execution_end",
+            toolCallId: "call_1",
+            toolName: "read",
+            result: "file contents",
+            isError: false,
+          },
+          {},
+        );
         // End with usage
-        agent._emit({
-          type: "agent_end",
-          totalUsage: { inputTokens: 500, outputTokens: 200 },
-          messages: [],
-        }, {});
+        agent._emit(
+          {
+            type: "agent_end",
+            totalUsage: { inputTokens: 500, outputTokens: 200 },
+            messages: [],
+          },
+          {},
+        );
       });
 
       await webviewSession.webviewSessionSend(session.id, "Read foo.ts", null);
 
       const events = emittedEvents();
-      const turnDiffEvents = extractEventsByType(events, PI_SESSION_EVENT.TurnDiff);
+      const turnDiffEvents = extractEventsByType(
+        events,
+        PI_SESSION_EVENT.TurnDiff,
+      );
       expect(turnDiffEvents.length).toBeGreaterThanOrEqual(1);
 
       const diffPayload = turnDiffEvents[0].payload as Record<string, unknown>;
       expect(diffPayload.files).toBeDefined();
-      const files = diffPayload.files as Array<{ path: string; action: string }>;
+      const files = diffPayload.files as Array<{
+        path: string;
+        action: string;
+      }>;
       expect(files.length).toBeGreaterThanOrEqual(1);
       expect(files[0].path).toContain("foo.ts");
     });
@@ -228,21 +267,28 @@ describe("Pi session lifecycle integration", () => {
       const agent = createMockAgent();
       mockCreateTauriAgent.mockResolvedValueOnce(agent);
 
-      const { session } = await webviewSession.webviewSessionCreate("Empty TurnDiff");
+      const { session } =
+        await webviewSession.webviewSessionCreate("Empty TurnDiff");
 
       agent.prompt.mockImplementation(async () => {
         // End with no tools, no files, just usage
-        agent._emit({
-          type: "agent_end",
-          totalUsage: { inputTokens: 100, outputTokens: 50 },
-          messages: [],
-        }, {});
+        agent._emit(
+          {
+            type: "agent_end",
+            totalUsage: { inputTokens: 100, outputTokens: 50 },
+            messages: [],
+          },
+          {},
+        );
       });
 
       await webviewSession.webviewSessionSend(session.id, "Hello", null);
 
       const events = emittedEvents();
-      const turnDiffEvents = extractEventsByType(events, PI_SESSION_EVENT.TurnDiff);
+      const turnDiffEvents = extractEventsByType(
+        events,
+        PI_SESSION_EVENT.TurnDiff,
+      );
       // Should still emit turn_diff because it has usage
       expect(turnDiffEvents.length).toBeGreaterThanOrEqual(1);
     });
@@ -270,23 +316,34 @@ describe("Pi session lifecycle integration", () => {
       const agent = createMockAgent();
       mockCreateTauriAgent.mockResolvedValueOnce(agent);
 
-      const { session } = await webviewSession.webviewSessionCreate("Concurrent Test");
+      const { session } =
+        await webviewSession.webviewSessionCreate("Concurrent Test");
 
       // Make the first send hang (never resolves)
       let resolvePrompt: () => void;
       agent.prompt.mockImplementation(async () => {
         agent.state.isStreaming = true;
-        await new Promise<void>((resolve) => { resolvePrompt = resolve; });
+        await new Promise<void>((resolve) => {
+          resolvePrompt = resolve;
+        });
       });
 
       // Start first send
-      const sendPromise = webviewSession.webviewSessionSend(session.id, "Hello", null);
+      const sendPromise = webviewSession.webviewSessionSend(
+        session.id,
+        "Hello",
+        null,
+      );
 
       // Wait a tick so the first send starts
       await new Promise((r) => setTimeout(r, 10));
 
       // Try second send while first is running
-      const result = await webviewSession.webviewSessionSend(session.id, "Hello again", null);
+      const result = await webviewSession.webviewSessionSend(
+        session.id,
+        "Hello again",
+        null,
+      );
       expect(result.accepted).toBe(false);
 
       // Clean up
@@ -301,7 +358,8 @@ describe("Pi session lifecycle integration", () => {
       const agent = createMockAgent();
       mockCreateTauriAgent.mockResolvedValueOnce(agent);
 
-      const { session } = await webviewSession.webviewSessionCreate("Stop Test");
+      const { session } =
+        await webviewSession.webviewSessionCreate("Stop Test");
 
       const result = await webviewSession.webviewSessionStop(session.id);
 
@@ -311,7 +369,9 @@ describe("Pi session lifecycle integration", () => {
       // Verify a Status event was returned in the result
       expect(result.events).toHaveLength(1);
       expect(result.events[0].type).toBe(PI_SESSION_EVENT.Status);
-      expect((result.events[0].payload as Record<string, unknown>).status).toBe("stopped");
+      expect((result.events[0].payload as Record<string, unknown>).status).toBe(
+        "stopped",
+      );
     });
   });
 });

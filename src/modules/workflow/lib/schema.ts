@@ -857,7 +857,7 @@ export function validateSubgraphDepth(
     if (visited.has(id)) return;
     visited.add(id);
     const node = document.nodes.find((n) => n.id === id);
-    if (!node || node.type !== "subgraph") return;
+    if (node?.type !== "subgraph") return;
     if (depth > maxDepth) {
       errors.push(
         `Subgraph nesting exceeds maximum depth (${maxDepth}) at node ${id}`,
@@ -881,10 +881,7 @@ export function workflowConnectionWarnings(
   const nodeIds = new Set(document.nodes.map((n) => n.id));
   const nodeInputs = new Map<string, Set<string>>();
   for (const node of document.nodes) {
-    nodeInputs.set(
-      node.id,
-      new Set(node.inputs.map((p) => p.id)),
-    );
+    nodeInputs.set(node.id, new Set(node.inputs.map((p) => p.id)));
   }
   const connectedInputs = new Map<string, Set<string>>();
   for (const edge of document.edges) {
@@ -923,9 +920,7 @@ export function formatDuration(ms: number): string {
   return `${minutes}m ${remaining}s`;
 }
 
-export function nodeExecutionDuration(
-  node: WorkflowNode,
-): number {
+export function nodeExecutionDuration(node: WorkflowNode): number {
   const logs = node.runtimeState.logs ?? [];
   const started = logs.find((l) => l.event === "running");
   const completed = logs.find(

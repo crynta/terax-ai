@@ -127,9 +127,7 @@ function resolveExpressions(
 
 function artifactTextValue(artifact: WorkflowArtifact | undefined): string {
   if (!artifact) return "";
-  return typeof artifact.value === "string"
-    ? artifact.value
-    : artifact.preview;
+  return typeof artifact.value === "string" ? artifact.value : artifact.preview;
 }
 
 function evaluateCondition(
@@ -422,8 +420,7 @@ function createGetVariableArtifacts(
 ): WorkflowArtifact[] {
   const varName = String(node.config.variableName ?? "");
   const variable = document.variables.find((v) => v.name === varName);
-  const value =
-    variable?.value !== undefined ? String(variable.value) : "";
+  const value = variable?.value !== undefined ? String(variable.value) : "";
 
   const output = node.outputs[0];
   return [
@@ -502,7 +499,12 @@ export function executeWorkflowStep(
         } else {
           updatedVariables = [
             ...updatedVariables,
-            { id: `var_${varName}`, name: varName, type: "text" as const, value },
+            {
+              id: `var_${varName}`,
+              name: varName,
+              type: "text" as const,
+              value,
+            },
           ];
         }
       }

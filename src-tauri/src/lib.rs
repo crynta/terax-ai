@@ -17,10 +17,14 @@ pub mod modules;
 
 use modules::{
     agent, artifacts, capture, fs, git, mcp, model_compare, net, overlay, pi, pty, secrets, shell,
-    workspace,
+    skills, workspace,
 };
+#[cfg(feature = "openclicky")]
+use modules::{agents, voice};
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 use modules::tray;
+#[cfg(feature = "workflow")]
+use modules::schedule;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -139,6 +143,14 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(feature = "openclicky")]
+    let args: Vec<String> = std::env::args().collect();
+    #[cfg(feature = "openclicky")]
+    if args.iter().any(|a| a == "--mcp-server") {
+        mcp::cli::run_stdio_server();
+        return;
+    }
+
     #[cfg(all(target_os = "macos", feature = "openclicky"))]
     tray::set_activation_policy_accessory();
 
@@ -168,7 +180,37 @@ pub fn run() {
 
     #[cfg(feature = "openclicky")]
     {
-        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+        builder = builder.plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, event, event_state| {
+                    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+                    let shortcut_def = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+                    if event == &shortcut_def {
+                        match event_state.state {
+                            ShortcutState::Pressed => {
+                                let _ = app.emit("voice-ptt-start", ());
+                            }
+                            ShortcutState::Released => {
+                                let _ = app.emit("voice-ptt-stop", ());
+                            }
+                        }
+                    }
+                })
+                .build(),
+        );
+    }
+
+    #[cfg(feature = "workflow")]
+    {
+        builder = builder.manage(schedule::ScheduleState::default());
+    }
+
+    #[cfg(feature = "openclicky")]
+    {
+        builder = builder
+            .manage(voice::VoiceState::default())
+            .manage(voice::ptt::PttState::new())
+            .manage(agents::lease::FileLeaseCoordinator::new());
     }
 
     if let Err(error) = builder
@@ -176,6 +218,14 @@ pub fn run() {
             #[cfg(all(target_os = "macos", feature = "openclicky"))]
             if let Err(e) = tray::setup_tray(_app.handle()) {
                 log::warn!("tray setup failed (non-fatal, continuing with dock icon): {e}");
+            }
+
+            #[cfg(feature = "workflow")]
+            {
+                let handle = _app.handle().clone();
+                tokio::spawn(async move {
+                    schedule::auto_start_if_needed(&handle).await;
+                });
             }
 
             #[cfg(target_os = "macos")]
@@ -198,6 +248,7 @@ pub fn run() {
         })
         .manage(pty::PtyState::default())
         .manage(pi::PiState::default())
+        .manage(pi::PiAgentToolState::default())
         .manage(Arc::new(mcp::McpState::default()))
         .manage(artifacts::ArtifactsState::default())
         .manage(shell::ShellState::default())
@@ -216,6 +267,7 @@ pub fn run() {
         .manage(LaunchDir(Mutex::new(cli_dir)))
         .manage(overlay::OverlayState::default())
         .manage(capture::CaptureState::default())
+        .manage(skills::SkillsState::default())
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -251,6 +303,10 @@ pub fn run() {
             pi::pi_store_record_transcript,
             pi::pi_store_load_transcript,
             pi::pi_store_delete_transcript,
+            pi::pi_agent_tool_execute,
+            pi::pi_approval_grant,
+            pi::pi_agent_session_forget,
+            pi::pi_agent_tool_audit,
             mcp::mcp_server_configs_list,
             mcp::mcp_server_config_save,
             mcp::mcp_server_config_remove,
@@ -370,7 +426,75 @@ pub fn run() {
             #[cfg(feature = "openclicky")]
             overlay::overlay_hide,
             #[cfg(feature = "openclicky")]
+            overlay::overlay_draw,
+            #[cfg(feature = "openclicky")]
+            overlay::overlay_clear,
+            #[cfg(feature = "openclicky")]
+            overlay::overlay_get_annotations,
+            #[cfg(feature = "openclicky")]
             capture::capture_screen,
+            #[cfg(feature = "openclicky")]
+            capture::list_windows,
+            #[cfg(feature = "openclicky")]
+            capture::three_d::generate_3d_model,
+            #[cfg(feature = "openclicky")]
+            voice::tts_speak,
+            #[cfg(feature = "openclicky")]
+            voice::tts_stop,
+            #[cfg(feature = "openclicky")]
+            voice::tts_status,
+            #[cfg(feature = "openclicky")]
+            voice::transcribe_audio,
+            #[cfg(feature = "openclicky")]
+            voice::wake_word::wake_word_start,
+            #[cfg(feature = "openclicky")]
+            voice::wake_word::wake_word_detected,
+            #[cfg(feature = "openclicky")]
+            voice::wake_word::wake_word_stop,
+            #[cfg(feature = "openclicky")]
+            voice::wake_word::wake_word_status,
+            #[cfg(feature = "openclicky")]
+            voice::ptt::ptt_register,
+            #[cfg(feature = "openclicky")]
+            voice::ptt::ptt_unregister,
+            #[cfg(feature = "openclicky")]
+            tray::tray_set_icon,
+            #[cfg(feature = "openclicky")]
+            agents::agent_list,
+            #[cfg(feature = "openclicky")]
+            agents::agent_load,
+            #[cfg(feature = "openclicky")]
+            agents::agent_save,
+            #[cfg(feature = "openclicky")]
+            agents::agent_delete,
+            #[cfg(feature = "openclicky")]
+            agents::agent_memory_read,
+            #[cfg(feature = "openclicky")]
+            agents::agent_memory_append,
+            #[cfg(feature = "openclicky")]
+            agents::migrator::agents_import_openclicky,
+            #[cfg(feature = "openclicky")]
+            agents::lease::file_lease_acquire,
+            #[cfg(feature = "openclicky")]
+            agents::lease::file_lease_release,
+            #[cfg(feature = "openclicky")]
+            agents::lease::file_lease_status,
+            #[cfg(feature = "openclicky")]
+            skills::skill_list,
+            #[cfg(feature = "openclicky")]
+            skills::skill_status,
+            #[cfg(feature = "workflow")]
+            schedule::schedule_add_job,
+            #[cfg(feature = "workflow")]
+            schedule::schedule_remove_job,
+            #[cfg(feature = "workflow")]
+            schedule::schedule_toggle_job,
+            #[cfg(feature = "workflow")]
+            schedule::schedule_list_jobs,
+            #[cfg(feature = "workflow")]
+            schedule::schedule_start_daemon,
+            #[cfg(feature = "workflow")]
+            schedule::schedule_stop_daemon,
         ])
         .run(tauri::generate_context!())
     {

@@ -1,12 +1,13 @@
 import AiScanIcon from "@hugeicons/core-free-icons/AiScanIcon";
 import InformationCircleIcon from "@hugeicons/core-free-icons/InformationCircleIcon";
 import KeyboardIcon from "@hugeicons/core-free-icons/KeyboardIcon";
+import Speaker01Icon from "@hugeicons/core-free-icons/Speaker01Icon";
 import PaintBoardIcon from "@hugeicons/core-free-icons/PaintBoardIcon";
 import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
 import UserMultiple02Icon from "@hugeicons/core-free-icons/UserMultiple02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { JSX, useEffect, useState } from "react";
+import { type JSX, useEffect, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
@@ -18,6 +19,7 @@ import { GeneralSection } from "./sections/GeneralSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { ThemesSection } from "./sections/ThemesSection";
+import { VoiceSettings } from "@/modules/ai/components/VoiceSettings";
 
 const TABS: {
   id: SettingsTab;
@@ -51,6 +53,12 @@ const TABS: {
     component: AgentsSection,
   },
   {
+    id: "voice",
+    label: "Voice",
+    icon: Speaker01Icon,
+    component: VoiceSettings,
+  },
+  {
     id: "about",
     label: "About",
     icon: InformationCircleIcon,
@@ -64,6 +72,7 @@ const VALID_TABS: SettingsTab[] = [
   "shortcuts",
   "models",
   "agents",
+  "voice",
   "about",
 ];
 

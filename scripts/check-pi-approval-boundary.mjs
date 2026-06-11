@@ -192,6 +192,39 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
       "docs/pi-sidebar-verification.md",
       ["rust-mediated", "PI_APPROVAL_NOT_FOUND"],
     ],
+    // Webview agent enforcement path (the live, default runtime). The webview
+    // proposes; Rust disposes. These rules fail CI if the verified-executor
+    // routing, the approval grant, or the Rust enforcement is removed.
+    [
+      "src-tauri/src/modules/pi/agent_tools.rs",
+      [
+        "pub fn pi_agent_tool_execute",
+        "pub fn pi_approval_grant",
+        "authorize_spawn_cwd",
+        "evaluate_tool_policy",
+        "CapabilityAuditOutcome::Blocked",
+      ],
+    ],
+    [
+      "src/modules/pi/bridge/pi-tools.ts",
+      ["pi_agent_tool_execute", "pi_approval_grant", "executeAgentTool"],
+    ],
+    [
+      "src/modules/pi/bridge/pi-session.ts",
+      ["executeAgentTool", "grantAgentTool", "AGENT_TO_NATIVE_TOOL"],
+    ],
+    [
+      "src/modules/pi/bridge/pi-session.boundary.test.ts",
+      [
+        "a denied gate never reaches the executor",
+        "records a grant for the native tool name",
+      ],
+    ],
+    [
+      "src/modules/pi/bridge/pi-tools.test.ts",
+      ["routes through pi_agent_tool_execute", "single-use grant"],
+    ],
+    ["src-tauri/src/lib.rs", ["pi::pi_agent_tool_execute", "pi::pi_approval_grant"]],
   ],
   forbiddenText: [
     ["src-tauri/tests/pi_state.rs", ["noTools", 'tool_mode, "approval-gated"']],

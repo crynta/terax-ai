@@ -10,7 +10,11 @@ import { executeWorkflowStep } from "./execution";
 describe("delay node execution", () => {
   it("delays async execution", () => {
     let doc = createStarterWorkflowDocument({ id: "wf_delay", title: "Delay" });
-    doc = addWorkflowNode(doc, { id: "delay", type: "delay", position: { x: 100, y: 100 } });
+    doc = addWorkflowNode(doc, {
+      id: "delay",
+      type: "delay",
+      position: { x: 100, y: 100 },
+    });
     doc = updateWorkflowNodeConfig(doc, "delay", { seconds: 2 });
 
     const result = executeWorkflowStep(doc);
@@ -24,9 +28,19 @@ describe("delay node execution", () => {
 
 describe("webhook node execution", () => {
   it("produces trigger artifacts", () => {
-    let doc = createStarterWorkflowDocument({ id: "wf_webhook", title: "Webhook" });
-    doc = addWorkflowNode(doc, { id: "hook", type: "webhook", position: { x: 100, y: 100 } });
-    doc = updateWorkflowNodeConfig(doc, "hook", { path: "/api/trigger", method: "POST" });
+    let doc = createStarterWorkflowDocument({
+      id: "wf_webhook",
+      title: "Webhook",
+    });
+    doc = addWorkflowNode(doc, {
+      id: "hook",
+      type: "webhook",
+      position: { x: 100, y: 100 },
+    });
+    doc = updateWorkflowNodeConfig(doc, "hook", {
+      path: "/api/trigger",
+      method: "POST",
+    });
 
     const result = executeWorkflowStep(doc);
     const hookNode = result.nodes.find((n) => n.id === "hook");
@@ -37,14 +51,24 @@ describe("webhook node execution", () => {
 
     const bodyArtifact = artifacts.find((a) => a.portId === "body");
     expect(bodyArtifact?.type).toBe("json");
-    expect(bodyArtifact?.value).toEqual({ trigger: true, path: "/api/trigger" });
+    expect(bodyArtifact?.value).toEqual({
+      trigger: true,
+      path: "/api/trigger",
+    });
   });
 });
 
 describe("schedule node execution", () => {
   it("produces a trigger artifact with cron expression", () => {
-    let doc = createStarterWorkflowDocument({ id: "wf_sched", title: "Schedule" });
-    doc = addWorkflowNode(doc, { id: "sched", type: "schedule", position: { x: 100, y: 100 } });
+    let doc = createStarterWorkflowDocument({
+      id: "wf_sched",
+      title: "Schedule",
+    });
+    doc = addWorkflowNode(doc, {
+      id: "sched",
+      type: "schedule",
+      position: { x: 100, y: 100 },
+    });
     doc = updateWorkflowNodeConfig(doc, "sched", { cron: "0 */2 * * *" });
 
     const result = executeWorkflowStep(doc);
@@ -61,22 +85,37 @@ describe("schedule node execution", () => {
 
 describe("expression resolution in control flow", () => {
   it("resolves {{variables.x}} in if condition value", () => {
-    let doc = createStarterWorkflowDocument({ id: "wf_expr_if", title: "Expr If" });
+    let doc = createStarterWorkflowDocument({
+      id: "wf_expr_if",
+      title: "Expr If",
+    });
     doc = {
       ...doc,
-      variables: [
-        { id: "v1", name: "target", type: "text", value: "hello" },
-      ],
+      variables: [{ id: "v1", name: "target", type: "text", value: "hello" }],
     };
-    doc = addWorkflowNode(doc, { id: "prompt", type: "textPrompt", position: { x: 0, y: 0 } });
+    doc = addWorkflowNode(doc, {
+      id: "prompt",
+      type: "textPrompt",
+      position: { x: 0, y: 0 },
+    });
     doc = updateWorkflowNodeConfig(doc, "prompt", { prompt: "hello world" });
-    doc = addWorkflowNode(doc, { id: "if1", type: "if", position: { x: 200, y: 0 } });
+    doc = addWorkflowNode(doc, {
+      id: "if1",
+      type: "if",
+      position: { x: 200, y: 0 },
+    });
     doc = updateWorkflowNodeConfig(doc, "if1", {
       operator: "contains",
       value: "{{variables.target}}",
     });
     const edges: WorkflowEdge[] = [
-      { id: "e1", sourceNodeId: "prompt", sourcePortId: "text", targetNodeId: "if1", targetPortId: "input" },
+      {
+        id: "e1",
+        sourceNodeId: "prompt",
+        sourcePortId: "text",
+        targetNodeId: "if1",
+        targetPortId: "input",
+      },
     ];
     doc = { ...doc, edges };
 
@@ -88,22 +127,37 @@ describe("expression resolution in control flow", () => {
   });
 
   it("resolves {{variables.x}} in switch case patterns", () => {
-    let doc = createStarterWorkflowDocument({ id: "wf_expr_sw", title: "Expr Switch" });
+    let doc = createStarterWorkflowDocument({
+      id: "wf_expr_sw",
+      title: "Expr Switch",
+    });
     doc = {
       ...doc,
-      variables: [
-        { id: "v1", name: "pattern", type: "text", value: "ok" },
-      ],
+      variables: [{ id: "v1", name: "pattern", type: "text", value: "ok" }],
     };
-    doc = addWorkflowNode(doc, { id: "prompt", type: "textPrompt", position: { x: 0, y: 0 } });
+    doc = addWorkflowNode(doc, {
+      id: "prompt",
+      type: "textPrompt",
+      position: { x: 0, y: 0 },
+    });
     doc = updateWorkflowNodeConfig(doc, "prompt", { prompt: "status: ok" });
-    doc = addWorkflowNode(doc, { id: "sw1", type: "switch", position: { x: 200, y: 0 } });
+    doc = addWorkflowNode(doc, {
+      id: "sw1",
+      type: "switch",
+      position: { x: 200, y: 0 },
+    });
     doc = updateWorkflowNodeConfig(doc, "sw1", {
       operator: "contains",
       cases: "{{variables.pattern}}\nerror",
     });
     const edges: WorkflowEdge[] = [
-      { id: "e1", sourceNodeId: "prompt", sourcePortId: "text", targetNodeId: "sw1", targetPortId: "input" },
+      {
+        id: "e1",
+        sourceNodeId: "prompt",
+        sourcePortId: "text",
+        targetNodeId: "sw1",
+        targetPortId: "input",
+      },
     ];
     doc = { ...doc, edges };
 

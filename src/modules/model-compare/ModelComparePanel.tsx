@@ -279,7 +279,9 @@ export function ModelComparePanel({
 
   useEffect(
     () => () => {
-      abortControllersRef.current.forEach((controller) => controller.abort());
+      abortControllersRef.current.forEach((controller) => {
+        controller.abort();
+      });
     },
     [],
   );
@@ -330,7 +332,9 @@ export function ModelComparePanel({
 
   const stop = useCallback(() => {
     activeExecutionRunIdRef.current = null;
-    abortControllersRef.current.forEach((controller) => controller.abort());
+    abortControllersRef.current.forEach((controller) => {
+      controller.abort();
+    });
     abortControllersRef.current = [];
     setRunning(false);
   }, []);

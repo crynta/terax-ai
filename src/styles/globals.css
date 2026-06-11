@@ -214,7 +214,7 @@ html[data-chrome="borderless"] .terax-bg-surface {
  * ourselves so the app doesn't look naked on GNOME/KDE/Hyprland. */
 html[data-chrome="borderless"],
 html[data-chrome="borderless"] body {
-  background: transparent !important;
+  background: transparent;
 }
 html[data-chrome="borderless"] #root,
 html[data-chrome="borderless"] #settings-root {
@@ -236,43 +236,43 @@ html[data-chrome="borderless"] #settings-root {
 .xterm .scrollbar,
 .xterm .scrollbar.vertical,
 .xterm .scrollbar.horizontal {
-  display: none !important;
-  visibility: hidden !important;
-  width: 0 !important;
-  height: 0 !important;
-  pointer-events: none !important;
+  display: none;
+  visibility: hidden;
+  width: 0;
+  height: 0;
+  pointer-events: none;
 }
 .xterm .xterm-viewport,
 .xterm-viewport {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 .xterm .xterm-viewport::-webkit-scrollbar,
 .xterm-viewport::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
+  width: 0;
+  height: 0;
+  display: none;
 }
 .xterm-screen {
-  outline: none !important;
+  outline: none;
 }
 .xterm:focus,
 .xterm.focus,
 .xterm:focus-within {
-  outline: 2px solid color-mix(in oklch, var(--ring) 72%, transparent) !important;
+  outline: 2px solid color-mix(in oklch, var(--ring) 72%, transparent);
   outline-offset: -2px;
 }
 
 .cm-editor,
 .cm-scroller {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 .cm-editor::-webkit-scrollbar,
 .cm-scroller::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 body {
@@ -313,25 +313,25 @@ textarea,
 }
 
 .no-scrollbar {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 .no-scrollbar::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .no-scrollbar-deep,
 .no-scrollbar-deep * {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 .no-scrollbar-deep::-webkit-scrollbar,
 .no-scrollbar-deep *::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 @keyframes terax-collapsible-down {
@@ -422,8 +422,8 @@ textarea,
   *,
   *::before,
   *::after {
-    animation: none !important;
-    scroll-behavior: auto !important;
-    transition: none !important;
+    animation: none;
+    scroll-behavior: auto;
+    transition: none;
   }
 }

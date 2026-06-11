@@ -15,15 +15,14 @@ export function fanOutVisualState(
   // Get downstream nodes connected to each item port
   const itemEdges = document.edges.filter(
     (e) =>
-      e.sourceNodeId === forEachNode.id &&
-      e.sourcePortId?.startsWith("item_"),
+      e.sourceNodeId === forEachNode.id && e.sourcePortId?.startsWith("item_"),
   );
 
   for (const edge of itemEdges) {
     const targetNode = document.nodes.find((n) => n.id === edge.targetNodeId);
     if (!targetNode) continue;
 
-    const itemIndex = parseInt(edge.sourcePortId!.replace("item_", ""), 10);
+    const itemIndex = parseInt(edge.sourcePortId?.replace("item_", ""), 10);
     if (Number.isNaN(itemIndex)) continue;
 
     const status = targetNode.runtimeState.status;
@@ -70,9 +69,7 @@ export interface FanOutBranchVisual {
 /**
  * Count running fan-out branches.
  */
-export function runningFanOutBranches(
-  branches: FanOutBranchVisual[],
-): number {
+export function runningFanOutBranches(branches: FanOutBranchVisual[]): number {
   return branches.filter((b) => b.status === "running").length;
 }
 
@@ -80,7 +77,5 @@ export function runningFanOutBranches(
  * Check if fan-out is in progress (at least one branch running or pending).
  */
 export function isFanOutInProgress(branches: FanOutBranchVisual[]): boolean {
-  return branches.some(
-    (b) => b.status === "running" || b.status === "idle",
-  );
+  return branches.some((b) => b.status === "running" || b.status === "idle");
 }

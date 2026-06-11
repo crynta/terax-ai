@@ -229,14 +229,14 @@ async function piFetchStreamed(
         break;
       case "chunk":
         try {
-          controller!.enqueue(new Uint8Array(event.bytes));
+          controller?.enqueue(new Uint8Array(event.bytes));
         } catch {
           // Stream already closed (abort)
         }
         break;
       case "end":
         try {
-          controller!.close();
+          controller?.close();
         } catch {
           // Already closed
         }
@@ -247,7 +247,7 @@ async function piFetchStreamed(
           rejectHeaders(new Error(event.message));
         }
         try {
-          controller!.error(new Error(event.message));
+          controller?.error(new Error(event.message));
         } catch {
           // Already closed
         }
@@ -261,7 +261,7 @@ async function piFetchStreamed(
   const onAbort = () => {
     streamError = "Aborted";
     try {
-      controller!.error(
+      controller?.error(
         new DOMException("The operation was aborted.", "AbortError"),
       );
     } catch {
@@ -292,7 +292,7 @@ async function piFetchStreamed(
           rejectHeaders(new Error(streamError));
         }
         try {
-          controller!.error(new Error(streamError));
+          controller?.error(new Error(streamError));
         } catch {
           // Already closed
         }

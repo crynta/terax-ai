@@ -94,7 +94,7 @@ function buildRows(
 
   const walk = (parent: string, depth: number) => {
     const node = tree.nodes[parent];
-    if (!node || node.status !== "loaded") return;
+    if (node?.status !== "loaded") return;
     for (const entry of node.entries) {
       const path = tree.joinPath(parent, entry.name);
       const isDir = entry.kind === "dir";
@@ -405,7 +405,6 @@ export function FileExplorer({
     <div
       ref={containerRef}
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden outline-none"
-      tabIndex={0}
       onKeyDown={handleKeyDown}
     >
       <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">

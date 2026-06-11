@@ -12,11 +12,14 @@ use crate::modules::mcp::McpState;
 use crate::modules::secrets::SecretsState;
 use crate::modules::workspace::{self, WorkspaceEnv, WorkspaceRegistry};
 
+mod agent_tools;
 mod host;
 mod local_agents;
 mod native_tools;
 mod provider_config;
 mod store;
+
+pub use agent_tools::*;
 
 use host::PiSessionEventSink;
 

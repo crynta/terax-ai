@@ -156,6 +156,10 @@ fn is_sensitive_component_name(name: &str) -> bool {
             | ".aws"
             | ".ssh"
             | ".gnupg"
+            | ".docker"
+            | ".kube"
+            | "gcloud"
+            | "kubeconfig"
             | "id_rsa"
             | "id_dsa"
             | "id_ecdsa"
@@ -244,8 +248,15 @@ mod tests {
         assert!(is_sensitive_path(Path::new("keys/public.asc")));
         assert!(is_sensitive_path(Path::new(".ssh/id_dsa")));
         assert!(is_sensitive_path(Path::new(".ssh/id_ecdsa")));
+        assert!(is_sensitive_path(Path::new(".aws/credentials")));
+        assert!(is_sensitive_path(Path::new(".docker/config.json")));
+        assert!(is_sensitive_path(Path::new(".kube/config")));
+        assert!(is_sensitive_path(Path::new(
+            ".config/gcloud/application_default_credentials.json"
+        )));
         assert!(!is_sensitive_path(Path::new("assets/image.png")));
         assert!(!is_sensitive_path(Path::new("src/main.rs")));
+        assert!(!is_sensitive_path(Path::new(".config/app/settings.json")));
     }
 
     #[test]

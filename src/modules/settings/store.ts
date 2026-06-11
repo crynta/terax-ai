@@ -56,6 +56,9 @@ export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
   "xcode-light": "Xcode Light",
 };
 
+export type TtsProviderId = "cartesia" | "avspeech";
+export type SttProviderId = "whisper" | "deepgram";
+
 export type Preferences = {
   theme: ThemePref;
   themeId: string;
@@ -100,6 +103,11 @@ export type Preferences = {
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
+  ttsProvider: TtsProviderId;
+  sttProvider: SttProviderId;
+  wakeWordEnabled: boolean;
+  pushToTalkShortcut: string;
+  overlayEnabled: boolean;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -147,6 +155,11 @@ const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
+const KEY_TTS_PROVIDER = "ttsProvider";
+const KEY_STT_PROVIDER = "sttProvider";
+const KEY_WAKE_WORD_ENABLED = "wakeWordEnabled";
+const KEY_PTT_SHORTCUT = "pushToTalkShortcut";
+const KEY_OVERLAY_ENABLED = "overlayEnabled";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -207,6 +220,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
+  ttsProvider: "cartesia" as TtsProviderId,
+  sttProvider: "whisper" as SttProviderId,
+  wakeWordEnabled: false,
+  pushToTalkShortcut: "Alt+Space",
+  overlayEnabled: true,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -346,6 +364,17 @@ export async function loadPreferences(): Promise<Preferences> {
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
     ),
+    ttsProvider:
+      get<TtsProviderId>(KEY_TTS_PROVIDER) ?? DEFAULT_PREFERENCES.ttsProvider,
+    sttProvider:
+      get<SttProviderId>(KEY_STT_PROVIDER) ?? DEFAULT_PREFERENCES.sttProvider,
+    wakeWordEnabled:
+      get<boolean>(KEY_WAKE_WORD_ENABLED) ??
+      DEFAULT_PREFERENCES.wakeWordEnabled,
+    pushToTalkShortcut:
+      get<string>(KEY_PTT_SHORTCUT) ?? DEFAULT_PREFERENCES.pushToTalkShortcut,
+    overlayEnabled:
+      get<boolean>(KEY_OVERLAY_ENABLED) ?? DEFAULT_PREFERENCES.overlayEnabled,
   };
 }
 
@@ -567,9 +596,29 @@ export async function setAgentNotifications(value: boolean): Promise<void> {
 }
 
 export async function setShortcuts(
-  value: Record<ShortcutId, KeyBinding[]> | {},
+  value: Record<ShortcutId, KeyBinding[]> | Record<string, never>,
 ): Promise<void> {
   await writePref(KEY_SHORTCUTS, value);
+}
+
+export async function setTtsProvider(value: TtsProviderId): Promise<void> {
+  await writePref(KEY_TTS_PROVIDER, value);
+}
+
+export async function setSttProvider(value: SttProviderId): Promise<void> {
+  await writePref(KEY_STT_PROVIDER, value);
+}
+
+export async function setWakeWordEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_WAKE_WORD_ENABLED, value);
+}
+
+export async function setPushToTalkShortcut(value: string): Promise<void> {
+  await writePref(KEY_PTT_SHORTCUT, value);
+}
+
+export async function setOverlayEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_OVERLAY_ENABLED, value);
 }
 
 export async function resetShortcuts(): Promise<void> {
@@ -622,10 +671,15 @@ const STORE_KEY_TO_PREF_KEY = {
   [KEY_SHORTCUTS]: "shortcuts",
   [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
   [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
+  [KEY_TTS_PROVIDER]: "ttsProvider",
+  [KEY_STT_PROVIDER]: "sttProvider",
+  [KEY_WAKE_WORD_ENABLED]: "wakeWordEnabled",
+  [KEY_PTT_SHORTCUT]: "pushToTalkShortcut",
+  [KEY_OVERLAY_ENABLED]: "overlayEnabled",
 } satisfies Record<PrefKey, PrefKey>;
 
 function storeKeyToPrefKey(key: string): PrefKey | undefined {
-  return Object.prototype.hasOwnProperty.call(STORE_KEY_TO_PREF_KEY, key)
+  return Object.hasOwn(STORE_KEY_TO_PREF_KEY, key)
     ? STORE_KEY_TO_PREF_KEY[key as PrefKey]
     : undefined;
 }

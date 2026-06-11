@@ -315,6 +315,7 @@ export async function webviewSessionCreate(
 
   const agent = await createTauriAgent({
     cwd: workingDir,
+    sessionId,
     systemPrompt,
     provider,
     modelId,
@@ -670,6 +671,7 @@ async function rehydrateSession(
 
   const agent = await createTauriAgent({
     cwd: stored.cwd ?? "/",
+    sessionId,
     provider,
     modelId,
     baseUrl: providerConfig?.baseUrl,

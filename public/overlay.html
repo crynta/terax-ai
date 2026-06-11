@@ -1,5 +1,154 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>Terax Overlay</title></head>
-<body style="margin:0;background:transparent;"></body>
+<head>
+<meta charset="utf-8">
+<title>Terax Overlay</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .overlay-controls {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    display: flex;
+    gap: 8px;
+    pointer-events: auto;
+    z-index: 1000;
+  }
+  .overlay-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(30,30,46,0.85);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: background 0.15s;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .overlay-btn:hover { background: rgba(60,60,80,0.9); }
+  .overlay-btn.recording { background: rgba(220,38,38,0.85); border-color: rgba(255,80,80,0.4); }
+</style>
+</head>
+<body>
+<canvas id="overlay-canvas"></canvas>
+<div class="overlay-controls">
+  <button class="overlay-btn" id="btn-mic" title="Start recording">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+      <line x1="12" x2="12" y1="19" y2="22"/>
+    </svg>
+  </button>
+  <button class="overlay-btn" id="btn-clear" title="Clear annotations">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18"/>
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+    </svg>
+  </button>
+</div>
+<script>
+const canvas = document.getElementById('overlay-canvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  render();
+}
+window.addEventListener('resize', resize);
+resize();
+
+let annotations = [];
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (const item of annotations) {
+    ctx.strokeStyle = item.color || '#FF4444';
+    ctx.lineWidth = item.strokeWidth || 2;
+    ctx.fillStyle = item.color || '#FF4444';
+
+    switch (item.type) {
+      case 'rect':
+        ctx.strokeRect(item.x, item.y, item.width, item.height);
+        break;
+      case 'circle':
+        ctx.beginPath();
+        ctx.arc(item.cx, item.cy, item.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      case 'arrow': {
+        const headLen = 12;
+        const angle = Math.atan2(item.y2 - item.y1, item.x2 - item.x1);
+        ctx.beginPath();
+        ctx.moveTo(item.x1, item.y1);
+        ctx.lineTo(item.x2, item.y2);
+        ctx.lineTo(item.x2 - headLen * Math.cos(angle - Math.PI / 6), item.y2 - headLen * Math.sin(angle - Math.PI / 6));
+        ctx.moveTo(item.x2, item.y2);
+        ctx.lineTo(item.x2 - headLen * Math.cos(angle + Math.PI / 6), item.y2 - headLen * Math.sin(angle + Math.PI / 6));
+        ctx.stroke();
+        break;
+      }
+      case 'text':
+        ctx.font = `${item.fontSize || 16}px Inter, -apple-system, sans-serif`;
+        ctx.fillText(item.content, item.x, item.y);
+        break;
+      case 'scribble':
+        if (item.points && item.points.length > 1) {
+          ctx.beginPath();
+          ctx.moveTo(item.points[0][0], item.points[0][1]);
+          for (let i = 1; i < item.points.length; i++) {
+            ctx.lineTo(item.points[i][0], item.points[i][1]);
+          }
+          ctx.stroke();
+        }
+        break;
+    }
+  }
+}
+
+if (window.__TAURI__) {
+  const { listen } = window.__TAURI__.event;
+
+  listen('overlay:draw', (event) => {
+    try {
+      const incoming = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+      if (Array.isArray(incoming)) {
+        annotations = annotations.concat(incoming);
+      }
+    } catch {
+      window.__TAURI__.core.invoke('overlay_get_annotations').then((items) => {
+        annotations = items || [];
+      }).catch(() => {});
+    }
+    render();
+  });
+
+  listen('overlay:clear', () => {
+    annotations = [];
+    render();
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    window.__TAURI__.core.invoke('overlay_clear').catch(() => {});
+  });
+
+  let recording = false;
+  const micBtn = document.getElementById('btn-mic');
+  micBtn.addEventListener('click', () => {
+    recording = !recording;
+    micBtn.classList.toggle('recording', recording);
+    micBtn.title = recording ? 'Stop listening' : 'Start listening';
+    window.__TAURI__.core.invoke(recording ? 'wake_word_start' : 'wake_word_stop', {}).catch(() => {});
+  });
+}
+</script>
+</body>
 </html>

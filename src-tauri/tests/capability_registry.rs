@@ -99,6 +99,8 @@ fn app_manifest_exposes_non_model_visible_native_surfaces() {
             "app.file_search",
             "app.file_write",
             "app.http_request",
+            "app.pty_session",
+            "app.mcp_tool",
         ]
     );
     assert!(manifest.enabled_tool_names().is_empty());

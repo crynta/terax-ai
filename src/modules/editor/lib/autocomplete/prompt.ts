@@ -60,7 +60,7 @@ export function buildUserPrompt(req: CompletionRequest): string {
   const meta: string[] = [];
   if (req.filename) meta.push(`File: ${req.filename}`);
   if (req.language) meta.push(`Language: ${req.language}`);
-  const metaBlock = meta.length ? meta.join("\n") + "\n\n" : "";
+  const metaBlock = meta.length ? `${meta.join("\n")}\n\n` : "";
 
   return `${metaBlock}PREFIX:
 <<<

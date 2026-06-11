@@ -144,9 +144,7 @@ function NodeDiffTable({
               <div className="flex items-center gap-1">
                 <StatusDot status={leftSnap?.status} />
                 <span className="text-muted-foreground">
-                  {leftSnap
-                    ? formatSnapshotSummary(leftSnap)
-                    : "(not present)"}
+                  {leftSnap ? formatSnapshotSummary(leftSnap) : "(not present)"}
                 </span>
               </div>
               <div className="flex items-center gap-1">

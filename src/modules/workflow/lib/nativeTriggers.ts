@@ -27,7 +27,11 @@ export async function webhookRegister(
   method: string,
   authToken?: string,
 ): Promise<WebhookRoute> {
-  return invoke("webhook_register", { path, method, authToken: authToken ?? null });
+  return invoke("webhook_register", {
+    path,
+    method,
+    authToken: authToken ?? null,
+  });
 }
 
 export async function webhookUnregister(routeId: string): Promise<void> {

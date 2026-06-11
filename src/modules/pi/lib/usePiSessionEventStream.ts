@@ -36,27 +36,30 @@ export function usePiSessionEventStream({
     null,
   );
 
-  const applySessionEvents = useCallback((events: PiSessionEvent[]) => {
-    if (events.length === 0) {
-      return;
-    }
-
-    const annotatedEvents = events.map((event) => {
-      const branch = activeRegenerateBranchesRef.current.get(event.sessionId);
-      const nextEvent = branch
-        ? annotatePiSessionEventBranch(event, branch)
-        : event;
-      if (eventCompletesRegenerateBranch(event)) {
-        activeRegenerateBranchesRef.current.delete(event.sessionId);
+  const applySessionEvents = useCallback(
+    (events: PiSessionEvent[]) => {
+      if (events.length === 0) {
+        return;
       }
-      return nextEvent;
-    });
 
-    setSessionEvents((current) =>
-      mergePiSessionEvents(current, annotatedEvents),
-    );
-    setSessions((current) => applyPiSessionEvents(current, annotatedEvents));
-  }, [activeRegenerateBranchesRef, setSessionEvents, setSessions]);
+      const annotatedEvents = events.map((event) => {
+        const branch = activeRegenerateBranchesRef.current.get(event.sessionId);
+        const nextEvent = branch
+          ? annotatePiSessionEventBranch(event, branch)
+          : event;
+        if (eventCompletesRegenerateBranch(event)) {
+          activeRegenerateBranchesRef.current.delete(event.sessionId);
+        }
+        return nextEvent;
+      });
+
+      setSessionEvents((current) =>
+        mergePiSessionEvents(current, annotatedEvents),
+      );
+      setSessions((current) => applyPiSessionEvents(current, annotatedEvents));
+    },
+    [activeRegenerateBranchesRef, setSessionEvents, setSessions],
+  );
 
   const applySessionUpdate = useCallback(
     (session: PiSession, events: PiSessionEvent[]) => {

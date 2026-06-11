@@ -22,18 +22,13 @@ import type {
   WorkflowEdge,
   WorkflowNodeType,
 } from "../lib/schema";
-import {
-  addWorkflowNode,
-  nextWorkflowNodeId,
-} from "../lib/schema";
+import { addWorkflowNode, nextWorkflowNodeId } from "../lib/schema";
 import {
   executeWorkflowStep,
   getReadyNodeIds,
   resetWorkflowRuntime,
 } from "../lib/execution";
-import {
-  toReactFlowElements,
-} from "../lib/reactFlowAdapter";
+import { toReactFlowElements } from "../lib/reactFlowAdapter";
 import { WorkflowNodeCard } from "./WorkflowNodeCard";
 
 const subgraphNodeTypes = { workflowNode: WorkflowNodeCard };

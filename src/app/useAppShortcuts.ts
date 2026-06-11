@@ -85,7 +85,7 @@ export function useAppShortcuts({
       const tab = tabsRef.current.find(
         (candidate) => candidate.id === activeId,
       );
-      if (!tab || tab.kind !== "terminal") return;
+      if (tab?.kind !== "terminal") return;
       splitActivePane(activeId, dir);
     },
     [activeId, splitActivePane, tabsRef],
@@ -169,7 +169,7 @@ export function useAppShortcuts({
         const inTerminal = !!target?.closest?.(".xterm");
         if (!inTerminal) return false;
         const selection = captureActiveSelection();
-        return !selection || !selection.trim();
+        return !selection?.trim();
       }
       if (id === "terminal.clear") {
         // Only intercept ⌘K while a terminal is focused; elsewhere let the key

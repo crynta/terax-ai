@@ -86,7 +86,7 @@ function hasKey<K extends keyof PiControllerState>(
   state: RetainedState,
   key: K,
 ): boolean {
-  return Object.prototype.hasOwnProperty.call(state, key);
+  return Object.hasOwn(state, key);
 }
 
 export function createPiControllerStore(): PiControllerStore {

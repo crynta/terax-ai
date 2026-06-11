@@ -1,6 +1,9 @@
 packages:
   - sidecars/*
 
+overrides:
+  fast-uri@<3.1.2: ">=3.1.2"
+
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true
 verifyDepsBeforeRun: false

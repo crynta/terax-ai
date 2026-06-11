@@ -82,7 +82,7 @@ export function useAppAiSelection({
       return;
     }
     const selection = captureActiveSelection();
-    if (!selection || !selection.trim()) {
+    if (!selection?.trim()) {
       focusInput(null);
       return;
     }

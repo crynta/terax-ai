@@ -9,8 +9,8 @@ import {
 
 function absoluteOrRepoPath(repoRoot: string, path: string): string {
   if (/^([A-Za-z]:|\/|\\)/.test(path)) return path;
-  const root = repoRoot.replace(/[\/]+$/, "");
-  const rel = path.replace(/^[\/]+/, "");
+  const root = repoRoot.replace(/[/]+$/, "");
+  const rel = path.replace(/^[/]+/, "");
   return `${root}/${rel}`;
 }
 

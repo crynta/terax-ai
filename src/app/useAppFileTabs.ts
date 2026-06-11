@@ -68,7 +68,7 @@ export function useAppFileTabs({
   const handleSaveWorkflowDocument = useCallback(
     async (tabId: number, document: WorkflowDocument) => {
       const tab = tabsRef.current.find((x) => x.id === tabId);
-      if (!tab || tab.kind !== "workflow" || !tab.path) {
+      if (tab?.kind !== "workflow" || !tab.path) {
         throw new Error("Workflow tab is not backed by a file");
       }
 
@@ -85,7 +85,7 @@ export function useAppFileTabs({
   const handleSaveWorkflowDocumentAs = useCallback(
     async (tabId: number, document: WorkflowDocument, path: string) => {
       const tab = tabsRef.current.find((x) => x.id === tabId);
-      if (!tab || tab.kind !== "workflow") {
+      if (tab?.kind !== "workflow") {
         throw new Error("Workflow tab is not available");
       }
 

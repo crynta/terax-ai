@@ -92,6 +92,24 @@ pub fn app_capability_manifest() -> CapabilityManifest {
                 RiskLevel::Medium,
                 &["app", "network"],
             ),
+            app_tool(
+                "app.pty_session",
+                "app PTY session",
+                "Open an interactive terminal session through Rust policy and audit.",
+                bash_schema(),
+                CapabilityKind::ProcessExec,
+                RiskLevel::High,
+                &["app", "process"],
+            ),
+            app_tool(
+                "app.mcp_tool",
+                "app MCP tool call",
+                "Invoke an MCP server tool through Rust policy and audit.",
+                object_schema(serde_json::json!({}), &[]),
+                CapabilityKind::McpTool,
+                RiskLevel::Medium,
+                &["app", "mcp"],
+            ),
         ],
     }
 }

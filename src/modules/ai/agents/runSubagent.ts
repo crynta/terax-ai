@@ -2,15 +2,17 @@ import { generateText, stepCountIs } from "ai";
 import { DEFAULT_MODEL_ID, getModel, type ModelId } from "../config";
 import { buildLanguageModel } from "../lib/agent";
 import type { ProviderKeys } from "../lib/keyring";
-import type { ToolContext } from "../tools/context";
+import { buildEditTools } from "../tools/edit";
 import { buildFsTools } from "../tools/fs";
 import { buildSearchTools } from "../tools/search";
-import { SUBAGENTS, type SubagentType } from "./registry";
+import { buildShellTools } from "../tools/shell";
+import type { ToolContext } from "../tools/context";
+import { SUBAGENTS } from "./registry";
 
 const SUBAGENT_MAX_STEPS = 12;
 
 type Args = {
-  type: SubagentType;
+  type: string;
   prompt: string;
   keys: ProviderKeys;
   modelId: string;
@@ -37,13 +39,15 @@ export async function runSubagent({
   const def = SUBAGENTS[type];
   if (!def) throw new Error(`unknown subagent type: ${type}`);
 
-  const readOnly: Record<string, unknown> = {
+  const allTools: Record<string, unknown> = {
     ...buildFsTools(toolContext),
+    ...buildEditTools(toolContext),
     ...buildSearchTools(toolContext),
+    ...buildShellTools(toolContext),
   };
   const tools: Record<string, unknown> = {};
   for (const t of def.tools) {
-    if (t in readOnly) tools[t] = readOnly[t];
+    if (t in allTools) tools[t] = allTools[t];
   }
 
   const model = await buildLanguageModel(

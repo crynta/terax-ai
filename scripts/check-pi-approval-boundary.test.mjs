@@ -62,7 +62,8 @@ const healthyFiles = {
     "PiSessionToolRespondResult pi_session_tool_respond",
   "src-tauri/src/modules/pi/state/compat.rs":
     "session_tool_respond_with_resource_dir",
-  "src-tauri/src/lib.rs": "pi::pi_session_tool_respond",
+  "src-tauri/src/lib.rs":
+    "pi::pi_session_tool_respond pi::pi_agent_tool_execute pi::pi_approval_grant",
   "src-tauri/tests/pi_state.rs":
     "rust-mediated tool_approval_responses_are_forwarded_to_the_sidecar wait_for_event",
   "src/modules/pi/lib/native.ts":
@@ -84,6 +85,16 @@ const healthyFiles = {
   "docs/pi-session-protocol.md":
     "rust-mediated nativeTools.execute sessions.tool.respond",
   "docs/pi-sidebar-verification.md": "rust-mediated PI_APPROVAL_NOT_FOUND",
+  "src-tauri/src/modules/pi/agent_tools.rs":
+    "pub fn pi_agent_tool_execute pub fn pi_approval_grant authorize_spawn_cwd evaluate_tool_policy CapabilityAuditOutcome::Blocked",
+  "src/modules/pi/bridge/pi-tools.ts":
+    "pi_agent_tool_execute pi_approval_grant executeAgentTool",
+  "src/modules/pi/bridge/pi-session.ts":
+    "executeAgentTool grantAgentTool AGENT_TO_NATIVE_TOOL",
+  "src/modules/pi/bridge/pi-session.boundary.test.ts":
+    "a denied gate never reaches the executor records a grant for the native tool name",
+  "src/modules/pi/bridge/pi-tools.test.ts":
+    "routes through pi_agent_tool_execute single-use grant",
 };
 
 describe("checkPiApprovalBoundary", () => {

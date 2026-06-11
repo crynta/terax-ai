@@ -4,7 +4,7 @@ import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 import UnfoldMoreIcon from "@hugeicons/core-free-icons/UnfoldMoreIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import * as React from "react";
+import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 function Select({

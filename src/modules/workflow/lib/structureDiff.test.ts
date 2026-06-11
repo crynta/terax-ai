@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  diffWorkflowDocuments,
-  summarizeStructureDiff,
-} from "./structureDiff";
+import { diffWorkflowDocuments, summarizeStructureDiff } from "./structureDiff";
 import {
   createStarterWorkflowDocument,
   addWorkflowNode,

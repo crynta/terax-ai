@@ -19,10 +19,7 @@ async function invoke(cmd: string, args: Record<string, unknown>) {
   return tauriInvoke(cmd, args);
 }
 
-async function listen<T>(
-  event: string,
-  cb: (e: { payload: T }) => void,
-) {
+async function listen<T>(event: string, cb: (e: { payload: T }) => void) {
   const { listen: tauriListen } = await import("@tauri-apps/api/event");
   return tauriListen<T>(event, cb);
 }

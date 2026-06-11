@@ -2,7 +2,7 @@ import MinusSignIcon from "@hugeicons/core-free-icons/MinusSignIcon";
 import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import * as CheckboxPrimitive from "@radix-ui/react-checkbox";
-import * as React from "react";
+import type * as React from "react";
 import { cn } from "@/lib/utils";
 
 function Checkbox({

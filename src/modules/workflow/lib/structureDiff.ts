@@ -1,8 +1,4 @@
-import type {
-  WorkflowDocument,
-  WorkflowNode,
-  WorkflowEdge,
-} from "./schema";
+import type { WorkflowDocument, WorkflowNode, WorkflowEdge } from "./schema";
 
 export type WorkflowStructureDiff = {
   addedNodes: WorkflowNode[];
@@ -108,7 +104,11 @@ function diffNodeFields(
   const changes: WorkflowNodeChange[] = [];
 
   if (left.title !== right.title) {
-    changes.push({ field: "title", oldValue: left.title, newValue: right.title });
+    changes.push({
+      field: "title",
+      oldValue: left.title,
+      newValue: right.title,
+    });
   }
   if (left.type !== right.type) {
     changes.push({ field: "type", oldValue: left.type, newValue: right.type });
@@ -149,11 +149,16 @@ function diffNodeFields(
  */
 export function summarizeStructureDiff(diff: WorkflowStructureDiff): string {
   const parts: string[] = [];
-  if (diff.addedNodes.length > 0) parts.push(`+${diff.addedNodes.length} nodes`);
-  if (diff.removedNodes.length > 0) parts.push(`-${diff.removedNodes.length} nodes`);
-  if (diff.modifiedNodes.length > 0) parts.push(`~${diff.modifiedNodes.length} modified`);
-  if (diff.addedEdges.length > 0) parts.push(`+${diff.addedEdges.length} edges`);
-  if (diff.removedEdges.length > 0) parts.push(`-${diff.removedEdges.length} edges`);
+  if (diff.addedNodes.length > 0)
+    parts.push(`+${diff.addedNodes.length} nodes`);
+  if (diff.removedNodes.length > 0)
+    parts.push(`-${diff.removedNodes.length} nodes`);
+  if (diff.modifiedNodes.length > 0)
+    parts.push(`~${diff.modifiedNodes.length} modified`);
+  if (diff.addedEdges.length > 0)
+    parts.push(`+${diff.addedEdges.length} edges`);
+  if (diff.removedEdges.length > 0)
+    parts.push(`-${diff.removedEdges.length} edges`);
   if (parts.length === 0) return "No changes";
   return parts.join(" · ");
 }

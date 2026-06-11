@@ -305,7 +305,7 @@ export function resolvePiProviderConfig(
     return resolveCustomEndpoint(prefs, sourceModelId);
   }
 
-  let model;
+  let model: ReturnType<typeof resolveModel>;
   try {
     model = resolveModel(sourceModelId, prefs.customEndpoints);
   } catch {

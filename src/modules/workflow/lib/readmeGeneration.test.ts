@@ -9,7 +9,10 @@ import type { WorkflowEdge } from "./schema";
 
 describe("generateWorkflowReadme", () => {
   it("generates a README with title and overview", () => {
-    const doc = createStarterWorkflowDocument({ id: "wf1", title: "My Workflow" });
+    const doc = createStarterWorkflowDocument({
+      id: "wf1",
+      title: "My Workflow",
+    });
     const readme = generateWorkflowReadme(doc);
     expect(readme).toContain("# My Workflow");
     expect(readme).toContain("## Overview");
@@ -60,7 +63,10 @@ describe("generateWorkflowReadme", () => {
 
   it("includes variables when present", () => {
     let doc = createStarterWorkflowDocument({ id: "wf1", title: "Test" });
-    doc = { ...doc, variables: [{ id: "v1", name: "apiKey", type: "text", value: "secret" }] };
+    doc = {
+      ...doc,
+      variables: [{ id: "v1", name: "apiKey", type: "text", value: "secret" }],
+    };
     const readme = generateWorkflowReadme(doc);
     expect(readme).toContain("## Variables");
     expect(readme).toContain("apiKey");

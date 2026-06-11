@@ -70,7 +70,10 @@ const PREVIEW_INBOX_ROWS: readonly InboxRow[] = [
 function noop(): void {}
 
 function inboxRowsForCount(count: number): readonly InboxRow[] {
-  return PREVIEW_INBOX_ROWS.slice(0, Math.max(0, Math.min(count, PREVIEW_INBOX_ROWS.length)));
+  return PREVIEW_INBOX_ROWS.slice(
+    0,
+    Math.max(0, Math.min(count, PREVIEW_INBOX_ROWS.length)),
+  );
 }
 
 function previewSourceControl(changedCount: number): SourceControlSummary {

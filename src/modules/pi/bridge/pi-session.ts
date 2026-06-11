@@ -36,13 +36,20 @@ import type {
 } from "@/modules/pi/lib/sessions";
 import { piEnv } from "./pi-env";
 import { installProxiedFetch, uninstallProxiedFetch } from "./pi-http";
-import { piBridgeTools } from "./pi-tools";
+import { executeAgentTool, grantAgentTool } from "./pi-tools";
+import type { NativeToolResult } from "./pi-tools";
 
 // ─── Types ───
 
 export type TauriAgentOptions = {
   /** Working directory for file/shell operations */
   cwd: string;
+  /**
+   * Session id. Threaded into every tool call so the Rust verified executor
+   * (`pi_agent_tool_execute`) can match user-issued approval grants. Required
+   * for tool execution; without it mutating/Ask tools will be denied by Rust.
+   */
+  sessionId: string;
   /** System prompt */
   systemPrompt?: string;
   /** Provider name (e.g. "anthropic", "openai") */
@@ -96,152 +103,157 @@ function errorResult(error: string) {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: SDK AgentTool is generic over per-tool schema; erased to share one execute signature
 type ToolExecute = AgentTool<any>["execute"];
 
 // ─── Tool factory ───
 
-function createAgentTools(cwd: string): AgentTool[] {
-  return [
-    {
-      name: "read_file",
-      label: "Read file",
-      description: "Read a file's contents.",
-      parameters: Type.Object({
-        path: Type.String({ description: "File path" }),
-      }),
-      execute: (async (_id: string, params: unknown) => {
-        const { path } = params as { path: string };
-        try {
-          const result = await piBridgeTools.readFile(path, cwd);
-          return textResult(JSON.stringify(result, null, 2));
-        } catch (e) {
-          return errorResult(String(e));
-        }
-      }) as ToolExecute,
-    },
-    {
-      name: "write_file",
-      label: "Write file",
-      description: "Write content to a file.",
-      parameters: Type.Object({
-        path: Type.String(),
-        content: Type.String(),
-      }),
-      execute: (async (_id: string, params: unknown) => {
-        const { path, content } = params as { path: string; content: string };
-        try {
-          const result = await piBridgeTools.writeFile(path, content, cwd);
-          return textResult(JSON.stringify(result));
-        } catch (e) {
-          return errorResult(String(e));
-        }
-      }) as ToolExecute,
-    },
-    {
-      name: "edit_file",
-      label: "Edit file",
-      description:
-        "Apply exact text replacements to a file. Each edit's oldText must be unique in the file.",
-      parameters: Type.Object({
-        path: Type.String({ description: "File path" }),
-        edits: Type.Array(
-          Type.Object({
-            oldText: Type.String({ description: "Exact text to find" }),
-            newText: Type.String({ description: "Replacement text" }),
-          }),
-        ),
-      }),
-      execute: (async (_id: string, params: unknown) => {
-        const { path, edits } = params as {
-          path: string;
-          edits: Array<{ oldText: string; newText: string }>;
-        };
-        try {
-          const result = await piBridgeTools.editFile(path, edits, cwd);
-          return textResult(JSON.stringify(result, null, 2));
-        } catch (e) {
-          return errorResult(String(e));
-        }
-      }) as ToolExecute,
-    },
-    {
-      name: "list_directory",
-      label: "List directory",
-      description: "List entries in a directory.",
-      parameters: Type.Object({
-        path: Type.String(),
-      }),
-      execute: (async (_id: string, params: unknown) => {
-        const { path } = params as { path: string };
-        try {
-          const result = await piBridgeTools.listDirectory(path, cwd);
-          return textResult(JSON.stringify(result, null, 2));
-        } catch (e) {
-          return errorResult(String(e));
-        }
-      }) as ToolExecute,
-    },
-    {
-      name: "bash_run",
-      label: "Run command",
-      description:
-        "Run a shell command and return stdout, stderr, and exit code.",
-      parameters: Type.Object({
-        command: Type.String(),
-      }),
-      execute: (async (_id: string, params: unknown, signal?: AbortSignal) => {
-        const { command } = params as { command: string };
+/**
+ * Agent tool name to native dispatcher tool name. The native dispatcher
+ * (`execute_with_context` on the Rust side) is the workspace-scoped, secret-path
+ * filtered implementation; grants are keyed by the native name so the approval
+ * recorded by the UI matches what the executor consumes.
+ */
+const AGENT_TO_NATIVE_TOOL: Record<string, string> = {
+  read_file: "read",
+  write_file: "write",
+  edit_file: "edit",
+  list_directory: "ls",
+  bash_run: "bash",
+  grep: "grep",
+  glob: "find",
+};
+
+function nativeToolName(agentToolName: string): string {
+  return AGENT_TO_NATIVE_TOOL[agentToolName] ?? agentToolName;
+}
+
+function toAgentResult(result: NativeToolResult): AgentToolResult<unknown> {
+  const content =
+    result.content && result.content.length > 0
+      ? result.content.map((item) => ({
+          type: "text" as const,
+          text: item.text ?? "",
+        }))
+      : [{ type: "text" as const, text: "(no output)" }];
+  return {
+    content,
+    details: result.details,
+  } as AgentToolResult<unknown>;
+}
+
+type NativeToolSpec = {
+  name: string;
+  label: string;
+  description: string;
+  parameters: TSchema;
+  buildInput: (params: Record<string, unknown>) => unknown;
+};
+
+const NATIVE_TOOL_SPECS: NativeToolSpec[] = [
+  {
+    name: "read_file",
+    label: "Read file",
+    description: "Read a file's contents.",
+    parameters: Type.Object({
+      path: Type.String({ description: "File path" }),
+    }),
+    buildInput: (p) => ({ path: p.path }),
+  },
+  {
+    name: "write_file",
+    label: "Write file",
+    description: "Write content to a file.",
+    parameters: Type.Object({
+      path: Type.String(),
+      content: Type.String(),
+    }),
+    buildInput: (p) => ({ path: p.path, content: p.content }),
+  },
+  {
+    name: "edit_file",
+    label: "Edit file",
+    description:
+      "Apply exact text replacements to a file. Each edit's oldText must be unique in the file.",
+    parameters: Type.Object({
+      path: Type.String({ description: "File path" }),
+      edits: Type.Array(
+        Type.Object({
+          oldText: Type.String({ description: "Exact text to find" }),
+          newText: Type.String({ description: "Replacement text" }),
+        }),
+      ),
+    }),
+    buildInput: (p) => ({ path: p.path, edits: p.edits }),
+  },
+  {
+    name: "list_directory",
+    label: "List directory",
+    description: "List entries in a directory.",
+    parameters: Type.Object({
+      path: Type.String(),
+    }),
+    buildInput: (p) => ({ path: p.path }),
+  },
+  {
+    name: "bash_run",
+    label: "Run command",
+    description:
+      "Run a shell command and return stdout, stderr, and exit code.",
+    parameters: Type.Object({
+      command: Type.String(),
+    }),
+    buildInput: (p) => ({ command: p.command }),
+  },
+  {
+    name: "grep",
+    label: "Search files",
+    description: "Search file contents with a regex pattern.",
+    parameters: Type.Object({
+      pattern: Type.String(),
+      path: Type.String({ description: "Root directory to search" }),
+    }),
+    buildInput: (p) => ({ pattern: p.pattern, path: p.path }),
+  },
+  {
+    name: "glob",
+    label: "Find files",
+    description: "Find files matching a glob pattern.",
+    parameters: Type.Object({
+      pattern: Type.String(),
+      path: Type.String({ description: "Root directory to search" }),
+    }),
+    buildInput: (p) => ({ pattern: p.pattern, path: p.path }),
+  },
+];
+
+function createAgentTools(cwd: string, sessionId: string): AgentTool[] {
+  return NATIVE_TOOL_SPECS.map((spec) => ({
+    name: spec.name,
+    label: spec.label,
+    description: spec.description,
+    parameters: spec.parameters,
+    execute: (async (
+      toolCallId: string,
+      params: unknown,
+      signal?: AbortSignal,
+    ) => {
+      if (signal?.aborted) throw new Error("Aborted");
+      try {
+        const result = await executeAgentTool({
+          sessionId,
+          toolCallId,
+          toolName: nativeToolName(spec.name),
+          cwd,
+          input: spec.buildInput((params as Record<string, unknown>) ?? {}),
+        });
         if (signal?.aborted) throw new Error("Aborted");
-        try {
-          const result = await piBridgeTools.bash(command, cwd);
-          if (signal?.aborted) throw new Error("Aborted");
-          const output = result.stdout || result.stderr || "(no output)";
-          return textResult(
-            `${output}\n\nexit code: ${result.exitCode ?? "unknown"}`,
-          );
-        } catch (e) {
-          return errorResult(String(e));
-        }
-      }) as ToolExecute,
-    },
-    {
-      name: "grep",
-      label: "Search files",
-      description: "Search file contents with a regex pattern.",
-      parameters: Type.Object({
-        pattern: Type.String(),
-        path: Type.String({ description: "Root directory to search" }),
-      }),
-      execute: (async (_id: string, params: unknown) => {
-        const { pattern, path } = params as { pattern: string; path: string };
-        try {
-          const result = await piBridgeTools.grep(pattern, path);
-          return textResult(JSON.stringify(result, null, 2));
-        } catch (e) {
-          return errorResult(String(e));
-        }
-      }) as ToolExecute,
-    },
-    {
-      name: "glob",
-      label: "Find files",
-      description: "Find files matching a glob pattern.",
-      parameters: Type.Object({
-        pattern: Type.String(),
-        path: Type.String({ description: "Root directory to search" }),
-      }),
-      execute: (async (_id: string, params: unknown) => {
-        const { pattern, path } = params as { pattern: string; path: string };
-        try {
-          const result = await piBridgeTools.glob(pattern, path);
-          return textResult(JSON.stringify(result, null, 2));
-        } catch (e) {
-          return errorResult(String(e));
-        }
-      }) as ToolExecute,
-    },
-  ];
+        return toAgentResult(result);
+      } catch (e) {
+        return errorResult(String(e));
+      }
+    }) as ToolExecute,
+  }));
 }
 
 // ─── MCP tool integration ───
@@ -252,13 +264,16 @@ function createAgentTools(cwd: string): AgentTool[] {
  * Execution routes through the Rust MCP module via the
  * `mcp_call_tool` Tauri command — no sidecar dependency.
  */
-async function discoverMcpTools(): Promise<AgentTool[]> {
+async function discoverMcpTools(
+  cwd: string,
+  sessionId: string,
+): Promise<AgentTool[]> {
   try {
     const { piNative } = await import("@/modules/pi/lib/native");
     const descriptors = await piNative.mcpTools();
     return descriptors
       .filter((d) => d.modelVisible && d.approvalPolicy !== "deny")
-      .map(mcpDescriptorToAgentTool);
+      .map((desc) => mcpDescriptorToAgentTool(desc, cwd, sessionId));
   } catch {
     return []; // MCP not available or no servers connected
   }
@@ -266,33 +281,36 @@ async function discoverMcpTools(): Promise<AgentTool[]> {
 
 function mcpDescriptorToAgentTool(
   desc: import("@/modules/pi/lib/native").McpToolDescriptor,
+  cwd: string,
+  sessionId: string,
 ): AgentTool {
   return {
     name: desc.qualifiedName,
     label: `${desc.serverName}: ${desc.name}`,
     description: `[MCP:${desc.serverName}] ${desc.description}`,
     parameters: desc.inputSchema as TSchema,
-    execute: async (
-      _toolCallId: string,
+    execute: (async (
+      toolCallId: string,
       params: unknown,
       signal?: AbortSignal,
     ) => {
       if (signal?.aborted) throw new Error("Aborted");
-      const { piNative } = await import("@/modules/pi/lib/native");
-      const result = await piNative.mcpCallTool(desc.qualifiedName, params);
-      const text = result.content
-        .filter((c: { type: string; text?: string }) => c.type === "text")
-        .map((c: { type: string; text?: string }) => c.text ?? "")
-        .join("\n");
-      return {
-        content: [
-          { type: "text" as const, text: text || "MCP tool completed." },
-        ],
-        details: {
-          mcp: { toolName: desc.qualifiedName, isError: result.isError },
-        },
-      } as AgentToolResult<{ mcp: { toolName: string; isError: boolean } }>;
-    },
+      // MCP tools route through the same Rust verified executor as native
+      // tools, so their capability policy and approval are enforced and audited
+      // in Rust rather than the webview.
+      try {
+        const result = await executeAgentTool({
+          sessionId,
+          toolCallId,
+          toolName: desc.qualifiedName,
+          cwd,
+          input: params ?? {},
+        });
+        return toAgentResult(result);
+      } catch (e) {
+        return errorResult(String(e));
+      }
+    }) as ToolExecute,
   };
 }
 
@@ -366,10 +384,10 @@ export async function createTauriAgent(
 ): Promise<Agent> {
   const model = resolveAgentModel(options);
 
-  const tools = createAgentTools(options.cwd);
+  const tools = createAgentTools(options.cwd, options.sessionId);
 
   // Discover and add MCP tools from connected servers
-  const mcpTools = await discoverMcpTools();
+  const mcpTools = await discoverMcpTools(options.cwd, options.sessionId);
   tools.push(...mcpTools);
 
   // Expose an interactive question tool when a gate is provided.
@@ -421,10 +439,18 @@ export async function createTauriAgent(
     });
   }
 
-  // Wrap tool execute functions with approval gate if provided
+  // Wrap tool execute functions with the approval gate. The gate produces the
+  // approval UX and decides allow/deny; on approval we record a single-use grant
+  // in Rust keyed by the native tool name, which the verified executor consumes.
+  // The gate is UX only: Rust independently enforces policy and the grant, so a
+  // bypassed gate cannot execute an Ask/Deny tool.
   if (options.approvalGate) {
     const gate = options.approvalGate;
+    const sessionId = options.sessionId;
     for (const tool of tools) {
+      // ask_question is an interactive elicitation tool, not a workspace tool;
+      // it does not route through the verified executor, so it is not gated here.
+      if (tool.name === "ask_question") continue;
       const originalExecute = tool.execute;
       tool.execute = async (
         toolCallId: string,
@@ -442,6 +468,16 @@ export async function createTauriAgent(
             ],
             details: { denied: true, toolName: tool.name },
           } as AgentToolResult<{ denied: boolean; toolName: string }>;
+        }
+        try {
+          await grantAgentTool(
+            sessionId,
+            toolCallId,
+            nativeToolName(tool.name),
+          );
+        } catch {
+          // If the grant cannot be recorded, the verified executor will deny
+          // Ask-level tools; Auto tools proceed regardless.
         }
         return originalExecute(toolCallId, params, signal);
       };

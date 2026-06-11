@@ -27,7 +27,9 @@ export function toggleGroupCollapse(
 /**
  * Get IDs of nodes hidden by collapsed groups.
  */
-export function collapsedGroupChildIds(document: WorkflowDocument): Set<string> {
+export function collapsedGroupChildIds(
+  document: WorkflowDocument,
+): Set<string> {
   const hidden = new Set<string>();
   for (const node of document.nodes) {
     if (node.type === "group" && node.config.collapsed === true) {

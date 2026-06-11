@@ -159,9 +159,7 @@ export function summarizeAgentToolActivity(
         input: toolInput,
         output: toolOutput,
         errorText:
-          typeof toolError === "string" && toolError.trim()
-            ? toolError
-            : null,
+          typeof toolError === "string" && toolError.trim() ? toolError : null,
       });
     }
   }
@@ -522,7 +520,9 @@ export const AgentRunTimeline = memo(function AgentRunTimeline({
             {isCollapsed ? "▸" : "▾"}
           </span>
           <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="shrink-0 font-medium text-foreground">Run timeline</span>
+            <span className="shrink-0 font-medium text-foreground">
+              Run timeline
+            </span>
             <span className="min-w-0 shrink truncate text-muted-foreground/85">
               {statusLabel}
               {duration ? ` · ${duration}` : ""}
@@ -693,7 +693,11 @@ export const AgentRunTimeline = memo(function AgentRunTimeline({
                         aria-label={`Toggle details for ${item.name} tool`}
                         className="group/tool-row flex w-full min-w-0 items-center gap-1.5 rounded-md border border-border/25 bg-background/45 px-1.5 py-1 text-left text-[10px] leading-none text-muted-foreground transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         onClick={() =>
-                          toggleToolRow(toolKey, item.status === "failed", isExpanded)
+                          toggleToolRow(
+                            toolKey,
+                            item.status === "failed",
+                            isExpanded,
+                          )
                         }
                       >
                         {expandControl}
@@ -787,7 +791,6 @@ export const AgentRunTimeline = memo(function AgentRunTimeline({
     </div>
   );
 });
-
 
 const CompactionNotice = memo(function CompactionNotice({
   droppedCount,

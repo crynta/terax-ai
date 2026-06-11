@@ -11,12 +11,15 @@ import {
 } from "./views";
 
 describe("sidebar views", () => {
-  it("keeps the primary sidebar limited to Files and Git", () => {
+  it("lists the primary sidebar workspace activities", () => {
     expect(
       PRIMARY_SIDEBAR_VIEW_ITEMS.map((item) => [item.id, item.label]),
     ).toEqual([
       ["explorer", "Files"],
       ["source-control", "Git"],
+      ["automation", "Automation"],
+      ["agent-manager", "Agents"],
+      ["skill-browser", "Skills"],
     ]);
   });
 
@@ -35,6 +38,9 @@ describe("sidebar views", () => {
     expect(SIDEBAR_VIEW_ITEMS.map((item) => item.id)).toEqual([
       "explorer",
       "source-control",
+      "automation",
+      "agent-manager",
+      "skill-browser",
       "code",
       "chat",
       "compare",

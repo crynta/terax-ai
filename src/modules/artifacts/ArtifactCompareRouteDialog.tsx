@@ -40,7 +40,8 @@ export function ArtifactCompareRouteDialog({
   }, [defaultUrl, request]);
 
   const normalized = useMemo(() => normalizeCompareRoute(draft), [draft]);
-  const error = draft.trim() && !normalized ? "Enter a valid http(s) URL." : null;
+  const error =
+    draft.trim() && !normalized ? "Enter a valid http(s) URL." : null;
 
   const submit = () => {
     if (!request || !normalized) return;
@@ -48,7 +49,10 @@ export function ArtifactCompareRouteDialog({
   };
 
   return (
-    <Dialog open={request !== null} onOpenChange={(open) => !open && onCancel()}>
+    <Dialog
+      open={request !== null}
+      onOpenChange={(open) => !open && onCancel()}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Compare artifact to browser route</DialogTitle>
@@ -60,7 +64,10 @@ export function ArtifactCompareRouteDialog({
 
         <div className="grid gap-3">
           <div className="grid gap-1.5">
-            <label className="text-xs font-medium" htmlFor="artifact-compare-url">
+            <label
+              className="text-xs font-medium"
+              htmlFor="artifact-compare-url"
+            >
               Browser route URL
             </label>
             <Input
@@ -80,7 +87,8 @@ export function ArtifactCompareRouteDialog({
                 error ? "text-destructive" : "text-muted-foreground",
               )}
             >
-              {error ?? "Artifact previews stay sandboxed; browser routes use the normal preview iframe."}
+              {error ??
+                "Artifact previews stay sandboxed; browser routes use the normal preview iframe."}
             </div>
           </div>
 

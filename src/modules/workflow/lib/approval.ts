@@ -67,7 +67,7 @@ export function createWorkflowApprovalRequest(
   options: { requestedAt?: string } = {},
 ): WorkflowApprovalRequest | null {
   const node = document.nodes.find((candidate) => candidate.id === nodeId);
-  if (!node || node.runtimeState.status !== "waiting-approval") return null;
+  if (node?.runtimeState.status !== "waiting-approval") return null;
 
   const action = workflowNodeExecutionIntent(node);
   const nodeType = workflowApprovalNodeType(node);

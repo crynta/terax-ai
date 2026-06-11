@@ -238,12 +238,7 @@ function ArtifactDetail({
     setSaving(false);
     setRenaming(false);
     setDeleting(false);
-  }, [
-    artifact.content,
-    artifact.summary.slug,
-    artifact.summary.title,
-    artifact.summary.version,
-  ]);
+  }, [artifact.content, artifact.summary.title]);
 
   async function saveDraft() {
     if (

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { preRunValidation } from "./preRunValidation";
-import {
-  createStarterWorkflowDocument,
-  addWorkflowNode,
-} from "./schema";
+import { createStarterWorkflowDocument, addWorkflowNode } from "./schema";
 
 describe("workflow pre-run validation", () => {
   it("reports no issues for a valid starter document", () => {
@@ -22,8 +19,8 @@ describe("workflow pre-run validation", () => {
       { id: "node_http", type: "httpRequest", position: { x: 200, y: 80 } },
     );
     const issues = preRunValidation(doc);
-    const httpWarnings = issues.filter(
-      (i) => i.message.includes("URL not configured"),
+    const httpWarnings = issues.filter((i) =>
+      i.message.includes("URL not configured"),
     );
     expect(httpWarnings.length).toBe(1);
   });
@@ -34,8 +31,8 @@ describe("workflow pre-run validation", () => {
       { id: "node_setvar", type: "setVariable", position: { x: 200, y: 80 } },
     );
     const issues = preRunValidation(doc);
-    const varWarnings = issues.filter(
-      (i) => i.message.includes("Variable name not set"),
+    const varWarnings = issues.filter((i) =>
+      i.message.includes("Variable name not set"),
     );
     expect(varWarnings.length).toBe(1);
   });

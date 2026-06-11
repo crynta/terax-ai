@@ -33,7 +33,13 @@ type Props = {
 // server page can hold hundreds of MB inside the WebView.
 const SUSPEND_AFTER_MS = 30_000;
 
-export function PreviewPane({ url, visible, onUrlChange, ref, iframeRef }: Props) {
+export function PreviewPane({
+  url,
+  visible,
+  onUrlChange,
+  ref,
+  iframeRef,
+}: Props) {
   // `nonce` is part of the iframe `key`. Bumping it remounts the iframe,
   // which is the only reliable cross-origin reload (calling
   // contentWindow.location.reload() throws on cross-origin frames).

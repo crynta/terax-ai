@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { providerNeedsKey, providerSupportsKey } from "@/modules/ai/config";
 import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
 import { usePiControllerState } from "@/modules/pi/lib/PiControllerProvider";
-import { resolvePiProviderConfig } from "@/modules/pi/lib/provider";
+import type { resolvePiProviderConfig } from "@/modules/pi/lib/provider";
 import { onKeysChanged } from "@/modules/settings/store";
 
 type PiProviderResult = ReturnType<typeof resolvePiProviderConfig>;

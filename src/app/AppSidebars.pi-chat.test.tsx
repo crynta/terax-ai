@@ -40,7 +40,9 @@ function props(): AppSidebarsProps {
       defaultSize: 260,
       explorerRef: { current: null },
       rootPath: "/repo",
-      sourceControl: { changedCount: 0 } as AppSidebarsProps["primary"]["sourceControl"],
+      sourceControl: {
+        changedCount: 0,
+      } as AppSidebarsProps["primary"]["sourceControl"],
       visible: true,
       widthRef: { current: null },
       onAttachFileToAgent: () => {},

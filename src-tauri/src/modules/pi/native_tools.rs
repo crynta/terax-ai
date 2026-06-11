@@ -105,14 +105,14 @@ impl NativeToolContext {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct NativeToolApprovalMetadata {
+pub struct NativeToolApprovalMetadata {
     pub policy: Option<ApprovalPolicy>,
     pub approved: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct NativeToolRequest {
+pub struct NativeToolRequest {
     pub session_id: String,
     pub tool_call_id: String,
     pub tool_name: String,
@@ -138,13 +138,13 @@ impl NativeToolRequest {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct NativeToolResult {
+pub struct NativeToolResult {
     pub content: Vec<NativeToolContent>,
     pub details: Value,
 }
 
 #[derive(Debug, Serialize)]
-pub(super) struct NativeToolContent {
+pub struct NativeToolContent {
     #[serde(rename = "type")]
     kind: &'static str,
     text: String,

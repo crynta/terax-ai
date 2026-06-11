@@ -19,7 +19,9 @@ let root: Root;
 
 describe("ArtifactComparePanel", () => {
   beforeEach(() => {
-    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    (
+      globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    ).IS_REACT_ACT_ENVIRONMENT = true;
     artifactsNativeMock.get.mockReset();
     artifactsNativeMock.get.mockResolvedValue({
       summary: {
@@ -66,6 +68,8 @@ describe("ArtifactComparePanel", () => {
     );
     expect(document.body.textContent).toContain("Artifact preview");
     expect(document.body.textContent).toContain("Browser route");
-    expect(document.querySelectorAll("iframe").length).toBeGreaterThanOrEqual(2);
+    expect(document.querySelectorAll("iframe").length).toBeGreaterThanOrEqual(
+      2,
+    );
   });
 });

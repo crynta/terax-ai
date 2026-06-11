@@ -33,7 +33,11 @@ type CommandOutput = {
 };
 
 type GrepHit = { path: string; rel: string; line: number; text: string };
-type GrepResponse = { hits: GrepHit[]; truncated: boolean; files_scanned: number };
+type GrepResponse = {
+  hits: GrepHit[];
+  truncated: boolean;
+  files_scanned: number;
+};
 type GlobHit = { path: string; rel: string };
 type GlobResponse = { hits: GlobHit[]; truncated: boolean };
 
@@ -65,8 +69,51 @@ function deriveHomeDir(cwd: string): string {
   if (match) return match[1];
   // Fallback: strip trailing path components until we reach a likely home
   const parts = cwd.split("/").filter(Boolean);
-  if (parts.length >= 2) return "/" + parts.slice(0, 2).join("/");
+  if (parts.length >= 2) return `/${parts.slice(0, 2).join("/")}`;
   return cwd;
+}
+
+// ─── Verified execution path ───
+//
+// Every agent-initiated tool call is routed through the Rust verified executor
+// (`pi_agent_tool_execute`). Rust authorizes the cwd against the live workspace
+// registry, evaluates capability policy, consumes a user-issued approval grant
+// for Ask-level tools, runs the tool, and records an audit entry. The webview
+// approval card is UX; Rust is the security boundary.
+
+export type NativeToolContentItem = { type: string; text?: string };
+export type NativeToolResult = {
+  content: NativeToolContentItem[];
+  details?: unknown;
+};
+
+/** Run a native agent tool under full Rust enforcement. */
+export async function executeAgentTool(req: {
+  sessionId: string;
+  toolCallId: string;
+  toolName: string;
+  cwd: string;
+  input: unknown;
+}): Promise<NativeToolResult> {
+  return invoke<NativeToolResult>("pi_agent_tool_execute", {
+    request: {
+      sessionId: req.sessionId,
+      toolCallId: req.toolCallId,
+      toolName: req.toolName,
+      cwd: req.cwd,
+      workspaceEnv: ws(),
+      input: req.input,
+    },
+  });
+}
+
+/** Record a single-use approval grant the moment the user approves a tool. */
+export async function grantAgentTool(
+  sessionId: string,
+  toolCallId: string,
+  toolName: string,
+): Promise<void> {
+  await invoke("pi_approval_grant", { sessionId, toolCallId, toolName });
 }
 
 // ─── Tool implementations ───
@@ -124,7 +171,7 @@ export const piBridgeTools = {
 
     let content = result.content;
     let applied = 0;
-    let failed: string[] = [];
+    const failed: string[] = [];
 
     for (const edit of edits) {
       const idx = content.indexOf(edit.oldText);
@@ -136,11 +183,15 @@ export const piBridgeTools = {
       // to avoid silently editing the wrong location.
       const secondIdx = content.indexOf(edit.oldText, idx + 1);
       if (secondIdx !== -1) {
-        failed.push(`oldText is not unique (found at ${idx} and ${secondIdx}): ${edit.oldText.slice(0, 50)}...`);
+        failed.push(
+          `oldText is not unique (found at ${idx} and ${secondIdx}): ${edit.oldText.slice(0, 50)}...`,
+        );
         continue;
       }
       content =
-        content.slice(0, idx) + edit.newText + content.slice(idx + edit.oldText.length);
+        content.slice(0, idx) +
+        edit.newText +
+        content.slice(idx + edit.oldText.length);
       applied++;
     }
 
@@ -181,7 +232,11 @@ export const piBridgeTools = {
   async grep(
     pattern: string,
     root: string,
-    options?: { glob?: string[]; caseInsensitive?: boolean; maxResults?: number },
+    options?: {
+      glob?: string[];
+      caseInsensitive?: boolean;
+      maxResults?: number;
+    },
   ) {
     const abs = resolvePath(root, root.startsWith("/") ? "" : "/");
     const result = await invoke<GrepResponse>("fs_grep", {

@@ -43,7 +43,7 @@ import {
   type WorkflowHttpRequestExecutor,
   type WorkflowShellCommandExecutor,
 } from "../lib/execution";
-import { type WorkflowRecentFile } from "../lib/filePersistence";
+import type { WorkflowRecentFile } from "../lib/filePersistence";
 import { workflowNativeHttpExecutor } from "../lib/httpExecution";
 import { buildWorkflowInspectorState } from "../lib/inspector";
 import { createWorkflowPiAgentExecutor } from "../lib/nativeAgentExecution";

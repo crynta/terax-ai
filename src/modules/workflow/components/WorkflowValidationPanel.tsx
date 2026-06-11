@@ -59,10 +59,7 @@ export function WorkflowValidationPanel({
       {expanded && (
         <div className="max-h-48 overflow-y-auto border-border/40 border-t px-2 py-1.5">
           {issues.map((issue, i) => (
-            <div
-              key={i}
-              className="flex items-start gap-2 py-0.5 text-[11px]"
-            >
+            <div key={i} className="flex items-start gap-2 py-0.5 text-[11px]">
               <span
                 className={
                   issue.severity === "error"

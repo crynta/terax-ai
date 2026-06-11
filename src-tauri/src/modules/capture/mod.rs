@@ -1,8 +1,13 @@
+pub mod window_enum;
+#[cfg(feature = "openclicky")]
+pub mod three_d;
+
+use tauri::Runtime;
+
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 use base64::Engine;
-#[cfg(all(target_os = "macos", feature = "openclicky"))]
+#[cfg(feature = "openclicky")]
 use tauri::Manager;
-use tauri::Runtime;
 
 #[derive(Default)]
 pub struct CaptureState {
@@ -70,4 +75,9 @@ pub async fn capture_screen<R: Runtime>(
         let _ = (app, _state, focused_only);
         Err("screen capture not available on this platform".into())
     }
+}
+
+#[tauri::command]
+pub async fn list_windows() -> Result<Vec<window_enum::WindowInfo>, String> {
+    window_enum::list_windows()
 }

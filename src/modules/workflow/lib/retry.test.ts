@@ -16,7 +16,10 @@ import {
 } from "./schema";
 
 function docWithRetrySetup(): WorkflowDocument {
-  let doc = createStarterWorkflowDocument({ id: "wf_retry", title: "Retry Test" });
+  let doc = createStarterWorkflowDocument({
+    id: "wf_retry",
+    title: "Retry Test",
+  });
   doc = addWorkflowNode(doc, {
     id: "source",
     type: "httpRequest",
@@ -48,7 +51,11 @@ describe("retry execution", () => {
 
   it("returns null when no upstream edge", () => {
     let doc = createStarterWorkflowDocument({ id: "wf", title: "T" });
-    doc = addWorkflowNode(doc, { id: "r", type: "retry", position: { x: 100, y: 100 } });
+    doc = addWorkflowNode(doc, {
+      id: "r",
+      type: "retry",
+      position: { x: 100, y: 100 },
+    });
     const retry = doc.nodes.find((n) => n.id === "r")!;
     expect(retrySourceNode(doc, retry)).toBeNull();
   });
@@ -59,7 +66,14 @@ describe("retry execution", () => {
       ...doc,
       nodes: doc.nodes.map((n) =>
         n.id === "source"
-          ? { ...n, runtimeState: { status: "failed", message: "timeout", attempt: 1 } }
+          ? {
+              ...n,
+              runtimeState: {
+                status: "failed",
+                message: "timeout",
+                attempt: 1,
+              },
+            }
           : n,
       ),
     };
@@ -75,7 +89,14 @@ describe("retry execution", () => {
       ...doc,
       nodes: doc.nodes.map((n) =>
         n.id === "source"
-          ? { ...n, runtimeState: { status: "failed", message: "timeout", attempt: 1 } }
+          ? {
+              ...n,
+              runtimeState: {
+                status: "failed",
+                message: "timeout",
+                attempt: 1,
+              },
+            }
           : n,
       ),
     };
@@ -89,7 +110,14 @@ describe("retry execution", () => {
       ...doc,
       nodes: doc.nodes.map((n) =>
         n.id === "source"
-          ? { ...n, runtimeState: { status: "failed", message: "timeout", attempt: 3 } }
+          ? {
+              ...n,
+              runtimeState: {
+                status: "failed",
+                message: "timeout",
+                attempt: 3,
+              },
+            }
           : n,
       ),
     };
@@ -109,7 +137,14 @@ describe("retry execution", () => {
       ...doc,
       nodes: doc.nodes.map((n) =>
         n.id === "source"
-          ? { ...n, runtimeState: { status: "failed", message: "Connection refused", attempt: 3 } }
+          ? {
+              ...n,
+              runtimeState: {
+                status: "failed",
+                message: "Connection refused",
+                attempt: 3,
+              },
+            }
           : n,
       ),
     };
@@ -131,7 +166,14 @@ describe("retry execution", () => {
           : n,
       ),
       artifacts: [
-        { id: "a1", nodeId: "source", type: "text", label: "Response", preview: "OK data", value: "OK data" },
+        {
+          id: "a1",
+          nodeId: "source",
+          type: "text",
+          label: "Response",
+          preview: "OK data",
+          value: "OK data",
+        },
       ],
     };
     const retry = doc.nodes.find((n) => n.id === "retry")!;

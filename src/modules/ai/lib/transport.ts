@@ -1,5 +1,5 @@
 import type { UIMessage } from "@ai-sdk/react";
-import { type CustomEndpoint } from "../config";
+import type { CustomEndpoint } from "../config";
 import type { ToolContext } from "../tools/tools";
 import { type AgentUsageDelta, runAgentStream } from "./agent";
 import type { CustomEndpointKeys, ProviderKeys } from "./keyring";
