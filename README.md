@@ -95,6 +95,10 @@ Terax is a lightweight open-source terminal (ADE) built on Tauri 2 + Rust and Re
 
 Latest installers are on the [Releases](https://github.com/crynta/terax-ai/releases/latest) page. Terax auto-updates from there.
 
+### macOS notes
+
+- **Homebrew:** `brew install --cask terax`
+
 ### Windows notes
 
 - On first launch Windows shows "Windows protected your PC" because Terax isn't code-signed yet. Click **More info** then **Run anyway**.
