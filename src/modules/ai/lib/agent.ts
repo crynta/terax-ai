@@ -26,6 +26,7 @@ import {
 import { buildTools, type ToolContext } from "../tools/tools";
 import { compactModelMessagesDetailed } from "./compact";
 import type { CustomEndpointKeys, ProviderKeys } from "./keyring";
+import { isE2eMockEnabled, isMockModelId } from "./mockFlags";
 import { createProxyFetch } from "./proxyFetch";
 
 const localProxyFetch = createProxyFetch({ allowPrivateNetwork: true });
@@ -242,6 +243,12 @@ export function buildConfiguredLanguageModel(
   keys: ProviderKeys,
   local: LocalProviderConfig = {},
 ): Promise<LanguageModel> {
+  // E2E mock short-circuit (Phase C, Stage 0): only when the flag is set, and
+  // resolved before any key check or provider switch. Dynamically imported so
+  // the mock + `ai/test` never enter the production main chunk.
+  if (isMockModelId(modelId) && isE2eMockEnabled()) {
+    return import("./mockProvider").then((m) => m.buildMockModel(modelId));
+  }
   if (isCompatModelId(modelId)) {
     const eid = endpointIdFromCompatModel(modelId);
     const ep = local.customEndpoints?.find((e) => e.id === eid);

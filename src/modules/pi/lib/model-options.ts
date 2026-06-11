@@ -5,6 +5,7 @@ import {
   type ProviderId,
   type ProviderInfo,
 } from "@/modules/ai/config";
+import { isModelSelectable } from "@/modules/ai/lib/mockFlags";
 import type { PiProfileModelsList } from "@/modules/pi/lib/native";
 
 export type PiModelFilterOptions = {
@@ -68,6 +69,7 @@ export function getPiModelProviderGroups(
       models: MODELS.filter(
         (model) =>
           model.provider === provider.id &&
+          isModelSelectable(model.id) &&
           providerModelMatchesQuery(model, query),
       ),
       setupRequired: !configuredIds.has(provider.id),

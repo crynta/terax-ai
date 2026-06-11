@@ -523,6 +523,18 @@ export const MODELS = [
     description: "Local models via Ollama.",
     capabilities: { intelligence: 3, speed: 3, cost: 5 },
   },
+  {
+    // E2E-only deterministic mock (Phase C, Stage 0). Keyless provider so the
+    // key gate passes; hidden from the picker unless the `terax.e2e` flag is
+    // set (see isMockModelVisible). buildConfiguredLanguageModel short-circuits
+    // on this id before the provider switch, so the ollama branch never runs.
+    id: "mock-echo",
+    provider: "ollama",
+    label: "Mock (e2e)",
+    hint: "Mock",
+    description: "Deterministic offline model for end-to-end tests.",
+    capabilities: { intelligence: 1, speed: 5, cost: 5 },
+  },
 ] as const satisfies readonly ModelInfo[];
 
 export type ModelId = (typeof MODELS)[number]["id"];

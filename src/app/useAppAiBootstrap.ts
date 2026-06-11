@@ -4,6 +4,7 @@ import {
   getAllKeys,
   hasAnyKey,
 } from "@/modules/ai/lib/keyring";
+import { isE2eMockEnabled } from "@/modules/ai/lib/mockFlags";
 import { useAgentsStore } from "@/modules/ai/store/agentsStore";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { useSnippetsStore } from "@/modules/ai/store/snippetsStore";
@@ -47,7 +48,9 @@ export function useAppAiBootstrap() {
     (ollamaModelId.trim() && ollamaBaseURL.trim()) ||
     (openaiCompatibleModelId.trim() && openaiCompatibleBaseURL.trim()) ||
     customEndpoints.some((endpoint) => endpoint.modelId.trim());
-  const hasComposer = hasAnyKey(apiKeys) || Boolean(hasLocalModel);
+  // The e2e mock provider is keyless, so let the flag satisfy the composer gate.
+  const hasComposer =
+    hasAnyKey(apiKeys) || Boolean(hasLocalModel) || isE2eMockEnabled();
 
   const prefsHydrated = usePreferencesStore((s) => s.hydrated);
   const sidebarPosition = usePreferencesStore((s) => s.sidebarPosition);

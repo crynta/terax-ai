@@ -132,6 +132,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@ai-sdk/provider": "^3.0.8",
     "@biomejs/biome": "^2.4.16",
     "@tailwindcss/vite": "^4.2.3",
     "@tauri-apps/cli": "^2.11.2",

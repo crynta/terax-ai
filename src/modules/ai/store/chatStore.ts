@@ -21,6 +21,7 @@ import {
   EMPTY_PROVIDER_KEYS,
   type ProviderKeys,
 } from "../lib/keyring";
+import { E2E_MOCK_MODEL_ID, isE2eMockEnabled } from "../lib/mockFlags";
 import { pushRecentModel } from "../lib/modelPrefs";
 import {
   deleteSessionData,
@@ -401,7 +402,10 @@ export const useChatStore = create<StoreState>((set, get) => ({
   customEndpointKeys: {},
   setCustomEndpointKeys: (keys) => set({ customEndpointKeys: keys }),
 
-  selectedModelId: DEFAULT_MODEL_ID,
+  // In e2e (flag set), default to the deterministic mock model so specs need no
+  // provider keys or model-picker interaction; production always gets the real
+  // default.
+  selectedModelId: isE2eMockEnabled() ? E2E_MOCK_MODEL_ID : DEFAULT_MODEL_ID,
   setSelectedModelId: (id) => {
     set({ selectedModelId: id });
     void pushRecentModel(id);

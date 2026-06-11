@@ -31,6 +31,20 @@ Golden flows that need no AI provider, secrets, or network:
   shortcut fires even with the terminal focused), typing filters, Escape closes.
 - `new-editor.e2e.mjs` - Ctrl+E opens the new-file dialog; typing a name and
   pressing Escape cancels without writing a file.
+- `ai-chat.e2e.mjs` - the AI chat surface end to end against a deterministic
+  mock provider (no keys, no network). Sets the `terax.e2e` localStorage flag,
+  reloads, opens the composer (Ctrl+I), sends a prompt, and asserts the mocked
+  assistant reply streams in. This is the Phase C, Stage 0 scaffold.
+
+### The mock provider (terax.e2e flag)
+
+The chat surface needs a live BYOK provider, which these tests must not depend
+on. Setting `localStorage["terax.e2e"] = "1"` (then reloading) swaps in a
+deterministic offline `MockLanguageModelV3` (`src/modules/ai/lib/mockProvider.ts`)
+that streams a canned reply. The flag also: registers a hidden `mock-echo`
+model, makes it the default selection, and satisfies the composer's "has a
+provider" gate. In normal use the flag is unset, so none of this is reachable
+and the mock code stays in a lazily loaded chunk.
 
 xterm renders to a WebGL canvas, so on-screen terminal text is not readable
 through the DOM. The terminal spec asserts the input plumbing structurally

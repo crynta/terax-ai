@@ -57,6 +57,7 @@ import {
   providerNeedsKey,
 } from "../config";
 import { ACCEPTED_FILES, useComposer } from "../lib/composer";
+import { isModelSelectable } from "../lib/mockFlags";
 import { toggleFavoriteModel } from "../lib/modelPrefs";
 import { useChatStore } from "../store/chatStore";
 
@@ -260,7 +261,10 @@ function ModelDropdown() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKeys]);
 
-  const allModels = useMemo(() => [...MODELS, ...epModelInfos], [epModelInfos]);
+  const allModels = useMemo(
+    () => [...MODELS.filter((m) => isModelSelectable(m.id)), ...epModelInfos],
+    [epModelInfos],
+  );
 
   const COMPAT_PROVIDER_ID = "__compat__";
 
