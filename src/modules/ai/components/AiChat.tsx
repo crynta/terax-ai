@@ -16,6 +16,7 @@ import {
   sendMessage,
   useChatStore,
 } from "../store/chatStore";
+import { LazyRow } from "@/components/lazy-row";
 import { RenderedMessage } from "./AiChatMessage";
 
 type AnyPart = UIMessagePart<Record<string, never>, Record<string, never>>;
@@ -65,7 +66,6 @@ const EMPTY_TOOL_ACTIVITY: AgentToolActivitySummary = {
   latestToolName: null,
   items: [],
 };
-const MAX_RENDERED_CHAT_MESSAGES = 80;
 
 function isToolPart(part: AnyPart): boolean {
   return part.type === "dynamic-tool" || part.type.startsWith("tool-");
@@ -243,12 +243,6 @@ export function AiChatView({
   const markAgentRunPaused = useChatStore((s) => s.markAgentRunPaused);
   const showContinue =
     !isBusy && hitStepCap && lastMessage?.role === "assistant";
-  const hiddenMessageCount = Math.max(
-    0,
-    messages.length - MAX_RENDERED_CHAT_MESSAGES,
-  );
-  const renderedMessages =
-    hiddenMessageCount > 0 ? messages.slice(hiddenMessageCount) : messages;
 
   const onApproval = useCallback(
     (id: string, approved: boolean) =>
@@ -272,23 +266,16 @@ export function AiChatView({
   return (
     <Conversation>
       <ConversationContent className="gap-5 p-3">
-        {hiddenMessageCount > 0 ? (
-          <div
-            role="note"
-            className="rounded-md border border-border/45 bg-card/55 px-3 py-2 text-xs text-muted-foreground"
-          >
-            Showing latest {renderedMessages.length.toLocaleString()} messages.
-            {hiddenMessageCount.toLocaleString()} older messages are retained in
-            chat history.
-          </div>
-        ) : null}
-        {renderedMessages.map((m) => (
-          <RenderedMessage
-            key={m.id}
-            message={m}
-            onApproval={onApproval}
-            streaming={m.id === streamingMessageId}
-          />
+        {messages.map((m) => (
+          // Older messages lazy-render off-screen via content-visibility; the
+          // streaming message stays eager (on-screen, updates per token).
+          <LazyRow key={m.id} eager={m.id === streamingMessageId}>
+            <RenderedMessage
+              message={m}
+              onApproval={onApproval}
+              streaming={m.id === streamingMessageId}
+            />
+          </LazyRow>
         ))}
         <AgentRunTimeline
           messages={messages}

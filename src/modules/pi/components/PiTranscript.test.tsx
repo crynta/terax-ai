@@ -334,7 +334,7 @@ describe("PiTranscript", () => {
     expect(html).toContain("hello");
   });
 
-  it("windows very large transcripts to keep the sidebar responsive", () => {
+  it("renders the full transcript with content-visibility virtualization", () => {
     const transcript = Array.from({ length: 180 }, (_, index) =>
       item({
         id: `evt-${index + 1}`,
@@ -352,9 +352,11 @@ describe("PiTranscript", () => {
       <PiTranscript selectedSession={session} transcript={transcript} />,
     );
 
-    expect(html).toContain("Showing latest 160 of 180 messages");
-    expect(html).not.toContain("oldest-message");
+    // The whole history is reachable now (no silent slice); off-screen rows are
+    // kept cheap via native content-visibility rather than being dropped.
+    expect(html).toContain("oldest-message");
     expect(html).toContain("latest-message");
+    expect(html).toContain("content-visibility:auto");
   });
 
   it("shows prompt context and copy affordances for user messages", () => {

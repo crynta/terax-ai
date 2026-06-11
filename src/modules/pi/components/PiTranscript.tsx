@@ -34,6 +34,7 @@ import {
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
 import { Tool } from "@/components/ai-elements/tool";
+import { LazyRow } from "@/components/lazy-row";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup, ButtonGroupText } from "@/components/ui/button-group";
@@ -85,8 +86,6 @@ const PROMPT_SUGGESTIONS = [
   "Summarize current file",
   "Find where auth is configured",
 ];
-
-const MAX_RENDERED_TRANSCRIPT_ITEMS = 160;
 
 type PromptContextChip = {
   label: string;
@@ -956,15 +955,6 @@ export function PiTranscript({
       ),
     [transcript],
   );
-  const renderedTranscript = useMemo(
-    () =>
-      visibleTranscript.length > MAX_RENDERED_TRANSCRIPT_ITEMS
-        ? visibleTranscript.slice(-MAX_RENDERED_TRANSCRIPT_ITEMS)
-        : visibleTranscript,
-    [visibleTranscript],
-  );
-  const hiddenTranscriptCount =
-    visibleTranscript.length - renderedTranscript.length;
   const isRunning = selectedSession?.status === "running";
   const lastVisible = visibleTranscript[visibleTranscript.length - 1] ?? null;
   const latestProgress = useMemo(
@@ -1046,31 +1036,28 @@ export function PiTranscript({
               <EmptyTranscript onUsePrompt={onUsePrompt} />
             ) : (
               <>
-                {hiddenTranscriptCount > 0 ? (
-                  <div
-                    className="rounded-md border border-border/35 bg-card/60 px-2 py-1 text-center text-[10px] text-muted-foreground"
-                    role="note"
-                  >
-                    Showing latest {renderedTranscript.length} of{" "}
-                    {visibleTranscript.length} messages
-                  </div>
-                ) : null}
-                {renderedTranscript.map((item) => (
-                  <TranscriptItem
+                {visibleTranscript.map((item) => (
+                  // Older rows lazy-render off-screen via content-visibility;
+                  // the streaming row stays eager (on-screen, updates per token).
+                  <LazyRow
                     key={item.id}
-                    canRegenerate={canRegenerate}
-                    item={item}
-                    onForkFromTurn={onForkFromTurn}
-                    onRollbackToTurn={onRollbackToTurn}
-                    onRegenerate={onRegenerate}
-                    onToolApproval={onToolApproval}
-                    onQuestionRespond={onQuestionRespond}
-                    streaming={item.id === streamingAssistantId}
-                    ttsSpeaking={tts.speaking}
-                    ttsActiveMessageId={tts.activeMessageId}
-                    onTtsSpeak={tts.speak}
-                    onTtsStop={tts.stop}
-                  />
+                    eager={item.id === streamingAssistantId}
+                  >
+                    <TranscriptItem
+                      canRegenerate={canRegenerate}
+                      item={item}
+                      onForkFromTurn={onForkFromTurn}
+                      onRollbackToTurn={onRollbackToTurn}
+                      onRegenerate={onRegenerate}
+                      onToolApproval={onToolApproval}
+                      onQuestionRespond={onQuestionRespond}
+                      streaming={item.id === streamingAssistantId}
+                      ttsSpeaking={tts.speaking}
+                      ttsActiveMessageId={tts.activeMessageId}
+                      onTtsSpeak={tts.speak}
+                      onTtsStop={tts.stop}
+                    />
+                  </LazyRow>
                 ))}
                 {showProgress ? <ProgressRow text={progressText} /> : null}
               </>
