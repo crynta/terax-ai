@@ -9,7 +9,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
-import { createImeDedup } from "./imeDedup";
+import { createImeDedup, IME_DEDUP_WINDOW_MS } from "./imeDedup";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
@@ -61,6 +61,7 @@ export type Slot = {
   ptyTimer: ReturnType<typeof setTimeout> | null;
   webglReapTimer: ReturnType<typeof setTimeout> | null;
   slotReapTimer: ReturnType<typeof setTimeout> | null;
+  imeFlushTimer: ReturnType<typeof setTimeout> | null;
   unhideRaf: number | null;
   lastCols: number;
   lastRows: number;
@@ -209,9 +210,6 @@ function createSlot(): Slot {
   getRecycler().appendChild(host);
   term.open(host);
   const imeDedup = createImeDedup();
-  term.textarea?.addEventListener("compositionend", (e) =>
-    imeDedup.arm((e as CompositionEvent).data ?? "", performance.now()),
-  );
 
   const slot: Slot = {
     id: slots.length,
@@ -231,6 +229,7 @@ function createSlot(): Slot {
     ptyTimer: null,
     webglReapTimer: null,
     slotReapTimer: null,
+    imeFlushTimer: null,
     unhideRaf: null,
     lastCols: term.cols,
     lastRows: term.rows,
@@ -238,6 +237,26 @@ function createSlot(): Slot {
     lastH: 0,
     lastUsedAt: 0,
   };
+
+  term.textarea?.addEventListener(
+    "compositionend",
+    (e) => {
+      const data = (e as CompositionEvent).data ?? "";
+      const armedAt = performance.now();
+      imeDedup.arm(data, armedAt);
+      cancelImeFlush(slot);
+      if (!data) return;
+      slot.imeFlushTimer = setTimeout(() => {
+        slot.imeFlushTimer = null;
+        const pending = imeDedup.flushPending(armedAt + IME_DEDUP_WINDOW_MS);
+        if (pending === null) return;
+        const leafId = slot.currentLeafId;
+        if (leafId === null) return;
+        adapter?.resolveLeaf(leafId)?.writeToPty(pending);
+      }, IME_DEDUP_WINDOW_MS);
+    },
+    { capture: true },
+  );
 
   term.attachCustomKeyEventHandler((event) => {
     // During IME composition the browser is assembling a multi-keystroke
@@ -667,6 +686,7 @@ function detachSlotFromLeaf(slot: Slot, retain: boolean): void {
   if (slot.ptyTimer) clearTimeout(slot.ptyTimer);
   slot.fitTimer = null;
   slot.ptyTimer = null;
+  cancelImeFlush(slot);
 
   cancelPendingUnhide(slot);
   slot.host.style.visibility = "";
@@ -722,6 +742,13 @@ function cancelSlotReap(slot: Slot): void {
   }
 }
 
+function cancelImeFlush(slot: Slot): void {
+  if (slot.imeFlushTimer !== null) {
+    clearTimeout(slot.imeFlushTimer);
+    slot.imeFlushTimer = null;
+  }
+}
+
 function reapIdleSlot(slot: Slot): void {
   if (slot.currentLeafId !== null) return;
   const idle = slots.filter((s) => s.currentLeafId === null);
@@ -743,6 +770,7 @@ function disposeSlot(slot: Slot): void {
   if (slot.ptyTimer) clearTimeout(slot.ptyTimer);
   slot.fitTimer = null;
   slot.ptyTimer = null;
+  cancelImeFlush(slot);
   slot.observer?.disconnect();
   slot.observer = null;
   for (const d of slot.oscDisposers) {
