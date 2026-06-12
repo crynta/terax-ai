@@ -82,6 +82,17 @@ import {
 import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import {
+  currentWorkspaceEnv,
+  getWslHome,
+  LOCAL_WORKSPACE,
+  useWorkspaceEnvStore,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
+import { invoke } from "@tauri-apps/api/core";
+import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
+import { homeDir } from "@tauri-apps/api/path";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useWorkspaceEnvStore } from "@/modules/workspace";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -443,6 +454,16 @@ export default function App() {
     newPrivateTab(inheritedCwdForNewTab());
   }, [newPrivateTab, inheritedCwdForNewTab]);
 
+  // Native folder picker → open the chosen directory in a fresh terminal tab.
+  // On macOS the open panel also grants the (non-sandboxed) packaged app TCC
+  // access to external volumes under /Volumes, which are otherwise unreadable.
+  const openFolder = useCallback(async () => {
+    const selected = await openFolderDialog({
+      directory: true,
+      multiple: false,
+    });
+    if (typeof selected === "string") newTab(selected);
+  }, [newTab]);
   const openNewBlockTab = useCallback(() => {
     newBlockTab(inheritedCwdForNewTab());
   }, [newBlockTab, inheritedCwdForNewTab]);
@@ -614,6 +635,7 @@ export default function App() {
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "settings.open": () => void openSettingsWindow(),
+      "folder.open": () => void openFolder(),
       "sidebar.toggle": toggleSidebar,
       "explorer.focus": toggleExplorerFocus,
       "view.zoomIn": zoomIn,
@@ -632,6 +654,7 @@ export default function App() {
       openNewTab,
       openNewBlockTab,
       openNewPrivateTab,
+      openFolder,
       openPreviewTab,
       selectByIndex,
       splitActivePaneInActiveTab,
@@ -1046,6 +1069,7 @@ export default function App() {
                       <FileExplorer
                         ref={explorerRef}
                         rootPath={explorerRoot}
+                        onOpenFolder={openFolder}
                         activeFilePath={explorerActiveFilePath}
                         onOpenFile={handleOpenFile}
                         onPathRenamed={handlePathRenamed}

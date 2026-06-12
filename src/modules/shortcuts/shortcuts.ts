@@ -38,6 +38,7 @@ export type ShortcutId =
   | "ai.toggle"
   | "ai.askSelection"
   | "settings.open"
+  | "folder.open"
   | "sidebar.toggle"
   | "editor.undo"
   | "editor.redo";
@@ -87,6 +88,18 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Open settings",
     group: "General",
     defaultBindings: [{ [MOD_PROP]: true, key: "," }],
+  },
+  {
+    id: "shortcuts.open",
+    label: "Show keyboard shortcuts",
+    group: "General",
+    defaultBindings: [{ [MOD_PROP]: true, key: "k" }],
+  },
+  {
+    id: "folder.open",
+    label: "Open folder",
+    group: "General",
+    defaultBindings: [{ [MOD_PROP]: true, key: "o" }],
   },
   {
     id: "tab.new",

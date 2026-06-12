@@ -20,6 +20,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "opener:default",
+    "dialog:allow-open",
     "log:default",
     "os:default",
     "notification:default",
