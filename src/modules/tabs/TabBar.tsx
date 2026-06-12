@@ -215,8 +215,49 @@ export function TabBar({
                   key={t.id}
                   value={String(t.id)}
                   data-tab-id={t.id}
-                  data-tab-active={isActive ? "true" : undefined}
-                  onDoubleClick={() => isPreview && onPin(t.id)}
+                  onPointerDown={(e) => {
+                    // Left button only; ignore grabs that start on the close
+                    // control so it can still receive the click.
+                    if (e.button !== 0) return;
+                    if ((e.target as HTMLElement).closest("[data-no-drag]"))
+                      return;
+                    drag.current = {
+                      pointerId: e.pointerId,
+                      startX: e.clientX,
+                      fromId: t.id,
+                      active: false,
+                    };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    const st = drag.current;
+                    if (!st || st.pointerId !== e.pointerId) return;
+                    if (!st.active) {
+                      // Don't start a drag until the pointer clears a small
+                      // threshold, so a plain click still selects the tab.
+                      if (Math.abs(e.clientX - st.startX) < 4) return;
+                      st.active = true;
+                      setDraggingId(st.fromId);
+                      document.body.style.userSelect = "none";
+                    }
+                    e.preventDefault();
+                    setDropGap(gapAtX(e.clientX));
+                  }}
+                  onPointerUp={(e) => {
+                    const st = drag.current;
+                    if (st?.active && dropGap !== null) {
+                      onReorder(st.fromId, dropGap);
+                    }
+                    endDrag(e.currentTarget);
+                  }}
+                  onPointerCancel={(e) => endDrag(e.currentTarget)}
+                  onDoubleClick={() => {
+  if (isPreview) {
+    onPin(t.id);
+  } else if (t.kind === "terminal") {
+    setEditingId(t.id);
+  }
+}}
                   onAuxClick={(e) => {
                     if (e.button === 1 && tabs.length > 1) {
                       e.preventDefault();
