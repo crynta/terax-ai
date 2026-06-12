@@ -22,10 +22,7 @@ import {
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { native } from "@/modules/ai/lib/native";
-import {
-  CommandPalette,
-  createCommandItems,
-} from "@/modules/command-palette";
+import { CommandPalette, createCommandItems } from "@/modules/command-palette";
 import {
   NewEditorDialog,
   useEditorFileSync,
@@ -56,11 +53,7 @@ import {
   useSourceControlContext,
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
-import {
-  useTabs,
-  useWindowTitle,
-  useWorkspaceCwd,
-} from "@/modules/tabs";
+import { useTabs, useWindowTitle, useWorkspaceCwd } from "@/modules/tabs";
 import {
   clearFocusedTerminal,
   disposeSession,
@@ -869,8 +862,9 @@ export default function App() {
 
   const handleNewTabInSpace = useCallback(
     (spaceId: string) => {
-      const root = useSpaces.getState().spaces.find((s) => s.id === spaceId)
-        ?.root;
+      const root = useSpaces
+        .getState()
+        .spaces.find((s) => s.id === spaceId)?.root;
       newTabInSpace(spaceId, root ?? undefined);
     },
     [newTabInSpace],
@@ -1023,7 +1017,7 @@ export default function App() {
             />
           )}
 
-          <main className="zoom-content flex min-h-0 flex-1 flex-col">
+          <main className="flex min-h-0 flex-1 flex-col">
             <ResizablePanelGroup
               orientation="horizontal"
               className="min-h-0 flex-1"
@@ -1041,7 +1035,10 @@ export default function App() {
                 }}
               >
                 <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
-                  <div key={sidebarView} className="min-h-0 flex-1 terax-panel-in">
+                  <div
+                    key={sidebarView}
+                    className="min-h-0 flex-1 terax-panel-in"
+                  >
                     {sidebarView === "explorer" ? (
                       <FileExplorer
                         ref={explorerRef}
@@ -1073,7 +1070,7 @@ export default function App() {
               </ResizablePanel>
               <ResizableHandle withHandle />
               <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
-                <div className="flex h-full min-h-0 flex-col">
+                <div className="zoom-content flex h-full min-h-0 flex-col">
                   <div className="relative min-h-0 flex-1">
                     <WorkspaceSurface
                       tabs={tabs}
