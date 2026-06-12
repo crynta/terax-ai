@@ -9,6 +9,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
+import { createImeDedup } from "./imeDedup";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
@@ -207,6 +208,10 @@ function createSlot(): Slot {
   host.setAttribute("data-terax-slot", String(slots.length));
   getRecycler().appendChild(host);
   term.open(host);
+  const imeDedup = createImeDedup();
+  term.textarea?.addEventListener("compositionend", (e) =>
+    imeDedup.arm((e as CompositionEvent).data ?? "", performance.now()),
+  );
 
   const slot: Slot = {
     id: slots.length,
@@ -297,6 +302,7 @@ function createSlot(): Slot {
   });
 
   term.onData((data) => {
+    if (imeDedup.shouldDrop(data, performance.now())) return;
     const leafId = slot.currentLeafId;
     if (leafId === null) return;
     adapter?.resolveLeaf(leafId)?.writeToPty(data);
