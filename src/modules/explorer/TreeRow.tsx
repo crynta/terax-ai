@@ -6,6 +6,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { memo, useState } from "react";
@@ -61,6 +62,9 @@ function EntryRowImpl(props: EntryRowProps) {
   } = props;
 
   const [isConfirming, setIsConfirming] = useState(false);
+  const doubleClickAction = usePreferencesStore(
+    (s) => s.explorerDoubleClickAction,
+  );
   const iconUrl = isDir ? folderIconUrl(name, isExpanded) : fileIconUrl(name);
   const createTarget = isDir ? path : path.slice(0, path.lastIndexOf("/")) || rootPath;
   const paddingLeft = 6 + depth * 12;
@@ -97,7 +101,11 @@ function EntryRowImpl(props: EntryRowProps) {
             type="button"
             data-fs-path={path}
             onClick={handleClick}
-            onDoubleClick={() => !isDir && tree.beginRename(path)}
+            onDoubleClick={() => {
+              if (isDir) return;
+              if (doubleClickAction === "rename") tree.beginRename(path);
+              else onOpenFile(path, true);
+            }}
             className={cn(
               "group flex h-6 w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 text-left text-[13px] text-foreground/85 transition-colors hover:bg-accent/70",
               isSelected && "bg-accent text-foreground",
@@ -187,6 +195,13 @@ function EntryRowImpl(props: EntryRowProps) {
           onSelect={() => void copyToClipboard(relativePath(rootPath, path))}
         >
           Copy Relative Path
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          className={COMPACT_ITEM}
+          onSelect={() => tree.beginRename(path)}
+        >
+          Rename
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
