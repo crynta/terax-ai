@@ -108,6 +108,11 @@ type SourceControlPanelState = {
   generateCommitMessage: () => Promise<void>;
   commit: () => Promise<void>;
   push: () => Promise<void>;
+  worktreeBusy: boolean;
+  worktreeError: string | null;
+  clearWorktreeError: () => void;
+  suggestedWorktreeName: string;
+  createWorktree: (branchName: string) => Promise<string>;
 };
 
 function normalizeError(error: unknown): string {
@@ -258,7 +263,8 @@ function optimisticStage(
     if (!paths.has(file.path)) return file;
     if (file.staged && !file.unstaged) return file;
     changed = true;
-    const wt = file.worktreeStatus !== " " ? file.worktreeStatus : file.indexStatus;
+    const wt =
+      file.worktreeStatus !== " " ? file.worktreeStatus : file.indexStatus;
     return {
       ...file,
       indexStatus: wt,
@@ -288,7 +294,8 @@ function optimisticUnstage(
       continue;
     }
     changed = true;
-    const idx = file.indexStatus !== " " ? file.indexStatus : file.worktreeStatus;
+    const idx =
+      file.indexStatus !== " " ? file.indexStatus : file.worktreeStatus;
     if (idx === "R" && file.originalPath) {
       next.push({
         path: file.originalPath,
@@ -399,6 +406,10 @@ export function useSourceControlPanel(
     | { scope: "all"; entries: SourceControlEntry[] }
     | null
   >(null);
+  const [worktreeBusy, setWorktreeBusy] = useState(false);
+  const [worktreeError, setWorktreeError] = useState<string | null>(null);
+  const [suggestedWorktreeName, setSuggestedWorktreeName] = useState("");
+  const clearWorktreeError = useCallback(() => setWorktreeError(null), []);
   const selectedRef = useRef<DiffSelection | null>(null);
   const reconcileTimerRef = useRef(0);
 
@@ -543,7 +554,11 @@ export function useSourceControlPanel(
   useEffect(() => () => cancelReconcile(), [cancelReconcile]);
 
   const openSelection = useCallback(
-    (sel: DiffSelection, repoRoot: string, file: GitChangedFile | undefined) => {
+    (
+      sel: DiffSelection,
+      repoRoot: string,
+      file: GitChangedFile | undefined,
+    ) => {
       onOpenDiff?.({
         path: sel.path,
         repoRoot,
@@ -641,7 +656,10 @@ export function useSourceControlPanel(
   const selectEntry = useCallback(
     async (entry: SourceControlEntry) => {
       if (!repo) return;
-      const nextSelection: DiffSelection = { path: entry.path, mode: entry.mode };
+      const nextSelection: DiffSelection = {
+        path: entry.path,
+        mode: entry.mode,
+      };
       if (sameSelection(selected, nextSelection)) {
         setActionError(null);
         setActionMessage(null);
@@ -965,6 +983,41 @@ export function useSourceControlPanel(
     }
   }, [repo, status?.upstream, summary]);
 
+  useEffect(() => {
+    if (panelState !== "ready" || !summary.repo) return;
+    let cancelled = false;
+    void native
+      .gitSuggestWorktreeName(summary.repo.repoRoot, null)
+      .then((result) => {
+        if (!cancelled) setSuggestedWorktreeName(result.branchName);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [panelState, summary.repo]);
+
+  const createWorktree = useCallback(
+    async (branchName: string): Promise<string> => {
+      if (!repo || worktreeBusy) return "";
+      setWorktreeBusy(true);
+      setWorktreeError(null);
+      try {
+        const result = await native.gitWorktreeAdd(repo.repoRoot, branchName);
+        setActionMessage(`Created worktree for ${branchName}`);
+        invalidateRepoDiffs(repo.repoRoot);
+        await summary.refresh({ remote: "never" });
+        return result.worktreePath;
+      } catch (error) {
+        setWorktreeError(normalizeError(error));
+        return "";
+      } finally {
+        setWorktreeBusy(false);
+      }
+    },
+    [repo, worktreeBusy, summary],
+  );
+
   const pendingDiscardView = useMemo<PendingDiscard | null>(() => {
     if (!pendingDiscard) return null;
     if (pendingDiscard.scope === "single") {
@@ -1025,5 +1078,10 @@ export function useSourceControlPanel(
     generateCommitMessage,
     commit,
     push,
+    worktreeBusy,
+    worktreeError,
+    clearWorktreeError,
+    suggestedWorktreeName,
+    createWorktree,
   };
 }

@@ -466,9 +466,12 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 onCreate={async (branchName) => {
                   const path = await scm.createWorktree(branchName);
                   if (path) onOpenTerminal?.(path);
+                  return path;
                 }}
                 busy={scm.worktreeBusy}
-                error={scm.worktreeError}>
+                error={scm.worktreeError}
+                onClearError={scm.clearWorktreeError}
+              >
                 <button
                   type="button"
                   aria-label="New worktree"

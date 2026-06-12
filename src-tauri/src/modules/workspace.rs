@@ -491,6 +491,31 @@ pub fn wsl_home(distro: String) -> Result<String, String> {
     }
 }
 
+pub(crate) fn workspace_home(workspace: &WorkspaceEnv) -> Result<String, String> {
+    match workspace {
+        WorkspaceEnv::Local => dirs::home_dir()
+            .map(|p| crate::modules::fs::to_canon(&p))
+            .ok_or_else(|| "could not resolve home directory".to_string()),
+        WorkspaceEnv::Wsl { distro } => {
+            #[cfg(not(windows))]
+            {
+                let _ = distro;
+                Err("WSL is only available on Windows".to_string())
+            }
+            #[cfg(windows)]
+            {
+                let out = run_wsl_sh(distro, "printf %s \"$HOME\"")?;
+                let home = normalize_wsl_value(out, "");
+                if home.is_empty() {
+                    Err(format!("could not resolve WSL home for {distro}"))
+                } else {
+                    Ok(home)
+                }
+            }
+        }
+    }
+}
+
 #[cfg(windows)]
 pub fn wsl_login_shell(distro: String) -> Result<String, String> {
     const SCRIPT: &str = r#"uid="$(id -u 2>/dev/null || printf '')"
