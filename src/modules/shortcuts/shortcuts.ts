@@ -36,6 +36,7 @@ export type ShortcutId =
   | "view.zoomReset"
   | "view.zenMode"
   | "ai.toggle"
+  | "ai.newThread"
   | "ai.askSelection"
   | "settings.open"
   | "sidebar.toggle"
@@ -237,6 +238,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle AI agent",
     group: "AI",
     defaultBindings: [{ [MOD_PROP]: true, key: "i" }],
+  },
+  {
+    id: "ai.newThread",
+    label: "New AI conversation",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, key: "n" }],
   },
   {
     id: "ai.askSelection",
