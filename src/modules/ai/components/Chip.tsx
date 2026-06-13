@@ -12,39 +12,21 @@ export type ChipTone =
   | "amber"
   | "primary";
 
-// Catppuccin-soft tones: normal text, a barely-there tinted background, and the
-// accent carried by the icon (theme-adaptive: deeper in light, pastel in dark).
+// All tones render monochrome (color next to the terminal reads as noise);
+// the tone prop stays so call sites keep their semantics.
 type Tone = { box: string; icon: string };
 
+const BOX = "border-border/40 bg-foreground/[0.03] text-foreground/75";
+const TONE: Tone = { box: BOX, icon: "text-foreground/60" };
+
 const TONES: Record<ChipTone, Tone> = {
-  neutral: {
-    box: "border-border/45 bg-foreground/[0.03] text-muted-foreground",
-    icon: "text-muted-foreground",
-  },
-  blue: {
-    box: "border-border/40 bg-blue-400/5 text-foreground/80",
-    icon: "text-blue-500 dark:text-blue-300",
-  },
-  violet: {
-    box: "border-border/40 bg-violet-400/5 text-foreground/80",
-    icon: "text-violet-500 dark:text-violet-300",
-  },
-  emerald: {
-    box: "border-border/40 bg-emerald-400/5 text-foreground/80",
-    icon: "text-emerald-500 dark:text-emerald-300",
-  },
-  sky: {
-    box: "border-border/40 bg-cyan-400/5 text-foreground/80",
-    icon: "text-cyan-500 dark:text-cyan-300",
-  },
-  amber: {
-    box: "border-border/40 bg-amber-400/5 text-foreground/80",
-    icon: "text-amber-500 dark:text-amber-300",
-  },
-  primary: {
-    box: "border-border/40 bg-primary/[0.05] text-foreground/80",
-    icon: "text-primary",
-  },
+  neutral: TONE,
+  blue: TONE,
+  violet: TONE,
+  emerald: TONE,
+  sky: TONE,
+  amber: TONE,
+  primary: TONE,
 };
 
 type Props = {
@@ -56,7 +38,7 @@ type Props = {
   title?: string;
   onRemove?: () => void;
   removeLabel?: string;
-  children: ReactNode;
+  children?: ReactNode;
 };
 
 export function Chip({
@@ -73,7 +55,8 @@ export function Chip({
     <div
       title={title}
       className={cn(
-        "group inline-flex h-[22px] items-center gap-1.5 rounded-md border px-2 text-[11px] leading-none",
+        "group inline-flex h-[22px] items-center gap-1.5 rounded-md border text-[11px] leading-none",
+        children ? "px-2" : "px-1.5",
         "animate-in fade-in-0 zoom-in-95 duration-150",
         !onRemove && "pointer-events-none select-none",
         TONES[tone].box,
@@ -89,7 +72,9 @@ export function Chip({
           />
         ))}
       {label && <span className="opacity-55">{label}</span>}
-      <span className="max-w-[12rem] truncate font-medium">{children}</span>
+      {children != null && (
+        <span className="max-w-[12rem] truncate font-medium">{children}</span>
+      )}
       {onRemove && (
         <button
           type="button"

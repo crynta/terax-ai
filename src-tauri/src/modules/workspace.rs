@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -188,6 +189,11 @@ fn is_usable_launch_dir(path: &Path) -> bool {
     if s.contains(".app/Contents/") {
         return false;
     }
+    // The AppImage mount (/tmp/.mount_*) is not a real working directory.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("APPDIR").is_some_and(|appdir| path.starts_with(&appdir)) {
+        return false;
+    }
     if cfg!(debug_assertions) && path.file_name().and_then(|s| s.to_str()) == Some("src-tauri") {
         return false;
     }
@@ -205,6 +211,84 @@ fn is_executable_dir(path: &Path) -> bool {
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     }
+}
+
+#[cfg(target_os = "linux")]
+const APPIMAGE_PATH_VARS: &[&str] = &[
+    "LD_LIBRARY_PATH",
+    "PATH",
+    "XDG_DATA_DIRS",
+    "GST_PLUGIN_SYSTEM_PATH",
+    "GST_PLUGIN_SYSTEM_PATH_1_0",
+    "GST_PLUGIN_PATH",
+    "GI_TYPELIB_PATH",
+    "GDK_PIXBUF_MODULEDIR",
+    "GIO_MODULE_DIR",
+    "GSETTINGS_SCHEMA_DIR",
+];
+
+#[cfg(target_os = "linux")]
+const APPIMAGE_VALUE_VARS: &[&str] = &[
+    "GDK_PIXBUF_MODULE_FILE",
+    "LD_PRELOAD",
+    "FONTCONFIG_FILE",
+    "FONTCONFIG_PATH",
+];
+
+#[cfg(target_os = "linux")]
+const APPIMAGE_MARKER_VARS: &[&str] = &["APPDIR", "APPIMAGE", "ARGV0"];
+
+pub fn appimage_env_overrides() -> Vec<(&'static str, Option<OsString>)> {
+    #[cfg(target_os = "linux")]
+    {
+        let Some(appdir) = std::env::var_os("APPDIR") else {
+            return Vec::new();
+        };
+        compute_appimage_env_overrides(Path::new(&appdir), |k| std::env::var_os(k))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Vec::new()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn compute_appimage_env_overrides(
+    appdir: &Path,
+    read: impl Fn(&str) -> Option<OsString>,
+) -> Vec<(&'static str, Option<OsString>)> {
+    let mut out = Vec::new();
+
+    for &key in APPIMAGE_PATH_VARS {
+        let Some(val) = read(key) else { continue };
+        let original: Vec<PathBuf> = std::env::split_paths(&val).collect();
+        let kept: Vec<PathBuf> = original
+            .iter()
+            .filter(|p| !p.as_os_str().is_empty() && !p.starts_with(appdir))
+            .cloned()
+            .collect();
+        if kept.len() == original.len() {
+            continue; // nothing AppImage-injected; leave as-is
+        }
+        match std::env::join_paths(&kept) {
+            Ok(joined) if !kept.is_empty() => out.push((key, Some(joined))),
+            _ => out.push((key, None)),
+        }
+    }
+
+    for &key in APPIMAGE_VALUE_VARS {
+        if read(key).is_some_and(|v| Path::new(&v).starts_with(appdir)) {
+            out.push((key, None));
+        }
+    }
+
+    for &key in APPIMAGE_MARKER_VARS {
+        if read(key).is_some() {
+            out.push((key, None));
+        }
+    }
+
+    out
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -796,5 +880,68 @@ mod auth_tests {
         let env = tempdir("envfb");
         let resolved = resolve_launch_cwd(Some("/no/such/terax/dir"), Some(env.clone()));
         assert_eq!(resolved, Some(env));
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod appimage_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn reader(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
+        let map: HashMap<String, OsString> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), OsString::from(v)))
+            .collect();
+        move |k: &str| map.get(k).cloned()
+    }
+
+    fn find<'a>(
+        out: &'a [(&'static str, Option<OsString>)],
+        key: &str,
+    ) -> Option<&'a Option<OsString>> {
+        out.iter().find(|(k, _)| *k == key).map(|(_, v)| v)
+    }
+
+    #[test]
+    fn strips_appdir_from_path_lists_and_unsets_when_empty() {
+        let appdir = Path::new("/tmp/.mount_Terax_X");
+        let env = reader(&[
+            ("LD_LIBRARY_PATH", "/tmp/.mount_Terax_X/usr/lib:/usr/lib"),
+            ("PATH", "/tmp/.mount_Terax_X/usr/bin:/usr/bin:/bin"),
+            ("GST_PLUGIN_SYSTEM_PATH", "/tmp/.mount_Terax_X/usr/lib/gstreamer-1.0"),
+            ("APPDIR", "/tmp/.mount_Terax_X"),
+        ]);
+        let out = compute_appimage_env_overrides(appdir, env);
+
+        assert_eq!(find(&out, "LD_LIBRARY_PATH"), Some(&Some(OsString::from("/usr/lib"))));
+        assert_eq!(find(&out, "PATH"), Some(&Some(OsString::from("/usr/bin:/bin"))));
+        // Only an APPDIR entry, so the var is removed entirely.
+        assert_eq!(find(&out, "GST_PLUGIN_SYSTEM_PATH"), Some(&None));
+        assert_eq!(find(&out, "APPDIR"), Some(&None));
+    }
+
+    #[test]
+    fn leaves_untouched_vars_alone() {
+        let appdir = Path::new("/tmp/.mount_Terax_X");
+        let env = reader(&[
+            ("LD_LIBRARY_PATH", "/usr/lib:/usr/local/lib"),
+            ("LD_PRELOAD", "/home/u/my.so"),
+        ]);
+        let out = compute_appimage_env_overrides(appdir, env);
+
+        // No APPDIR component => no override emitted for these.
+        assert!(find(&out, "LD_LIBRARY_PATH").is_none());
+        assert!(find(&out, "LD_PRELOAD").is_none());
+    }
+
+    #[test]
+    fn unsets_value_vars_only_when_pointing_into_appdir() {
+        let appdir = Path::new("/tmp/.mount_Terax_X");
+        let into = reader(&[("LD_PRELOAD", "/tmp/.mount_Terax_X/usr/lib/x.so")]);
+        assert_eq!(find(&compute_appimage_env_overrides(appdir, into), "LD_PRELOAD"), Some(&None));
+
+        let outside = reader(&[("FONTCONFIG_FILE", "/etc/fonts/fonts.conf")]);
+        assert!(find(&compute_appimage_env_overrides(appdir, outside), "FONTCONFIG_FILE").is_none());
     }
 }

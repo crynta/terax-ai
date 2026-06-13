@@ -428,6 +428,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     !slot.webglAddon ||
     slot.parked ||
     performance.now() - slot.lastUsedAt > SLOT_STALE_MS;
+  const hadWebgl = !!slot.webglAddon;
   slot.retainedLeafId = null;
   slot.currentLeafId = p.leafId;
   slot.lastUsedAt = performance.now();
@@ -436,7 +437,10 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   cancelWebglReap(slot);
   cancelSlotReap(slot);
   unparkSlotHost(slot);
-  if (!fast) slot.host.style.visibility = "hidden";
+  if (!fast) {
+    slot.host.style.visibility = "hidden";
+    if (hadWebgl) disposeSlotWebgl(slot);
+  }
 
   if (slot.host.parentNode !== p.container) {
     p.container.appendChild(slot.host);
@@ -517,7 +521,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     }
     if (adapter?.isLeafFocused(p.leafId)) slot.term.focus();
   } else {
-    scheduleUnhide(slot, stale);
+    scheduleUnhide(slot, stale || hadWebgl);
   }
 
   p.onSearchReady(slot.searchAddon);

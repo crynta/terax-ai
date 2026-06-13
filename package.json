@@ -1,7 +1,7 @@
 {
   "name": "terax",
   "private": true,
-  "version": "0.7.3",
+  "version": "0.8.0",
   "license": "Apache-2.0",
   "type": "module",
   "packageManager": "pnpm@11.5.0+sha512.dbfcc4f81cf48597afd4bc391ffdf12c11f1a9fb83a395bfa6b0a2d9cc2fd8ffebafdb1ccbd529632153f793904c2615b7f09fe1a345473fd1c35845172a8eb1",
@@ -35,9 +35,6 @@
     "@ai-sdk/openai-compatible": "^2.0.48",
     "@ai-sdk/react": "^3.0.198",
     "@ai-sdk/xai": "^3.0.93",
-    "@atlaskit/pragmatic-drag-and-drop": "^1.8.1",
-    "@atlaskit/pragmatic-drag-and-drop-auto-scroll": "^2.1.5",
-    "@atlaskit/pragmatic-drag-and-drop-hitbox": "^1.2.0",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/lang-css": "^6.3.1",

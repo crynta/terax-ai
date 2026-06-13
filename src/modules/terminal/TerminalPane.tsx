@@ -6,10 +6,14 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
-  useState,
 } from "react";
 import { BlockOverlay } from "./block/BlockOverlay";
-import { focusLeafInput, useTerminalSession } from "./lib/useTerminalSession";
+import { BlockWatermark } from "./block/BlockWatermark";
+import {
+  focusLeafInput,
+  submitToLeaf,
+  useTerminalSession,
+} from "./lib/useTerminalSession";
 
 export type TerminalPaneHandle = {
   write: (data: string) => void;
@@ -80,28 +84,12 @@ export const TerminalPane = memo(
       [session],
     );
 
-    const [hoveredId, setHoveredId] = useState<string | null>(null);
-    const hideHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const cancelHideHover = () => {
-      if (hideHoverTimer.current) {
-        clearTimeout(hideHoverTimer.current);
-        hideHoverTimer.current = null;
-      }
-    };
-    const scheduleHideHover = () => {
-      cancelHideHover();
-      hideHoverTimer.current = setTimeout(() => setHoveredId(null), 120);
-    };
-    useEffect(() => {
-      return () => {
-        if (hideHoverTimer.current) clearTimeout(hideHoverTimer.current);
-      };
-    }, []);
-
     const hideStyle = {
       visibility: visible ? ("visible" as const) : ("hidden" as const),
       pointerEvents: visible ? ("auto" as const) : ("none" as const),
     };
+
+    const promptReady = session.blockMode === "prompt";
 
     if (blocks) {
       return (
@@ -125,23 +113,23 @@ export const TerminalPane = memo(
                 if (!moved) session.selectBlockAt(e.clientY);
                 if (session.blockMode === "prompt") focusLeafInput(leafId);
               }}
-              onMouseMove={(e) => {
-                cancelHideHover();
-                const id = session.blockHoverAt(e.clientY)?.block.id ?? null;
-                setHoveredId((prev) => (prev === id ? prev : id));
-              }}
-              onMouseLeave={scheduleHideHover}
+            />
+            <BlockWatermark
+              leafId={leafId}
+              subscribe={session.subscribeBlocks}
             />
             <BlockOverlay
               subscribe={session.subscribeBlocks}
               getVisible={session.visibleBlocks}
-              hoveredId={hoveredId}
               readOutput={(id) => session.readBlockId(id)?.output ?? null}
               searchBlock={session.searchBlock}
               revealMatch={session.revealMatch}
               clearSearch={session.clearSearch}
-              onHoverKeepAlive={cancelHideHover}
-              onHoverEnd={() => setHoveredId(null)}
+              promptReady={promptReady}
+              onRunAgain={(cmd) => submitToLeaf(leafId, cmd)}
+              onRestoreFocus={() => {
+                if (session.blockMode === "prompt") focusLeafInput(leafId);
+              }}
             />
           </div>
         </div>

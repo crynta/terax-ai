@@ -9,10 +9,10 @@ export function OsIcon({ os }: { os: string | null }) {
     return (
       <svg
         viewBox="0 0 448 512"
-        width={11}
-        height={11}
+        width={12}
+        height={12}
         fill="currentColor"
-        className="shrink-0 opacity-80"
+        className="shrink-0"
         aria-hidden="true"
       >
         <path d={LINUX_PATH} />
@@ -22,9 +22,9 @@ export function OsIcon({ os }: { os: string | null }) {
   return (
     <HugeiconsIcon
       icon={os === "macOS" ? AppleIcon : WindowsOldIcon}
-      size={11}
-      strokeWidth={1.75}
-      className="shrink-0 opacity-80"
+      size={12}
+      strokeWidth={2}
+      className="shrink-0"
     />
   );
 }
