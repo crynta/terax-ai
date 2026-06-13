@@ -47,6 +47,7 @@ futures-util = "0.3"
 tokio = { version = "1", default-features = false, features = ["rt"] }
 tempfile = "3"
 notify = "8.2.0"
+tauri-plugin-clipboard-manager = "2"
 
 [dev-dependencies]
 proptest = "1"

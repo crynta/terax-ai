@@ -23,6 +23,8 @@
     "log:default",
     "os:default",
     "notification:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
     "store:default",
     "autostart:allow-enable",
     "autostart:allow-disable",
