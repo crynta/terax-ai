@@ -3,6 +3,8 @@ import { native } from "@/modules/ai/lib/native";
 import type { Tab } from "@/modules/tabs";
 import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { isLeaf, type PaneNode } from "@/modules/terminal/lib/panes";
+import { useWorkspaceEnvStore } from "@/modules/workspace";
+import { activeSpaceEnv } from "./activeSpace";
 import { freshTerminalTab, hydrateTabs } from "./serialize";
 import { loadAll, saveActiveId, saveSpacesList, type SpaceMeta } from "./store";
 import { useSpaces } from "./useSpaces";
@@ -78,6 +80,10 @@ export function useSpacesBoot({
             ? activeId
             : spaces[0].id;
         setActiveSpaceForNewTabs(active);
+
+        // Must precede cwd authorization and shell spawns below; both read the
+        // global env, which on Windows decides WSL vs local path resolution.
+        useWorkspaceEnvStore.getState().setEnv(activeSpaceEnv(spaces, active));
 
         // Active space must never be empty, else its tab list shows nothing.
         if (!restored.some((t) => t.spaceId === active)) {

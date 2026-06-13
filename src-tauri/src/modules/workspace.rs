@@ -115,6 +115,23 @@ pub fn authorize_user_spawn_cwd(
     Ok(Some(canonical))
 }
 
+// A saved cwd can be stale or from another environment (e.g. a Windows path in
+// a now-WSL space); the terminal must still open, so fall back to home.
+pub fn user_spawn_cwd_or_home(
+    registry: &WorkspaceRegistry,
+    cwd: Option<&str>,
+    workspace: &WorkspaceEnv,
+) -> Option<String> {
+    let cwd = cwd.map(str::trim).filter(|s| !s.is_empty())?;
+    match authorize_user_spawn_cwd(registry, Some(cwd), workspace) {
+        Ok(_) => Some(cwd.to_owned()),
+        Err(e) => {
+            log::warn!("pty cwd {cwd:?} unusable in {workspace:?} ({e}); opening home");
+            None
+        }
+    }
+}
+
 pub fn bootstrap_registry(registry: &WorkspaceRegistry) {
     let _ = registry.authorize(resolve_launch_dir());
     if let Some(home) = dirs::home_dir() {
@@ -816,6 +833,43 @@ mod auth_tests {
         let err = authorize_user_spawn_cwd(&reg, Some(&s), &WorkspaceEnv::Local)
             .expect_err("missing path must fail");
         assert!(err.contains("cwd not accessible"), "got: {err}");
+    }
+
+    #[test]
+    fn user_spawn_cwd_or_home_keeps_accessible_dir() {
+        let dir = tempdir("orhome-ok");
+        let reg = WorkspaceRegistry::default();
+        let s = dir.to_string_lossy().into_owned();
+        assert_eq!(
+            user_spawn_cwd_or_home(&reg, Some(&s), &WorkspaceEnv::Local),
+            Some(s)
+        );
+        assert!(reg.is_authorized(&dir));
+    }
+
+    #[test]
+    fn user_spawn_cwd_or_home_falls_back_when_inaccessible() {
+        let mut missing = env::temp_dir();
+        missing.push(format!("terax-orhome-missing-{}", std::process::id()));
+        let reg = WorkspaceRegistry::default();
+        let s = missing.to_string_lossy().into_owned();
+        assert_eq!(
+            user_spawn_cwd_or_home(&reg, Some(&s), &WorkspaceEnv::Local),
+            None
+        );
+    }
+
+    #[test]
+    fn user_spawn_cwd_or_home_passes_through_empty() {
+        let reg = WorkspaceRegistry::default();
+        assert_eq!(
+            user_spawn_cwd_or_home(&reg, None, &WorkspaceEnv::Local),
+            None
+        );
+        assert_eq!(
+            user_spawn_cwd_or_home(&reg, Some("  "), &WorkspaceEnv::Local),
+            None
+        );
     }
 
     #[test]

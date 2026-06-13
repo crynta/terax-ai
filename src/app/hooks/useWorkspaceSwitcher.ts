@@ -56,20 +56,20 @@ export function useWorkspaceSwitcher({
   }, []);
 
   const switchWorkspace = useCallback(
-    async (env: WorkspaceEnv) => {
+    async (env: WorkspaceEnv): Promise<boolean> => {
       if (
         env.kind === workspaceEnv.kind &&
         (env.kind === "local" ||
           (workspaceEnv.kind === "wsl" && env.distro === workspaceEnv.distro))
       ) {
-        return;
+        return false;
       }
       const dirty = tabsRef.current.some((t) => t.kind === "editor" && t.dirty);
       if (dirty) {
         window.alert(
           "Save or close unsaved editor tabs before switching workspace.",
         );
-        return;
+        return false;
       }
 
       let nextHome: string | null = null;
@@ -81,7 +81,7 @@ export function useWorkspaceSwitcher({
         }
       } catch (e) {
         window.alert(String(e));
-        return;
+        return false;
       }
 
       clearWorkspaceState();
@@ -96,6 +96,7 @@ export function useWorkspaceSwitcher({
         }
       }
       resetWorkspace(nextHome ?? undefined);
+      return true;
     },
     [
       workspaceEnv,

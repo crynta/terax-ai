@@ -14,7 +14,7 @@ use std::thread;
 use portable_pty::PtySize;
 use tauri::ipc::{Channel, Response};
 
-use crate::modules::workspace::{authorize_user_spawn_cwd, WorkspaceEnv, WorkspaceRegistry};
+use crate::modules::workspace::{user_spawn_cwd_or_home, WorkspaceEnv, WorkspaceRegistry};
 use session::Session;
 
 pub struct PtyState {
@@ -49,10 +49,7 @@ pub async fn pty_open(
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let blocks = blocks.unwrap_or(false);
-    authorize_user_spawn_cwd(&registry, cwd.as_deref(), &workspace).map_err(|e| {
-        log::warn!("pty_open: cwd rejected: {e}");
-        e
-    })?;
+    let cwd = user_spawn_cwd_or_home(&registry, cwd.as_deref(), &workspace);
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
     let session = tauri::async_runtime::spawn_blocking(move || {
         session::spawn(id, app, cols, rows, cwd, workspace, blocks, on_data, on_exit)
