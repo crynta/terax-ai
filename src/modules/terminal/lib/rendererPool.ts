@@ -14,6 +14,10 @@ import {
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
+import {
+  readTerminalClipboardText,
+  writeTerminalClipboardText,
+} from "./clipboard";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -276,15 +280,14 @@ function createSlot(): Slot {
     if (isTerminalCopy(event)) {
       if (event.type === "keydown" && slot.term.hasSelection()) {
         const sel = slot.term.getSelection();
-        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        if (sel) void writeTerminalClipboardText(sel).catch(() => {});
       }
       event.preventDefault();
       return false;
     }
     if (isTerminalPaste(event)) {
       if (event.type === "keydown") {
-        void navigator.clipboard
-          .readText()
+        void readTerminalClipboardText()
           .then((text) => {
             if (text) slot.term.paste(text);
           })
