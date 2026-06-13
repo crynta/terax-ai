@@ -1,6 +1,7 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
+import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
@@ -242,7 +243,10 @@ function createSlot(): Slot {
     // composed string through its own compositionend handler instead.
     // keyCode 229 ("Process") is what Chromium reports for every key
     // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // Thai tone marks also get keyCode 229 in Chromium but carry a real key
+    // value (e.g. '่') — use event.key === 'Process' to distinguish IME from
+    // direct Thai keyboard input.
+    if (event.isComposing || event.key === "Process") return false;
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
@@ -277,18 +281,43 @@ function createSlot(): Slot {
       if (event.type === "keydown" && slot.term.hasSelection()) {
         const sel = slot.term.getSelection();
         if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        const t = slot.term;
+        requestAnimationFrame(() => { t.clearSelection(); t.refresh(0, t.rows - 1); });
+      }
+      event.preventDefault();
+      return false;
+    }
+    // Ctrl+C: copy when text is selected, otherwise fall through to PTY (SIGINT).
+    if (isCtrlC(event) && slot.term.hasSelection()) {
+      if (event.type === "keydown") {
+        const sel = slot.term.getSelection();
+        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        const t = slot.term;
+        requestAnimationFrame(() => { t.clearSelection(); t.refresh(0, t.rows - 1); });
       }
       event.preventDefault();
       return false;
     }
     if (isTerminalPaste(event)) {
       if (event.type === "keydown") {
-        void navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (text) slot.term.paste(text);
-          })
-          .catch(() => {});
+        void pasteClipboard(slot);
+      }
+      event.preventDefault();
+      return false;
+    }
+    // Ctrl+V: paste from clipboard (^V / literal-next is sacrificed, matching
+    // Windows Terminal behaviour where Ctrl+V always pastes).
+    if (isCtrlV(event)) {
+      if (event.type === "keydown") {
+        void pasteClipboard(slot);
+      }
+      event.preventDefault();
+      return false;
+    }
+    // Cmd+V on macOS: intercept to support image paste.
+    if (isMacPaste(event)) {
+      if (event.type === "keydown") {
+        void pasteClipboard(slot);
       }
       event.preventDefault();
       return false;
@@ -1034,11 +1063,23 @@ const IS_MAC =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad/.test(navigator.userAgent);
 
+
 function isTerminalCopy(e: KeyboardEvent): boolean {
   return (
     !IS_MAC &&
     e.ctrlKey &&
     e.shiftKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    (e.code === "KeyC" || e.key === "c" || e.key === "C")
+  );
+}
+
+function isCtrlC(e: KeyboardEvent): boolean {
+  return (
+    !IS_MAC &&
+    e.ctrlKey &&
+    !e.shiftKey &&
     !e.altKey &&
     !e.metaKey &&
     (e.code === "KeyC" || e.key === "c" || e.key === "C")
@@ -1056,8 +1097,79 @@ function isTerminalPaste(e: KeyboardEvent): boolean {
   );
 }
 
+function isCtrlV(e: KeyboardEvent): boolean {
+  return (
+    !IS_MAC &&
+    e.ctrlKey &&
+    !e.shiftKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    (e.code === "KeyV" || e.key === "v" || e.key === "V")
+  );
+}
+
+function isMacPaste(e: KeyboardEvent): boolean {
+  return (
+    IS_MAC &&
+    e.metaKey &&
+    !e.ctrlKey &&
+    !e.shiftKey &&
+    !e.altKey &&
+    (e.code === "KeyV" || e.key === "v" || e.key === "V")
+  );
+}
+
 function isShiftEnter(e: KeyboardEvent): boolean {
   return (
     e.key === "Enter" && e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey
   );
+}
+
+/**
+ * Paste clipboard content into the terminal. Text pastes as usual; when the
+ * clipboard holds only an image, forward a literal ^V to the PTY so CLI tools
+ * that read the OS clipboard themselves (e.g. Claude Code) can pick it up.
+ */
+async function pasteClipboard(slot: Slot): Promise<void> {
+  try {
+    const items = await navigator.clipboard.read();
+    const hasText = items.some((i) =>
+      i.types.some((t) => t.startsWith("text/")),
+    );
+    const hasImage = items.some((i) =>
+      i.types.some((t) => t.startsWith("image/")),
+    );
+    if (!hasText && hasImage) {
+      const imgItem =
+        items.find((i) => i.types.includes("image/png")) ??
+        items.find((i) => i.types.some((t) => t.startsWith("image/")));
+      if (imgItem) {
+        const type = imgItem.types.find((t) => t.startsWith("image/")) ?? "image/png";
+        const blob = await imgItem.getType(type);
+        const b64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const url = e.target!.result as string;
+            resolve(url.split(",")[1] ?? "");
+          };
+          reader.readAsDataURL(blob);
+        });
+        const path = await invoke<string>("write_temp_image", { dataBase64: b64 });
+        if (path) {
+          slot.term.paste(path);
+          setTimeout(
+            () => void invoke("fs_delete", { path, workspace: null }).catch(() => {}),
+            5 * 60 * 1000,
+          );
+          return;
+        }
+      }
+    }
+  } catch {
+    // fall through to plain-text paste
+  }
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text) slot.term.paste(text);
+  } catch {}
 }

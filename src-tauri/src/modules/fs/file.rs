@@ -128,6 +128,22 @@ pub fn fs_write_file(
     Ok(())
 }
 
+/// Save base64-encoded PNG bytes to a unique temp file and return its path.
+/// The caller is responsible for deleting the file via `fs_delete` when done.
+#[tauri::command]
+pub fn write_temp_image(data_base64: String) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    let bytes = STANDARD.decode(&data_base64).map_err(|e| e.to_string())?;
+    let id = std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let mut path = std::env::temp_dir();
+    path.push(format!("terax-paste-{id}.png"));
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub fn fs_canonicalize(path: String, workspace: Option<WorkspaceEnv>) -> Result<String, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
