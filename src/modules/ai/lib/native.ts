@@ -124,6 +124,16 @@ export type GitDiscardEntry = {
   untracked: boolean;
 };
 
+export type GitAddWorktreeResult = {
+  worktreePath: string;
+  branchName: string;
+};
+
+export type GitWorktreeNameSuggestion = {
+  branchName: string;
+  displayName: string;
+};
+
 export const native = {
   workspaceCurrentDir: () => invoke<string>("workspace_current_dir"),
   workspaceAuthorize: (path: string) =>
@@ -356,6 +366,18 @@ export const native = {
     invoke<string | null>("git_remote_url", {
       repoRoot,
       name: name ?? null,
+      workspace: currentWorkspaceEnv(),
+    }),
+  gitSuggestWorktreeName: (repoRoot: string, userInput?: string | null) =>
+    invoke<GitWorktreeNameSuggestion>("git_suggest_worktree_name", {
+      repoRoot,
+      userInput: userInput ?? null,
+      workspace: currentWorkspaceEnv(),
+    }),
+  gitWorktreeAdd: (repoRoot: string, branchName: string) =>
+    invoke<GitAddWorktreeResult>("git_add_worktree", {
+      repoRoot,
+      branchName,
       workspace: currentWorkspaceEnv(),
     }),
 };

@@ -109,6 +109,20 @@ pub struct GitLogEntry {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GitWorktreeAddResult {
+    pub worktree_path: String,
+    pub branch_name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitWorktreeNameSuggestion {
+    pub branch_name: String,
+    pub display_name: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitPushResult {
     pub remote: Option<String>,
     pub branch: Option<String>,
