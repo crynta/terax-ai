@@ -8,6 +8,12 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -21,10 +27,22 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
+import { openPath } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { COMPACT_CONTENT, COMPACT_ITEM } from "@/modules/explorer/lib/menuItemClass";
 import { segmentsFromCwd } from "./lib/pathUtils";
+
+/** Open a folder directly in the system file manager (shows its contents). */
+async function openInFileManager(path: string): Promise<void> {
+  try {
+    await openPath(path);
+  } catch (e) {
+    console.error("openPath failed:", e);
+  }
+}
 
 type Props = {
   cwd: string | null;
@@ -44,7 +62,47 @@ function basename(path: string): string {
   return i === -1 ? path : path.slice(i + 1);
 }
 
+/**
+ * Right-click / two-finger tap on a path segment reveals THAT segment in the
+ * system file manager. Each segment sets the target during the bubble phase;
+ * `onResetTarget` runs first (capture phase) so clicks on separators or empty
+ * space fall back to the whole directory.
+ */
+function RevealMenu({
+  revealPath,
+  onResetTarget,
+  children,
+}: {
+  revealPath: string | null;
+  onResetTarget: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        className="contents"
+        onContextMenuCapture={onResetTarget}
+      >
+        {children}
+      </ContextMenuTrigger>
+      <ContextMenuContent className={COMPACT_CONTENT}>
+        <ContextMenuItem
+          className={COMPACT_ITEM}
+          disabled={!revealPath}
+          onSelect={() => revealPath && void openInFileManager(revealPath)}
+        >
+          Reveal in Finder
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
+  // Tracks which path the next "Reveal in Finder" should open; segments set it
+  // on right-click, falling back to the whole directory.
+  const [revealPath, setRevealPath] = useState<string | null>(null);
+
   // File mode: dir segments navigate; filename is the terminal leaf.
   if (filePath) {
     const dir = dirname(filePath);
@@ -53,13 +111,18 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
     const first = segments[0];
     const middle = segments.slice(1);
     return (
-      <Breadcrumb>
+      <RevealMenu
+        revealPath={revealPath}
+        onResetTarget={() => setRevealPath(dir)}
+      >
+        <Breadcrumb>
         <BreadcrumbList className="gap-1 text-xs sm:gap-1.5">
           {first ? (
             <BreadcrumbSegment
               label={first.label}
               isHome={first.isHome}
               onClick={() => onCd(first.fullPath)}
+              onReveal={() => setRevealPath(first.fullPath)}
             />
           ) : null}
           {middle.length > 0 ? (
@@ -74,14 +137,21 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
                 label={s.label}
                 isHome={s.isHome}
                 onClick={() => onCd(s.fullPath)}
+                onReveal={() => setRevealPath(s.fullPath)}
               />
             </span>
           ))}
           <BreadcrumbItem>
-            <BreadcrumbPage className="text-foreground">{name}</BreadcrumbPage>
+            <BreadcrumbPage
+              className="text-foreground"
+              onContextMenu={() => setRevealPath(dir)}
+            >
+              {name}
+            </BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
-      </Breadcrumb>
+        </Breadcrumb>
+      </RevealMenu>
     );
   }
 
@@ -98,13 +168,18 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
   const firstParent = parents[0];
   const middleParents = parents.slice(1);
   return (
-    <Breadcrumb>
+    <RevealMenu
+      revealPath={revealPath}
+      onResetTarget={() => setRevealPath(cwd)}
+    >
+      <Breadcrumb>
       <BreadcrumbList className="gap-1 text-xs sm:gap-1.5">
         {firstParent ? (
           <BreadcrumbSegment
             label={firstParent.label}
             isHome={firstParent.isHome}
             onClick={() => onCd(firstParent.fullPath)}
+            onReveal={() => setRevealPath(firstParent.fullPath)}
           />
         ) : null}
         {middleParents.length > 0 ? (
@@ -116,6 +191,7 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
               label={s.label}
               isHome={s.isHome}
               onClick={() => onCd(s.fullPath)}
+              onReveal={() => setRevealPath(s.fullPath)}
             />
           </span>
         ))}
@@ -124,10 +200,12 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
             label={current.label}
             path={current.fullPath}
             onCd={onCd}
+            onReveal={() => setRevealPath(current.fullPath)}
           />
         </BreadcrumbItem>
       </BreadcrumbList>
-    </Breadcrumb>
+      </Breadcrumb>
+    </RevealMenu>
   );
 }
 
@@ -135,10 +213,12 @@ function BreadcrumbSegment({
   label,
   isHome,
   onClick,
+  onReveal,
 }: {
   label: string;
   isHome: boolean;
   onClick: () => void;
+  onReveal: () => void;
 }) {
   return (
     <>
@@ -147,6 +227,7 @@ function BreadcrumbSegment({
           <button
             type="button"
             onClick={onClick}
+            onContextMenu={onReveal}
             className="cursor-pointer"
           >
             <Badge
@@ -174,10 +255,12 @@ function CurrentSegmentDropdown({
   label,
   path,
   onCd,
+  onReveal,
 }: {
   label: string;
   path: string;
   onCd: (p: string) => void;
+  onReveal: () => void;
 }) {
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const [open, setOpen] = useState(false);
@@ -206,7 +289,10 @@ function CurrentSegmentDropdown({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <BreadcrumbPage className="flex cursor-pointer items-center gap-1 rounded-sm px-1 py-0.5 text-foreground hover:bg-accent">
+        <BreadcrumbPage
+          className="flex cursor-pointer items-center gap-1 rounded-sm px-1 py-0.5 text-foreground hover:bg-accent"
+          onContextMenu={onReveal}
+        >
           {label === "~" ? (
             <>
               <HugeiconsIcon
