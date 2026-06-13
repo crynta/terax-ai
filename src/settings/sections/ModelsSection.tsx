@@ -16,8 +16,10 @@ import {
   PROVIDERS,
   compatModelIdForEndpoint,
   getAutocompleteEligibleModels,
+  getCompatModelInfo,
   getModel,
   getProvider,
+  isCompatModelId,
   providerNeedsKey,
   type CustomEndpoint,
   type ModelId,
@@ -344,6 +346,7 @@ export function ModelsSection() {
         defaultModel={defaultModel}
         configuredIds={configuredIds}
         keys={keys}
+        customEndpoints={customEndpoints}
       />
 
       <div className="flex flex-col gap-3">
@@ -505,10 +508,12 @@ function DefaultsBlock({
   defaultModel,
   configuredIds,
   keys,
+  customEndpoints,
 }: {
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
   keys: KeysMap;
+  customEndpoints: readonly CustomEndpoint[];
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -520,7 +525,11 @@ function DefaultsBlock({
             configuredIds={configuredIds}
           />
         </FieldRow>
-        <AutocompleteRow keys={keys} configuredIds={configuredIds} />
+        <AutocompleteRow
+          keys={keys}
+          configuredIds={configuredIds}
+          customEndpoints={customEndpoints}
+        />
       </div>
     </div>
   );
@@ -603,27 +612,46 @@ function DefaultModelPicker({
 function AutocompleteRow({
   keys,
   configuredIds,
+  customEndpoints,
 }: {
   keys: KeysMap;
   configuredIds: Set<ProviderId>;
+  customEndpoints: readonly CustomEndpoint[];
 }) {
   const enabled = usePreferencesStore((s) => s.autocompleteEnabled);
   const provider = usePreferencesStore((s) => s.autocompleteProvider);
   const modelId = usePreferencesStore((s) => s.autocompleteModelId);
   const eligible = useMemo(() => getAutocompleteEligibleModels(), []);
 
-  // Fast cloud tiers + any configured local provider (one model id each).
+  // One selectable model per fully-configured OpenAI-compatible endpoint.
+  const compatItems = useMemo(
+    () =>
+      customEndpoints
+        .filter((e) => e.baseURL.trim() && e.modelId.trim())
+        .map((e) =>
+          getCompatModelInfo(compatModelIdForEndpoint(e.id), customEndpoints),
+        ),
+    [customEndpoints],
+  );
+
+  // Fast cloud tiers + configured local providers + named compat endpoints.
   const items = useMemo(() => {
     const local = PROVIDERS.filter(
-      (p) => isLocalProvider(p.id) && configuredIds.has(p.id),
+      (p) =>
+        isLocalProvider(p.id) &&
+        p.id !== "openai-compatible" &&
+        configuredIds.has(p.id),
     ).flatMap((p) => {
       const m = MODELS.find((x) => x.provider === p.id);
       return m ? [m] : [];
     });
-    return [...eligible, ...local];
-  }, [eligible, configuredIds]);
+    return [...eligible, ...local, ...compatItems];
+  }, [eligible, configuredIds, compatItems]);
 
   const currentModel = useMemo(() => {
+    if (provider === "openai-compatible" && isCompatModelId(modelId)) {
+      return getCompatModelInfo(modelId, customEndpoints);
+    }
     if (isLocalProvider(provider)) {
       return MODELS.find((m) => m.provider === provider) ?? eligible[0];
     }
@@ -632,11 +660,14 @@ function AutocompleteRow({
       MODELS.find((m) => m.id === modelId) ??
       eligible[0]
     );
-  }, [eligible, provider, modelId]);
+  }, [eligible, provider, modelId, customEndpoints]);
 
   const setModel = (id: string, providerId: ProviderId) => {
     void setAutocompleteProvider(providerId);
-    void setAutocompleteModelId(isLocalProvider(providerId) ? "" : id);
+    // Compat endpoints store their compat- id; other locals use their own field.
+    const keep =
+      providerId === "openai-compatible" || !isLocalProvider(providerId);
+    void setAutocompleteModelId(keep ? id : "");
   };
 
   const grouped = useMemo(() => {
@@ -689,7 +720,8 @@ function AutocompleteRow({
               {PROVIDERS.map((p) => {
                 const list = grouped.get(p.id);
                 if (!list || list.length === 0) return null;
-                const pConfigured = configuredIds.has(p.id);
+                const pConfigured =
+                  p.id === "openai-compatible" || configuredIds.has(p.id);
                 return (
                   <div key={p.id} className="px-1 pt-1.5 first:pt-1">
                     <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
