@@ -21,6 +21,7 @@ import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
+  setAlwaysOpenLocalhostLinksInPreview,
   setAutostart,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
@@ -81,8 +82,9 @@ export function GeneralSection() {
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
-  const terminalCursorBlink = usePreferencesStore(
-    (s) => s.terminalCursorBlink,
+  const terminalCursorBlink = usePreferencesStore((s) => s.terminalCursorBlink);
+  const alwaysOpenLocalhostLinksInPreview = usePreferencesStore(
+    (s) => s.alwaysOpenLocalhostLinksInPreview,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalLetterSpacing = usePreferencesStore(
@@ -120,10 +122,7 @@ export function GeneralSection() {
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionHeader
-        title="General"
-        description="Mode, editor, and startup."
-      />
+      <SectionHeader title="General" description="Mode, editor, and startup." />
 
       <div className="flex flex-col gap-2">
         <Label>Appearance</Label>
@@ -238,15 +237,12 @@ export function GeneralSection() {
                       ⓘ
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    className="max-w-65 text-[11px]"
-                  >
-                    xterm's WebGL renderer caches glyphs in a GPU texture
-                    atlas. On some macOS setups (especially with Nerd Fonts),
-                    the atlas corrupts and terminal text becomes unreadable.
-                    Turn this off as a fallback — performance dips slightly,
-                    but text renders correctly via the DOM renderer.
+                  <TooltipContent side="top" className="max-w-65 text-[11px]">
+                    xterm's WebGL renderer caches glyphs in a GPU texture atlas.
+                    On some macOS setups (especially with Nerd Fonts), the atlas
+                    corrupts and terminal text becomes unreadable. Turn this off
+                    as a fallback — performance dips slightly, but text renders
+                    correctly via the DOM renderer.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -310,7 +306,11 @@ export function GeneralSection() {
             </SelectTrigger>
             <SelectContent>
               {TERMINAL_FONT_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)} className="text-[12px]">
+                <SelectItem
+                  key={size}
+                  value={String(size)}
+                  className="text-[12px]"
+                >
                   {size} px
                 </SelectItem>
               ))}
@@ -340,6 +340,21 @@ export function GeneralSection() {
               ))}
             </SelectContent>
           </Select>
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Web Preview</Label>
+        <SettingRow
+          title="Always open localhost links in preview"
+          description="Open terminal localhost and loopback links in an in-app preview tab instead of the system browser."
+        >
+          <Switch
+            checked={alwaysOpenLocalhostLinksInPreview}
+            onCheckedChange={(v) =>
+              void setAlwaysOpenLocalhostLinksInPreview(v)
+            }
+          />
         </SettingRow>
       </div>
 
@@ -444,4 +459,3 @@ function AutoSaveDelayInput({
     </SettingRow>
   );
 }
-

@@ -6,6 +6,7 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getLaunchDir } from "@/lib/launchDir";
+import { isLocalhostUrl } from "@/lib/localUrl";
 import { usePresence } from "@/lib/usePresence";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
@@ -22,10 +23,7 @@ import {
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { native } from "@/modules/ai/lib/native";
-import {
-  CommandPalette,
-  createCommandItems,
-} from "@/modules/command-palette";
+import { CommandPalette, createCommandItems } from "@/modules/command-palette";
 import {
   NewEditorDialog,
   useEditorFileSync,
@@ -58,19 +56,17 @@ import {
   useSourceControlContext,
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
-import {
-  useTabs,
-  useWindowTitle,
-  useWorkspaceCwd,
-} from "@/modules/tabs";
+import { useTabs, useWindowTitle, useWorkspaceCwd } from "@/modules/tabs";
 import {
   clearFocusedTerminal,
+  configureTerminalLinkActions,
   disposeSession,
   findLeafCwd,
   hasLeaf,
   leafIds,
   navigateFocusedBlocks,
   respawnSession,
+  type TerminalLinkHover,
   type TerminalPaneHandle,
   useTerminalFileDrop,
   writeToSession,
@@ -85,6 +81,9 @@ import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { useWorkspaceEnvStore } from "@/modules/workspace";
+import { LinkSquare02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloseDialogs } from "./components/CloseDialogs";
@@ -563,6 +562,73 @@ export default function App() {
     [newPreviewTab],
   );
 
+  const alwaysOpenLocalhostLinksInPreview = usePreferencesStore(
+    (s) => s.alwaysOpenLocalhostLinksInPreview,
+  );
+  const alwaysOpenLocalhostLinksInPreviewRef = useRef(
+    alwaysOpenLocalhostLinksInPreview,
+  );
+  const [localhostLinkPopup, setLocalhostLinkPopup] =
+    useState<TerminalLinkHover | null>(null);
+  const linkPopupHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    alwaysOpenLocalhostLinksInPreviewRef.current =
+      alwaysOpenLocalhostLinksInPreview;
+  }, [alwaysOpenLocalhostLinksInPreview]);
+
+  const clearLinkPopupHideTimer = useCallback(() => {
+    const timer = linkPopupHideTimer.current;
+    if (!timer) return;
+    clearTimeout(timer);
+    linkPopupHideTimer.current = null;
+  }, []);
+
+  const hideLinkPopupSoon = useCallback(() => {
+    clearLinkPopupHideTimer();
+    linkPopupHideTimer.current = setTimeout(() => {
+      setLocalhostLinkPopup(null);
+      linkPopupHideTimer.current = null;
+    }, 180);
+  }, [clearLinkPopupHideTimer]);
+
+  useEffect(() => clearLinkPopupHideTimer, [clearLinkPopupHideTimer]);
+
+  useEffect(() => {
+    configureTerminalLinkActions({
+      open: (_event, uri) => {
+        setLocalhostLinkPopup(null);
+        if (
+          isLocalhostUrl(uri) &&
+          alwaysOpenLocalhostLinksInPreviewRef.current
+        ) {
+          openPreviewTab(uri);
+          return;
+        }
+        void openUrl(uri).catch(console.error);
+      },
+      hover: (hover) => {
+        if (!isLocalhostUrl(hover.uri)) {
+          setLocalhostLinkPopup(null);
+          return;
+        }
+        clearLinkPopupHideTimer();
+        setLocalhostLinkPopup(hover);
+      },
+      leave: (uri) => {
+        if (isLocalhostUrl(uri)) hideLinkPopupSoon();
+      },
+    });
+    return () => {
+      configureTerminalLinkActions({
+        open: (_event, uri) => {
+          void openUrl(uri).catch(console.error);
+        },
+        hover: () => {},
+        leave: () => {},
+      });
+    };
+  }, [openPreviewTab, clearLinkPopupHideTimer, hideLinkPopupSoon]);
 
   const splitActivePaneInActiveTab = useCallback(
     (dir: "row" | "col") => {
@@ -871,8 +937,9 @@ export default function App() {
 
   const handleNewTabInSpace = useCallback(
     (spaceId: string) => {
-      const root = useSpaces.getState().spaces.find((s) => s.id === spaceId)
-        ?.root;
+      const root = useSpaces
+        .getState()
+        .spaces.find((s) => s.id === spaceId)?.root;
       newTabInSpace(spaceId, root ?? undefined);
     },
     [newTabInSpace],
@@ -1043,7 +1110,10 @@ export default function App() {
                 }}
               >
                 <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
-                  <div key={sidebarView} className="min-h-0 flex-1 terax-panel-in">
+                  <div
+                    key={sidebarView}
+                    className="min-h-0 flex-1 terax-panel-in"
+                  >
                     {sidebarView === "explorer" ? (
                       <FileExplorer
                         ref={explorerRef}
@@ -1137,6 +1207,16 @@ export default function App() {
             activeId={activeId}
             onActivate={onActivateAgent}
           />
+          <LocalhostLinkPreviewPopup
+            hover={localhostLinkPopup}
+            onOpen={(uri) => {
+              clearLinkPopupHideTimer();
+              setLocalhostLinkPopup(null);
+              openPreviewTab(uri);
+            }}
+            onMouseEnter={clearLinkPopupHideTimer}
+            onMouseLeave={hideLinkPopupSoon}
+          />
           <Toaster position="bottom-right" />
 
           {hasComposer ? (
@@ -1199,4 +1279,60 @@ export default function App() {
   );
 
   return <AiComposerProvider>{shell}</AiComposerProvider>;
+}
+
+function LocalhostLinkPreviewPopup({
+  hover,
+  onOpen,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  hover: TerminalLinkHover | null;
+  onOpen: (uri: string) => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  if (!hover) return null;
+
+  const width = Math.max(180, Math.min(420, Math.round(hover.width || 0)));
+  const height = 40;
+  const margin = 8;
+  const maxLeft =
+    typeof window === "undefined"
+      ? hover.x
+      : window.innerWidth - width - margin;
+  const maxTop =
+    typeof window === "undefined"
+      ? hover.y
+      : window.innerHeight - height - margin;
+  const left = Math.max(margin, Math.min(hover.x, maxLeft));
+  const above = hover.y - height - 4;
+  const top = Math.max(
+    margin,
+    Math.min(above < margin ? hover.y + 18 : above, maxTop),
+  );
+
+  return (
+    <div
+      className="fixed z-50 rounded-md border border-border/70 bg-popover p-1 text-popover-foreground shadow-xl"
+      style={{ left, top, width }}
+    >
+      <button
+        type="button"
+        className="flex h-8 w-full items-center justify-center gap-2 rounded px-2 text-[12px] hover:bg-accent hover:text-accent-foreground"
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onOpen(hover.uri)}
+      >
+        <HugeiconsIcon
+          icon={LinkSquare02Icon}
+          size={14}
+          strokeWidth={1.75}
+          className="shrink-0"
+        />
+        <span className="min-w-0 flex-1 truncate">Open in Preview</span>
+      </button>
+    </div>
+  );
 }

@@ -71,6 +71,11 @@ export type Slot = {
 const slots: Slot[] = [];
 let recyclerEl: HTMLDivElement | null = null;
 let adapter: SlotAdapter | null = null;
+let linkActions: TerminalLinkActions = {
+  open: (_event, uri) => openUrl(uri).catch(console.error),
+  hover: () => {},
+  leave: () => {},
+};
 
 let windowActive =
   typeof document === "undefined" || (!document.hidden && document.hasFocus());
@@ -101,6 +106,25 @@ function setWindowActive(active: boolean): void {
 export function configureRendererPool(a: SlotAdapter): void {
   adapter = a;
   bindWindowActivityListeners();
+}
+
+export type TerminalLinkHover = {
+  uri: string;
+  x: number;
+  y: number;
+  width: number;
+};
+
+export type TerminalLinkActions = {
+  open: (event: MouseEvent, uri: string) => void;
+  hover: (hover: TerminalLinkHover) => void;
+  leave: (uri: string) => void;
+};
+
+export function configureTerminalLinkActions(
+  actions: TerminalLinkActions,
+): void {
+  linkActions = actions;
 }
 
 export function forEachSlot(fn: (slot: Slot) => void): void {
@@ -195,14 +219,25 @@ function createSlot(): Slot {
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
   const serializeAddon = new SerializeAddon();
+  const host = document.createElement("div");
   term.loadAddon(fitAddon);
   term.loadAddon(searchAddon);
   term.loadAddon(serializeAddon);
   term.loadAddon(
-    new WebLinksAddon((_e, uri) => openUrl(uri).catch(console.error)),
+    new WebLinksAddon((event, uri) => linkActions.open(event, uri), {
+      hover: (event, uri, range) => {
+        const rect = linkViewportRect(term, host, range);
+        linkActions.hover({
+          uri,
+          x: rect?.left ?? event.clientX,
+          y: rect?.top ?? event.clientY,
+          width: rect?.width ?? 0,
+        });
+      },
+      leave: (_event, uri) => linkActions.leave(uri),
+    }),
   );
 
-  const host = document.createElement("div");
   host.style.cssText = "width:100%;height:100%;";
   host.setAttribute("data-terax-slot", String(slots.length));
   getRecycler().appendChild(host);
@@ -304,6 +339,29 @@ function createSlot(): Slot {
 
   slots.push(slot);
   return slot;
+}
+
+function linkViewportRect(
+  term: Terminal,
+  host: HTMLDivElement,
+  range: { start: { x: number; y: number }; end: { x: number; y: number } },
+): { left: number; top: number; width: number } | null {
+  const screen =
+    host.querySelector<HTMLElement>(".xterm-screen") ??
+    host.querySelector<HTMLElement>(".xterm-viewport") ??
+    host;
+  const rect = screen.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0 || term.cols <= 0 || term.rows <= 0) {
+    return null;
+  }
+
+  const cellW = rect.width / term.cols;
+  const cellH = rect.height / term.rows;
+  const left = rect.left + (range.start.x - 1) * cellW;
+  const top = rect.top + (range.start.y - 1) * cellH;
+  const endX = range.end.y === range.start.y ? range.end.x : term.cols;
+  const cells = Math.max(1, endX - range.start.x + 1);
+  return { left, top, width: cells * cellW };
 }
 
 type PickResult = { slot: Slot; previousLeafId: number | null };
