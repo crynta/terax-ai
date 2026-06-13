@@ -198,6 +198,15 @@ export const MODELS = [
     tags: ["vision", "reasoning", "tools", "coding"],
   },
   {
+    id: "gpt-5.5-pro",
+    provider: "openai",
+    label: "GPT-5.5 Pro",
+    hint: "Max",
+    description: "Highest-accuracy version for the hardest professional and agentic tasks.",
+    capabilities: { intelligence: 5, speed: 2, cost: 1 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+  },
+  {
     id: "gpt-5.4-mini",
     provider: "openai",
     label: "GPT-5.4 mini",
@@ -236,11 +245,20 @@ export const MODELS = [
 
   // ── Anthropic ─────────────────────────────────────────────────────────────
   {
+    id: "claude-opus-4-8",
+    provider: "anthropic",
+    label: "Claude Opus 4.8",
+    hint: "Best",
+    description: "Anthropic's most capable model for complex reasoning and long-horizon agentic coding.",
+    capabilities: { intelligence: 5, speed: 2, cost: 1 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+  },
+  {
     id: "claude-opus-4-7",
     provider: "anthropic",
     label: "Claude Opus 4.7",
-    hint: "Best",
-    description: "Anthropic's flagship for long reasoning.",
+    hint: "Previous",
+    description: "Previous-gen flagship for long reasoning.",
     capabilities: { intelligence: 5, speed: 2, cost: 1 },
     tags: ["vision", "reasoning", "tools", "coding"],
   },
@@ -355,6 +373,24 @@ export const MODELS = [
     description: "Cheaper Grok 4 with vision and reasoning.",
     capabilities: { intelligence: 4, speed: 4, cost: 4 },
     tags: ["vision", "reasoning", "tools"],
+  },
+  {
+    id: "grok-4.3",
+    provider: "xai",
+    label: "Grok 4.3",
+    hint: "Flagship",
+    description: "Most intelligent and fastest Grok. Strong agentic tool use and 1M context.",
+    capabilities: { intelligence: 5, speed: 4, cost: 2 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+  },
+  {
+    id: "grok-build-0.1",
+    provider: "xai",
+    label: "Grok Build 0.1",
+    hint: "Coding",
+    description: "Specialized fast coding model for agentic workflows (powers Grok Build CLI).",
+    capabilities: { intelligence: 4, speed: 5, cost: 4 },
+    tags: ["tools", "coding"],
   },
 
   // ── DeepSeek ──────────────────────────────────────────────────────────────
@@ -583,11 +619,13 @@ export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
  *  estimates — actual provider limits may shift. */
 export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "gpt-5.5": 1_050_000,
+  "gpt-5.5-pro": 1_050_000,
   "gpt-5.4-mini": 400_000,
   "gpt-5.4-nano": 400_000,
   "gpt-5.3-codex": 400_000,
   "gpt-4.1-mini": 128_000,
   "claude-opus-4-7": 200_000,
+  "claude-opus-4-8": 1_000_000,
   "claude-sonnet-4-6": 200_000,
   "claude-haiku-4-5": 200_000,
   "claude-opus-4-6": 200_000,
@@ -600,6 +638,8 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "grok-4.20-reasoning": 2_000_000,
   "grok-4.20-non-reasoning": 2_000_000,
   "grok-4-fast-reasoning": 2_000_000,
+  "grok-4.3": 1_000_000,
+  "grok-build-0.1": 256_000,
   "deepseek-v4-pro": 1_000_000,
   "deepseek-v4-flash": 1_000_000,
   "deepseek-reasoner": 128_000,
@@ -638,11 +678,13 @@ export type ModelPricing = {
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-5.5": { input: 5, output: 15, cacheRead: 0.5 },
+  "gpt-5.5-pro": { input: 30, output: 180 },
   "gpt-5.4-mini": { input: 0.4, output: 1.6, cacheRead: 0.04 },
   "gpt-5.4-nano": { input: 0.1, output: 0.4, cacheRead: 0.01 },
   "gpt-5.3-codex": { input: 1.5, output: 6, cacheRead: 0.15 },
   "gpt-4.1-mini": { input: 0.4, output: 1.6, cacheRead: 0.1 },
   "claude-opus-4-7": { input: 15, output: 75, cacheRead: 1.5 },
+  "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5 },
   "claude-opus-4-6": { input: 15, output: 75, cacheRead: 1.5 },
   "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3 },
   "claude-haiku-4-5": { input: 1, output: 5, cacheRead: 0.1 },
@@ -655,6 +697,8 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "grok-4.20-reasoning": { input: 3, output: 15 },
   "grok-4.20-non-reasoning": { input: 1, output: 5 },
   "grok-4-fast-reasoning": { input: 0.2, output: 0.5 },
+  "grok-4.3": { input: 1.25, output: 2.5 },
+  "grok-build-0.1": { input: 1, output: 2 },
   "deepseek-v4-pro": { input: 0.28, output: 1.1, cacheRead: 0.028 },
   "deepseek-v4-flash": { input: 0.07, output: 0.27, cacheRead: 0.007 },
   "deepseek-reasoner": { input: 0.55, output: 2.19, cacheRead: 0.14 },
@@ -707,7 +751,7 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   openai: "gpt-5.4-nano",
   anthropic: "claude-haiku-4-5",
   google: "gemini-2.5-flash",
-  xai: "grok-4-fast-reasoning",
+  xai: "grok-4.3",
   deepseek: "deepseek-v4-flash",
   openrouter: "openai/gpt-5.4-mini",
   "openai-compatible": "",
@@ -804,6 +848,7 @@ const LITE_SYSTEM_PROMPT_MODEL_IDS = new Set<string>([
   "llama3.3-70b",
   "llama-3.3-70b-versatile",
   "qwen-3-32b",
+  "grok-build-0.1",
 ]);
 
 export function selectSystemPrompt(modelId: string | undefined): string {
