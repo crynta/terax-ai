@@ -19,7 +19,7 @@ export type ThemePref = "system" | "light" | "dark";
 
 export const DEFAULT_THEME_ID = "terax-default";
 
-export type BackgroundKind = "none" | "image";
+export type BackgroundKind = "none" | "image" | "video";
 
 export const EDITOR_THEMES = [
   "atomone",
@@ -54,6 +54,7 @@ export type Preferences = {
   themeId: string;
   backgroundKind: BackgroundKind;
   backgroundImageId: string | null;
+  backgroundVideoId: string | null;
   backgroundOpacity: number;
   backgroundBlur: number;
   defaultModelId: ModelId;
@@ -99,6 +100,7 @@ const KEY_THEME = "theme";
 const KEY_THEME_ID = "themeId";
 const KEY_BG_KIND = "backgroundKind";
 const KEY_BG_IMAGE_ID = "backgroundImageId";
+const KEY_BG_VIDEO_ID = "backgroundVideoId";
 const KEY_BG_OPACITY = "backgroundOpacity";
 const KEY_BG_BLUR = "backgroundBlur";
 const KEY_DEFAULT_MODEL = "defaultModelId";
@@ -159,6 +161,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   themeId: DEFAULT_THEME_ID,
   backgroundKind: "none",
   backgroundImageId: null,
+  backgroundVideoId: null,
   backgroundOpacity: 0.5,
   backgroundBlur: 0,
   defaultModelId: DEFAULT_MODEL_ID,
@@ -227,6 +230,9 @@ export async function loadPreferences(): Promise<Preferences> {
     backgroundImageId:
       get<string | null>(KEY_BG_IMAGE_ID) ??
       DEFAULT_PREFERENCES.backgroundImageId,
+    backgroundVideoId:
+      get<string | null>(KEY_BG_VIDEO_ID) ??
+      DEFAULT_PREFERENCES.backgroundVideoId,
     backgroundOpacity: clampBgOpacity(
       get<number>(KEY_BG_OPACITY) ?? DEFAULT_PREFERENCES.backgroundOpacity,
     ),
@@ -373,6 +379,10 @@ export async function setBackgroundKind(value: BackgroundKind): Promise<void> {
 
 export async function setBackgroundImageId(value: string | null): Promise<void> {
   await writePref(KEY_BG_IMAGE_ID, value);
+}
+
+export async function setBackgroundVideoId(value: string | null): Promise<void> {
+  await writePref(KEY_BG_VIDEO_ID, value);
 }
 
 export async function setBackgroundOpacity(value: number): Promise<void> {
@@ -574,6 +584,7 @@ export async function onPreferencesChange(
     [KEY_THEME_ID]: "themeId",
     [KEY_BG_KIND]: "backgroundKind",
     [KEY_BG_IMAGE_ID]: "backgroundImageId",
+    [KEY_BG_VIDEO_ID]: "backgroundVideoId",
     [KEY_BG_OPACITY]: "backgroundOpacity",
     [KEY_BG_BLUR]: "backgroundBlur",
     [KEY_DEFAULT_MODEL]: "defaultModelId",

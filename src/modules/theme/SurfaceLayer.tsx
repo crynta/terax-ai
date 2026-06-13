@@ -13,11 +13,17 @@ const FADE_IN_MS = 200;
 export function SurfaceLayer() {
   const [fastPath] = useState(readBgFastPath);
   const storeActive = usePreferencesStore(
-    (s) => s.backgroundKind === "image" && !!s.backgroundImageId,
+    (s) =>
+      (s.backgroundKind === "image" && !!s.backgroundImageId) ||
+      (s.backgroundKind === "video" && !!s.backgroundVideoId),
   );
   const hydrated = usePreferencesStore((s) => s.hydrated);
   const active = hydrated ? storeActive : fastPath.active;
+  const backgroundKind = usePreferencesStore((s) => s.backgroundKind);
   if (!active) return null;
+  if (backgroundKind === "video") {
+    return <BackgroundVideo />;
+  }
   return <BackgroundImage fastImageId={fastPath.imageId} />;
 }
 
@@ -96,6 +102,79 @@ function BackgroundImage({ fastImageId }: { fastImageId: string | null }) {
         transform: "translateZ(0)",
         transition: `opacity ${FADE_IN_MS}ms ease-out`,
       }}
+    />,
+    document.body,
+  );
+}
+
+function BackgroundVideo() {
+  const storeVideoId = usePreferencesStore((s) => s.backgroundVideoId);
+  const hydrated = usePreferencesStore((s) => s.hydrated);
+  const opacity = usePreferencesStore((s) => s.backgroundOpacity);
+  const [state, setState] = useState<{ url: string } | null>(null);
+  const [visible, setVisible] = useState(false);
+  const lastUrlRef = useRef<string | null>(null);
+  const docHidden = useDocumentHidden();
+
+  useEffect(() => {
+    if (!storeVideoId || !hydrated) return;
+    let alive = true;
+    let rafId: number | null = null;
+    setVisible(false);
+    void (async () => {
+      const { getBgImage } = await import("./bgImageStore");
+      const blob = await getBgImage(storeVideoId).catch(() => null);
+      if (!alive || !blob) return;
+      const url = URL.createObjectURL(blob);
+      if (lastUrlRef.current) URL.revokeObjectURL(lastUrlRef.current);
+      lastUrlRef.current = url;
+      setState({ url });
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (alive) setVisible(true);
+      });
+    })();
+    return () => {
+      alive = false;
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [storeVideoId, hydrated]);
+
+  useEffect(() => {
+    return () => {
+      if (lastUrlRef.current) {
+        URL.revokeObjectURL(lastUrlRef.current);
+        lastUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  if (!state || typeof document === "undefined") return null;
+  const { url } = state;
+
+  const renderedOpacity = visible && !docHidden ? opacity * BG_OPACITY_RENDER_FACTOR : 0;
+
+  return createPortal(
+    <video
+      aria-hidden
+      className="terax-bg-video"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: OVERLAY_Z,
+        pointerEvents: "none",
+        width: "100%",
+        height: "100%",
+        objectFit: "cover",
+        opacity: renderedOpacity,
+        transform: "translateZ(0)",
+        transition: `opacity ${FADE_IN_MS}ms ease-out`,
+      }}
+      autoPlay
+      loop
+      muted
+      playsInline
+      src={url}
     />,
     document.body,
   );

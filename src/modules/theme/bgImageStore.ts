@@ -72,6 +72,7 @@ const MAX_DIM = 2560;
 const JPEG_QUALITY = 0.88;
 const MAX_STATIC_BYTES = 30 * 1024 * 1024;
 const MAX_ANIMATED_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
 const WEBP_SNIFF_BYTES = 64;
 
 function formatBytes(n: number): string {
@@ -101,8 +102,21 @@ async function isAnimated(file: File): Promise<boolean> {
 }
 
 export async function importBgImageFromFile(file: File): Promise<{ id: string; blob: Blob }> {
-  if (!file.type.startsWith("image/")) {
-    throw new Error("This file isn't an image.");
+  const t = file.type.toLowerCase();
+  if (t.startsWith("video/")) {
+    if (file.size > MAX_VIDEO_BYTES) {
+      const limitMb = Math.round(MAX_VIDEO_BYTES / 1024 / 1024);
+      throw new Error(
+        `Videos are limited to ${limitMb} MB to keep things smooth. This one is ${formatBytes(file.size)}.`,
+      );
+    }
+    const id = crypto.randomUUID();
+    const blob = file.slice(0, file.size, file.type);
+    await putBgImage(id, blob);
+    return { id, blob };
+  }
+  if (!t.startsWith("image/")) {
+    throw new Error("This file isn't an image or video.");
   }
   const id = crypto.randomUUID();
   const animated = await isAnimated(file);
