@@ -4,6 +4,7 @@ export {
   MAX_PANES_PER_TAB,
   DEFAULT_SPACE_ID,
   useTabs,
+  nextActiveInSpace,
   type Tab,
   type TerminalTab,
   type EditorTab,
