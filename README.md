@@ -1,3 +1,5 @@
+[![Listed on TakoAPI](https://img.shields.io/badge/Listed%20on-TakoAPI-7c3aed)](https://takoapi.com/agents/crynta-terax-ai)
+
 <div align="center">
   <img src="public/logo.png" width="144" height="144" alt="Terax" />
   <h1>Terax</h1>
