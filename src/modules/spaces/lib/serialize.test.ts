@@ -71,6 +71,19 @@ describe("serializeTabs", () => {
       expect(node.tree.children[0]).not.toHaveProperty("active");
     }
   });
+
+  it("does not persist cwd from ssh terminal leaves", () => {
+    const [s] = serializeTabs([
+      term({
+        cwd: "/remote/project",
+        paneTree: { kind: "leaf", id: 2, cwd: "/remote/project", ssh: true },
+        ssh: true,
+      }),
+    ]);
+    const node = s as Extract<SerializedTab, { kind: "terminal" }>;
+
+    expect(node.tree).toEqual({ kind: "leaf", active: true });
+  });
 });
 
 describe("hydrateTabs", () => {

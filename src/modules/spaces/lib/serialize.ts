@@ -41,9 +41,10 @@ function titleFromUrl(url: string): string {
 
 function serializeNode(node: PaneNode, activeLeafId: number): SerializedNode {
   if (isLeaf(node)) {
+    const cwd = node.ssh ? undefined : node.cwd;
     return {
       kind: "leaf",
-      ...(node.cwd !== undefined && { cwd: node.cwd }),
+      ...(cwd !== undefined && { cwd }),
       ...(node.id === activeLeafId && { active: true }),
     };
   }

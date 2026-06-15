@@ -7,6 +7,7 @@ pub(crate) mod shell_init;
 
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
@@ -14,7 +15,7 @@ use std::thread;
 use portable_pty::PtySize;
 use tauri::ipc::{Channel, Response};
 
-use crate::modules::workspace::{authorize_user_spawn_cwd, WorkspaceEnv, WorkspaceRegistry};
+use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry, authorize_user_spawn_cwd};
 use session::Session;
 
 pub struct PtyState {
@@ -39,6 +40,49 @@ impl PtyState {
     }
 }
 
+fn path_string(path: PathBuf) -> String {
+    crate::modules::fs::to_canon(path)
+}
+
+fn local_home_cwd(registry: &WorkspaceRegistry) -> Option<String> {
+    let home = dirs::home_dir()?.canonicalize().ok()?;
+    if !home.is_dir() {
+        return None;
+    }
+    let canonical = registry.authorize(&home).ok()?;
+    Some(path_string(canonical))
+}
+
+fn trimmed_cwd(cwd: Option<&str>) -> Option<String> {
+    cwd.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn resolve_pty_cwd(
+    registry: &WorkspaceRegistry,
+    cwd: Option<&str>,
+    workspace: &WorkspaceEnv,
+) -> Result<Option<String>, String> {
+    if workspace.is_ssh() {
+        return Ok(trimmed_cwd(cwd));
+    }
+    match authorize_user_spawn_cwd(registry, cwd, workspace) {
+        Ok(resolved) => {
+            if matches!(workspace, WorkspaceEnv::Local) {
+                Ok(resolved.map(path_string))
+            } else {
+                Ok(trimmed_cwd(cwd))
+            }
+        }
+        Err(e) if matches!(workspace, WorkspaceEnv::Local) => {
+            log::warn!("pty_open: cwd rejected, falling back to home: {e}");
+            Ok(local_home_cwd(registry))
+        }
+        Err(e) => Err(e),
+    }
+}
+
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn pty_open(
@@ -55,14 +99,16 @@ pub async fn pty_open(
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let blocks = blocks.unwrap_or(false);
-    authorize_user_spawn_cwd(&registry, cwd.as_deref(), &workspace).map_err(|e| {
+    let cwd = resolve_pty_cwd(&registry, cwd.as_deref(), &workspace).map_err(|e| {
         log::warn!("pty_open: cwd rejected: {e}");
         e
     })?;
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
     let session = tauri::async_runtime::spawn_blocking(move || {
-        session::spawn(id, app, cols, rows, cwd, workspace, blocks, on_data, on_exit)
-            .map(|(s, _)| s)
+        session::spawn(
+            id, app, cols, rows, cwd, workspace, blocks, on_data, on_exit,
+        )
+        .map(|(s, _)| s)
     })
     .await
     .map_err(|e| {
@@ -254,8 +300,7 @@ fn shell_has_children(shell_pid: u32) -> bool {
     use std::mem::{size_of, zeroed};
     use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32First, Process32Next, PROCESSENTRY32,
-        TH32CS_SNAPPROCESS,
+        CreateToolhelp32Snapshot, PROCESSENTRY32, Process32First, Process32Next, TH32CS_SNAPPROCESS,
     };
     unsafe {
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -308,4 +353,69 @@ pub fn pty_close_all(state: tauri::State<PtyState>) -> Result<usize, String> {
 #[tauri::command]
 pub fn pty_shell_name() -> String {
     shell_init::detect_shell_name()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+
+    fn tempdir(label: &str) -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "terax-pty-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&dir).expect("tempdir");
+        fs::canonicalize(dir).expect("canonical tempdir")
+    }
+
+    #[test]
+    fn resolve_pty_cwd_registers_existing_local_cwd() {
+        let dir = tempdir("existing");
+        let reg = WorkspaceRegistry::default();
+        let s = path_string(dir.clone());
+        let resolved = resolve_pty_cwd(&reg, Some(&s), &WorkspaceEnv::Local).expect("resolved cwd");
+
+        assert_eq!(resolved.as_deref(), Some(s.as_str()));
+        assert!(reg.is_authorized(&dir));
+        fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn resolve_pty_cwd_falls_back_to_home_for_missing_local_cwd() {
+        let Some(home) = dirs::home_dir()
+            .and_then(|p| p.canonicalize().ok())
+            .filter(|p| p.is_dir())
+            .map(path_string)
+        else {
+            return;
+        };
+        let mut missing = std::env::temp_dir();
+        missing.push(format!("terax-pty-missing-{}", std::process::id()));
+        let reg = WorkspaceRegistry::default();
+        let s = missing.to_string_lossy().into_owned();
+        let resolved = resolve_pty_cwd(&reg, Some(&s), &WorkspaceEnv::Local).expect("fallback cwd");
+
+        assert_eq!(resolved.as_deref(), Some(home.as_str()));
+    }
+
+    #[test]
+    fn resolve_pty_cwd_keeps_ssh_cwd_remote() {
+        let reg = WorkspaceRegistry::default();
+        let env = WorkspaceEnv::Ssh {
+            host: "victus".into(),
+            user: Some("kaan".into()),
+            port: None,
+            root: None,
+        };
+        let resolved = resolve_pty_cwd(&reg, Some("/remote/project"), &env).expect("ssh cwd");
+
+        assert_eq!(resolved.as_deref(), Some("/remote/project"));
+    }
 }
