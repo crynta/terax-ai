@@ -8,6 +8,7 @@ export type ShortcutId =
   | "commandPalette.open"
   | "commandPalette.content"
   | "tab.new"
+  | "tab.newBlock"
   | "tab.newPrivate"
   | "tab.newPreview"
   | "tab.newEditor"
@@ -25,6 +26,8 @@ export type ShortcutId =
   | "pane.source"
   | "terminal.clear"
   | "terminal.toggleInput"
+  | "blocks.prev"
+  | "blocks.next"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
@@ -90,6 +93,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "New tab",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "t" }],
+  },
+  {
+    id: "tab.newBlock",
+    label: "New Blocks terminal",
+    group: "Tabs",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "t" }],
   },
   {
     id: "tab.newPrivate",
@@ -160,6 +169,20 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle Shell / AI input",
     group: "Terminal",
     defaultBindings: [{ [MOD_PROP]: true, key: "u" }],
+  },
+  {
+    id: "blocks.prev",
+    label: "Previous command block",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowUp" }],
+    allowRepeat: true,
+  },
+  {
+    id: "blocks.next",
+    label: "Next command block",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowDown" }],
+    allowRepeat: true,
   },
   {
     id: "tab.next",

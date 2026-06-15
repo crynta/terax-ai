@@ -77,6 +77,7 @@ const loaders: Record<string, LanguageLoader> = {
       m.html({ selfClosingTags: true }),
     ),
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
+  vue: () => import("@codemirror/lang-vue").then((m) => m.vue()),
 
   php: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
   rb: rubyLoader,

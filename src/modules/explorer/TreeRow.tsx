@@ -1,25 +1,18 @@
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { memo, useState } from "react";
+import { memo } from "react";
 import { InlineInput } from "./InlineInput";
-import {
-  copyToClipboard,
-  relativePath,
-  revealInFinder,
-} from "./lib/contextActions";
+import { explorerGitTextClass } from "./lib/gitStatusColor";
+import type { GitStatusCode } from "./lib/gitStatusUtils";
 import { fileIconUrl, folderIconUrl } from "./lib/iconResolver";
-import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
-import type { useFileTree } from "./lib/useFileTree";
 
-type Tree = ReturnType<typeof useFileTree>;
+export type RowActions = {
+  toggle: (path: string) => void;
+  beginRename: (path: string) => void;
+  commitRename: (newName: string) => void | Promise<void>;
+  cancelRename: () => void;
+};
 
 export type EntryRowProps = {
   path: string;
@@ -27,20 +20,16 @@ export type EntryRowProps = {
   isDir: boolean;
   isExpanded: boolean;
   depth: number;
-  rootPath: string;
-  tree: Tree;
+  actions: RowActions;
+  renameInProgress: boolean;
   isSelected: boolean;
   isRenaming: boolean;
+  isDropTarget?: boolean;
   onOpenFile: (path: string, pin?: boolean) => void;
   onSelectPath: (path: string) => void;
-  onRevealInTerminal?: (path: string) => void;
-  onAttachToAgent?: (path: string) => void;
-  onOpenMarkdownPreview?: (path: string) => void;
+  gitStatusCode?: GitStatusCode | null;
+  gitignored?: boolean;
 };
-
-function isMarkdownPath(path: string): boolean {
-  return /\.(md|markdown|mdx)$/i.test(path);
-}
 
 function EntryRowImpl(props: EntryRowProps) {
   const {
@@ -49,170 +38,92 @@ function EntryRowImpl(props: EntryRowProps) {
     isDir,
     isExpanded,
     depth,
-    rootPath,
-    tree,
+    actions,
+    renameInProgress,
     isSelected,
     isRenaming,
+    isDropTarget = false,
     onOpenFile,
     onSelectPath,
-    onRevealInTerminal,
-    onAttachToAgent,
-    onOpenMarkdownPreview,
+    gitStatusCode,
+    gitignored = false,
   } = props;
 
-  const [isConfirming, setIsConfirming] = useState(false);
   const iconUrl = isDir ? folderIconUrl(name, isExpanded) : fileIconUrl(name);
-  const createTarget = isDir ? path : path.slice(0, path.lastIndexOf("/")) || rootPath;
   const paddingLeft = 6 + depth * 12;
 
+  if (isRenaming) {
+    return (
+      <div
+        className="flex h-6 w-full min-w-0 items-center gap-2 px-1.5 text-[13px]"
+        style={{ paddingLeft }}
+      >
+        <span className="size-3.5 shrink-0" />
+        {iconUrl ? (
+          <img src={iconUrl} alt="" className="size-4 shrink-0" />
+        ) : (
+          <span className="size-4 shrink-0" />
+        )}
+        <InlineInput
+          initial={name}
+          onCommit={actions.commitRename}
+          onCancel={actions.cancelRename}
+        />
+      </div>
+    );
+  }
+
   const handleClick = () => {
-    if (tree.renaming) return;
+    if (renameInProgress) return;
     onSelectPath(path);
-    if (isDir) tree.toggle(path);
+    if (isDir) actions.toggle(path);
     else onOpenFile(path);
   };
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        {isRenaming ? (
-          <div
-            className="flex h-6 w-full min-w-0 items-center gap-2 px-1.5 text-[13px]"
-            style={{ paddingLeft }}
-          >
-            <span className="size-3.5 shrink-0" />
-            {iconUrl ? (
-              <img src={iconUrl} alt="" className="size-4 shrink-0" />
-            ) : (
-              <span className="size-4 shrink-0" />
-            )}
-            <InlineInput
-              initial={name}
-              onCommit={tree.commitRename}
-              onCancel={tree.cancelRename}
-            />
-          </div>
-        ) : (
-          <button
-            type="button"
-            data-fs-path={path}
-            onClick={handleClick}
-            onDoubleClick={() => !isDir && tree.beginRename(path)}
-            className={cn(
-              "group flex h-6 w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 text-left text-[13px] text-foreground/85 transition-colors hover:bg-accent/70",
-              isSelected && "bg-accent text-foreground",
-            )}
-            style={{ paddingLeft }}
-          >
-            <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
-              {isDir ? (
-                <HugeiconsIcon
-                  icon={ArrowRight01Icon}
-                  size={12}
-                  strokeWidth={2.25}
-                  className={cn(
-                    "transition-transform",
-                    isExpanded && "rotate-90",
-                  )}
-                />
-              ) : null}
-            </span>
-            {iconUrl ? (
-              <img src={iconUrl} alt="" className="size-4 shrink-0" />
-            ) : (
-              <span className="size-4 shrink-0" />
-            )}
-            <span className="min-w-0 flex-1 truncate">{name}</span>
-          </button>
+    <button
+      type="button"
+      data-fs-path={path}
+      onClick={handleClick}
+      onDoubleClick={() => !isDir && actions.beginRename(path)}
+      className={cn(
+        "group flex h-6 w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 text-left text-[13px] transition-colors hover:bg-accent/70",
+        isSelected
+          ? "bg-accent text-foreground"
+          : gitignored
+            ? "text-muted-foreground/70"
+            : "text-foreground/85",
+        isDropTarget && "bg-primary/10 ring-1 ring-inset ring-primary/60",
+      )}
+      style={{ paddingLeft }}
+    >
+      <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
+        {isDir ? (
+          <HugeiconsIcon
+            icon={ArrowRight01Icon}
+            size={12}
+            strokeWidth={2.25}
+            className={cn("transition-transform", isExpanded && "rotate-90")}
+          />
+        ) : null}
+      </span>
+      {iconUrl ? (
+        <img src={iconUrl} alt="" className="size-4 shrink-0" />
+      ) : (
+        <span className="size-4 shrink-0" />
+      )}
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          !isSelected &&
+            !gitignored &&
+            gitStatusCode &&
+            explorerGitTextClass(gitStatusCode),
         )}
-      </ContextMenuTrigger>
-      <ContextMenuContent
-        className={COMPACT_CONTENT}
-        onCloseAutoFocus={(e) => {
-          if (tree.renaming || tree.pendingCreate) e.preventDefault();
-        }}
       >
-        {!isDir && (
-          <ContextMenuItem
-            className={COMPACT_ITEM}
-            onSelect={() => onOpenFile(path, true)}
-          >
-            Open
-          </ContextMenuItem>
-        )}
-        {!isDir && isMarkdownPath(path) && onOpenMarkdownPreview && (
-          <ContextMenuItem
-            className={COMPACT_ITEM}
-            onSelect={() => onOpenMarkdownPreview(path)}
-          >
-            Open Preview
-          </ContextMenuItem>
-        )}
-        {isDir && onRevealInTerminal && (
-          <ContextMenuItem
-            className={COMPACT_ITEM}
-            onSelect={() => onRevealInTerminal(path)}
-          >
-            Open in Terminal
-          </ContextMenuItem>
-        )}
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => void revealInFinder(path)}
-        >
-          Reveal in Finder
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => tree.beginCreate(createTarget, "file")}
-        >
-          New File
-        </ContextMenuItem>
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => tree.beginCreate(createTarget, "dir")}
-        >
-          New Folder
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => void copyToClipboard(path)}
-        >
-          Copy Path
-        </ContextMenuItem>
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => void copyToClipboard(relativePath(rootPath, path))}
-        >
-          Copy Relative Path
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          onSelect={() => onAttachToAgent?.(path)}
-        >
-          Attach to Agent
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          className={COMPACT_ITEM}
-          variant="destructive"
-          onSelect={(e) => {
-            e.preventDefault();
-            if (isConfirming) {
-              void tree.deletePath(path);
-            } else {
-              setIsConfirming(true);
-            }
-          }}
-          onMouseLeave={() => setTimeout(() => setIsConfirming(false), 1500)}
-        >
-          {isConfirming ? "Click again to confirm" : "Delete"}
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+        {name}
+      </span>
+    </button>
   );
 }
 
@@ -225,7 +136,12 @@ export type PendingRowProps = {
   onCancel: () => void;
 };
 
-export function PendingRow({ depth, kind, onCommit, onCancel }: PendingRowProps) {
+export function PendingRow({
+  depth,
+  kind,
+  onCommit,
+  onCancel,
+}: PendingRowProps) {
   return (
     <div
       className="flex h-6 w-full min-w-0 items-center gap-2 px-1.5 text-[13px]"
@@ -233,7 +149,9 @@ export function PendingRow({ depth, kind, onCommit, onCancel }: PendingRowProps)
     >
       <span className="size-3.5 shrink-0" />
       <img
-        src={kind === "dir" ? folderIconUrl("", false) : fileIconUrl("untitled")}
+        src={
+          kind === "dir" ? folderIconUrl("", false) : fileIconUrl("untitled")
+        }
         alt=""
         className="size-4 shrink-0 opacity-70"
       />

@@ -69,10 +69,10 @@ export function useSourceControlContext({
     [tabs],
   );
   const sourceControlActive = hasOpenGitTab || sidebarView === "source-control";
-  // Stable per-session path so switching tabs / cd-ing in a shell does NOT
-  // re-fire git IPC for the badge. The active panel resolves the current
-  // context path on its own when the user actually opens git.
-  const badgeContextPath = workspaceFallbackPath;
+  // Ambient path tracks the explorer root so the rail badge and explorer git
+  // decorations reflect the repo you are actually looking at. cd-within-repo
+  // churn is absorbed by the status TTL + reusable-root path in useSourceControl.
+  const badgeContextPath = explorerRoot ?? workspaceFallbackPath;
   const sourceControlPath = sourceControlActive
     ? sourceControlContextPath
     : badgeContextPath;
