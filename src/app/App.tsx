@@ -37,6 +37,8 @@ import {
 } from "@/modules/header";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { isMarkdownPath } from "@/lib/utils";
 import {
   useGlobalShortcuts,
   type ShortcutHandlers,
@@ -108,6 +110,7 @@ export default function App() {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    setMarkdownView,
     openAiDiffTab,
     closeAiDiffTab,
     openGitDiffTab,
@@ -468,11 +471,13 @@ export default function App() {
 
   const handleOpenFile = useCallback(
     (path: string, pin?: boolean) => {
-      // Explorer defaults to preview (pin=false); explicit actions like
-      // context-menu "Open" pass pin=true for a persistent tab.
-      openFileTab(path, pin ?? false);
+      // Markdown opens in its rendered view by default; a per-tab toggle flips
+      // it to the raw editor. Other files default to preview (pin=false);
+      // explicit actions like context-menu "Open" pass pin=true to persist.
+      if (isMarkdownPath(path)) newMarkdownTab(path);
+      else openFileTab(path, pin ?? false);
     },
-    [openFileTab],
+    [openFileTab, newMarkdownTab],
   );
 
   const handlePathRenamed = useCallback(
@@ -535,6 +540,9 @@ export default function App() {
       cycleSidebarView,
       openCommitHistoryTab,
     });
+  const explorerGitDecorations = usePreferencesStore(
+    (s) => s.explorerGitDecorations,
+  );
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -548,12 +556,6 @@ export default function App() {
     [newPreviewTab],
   );
 
-  const openMarkdownPreview = useCallback(
-    (path: string) => {
-      newMarkdownTab(path);
-    },
-    [newMarkdownTab],
-  );
 
   const splitActivePaneInActiveTab = useCallback(
     (dir: "row" | "col") => {
@@ -1043,13 +1045,15 @@ export default function App() {
                       <FileExplorer
                         ref={explorerRef}
                         rootPath={explorerRoot}
+                        gitStatus={
+                          explorerGitDecorations ? sourceControl.status : null
+                        }
                         activeFilePath={explorerActiveFilePath}
                         onOpenFile={handleOpenFile}
                         onPathRenamed={handlePathRenamed}
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
-                        onOpenMarkdownPreview={openMarkdownPreview}
                       />
                     ) : (
                       <SourceControlPanel
@@ -1090,6 +1094,7 @@ export default function App() {
                       onAiDiffReject={(id) => respondToApproval(id, false)}
                       onOpenCommitFile={openCommitFileDiffTab}
                       onGitHistorySearchHandle={setGitHistoryHandle}
+                      onSetMarkdownView={setMarkdownView}
                     />
                   </div>
 

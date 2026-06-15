@@ -16,6 +16,9 @@ const ZLOGIN_SCRIPT: &str = include_str!("scripts/zlogin.zsh");
 const ZSHRC_SCRIPT: &str = include_str!("scripts/zshrc.zsh");
 #[cfg(windows)]
 const FISH_INIT_SCRIPT: &str = include_str!("scripts/init.fish");
+#[cfg(unix)]
+const FISH_REINSTALL_PROMPT: &str =
+    "functions -q __terax_install_prompt; and __terax_install_prompt";
 
 #[cfg(windows)]
 fn bashrc_script() -> &'static str {
@@ -105,6 +108,16 @@ fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>, blocks: bool) {
     cmd.env("TERAX_TERMINAL", "1");
     if blocks {
         cmd.env("TERAX_BLOCKS", "1");
+    }
+    for (key, value) in workspace::appimage_env_overrides() {
+        match value {
+            Some(v) => {
+                cmd.env(key, v);
+            }
+            None => {
+                cmd.env_remove(key);
+            }
+        }
     }
     ensure_utf8_locale(cmd);
 
@@ -224,6 +237,11 @@ mod unix {
                 // fish 4.0+ writes its own OSC 133 A/B; ours would double it.
                 cmd.env("fish_features", "no-mark-prompt");
                 cmd.arg("-i");
+                // Re-assert our prompt after config.fish (-C runs last), so a
+                // framework prompt (starship etc.) loaded there can't override
+                // the markers and break cwd tracking.
+                cmd.arg("-C");
+                cmd.arg(super::FISH_REINSTALL_PROMPT);
             }
             Shell::Other => {
                 log::info!(
