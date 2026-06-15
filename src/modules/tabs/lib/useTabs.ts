@@ -1025,14 +1025,18 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
   const reorderTabByGap = useCallback((fromId: number, toGapIndex: number) => {
     setTabs((prev) => {
-      const from = prev.findIndex((t) => t.id === fromId);
-      if (from === -1) return prev;
-      const next = prev.slice();
-      const [moved] = next.splice(from, 1);
-      let target = toGapIndex > from ? toGapIndex - 1 : toGapIndex;
-      target = Math.max(0, Math.min(target, next.length));
-      if (target === from) return prev;
-      next.splice(target, 0, moved);
+      const moved = prev.find((t) => t.id === fromId);
+      if (!moved) return prev;
+      const sameSpace = prev.filter((t) => t.spaceId === moved.spaceId);
+      const spaceFrom = sameSpace.findIndex((t) => t.id === fromId);
+      let spaceTarget = toGapIndex > spaceFrom ? toGapIndex - 1 : toGapIndex;
+      spaceTarget = Math.max(0, Math.min(spaceTarget, sameSpace.length - 1));
+      if (spaceTarget === spaceFrom) return prev;
+      const anchor = sameSpace[spaceTarget];
+      const anchorIdx = prev.findIndex((t) => t.id === anchor.id);
+      const insertIdx = spaceTarget > spaceFrom ? anchorIdx + 1 : anchorIdx;
+      const next = prev.filter((t) => t.id !== fromId);
+      next.splice(Math.min(insertIdx, next.length), 0, moved);
       return next;
     });
   }, []);
