@@ -1023,6 +1023,20 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     for (const lid of toDispose) disposeSession(lid);
   }, []);
 
+  const reorderTabByGap = useCallback((fromId: number, toGapIndex: number) => {
+    setTabs((prev) => {
+      const from = prev.findIndex((t) => t.id === fromId);
+      if (from === -1) return prev;
+      const next = prev.slice();
+      const [moved] = next.splice(from, 1);
+      let target = toGapIndex > from ? toGapIndex - 1 : toGapIndex;
+      target = Math.max(0, Math.min(target, next.length));
+      if (target === from) return prev;
+      next.splice(target, 0, moved);
+      return next;
+    });
+  }, []);
+
   return {
     tabs,
     activeId,
@@ -1031,6 +1045,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     replaceTabs,
     moveTabToSpace,
     reorderTab,
+    reorderTabByGap,
     newTabInSpace,
     removeTabsForSpace,
     markBooted,
