@@ -43,9 +43,7 @@ function projectNameFromRepoRoot(repoRoot: string): string {
 function slugify(input: string): string {
   return input
     .toLowerCase()
-    .replace(/[^a-z0-9\-/._\\]/g, "-")
-    .replace(/[\s./_\\]+/g, "-")
-    .replace(/-+/g, "-")
+    .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
 
