@@ -3,7 +3,7 @@ import { native } from "@/modules/ai/lib/native";
 import type { Tab } from "@/modules/tabs";
 import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { isLeaf, type PaneNode } from "@/modules/terminal/lib/panes";
-import { useWorkspaceEnvStore } from "@/modules/workspace";
+import type { WorkspaceEnv } from "@/modules/workspace";
 import { activeSpaceEnv } from "./activeSpace";
 import { freshTerminalTab, hydrateTabs } from "./serialize";
 import { loadAll, saveActiveId, saveSpacesList, type SpaceMeta } from "./store";
@@ -17,6 +17,7 @@ type Params = {
   replaceTabs: (tabs: Tab[], activeId: number) => void;
   markBooted: () => void;
   setActiveSpaceForNewTabs: (id: string) => void;
+  adoptWorkspaceEnv: (env: WorkspaceEnv) => Promise<string | null>;
 };
 
 function uniqueCwds(tabs: Tab[]): string[] {
@@ -40,6 +41,7 @@ export function useSpacesBoot({
   replaceTabs,
   markBooted,
   setActiveSpaceForNewTabs,
+  adoptWorkspaceEnv,
 }: Params) {
   const done = useRef(false);
 
@@ -81,13 +83,21 @@ export function useSpacesBoot({
             : spaces[0].id;
         setActiveSpaceForNewTabs(active);
 
-        // Must precede cwd authorization and shell spawns below; both read the
-        // global env, which on Windows decides WSL vs local path resolution.
-        useWorkspaceEnvStore.getState().setEnv(activeSpaceEnv(spaces, active));
+        // Apply the space's env+home before the fresh-tab fallback and spawns
+        // below; env is set synchronously so cwd resolution picks WSL vs local.
+        const restoredHome = await adoptWorkspaceEnv(
+          activeSpaceEnv(spaces, active),
+        );
 
         // Active space must never be empty, else its tab list shows nothing.
         if (!restored.some((t) => t.spaceId === active)) {
-          restored.push(freshTerminalTab(active, launchCwd ?? home, allocId));
+          restored.push(
+            freshTerminalTab(
+              active,
+              restoredHome ?? launchCwd ?? home,
+              allocId,
+            ),
+          );
         }
 
         await Promise.allSettled(
@@ -117,5 +127,6 @@ export function useSpacesBoot({
     replaceTabs,
     markBooted,
     setActiveSpaceForNewTabs,
+    adoptWorkspaceEnv,
   ]);
 }
