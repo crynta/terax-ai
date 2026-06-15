@@ -60,7 +60,6 @@ import {
   setGroqSttModel,
   setSttProvider,
   setWhispercppBaseURL,
-  setWhispercppModel,
 } from "@/modules/settings/store";
 import {
   Add01Icon,
@@ -1221,14 +1220,11 @@ function VoiceBlock() {
   const sttProvider = usePreferencesStore((s) => s.sttProvider);
   const groqSttModel = usePreferencesStore((s) => s.groqSttModel);
   const whispercppBaseURL = usePreferencesStore((s) => s.whispercppBaseURL);
-  const whispercppModel = usePreferencesStore((s) => s.whispercppModel);
   const [urlDraft, setUrlDraft] = useState(whispercppBaseURL);
   const [groqModelDraft, setGroqModelDraft] = useState(groqSttModel);
-  const [modelDraft, setModelDraft] = useState(whispercppModel);
 
   useEffect(() => setUrlDraft(whispercppBaseURL), [whispercppBaseURL]);
   useEffect(() => setGroqModelDraft(groqSttModel), [groqSttModel]);
-  useEffect(() => setModelDraft(whispercppModel), [whispercppModel]);
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
@@ -1308,19 +1304,6 @@ function VoiceBlock() {
                 if (v !== whispercppBaseURL) void setWhispercppBaseURL(v);
               }}
               placeholder={WHISPERCPP_DEFAULT_BASE_URL}
-              spellCheck={false}
-              className="h-8 font-mono text-[11.5px]"
-            />
-          </FieldRow>
-          <FieldRow label="Model">
-            <Input
-              value={modelDraft}
-              onChange={(e) => setModelDraft(e.target.value)}
-              onBlur={() => {
-                const v = modelDraft.trim();
-                if (v !== whispercppModel) void setWhispercppModel(v);
-              }}
-              placeholder="base, small, medium, large-v3, …"
               spellCheck={false}
               className="h-8 font-mono text-[11.5px]"
             />

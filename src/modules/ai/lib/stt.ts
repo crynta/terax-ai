@@ -1,6 +1,20 @@
 import type { ProviderKeys } from "./keyring";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+const STT_REQUEST_TIMEOUT_MS = 30_000;
+
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STT_REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function transcribeOpenAI(blob: Blob, apiKey: string): Promise<string> {
   const [{ createOpenAI }, { experimental_transcribe: transcribe }] =
@@ -28,7 +42,7 @@ async function transcribeViaRest(
   const headers: Record<string, string> = {};
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
 
-  const res = await fetch(`${baseURL}/audio/transcriptions`, {
+  const res = await fetchWithTimeout(`${baseURL}/audio/transcriptions`, {
     method: "POST",
     headers,
     body: form,
@@ -93,7 +107,7 @@ async function transcribeWhisperCpp(
   form.append("file", wav, "audio.wav");
   form.append("response_format", "text");
 
-  const res = await fetch(`${baseURL}/inference`, {
+  const res = await fetchWithTimeout(`${baseURL}/inference`, {
     method: "POST",
     body: form,
   });
@@ -109,7 +123,6 @@ async function transcribeWhisperCpp(
 export type SttOptions = {
   groqSttModel?: string;
   whispercppBaseURL?: string;
-  whispercppModel?: string;
 };
 
 export async function transcribeAudio(

@@ -43,7 +43,6 @@ export function useWhisperRecording({
   const sttProvider = usePreferencesStore((s) => s.sttProvider);
   const groqSttModel = usePreferencesStore((s) => s.groqSttModel);
   const whispercppBaseURL = usePreferencesStore((s) => s.whispercppBaseURL);
-  const whispercppModel = usePreferencesStore((s) => s.whispercppModel);
   const [state, setState] = useState<State>("idle");
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -61,7 +60,6 @@ export function useWhisperRecording({
   const sttOptions: SttOptions = {
     groqSttModel,
     whispercppBaseURL,
-    whispercppModel,
   };
 
   const teardownStream = () => {

@@ -81,7 +81,6 @@ export type Preferences = {
   sttProvider: SttProvider;
   groqSttModel: string;
   whispercppBaseURL: string;
-  whispercppModel: string;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
@@ -130,7 +129,6 @@ const KEY_OPENROUTER_MODEL_ID = "openrouterModelId";
 const KEY_STT_PROVIDER = "sttProvider";
 const KEY_GROQ_STT_MODEL = "groqSttModel";
 const KEY_WHISPERCPP_BASE_URL = "whispercppBaseURL";
-const KEY_WHISPERCPP_MODEL = "whispercppModel";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
@@ -194,7 +192,6 @@ export const DEFAULT_PREFERENCES: Preferences = {
   sttProvider: DEFAULT_STT_PROVIDER,
   groqSttModel: "whisper-large-v3-turbo",
   whispercppBaseURL: WHISPERCPP_DEFAULT_BASE_URL,
-  whispercppModel: "",
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
@@ -312,8 +309,6 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_GROQ_STT_MODEL) ?? DEFAULT_PREFERENCES.groqSttModel,
     whispercppBaseURL:
       get<string>(KEY_WHISPERCPP_BASE_URL) ?? DEFAULT_PREFERENCES.whispercppBaseURL,
-    whispercppModel:
-      get<string>(KEY_WHISPERCPP_MODEL) ?? DEFAULT_PREFERENCES.whispercppModel,
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ??
       DEFAULT_PREFERENCES.favoriteModelIds
@@ -504,10 +499,6 @@ export async function setWhispercppBaseURL(value: string): Promise<void> {
   await writePref(KEY_WHISPERCPP_BASE_URL, value.trim());
 }
 
-export async function setWhispercppModel(value: string): Promise<void> {
-  await writePref(KEY_WHISPERCPP_MODEL, value.trim());
-}
-
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -637,7 +628,6 @@ export async function onPreferencesChange(
     [KEY_STT_PROVIDER]: "sttProvider",
     [KEY_GROQ_STT_MODEL]: "groqSttModel",
     [KEY_WHISPERCPP_BASE_URL]: "whispercppBaseURL",
-    [KEY_WHISPERCPP_MODEL]: "whispercppModel",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
