@@ -1,14 +1,16 @@
 import type { ProviderKeys } from "./keyring";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
-const STT_REQUEST_TIMEOUT_MS = 30_000;
+const STT_TIMEOUT_GROQ_MS = 30_000;
+const STT_TIMEOUT_WHISPERCPP_MS = 180_000;
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit = {},
+  timeoutMs: number,
 ): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), STT_REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } finally {
@@ -46,7 +48,7 @@ async function transcribeViaRest(
     method: "POST",
     headers,
     body: form,
-  });
+  }, STT_TIMEOUT_GROQ_MS);
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(
@@ -110,7 +112,7 @@ async function transcribeWhisperCpp(
   const res = await fetchWithTimeout(`${baseURL}/inference`, {
     method: "POST",
     body: form,
-  });
+  }, STT_TIMEOUT_WHISPERCPP_MS);
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(
