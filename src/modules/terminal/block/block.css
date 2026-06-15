@@ -112,7 +112,7 @@
 }
 
 .bt-divider-fail {
-  background: rgba(229, 112, 107, 0.45);
+  background: color-mix(in srgb, var(--destructive, #e5706b) 50%, transparent);
 }
 
 .bt-match {
@@ -131,10 +131,10 @@
   justify-content: space-between;
   height: 18px;
   opacity: 0.72;
-  transition: opacity 120ms ease;
+  transition: opacity var(--dur-fast) var(--ease-soft);
 }
 
-.bt-bar-active {
+.bt-bar:hover {
   opacity: 1;
 }
 
@@ -170,6 +170,14 @@
   opacity: 0.85;
 }
 
+.bt-exit {
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 4px;
+  color: var(--destructive, #e5706b);
+}
+
 .bt-tools,
 .bt-search {
   display: flex;
@@ -179,9 +187,8 @@
   border-radius: 7px;
   pointer-events: auto;
   border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
-  background: color-mix(in srgb, var(--popover, #1b1b1d) 90%, transparent);
+  background: color-mix(in srgb, var(--popover, #1b1b1d) 96%, transparent);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(6px);
   color: var(--muted-foreground, rgba(170, 170, 170, 0.85));
 }
 
@@ -190,7 +197,6 @@
   top: 8px;
   right: 8px;
   padding: 2px 4px;
-  background: color-mix(in srgb, var(--popover, #1b1b1d) 96%, transparent);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
@@ -203,13 +209,17 @@
   border-radius: 5px;
   color: inherit;
   transition:
-    background 100ms ease,
-    color 100ms ease;
+    background var(--dur-fast) var(--ease-soft),
+    color var(--dur-fast) var(--ease-soft);
 }
 
 .bt-btn:hover {
   background: var(--accent, rgba(127, 127, 127, 0.22));
   color: var(--foreground, #fff);
+}
+
+.bt-btn:disabled {
+  pointer-events: none;
 }
 
 .bt-search-input {
@@ -242,8 +252,7 @@
   align-items: center;
   gap: 7px;
   padding: 3px 6px 3px 10px;
-  background: color-mix(in srgb, var(--popover, #1b1b1d) 82%, transparent);
-  backdrop-filter: blur(8px);
+  background: color-mix(in srgb, var(--popover, #1b1b1d) 96%, transparent);
   border-bottom: 1px solid var(--border, rgba(255, 255, 255, 0.08));
 }
 

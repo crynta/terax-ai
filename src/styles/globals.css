@@ -316,6 +316,15 @@ html *::-webkit-scrollbar {
   display: none;
 }
 
+/* Motion tokens. Reduced-motion zeroes the durations as a global snap. */
+:root {
+  --dur-fast: 160ms;
+  --dur-base: 240ms;
+  --dur-slow: 320ms;
+  --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 @keyframes terax-collapsible-down {
   from {
     height: 0;
@@ -342,10 +351,10 @@ html *::-webkit-scrollbar {
   overflow: hidden;
 }
 .terax-collapsible-content[data-state="open"] {
-  animation: terax-collapsible-down 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  animation: terax-collapsible-down var(--dur-base) var(--ease-soft);
 }
 .terax-collapsible-content[data-state="closed"] {
-  animation: terax-collapsible-up 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  animation: terax-collapsible-up var(--dur-base) var(--ease-soft);
 }
 
 /* Height auto<->0 reveal without JS measuring: animate the grid track from 0fr
@@ -355,8 +364,8 @@ html *::-webkit-scrollbar {
   display: grid;
   grid-template-rows: 0fr;
   transition:
-    grid-template-rows 180ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 180ms cubic-bezier(0.16, 1, 0.3, 1);
+    grid-template-rows var(--dur-base) var(--ease-premium),
+    opacity var(--dur-base) var(--ease-premium);
   opacity: 0;
 }
 .terax-reveal[data-state="open"] {
@@ -366,6 +375,34 @@ html *::-webkit-scrollbar {
 .terax-reveal > * {
   min-height: 0;
   overflow: hidden;
+}
+
+@keyframes terax-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.terax-panel-in {
+  animation: terax-panel-in var(--dur-slow) var(--ease-premium);
+}
+
+@keyframes terax-tab-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.terax-tab-in {
+  animation: terax-tab-in var(--dur-base) var(--ease-premium);
 }
 
 /* Text shimmer loop (replaces motion background-position animation). Driven by
@@ -398,6 +435,11 @@ html *::-webkit-scrollbar {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+    --dur-slow: 0.01ms;
+  }
   .terax-reveal {
     transition: none;
   }

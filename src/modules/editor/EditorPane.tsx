@@ -221,9 +221,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }, [vimMode]);
 
     useEffect(() => {
-      let cancelled = false;
       const ext = path.split(".").pop()?.toLowerCase() ?? null;
       languageRef.current = ext;
+      if (doc.status !== "ready") return;
+      let cancelled = false;
       const resolve = async (): Promise<Extension> => {
         if (path.toLowerCase().endsWith(".terax-theme")) {
           const [{ json }, { colorSwatches }] = await Promise.all([
@@ -245,7 +246,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       return () => {
         cancelled = true;
       };
-    }, [path]);
+    }, [path, doc.status]);
 
     useImperativeHandle(
       ref,
@@ -383,7 +384,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }
 
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-col zoom-exempt">
         <CodeMirror
           ref={cmRef}
           value={doc.content}

@@ -163,9 +163,12 @@ pub fn spawn(
     let done = Arc::new(AtomicBool::new(false));
     let spawn_at = Instant::now();
 
+    let first_byte = Arc::new(AtomicBool::new(false));
+
     let pending_r = pending.clone();
     let writer_for_da = writer.clone();
     let app_reader = app.clone();
+    let first_byte_r = first_byte;
     let reader_thread = thread::Builder::new()
         .name("terax-pty-reader".into())
         .spawn(move || {
@@ -174,13 +177,12 @@ pub fn spawn(
             let mut da_filter = DaFilter::new();
             let mut agent_detect = AgentDetector::new();
             let mut dropped_bytes: u64 = 0;
-            let mut logged_first = false;
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if !logged_first {
-                            logged_first = true;
+                        if !first_byte_r.load(Ordering::Relaxed) {
+                            first_byte_r.store(true, Ordering::Release);
                             log::debug!("pty first byte after {}ms", spawn_at.elapsed().as_millis());
                         }
                         agent_detect.process(&buf[..n], |t| {

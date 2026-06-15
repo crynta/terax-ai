@@ -1,11 +1,14 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
-import { MOD_KEY, fmtShortcut } from "@/lib/platform";
+import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
+  clearLeafBlockSelection,
   getLeafDraft,
+  leafGridSelection,
   setLeafDraft,
+  setLeafInputActivity,
   setLeafInputFocus,
 } from "../lib/useTerminalSession";
 import {
@@ -43,8 +46,11 @@ export default function ShellInput({
   const commandsRef = useRef<string[]>([]);
   const cbRef = useRef({ onSubmit, onInterrupt, getCwd });
   cbRef.current = { onSubmit, onInterrupt, getCwd };
+  const leafIdRef = useRef(leafId);
+  leafIdRef.current = leafId;
   const atPrompt = mode === "prompt";
-  const [empty, setEmpty] = useState(true);
+  const focusableRef = useRef(false);
+  focusableRef.current = focused && atPrompt;
 
   useEffect(() => {
     let alive = true;
@@ -69,9 +75,11 @@ export default function ShellInput({
       parent: host,
       fontFamily: fontRef.current.fontFamily,
       fontSize: fontRef.current.fontSize,
+      placeholderText: `Run a command  -  ↑ history  ${fmtShortcut(MOD_KEY, "U")} switch to AI`,
       commandNames: () => commandsRef.current,
       getCwd: () => cbRef.current.getCwd(),
-      onChange: (text) => setEmpty(text.length === 0),
+      onChange: (text) =>
+        setLeafInputActivity(leafIdRef.current, text.length > 0),
       suggest: historySuggest,
       historyList,
       onSubmit: (text) => {
@@ -83,6 +91,7 @@ export default function ShellInput({
         cbRef.current.onSubmit(text);
       },
       onInterrupt: () => cbRef.current.onInterrupt(),
+      onEscape: () => clearLeafBlockSelection(leafIdRef.current),
     });
     handleRef.current = handle;
     requestAnimationFrame(() => handleRef.current?.focus());
@@ -93,12 +102,20 @@ export default function ShellInput({
   }, []);
 
   // Retarget the single editor to the active leaf: register its focus callback
-  // and swap drafts so each leaf keeps its own unsent command.
+  // and swap drafts so each leaf keeps its own unsent command. New or switched
+  // tabs land with the cursor already in the input.
   useEffect(() => {
     setLeafInputFocus(leafId, () => handleRef.current?.focus());
     handleRef.current?.setValue(getLeafDraft(leafId));
+    requestAnimationFrame(() => {
+      if (focusableRef.current && leafIdRef.current === leafId) {
+        handleRef.current?.focus();
+      }
+    });
     return () => {
-      setLeafDraft(leafId, handleRef.current?.getValue() ?? "");
+      const value = handleRef.current?.getValue() ?? "";
+      setLeafDraft(leafId, value);
+      setLeafInputActivity(leafId, value.length > 0);
       setLeafInputFocus(leafId, null);
     };
   }, [leafId]);
@@ -119,8 +136,22 @@ export default function ShellInput({
     if (focused && atPrompt) handleRef.current?.focus();
   }, [focused, atPrompt]);
 
+  // The editor holds focus at the prompt, so a Cmd+C over a grid selection lands
+  // here, not on the xterm. Copy the grid selection unless the editor has its own.
+  const onCopyCapture = (e: React.ClipboardEvent) => {
+    const view = handleRef.current?.view;
+    if (view && !view.state.selection.main.empty) return;
+    const sel = leafGridSelection(leafId);
+    if (!sel) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", sel);
+  };
+
   return (
-    <div className={cn("flex items-start gap-2", !atPrompt && "opacity-45")}>
+    <div
+      className={cn("flex items-start gap-2", !atPrompt && "opacity-45")}
+      onCopyCapture={onCopyCapture}
+    >
       <span
         className="select-none pt-px text-primary/80"
         style={{ fontFamily, fontSize: `${fontSize}px`, lineHeight: 1.5 }}
@@ -128,11 +159,6 @@ export default function ShellInput({
         ❯
       </span>
       <div ref={hostRef} className="min-w-0 flex-1" />
-      {atPrompt && empty && (
-        <span className="pointer-events-none shrink-0 select-none self-center pr-0.5 text-[10px] text-muted-foreground/40">
-          {fmtShortcut(MOD_KEY, "U")} switch · ↑ history
-        </span>
-      )}
     </div>
   );
 }

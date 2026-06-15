@@ -72,8 +72,22 @@ pub async fn pty_open(
     Ok(id)
 }
 
+// Input is the latency-critical path: raw body + id header skips JSON
+// serialization of every keystroke on both sides of the IPC boundary.
 #[tauri::command]
-pub fn pty_write(state: tauri::State<PtyState>, id: u32, data: String) -> Result<(), String> {
+pub fn pty_write(
+    state: tauri::State<PtyState>,
+    request: tauri::ipc::Request,
+) -> Result<(), String> {
+    let id: u32 = request
+        .headers()
+        .get("x-pty-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
+        .ok_or_else(|| "pty_write: missing x-pty-id header".to_string())?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("pty_write: expected raw body".to_string());
+    };
     let session = state
         .sessions
         .read()
@@ -90,7 +104,7 @@ pub fn pty_write(state: tauri::State<PtyState>, id: u32, data: String) -> Result
         .writer
         .lock()
         .unwrap()
-        .write_all(data.as_bytes())
+        .write_all(bytes)
         .map_err(|e| {
             // EPIPE is expected if the child already exited.
             log::debug!("pty_write id={id} failed: {e}");
@@ -174,6 +188,31 @@ pub fn pty_has_foreground_process(state: tauri::State<PtyState>, id: u32) -> Res
         return Ok(false);
     }
     Ok(shell_has_children(shell_pid))
+}
+
+// Foreground-only check for the renderer hibernation path: true while a job
+// owns the tty (tcgetpgrp != shell pgid). Stricter and cheaper than
+// pty_has_foreground_process, which counts background children too.
+#[tauri::command]
+pub fn pty_has_foreground_job(state: tauri::State<PtyState>, id: u32) -> Result<bool, String> {
+    let sessions = state.sessions.read().unwrap();
+    let session = sessions.get(&id).ok_or_else(|| {
+        log::warn!("pty_has_foreground_job: unknown session id={id}");
+        "no session".to_string()
+    })?;
+    let shell_pid = session.shell_pid;
+    if shell_pid == 0 {
+        return Ok(false);
+    }
+    #[cfg(unix)]
+    {
+        let leader = session.master.lock().unwrap().process_group_leader();
+        Ok(matches!(leader, Some(pid) if pid > 0 && pid as u32 != shell_pid))
+    }
+    #[cfg(windows)]
+    {
+        Ok(shell_has_children(shell_pid))
+    }
 }
 
 // pgrep -P exits 0 when shell_pid has at least one child, 1 when none.
