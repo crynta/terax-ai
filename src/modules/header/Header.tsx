@@ -10,7 +10,13 @@ import {
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   SearchInline,
   type SearchInlineHandle,
@@ -37,6 +43,7 @@ type Props = {
   onActivateAgent: (tabId: number, leafId: number) => void;
   onActivateLocalAgent: () => void;
   onOpenSettings: () => void;
+  spaceSwitcher: ReactNode;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
 };
@@ -61,6 +68,7 @@ export function Header({
   onActivateAgent,
   onActivateLocalAgent,
   onOpenSettings,
+  spaceSwitcher,
   searchTarget,
   searchRef,
 }: Props) {
@@ -114,14 +122,8 @@ export function Header({
           variant="ghost"
           onClick={onOpenCommandPalette}
           title="Command palette"
-          className="shrink-0 gap-1.5 rounded-md px-1.5 text-muted-foreground"
+          className="shrink-0 gap-1.5 rounded-md px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
-          {/* <span className="text-xs font-medium">Cmd</span>
-          {!compact && paletteTokens && (
-            <Kbd className="rounded bg-transparent px-1 py-px font-sans text-[10px]">
-            {paletteTokens}
-            </Kbd>
-          )} */}
           <HugeiconsIcon icon={CommandIcon} size={14} strokeWidth={1.75} />
         </Button>
 
@@ -133,14 +135,15 @@ export function Header({
         )}
       </div>
 
-      {!IS_MAC && <span className="mx-1 h-5 w-px shrink-0 bg-border" />}
+      {!IS_MAC && <span className="mx-1 h-full w-px shrink-0 bg-border/70" />}
 
-      {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border" />}
+      {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border/70" />}
 
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
         data-tauri-drag-region
       >
+        {spaceSwitcher}
         <TabBar
           tabs={tabs}
           activeId={activeId}
@@ -175,7 +178,7 @@ export function Header({
 
       {USE_CUSTOM_WINDOW_CONTROLS && (
         <>
-          <span className="ml-1 h-5 w-px shrink-0 bg-border" />
+          <span className="ml-1 h-5 w-px shrink-0 bg-border/60" />
           <WindowControls />
         </>
       )}

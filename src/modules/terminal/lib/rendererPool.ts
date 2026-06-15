@@ -25,6 +25,9 @@ export type SlotAdapter = {
   evictLeaf(leafId: number): void;
   isLeafFocused(leafId: number): boolean;
   isLeafBlocks(leafId: number): boolean;
+  isLeafBusy(leafId: number): boolean;
+  isLeafVisible(leafId: number): boolean;
+  storeSnapshot(leafId: number, out: SerializeOutput): void;
 };
 
 export type LeafBridge = {
@@ -47,6 +50,10 @@ export type Slot = {
   webglAddon: WebglAddon | null;
   webglCanvases: HTMLCanvasElement[];
   currentLeafId: number | null;
+  // Leaf whose buffer this slot still holds intact after release; serialized
+  // only if another leaf steals the slot.
+  retainedLeafId: number | null;
+  parked: boolean;
   oscDisposers: (() => void)[];
   observer: ResizeObserver | null;
   fitTimer: ReturnType<typeof setTimeout> | null;
@@ -66,8 +73,7 @@ let recyclerEl: HTMLDivElement | null = null;
 let adapter: SlotAdapter | null = null;
 
 let windowActive =
-  typeof document === "undefined" ||
-  (!document.hidden && document.hasFocus());
+  typeof document === "undefined" || (!document.hidden && document.hasFocus());
 let windowActivityBound = false;
 let cursorBlinkEnabled = false;
 
@@ -108,6 +114,8 @@ export function poolSize(): number {
 export type PoolSlotStat = {
   id: number;
   leafId: number | null;
+  retainedLeafId: number | null;
+  parked: boolean;
   cols: number;
   rows: number;
   bufferLines: number;
@@ -119,6 +127,8 @@ export function poolSlotStats(): PoolSlotStat[] {
   return slots.map((s) => ({
     id: s.id,
     leafId: s.currentLeafId,
+    retainedLeafId: s.retainedLeafId,
+    parked: s.parked,
     cols: s.term.cols,
     rows: s.term.rows,
     bufferLines: s.term.buffer.active.length,
@@ -137,7 +147,7 @@ export function pasteIntoLeaf(leafId: number, text: string): boolean {
 }
 
 function getRecycler(): HTMLDivElement {
-  if (recyclerEl && recyclerEl.isConnected) return recyclerEl;
+  if (recyclerEl?.isConnected) return recyclerEl;
   const el = document.createElement("div");
   el.setAttribute("data-terax-recycler", "");
   el.style.cssText =
@@ -208,6 +218,8 @@ function createSlot(): Slot {
     webglAddon: null,
     webglCanvases: [],
     currentLeafId: null,
+    retainedLeafId: null,
+    parked: false,
     oscDisposers: [],
     observer: null,
     fitTimer: null,
@@ -304,27 +316,48 @@ function isAltScreen(s: Slot): boolean {
   }
 }
 
+function evictionScore(s: Slot): number {
+  const leafId = s.currentLeafId;
+  const visible = leafId !== null && (adapter?.isLeafVisible(leafId) ?? false);
+  const busy = leafId !== null && (adapter?.isLeafBusy(leafId) ?? false);
+  const blocks = leafId !== null && (adapter?.isLeafBlocks(leafId) ?? false);
+  const focused = leafId !== null && (adapter?.isLeafFocused(leafId) ?? false);
+  return (
+    (visible ? 1000 : 0) +
+    (isAltScreen(s) ? 100 : 0) +
+    (busy ? 80 : 0) +
+    (blocks ? 50 : 0) +
+    (focused ? 10 : 0) +
+    s.lastUsedAt / 1e12
+  );
+}
+
 function pickSlotFor(leafId: number): PickResult {
-  const free = slots.find((s) => s.currentLeafId === null);
-  if (free) return { slot: free, previousLeafId: null };
+  const retainedOwn = slots.find(
+    (s) => s.currentLeafId === null && s.retainedLeafId === leafId,
+  );
+  if (retainedOwn) return { slot: retainedOwn, previousLeafId: null };
+
+  const clean = slots.find(
+    (s) => s.currentLeafId === null && s.retainedLeafId === null,
+  );
+  if (clean) return { slot: clean, previousLeafId: null };
   if (slots.length < POOL_MAX_SIZE)
     return { slot: createSlot(), previousLeafId: null };
+
+  // Retained buffers are cheaper to lose than bound ones: serialize, no evict.
+  let retained: Slot | null = null;
+  for (const s of slots) {
+    if (s.currentLeafId !== null) continue;
+    if (!retained || s.lastUsedAt < retained.lastUsedAt) retained = s;
+  }
+  if (retained) return { slot: retained, previousLeafId: null };
 
   let best: Slot | null = null;
   let bestScore = Number.POSITIVE_INFINITY;
   for (const s of slots) {
     if (s.currentLeafId === leafId) return { slot: s, previousLeafId: null };
-    const focused =
-      s.currentLeafId !== null &&
-      (adapter?.isLeafFocused(s.currentLeafId) ?? false);
-    const blocks =
-      s.currentLeafId !== null &&
-      (adapter?.isLeafBlocks(s.currentLeafId) ?? false);
-    const score =
-      (isAltScreen(s) ? 100 : 0) +
-      (blocks ? 50 : 0) +
-      (focused ? 10 : 0) +
-      s.lastUsedAt / 1e12;
+    const score = evictionScore(s);
     if (score < bestScore) {
       bestScore = score;
       best = s;
@@ -366,64 +399,95 @@ export function acquireSlot(params: AcquireParams): Slot {
     pick.slot.currentLeafId !== null &&
     pick.slot.currentLeafId !== params.leafId
   ) {
-    detachSlotFromLeaf(pick.slot);
+    detachSlotFromLeaf(pick.slot, false);
+  }
+  if (
+    pick.slot.retainedLeafId !== null &&
+    pick.slot.retainedLeafId !== params.leafId
+  ) {
+    adapter?.storeSnapshot(pick.slot.retainedLeafId, serializeSlot(pick.slot));
+    discardRetention(pick.slot);
   }
   bindSlot(pick.slot, params);
   return pick.slot;
 }
 
+function discardRetention(slot: Slot): void {
+  slot.retainedLeafId = null;
+  for (const d of slot.oscDisposers) {
+    try {
+      d();
+    } catch {}
+  }
+  slot.oscDisposers = [];
+}
+
 function bindSlot(slot: Slot, p: AcquireParams): void {
+  const fast = slot.retainedLeafId === p.leafId;
   const stale =
-    !slot.webglAddon || performance.now() - slot.lastUsedAt > SLOT_STALE_MS;
+    !slot.webglAddon ||
+    slot.parked ||
+    performance.now() - slot.lastUsedAt > SLOT_STALE_MS;
+  const hadWebgl = !!slot.webglAddon;
+  slot.retainedLeafId = null;
   slot.currentLeafId = p.leafId;
   slot.lastUsedAt = performance.now();
 
   cancelPendingUnhide(slot);
   cancelWebglReap(slot);
   cancelSlotReap(slot);
-  slot.host.style.visibility = "hidden";
+  unparkSlotHost(slot);
+  if (!fast) {
+    slot.host.style.visibility = "hidden";
+    if (hadWebgl) disposeSlotWebgl(slot);
+  }
 
   if (slot.host.parentNode !== p.container) {
     p.container.appendChild(slot.host);
   }
 
   slot.term.options.disableStdin = p.shellExited;
-  slot.term.clear();
-  slot.term.reset();
 
-  if (
-    p.cols > 0 &&
-    p.rows > 0 &&
-    (slot.term.cols !== p.cols || slot.term.rows !== p.rows)
-  ) {
-    slot.term.resize(p.cols, p.rows);
-  }
+  if (!fast) {
+    slot.term.clear();
+    slot.term.reset();
 
-  if (p.snapshot) {
-    try {
-      slot.term.write(p.snapshot);
-    } catch (e) {
-      console.warn("[terax] snapshot replay failed:", e);
+    if (
+      p.cols > 0 &&
+      p.rows > 0 &&
+      (slot.term.cols !== p.cols || slot.term.rows !== p.rows)
+    ) {
+      slot.term.resize(p.cols, p.rows);
     }
-  }
-  if (p.altScreen) {
-    // Discard the dormant ring. TUI output is incremental cursor-positioned
-    // updates that can't be replayed coherently on top of a stale snapshot
-    // — see the SIGWINCH kick below, which makes the TUI redraw from scratch.
-    p.drainRing(() => {});
+
+    if (p.snapshot) {
+      try {
+        slot.term.write(p.snapshot);
+      } catch (e) {
+        console.warn("[terax] snapshot replay failed:", e);
+      }
+    }
+    if (p.altScreen) {
+      // TUI output is incremental cursor-positioned updates that can't be
+      // replayed on top of a stale snapshot; the SIGWINCH kick below makes
+      // the TUI redraw from scratch instead.
+      p.drainRing(() => {});
+    } else {
+      p.drainRing((bytes) => slot.term.write(bytes));
+    }
+    try {
+      slot.term.write("\x1b[?25h");
+    } catch {}
+
+    for (const d of slot.oscDisposers) {
+      try {
+        d();
+      } catch {}
+    }
+    slot.oscDisposers = p.registerOsc(slot.term);
   } else {
     p.drainRing((bytes) => slot.term.write(bytes));
   }
-  try {
-    slot.term.write("\x1b[?25h");
-  } catch {}
-
-  for (const d of slot.oscDisposers) {
-    try {
-      d();
-    } catch {}
-  }
-  slot.oscDisposers = p.registerOsc(slot.term);
 
   setupResizeObserver(slot, p);
   slot.fitAddon.fit();
@@ -436,7 +500,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     adapter?.resolveLeaf(p.leafId)?.resizePty(slot.lastCols, slot.lastRows);
   }
 
-  if (p.searchQuery) {
+  if (!fast && p.searchQuery) {
     try {
       slot.searchAddon.findNext(p.searchQuery);
     } catch {}
@@ -444,11 +508,21 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
 
   applyCursorBlinkOnSlot(slot, adapter?.isLeafFocused(p.leafId) ?? false);
 
-  if (p.altScreen && !p.shellExited) {
+  if (!fast && p.altScreen && !p.shellExited) {
     adapter?.resolveLeaf(p.leafId)?.kickPty(slot.term.cols, slot.term.rows);
   }
 
-  scheduleUnhide(slot, stale);
+  if (fast) {
+    if (stale) {
+      if (!slot.webglAddon) attachWebgl(slot);
+      try {
+        slot.term.refresh(0, slot.term.rows - 1);
+      } catch {}
+    }
+    if (adapter?.isLeafFocused(p.leafId)) slot.term.focus();
+  } else {
+    scheduleUnhide(slot, stale || hadWebgl);
+  }
 
   p.onSearchReady(slot.searchAddon);
 }
@@ -481,6 +555,7 @@ function cancelPendingUnhide(slot: Slot): void {
 
 function rewireSlot(slot: Slot, p: AcquireParams): void {
   slot.lastUsedAt = performance.now();
+  unparkSlotHost(slot);
   if (slot.host.parentNode !== p.container) {
     p.container.appendChild(slot.host);
   }
@@ -515,10 +590,11 @@ function setupResizeObserver(slot: Slot, p: AcquireParams): void {
   };
 
   slot.observer = new ResizeObserver(() => {
+    if (slot.parked) return;
     if (slot.fitTimer) clearTimeout(slot.fitTimer);
     slot.fitTimer = setTimeout(() => {
       slot.fitTimer = null;
-      if (slot.currentLeafId !== p.leafId) return;
+      if (slot.currentLeafId !== p.leafId || slot.parked) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
       if (w === slot.lastW && h === slot.lastH) return;
@@ -539,12 +615,13 @@ export type SerializeOutput = {
   altScreen: boolean;
 };
 
-export function releaseSlot(leafId: number): SerializeOutput | null {
+export type ReleaseOutput = { cols: number; rows: number };
+
+export function releaseSlot(leafId: number): ReleaseOutput | null {
   const slot = slots.find((s) => s.currentLeafId === leafId);
   if (!slot) return null;
-  const out = serializeSlot(slot);
-  detachSlotFromLeaf(slot);
-  return out;
+  detachSlotFromLeaf(slot, true);
+  return { cols: slot.term.cols, rows: slot.term.rows };
 }
 
 function serializeSlot(slot: Slot): SerializeOutput {
@@ -566,13 +643,17 @@ function serializeSlot(slot: Slot): SerializeOutput {
   };
 }
 
-function detachSlotFromLeaf(slot: Slot): void {
-  for (const d of slot.oscDisposers) {
-    try {
-      d();
-    } catch {}
+function detachSlotFromLeaf(slot: Slot, retain: boolean): void {
+  if (retain && slot.currentLeafId !== null) {
+    slot.retainedLeafId = slot.currentLeafId;
+    parkSlotHost(slot);
+  } else {
+    discardRetention(slot);
+    unparkSlotHost(slot);
+    if (slot.host.parentNode !== getRecycler()) {
+      getRecycler().appendChild(slot.host);
+    }
   }
-  slot.oscDisposers = [];
 
   slot.observer?.disconnect();
   slot.observer = null;
@@ -584,14 +665,24 @@ function detachSlotFromLeaf(slot: Slot): void {
   cancelPendingUnhide(slot);
   slot.host.style.visibility = "";
 
-  if (slot.host.parentNode !== getRecycler()) {
-    getRecycler().appendChild(slot.host);
-  }
-
   slot.currentLeafId = null;
   slot.lastUsedAt = performance.now();
   scheduleWebglReap(slot);
   scheduleSlotReap(slot);
+}
+
+// display:none makes xterm's IntersectionObserver pause rendering while the
+// buffer keeps parsing writes; visibility:hidden would not (geometry remains).
+function parkSlotHost(slot: Slot): void {
+  if (slot.parked) return;
+  slot.parked = true;
+  slot.host.style.display = "none";
+}
+
+function unparkSlotHost(slot: Slot): void {
+  if (!slot.parked) return;
+  slot.parked = false;
+  slot.host.style.display = "";
 }
 
 function scheduleWebglReap(slot: Slot): void {
@@ -599,7 +690,7 @@ function scheduleWebglReap(slot: Slot): void {
   if (!slot.webglAddon) return;
   slot.webglReapTimer = setTimeout(() => {
     slot.webglReapTimer = null;
-    if (slot.currentLeafId === null) disposeSlotWebgl(slot);
+    if (slot.currentLeafId === null || slot.parked) disposeSlotWebgl(slot);
   }, WEBGL_REAP_GRACE_MS);
 }
 
@@ -631,7 +722,11 @@ function reapIdleSlot(slot: Slot): void {
   if (idle.length <= IDLE_SLOTS_KEEP_WARM) return;
   idle.sort((a, b) => a.lastUsedAt - b.lastUsedAt);
   const surplus = idle.slice(0, idle.length - IDLE_SLOTS_KEEP_WARM);
-  if (surplus.includes(slot)) disposeSlot(slot);
+  if (!surplus.includes(slot)) return;
+  if (slot.retainedLeafId !== null) {
+    adapter?.storeSnapshot(slot.retainedLeafId, serializeSlot(slot));
+  }
+  disposeSlot(slot);
 }
 
 function disposeSlot(slot: Slot): void {
@@ -691,7 +786,8 @@ function attachWebgl(slot: Slot): void {
       // reset; without re-attach the slot would silently fall back to DOM
       // forever. Defer past WebKit's reset window before retrying.
       setTimeout(() => {
-        if (slot.webglAddon || slot.currentLeafId === null) return;
+        if (slot.webglAddon || slot.currentLeafId === null || slot.parked)
+          return;
         if (!usePreferencesStore.getState().terminalWebglEnabled) return;
         attachWebgl(slot);
         if (slot.webglAddon) {
@@ -767,7 +863,7 @@ function releaseCanvasContext(canvas: HTMLCanvasElement): void {
 export function applyWebglPreference(enabled: boolean): void {
   for (const slot of slots) {
     if (enabled) {
-      if (slot.currentLeafId !== null && !slot.webglAddon) {
+      if (slot.currentLeafId !== null && !slot.parked && !slot.webglAddon) {
         attachWebgl(slot);
         if (slot.webglAddon) {
           try {
@@ -782,17 +878,26 @@ export function applyWebglPreference(enabled: boolean): void {
   }
 }
 
+// Parked and retained slots can't be measured (display:none); poison lastW
+// so the refit happens on unpark/rebind instead.
+function refitSlot(slot: Slot): void {
+  if (slot.parked || slot.currentLeafId === null) {
+    slot.lastW = -1;
+    return;
+  }
+  slot.fitAddon.fit();
+  slot.lastCols = slot.term.cols;
+  slot.lastRows = slot.term.rows;
+  adapter
+    ?.resolveLeaf(slot.currentLeafId)
+    ?.resizePty(slot.term.cols, slot.term.rows);
+}
+
 export function applyFontSize(size: number): void {
   for (const slot of slots) {
     if (slot.term.options.fontSize === size) continue;
     slot.term.options.fontSize = size;
-    slot.fitAddon.fit();
-    if (slot.currentLeafId !== null) {
-      slot.lastCols = slot.term.cols;
-      slot.lastRows = slot.term.rows;
-      const bridge = adapter?.resolveLeaf(slot.currentLeafId);
-      bridge?.resizePty(slot.term.cols, slot.term.rows);
-    }
+    refitSlot(slot);
   }
 }
 
@@ -800,7 +905,7 @@ export function applyLetterSpacing(spacing: number): void {
   for (const slot of slots) {
     if (slot.term.options.letterSpacing === spacing) continue;
     slot.term.options.letterSpacing = spacing;
-    slot.fitAddon.fit();
+    refitSlot(slot);
   }
 }
 
@@ -809,13 +914,7 @@ export function applyFontFamily(family: string): void {
   for (const slot of slots) {
     if (slot.term.options.fontFamily === resolved) continue;
     slot.term.options.fontFamily = resolved;
-    slot.fitAddon.fit();
-    if (slot.currentLeafId !== null) {
-      slot.lastCols = slot.term.cols;
-      slot.lastRows = slot.term.rows;
-      const bridge = adapter?.resolveLeaf(slot.currentLeafId);
-      bridge?.resizePty(slot.term.cols, slot.term.rows);
-    }
+    refitSlot(slot);
   }
 }
 
@@ -872,14 +971,34 @@ export function isLeafAltScreen(leafId: number): boolean {
 
 export function parkLeafSlot(leafId: number): void {
   const slot = slots.find((s) => s.currentLeafId === leafId);
-  if (slot) disposeSlotWebgl(slot);
+  if (!slot) return;
+  parkSlotHost(slot);
+  scheduleWebglReap(slot);
 }
 
 export function refreshLeafSlot(leafId: number): void {
   const slot = slots.find((s) => s.currentLeafId === leafId);
   if (!slot) return;
+  cancelWebglReap(slot);
+  unparkSlotHost(slot);
   if (usePreferencesStore.getState().terminalWebglEnabled && !slot.webglAddon) {
     attachWebgl(slot);
+  }
+  // The observer skips parked slots; catch up on container resizes here.
+  const container = slot.host.parentElement;
+  if (
+    container &&
+    (container.clientWidth !== slot.lastW ||
+      container.clientHeight !== slot.lastH)
+  ) {
+    slot.lastW = container.clientWidth;
+    slot.lastH = container.clientHeight;
+    slot.fitAddon.fit();
+    if (slot.term.cols !== slot.lastCols || slot.term.rows !== slot.lastRows) {
+      slot.lastCols = slot.term.cols;
+      slot.lastRows = slot.term.rows;
+      adapter?.resolveLeaf(leafId)?.resizePty(slot.lastCols, slot.lastRows);
+    }
   }
   try {
     slot.term.refresh(0, slot.term.rows - 1);
@@ -887,8 +1006,28 @@ export function refreshLeafSlot(leafId: number): void {
 }
 
 export function disposeLeafSlot(leafId: number): void {
-  const slot = slots.find((s) => s.currentLeafId === leafId);
+  const slot = slots.find(
+    (s) => s.currentLeafId === leafId || s.retainedLeafId === leafId,
+  );
   if (slot) disposeSlot(slot);
+}
+
+export function discardRetainedSlot(leafId: number): void {
+  const slot = slots.find(
+    (s) => s.currentLeafId === null && s.retainedLeafId === leafId,
+  );
+  if (!slot) return;
+  discardRetention(slot);
+  slot.term.clear();
+  slot.term.reset();
+}
+
+export function getLiveSlotForLeaf(leafId: number): Slot | null {
+  return (
+    slots.find(
+      (s) => s.currentLeafId === leafId || s.retainedLeafId === leafId,
+    ) ?? null
+  );
 }
 
 const IS_MAC =

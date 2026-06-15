@@ -7,10 +7,10 @@ import { useBlockController } from "@/modules/terminal/lib/blockController";
 import { focusLeafInput } from "@/modules/terminal/lib/useTerminalSession";
 import { useTheme } from "@/modules/theme";
 import {
+  AiContentGenerator02Icon,
   CommandLineIcon,
   Folder01Icon,
   GitBranchIcon,
-  SparklesIcon,
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -107,11 +107,7 @@ export function WorkspaceInputBar({
 
   const terminalChips = isTerminalTab ? (
     <>
-      {os && (
-        <Chip tone="neutral" iconNode={<OsIcon os={os} />}>
-          {os}
-        </Chip>
-      )}
+      {os && <Chip tone="neutral" iconNode={<OsIcon os={os} />} title={os} />}
       {cwd && (
         <Chip tone="blue" icon={Folder01Icon} title={cwd}>
           {relPath(cwd, home)}
@@ -207,10 +203,10 @@ function ModeToggle({
   onChange: (next: "shell" | "ai") => void;
 }) {
   return (
-    <div className="relative grid grid-cols-2 rounded-lg bg-muted/40 p-0.5 text-[11px] ring-1 ring-inset ring-border/40">
+    <div className="relative grid shrink-0 grid-cols-2 rounded-md p-0.5 text-[10.5px] ring-1 ring-inset ring-border/35">
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-[5px] bg-background shadow-sm ring-1 ring-border/50 transition-transform duration-200 ease-out"
+        className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-[4px] bg-accent/60 transition-transform duration-200 ease-out"
         style={{
           transform: mode === "ai" ? "translateX(100%)" : "translateX(0)",
         }}
@@ -223,7 +219,7 @@ function ModeToggle({
       />
       <SegButton
         active={mode === "ai"}
-        icon={SparklesIcon}
+        icon={AiContentGenerator02Icon}
         label="AI"
         onClick={() => onChange("ai")}
       />
@@ -238,7 +234,7 @@ function SegButton({
   onClick,
 }: {
   active: boolean;
-  icon: typeof SparklesIcon;
+  icon: typeof AiContentGenerator02Icon;
   label: string;
   onClick: () => void;
 }) {
@@ -247,11 +243,13 @@ function SegButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative z-10 flex items-center justify-center gap-1 rounded-[5px] px-2.5 py-[3px] font-medium transition-colors",
-        active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+        "relative z-10 flex items-center justify-center gap-1 rounded-[4px] px-2 py-[2.5px] font-medium transition-colors",
+        active
+          ? "text-foreground/90"
+          : "text-muted-foreground/70 hover:text-foreground",
       )}
     >
-      <HugeiconsIcon icon={icon} size={12} strokeWidth={1.75} />
+      <HugeiconsIcon icon={icon} size={11} strokeWidth={1.75} />
       {label}
     </button>
   );

@@ -96,3 +96,31 @@ describe("OSC 7 cwd handler — gated by OSC 133 in-command state", () => {
     expect(onCwd).toHaveBeenCalledWith("C:/Users/me/project");
   });
 });
+
+describe("OSC 133 command-state tracking", () => {
+  it("reports running only between C and D, not while typing at the prompt", () => {
+    const { term, handlers } = makeFakeTerm();
+    const onCommandState = vi.fn();
+    registerPromptTracker(term, undefined, onCommandState);
+
+    handlers.get(133)?.("A");
+    expect(onCommandState).toHaveBeenLastCalledWith(false);
+    handlers.get(133)?.("B");
+    expect(onCommandState).toHaveBeenCalledTimes(1);
+    handlers.get(133)?.("C;claude");
+    expect(onCommandState).toHaveBeenLastCalledWith(true);
+    handlers.get(133)?.("D;0");
+    expect(onCommandState).toHaveBeenLastCalledWith(false);
+  });
+
+  it("clears running state on a bare new prompt when D was lost", () => {
+    const { term, handlers } = makeFakeTerm();
+    const onCommandState = vi.fn();
+    registerPromptTracker(term, undefined, onCommandState);
+
+    handlers.get(133)?.("C;vim");
+    expect(onCommandState).toHaveBeenLastCalledWith(true);
+    handlers.get(133)?.("A");
+    expect(onCommandState).toHaveBeenLastCalledWith(false);
+  });
+});
