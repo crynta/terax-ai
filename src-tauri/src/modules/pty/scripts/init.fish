@@ -39,14 +39,22 @@ function __terax_restore_status
     return $argv[1]
 end
 
-if functions -q fish_prompt
+function __terax_capture_user_prompt
+    if not functions -q fish_prompt
+        return
+    end
+    if functions fish_prompt | string match -q '*__terax_user_prompt*'
+        return
+    end
+    functions -e __terax_user_prompt 2>/dev/null
     functions -c fish_prompt __terax_user_prompt
 end
 
-# Wrapped so `fish -C __terax_install_prompt` can re-run it in block mode AFTER
-# config.fish, where a framework prompt (starship etc.) would otherwise override
-# fish_prompt and drop our markers.
+# Wrapped so `fish -C __terax_install_prompt` can re-run it AFTER config.fish,
+# where a framework prompt (starship etc.) would otherwise override fish_prompt
+# and drop our markers.
 function __terax_install_prompt
+    __terax_capture_user_prompt
     if set -q TERAX_BLOCKS
         function fish_right_prompt
         end
