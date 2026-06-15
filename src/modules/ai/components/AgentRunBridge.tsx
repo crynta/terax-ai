@@ -6,10 +6,10 @@ import { checkReadable } from "../lib/security";
 import { resolvePath } from "../tools/tools";
 import {
   flushPersist,
-  getOrCreateChat,
   useChatStore,
   type AgentRunStatus,
 } from "../store/chatStore";
+import { getOrCreateChat } from "../store/chatRuntime";
 
 /**
  * Headless bridge that mirrors chat lifecycle into the store, so the status

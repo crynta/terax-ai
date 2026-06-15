@@ -9,7 +9,7 @@ Terax loads `TERAX.md` from the workspace root as agent memory (similar to AGENT
 - Bundle id: `app.crynta.terax`
 - Package manager: **pnpm**
 - Platforms: macOS, Linux, Windows
-- Frontend checks: `pnpm exec tsc --noEmit`, `pnpm test`
+- Frontend checks: `pnpm lint`, `pnpm check-types`, `pnpm test`
 - Rust checks: `cd src-tauri && cargo clippy && cargo test --locked`
 
 ## Quality bar
@@ -22,7 +22,7 @@ Production-grade or it does not ship. Every change is judged against all of thes
 - **UI/UX**: polished, professional, premium. Every state and detail considered.
 - **Architecture**: new or changed logic lives in pure, dependency-light functions (functional core); tauri commands and React components stay thin (imperative shell). Keeps it testable without a later rewrite.
 
-Verify before claiming done: `pnpm exec tsc --noEmit`, `pnpm test`, `cargo clippy`, `cargo test --locked`. A change to a core subsystem (terminal/shell spawn, workspace auth, git, fs, IPC or AI tool surface) needs a test that locks the invariant.
+Verify before claiming done: `pnpm lint`, `pnpm check-types`, `pnpm test`, `cargo clippy`, `cargo test --locked`. A change to a core subsystem (terminal/shell spawn, workspace auth, git, fs, IPC or AI tool surface) needs a test that locks the invariant.
 
 ## Conventions
 
@@ -74,7 +74,7 @@ Single-window React app. Path alias `@/*` → `src/*`. Tabs are a tagged union (
 
 Each module is self-contained, exports a thin barrel via `index.ts`, and owns its hooks under `lib/`.
 
-- **terminal/** — `TerminalStack` keeps one mounted xterm per tab via `useTerminalSession` + `pty-bridge`. `osc-handlers.ts` parses OSC 7 (with Windows drive-letter normalization: `/C:/Users/foo` → `C:/Users/foo`) and OSC 133 markers. The xterm color palette is driven by the central theme engine (`modules/theme`), not a local table.
+- **terminal/** — `TerminalStack` keeps one mounted xterm per tab via `useTerminalSession` + `pty-bridge`. `osc-handlers.ts` parses OSC 7 (with Windows drive-letter normalization: `/C:/Users/foo` → `C:/Users/foo`) and OSC 133 markers. The xterm color palette is driven by the central theme engine (`modules/theme`), not a local table. Renderer slots are pooled (`rendererPool.ts`, max 5): a hidden leaf with a foreground job (OSC 133 C..D, agent signal, or `pty_has_foreground_job`) keeps its live grid parked with rendering paused via `display:none`; an idle hidden leaf releases its slot but the buffer is retained and serialized lazily only when another leaf steals it. The `DormantRing` (1 MiB, no terminal reset on overflow) buffers bytes only for leaves whose slot was stolen or never bound. Never serialize a leaf that is mid-command: replaying incremental TUI repaints over a snapshot is what used to wipe Claude Code.
 - **editor/** — CodeMirror 6 stack (`EditorStack` mirrors `TerminalStack`). `extensions.ts` configures language modes; supports vim mode and prebuilt themes (Tokyo Night, Nord, GitHub, Atom One, Aura, Copilot, Xcode, Gruvbox Dark).
 - **explorer/** — file tree with Material/Catppuccin icons (`iconResolver.ts`), fuzzy search, keyboard nav, inline rename, context actions. Backslash-aware `basename`.
 - **preview/** — auto-detected dev-server preview tab (status-bar pill suggests opening when a localhost URL is detected).

@@ -6,6 +6,7 @@ function terminalTab(id: number): Tab {
   return {
     id,
     kind: "terminal",
+    spaceId: "default",
     title: `tab-${id}`,
     paneTree: { kind: "leaf", id: id * 100 },
     activeLeafId: id * 100,

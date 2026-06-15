@@ -1,0 +1,159 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+
+# CodeRabbit is a first-pass filter, not a merge gate: humans build, run and
+# trace blast radius before merging. Review at a senior engineering level.
+tone_instructions: >-
+  Senior/staff reviewer for an ultra-lightweight, terminal-first Tauri+React app.
+  High-signal only: architecture, regressions, performance, bundle/deps, RAM,
+  security, UX. Skip trivial style and lint nits.
+
+early_access: false
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  changed_files_summary: true
+  estimate_code_review_effort: true
+  assess_linked_issues: true
+  related_issues: true
+  related_prs: true
+  suggested_labels: true
+  auto_apply_labels: false
+  suggested_reviewers: false
+  sequence_diagrams: false
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+
+  slop_detection:
+    enabled: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+    base_branches:
+      - main
+    ignore_title_keywords:
+      - wip
+      - "[skip-review]"
+
+  # CodeRabbit reviews, it does not author code or tests.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+
+  # Default docstring-coverage gate clashes with our no-comments convention.
+  # Keep the checks that actually help triage AI-authored PRs.
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "warning"
+      requirements: "Conventional Commits; the title becomes the squash commit message."
+    description:
+      mode: "warning"
+    issue_assessment:
+      mode: "warning"
+
+  path_filters:
+    - "!**/*.lock"
+    - "!**/pnpm-lock.yaml"
+    - "!src-tauri/Cargo.lock"
+    - "!src-tauri/gen/**"
+    - "!src-tauri/icons/**"
+    - "!**/*.snap"
+    - "!dist/**"
+
+  path_instructions:
+    - path: "**"
+      instructions: >-
+        Review at a senior/staff engineering level. Assume the author is competent:
+        do NOT flag trivial style, naming, import ordering, formatting or syntax,
+        linters and the author already handle those. Surface a few high-signal
+        findings, not many low-value ones; when unsure whether something is a real
+        problem, say so rather than inventing issues. Focus on:
+        (1) Blast radius and regressions, the single most important check: does a
+        local fix break something global? Trace what else hits this code path and how
+        it behaves for empty, large, concurrent, or cross-platform input; flag silent
+        behavior changes that reach beyond the PR's stated scope.
+        (2) Architecture and approach: is this the right solution at the right layer
+        with the right abstraction boundary, does it fit existing patterns (pure
+        functional core, thin imperative shell), is the feature even needed or does
+        adjacent code already solve it, will it need a rewrite in a few months.
+        (3) Performance and resources: extra IPC round-trips, redundant requests,
+        wasted re-renders, quadratic work on hot paths, unnecessary allocations or RAM
+        growth, work done while the feature is idle.
+        (4) Bundle size and dependencies: flag every new dependency and whether it is
+        justified, prefer std/platform or existing deps; the bundle stays ~7-8MB.
+        (5) Security: validation at boundaries (IPC, fs, network, AI tool surface),
+        injection, path traversal, secret exposure.
+        (6) Correctness: edge cases, error and failure handling, race conditions,
+        rollback on partial failure.
+        (7) UX: loading/empty/error/large-data states, cross-platform parity, polish.
+        (8) Scope: flag mixed-concern PRs bundling unrelated changes; they should be
+        split.
+    - path: "src-tauri/**/*.rs"
+      instructions: >-
+        Rust backend owns all OS access. Verify OS-specific logic exists in the
+        matching cfg arm for every platform the change affects (unix, windows, macos);
+        a fix that only handles one platform is a regression on the others. Keep tauri
+        commands thin with logic in pure, testable functions. The secret-path deny-list
+        must apply on both read and write and never be bypassed. Do not accept removal
+        of SPAWN_LOCK or the per-session Job Object without an equivalent guarantee
+        (first-tab stability, no orphaned child processes). Question any new crate on
+        bundle-size grounds.
+    - path: "src/**/*.{ts,tsx}"
+      instructions: >-
+        Watch for performance regressions: wasted re-renders, extra IPC round-trips,
+        eager work that should be lazy, heavy new dependencies. Tabs are kept mounted
+        and hidden on switch (PTYs/dev servers keep streaming), so do not accept logic
+        that assumes unmount-on-switch. Paths originating from OSC 7, the explorer or
+        the OS must tolerate both separators (split on /[\\/]/); canonical frontend
+        form is forward-slash. New features belong in modules/<area> with App.tsx as a
+        thin coordinator.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Release pipeline is high blast radius. Flag anything that could break the
+        auto-updater signature flow, latest.json, code signing, or cross-platform
+        artifact production. A broken release affects every user's auto-update.
+    - path: "**/*.{md,mdx}"
+      instructions: >-
+        Only flag substance, not style. Terax is positioned terminal-first; flag
+        README or marketing rewrites that reframe it as an IDE or generic developer
+        environment.
+
+  tools:
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    biome:
+      enabled: false
+    clippy:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  web_search:
+    enabled: true
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/TERAX.md"
+      - "**/CLAUDE.md"
+      - "**/AGENTS.md"
+  learnings:
+    scope: auto
+  issues:
+    scope: auto
+  pull_requests:
+    scope: auto

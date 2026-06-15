@@ -26,12 +26,14 @@ import {
   setAutostart,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
+  setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
   setTabBehavior,
   setTerminalFontFamily,
   setTerminalLetterSpacing,
   setTerminalFontSize,
+  setTerminalCursorBlink,
   setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
@@ -76,8 +78,14 @@ export function GeneralSection() {
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
+  const explorerGitDecorations = usePreferencesStore(
+    (s) => s.explorerGitDecorations,
+  );
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
+  );
+  const terminalCursorBlink = usePreferencesStore(
+    (s) => s.terminalCursorBlink,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalLetterSpacing = usePreferencesStore(
@@ -231,6 +239,15 @@ export function GeneralSection() {
             onCheckedChange={(v) => void setShowHidden(v)}
           />
         </SettingRow>
+        <SettingRow
+          title="Git decorations"
+          description="Tint changed files and dim gitignored entries in the file explorer."
+        >
+          <Switch
+            checked={explorerGitDecorations}
+            onCheckedChange={(v) => void setExplorerGitDecorations(v)}
+          />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -268,6 +285,15 @@ export function GeneralSection() {
           <Switch
             checked={terminalWebglEnabled}
             onCheckedChange={(v) => void setTerminalWebglEnabled(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Cursor blinking"
+          description="Blink the terminal cursor. Off by default for lower idle CPU, matching VS Code and the macOS terminal."
+        >
+          <Switch
+            checked={terminalCursorBlink}
+            onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
         </SettingRow>
         <SettingRow
