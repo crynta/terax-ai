@@ -25,6 +25,13 @@ export type TabBehavior = "atLast" | "afterCurrent";
 
 export const TAB_BEHAVIORS = ["atLast", "afterCurrent"] as const;
 
+function isTabBehavior(value: unknown): value is TabBehavior {
+  return (
+    typeof value === "string" &&
+    (TAB_BEHAVIORS as readonly string[]).includes(value)
+  );
+}
+
 export const TAB_BEHAVIOR_LABELS: Record<TabBehavior, string> = {
   atLast: "At Last",
   afterCurrent: "After Current Tab",
@@ -354,8 +361,12 @@ export async function loadPreferences(): Promise<Preferences> {
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
     ),
-    tabBehavior:
-      get<TabBehavior>(KEY_TAB_BEHAVIOR) ?? DEFAULT_PREFERENCES.tabBehavior,
+    tabBehavior: (() => {
+      const stored = get<unknown>(KEY_TAB_BEHAVIOR);
+      return isTabBehavior(stored)
+        ? stored
+        : DEFAULT_PREFERENCES.tabBehavior;
+    })(),
   };
 }
 
@@ -564,6 +575,7 @@ export async function setEditorAutoSaveDelay(value: number): Promise<void> {
 }
 
 export async function setTabBehavior(value: TabBehavior): Promise<void> {
+  if (!isTabBehavior(value)) return;
   await writePref(KEY_TAB_BEHAVIOR, value);
 }
 

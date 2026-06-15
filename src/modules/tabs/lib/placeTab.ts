@@ -2,8 +2,8 @@ import type { TabBehavior } from "@/modules/settings/store";
 import type { Tab } from "./useTabs";
 
 /**
- * Appends `tab` to the strip, or — when the user's `tabBehavior` preference is
- * "afterCurrent" — inserts it immediately after the currently active tab.
+ * Appends `tab` to the strip, or (when the user's `tabBehavior` preference is
+ * "afterCurrent") inserts it immediately after the currently active tab.
  * Falls back to appending if the active id isn't found. Pure: callers pass the
  * active id and behavior so this stays usable inside `setTabs` updaters.
  */
