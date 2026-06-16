@@ -4,7 +4,7 @@ import type { Tab } from "@/modules/tabs";
 import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { isLeaf, type PaneNode } from "@/modules/terminal/lib/panes";
 import type { WorkspaceEnv } from "@/modules/workspace";
-import { activeSpaceEnv } from "./activeSpace";
+import { activeSpaceEnv, freshTabCwd } from "./activeSpace";
 import { freshTerminalTab, hydrateTabs } from "./serialize";
 import { loadAll, saveActiveId, saveSpacesList, type SpaceMeta } from "./store";
 import { useSpaces } from "./useSpaces";
@@ -85,19 +85,13 @@ export function useSpacesBoot({
 
         // Apply the space's env+home before the fresh-tab fallback and spawns
         // below; env is set synchronously so cwd resolution picks WSL vs local.
-        const restoredHome = await adoptWorkspaceEnv(
-          activeSpaceEnv(spaces, active),
-        );
+        const env = activeSpaceEnv(spaces, active);
+        const restoredHome = await adoptWorkspaceEnv(env);
 
         // Active space must never be empty, else its tab list shows nothing.
         if (!restored.some((t) => t.spaceId === active)) {
-          restored.push(
-            freshTerminalTab(
-              active,
-              restoredHome ?? launchCwd ?? home,
-              allocId,
-            ),
-          );
+          const cwd = freshTabCwd(env, restoredHome, launchCwd, home);
+          restored.push(freshTerminalTab(active, cwd, allocId));
         }
 
         await Promise.allSettled(

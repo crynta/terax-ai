@@ -1,5 +1,6 @@
+import type { WorkspaceEnv } from "@/modules/workspace";
 import { describe, expect, it } from "vitest";
-import { activeSpaceEnv, findActiveSpace } from "./activeSpace";
+import { activeSpaceEnv, findActiveSpace, freshTabCwd } from "./activeSpace";
 import type { SpaceMeta } from "./store";
 
 function space(over: Partial<SpaceMeta>): SpaceMeta {
@@ -53,5 +54,26 @@ describe("activeSpaceEnv", () => {
 
   it("defaults to local when there are no spaces", () => {
     expect(activeSpaceEnv([], "a")).toEqual({ kind: "local" });
+  });
+});
+
+describe("freshTabCwd", () => {
+  const wsl: WorkspaceEnv = { kind: "wsl", distro: "Ubuntu" };
+  const local: WorkspaceEnv = { kind: "local" };
+
+  it("prefers the restored home for any env", () => {
+    expect(freshTabCwd(wsl, "/home/aj", "C:/Users/me", "C:/Users/me")).toBe(
+      "/home/aj",
+    );
+  });
+
+  it("returns null for a WSL space when its home did not resolve", () => {
+    expect(freshTabCwd(wsl, null, "C:/Users/me", "C:/Users/me")).toBeNull();
+  });
+
+  it("falls back to the local launch cwd then home for a local space", () => {
+    expect(freshTabCwd(local, null, "C:/work", "C:/Users/me")).toBe("C:/work");
+    expect(freshTabCwd(local, null, null, "C:/Users/me")).toBe("C:/Users/me");
+    expect(freshTabCwd(local, null, null, null)).toBeNull();
   });
 });
