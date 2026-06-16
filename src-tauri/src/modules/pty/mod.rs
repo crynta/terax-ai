@@ -409,8 +409,8 @@ mod tests {
     fn resolve_pty_cwd_keeps_ssh_cwd_remote() {
         let reg = WorkspaceRegistry::default();
         let env = WorkspaceEnv::Ssh {
-            host: "victus".into(),
-            user: Some("kaan".into()),
+            host: "example-host".into(),
+            user: Some("devuser".into()),
             port: None,
             root: None,
         };

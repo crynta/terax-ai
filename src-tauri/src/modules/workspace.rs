@@ -954,19 +954,19 @@ mod auth_tests {
     #[test]
     fn ssh_target_formats_user_host_portless() {
         let env = WorkspaceEnv::Ssh {
-            host: "ubuntu-box".into(),
-            user: Some("kaan".into()),
+            host: "example-host".into(),
+            user: Some("devuser".into()),
             port: None,
-            root: Some("/home/kaan/project".into()),
+            root: Some("/home/devuser/project".into()),
         };
-        assert_eq!(ssh_target(&env).unwrap(), "kaan@ubuntu-box");
+        assert_eq!(ssh_target(&env).unwrap(), "devuser@example-host");
     }
 
     #[test]
     fn ssh_target_rejects_shell_metacharacters() {
         let env = WorkspaceEnv::Ssh {
             host: "host;rm".into(),
-            user: Some("kaan".into()),
+            user: Some("devuser".into()),
             port: None,
             root: None,
         };
@@ -977,8 +977,8 @@ mod auth_tests {
     fn ssh_authorize_spawn_cwd_does_not_touch_local_filesystem() {
         let reg = WorkspaceRegistry::default();
         let env = WorkspaceEnv::Ssh {
-            host: "ubuntu-box".into(),
-            user: Some("kaan".into()),
+            host: "example-host".into(),
+            user: Some("devuser".into()),
             port: Some(22),
             root: None,
         };
