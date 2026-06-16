@@ -25,29 +25,86 @@ export const DEFAULT_THEME_ID = "terax-default";
 export type BackgroundKind = "none" | "image";
 
 export const EDITOR_THEMES = [
+  "kanagawa",
+  "kanagawa-lotus",
+  "kanagawa-dragon",
+  "tokyo-night",
+  "catppuccin-mocha",
+  "catppuccin-latte",
+  "rose-pine",
+  "rose-pine-dawn",
+  "everforest",
+  "everforest-light",
+  "dracula",
+  "solarized-dark",
+  "solarized-light",
+  "nord",
+  "gruvbox-dark",
   "atomone",
   "aura",
   "copilot",
   "github-dark",
   "github-light",
-  "gruvbox-dark",
-  "nord",
-  "tokyo-night",
   "xcode-dark",
   "xcode-light",
 ] as const;
 
 export type EditorThemeId = (typeof EDITOR_THEMES)[number];
 
+/** "auto" follows the active app theme's editorTheme pairing (resolved live). */
+export const EDITOR_THEME_AUTO = "auto" as const;
+export type EditorThemePref = typeof EDITOR_THEME_AUTO | EditorThemeId;
+
+export function isEditorThemeId(v: unknown): v is EditorThemeId {
+  return typeof v === "string" && (EDITOR_THEMES as readonly string[]).includes(v);
+}
+
+export const EDITOR_THEME_MODE: Record<EditorThemeId, "light" | "dark"> = {
+  kanagawa: "dark",
+  "kanagawa-lotus": "light",
+  "kanagawa-dragon": "dark",
+  "tokyo-night": "dark",
+  "catppuccin-mocha": "dark",
+  "catppuccin-latte": "light",
+  "rose-pine": "dark",
+  "rose-pine-dawn": "light",
+  everforest: "dark",
+  "everforest-light": "light",
+  dracula: "dark",
+  "solarized-dark": "dark",
+  "solarized-light": "light",
+  nord: "dark",
+  "gruvbox-dark": "dark",
+  atomone: "dark",
+  aura: "dark",
+  copilot: "dark",
+  "github-dark": "dark",
+  "github-light": "light",
+  "xcode-dark": "dark",
+  "xcode-light": "light",
+};
+
 export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
+  kanagawa: "Kanagawa Wave",
+  "kanagawa-lotus": "Kanagawa Lotus",
+  "kanagawa-dragon": "Kanagawa Dragon",
+  "tokyo-night": "Tokyo Night",
+  "catppuccin-mocha": "Catppuccin Mocha",
+  "catppuccin-latte": "Catppuccin Latte",
+  "rose-pine": "Rosé Pine",
+  "rose-pine-dawn": "Rosé Pine Dawn",
+  everforest: "Everforest Dark",
+  "everforest-light": "Everforest Light",
+  dracula: "Dracula",
+  "solarized-dark": "Solarized Dark",
+  "solarized-light": "Solarized Light",
+  nord: "Nord",
+  "gruvbox-dark": "Gruvbox Dark",
   atomone: "Atom One",
   aura: "Aura",
   copilot: "Copilot",
   "github-dark": "GitHub Dark",
   "github-light": "GitHub Light",
-  "gruvbox-dark": "Gruvbox Dark",
-  nord: "Nord",
-  "tokyo-night": "Tokyo Night",
   "xcode-dark": "Xcode Dark",
   "xcode-light": "Xcode Light",
 };
@@ -60,7 +117,7 @@ export type Preferences = {
   backgroundOpacity: number;
   backgroundBlur: number;
   defaultModelId: ModelId;
-  editorTheme: EditorThemeId;
+  editorTheme: EditorThemePref;
   customInstructions: string;
   autostart: boolean;
   restoreWindowState: boolean;
@@ -171,7 +228,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   backgroundOpacity: 0.5,
   backgroundBlur: 0,
   defaultModelId: DEFAULT_MODEL_ID,
-  editorTheme: "atomone",
+  editorTheme: EDITOR_THEME_AUTO,
   customInstructions: "",
   autostart: false,
   restoreWindowState: true,
@@ -251,8 +308,11 @@ export async function loadPreferences(): Promise<Preferences> {
         ? stored
         : DEFAULT_PREFERENCES.defaultModelId;
     })(),
-    editorTheme:
-      get<EditorThemeId>(KEY_EDITOR_THEME) ?? DEFAULT_PREFERENCES.editorTheme,
+    editorTheme: ((): EditorThemePref => {
+      const stored = get<string>(KEY_EDITOR_THEME);
+      if (stored === EDITOR_THEME_AUTO || isEditorThemeId(stored)) return stored;
+      return DEFAULT_PREFERENCES.editorTheme;
+    })(),
     customInstructions:
       get<string>(KEY_CUSTOM_INSTRUCTIONS) ??
       DEFAULT_PREFERENCES.customInstructions,
@@ -406,7 +466,7 @@ export async function setDefaultModel(value: ModelId): Promise<void> {
   await writePref(KEY_DEFAULT_MODEL, value);
 }
 
-export async function setEditorTheme(value: EditorThemeId): Promise<void> {
+export async function setEditorTheme(value: EditorThemePref): Promise<void> {
   await writePref(KEY_EDITOR_THEME, value);
 }
 
