@@ -20,3 +20,7 @@ export {
   type PaneNode,
   type SplitDir,
 } from "./lib/panes";
+export {
+  configureTerminalLinkActions,
+  type TerminalLinkHover,
+} from "./lib/rendererPool";
