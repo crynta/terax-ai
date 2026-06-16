@@ -50,6 +50,7 @@ import {
   MODELS,
   providerNeedsKey,
   PROVIDERS,
+  STT_PROVIDER_LABELS,
   type ModelCapabilities,
   type ModelId,
   type ModelInfo,
@@ -127,7 +128,7 @@ export function AiStatusBarControls() {
         <IconBtn
           title={
             !c.voice.hasKey
-              ? "Voice needs an OpenAI key"
+              ? `Voice needs a ${STT_PROVIDER_LABELS[c.voice.sttProvider]} key`
               : c.voice.recording
                 ? "Stop & transcribe"
                 : c.voice.transcribing
