@@ -10,7 +10,7 @@ function Breadcrumb({ className, ...props }: React.ComponentProps<"nav">) {
     <nav
       aria-label="breadcrumb"
       data-slot="breadcrumb"
-      className={cn(className)}
+      className={cn("min-w-0", className)}
       {...props}
     />
   )
@@ -21,7 +21,7 @@ function BreadcrumbList({ className, ...props }: React.ComponentProps<"ol">) {
     <ol
       data-slot="breadcrumb-list"
       className={cn(
-        "flex flex-wrap items-center gap-1.5 text-sm wrap-break-word text-muted-foreground sm:gap-2.5",
+        "flex flex-nowrap w-full whitespace-nowrap overflow-x-auto gap-1.5 text-sm text-muted-foreground sm:gap-2.5",
         className
       )}
       {...props}
