@@ -149,11 +149,14 @@ export function writeToSession(leafId: number, data: string): boolean {
 
 export function submitToLeaf(leafId: number, text: string): void {
   const s = sessions.get(leafId);
-  if (!s?.pty) return;
+  if (!s || s.shellExited) return;
   s.everSubmitted = true;
   // Bracketed paste keeps a multiline command atomic; trailing CR runs it.
-  if (text.includes("\n")) s.pty.write(`\x1b[200~${text}\x1b[201~\r`);
-  else s.pty.write(`${text}\r`);
+  const data = text.includes("\n")
+    ? `\x1b[200~${text}\x1b[201~\r`
+    : `${text}\r`;
+  if (s.pty) void s.pty.write(data);
+  else s.pendingInput += data;
 }
 
 export function interruptLeaf(leafId: number): void {
