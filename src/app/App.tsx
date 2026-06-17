@@ -40,6 +40,8 @@ import {
 } from "@/modules/header";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { isMarkdownPath } from "@/lib/utils";
 import {
   useGlobalShortcuts,
   type ShortcutHandlers,
@@ -67,14 +69,22 @@ import {
   findLeafCwd,
   hasLeaf,
   leafIds,
+  navigateFocusedBlocks,
   respawnSession,
   type TerminalPaneHandle,
   useTerminalFileDrop,
   writeToSession,
 } from "@/modules/terminal";
+import {
+  SpaceSwitcher,
+  useSpaces,
+  useSpacePersistence,
+  useSpacesBoot,
+} from "@/modules/spaces";
+import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
-import { useWorkspaceEnvStore } from "@/modules/workspace";
+import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloseDialogs } from "./components/CloseDialogs";
@@ -91,6 +101,14 @@ export default function App() {
     tabs,
     activeId,
     setActiveId,
+    allocId,
+    replaceTabs,
+    moveTabToSpace,
+    reorderTab,
+    newTabInSpace,
+    removeTabsForSpace,
+    markBooted,
+    setActiveSpaceForNewTabs,
     newTab,
     newBlockTab,
     newAgentTab,
@@ -99,6 +117,7 @@ export default function App() {
     pinTab,
     newPreviewTab,
     newMarkdownTab,
+    setMarkdownView,
     openAiDiffTab,
     closeAiDiffTab,
     openGitDiffTab,
@@ -158,14 +177,81 @@ export default function App() {
 
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
-  const { home, launchCwd, launchCwdResolved, switchWorkspace } =
-    useWorkspaceSwitcher({
-      tabsRef,
-      workspaceEnv,
-      setWorkspaceEnv,
-      resetWorkspace,
-      clearWorkspaceState,
-    });
+  const {
+    home,
+    launchCwd,
+    launchCwdResolved,
+    switchWorkspace,
+    adoptWorkspaceEnv,
+  } = useWorkspaceSwitcher({
+    tabsRef,
+    workspaceEnv,
+    setWorkspaceEnv,
+    resetWorkspace,
+    clearWorkspaceState,
+  });
+
+  const activeSpaceId = useSpaces((s) => s.activeId);
+  const spacesHydrated = useSpaces((s) => s.hydrated);
+
+  const handleWorkspaceChange = useCallback(
+    async (env: WorkspaceEnv) => {
+      const switched = await switchWorkspace(env);
+      if (switched && activeSpaceId) {
+        useSpaces.getState().setEnv(activeSpaceId, env);
+      }
+    },
+    [switchWorkspace, activeSpaceId],
+  );
+
+  useSpacesBoot({
+    ready: launchCwdResolved,
+    launchCwd,
+    home,
+    allocId,
+    replaceTabs,
+    markBooted,
+    setActiveSpaceForNewTabs,
+    adoptWorkspaceEnv,
+  });
+
+  useSpacePersistence({
+    tabs,
+    activeId,
+    activeSpaceId: activeSpaceId ?? DEFAULT_SPACE_ID,
+    enabled: spacesHydrated,
+  });
+
+  const prevSpaceRef = useRef(activeSpaceId);
+  useEffect(() => {
+    if (!spacesHydrated || !activeSpaceId) return;
+    setActiveSpaceForNewTabs(activeSpaceId);
+    const prev = prevSpaceRef.current;
+    prevSpaceRef.current = activeSpaceId;
+    if (prev === null || prev === activeSpaceId) return;
+    const meta = useSpaces.getState().spaces.find((s) => s.id === activeSpaceId);
+    if (meta) void adoptWorkspaceEnv(meta.env);
+    const inSpace = tabsRef.current.filter((t) => t.spaceId === activeSpaceId);
+    if (inSpace.length === 0) return;
+    // Keep the active tab if it already belongs to the newly active space (a
+    // cross-space jump set it explicitly); else fall to the space's last tab.
+    if (inSpace.some((t) => t.id === activeId)) return;
+    setActiveId(inSpace[inSpace.length - 1].id);
+  }, [
+    activeSpaceId,
+    activeId,
+    spacesHydrated,
+    setActiveSpaceForNewTabs,
+    setActiveId,
+    adoptWorkspaceEnv,
+  ]);
+
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+
+  const spaceTabs = useMemo(
+    () => tabs.filter((t) => t.spaceId === (activeSpaceId ?? DEFAULT_SPACE_ID)),
+    [tabs, activeSpaceId],
+  );
 
   const {
     sidebarRef,
@@ -280,13 +366,24 @@ export default function App() {
 
   const cycleTab = useCallback(
     (delta: 1 | -1) => {
-      if (tabs.length < 2) return;
-      const idx = tabs.findIndex((t) => t.id === activeId);
-      const nextIdx = (idx + delta + tabs.length) % tabs.length;
-      setActiveId(tabs[nextIdx].id);
+      const scoped = tabsRef.current.filter(
+        (t) => t.spaceId === (activeSpaceId ?? DEFAULT_SPACE_ID),
+      );
+      if (scoped.length < 2) return;
+      const idx = scoped.findIndex((t) => t.id === activeId);
+      const nextIdx = (idx + delta + scoped.length) % scoped.length;
+      setActiveId(scoped[nextIdx].id);
     },
-    [tabs, activeId, setActiveId],
+    [activeId, activeSpaceId, setActiveId],
   );
+
+  const cycleSpace = useCallback((delta: 1 | -1) => {
+    const { spaces, activeId: sid, setActive } = useSpaces.getState();
+    if (spaces.length < 2) return;
+    const idx = spaces.findIndex((s) => s.id === sid);
+    const next = (idx + delta + spaces.length) % spaces.length;
+    setActive(spaces[next].id);
+  }, []);
 
   const captureActiveSelection = useCallback((): string | null => {
     const t = tabs.find((x) => x.id === activeId);
@@ -400,11 +497,13 @@ export default function App() {
 
   const handleOpenFile = useCallback(
     (path: string, pin?: boolean) => {
-      // Explorer defaults to preview (pin=false); explicit actions like
-      // context-menu "Open" pass pin=true for a persistent tab.
-      openFileTab(path, pin ?? false);
+      // Markdown opens in its rendered view by default; a per-tab toggle flips
+      // it to the raw editor. Other files default to preview (pin=false);
+      // explicit actions like context-menu "Open" pass pin=true to persist.
+      if (isMarkdownPath(path)) newMarkdownTab(path);
+      else openFileTab(path, pin ?? false);
     },
-    [openFileTab],
+    [openFileTab, newMarkdownTab],
   );
 
   const handlePathRenamed = useCallback(
@@ -467,6 +566,9 @@ export default function App() {
       cycleSidebarView,
       openCommitHistoryTab,
     });
+  const explorerGitDecorations = usePreferencesStore(
+    (s) => s.explorerGitDecorations,
+  );
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -480,12 +582,6 @@ export default function App() {
     [newPreviewTab],
   );
 
-  const openMarkdownPreview = useCallback(
-    (path: string) => {
-      newMarkdownTab(path);
-    },
-    [newMarkdownTab],
-  );
 
   const splitActivePaneInActiveTab = useCallback(
     (dir: "row" | "col") => {
@@ -512,6 +608,7 @@ export default function App() {
       "commandPalette.open": () => openCommandPalette("commands"),
       "commandPalette.content": () => openCommandPalette("content"),
       "tab.new": openNewTab,
+      "tab.newBlock": openNewBlockTab,
       "tab.newPrivate": openNewPrivateTab,
       "tab.newPreview": () => openPreviewTab(""),
       "tab.newEditor": () => setNewEditorOpen(true),
@@ -519,6 +616,9 @@ export default function App() {
       "tab.next": () => cycleTab(1),
       "tab.prev": () => cycleTab(-1),
       "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
+      "space.next": () => cycleSpace(1),
+      "space.prev": () => cycleSpace(-1),
+      "space.overview": () => setSwitcherOpen(true),
       "pane.splitRight": () => splitActivePaneInActiveTab("row"),
       "pane.splitDown": () => splitActivePaneInActiveTab("col"),
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
@@ -529,6 +629,8 @@ export default function App() {
       },
       "terminal.toggleInput": () =>
         window.dispatchEvent(new CustomEvent(TOGGLE_BLOCK_INPUT_EVENT)),
+      "blocks.prev": () => navigateFocusedBlocks(-1),
+      "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
@@ -546,8 +648,10 @@ export default function App() {
       activeId,
       openCommandPalette,
       cycleTab,
+      cycleSpace,
       handleCloseTabOrPane,
       openNewTab,
+      openNewBlockTab,
       openNewPrivateTab,
       openPreviewTab,
       selectByIndex,
@@ -586,7 +690,11 @@ export default function App() {
           (e.target as HTMLElement | null) ?? document.activeElement;
         return !(target as HTMLElement | null)?.closest?.(".xterm");
       }
-      if (id === "terminal.toggleInput") {
+      if (
+        id === "terminal.toggleInput" ||
+        id === "blocks.prev" ||
+        id === "blocks.next"
+      ) {
         return !(activeTab?.kind === "terminal" && activeTab.blocks === true);
       }
       if (id === "sidebar.toggle") {
@@ -738,6 +846,84 @@ export default function App() {
     gitHistoryHandle,
   ]);
 
+  const activeCwd = activeTerminalLeafCwd;
+
+  const handleNewSpace = useCallback(() => {
+    const { spaces, create, setActive } = useSpaces.getState();
+    const meta = create({
+      name: `Space ${spaces.length + 1}`,
+      root: activeCwd ?? home ?? null,
+      env: workspaceEnv,
+    });
+    setActiveSpaceForNewTabs(meta.id);
+    newTab(activeCwd ?? undefined);
+    setActive(meta.id);
+    return meta.id;
+  }, [activeCwd, home, workspaceEnv, newTab, setActiveSpaceForNewTabs]);
+
+  const handleDeleteSpace = useCallback(
+    (id: string) => {
+      useSpaces.getState().remove(id);
+      removeTabsForSpace(id);
+    },
+    [removeTabsForSpace],
+  );
+
+  const handleMoveTab = useCallback(
+    (tabId: number, targetSpaceId: string) => {
+      if (moveTabToSpace(tabId, targetSpaceId)) {
+        useSpaces.getState().setActive(targetSpaceId);
+      }
+    },
+    [moveTabToSpace],
+  );
+
+  const handleReorderTab = useCallback(
+    (tabId: number, targetTabId: number, edge: "top" | "bottom") => {
+      if (reorderTab(tabId, targetTabId, edge)) {
+        const target = tabsRef.current.find((x) => x.id === targetTabId);
+        if (target) useSpaces.getState().setActive(target.spaceId);
+      }
+    },
+    [reorderTab],
+  );
+
+  const handleNewTabInSpace = useCallback(
+    (spaceId: string) => {
+      const root = useSpaces.getState().spaces.find((s) => s.id === spaceId)
+        ?.root;
+      newTabInSpace(spaceId, root ?? undefined);
+    },
+    [newTabInSpace],
+  );
+
+  const jumpToTab = useCallback(
+    (tabId: number) => {
+      const t = tabsRef.current.find((x) => x.id === tabId);
+      if (!t) return;
+      setActiveId(tabId);
+      useSpaces.getState().setActive(t.spaceId);
+      setSwitcherOpen(false);
+    },
+    [setActiveId],
+  );
+
+  const spaceSwitcher = (
+    <SpaceSwitcher
+      open={switcherOpen}
+      onOpenChange={setSwitcherOpen}
+      tabs={tabs}
+      onNewSpace={() => void handleNewSpace()}
+      onDeleteSpace={handleDeleteSpace}
+      onNewTabInSpace={handleNewTabInSpace}
+      onJumpTab={jumpToTab}
+      onCloseTab={handleClose}
+      onMoveTabToSpace={handleMoveTab}
+      onReorderTab={handleReorderTab}
+      onReorderSpaces={(ids) => useSpaces.getState().reorder(ids)}
+    />
+  );
+
   const commandPaletteItems = useMemo(
     () =>
       commandPaletteOpen
@@ -764,6 +950,11 @@ export default function App() {
             askAiSelection: askFromSelection,
             openSettings: () => void openSettingsWindow(),
             openKeyboardShortcuts: () => void openSettingsWindow("shortcuts"),
+            spaces: useSpaces.getState().spaces,
+            activeSpaceId,
+            openSpacesOverview: () => setSwitcherOpen(true),
+            newSpace: () => void handleNewSpace(),
+            switchSpace: (id) => useSpaces.getState().setActive(id),
           })
         : [],
     [
@@ -784,6 +975,8 @@ export default function App() {
       toggleSidebar,
       togglePanelAndFocus,
       askFromSelection,
+      activeSpaceId,
+      handleNewSpace,
     ],
   );
 
@@ -810,8 +1003,6 @@ export default function App() {
     [isTerminalTab, activeLeafId],
   );
 
-  const activeCwd = activeTerminalLeafCwd;
-
   useAiLiveBridge({
     setLive,
     activeId,
@@ -830,7 +1021,7 @@ export default function App() {
         <div className="relative flex h-screen flex-col overflow-hidden bg-background text-foreground">
           {!zenMode && (
             <Header
-              tabs={tabs}
+              tabs={spaceTabs}
               activeId={activeId}
               onSelect={setActiveId}
               onNew={openNewTab}
@@ -847,6 +1038,7 @@ export default function App() {
               onActivateAgent={onActivateAgent}
               onActivateLocalAgent={onActivateLocalAgent}
               onOpenSettings={() => void openSettingsWindow()}
+              spaceSwitcher={spaceSwitcher}
               searchTarget={searchTarget}
               searchRef={searchInlineRef}
             />
@@ -870,18 +1062,20 @@ export default function App() {
                 }}
               >
                 <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
-                  <div className="min-h-0 flex-1">
+                  <div key={sidebarView} className="min-h-0 flex-1 terax-panel-in">
                     {sidebarView === "explorer" ? (
                       <FileExplorer
                         ref={explorerRef}
                         rootPath={explorerRoot}
+                        gitStatus={
+                          explorerGitDecorations ? sourceControl.status : null
+                        }
                         activeFilePath={explorerActiveFilePath}
                         onOpenFile={handleOpenFile}
                         onPathRenamed={handlePathRenamed}
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
-                        onOpenMarkdownPreview={openMarkdownPreview}
                       />
                     ) : (
                       <SourceControlPanel
@@ -922,6 +1116,7 @@ export default function App() {
                       onAiDiffReject={(id) => respondToApproval(id, false)}
                       onOpenCommitFile={openCommitFileDiffTab}
                       onGitHistorySearchHandle={setGitHistoryHandle}
+                      onSetMarkdownView={setMarkdownView}
                     />
                   </div>
 
@@ -947,7 +1142,7 @@ export default function App() {
               filePath={activeFilePath}
               home={home}
               onCd={sendCd}
-              onWorkspaceChange={switchWorkspace}
+              onWorkspaceChange={handleWorkspaceChange}
               onOpenMini={openMini}
               hasComposer={hasComposer}
               privateActive={

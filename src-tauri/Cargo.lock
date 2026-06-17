@@ -2135,9 +2135,9 @@ dependencies = [
 
 [[package]]
 name = "ignore"
-version = "0.4.25"
+version = "0.4.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3d782a365a015e0f5c04902246139249abf769125006fbe7649e2ee88169b4a"
+checksum = "b915661dd01db3f05050265b2477bcc6527b3792388e2749b41623cc592be67d"
 dependencies = [
  "crossbeam-deque",
  "globset",
@@ -2496,9 +2496,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.30"
+version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "616ec5685824bcc94416c6d4a7a446eea774a31efd7062c8480ba6fd06d7a6e5"
+checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 dependencies = [
  "value-bag",
 ]
@@ -5366,7 +5366,7 @@ dependencies = [
 
 [[package]]
 name = "terax"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "bytes",
  "dirs 6.0.0",
@@ -5381,6 +5381,8 @@ dependencies = [
  "log",
  "notify",
  "nucleo-matcher",
+ "objc2",
+ "objc2-foundation",
  "portable-pty",
  "proptest",
  "reqwest 0.12.28",

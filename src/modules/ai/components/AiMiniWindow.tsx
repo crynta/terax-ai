@@ -363,7 +363,7 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
       : 0;
 
   return (
-    <Context usedTokens={used} maxTokens={max} modelId={modelId}>
+    <Context usedTokens={used} maxTokens={max}>
       <ContextTrigger className="h-6 gap-1 px-0 text-[10.5px]" />
       <ContextContent className="w-64 text-[11px]">
         <ContextContentHeader />

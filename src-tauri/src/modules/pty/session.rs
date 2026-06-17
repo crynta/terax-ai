@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
 use tauri::ipc::{Channel, Response};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::agent_detect::AgentDetector;
 use super::da_filter::DaFilter;
@@ -49,6 +49,9 @@ pub struct Session {
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
+    // Set by the waiter once the child exits, so pty_open can reap a shell
+    // that died before it was registered.
+    pub(super) exited: Arc<AtomicBool>,
 }
 
 impl Drop for Session {
@@ -147,6 +150,8 @@ pub fn spawn(
         None => None,
     };
 
+    let exited = Arc::new(AtomicBool::new(false));
+
     let session = Arc::new(Session {
         #[cfg(windows)]
         _job: job,
@@ -154,6 +159,7 @@ pub fn spawn(
         killer: Mutex::new(killer),
         writer: writer.clone(),
         master: Mutex::new(pair.master),
+        exited: exited.clone(),
     });
 
     let pending: Arc<(Mutex<Vec<u8>>, Condvar)> = Arc::new((
@@ -163,9 +169,12 @@ pub fn spawn(
     let done = Arc::new(AtomicBool::new(false));
     let spawn_at = Instant::now();
 
+    let first_byte = Arc::new(AtomicBool::new(false));
+
     let pending_r = pending.clone();
     let writer_for_da = writer.clone();
     let app_reader = app.clone();
+    let first_byte_r = first_byte;
     let reader_thread = thread::Builder::new()
         .name("terax-pty-reader".into())
         .spawn(move || {
@@ -174,13 +183,12 @@ pub fn spawn(
             let mut da_filter = DaFilter::new();
             let mut agent_detect = AgentDetector::new();
             let mut dropped_bytes: u64 = 0;
-            let mut logged_first = false;
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if !logged_first {
-                            logged_first = true;
+                        if !first_byte_r.load(Ordering::Relaxed) {
+                            first_byte_r.store(true, Ordering::Release);
                             log::debug!("pty first byte after {}ms", spawn_at.elapsed().as_millis());
                         }
                         agent_detect.process(&buf[..n], |t| {
@@ -256,6 +264,8 @@ pub fn spawn(
     let on_data_exit = on_data;
     let pending_e = pending;
     let done_e = done;
+    let app_waiter = app;
+    let exited_w = exited;
     thread::Builder::new()
         .name("terax-pty-waiter".into())
         .spawn(move || {
@@ -266,6 +276,7 @@ pub fn spawn(
                     -1
                 }
             };
+            exited_w.store(true, Ordering::Release);
             // Wait for the reader to hit EOF before taking a final snapshot of
             // `pending`, so the last line of output never races the Exit event.
             #[cfg(windows)]
@@ -290,6 +301,11 @@ pub fn spawn(
             cv.notify_all();
             if let Err(e) = on_exit.send(code) {
                 log::debug!("pty exit send failed (channel closed): {e}");
+            }
+            if let Some(state) = app_waiter.try_state::<super::PtyState>() {
+                if let Some(s) = state.take(id) {
+                    drop_session(s);
+                }
             }
         })
         .expect("spawn pty waiter thread");
@@ -328,6 +344,7 @@ mod tests {
             killer: Mutex::new(killer),
             writer,
             master: Mutex::new(pair.master),
+            exited: Arc::new(AtomicBool::new(false)),
         });
 
         assert!(
@@ -376,6 +393,7 @@ mod tests {
             killer: Mutex::new(killer),
             writer,
             master: Mutex::new(pair.master),
+            exited: Arc::new(AtomicBool::new(false)),
         });
 
         drop_session(session);

@@ -28,7 +28,7 @@ import {
   vimCompartment,
 } from "./lib/extensions";
 import { resolveLanguage } from "./lib/languageResolver";
-import { EDITOR_THEME_EXT } from "./lib/themes";
+import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { useDocument } from "./lib/useDocument";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
 
@@ -73,7 +73,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
     const cmRef = useRef<ReactCodeMirrorRef>(null);
-    const editorThemeId = usePreferencesStore((s) => s.editorTheme);
+    const themeExt = useEditorThemeExt();
     const vimMode = usePreferencesStore((s) => s.vimMode);
     const languageRef = useRef<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
@@ -109,9 +109,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         unsubPrefs();
       };
     }, []);
-    const themeExt =
-      EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
-
     // Stabilize save + onSaved via refs so the extensions array never changes
     // identity — a new identity makes @uiw/react-codemirror reconfigure the
     // whole state, wiping the language compartment.
@@ -221,9 +218,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }, [vimMode]);
 
     useEffect(() => {
-      let cancelled = false;
       const ext = path.split(".").pop()?.toLowerCase() ?? null;
       languageRef.current = ext;
+      if (doc.status !== "ready") return;
+      let cancelled = false;
       const resolve = async (): Promise<Extension> => {
         if (path.toLowerCase().endsWith(".terax-theme")) {
           const [{ json }, { colorSwatches }] = await Promise.all([
@@ -245,7 +243,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       return () => {
         cancelled = true;
       };
-    }, [path]);
+    }, [path, doc.status]);
 
     useImperativeHandle(
       ref,
@@ -383,7 +381,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }
 
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-col zoom-exempt">
         <CodeMirror
           ref={cmRef}
           value={doc.content}

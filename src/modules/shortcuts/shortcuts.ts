@@ -8,6 +8,7 @@ export type ShortcutId =
   | "commandPalette.open"
   | "commandPalette.content"
   | "tab.new"
+  | "tab.newBlock"
   | "tab.newPrivate"
   | "tab.newPreview"
   | "tab.newEditor"
@@ -15,6 +16,9 @@ export type ShortcutId =
   | "tab.next"
   | "tab.prev"
   | "tab.selectByIndex"
+  | "space.next"
+  | "space.prev"
+  | "space.overview"
   | "pane.splitRight"
   | "pane.splitDown"
   | "pane.focusNext"
@@ -22,6 +26,8 @@ export type ShortcutId =
   | "pane.source"
   | "terminal.clear"
   | "terminal.toggleInput"
+  | "blocks.prev"
+  | "blocks.next"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
@@ -39,6 +45,7 @@ export type ShortcutId =
 export type ShortcutGroup =
   | "General"
   | "Tabs"
+  | "Spaces"
   | "Panes"
   | "Terminal"
   | "Search"
@@ -86,6 +93,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "New tab",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "t" }],
+  },
+  {
+    id: "tab.newBlock",
+    label: "New Blocks terminal",
+    group: "Tabs",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "t" }],
   },
   {
     id: "tab.newPrivate",
@@ -158,6 +171,20 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "u" }],
   },
   {
+    id: "blocks.prev",
+    label: "Previous command block",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowUp" }],
+    allowRepeat: true,
+  },
+  {
+    id: "blocks.next",
+    label: "Next command block",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowDown" }],
+    allowRepeat: true,
+  },
+  {
     id: "tab.next",
     label: "Next tab",
     group: "Tabs",
@@ -174,6 +201,24 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Jump to tab 1–9",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
+  },
+  {
+    id: "space.next",
+    label: "Next space",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "]" }],
+  },
+  {
+    id: "space.prev",
+    label: "Previous space",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "[" }],
+  },
+  {
+    id: "space.overview",
+    label: "Open spaces",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "s" }],
   },
   {
     id: "explorer.search",
