@@ -287,6 +287,8 @@ export function TabBar({
                     const st = drag.current;
                     if (st?.active && dropGap !== null) {
                       onReorder(st.fromId, dropGap);
+                    } else if (st && !st.active) {
+                      onSelect(t.id);
                     }
                     endDrag(e.currentTarget);
                   }}
@@ -299,8 +301,19 @@ export function TabBar({
                       onClose(t.id);
                     }
                   }}
+                  // Suppress Radix's switch-on-mousedown so a tab grabbed to
+                  // drag (or a plain click) only activates on release.
                   onMouseDown={(e) => {
-                    if (e.button === 1) e.preventDefault();
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (
+                      e.button === 0 &&
+                      !(e.target as HTMLElement).closest("[data-no-drag]")
+                    ) {
+                      e.preventDefault();
+                    }
                   }}
                   className={cn(
                     "group relative z-[1] h-7 shrink-0 justify-between gap-1.5 rounded-md bg-transparent text-xs transition-colors data-active:bg-transparent dark:data-active:bg-transparent",
@@ -361,13 +374,16 @@ export function TabBar({
                   <ContextMenu>
                     <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
                     <ContextMenuContent
-                      className="min-w-36"
+                      className="min-w-32 p-1"
                       onCloseAutoFocus={(e) => e.preventDefault()}
                     >
-                      <ContextMenuItem onSelect={() => setEditingId(t.id)}>
+                      <ContextMenuItem
+                        className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                        onSelect={() => setEditingId(t.id)}
+                      >
                         <HugeiconsIcon
                           icon={PencilEdit02Icon}
-                          size={14}
+                          size={13}
                           strokeWidth={1.75}
                         />
                         <span className="flex-1">Rename</span>
@@ -375,10 +391,13 @@ export function TabBar({
                       {tabs.length > 1 && (
                         <>
                           <ContextMenuSeparator />
-                          <ContextMenuItem onSelect={() => onClose(t.id)}>
+                          <ContextMenuItem
+                            className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                            onSelect={() => onClose(t.id)}
+                          >
                             <HugeiconsIcon
                               icon={Cancel01Icon}
-                              size={14}
+                              size={13}
                               strokeWidth={1.75}
                             />
                             <span className="flex-1">Close</span>
