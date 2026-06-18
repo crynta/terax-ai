@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { AiDiffStatus } from "@/modules/tabs";
 import { presentableDiff, unifiedMergeView } from "@codemirror/merge";
 import { EditorState, type Extension } from "@codemirror/state";
@@ -11,7 +10,7 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef } from "react";
 import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import { resolveLanguage, resolveLanguageSync } from "./lib/languageResolver";
-import { EDITOR_THEME_EXT } from "./lib/themes";
+import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 
 type Props = {
   path: string;
@@ -92,8 +91,7 @@ export function AiDiffPane({
   onReject,
 }: Props) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
-  const editorThemeId = usePreferencesStore((s) => s.editorTheme);
-  const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
+  const themeExt = useEditorThemeExt();
 
   const initialLang = useMemo(() => resolveLanguageSync(path), [path]);
   const extensions = useMemo(

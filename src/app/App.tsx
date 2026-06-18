@@ -84,7 +84,7 @@ import {
 import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
-import { useWorkspaceEnvStore } from "@/modules/workspace";
+import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloseDialogs } from "./components/CloseDialogs";
@@ -177,17 +177,32 @@ export default function App() {
 
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
-  const { home, launchCwd, launchCwdResolved, switchWorkspace } =
-    useWorkspaceSwitcher({
-      tabsRef,
-      workspaceEnv,
-      setWorkspaceEnv,
-      resetWorkspace,
-      clearWorkspaceState,
-    });
+  const {
+    home,
+    launchCwd,
+    launchCwdResolved,
+    switchWorkspace,
+    adoptWorkspaceEnv,
+  } = useWorkspaceSwitcher({
+    tabsRef,
+    workspaceEnv,
+    setWorkspaceEnv,
+    resetWorkspace,
+    clearWorkspaceState,
+  });
 
   const activeSpaceId = useSpaces((s) => s.activeId);
   const spacesHydrated = useSpaces((s) => s.hydrated);
+
+  const handleWorkspaceChange = useCallback(
+    async (env: WorkspaceEnv) => {
+      const switched = await switchWorkspace(env);
+      if (switched && activeSpaceId) {
+        useSpaces.getState().setEnv(activeSpaceId, env);
+      }
+    },
+    [switchWorkspace, activeSpaceId],
+  );
 
   useSpacesBoot({
     ready: launchCwdResolved,
@@ -197,6 +212,7 @@ export default function App() {
     replaceTabs,
     markBooted,
     setActiveSpaceForNewTabs,
+    adoptWorkspaceEnv,
   });
 
   useSpacePersistence({
@@ -213,6 +229,8 @@ export default function App() {
     const prev = prevSpaceRef.current;
     prevSpaceRef.current = activeSpaceId;
     if (prev === null || prev === activeSpaceId) return;
+    const meta = useSpaces.getState().spaces.find((s) => s.id === activeSpaceId);
+    if (meta) void adoptWorkspaceEnv(meta.env);
     const inSpace = tabsRef.current.filter((t) => t.spaceId === activeSpaceId);
     if (inSpace.length === 0) return;
     // Keep the active tab if it already belongs to the newly active space (a
@@ -225,6 +243,7 @@ export default function App() {
     spacesHydrated,
     setActiveSpaceForNewTabs,
     setActiveId,
+    adoptWorkspaceEnv,
   ]);
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -1123,7 +1142,7 @@ export default function App() {
               filePath={activeFilePath}
               home={home}
               onCd={sendCd}
-              onWorkspaceChange={switchWorkspace}
+              onWorkspaceChange={handleWorkspaceChange}
               onOpenMini={openMini}
               hasComposer={hasComposer}
               privateActive={
