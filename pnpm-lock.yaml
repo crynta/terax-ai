@@ -89,15 +89,6 @@ importers:
       '@codemirror/view':
         specifier: ^6.43.1
         version: 6.43.1
-      '@dnd-kit/core':
-        specifier: ^6.3.1
-        version: 6.3.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@dnd-kit/sortable':
-        specifier: ^10.0.0
-        version: 10.0.0(@dnd-kit/core@6.3.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)
-      '@dnd-kit/utilities':
-        specifier: ^3.2.2
-        version: 3.2.2(react@19.2.7)
       '@fontsource-variable/inter':
         specifier: ^5.2.8
         version: 5.2.8
@@ -640,28 +631,6 @@ packages:
 
   '@codemirror/view@6.43.1':
     resolution: {integrity: sha512-+BIjw/AG3tDQ4pJgTLPYdAW25eDE66YsvM4LKyVPgGzVgZ4a9Wj1SRX8kPVKgBDdPt8oHtZ15F0qx7p0oOHdHw==}
-
-  '@dnd-kit/accessibility@3.1.1':
-    resolution: {integrity: sha512-2P+YgaXF+gRsIihwwY1gCsQSYnu9Zyj2py8kY5fFvUM1qm2WA2u639R6YNVfU4GWr+ZM5mqEsfHZZLoRONbemw==}
-    peerDependencies:
-      react: '>=16.8.0'
-
-  '@dnd-kit/core@6.3.1':
-    resolution: {integrity: sha512-xkGBRQQab4RLwgXxoqETICr6S5JlogafbhNsidmrkVv2YRs5MLwpjoF2qpiGjQt8S9AoxtIV603s0GIUpY5eYQ==}
-    peerDependencies:
-      react: '>=16.8.0'
-      react-dom: '>=16.8.0'
-
-  '@dnd-kit/sortable@10.0.0':
-    resolution: {integrity: sha512-+xqhmIIzvAYMGfBYYnbKuNicfSsk4RksY2XdmJhT+HAC01nix6fHCztU68jooFiMUB01Ky3F0FyOvhG/BZrWkg==}
-    peerDependencies:
-      '@dnd-kit/core': ^6.3.0
-      react: '>=16.8.0'
-
-  '@dnd-kit/utilities@3.2.2':
-    resolution: {integrity: sha512-+MKAJEOfaBe5SmV6t34p80MMKhjvUz0vRrvVJbPT0WElzaOJ/1xs+D+KDv+tD/NE5ujfrChEcshd4fLn0wpiqg==}
-    peerDependencies:
-      react: '>=16.8.0'
 
   '@dotenvx/dotenvx@1.71.2':
     resolution: {integrity: sha512-Xj9T3Wr+Bo4ILKf9PZJBYJ4SJiZGC/pqIdzOMbX9jgAFb0oGuKkusLleYHN/N6zanZixNvmuMVWYR1T3YJuVTA==}
@@ -4620,8 +4589,8 @@ packages:
   oxc-resolver@11.20.0:
     resolution: {integrity: sha512-CblytBiV/a/ZXY34dsVU2NxhIOxMXst8CvDCtyBelVITgd7PLrKzbEbA6oKLdPjvDKDzCiW48qzmzZ+mYaqn+g==}
 
-  oxlint-plugin-react-doctor@0.5.5:
-    resolution: {integrity: sha512-otsA5vf5JVISa5V7Jg8hdvRaFsXADTPmqwT8s9e7sMNEg+me/+nXviI0DvfQ22vmNpXK6yzq96IGIGVI1uqnRw==}
+  oxlint-plugin-react-doctor@0.5.6:
+    resolution: {integrity: sha512-my/aMTDi2XmodqTK2ur+UeDLVAnOohIBfwj1AQ5LC3Q2vpcKsUiFjmwVxdy3RuanLXHXJ7hXwAqfmtIaYeyTpQ==}
     engines: {node: ^20.19.0 || >=22.13.0}
 
   oxlint@1.66.0:
@@ -4786,8 +4755,8 @@ packages:
     engines: {node: ^14.17.0 || ^16.0.0 || >= 18.0.0}
     hasBin: true
 
-  react-doctor@0.5.5:
-    resolution: {integrity: sha512-rNYd/a5ykD+WislQ8HIhqmtTddyveQOOzs4PuI1INel41V79uWb8fNZtnZX6hgJIObZdLIlLU7u6vwSzCUAveA==}
+  react-doctor@0.5.6:
+    resolution: {integrity: sha512-xiy7vRG08qFW5XCYvvB6zir1kWtfuEK68h4scBJtOvt1r6bUNyi4zSsUkq5jdU1afJ2+Uq8y8H9KIQlP2sCqQA==}
     engines: {node: ^20.19.0 || >=22.13.0}
     hasBin: true
 
@@ -6075,31 +6044,6 @@ snapshots:
       crelt: 1.0.6
       style-mod: 4.1.3
       w3c-keyname: 2.2.8
-
-  '@dnd-kit/accessibility@3.1.1(react@19.2.7)':
-    dependencies:
-      react: 19.2.7
-      tslib: 2.8.1
-
-  '@dnd-kit/core@6.3.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
-    dependencies:
-      '@dnd-kit/accessibility': 3.1.1(react@19.2.7)
-      '@dnd-kit/utilities': 3.2.2(react@19.2.7)
-      react: 19.2.7
-      react-dom: 19.2.7(react@19.2.7)
-      tslib: 2.8.1
-
-  '@dnd-kit/sortable@10.0.0(@dnd-kit/core@6.3.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)':
-    dependencies:
-      '@dnd-kit/core': 6.3.1(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@dnd-kit/utilities': 3.2.2(react@19.2.7)
-      react: 19.2.7
-      tslib: 2.8.1
-
-  '@dnd-kit/utilities@3.2.2(react@19.2.7)':
-    dependencies:
-      react: 19.2.7
-      tslib: 2.8.1
 
   '@dotenvx/dotenvx@1.71.2':
     dependencies:
@@ -10142,7 +10086,7 @@ snapshots:
       '@oxc-resolver/binding-win32-arm64-msvc': 11.20.0
       '@oxc-resolver/binding-win32-x64-msvc': 11.20.0
 
-  oxlint-plugin-react-doctor@0.5.5:
+  oxlint-plugin-react-doctor@0.5.6:
     dependencies:
       '@typescript-eslint/types': 8.61.0
       eslint-scope: 9.1.2
@@ -10367,7 +10311,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  react-doctor@0.5.5(eslint@10.4.1(jiti@2.7.0)):
+  react-doctor@0.5.6(eslint@10.4.1(jiti@2.7.0)):
     dependencies:
       '@babel/code-frame': 7.29.7
       '@sentry/node': 10.57.0
@@ -10379,7 +10323,7 @@ snapshots:
       jiti: 2.7.0
       magicast: 0.5.3
       oxlint: 1.66.0
-      oxlint-plugin-react-doctor: 0.5.5
+      oxlint-plugin-react-doctor: 0.5.6
       prompts: 2.4.2
       typescript: 6.0.3
       vscode-languageserver: 9.0.1
@@ -10439,7 +10383,7 @@ snapshots:
       preact: 10.29.2
       prompts: 2.4.2
       react: 19.2.7
-      react-doctor: 0.5.5(eslint@10.4.1(jiti@2.7.0))
+      react-doctor: 0.5.6(eslint@10.4.1(jiti@2.7.0))
       react-dom: 19.2.7(react@19.2.7)
       react-grab: 0.1.44(react@19.2.7)
     optionalDependencies:
