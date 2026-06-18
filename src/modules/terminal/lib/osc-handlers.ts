@@ -1,5 +1,7 @@
 import type { IMarker, Terminal } from "@xterm/xterm";
 
+const MAX_OSC52_CLIPBOARD_BYTES = 1024 * 1024;
+
 /**
  * Cross-handler state shared between the OSC 7 cwd handler and the OSC 133
  * prompt-marker handler. Tracks whether we are currently inside a running
@@ -79,6 +81,25 @@ export function registerPromptTracker(
   };
 }
 
+export type ClipboardWriter = (text: string) => void | Promise<void>;
+
+export function registerOsc52ClipboardHandler(
+  term: Terminal,
+  writeClipboard: ClipboardWriter = writeSystemClipboard,
+): () => void {
+  const d = term.parser.registerOscHandler(52, (data) => {
+    const text = parseOsc52Clipboard(data);
+    if (text === null) return true;
+    queueMicrotask(() => {
+      try {
+        void Promise.resolve(writeClipboard(text)).catch(() => {});
+      } catch {}
+    });
+    return true;
+  });
+  return () => d.dispose();
+}
+
 function parseOsc7(data: string): string | null {
   const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
   if (!m) return null;
@@ -89,4 +110,30 @@ function parseOsc7(data: string): string | null {
   // /C:/Users/foo -> C:/Users/foo so it's a valid Windows path.
   if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
   return path;
+}
+
+function parseOsc52Clipboard(data: string): string | null {
+  const parts = data.split(";");
+  if (parts.length < 2) return null;
+  const selection = parts[0] || "c";
+  if (!selection.includes("c")) return null;
+  const encoded = parts.slice(1).join(";");
+  if (!encoded || encoded === "?") return null;
+  if (encoded.length > Math.ceil((MAX_OSC52_CLIPBOARD_BYTES * 4) / 3) + 4) {
+    return null;
+  }
+  const compact = encoded.replace(/\s/g, "");
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) return null;
+
+  try {
+    const bytes = Uint8Array.from(atob(compact), (c) => c.charCodeAt(0));
+    if (bytes.byteLength > MAX_OSC52_CLIPBOARD_BYTES) return null;
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+async function writeSystemClipboard(text: string): Promise<void> {
+  await navigator.clipboard.writeText(text);
 }

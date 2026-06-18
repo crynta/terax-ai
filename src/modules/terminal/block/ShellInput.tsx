@@ -1,4 +1,4 @@
-import { detectMonoFontFamily } from "@/lib/fonts";
+import { resolveFontFamily } from "@/lib/fonts";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -64,7 +64,7 @@ export default function ShellInput({
 
   const fontFamilyPref = usePreferencesStore((p) => p.terminalFontFamily);
   const fontSize = usePreferencesStore((p) => p.terminalFontSize);
-  const fontFamily = fontFamilyPref || detectMonoFontFamily();
+  const fontFamily = resolveFontFamily(fontFamilyPref);
   const fontRef = useRef({ fontFamily, fontSize });
   fontRef.current = { fontFamily, fontSize };
 

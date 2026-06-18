@@ -47,6 +47,19 @@ reviews:
     unit_tests:
       enabled: false
 
+  # Default docstring-coverage gate clashes with our no-comments convention.
+  # Keep the checks that actually help triage AI-authored PRs.
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "warning"
+      requirements: "Conventional Commits; the title becomes the squash commit message."
+    description:
+      mode: "warning"
+    issue_assessment:
+      mode: "warning"
+
   path_filters:
     - "!**/*.lock"
     - "!**/pnpm-lock.yaml"

@@ -1,4 +1,4 @@
-import { detectMonoFontFamily } from "@/lib/fonts";
+import { resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -169,7 +169,7 @@ function bgActive(
 function termOptions() {
   const prefs = usePreferencesStore.getState();
   return {
-    fontFamily: prefs.terminalFontFamily || detectMonoFontFamily(),
+    fontFamily: resolveFontFamily(prefs.terminalFontFamily),
     letterSpacing: prefs.terminalLetterSpacing,
     fontSize: Math.max(4, Math.round(prefs.terminalFontSize * prefs.zoomLevel)),
     theme: buildTerminalTheme(),
@@ -910,7 +910,7 @@ export function applyLetterSpacing(spacing: number): void {
 }
 
 export function applyFontFamily(family: string): void {
-  const resolved = family || detectMonoFontFamily();
+  const resolved = resolveFontFamily(family);
   for (const slot of slots) {
     if (slot.term.options.fontFamily === resolved) continue;
     slot.term.options.fontFamily = resolved;
