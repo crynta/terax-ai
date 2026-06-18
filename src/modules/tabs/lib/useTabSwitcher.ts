@@ -40,7 +40,8 @@ export function useTabSwitcher({ getOrder, onCommit }: Options) {
 
   useEffect(() => {
     const onKeyUp = (e: KeyboardEvent) => {
-      if (stateRef.current && e.key === "Control") commit();
+      if (!stateRef.current) return;
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) commit();
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (stateRef.current && e.key === "Escape") {

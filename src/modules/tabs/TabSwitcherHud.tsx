@@ -26,6 +26,7 @@ export function TabSwitcherHud({
   const rows = state.order
     .map((id) => byId.get(id))
     .filter((t): t is Tab => t !== undefined);
+  const selectedId = state.order[state.index];
 
   return (
     <div
@@ -33,14 +34,14 @@ export function TabSwitcherHud({
       className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center"
     >
       <div className="flex max-h-[60vh] w-72 flex-col gap-0.5 overflow-y-auto rounded-2xl border border-border bg-popover/95 p-1.5 shadow-2xl ring-1 ring-foreground/5 backdrop-blur-md">
-        {rows.map((t, i) => {
+        {rows.map((t) => {
           const subtitle = subtitleFor(t);
           return (
             <div
               key={t.id}
               className={cn(
                 "flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs",
-                i === state.index
+                t.id === selectedId
                   ? "bg-accent text-foreground"
                   : "text-muted-foreground",
               )}
