@@ -181,6 +181,53 @@ export function reorderTabsByGap(
   return next;
 }
 
+function coldTerminalTab(
+  tabId: number,
+  leafId: number,
+  spaceId: string,
+  cwd?: string,
+): TerminalTab {
+  return {
+    id: tabId,
+    kind: "terminal",
+    spaceId,
+    cold: true,
+    title: cwd ? basename(cwd) : "shell",
+    cwd,
+    paneTree: { kind: "leaf", id: leafId, cwd },
+    activeLeafId: leafId,
+  };
+}
+
+// Plans the removal of a deleted space's tabs while keeping the invariant that
+// the now-active `fallbackSpaceId` always has at least one tab (a cold one is
+// spawned when it would be left empty). Returns null when nothing to remove.
+export function planSpaceRemoval(
+  tabs: Tab[],
+  currentActiveId: number,
+  spaceId: string,
+  fallbackSpaceId: string,
+  fallbackCwd: string | undefined,
+  allocId: () => number,
+): { tabs: Tab[]; disposeLeafIds: number[]; activeId: number } | null {
+  const removed = tabs.filter((t) => t.spaceId === spaceId);
+  if (removed.length === 0) return null;
+  const disposeLeafIds = removed
+    .filter((t) => t.kind === "terminal")
+    .flatMap((t) => leafIds((t as TerminalTab).paneTree));
+  let next = tabs.filter((t) => t.spaceId !== spaceId);
+  let activeId = currentActiveId;
+  if (!next.some((t) => t.spaceId === fallbackSpaceId)) {
+    const tabId = allocId();
+    next = [...next, coldTerminalTab(tabId, allocId(), fallbackSpaceId, fallbackCwd)];
+    activeId = tabId;
+  } else if (!next.some((t) => t.id === currentActiveId)) {
+    const inFallback = next.filter((t) => t.spaceId === fallbackSpaceId);
+    activeId = inFallback[inFallback.length - 1].id;
+  }
+  return { tabs: next, disposeLeafIds, activeId };
+}
+
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const tabId = 1;
@@ -315,18 +362,27 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     [],
   );
 
-  const removeTabsForSpace = useCallback((spaceId: string) => {
-    let toDispose: number[] = [];
-    setTabs((curr) => {
-      const next = curr.filter((t) => t.spaceId !== spaceId);
-      if (next.length === 0 || next.length === curr.length) return curr;
-      toDispose = curr
-        .filter((t) => t.spaceId === spaceId && t.kind === "terminal")
-        .flatMap((t) => leafIds((t as TerminalTab).paneTree));
-      return next;
-    });
-    for (const lid of toDispose) disposeSession(lid);
-  }, []);
+  const removeTabsForSpace = useCallback(
+    (spaceId: string, fallbackSpaceId: string, fallbackCwd?: string) => {
+      let toDispose: number[] = [];
+      setTabs((curr) => {
+        const plan = planSpaceRemoval(
+          curr,
+          activeIdRef.current,
+          spaceId,
+          fallbackSpaceId,
+          fallbackCwd,
+          () => nextIdRef.current++,
+        );
+        if (!plan) return curr;
+        toDispose = plan.disposeLeafIds;
+        setActiveId(plan.activeId);
+        return plan.tabs;
+      });
+      for (const lid of toDispose) disposeSession(lid);
+    },
+    [],
+  );
 
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
