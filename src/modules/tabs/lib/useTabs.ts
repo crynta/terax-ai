@@ -160,6 +160,27 @@ export function nextActiveInSpace(
   return (sameSpace[idx - 1] ?? sameSpace[idx + 1]).id;
 }
 
+// Gap index is relative to the space's own strip, including the dragged tab.
+export function reorderTabsByGap(
+  tabs: Tab[],
+  fromId: number,
+  toGapIndex: number,
+): Tab[] {
+  const moved = tabs.find((t) => t.id === fromId);
+  if (!moved) return tabs;
+  const sameSpace = tabs.filter((t) => t.spaceId === moved.spaceId);
+  const spaceFrom = sameSpace.findIndex((t) => t.id === fromId);
+  let spaceTarget = toGapIndex > spaceFrom ? toGapIndex - 1 : toGapIndex;
+  spaceTarget = Math.max(0, Math.min(spaceTarget, sameSpace.length - 1));
+  if (spaceTarget === spaceFrom) return tabs;
+  const anchor = sameSpace[spaceTarget];
+  const next = tabs.filter((t) => t.id !== fromId);
+  const anchorIdx = next.findIndex((t) => t.id === anchor.id);
+  const insertIdx = spaceTarget > spaceFrom ? anchorIdx + 1 : anchorIdx;
+  next.splice(insertIdx, 0, moved);
+  return next;
+}
+
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     const tabId = 1;
@@ -1024,21 +1045,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   }, []);
 
   const reorderTabByGap = useCallback((fromId: number, toGapIndex: number) => {
-    setTabs((prev) => {
-      const moved = prev.find((t) => t.id === fromId);
-      if (!moved) return prev;
-      const sameSpace = prev.filter((t) => t.spaceId === moved.spaceId);
-      const spaceFrom = sameSpace.findIndex((t) => t.id === fromId);
-      let spaceTarget = toGapIndex > spaceFrom ? toGapIndex - 1 : toGapIndex;
-      spaceTarget = Math.max(0, Math.min(spaceTarget, sameSpace.length - 1));
-      if (spaceTarget === spaceFrom) return prev;
-      const anchor = sameSpace[spaceTarget];
-      const anchorIdx = prev.findIndex((t) => t.id === anchor.id);
-      const insertIdx = spaceTarget > spaceFrom ? anchorIdx + 1 : anchorIdx;
-      const next = prev.filter((t) => t.id !== fromId);
-      next.splice(Math.min(insertIdx, next.length), 0, moved);
-      return next;
-    });
+    setTabs((prev) => reorderTabsByGap(prev, fromId, toGapIndex));
   }, []);
 
   return {
