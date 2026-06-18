@@ -189,12 +189,14 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Next tab",
     group: "Tabs",
     defaultBindings: [{ ctrl: true, key: "Tab" }],
+    allowRepeat: true,
   },
   {
     id: "tab.prev",
     label: "Previous tab",
     group: "Tabs",
     defaultBindings: [{ ctrl: true, shift: true, key: "Tab" }],
+    allowRepeat: true,
   },
   {
     id: "tab.selectByIndex",
