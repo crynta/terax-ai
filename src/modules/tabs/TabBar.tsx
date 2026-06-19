@@ -29,6 +29,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -53,6 +54,8 @@ type Props = {
   onPin: (id: number) => void;
   /** Set a terminal tab's custom label; empty string resets to default. */
   onRename: (id: number, title: string) => void;
+  /** Move a dragged tab to a new position (insertion gap index 0..tabs.length). */
+  onReorder: (fromId: number, toGapIndex: number) => void;
   compact?: boolean;
 };
 
@@ -69,11 +72,20 @@ export function TabBar({
   onClose,
   onPin,
   onRename,
+  onReorder,
   compact,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [dropGap, setDropGap] = useState<number | null>(null);
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    fromId: number;
+    active: boolean;
+  } | null>(null);
 
   // Play the enter animation only for tabs opened after the first paint, never
   // the restored set and never on switch/reorder (triggers are keyed, so they
@@ -124,6 +136,26 @@ export function TabBar({
       return () => cancelAnimationFrame(id);
     }
   }, [pill, pillReady]);
+
+  const gapAtX = (clientX: number) => {
+    const els = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? [],
+    );
+    for (let i = 0; i < els.length; i++) {
+      const r = els[i].getBoundingClientRect();
+      if (clientX < r.left + r.width / 2) return i;
+    }
+    return els.length;
+  };
+
+  const endDrag = (currentTarget: HTMLElement) => {
+    const st = drag.current;
+    if (st) currentTarget.releasePointerCapture?.(st.pointerId);
+    drag.current = null;
+    setDraggingId(null);
+    setDropGap(null);
+    document.body.style.userSelect = "";
+  };
 
   // Horizontal wheel scroll without holding shift.
   useEffect(() => {
@@ -179,43 +211,88 @@ export function TabBar({
                   : { opacity: 0 }
               }
             />
-            {tabs.map((t) => {
+            {tabs.map((t, i) => {
               const isPreview = t.kind === "editor" && (t as EditorTab).preview;
               const isActive = t.id === activeId;
               const isNew = !firstRender && !seen.has(t.id);
+
+              const srcIndex = tabs.findIndex((x) => x.id === draggingId);
+              const showGap = (gap: number) =>
+                draggingId !== null &&
+                dropGap === gap &&
+                gap !== srcIndex &&
+                gap !== srcIndex + 1;
 
               // While renaming, render a non-button cell so the <input> is not
               // nested inside the trigger <button> (invalid HTML, and WebKit
               // blocks focus/selection on inputs inside buttons).
               if (editingId === t.id && t.kind === "terminal") {
                 return (
-                  <div
-                    key={t.id}
-                    data-tab-id={t.id}
-                    className={cn(
-                      "flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-accent text-xs text-foreground",
-                      compact ? "px-1.5" : "px-2",
+                  <Fragment key={t.id}>
+                    {showGap(i) && <DropIndicator />}
+                    <div
+                      data-tab-id={t.id}
+                      className={cn(
+                        "flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-accent text-xs text-foreground",
+                        compact ? "px-1.5" : "px-2",
+                      )}
+                    >
+                      <TabIcon tab={t} />
+                      <TabRenameInput
+                        initial={labelFor(t)}
+                        onCommit={(value) => {
+                          onRename(t.id, value);
+                          setEditingId(null);
+                        }}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    </div>
+                    {i === tabs.length - 1 && showGap(tabs.length) && (
+                      <DropIndicator />
                     )}
-                  >
-                    <TabIcon tab={t} />
-                    <TabRenameInput
-                      initial={labelFor(t)}
-                      onCommit={(value) => {
-                        onRename(t.id, value);
-                        setEditingId(null);
-                      }}
-                      onCancel={() => setEditingId(null)}
-                    />
-                  </div>
+                  </Fragment>
                 );
               }
 
               const trigger = (
                 <TabsTrigger
-                  key={t.id}
                   value={String(t.id)}
                   data-tab-id={t.id}
                   data-tab-active={isActive ? "true" : undefined}
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    if ((e.target as HTMLElement).closest("[data-no-drag]"))
+                      return;
+                    drag.current = {
+                      pointerId: e.pointerId,
+                      startX: e.clientX,
+                      fromId: t.id,
+                      active: false,
+                    };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    const st = drag.current;
+                    if (!st || st.pointerId !== e.pointerId) return;
+                    if (!st.active) {
+                      if (Math.abs(e.clientX - st.startX) < 4) return;
+                      st.active = true;
+                      setDraggingId(st.fromId);
+                      document.body.style.userSelect = "none";
+                    }
+                    e.preventDefault();
+                    setDropGap(gapAtX(e.clientX));
+                  }}
+                  onPointerUp={(e) => {
+                    const st = drag.current;
+                    if (st?.active && dropGap !== null) {
+                      onReorder(st.fromId, dropGap);
+                    } else if (st && !st.active) {
+                      onSelect(t.id);
+                    }
+                    endDrag(e.currentTarget);
+                  }}
+                  onPointerCancel={(e) => endDrag(e.currentTarget)}
                   onDoubleClick={() => isPreview && onPin(t.id)}
                   onAuxClick={(e) => {
                     if (e.button === 1 && tabs.length > 1) {
@@ -224,8 +301,19 @@ export function TabBar({
                       onClose(t.id);
                     }
                   }}
+                  // Suppress Radix's switch-on-mousedown so a tab grabbed to
+                  // drag (or a plain click) only activates on release.
                   onMouseDown={(e) => {
-                    if (e.button === 1) e.preventDefault();
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (
+                      e.button === 0 &&
+                      !(e.target as HTMLElement).closest("[data-no-drag]")
+                    ) {
+                      e.preventDefault();
+                    }
                   }}
                   className={cn(
                     "group relative z-[1] h-7 shrink-0 justify-between gap-1.5 rounded-md bg-transparent text-xs transition-colors data-active:bg-transparent dark:data-active:bg-transparent",
@@ -233,6 +321,7 @@ export function TabBar({
                     isActive
                       ? "text-foreground dark:text-foreground"
                       : "text-muted-foreground hover:text-foreground/80 dark:text-muted-foreground",
+                    draggingId === t.id && "opacity-50",
                     compact
                       ? "px-1.5!"
                       : tabs.length === 1
@@ -263,6 +352,7 @@ export function TabBar({
                     <span
                       role="button"
                       aria-label="Close tab"
+                      data-no-drag
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose(t.id);
@@ -279,38 +369,55 @@ export function TabBar({
                 </TabsTrigger>
               );
 
-              if (t.kind !== "terminal") return trigger;
+              const tabNode =
+                t.kind === "terminal" ? (
+                  <ContextMenu>
+                    <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
+                    <ContextMenuContent
+                      className="min-w-32 p-1"
+                      onCloseAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <ContextMenuItem
+                        className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                        onSelect={() => setEditingId(t.id)}
+                      >
+                        <HugeiconsIcon
+                          icon={PencilEdit02Icon}
+                          size={13}
+                          strokeWidth={1.75}
+                        />
+                        <span className="flex-1">Rename</span>
+                      </ContextMenuItem>
+                      {tabs.length > 1 && (
+                        <>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                            onSelect={() => onClose(t.id)}
+                          >
+                            <HugeiconsIcon
+                              icon={Cancel01Icon}
+                              size={13}
+                              strokeWidth={1.75}
+                            />
+                            <span className="flex-1">Close</span>
+                          </ContextMenuItem>
+                        </>
+                      )}
+                    </ContextMenuContent>
+                  </ContextMenu>
+                ) : (
+                  trigger
+                );
 
               return (
-                <ContextMenu key={t.id}>
-                  <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
-                  <ContextMenuContent
-                    className="min-w-36"
-                    onCloseAutoFocus={(e) => e.preventDefault()}
-                  >
-                    <ContextMenuItem onSelect={() => setEditingId(t.id)}>
-                      <HugeiconsIcon
-                        icon={PencilEdit02Icon}
-                        size={14}
-                        strokeWidth={1.75}
-                      />
-                      <span className="flex-1">Rename</span>
-                    </ContextMenuItem>
-                    {tabs.length > 1 && (
-                      <>
-                        <ContextMenuSeparator />
-                        <ContextMenuItem onSelect={() => onClose(t.id)}>
-                          <HugeiconsIcon
-                            icon={Cancel01Icon}
-                            size={14}
-                            strokeWidth={1.75}
-                          />
-                          <span className="flex-1">Close</span>
-                        </ContextMenuItem>
-                      </>
-                    )}
-                  </ContextMenuContent>
-                </ContextMenu>
+                <Fragment key={t.id}>
+                  {showGap(i) && <DropIndicator />}
+                  {tabNode}
+                  {i === tabs.length - 1 && showGap(tabs.length) && (
+                    <DropIndicator />
+                  )}
+                </Fragment>
               );
             })}
           </TabsList>
@@ -394,6 +501,15 @@ export function TabBar({
         </DropdownMenu>
       </div>
     </div>
+  );
+}
+
+function DropIndicator() {
+  return (
+    <span
+      aria-hidden
+      className="my-0.5 w-0.5 shrink-0 self-stretch rounded-full bg-primary"
+    />
   );
 }
 

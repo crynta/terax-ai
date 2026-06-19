@@ -13,6 +13,7 @@ import { DormantRing } from "./dormantRing";
 import {
   createShellIntegrationState,
   registerCwdHandler,
+  registerOsc52ClipboardHandler,
   registerPromptTracker,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
@@ -596,6 +597,7 @@ function bindLeafToSlot(leafId: number, s: Session): void {
     rows: s.rows,
     registerOsc: (term) => {
       if (s.blocks) {
+        const osc52 = registerOsc52ClipboardHandler(term);
         const deco = new BlockDecorations(term, {
           onCwd: (next) => {
             markSessionReady(leafId);
@@ -617,6 +619,7 @@ function bindLeafToSlot(leafId: number, s: Session): void {
         return [
           () => {
             s.blockDecorations = null;
+            osc52();
             deco.dispose();
             term.textarea?.removeEventListener("focus", onGridFocus);
           },
@@ -640,7 +643,8 @@ function bindLeafToSlot(leafId: number, s: Session): void {
         },
         shellState,
       );
-      return [prompt.dispose, cwd];
+      const osc52 = registerOsc52ClipboardHandler(term);
+      return [prompt.dispose, cwd, osc52];
     },
     onSearchReady: (addon) => s.callbacks.onSearchReady?.(addon),
   });

@@ -59,7 +59,9 @@ import {
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
 import {
+  TabSwitcherHud,
   useTabs,
+  useTabSwitcher,
   useWindowTitle,
   useWorkspaceCwd,
 } from "@/modules/tabs";
@@ -105,6 +107,7 @@ export default function App() {
     replaceTabs,
     moveTabToSpace,
     reorderTab,
+    reorderTabByGap,
     newTabInSpace,
     removeTabsForSpace,
     markBooted,
@@ -364,18 +367,34 @@ export default function App() {
       if (!live.has(k)) searchAddons.current.delete(k);
   }, [tabs]);
 
-  const cycleTab = useCallback(
-    (delta: 1 | -1) => {
-      const scoped = tabsRef.current.filter(
-        (t) => t.spaceId === (activeSpaceId ?? DEFAULT_SPACE_ID),
-      );
-      if (scoped.length < 2) return;
-      const idx = scoped.findIndex((t) => t.id === activeId);
-      const nextIdx = (idx + delta + scoped.length) % scoped.length;
-      setActiveId(scoped[nextIdx].id);
+  // Most-recently-used tab ids, most recent first, pruned to live tabs. Drives
+  // the Ctrl+Tab quick switcher so it cycles by recency, not strip order.
+  const mruRef = useRef<number[]>([activeId]);
+  useEffect(() => {
+    mruRef.current = [activeId, ...mruRef.current.filter((id) => id !== activeId)];
+  }, [activeId]);
+  useEffect(() => {
+    const live = new Set(tabs.map((t) => t.id));
+    mruRef.current = mruRef.current.filter((id) => live.has(id));
+  }, [tabs]);
+
+  const getSwitcherOrder = useCallback(() => {
+    const space = activeSpaceId ?? DEFAULT_SPACE_ID;
+    const inSpace = tabsRef.current
+      .filter((t) => t.spaceId === space)
+      .map((t) => t.id);
+    const present = new Set(inSpace);
+    const ordered = mruRef.current.filter((id) => present.has(id));
+    for (const id of inSpace) if (!ordered.includes(id)) ordered.push(id);
+    return [activeId, ...ordered.filter((id) => id !== activeId)];
+  }, [activeId, activeSpaceId]);
+
+  const { state: switcherState, step: stepSwitcher } = useTabSwitcher({
+    getOrder: getSwitcherOrder,
+    onCommit: (id) => {
+      if (tabsRef.current.some((t) => t.id === id)) setActiveId(id);
     },
-    [activeId, activeSpaceId, setActiveId],
-  );
+  });
 
   const cycleSpace = useCallback((delta: 1 | -1) => {
     const { spaces, activeId: sid, setActive } = useSpaces.getState();
@@ -613,8 +632,8 @@ export default function App() {
       "tab.newPreview": () => openPreviewTab(""),
       "tab.newEditor": () => setNewEditorOpen(true),
       "tab.close": handleCloseTabOrPane,
-      "tab.next": () => cycleTab(1),
-      "tab.prev": () => cycleTab(-1),
+      "tab.next": () => stepSwitcher(1),
+      "tab.prev": () => stepSwitcher(-1),
       "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
       "space.next": () => cycleSpace(1),
       "space.prev": () => cycleSpace(-1),
@@ -647,7 +666,7 @@ export default function App() {
     [
       activeId,
       openCommandPalette,
-      cycleTab,
+      stepSwitcher,
       cycleSpace,
       handleCloseTabOrPane,
       openNewTab,
@@ -863,8 +882,12 @@ export default function App() {
 
   const handleDeleteSpace = useCallback(
     (id: string) => {
-      useSpaces.getState().remove(id);
-      removeTabsForSpace(id);
+      const nextSpaceId = useSpaces.getState().remove(id);
+      if (!nextSpaceId) return;
+      const root = useSpaces
+        .getState()
+        .spaces.find((s) => s.id === nextSpaceId)?.root;
+      removeTabsForSpace(id, nextSpaceId, root ?? undefined);
     },
     [removeTabsForSpace],
   );
@@ -1033,6 +1056,7 @@ export default function App() {
               onClose={handleClose}
               onPin={pinTab}
               onRename={handleRenameTab}
+              onReorder={reorderTabByGap}
               onToggleSidebar={toggleSidebar}
               onOpenCommandPalette={() => openCommandPalette("commands")}
               onActivateAgent={onActivateAgent}
@@ -1180,6 +1204,10 @@ export default function App() {
               onDismiss={() => setAskPopup(null)}
             />
           ) : null}
+
+          {switcherState && (
+            <TabSwitcherHud tabs={spaceTabs} state={switcherState} />
+          )}
 
           <CommandPalette
             open={commandPaletteOpen}
