@@ -10,6 +10,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
 import {
+  terminalClipboardIntent,
   terminalDeleteSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
@@ -76,6 +77,8 @@ let windowActive =
   typeof document === "undefined" || (!document.hidden && document.hasFocus());
 let windowActivityBound = false;
 let cursorBlinkEnabled = false;
+// Default matches the preference default; the real value is pushed on mount.
+let smartCopyPaste = true;
 
 function bindWindowActivityListeners(): void {
   if (windowActivityBound || typeof window === "undefined") return;
@@ -273,15 +276,23 @@ function createSlot(): Slot {
       if (event.type === "keydown") bridge.writeToPty("\x1b\r");
       return false;
     }
-    if (isTerminalCopy(event)) {
-      if (event.type === "keydown" && slot.term.hasSelection()) {
+    const clipboard = terminalClipboardIntent(event, {
+      isMac: IS_MAC,
+      smartCopyPaste,
+      hasSelection: slot.term.hasSelection(),
+    });
+    if (clipboard === "copy") {
+      if (event.type === "keydown") {
         const sel = slot.term.getSelection();
         if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        // Smart (no-Shift) copy clears the highlight so a second Ctrl+C
+        // interrupts instead of re-copying. Ctrl+Shift+C keeps the selection.
+        if (!event.shiftKey) slot.term.clearSelection();
       }
       event.preventDefault();
       return false;
     }
-    if (isTerminalPaste(event)) {
+    if (clipboard === "paste") {
       if (event.type === "keydown") {
         void navigator.clipboard
           .readText()
@@ -943,6 +954,10 @@ export function setSlotFocused(leafId: number, focused: boolean): void {
   applyCursorBlinkOnSlot(slot, focused);
 }
 
+export function applySmartCopyPaste(enabled: boolean): void {
+  smartCopyPaste = enabled;
+}
+
 export function applyCursorBlink(enabled: boolean): void {
   cursorBlinkEnabled = enabled;
   for (const slot of slots) {
@@ -1033,28 +1048,6 @@ export function getLiveSlotForLeaf(leafId: number): Slot | null {
 const IS_MAC =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad/.test(navigator.userAgent);
-
-function isTerminalCopy(e: KeyboardEvent): boolean {
-  return (
-    !IS_MAC &&
-    e.ctrlKey &&
-    e.shiftKey &&
-    !e.altKey &&
-    !e.metaKey &&
-    (e.code === "KeyC" || e.key === "c" || e.key === "C")
-  );
-}
-
-function isTerminalPaste(e: KeyboardEvent): boolean {
-  return (
-    !IS_MAC &&
-    e.ctrlKey &&
-    e.shiftKey &&
-    !e.altKey &&
-    !e.metaKey &&
-    (e.code === "KeyV" || e.key === "v" || e.key === "V")
-  );
-}
 
 function isShiftEnter(e: KeyboardEvent): boolean {
   return (

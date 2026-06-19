@@ -14,6 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
@@ -32,6 +33,7 @@ import {
   setTerminalFontSize,
   setTerminalCursorBlink,
   setTerminalScrollback,
+  setTerminalSmartCopyPaste,
   setTerminalWebglEnabled,
   setVimMode,
   setZoomLevel,
@@ -83,6 +85,9 @@ export function GeneralSection() {
   );
   const terminalCursorBlink = usePreferencesStore(
     (s) => s.terminalCursorBlink,
+  );
+  const terminalSmartCopyPaste = usePreferencesStore(
+    (s) => s.terminalSmartCopyPaste,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalLetterSpacing = usePreferencesStore(
@@ -268,6 +273,17 @@ export function GeneralSection() {
             onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
         </SettingRow>
+        {!IS_MAC && (
+          <SettingRow
+            title="Smart copy / paste"
+            description="When on, Ctrl+C copies the selection (and only interrupts when nothing is selected) and Ctrl+V pastes. When off, Ctrl+C always interrupts. Ctrl+Shift+C / Ctrl+Shift+V copy and paste either way."
+          >
+            <Switch
+              checked={terminalSmartCopyPaste}
+              onCheckedChange={(v) => void setTerminalSmartCopyPaste(v)}
+            />
+          </SettingRow>
+        )}
         <FontFamilyInput
           value={terminalFontFamily}
           onCommit={(v) => void setTerminalFontFamily(v)}
