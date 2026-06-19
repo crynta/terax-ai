@@ -73,8 +73,10 @@ export function terminalClipboardIntent(
 ): TerminalClipboardIntent | null {
   if (opts.isMac) return null;
   if (!event.ctrlKey || event.altKey || event.metaKey) return null;
-  const isC = event.code === "KeyC" || event.key === "c" || event.key === "C";
-  const isV = event.code === "KeyV" || event.key === "v" || event.key === "V";
+  // Match physical position (event.code) as well as the character so Ctrl+C/V
+  // work on non-Latin layouts (e.g. Cyrillic) where event.key is not "c"/"v".
+  const isC = event.code === "KeyC" || event.key.toLowerCase() === "c";
+  const isV = event.code === "KeyV" || event.key.toLowerCase() === "v";
   if (!isC && !isV) return null;
 
   if (event.shiftKey) return isC ? "copy" : "paste";

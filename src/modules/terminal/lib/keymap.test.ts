@@ -236,6 +236,20 @@ describe("terminalClipboardIntent", () => {
     ).toBe("paste");
   });
 
+  it("keys off physical position so Ctrl+C/V work on non-Latin layouts", () => {
+    // Russian layout: the physical C/V keys report code KeyC/KeyV but produce
+    // key "с"/"м" (Cyrillic). event.code is what keeps the shortcuts working.
+    expect(
+      terminalClipboardIntent(
+        evt({ ctrlKey: true, code: "KeyC", key: "с" }),
+        opts({ hasSelection: true }),
+      ),
+    ).toBe("copy");
+    expect(
+      terminalClipboardIntent(evt({ ctrlKey: true, code: "KeyV", key: "м" }), opts({})),
+    ).toBe("paste");
+  });
+
   it("ignores Ctrl+Alt combos (AltGr) and other keys", () => {
     expect(
       terminalClipboardIntent(
