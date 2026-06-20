@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { ButtonGroup, ButtonGroupText } from "@/components/ui/button-group";
+import { streamdownPlugins } from "@/components/ai-elements/streamdown-plugins";
 import {
   Tooltip,
   TooltipContent,
@@ -332,6 +333,7 @@ export const MessageResponse = memo(
           className,
         )}
         components={streamdownComponents}
+        plugins={streamdownPlugins}
         {...props}
       />
     </ChatStreamingProvider>
