@@ -97,8 +97,9 @@ import {
 import { WorkspaceSurface } from "./components/WorkspaceSurface";
 import { useTabCloseGuards } from "./hooks/useTabCloseGuards";
 import { useWorkspaceSwitcher } from "./hooks/useWorkspaceSwitcher";
+import type { SessionState } from "@/modules/tabs/lib/sessionStore";
 
-export default function App() {
+export default function App({ initialSession }: { initialSession?: SessionState | null }) {
   const {
     tabs,
     activeId,
@@ -136,7 +137,7 @@ export default function App() {
     closeActivePane,
     closePaneByLeaf,
     resetWorkspace,
-  } = useTabs(getLaunchDir() ? { cwd: getLaunchDir() } : undefined);
+  } = useTabs(initialSession, getLaunchDir() ? { cwd: getLaunchDir() } : undefined);
 
   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`
   // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
