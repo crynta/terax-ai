@@ -122,10 +122,24 @@ export function AiComposerProvider({ children }: ProviderProps) {
   useEffect(() => {
     const onVoiceInsert = (e: Event) => {
       const text = (e as CustomEvent<string>).detail;
-      if (typeof text === "string" && text.length > 0) {
+      if (typeof text !== "string" || text.length === 0) return;
+      const el = textareaRef.current;
+      if (!el) {
         setValue((v) => (v ? `${v} ${text}` : text));
-        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
       }
+      const start = el.selectionStart ?? el.value.length;
+      const end = el.selectionEnd ?? el.value.length;
+      const before = el.value.slice(0, start);
+      const after = el.value.slice(end);
+      const sep = before && !/\s$/.test(before) ? " " : "";
+      const insert = `${sep}${text}`;
+      const caret = before.length + insert.length;
+      setValue(`${before}${insert}${after}`);
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(caret, caret);
+      });
     };
     window.addEventListener("terax:ai-voice-insert", onVoiceInsert);
     return () =>

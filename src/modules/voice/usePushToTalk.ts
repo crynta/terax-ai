@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { VoiceHoldMods } from "@/modules/settings/store";
@@ -20,6 +20,7 @@ function modsHeld(e: KeyboardEvent, mods: VoiceHoldMods): boolean {
 export function usePushToTalk() {
   const enabled = usePreferencesStore((s) => s.voiceHoldEnabled);
   const useFn = usePreferencesStore((s) => s.voiceHoldUseFn);
+  const startedByHold = useRef(false);
 
   useEffect(() => {
     if (!enabled || !useFn) return;
@@ -30,12 +31,18 @@ export function usePushToTalk() {
       if (active) set(u);
       else u();
     };
-    void listen("voice://fn-down", () =>
-      useVoiceStore.getState().start(),
-    ).then(keep((u) => (unlistenDown = u)));
-    void listen("voice://fn-up", () => useVoiceStore.getState().stop()).then(
-      keep((u) => (unlistenUp = u)),
-    );
+    void listen("voice://fn-down", () => {
+      if (useVoiceStore.getState().status === "idle") {
+        startedByHold.current = true;
+        useVoiceStore.getState().start();
+      }
+    }).then(keep((u) => (unlistenDown = u)));
+    void listen("voice://fn-up", () => {
+      if (startedByHold.current) {
+        startedByHold.current = false;
+        useVoiceStore.getState().stop();
+      }
+    }).then(keep((u) => (unlistenUp = u)));
     return () => {
       active = false;
       unlistenDown?.();
@@ -49,12 +56,17 @@ export function usePushToTalk() {
       if (e.repeat || !MODIFIER_KEYS.has(e.key)) return;
       const mods = usePreferencesStore.getState().voiceHoldMods;
       if (modsHeld(e, mods) && useVoiceStore.getState().status === "idle") {
+        startedByHold.current = true;
         useVoiceStore.getState().start();
       }
     };
     const onUp = (e: KeyboardEvent) => {
       if (!MODIFIER_KEYS.has(e.key)) return;
-      if (useVoiceStore.getState().status === "recording") {
+      if (
+        startedByHold.current &&
+        useVoiceStore.getState().status === "recording"
+      ) {
+        startedByHold.current = false;
         useVoiceStore.getState().stop();
       }
     };

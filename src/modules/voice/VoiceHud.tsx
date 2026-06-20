@@ -21,12 +21,12 @@ export function VoiceHud() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
             </span>
-            <span>Escuchando…</span>
+            <span>Listening…</span>
           </>
         ) : (
           <>
             <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-            <span>Transcribiendo…</span>
+            <span>Transcribing…</span>
           </>
         )}
       </div>

@@ -304,40 +304,42 @@ export default function App() {
   useEditorFileSync({ tabs, tabsRef, editorRefs });
   useThemeFileEditing({ tabsRef, openFileTab });
 
-  const routeTranscript = useCallback(
-    (text: string) => {
-      const active = document.activeElement;
-      const aiFocused =
-        panelOpen && !!active?.closest('[data-voice-target="ai"]');
-      if (!aiFocused && isEditorTab && activeEditorHandle) {
-        activeEditorHandle.insertText(text);
-        return;
-      }
-      if (!aiFocused && isTerminalTab && activeLeafId !== null) {
-        writeToSession(activeLeafId, text);
-        return;
-      }
-      if (hasComposer) {
+  const resolveVoiceTarget = useCallback((): ((text: string) => void) => {
+    const active = document.activeElement;
+    const aiFocused =
+      panelOpen && !!active?.closest('[data-voice-target="ai"]');
+    const editorHandle = isEditorTab
+      ? (editorRefs.current.get(activeId) ?? null)
+      : null;
+    if (!aiFocused && editorHandle) {
+      return (text) => editorHandle.insertText(text);
+    }
+    if (!aiFocused && isTerminalTab && activeLeafId !== null) {
+      const leafId = activeLeafId;
+      return (text) => writeToSession(leafId, text);
+    }
+    if (hasComposer) {
+      return (text) => {
         openPanel();
         window.dispatchEvent(
           new CustomEvent<string>("terax:ai-voice-insert", { detail: text }),
         );
         focusInput(null);
-      }
-    },
-    [
-      panelOpen,
-      isEditorTab,
-      activeEditorHandle,
-      isTerminalTab,
-      activeLeafId,
-      hasComposer,
-      openPanel,
-      focusInput,
-    ],
-  );
+      };
+    }
+    return () => {};
+  }, [
+    panelOpen,
+    isEditorTab,
+    activeId,
+    isTerminalTab,
+    activeLeafId,
+    hasComposer,
+    openPanel,
+    focusInput,
+  ]);
 
-  useVoiceController({ route: routeTranscript });
+  useVoiceController({ resolveTarget: resolveVoiceTarget });
   usePushToTalk();
 
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(

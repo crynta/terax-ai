@@ -5,14 +5,15 @@ import { useVoiceStore } from "./voiceStore";
 import { cleanupTranscript } from "./cleanup";
 
 export function useVoiceController({
-  route,
+  resolveTarget,
 }: {
-  route: (text: string) => void;
+  resolveTarget: () => (text: string) => void;
 }) {
-  const routeRef = useRef(route);
-  routeRef.current = route;
+  const resolveRef = useRef(resolveTarget);
+  resolveRef.current = resolveTarget;
 
   const onResult = useCallback(async (raw: string) => {
+    const apply = resolveRef.current();
     let text = raw;
     if (usePreferencesStore.getState().voiceCleanupEnabled) {
       try {
@@ -21,7 +22,7 @@ export function useVoiceController({
         text = raw;
       }
     }
-    if (text.trim()) routeRef.current(text.trim());
+    if (text.trim()) apply(text.trim());
   }, []);
 
   const voice = useWhisperRecording({ onResult });

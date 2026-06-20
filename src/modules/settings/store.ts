@@ -302,6 +302,23 @@ async function writePref<T>(key: string, value: T): Promise<void> {
   await emit(PREFS_CHANGED_EVENT, { key, value });
 }
 
+function normalizeVoiceHoldMods(value: unknown): VoiceHoldMods {
+  if (!value || typeof value !== "object") {
+    return DEFAULT_PREFERENCES.voiceHoldMods;
+  }
+  const o = value as Record<string, unknown>;
+  const mods: VoiceHoldMods = {
+    ctrl: o.ctrl === true,
+    alt: o.alt === true,
+    shift: o.shift === true,
+    meta: o.meta === true,
+  };
+  if (!mods.ctrl && !mods.alt && !mods.shift && !mods.meta) {
+    return DEFAULT_PREFERENCES.voiceHoldMods;
+  }
+  return mods;
+}
+
 export async function loadPreferences(): Promise<Preferences> {
   // Single IPC roundtrip — fetching keys individually fans out to one
   // `plugin:store|get` per setting and is the dominant boot cost.
@@ -394,9 +411,7 @@ export async function loadPreferences(): Promise<Preferences> {
       DEFAULT_PREFERENCES.voiceHoldEnabled,
     voiceHoldUseFn:
       get<boolean>(KEY_VOICE_HOLD_USE_FN) ?? DEFAULT_PREFERENCES.voiceHoldUseFn,
-    voiceHoldMods:
-      get<VoiceHoldMods>(KEY_VOICE_HOLD_MODS) ??
-      DEFAULT_PREFERENCES.voiceHoldMods,
+    voiceHoldMods: normalizeVoiceHoldMods(get<unknown>(KEY_VOICE_HOLD_MODS)),
     voiceCleanupEnabled:
       get<boolean>(KEY_VOICE_CLEANUP_ENABLED) ??
       DEFAULT_PREFERENCES.voiceCleanupEnabled,
