@@ -6,8 +6,9 @@
 
   <p>
     <img src="https://img.shields.io/github/v/release/crynta/terax-ai?label=version&color=blue" alt="version" />
-    <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
+    <img src="https://img.shields.io/github/downloads/crynta/terax-ai/total?label=downloads&color=blue" alt="downloads" />
     <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
+    <a href="https://discord.gg/tyveTUyEp7"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
   </p>
 
   <p>
@@ -44,6 +45,7 @@ Terax is a lightweight open-source terminal (ADE) built on Tauri 2 + Rust and Re
 ### Terminal
 
 - xterm.js with WebGL renderer, multi-tab with background streaming
+- GPU-accelerated block-based terminal with editor-like command input
 - Native PTY backend via `portable-pty` (zsh, bash, pwsh, fish, cmd)
 - Split panels (horizontal and vertical)
 - Inline search, link detection, true-color
