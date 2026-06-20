@@ -75,6 +75,51 @@ pub fn fs_delete(path: String, workspace: Option<WorkspaceEnv>) -> Result<(), St
     })
 }
 
+fn copy_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        std::fs::create_dir(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            copy_recursive(&entry.path(), &dst.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        std::fs::copy(src, dst).map(|_| ())
+    }
+}
+
+/// Copies external files/dirs into a destination directory, recursively for
+/// dirs. Sources are absolute OS paths (from a drag-drop); only the destination
+/// is workspace-resolved. Refuses to overwrite existing entries.
+#[tauri::command]
+pub fn fs_copy(
+    sources: Vec<String>,
+    dest_dir: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    let dest = resolve_path(&dest_dir, &workspace);
+    for source in &sources {
+        let src = std::path::PathBuf::from(source);
+        let name = src
+            .file_name()
+            .ok_or_else(|| format!("invalid source: {source}"))?;
+        let target = dest.join(name);
+        if target.exists() {
+            return Err(format!("already exists: {}", target.display()));
+        }
+        copy_recursive(&src, &target).map_err(|e| {
+            log::warn!(
+                "fs_copy({} -> {}) failed: {e}",
+                src.display(),
+                target.display()
+            );
+            e.to_string()
+        })?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,6 +175,41 @@ mod tests {
         assert!(err.contains("already exists"), "got: {err}");
         assert_eq!(std::fs::read(&occupied).unwrap(), b"keep");
         assert!(to.exists());
+    }
+
+    #[test]
+    fn copy_brings_file_and_dir_in_and_refuses_clobber() {
+        let src = tempfile::tempdir().unwrap();
+        let dest = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("a.txt"), b"payload").unwrap();
+        std::fs::create_dir_all(src.path().join("d/inner")).unwrap();
+        std::fs::write(src.path().join("d/inner/y.txt"), b"y").unwrap();
+
+        fs_copy(
+            vec![s(src.path().join("a.txt")), s(src.path().join("d"))],
+            s(dest.path().to_path_buf()),
+            None,
+        )
+        .expect("copy");
+
+        assert_eq!(
+            std::fs::read(dest.path().join("a.txt")).unwrap(),
+            b"payload"
+        );
+        assert_eq!(
+            std::fs::read(dest.path().join("d/inner/y.txt")).unwrap(),
+            b"y"
+        );
+        // copy, not move: the source survives.
+        assert!(src.path().join("a.txt").exists());
+
+        let err = fs_copy(
+            vec![s(src.path().join("a.txt"))],
+            s(dest.path().to_path_buf()),
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("already exists"), "got: {err}");
     }
 
     #[test]

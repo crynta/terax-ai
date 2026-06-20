@@ -76,6 +76,7 @@ const loaders: Record<string, LanguageLoader> = {
       m.html({ selfClosingTags: true }),
     ),
   css: () => import("@codemirror/lang-css").then((m) => m.css()),
+  vue: () => import("@codemirror/lang-vue").then((m) => m.vue()),
 
   php: () => import("@codemirror/lang-php").then((m) => m.php({ plain: true })),
   rb: rubyLoader,
@@ -97,6 +98,10 @@ const loaders: Record<string, LanguageLoader> = {
 
   // C#
   cs: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.csharp),
+
+  // Swift
+  swift: () =>
+    import("@codemirror/legacy-modes/mode/swift").then((m) => m.swift),
 
   // Legacy-modes: loaders return the raw StreamParser; wrapped below.
   sh: () => import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),

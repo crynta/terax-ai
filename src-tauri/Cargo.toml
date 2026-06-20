@@ -1,6 +1,6 @@
 [package]
 name = "terax"
-version = "0.7.3"
+version = "0.8.1"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
 license = "Apache-2.0"
@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -31,6 +31,7 @@ grep-regex = "0.1"
 grep-searcher = "0.1"
 grep-matcher = "0.1"
 globset = "0.4"
+nucleo-matcher = "0.3"
 shared_child = "1"
 tauri-plugin-log = "2"
 tauri-plugin-os = "2"
@@ -50,6 +51,7 @@ tauri-plugin-clipboard-manager = "2"
 
 [dev-dependencies]
 proptest = "1"
+tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -58,6 +60,8 @@ libc = "0.2"
 keyring = { version = "3.6", default-features = false, features = [
 	"apple-native",
 ] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [

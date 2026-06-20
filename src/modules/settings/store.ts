@@ -1,15 +1,18 @@
 import {
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
+  DEFAULT_STT_PROVIDER,
   isKnownModelId,
   LMSTUDIO_DEFAULT_BASE_URL,
   MLX_DEFAULT_BASE_URL,
   OLLAMA_DEFAULT_BASE_URL,
   migrateLegacyCompatEndpoint,
   OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
+  WHISPERCPP_DEFAULT_BASE_URL,
   type AutocompleteProviderId,
   type CustomEndpoint,
   type ModelId,
+  type SttProvider,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -22,29 +25,86 @@ export const DEFAULT_THEME_ID = "terax-default";
 export type BackgroundKind = "none" | "image";
 
 export const EDITOR_THEMES = [
+  "kanagawa",
+  "kanagawa-lotus",
+  "kanagawa-dragon",
+  "tokyo-night",
+  "catppuccin-mocha",
+  "catppuccin-latte",
+  "rose-pine",
+  "rose-pine-dawn",
+  "everforest",
+  "everforest-light",
+  "dracula",
+  "solarized-dark",
+  "solarized-light",
+  "nord",
+  "gruvbox-dark",
   "atomone",
   "aura",
   "copilot",
   "github-dark",
   "github-light",
-  "gruvbox-dark",
-  "nord",
-  "tokyo-night",
   "xcode-dark",
   "xcode-light",
 ] as const;
 
 export type EditorThemeId = (typeof EDITOR_THEMES)[number];
 
+/** "auto" follows the active app theme's editorTheme pairing (resolved live). */
+export const EDITOR_THEME_AUTO = "auto" as const;
+export type EditorThemePref = typeof EDITOR_THEME_AUTO | EditorThemeId;
+
+export function isEditorThemeId(v: unknown): v is EditorThemeId {
+  return typeof v === "string" && (EDITOR_THEMES as readonly string[]).includes(v);
+}
+
+export const EDITOR_THEME_MODE: Record<EditorThemeId, "light" | "dark"> = {
+  kanagawa: "dark",
+  "kanagawa-lotus": "light",
+  "kanagawa-dragon": "dark",
+  "tokyo-night": "dark",
+  "catppuccin-mocha": "dark",
+  "catppuccin-latte": "light",
+  "rose-pine": "dark",
+  "rose-pine-dawn": "light",
+  everforest: "dark",
+  "everforest-light": "light",
+  dracula: "dark",
+  "solarized-dark": "dark",
+  "solarized-light": "light",
+  nord: "dark",
+  "gruvbox-dark": "dark",
+  atomone: "dark",
+  aura: "dark",
+  copilot: "dark",
+  "github-dark": "dark",
+  "github-light": "light",
+  "xcode-dark": "dark",
+  "xcode-light": "light",
+};
+
 export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
+  kanagawa: "Kanagawa Wave",
+  "kanagawa-lotus": "Kanagawa Lotus",
+  "kanagawa-dragon": "Kanagawa Dragon",
+  "tokyo-night": "Tokyo Night",
+  "catppuccin-mocha": "Catppuccin Mocha",
+  "catppuccin-latte": "Catppuccin Latte",
+  "rose-pine": "Rosé Pine",
+  "rose-pine-dawn": "Rosé Pine Dawn",
+  everforest: "Everforest Dark",
+  "everforest-light": "Everforest Light",
+  dracula: "Dracula",
+  "solarized-dark": "Solarized Dark",
+  "solarized-light": "Solarized Light",
+  nord: "Nord",
+  "gruvbox-dark": "Gruvbox Dark",
   atomone: "Atom One",
   aura: "Aura",
   copilot: "Copilot",
   "github-dark": "GitHub Dark",
   "github-light": "GitHub Light",
-  "gruvbox-dark": "Gruvbox Dark",
-  nord: "Nord",
-  "tokyo-night": "Tokyo Night",
   "xcode-dark": "Xcode Dark",
   "xcode-light": "Xcode Light",
 };
@@ -57,7 +117,7 @@ export type Preferences = {
   backgroundOpacity: number;
   backgroundBlur: number;
   defaultModelId: ModelId;
-  editorTheme: EditorThemeId;
+  editorTheme: EditorThemePref;
   customInstructions: string;
   autostart: boolean;
   restoreWindowState: boolean;
@@ -75,11 +135,16 @@ export type Preferences = {
   openaiCompatibleContextLimit: number;
   customEndpoints: CustomEndpoint[];
   openrouterModelId: string;
+  sttProvider: SttProvider;
+  groqSttModel: string;
+  whispercppBaseURL: string;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
   showHidden: boolean;
+  explorerGitDecorations: boolean;
   terminalWebglEnabled: boolean;
+  terminalCursorBlink: boolean;
   terminalFontFamily: string;
   terminalLetterSpacing: number;
   terminalFontSize: number;
@@ -118,12 +183,17 @@ const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_OPENAI_COMPAT_CONTEXT_LIMIT = "openaiCompatibleContextLimit";
 const KEY_CUSTOM_ENDPOINTS = "customEndpoints";
 const KEY_OPENROUTER_MODEL_ID = "openrouterModelId";
+const KEY_STT_PROVIDER = "sttProvider";
+const KEY_GROQ_STT_MODEL = "groqSttModel";
+const KEY_WHISPERCPP_BASE_URL = "whispercppBaseURL";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
+const KEY_EXPLORER_GIT_DECORATIONS = "explorerGitDecorations";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
+const KEY_TERMINAL_CURSOR_BLINK = "terminalCursorBlink";
 const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
@@ -158,7 +228,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   backgroundOpacity: 0.5,
   backgroundBlur: 0,
   defaultModelId: DEFAULT_MODEL_ID,
-  editorTheme: "atomone",
+  editorTheme: EDITOR_THEME_AUTO,
   customInstructions: "",
   autostart: false,
   restoreWindowState: true,
@@ -176,11 +246,16 @@ export const DEFAULT_PREFERENCES: Preferences = {
   openaiCompatibleContextLimit: 128_000,
   customEndpoints: [],
   openrouterModelId: "",
+  sttProvider: DEFAULT_STT_PROVIDER,
+  groqSttModel: "whisper-large-v3-turbo",
+  whispercppBaseURL: WHISPERCPP_DEFAULT_BASE_URL,
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
   showHidden: false,
+  explorerGitDecorations: true,
   terminalWebglEnabled: true,
+  terminalCursorBlink: false,
   terminalFontFamily: "",
   terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
@@ -233,8 +308,11 @@ export async function loadPreferences(): Promise<Preferences> {
         ? stored
         : DEFAULT_PREFERENCES.defaultModelId;
     })(),
-    editorTheme:
-      get<EditorThemeId>(KEY_EDITOR_THEME) ?? DEFAULT_PREFERENCES.editorTheme,
+    editorTheme: ((): EditorThemePref => {
+      const stored = get<string>(KEY_EDITOR_THEME);
+      if (stored === EDITOR_THEME_AUTO || isEditorThemeId(stored)) return stored;
+      return DEFAULT_PREFERENCES.editorTheme;
+    })(),
     customInstructions:
       get<string>(KEY_CUSTOM_INSTRUCTIONS) ??
       DEFAULT_PREFERENCES.customInstructions,
@@ -285,6 +363,12 @@ export async function loadPreferences(): Promise<Preferences> {
     openrouterModelId:
       get<string>(KEY_OPENROUTER_MODEL_ID) ??
       DEFAULT_PREFERENCES.openrouterModelId,
+    sttProvider:
+      get<SttProvider>(KEY_STT_PROVIDER) ?? DEFAULT_PREFERENCES.sttProvider,
+    groqSttModel:
+      get<string>(KEY_GROQ_STT_MODEL) ?? DEFAULT_PREFERENCES.groqSttModel,
+    whispercppBaseURL:
+      get<string>(KEY_WHISPERCPP_BASE_URL) ?? DEFAULT_PREFERENCES.whispercppBaseURL,
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ??
       DEFAULT_PREFERENCES.favoriteModelIds
@@ -297,9 +381,15 @@ export async function loadPreferences(): Promise<Preferences> {
       get<boolean>(KEY_SHOW_HIDDEN) ??
       get<boolean>(LEGACY_KEY_SHOW_HIDDEN_DIRS) ??
       DEFAULT_PREFERENCES.showHidden,
+    explorerGitDecorations:
+      get<boolean>(KEY_EXPLORER_GIT_DECORATIONS) ??
+      DEFAULT_PREFERENCES.explorerGitDecorations,
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
       DEFAULT_PREFERENCES.terminalWebglEnabled,
+    terminalCursorBlink:
+      get<boolean>(KEY_TERMINAL_CURSOR_BLINK) ??
+      DEFAULT_PREFERENCES.terminalCursorBlink,
     terminalFontFamily:
       get<string>(KEY_TERMINAL_FONT_FAMILY) ??
       DEFAULT_PREFERENCES.terminalFontFamily,
@@ -376,7 +466,7 @@ export async function setDefaultModel(value: ModelId): Promise<void> {
   await writePref(KEY_DEFAULT_MODEL, value);
 }
 
-export async function setEditorTheme(value: EditorThemeId): Promise<void> {
+export async function setEditorTheme(value: EditorThemePref): Promise<void> {
   await writePref(KEY_EDITOR_THEME, value);
 }
 
@@ -457,6 +547,18 @@ export async function setOpenrouterModelId(value: string): Promise<void> {
   await writePref(KEY_OPENROUTER_MODEL_ID, value);
 }
 
+export async function setSttProvider(value: SttProvider): Promise<void> {
+  await writePref(KEY_STT_PROVIDER, value);
+}
+
+export async function setGroqSttModel(value: string): Promise<void> {
+  await writePref(KEY_GROQ_STT_MODEL, value.trim());
+}
+
+export async function setWhispercppBaseURL(value: string): Promise<void> {
+  await writePref(KEY_WHISPERCPP_BASE_URL, value.trim());
+}
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -473,8 +575,16 @@ export async function setShowHidden(value: boolean): Promise<void> {
   await writePref(KEY_SHOW_HIDDEN, value);
 }
 
+export async function setExplorerGitDecorations(value: boolean): Promise<void> {
+  await writePref(KEY_EXPLORER_GIT_DECORATIONS, value);
+}
+
 export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
+}
+
+export async function setTerminalCursorBlink(value: boolean): Promise<void> {
+  await writePref(KEY_TERMINAL_CURSOR_BLINK, value);
 }
 
 export async function setTerminalFontFamily(value: string): Promise<void> {
@@ -575,11 +685,16 @@ export async function onPreferencesChange(
     [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
     [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
     [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
+    [KEY_STT_PROVIDER]: "sttProvider",
+    [KEY_GROQ_STT_MODEL]: "groqSttModel",
+    [KEY_WHISPERCPP_BASE_URL]: "whispercppBaseURL",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
     [KEY_SHOW_HIDDEN]: "showHidden",
+    [KEY_EXPLORER_GIT_DECORATIONS]: "explorerGitDecorations",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
+    [KEY_TERMINAL_CURSOR_BLINK]: "terminalCursorBlink",
     [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
     [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",

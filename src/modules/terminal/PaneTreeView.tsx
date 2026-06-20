@@ -1,37 +1,34 @@
-import { Fragment } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import type { SearchAddon } from "@xterm/addon-search";
-import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
+import { Fragment } from "react";
 import { useTerminalDropStore } from "./lib/dropStore";
-import type { PaneNode } from "./lib/panes";
+import { leafIds, type PaneNode } from "./lib/panes";
+import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 
 type LeafBundle = {
   setRef: (h: TerminalPaneHandle | null) => void;
-  onSearch: (addon: SearchAddon) => void;
-  onCwd: (cwd: string) => void;
-  onExit: (code: number) => void;
+  onSearchReady: (leafId: number, addon: SearchAddon) => void;
+  onCwd: (leafId: number, cwd: string) => void;
+  onExit: (leafId: number, code: number) => void;
 };
 
 type Props = {
   node: PaneNode;
   tabVisible: boolean;
   activeLeafId: number;
+  blocks: boolean;
   onFocusLeaf: (leafId: number) => void;
   getBundle: (leafId: number) => LeafBundle;
 };
 
-export function PaneTreeView({
-  node,
-  tabVisible,
-  activeLeafId,
-  onFocusLeaf,
-  getBundle,
-}: Props) {
+export function PaneTreeView(props: Props) {
+  const { node } = props;
   if (node.kind === "leaf") {
+    const { tabVisible, activeLeafId, blocks, onFocusLeaf, getBundle } = props;
     const focused = node.id === activeLeafId;
     const b = getBundle(node.id);
     return (
@@ -52,10 +49,11 @@ export function PaneTreeView({
           visible={tabVisible}
           focused={focused}
           initialCwd={node.cwd}
+          blocks={blocks}
           ref={b.setRef}
-          onSearchReady={(_id, addon) => b.onSearch(addon)}
-          onCwd={(_id, cwd) => b.onCwd(cwd)}
-          onExit={(_id, code) => b.onExit(code)}
+          onSearchReady={b.onSearchReady}
+          onCwd={b.onCwd}
+          onExit={b.onExit}
         />
         <DropOverlay leafId={node.id} />
       </div>
@@ -67,16 +65,13 @@ export function PaneTreeView({
       orientation={node.dir === "row" ? "horizontal" : "vertical"}
     >
       {node.children.map((child, i) => (
-        <Fragment key={child.id}>
+        // Keyed by the subtree's first leaf, not the node id: when a leaf is
+        // split in place, the replacing split node gets a fresh id and would
+        // otherwise remount the surviving pane.
+        <Fragment key={leafIds(child)[0]}>
           {i > 0 && <ResizableHandle />}
           <ResizablePanel id={`pane-${child.id}`} minSize="10%">
-            <PaneTreeView
-              node={child}
-              tabVisible={tabVisible}
-              activeLeafId={activeLeafId}
-              onFocusLeaf={onFocusLeaf}
-              getBundle={getBundle}
-            />
+            <PaneTreeView {...props} node={child} />
           </ResizablePanel>
         </Fragment>
       ))}

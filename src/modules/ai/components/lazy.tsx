@@ -11,14 +11,8 @@ const AiMiniWindowInner = lazy(() =>
   import("./AiMiniWindow").then((m) => ({ default: m.AiMiniWindow })),
 );
 
-const AiInputBarModule = () => import("./AiInputBar");
-
-const AiInputBarInner = lazy(() =>
-  AiInputBarModule().then((m) => ({ default: m.AiInputBar })),
-);
-
 const AiInputBarConnectInner = lazy(() =>
-  AiInputBarModule().then((m) => ({ default: m.AiInputBarConnect })),
+  import("./AiInputBar").then((m) => ({ default: m.AiInputBarConnect })),
 );
 
 const SelectionAskAiInner = lazy(() =>
@@ -37,14 +31,6 @@ export function AiMiniWindow({ state }: { state: PresenceState }) {
   return (
     <Suspense fallback={null}>
       <AiMiniWindowInner state={state} />
-    </Suspense>
-  );
-}
-
-export function AiInputBar() {
-  return (
-    <Suspense fallback={null}>
-      <AiInputBarInner />
     </Suspense>
   );
 }

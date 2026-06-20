@@ -24,11 +24,13 @@ import {
   setAutostart,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
+  setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
   setTerminalLetterSpacing,
   setTerminalFontSize,
+  setTerminalCursorBlink,
   setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
@@ -73,8 +75,14 @@ export function GeneralSection() {
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
+  const explorerGitDecorations = usePreferencesStore(
+    (s) => s.explorerGitDecorations,
+  );
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
+  );
+  const terminalCursorBlink = usePreferencesStore(
+    (s) => s.terminalCursorBlink,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalLetterSpacing = usePreferencesStore(
@@ -203,6 +211,15 @@ export function GeneralSection() {
             onCheckedChange={(v) => void setShowHidden(v)}
           />
         </SettingRow>
+        <SettingRow
+          title="Git decorations"
+          description="Tint changed files and dim gitignored entries in the file explorer."
+        >
+          <Switch
+            checked={explorerGitDecorations}
+            onCheckedChange={(v) => void setExplorerGitDecorations(v)}
+          />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -243,17 +260,18 @@ export function GeneralSection() {
           />
         </SettingRow>
         <SettingRow
-          title="Font family"
-          description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
+          title="Cursor blinking"
+          description="Blink the terminal cursor. Off by default for lower idle CPU, matching VS Code and the macOS terminal."
         >
-          <input
-            type="text"
-            value={terminalFontFamily}
-            placeholder="Auto-detect"
-            onChange={(e) => void setTerminalFontFamily(e.target.value)}
-            className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+          <Switch
+            checked={terminalCursorBlink}
+            onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
         </SettingRow>
+        <FontFamilyInput
+          value={terminalFontFamily}
+          onCommit={(v) => void setTerminalFontFamily(v)}
+        />
         <SettingRow
           title="Letter spacing"
           description="Extra horizontal space between characters (px). Use negative values to tighten Nerd Fonts."
@@ -362,6 +380,47 @@ function Label({ children }: { children: React.ReactNode }) {
     <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
       {children}
     </span>
+  );
+}
+
+function FontFamilyInput({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  // Commit (and trim) only on blur/Enter so a trailing space can be typed
+  // mid-edit, e.g. "JetBrains Mono ".
+  const commit = () => {
+    const next = draft.trim();
+    if (next !== draft) setDraft(next);
+    if (next !== value) onCommit(next);
+  };
+
+  return (
+    <SettingRow
+      title="Font family"
+      description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
+    >
+      <input
+        type="text"
+        value={draft}
+        placeholder="Auto-detect"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+      />
+    </SettingRow>
   );
 }
 
