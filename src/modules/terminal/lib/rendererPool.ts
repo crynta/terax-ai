@@ -287,8 +287,10 @@ function createSlot(): Slot {
     }
     if (isTerminalPaste(event)) {
       if (event.type === "keydown") {
+        const targetLeafId = slot.currentLeafId;
         void readTerminalClipboard().then((text) => {
-          if (text) slot.term.paste(text);
+          if (!text || slot.currentLeafId !== targetLeafId) return;
+          slot.term.paste(text);
         });
       }
       event.preventDefault();
