@@ -122,7 +122,99 @@ const loaders: Record<string, LanguageLoader> = {
     import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
   sty: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
   cls: () => import("@codemirror/legacy-modes/mode/stex").then((m) => m.stex),
+
+  // Dart / Flutter, Kotlin, Scala (clike family)
+  dart: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.dart),
+  kt: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.kotlin),
+  kts: () =>
+    import("@codemirror/legacy-modes/mode/clike").then((m) => m.kotlin),
+  scala: () =>
+    import("@codemirror/legacy-modes/mode/clike").then((m) => m.scala),
+  sc: () => import("@codemirror/legacy-modes/mode/clike").then((m) => m.scala),
+
+  // XML family (.iml from IntelliJ, build/project files, plists, SVG)
+  xml: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+  iml: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+  xsd: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+  xsl: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+  xslt: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+  svg: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+  plist: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+  csproj: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+  props: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+  targets: () => import("@codemirror/legacy-modes/mode/xml").then((m) => m.xml),
+
+  // nginx / generic .conf
+  conf: () =>
+    import("@codemirror/legacy-modes/mode/nginx").then((m) => m.nginx),
+  nginx: () =>
+    import("@codemirror/legacy-modes/mode/nginx").then((m) => m.nginx),
+
+  // CMake
+  cmake: () =>
+    import("@codemirror/legacy-modes/mode/cmake").then((m) => m.cmake),
+
+  // INI / properties / env
+  ini: () =>
+    import("@codemirror/legacy-modes/mode/properties").then(
+      (m) => m.properties,
+    ),
+  cfg: () =>
+    import("@codemirror/legacy-modes/mode/properties").then(
+      (m) => m.properties,
+    ),
+  properties: () =>
+    import("@codemirror/legacy-modes/mode/properties").then(
+      (m) => m.properties,
+    ),
+  env: () =>
+    import("@codemirror/legacy-modes/mode/properties").then(
+      (m) => m.properties,
+    ),
+
+  // Other common languages
+  lua: () => import("@codemirror/legacy-modes/mode/lua").then((m) => m.lua),
+  ps1: () =>
+    import("@codemirror/legacy-modes/mode/powershell").then(
+      (m) => m.powerShell,
+    ),
+  psm1: () =>
+    import("@codemirror/legacy-modes/mode/powershell").then(
+      (m) => m.powerShell,
+    ),
+  psd1: () =>
+    import("@codemirror/legacy-modes/mode/powershell").then(
+      (m) => m.powerShell,
+    ),
+  pl: () => import("@codemirror/legacy-modes/mode/perl").then((m) => m.perl),
+  pm: () => import("@codemirror/legacy-modes/mode/perl").then((m) => m.perl),
+  groovy: () =>
+    import("@codemirror/legacy-modes/mode/groovy").then((m) => m.groovy),
+  gradle: () =>
+    import("@codemirror/legacy-modes/mode/groovy").then((m) => m.groovy),
+  clj: () =>
+    import("@codemirror/legacy-modes/mode/clojure").then((m) => m.clojure),
+  cljs: () =>
+    import("@codemirror/legacy-modes/mode/clojure").then((m) => m.clojure),
+  cljc: () =>
+    import("@codemirror/legacy-modes/mode/clojure").then((m) => m.clojure),
+  edn: () =>
+    import("@codemirror/legacy-modes/mode/clojure").then((m) => m.clojure),
+  hs: () =>
+    import("@codemirror/legacy-modes/mode/haskell").then((m) => m.haskell),
+  jl: () => import("@codemirror/legacy-modes/mode/julia").then((m) => m.julia),
+  diff: () => import("@codemirror/legacy-modes/mode/diff").then((m) => m.diff),
+  patch: () => import("@codemirror/legacy-modes/mode/diff").then((m) => m.diff),
+  proto: () =>
+    import("@codemirror/legacy-modes/mode/protobuf").then((m) => m.protobuf),
+  vb: () => import("@codemirror/legacy-modes/mode/vb").then((m) => m.vb),
+  svelte: () => import("@codemirror/lang-html").then((m) => m.html()),
 };
+
+const yamlLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/yaml").then((m) => m.yaml);
+const propertiesLoader: LanguageLoader = () =>
+  import("@codemirror/legacy-modes/mode/properties").then((m) => m.properties);
 
 const filenameOverrides: Record<string, LanguageLoader> = {
   dockerfile: loaders.dockerfile!,
@@ -133,7 +225,26 @@ const filenameOverrides: Record<string, LanguageLoader> = {
   fastfile: rubyLoader,
   guardfile: rubyLoader,
   brewfile: rubyLoader,
+  // Flutter / Dart project files
+  "pubspec.yaml": yamlLoader,
+  "pubspec.lock": yamlLoader,
+  "analysis_options.yaml": yamlLoader,
+  // Build / config files with fixed names
+  "cmakelists.txt": loaders.cmake!,
+  "nginx.conf": loaders.nginx!,
+  ".env": propertiesLoader,
+  ".editorconfig": propertiesLoader,
+  ".eslintrc": jsonLoader,
+  ".babelrc": jsonLoader,
+  ".prettierrc": jsonLoader,
 };
+
+// Any Dockerfile variant: `Dockerfile`, `Dockerfile.web`, `dockerfile.prod`,
+// `web.dockerfile` (the last is already covered by the `dockerfile` extension).
+// Pattern-based so new variants need no code change.
+function isDockerfileLike(base: string): boolean {
+  return base === "dockerfile" || base.startsWith("dockerfile.");
+}
 
 function extOf(name: string): string | null {
   const lower = name.toLowerCase();
@@ -156,6 +267,7 @@ function cacheKey(filename: string): string | null {
   const lower = filename.toLowerCase();
   const base = lower.split("/").pop() ?? lower;
   if (filenameOverrides[base]) return `name:${base}`;
+  if (isDockerfileLike(base)) return "name:dockerfile";
   const ext = extOf(base);
   return ext ? `ext:${ext}` : null;
 }
@@ -175,7 +287,10 @@ export async function resolveLanguage(
 
   const lower = filename.toLowerCase();
   const base = lower.split("/").pop() ?? lower;
-  const loader = filenameOverrides[base] ?? loaders[extOf(base) ?? ""];
+  const loader =
+    filenameOverrides[base] ??
+    (isDockerfileLike(base) ? loaders.dockerfile : undefined) ??
+    loaders[extOf(base) ?? ""];
   if (!loader) {
     cache.set(key, null);
     return null;

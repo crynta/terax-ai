@@ -139,6 +139,7 @@ export function ThemesSection() {
       />
 
       <div
+        role="presentation"
         className="flex flex-col gap-2"
         onDragOver={(e) => {
           e.preventDefault();
@@ -310,6 +311,7 @@ export function ThemesSection() {
       </div>
 
       <div
+        role="presentation"
         className="flex flex-col gap-2"
         onDragOver={(e) => {
           e.preventDefault();
