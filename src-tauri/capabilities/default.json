@@ -14,6 +14,7 @@
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-is-maximized",
+    "core:window:allow-is-fullscreen",
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-show",
     "core:window:allow-set-focus",

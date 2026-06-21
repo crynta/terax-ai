@@ -3,10 +3,27 @@ import "./styles/globals.css";
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { LazyStore } from "@tauri-apps/plugin-store";
 import ReactDOM from "react-dom/client";
 import App from "./app/App";
 import { initLaunchDir } from "./lib/launchDir";
-import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
+import { IS_LINUX, USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
+
+type WindowSize = {
+  width: number;
+  height: number;
+};
+
+const MAIN_WINDOW_SIZE_STORE = "main-window-size.json";
+const MAIN_WINDOW_MIN_WIDTH = 420;
+const MAIN_WINDOW_MIN_HEIGHT = 280;
+const MAIN_WINDOW_SAVE_DELAY_MS = 200;
+const MAIN_WINDOW_RESIZE_READY_MS = 1000;
+
+const mainWindowSizeStore = new LazyStore(MAIN_WINDOW_SIZE_STORE, {
+  defaults: {},
+  autoSave: false,
+});
 
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";
@@ -29,12 +46,81 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <App />,
 );
 
+function isUsableWindowSize(size: WindowSize): boolean {
+  return (
+    Number.isFinite(size.width) &&
+    Number.isFinite(size.height) &&
+    size.width >= MAIN_WINDOW_MIN_WIDTH &&
+    size.height >= MAIN_WINDOW_MIN_HEIGHT
+  );
+}
+
+function currentWindowSize(): WindowSize {
+  return {
+    width: Math.round(window.innerWidth),
+    height: Math.round(window.innerHeight),
+  };
+}
+
+async function saveLinuxMainWindowSize(
+  appWindow: ReturnType<typeof getCurrentWindow>,
+): Promise<void> {
+  const size = currentWindowSize();
+  if (!isUsableWindowSize(size)) return;
+
+  const [maximized, fullscreen] = await Promise.all([
+    appWindow.isMaximized(),
+    appWindow.isFullscreen(),
+  ]);
+  if (maximized || fullscreen) return;
+
+  await mainWindowSizeStore.set("width", size.width);
+  await mainWindowSizeStore.set("height", size.height);
+  await mainWindowSizeStore.save();
+}
+
+function startLinuxMainWindowSizePersistence(
+  appWindow: ReturnType<typeof getCurrentWindow>,
+): void {
+  let ready = false;
+  let saveTimer: number | undefined;
+
+  const scheduleSave = () => {
+    if (!ready) return;
+    if (saveTimer !== undefined) window.clearTimeout(saveTimer);
+    saveTimer = window.setTimeout(() => {
+      saveTimer = undefined;
+      void saveLinuxMainWindowSize(appWindow).catch((e) =>
+        console.error("window size save failed:", e),
+      );
+    }, MAIN_WINDOW_SAVE_DELAY_MS);
+  };
+
+  window.setTimeout(() => {
+    ready = true;
+    scheduleSave();
+  }, MAIN_WINDOW_RESIZE_READY_MS);
+
+  void appWindow
+    .onResized(() => scheduleSave())
+    .catch((e) => console.error("window resize listener failed:", e));
+}
+
+let linuxSizePersistenceStarted = false;
+
 // Window starts hidden (per tauri.conf.json) so users never see a transparent
 // shadow-only frame before React paints. Use setTimeout — rAF is throttled
 // while the window is hidden and would never fire.
 const showWindow = () => {
-  getCurrentWindow()
+  const appWindow = getCurrentWindow();
+  appWindow
     .show()
+    .then(() => {
+      if (IS_LINUX && !linuxSizePersistenceStarted) {
+        linuxSizePersistenceStarted = true;
+        startLinuxMainWindowSizePersistence(appWindow);
+      }
+    })
     .catch((e) => console.error("window.show failed:", e));
 };
 setTimeout(showWindow, 50);
