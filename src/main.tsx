@@ -1,7 +1,3 @@
-import "@fontsource/jetbrains-mono/latin-400.css";
-import "@fontsource/jetbrains-mono/latin-700.css";
-import "@fontsource/jetbrains-mono/cyrillic-400.css";
-import "@fontsource/jetbrains-mono/cyrillic-700.css";
 import "@xterm/xterm/css/xterm.css";
 import "./styles/globals.css";
 
@@ -14,6 +10,13 @@ import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
 
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";
+}
+
+// Render-instrumentation overlay, opt-in: `VITE_REACT_SCAN=true pnpm dev`.
+// Dev-only dynamic import so it never reaches the production bundle.
+if (import.meta.env.DEV && import.meta.env.VITE_REACT_SCAN === "true") {
+  const { scan } = await import("react-scan");
+  scan({ enabled: true });
 }
 
 // Reap PTY sessions orphaned by a prior webview load before any tab spawns.

@@ -13,7 +13,7 @@ type Args = {
   type: SubagentType;
   prompt: string;
   keys: ProviderKeys;
-  modelId: ModelId;
+  modelId: string;
   toolContext: ToolContext;
   lmstudioBaseURL?: string;
   onStep?: (label: string) => void;
@@ -47,9 +47,9 @@ export async function runSubagent({
   }
 
   const model = await buildLanguageModel(
-    getModel(modelId).provider,
+    getModel(modelId as ModelId).provider,
     keys,
-    getModel(modelId).id,
+    getModel(modelId as ModelId).id,
     { lmstudioBaseURL },
   );
 

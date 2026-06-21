@@ -316,6 +316,15 @@ html *::-webkit-scrollbar {
   display: none;
 }
 
+/* Motion tokens. Reduced-motion zeroes the durations as a global snap. */
+:root {
+  --dur-fast: 160ms;
+  --dur-base: 240ms;
+  --dur-slow: 320ms;
+  --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 @keyframes terax-collapsible-down {
   from {
     height: 0;
@@ -342,8 +351,100 @@ html *::-webkit-scrollbar {
   overflow: hidden;
 }
 .terax-collapsible-content[data-state="open"] {
-  animation: terax-collapsible-down 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  animation: terax-collapsible-down var(--dur-base) var(--ease-soft);
 }
 .terax-collapsible-content[data-state="closed"] {
-  animation: terax-collapsible-up 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  animation: terax-collapsible-up var(--dur-base) var(--ease-soft);
+}
+
+/* Height auto<->0 reveal without JS measuring: animate the grid track from 0fr
+ * to 1fr. The inner child must be the sole grid row with min-height:0. Used by
+ * the docked AI input bar and the composer voice-status row. */
+.terax-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition:
+    grid-template-rows var(--dur-base) var(--ease-premium),
+    opacity var(--dur-base) var(--ease-premium);
+  opacity: 0;
+}
+.terax-reveal[data-state="open"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.terax-reveal > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@keyframes terax-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.terax-panel-in {
+  animation: terax-panel-in var(--dur-slow) var(--ease-premium);
+}
+
+@keyframes terax-tab-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.terax-tab-in {
+  animation: terax-tab-in var(--dur-base) var(--ease-premium);
+}
+
+/* Text shimmer loop (replaces motion background-position animation). Driven by
+ * --shimmer-duration / --shimmer-spread set inline per instance. */
+@keyframes terax-shimmer {
+  from {
+    background-position: 100% center;
+  }
+  to {
+    background-position: 0% center;
+  }
+}
+.terax-shimmer {
+  background-repeat: no-repeat, padding-box;
+  background-size:
+    250% 100%,
+    auto;
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent calc(50% - var(--shimmer-spread)),
+      var(--color-background),
+      transparent calc(50% + var(--shimmer-spread))
+    ),
+    linear-gradient(
+      var(--color-muted-foreground),
+      var(--color-muted-foreground)
+    );
+  animation: terax-shimmer var(--shimmer-duration, 2s) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+    --dur-slow: 0.01ms;
+  }
+  .terax-reveal {
+    transition: none;
+  }
+  .terax-shimmer {
+    animation: none;
+    background-position: 0% center;
+  }
 }

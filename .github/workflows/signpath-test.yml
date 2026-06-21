@@ -16,11 +16,9 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
-        with:
-          version: 10
 
       - uses: actions/setup-node@v6
         with:
@@ -43,29 +41,31 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Pack Windows artifacts into zip
+      - name: Stage Windows artifacts
         shell: pwsh
         run: |
           $bundleDir = "src-tauri/target/release/bundle"
           $stagingDir = "signpath-staging"
           New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
-          Get-ChildItem -Path "$bundleDir/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue | Copy-Item -Destination $stagingDir
-          Get-ChildItem -Path "$bundleDir/msi"  -Filter "*.msi" -ErrorAction SilentlyContinue | Copy-Item -Destination $stagingDir
+          $exe = Get-ChildItem -Path "$bundleDir/nsis" -Filter "*.exe" -ErrorAction Stop | Select-Object -First 1
+          $msi = Get-ChildItem -Path "$bundleDir/msi"  -Filter "*.msi" -ErrorAction Stop | Select-Object -First 1
+          if (-not $exe) { throw "No .exe installer produced by Tauri" }
+          if (-not $msi) { throw "No .msi installer produced by Tauri" }
+          Copy-Item $exe.FullName -Destination "$stagingDir/terax-setup.exe"
+          Copy-Item $msi.FullName -Destination "$stagingDir/terax.msi"
           Write-Host "Staged files:"
           Get-ChildItem $stagingDir
-          if ((Get-ChildItem $stagingDir).Count -eq 0) { throw "No artifacts found to sign" }
-          Compress-Archive -Path "$stagingDir/*" -DestinationPath "windows-unsigned.zip" -Force
 
       - name: Upload unsigned artifact
         id: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-unsigned
-          path: windows-unsigned.zip
+          path: signpath-staging/
           if-no-files-found: error
 
       - name: Submit signing request to SignPath
-        uses: signpath/github-action-submit-signing-request@v1
+        uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: 'df665bf4-9b76-41ae-9596-1ba3a23010aa'
@@ -79,8 +79,9 @@ jobs:
       - name: Verify signatures exist
         shell: pwsh
         run: |
-          Expand-Archive -Path "signed/windows-unsigned.zip" -DestinationPath "signed-extracted" -Force
-          $files = Get-ChildItem "signed-extracted" -Include *.exe,*.msi -Recurse
+          Write-Host "Contents of signed/:"
+          Get-ChildItem "signed" -Recurse
+          $files = Get-ChildItem "signed" -Include *.exe,*.msi -Recurse
           if ($files.Count -eq 0) { throw "No signed files found" }
           foreach ($f in $files) {
             $sig = Get-AuthenticodeSignature $f.FullName
@@ -93,7 +94,7 @@ jobs:
           }
 
       - name: Upload signed artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-signed
           path: signed/

@@ -4,18 +4,14 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
   DEFAULT_THEME_ID,
-  EDITOR_THEMES,
   loadPreferences,
   onPreferencesChange,
-  setEditorTheme as persistEditorTheme,
   setTheme as persistTheme,
   setThemeId as persistThemeId,
-  type EditorThemeId,
   type ThemePref,
 } from "@/modules/settings/store";
 import { applyTheme, clearTheme } from "./applyTheme";
@@ -42,6 +38,8 @@ type ThemeProviderState = {
   customThemes: Theme[];
   setMode: (mode: ThemePref) => void;
   setThemeId: (id: string) => void;
+  /** Apply a theme transiently without persisting; null reverts to committed. */
+  previewThemeId: (id: string | null) => void;
 };
 
 const ThemeProviderContext = createContext<ThemeProviderState | null>(null);
@@ -75,6 +73,7 @@ function resolveTheme(id: string, custom: Theme[]): Theme {
 export function ThemeProvider({ children, defaultMode = "system" }: ThemeProviderProps) {
   const [mode, setModeState] = useState<ThemePref>(() => readFastMode(defaultMode));
   const [themeId, setThemeIdState] = useState<string>(() => readFastThemeId());
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [customThemes, setCustomThemes] = useState<Theme[]>([]);
   const [systemDark, setSystemDark] = useState<boolean>(() =>
     typeof window === "undefined"
@@ -134,25 +133,14 @@ export function ThemeProvider({ children, defaultMode = "system" }: ThemeProvide
     root.classList.add(resolvedMode);
   }, [resolvedMode]);
 
-  const lastEditorPairRef = useRef<string | null>(null);
+  const effectiveId = previewId ?? themeId;
   useEffect(() => {
-    if (themeId === DEFAULT_THEME_ID) {
+    if (effectiveId === DEFAULT_THEME_ID) {
       clearTheme();
-      lastEditorPairRef.current = null;
       return;
     }
-    const theme = resolveTheme(themeId, customThemes);
-    applyTheme(theme, resolvedMode);
-    const editorPair = theme.editorTheme?.[resolvedMode];
-    if (
-      editorPair &&
-      lastEditorPairRef.current !== editorPair &&
-      (EDITOR_THEMES as readonly string[]).includes(editorPair)
-    ) {
-      lastEditorPairRef.current = editorPair;
-      void persistEditorTheme(editorPair as EditorThemeId);
-    }
-  }, [themeId, resolvedMode, customThemes]);
+    applyTheme(resolveTheme(effectiveId, customThemes), resolvedMode);
+  }, [effectiveId, resolvedMode, customThemes]);
 
   const setMode = useCallback((next: ThemePref) => {
     setModeState(next);
@@ -161,14 +149,27 @@ export function ThemeProvider({ children, defaultMode = "system" }: ThemeProvide
   }, []);
 
   const setThemeId = useCallback((id: string) => {
+    setPreviewId(null);
     setThemeIdState(id);
     writeFastThemeId(id);
     void persistThemeId(id);
   }, []);
 
+  const previewThemeId = useCallback((id: string | null) => {
+    setPreviewId(id);
+  }, []);
+
   const value = useMemo<ThemeProviderState>(
-    () => ({ mode, resolvedMode, themeId, customThemes, setMode, setThemeId }),
-    [mode, resolvedMode, themeId, customThemes, setMode, setThemeId],
+    () => ({
+      mode,
+      resolvedMode,
+      themeId,
+      customThemes,
+      setMode,
+      setThemeId,
+      previewThemeId,
+    }),
+    [mode, resolvedMode, themeId, customThemes, setMode, setThemeId, previewThemeId],
   );
 
   return (

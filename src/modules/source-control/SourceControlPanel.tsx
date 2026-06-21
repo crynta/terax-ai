@@ -10,6 +10,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -20,7 +27,16 @@ import {
 } from "@/components/ui/tooltip";
 import { IS_MAC } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import {
+  copyToClipboard,
+  revealInFinder,
+} from "@/modules/explorer/lib/contextActions";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import {
+  COMPACT_CONTENT,
+  COMPACT_ITEM,
+} from "@/modules/explorer/lib/menuItemClass";
+import { joinPath } from "@/modules/explorer/lib/useFileTree";
 import {
   AiContentGenerator02Icon,
   Alert02Icon,
@@ -65,6 +81,7 @@ type Props = {
     originalPath: string | null;
     title?: string;
   }) => void;
+  onOpenFile?: (absolutePath: string) => void;
 };
 
 const SOURCE_CONTROL_TOOLTIP_CLASS =
@@ -131,6 +148,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   sourceControl,
   onOpenGitGraph,
   onOpenDiff,
+  onOpenFile,
 }: Props) {
   const scm = useSourceControlPanel(open, sourceControl, onOpenDiff);
   const refreshAnimationRef = useRef<number | null>(null);
@@ -567,7 +585,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                   placeholder="Commit message"
                   rows={3}
                   className={cn(
-                    "min-h-[72px] border-  resize-none rounded-lg  bg-transparent px-3 pb-7 pt-2.5 text-[12.5px] leading-snug shadow-none placeholder:text-muted-foreground/65 focus-visible:ring-0 focus:border-0",
+                    "min-h-[72px] border-border resize-none rounded-lg bg-transparent px-3 pb-7 pt-2.5 text-[12.5px] leading-snug shadow-none placeholder:text-muted-foreground/65 focus-visible:ring-0 focus:border-0",
                   )}
                 />
                 <div className="pointer-events-none absolute inset-x-3 bottom-1.5 flex items-center justify-between p-1 gap-2 text-[10px] tabular-nums text-muted-foreground/55">
@@ -733,11 +751,13 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                             selectedPath={scm.selected?.path ?? null}
                             actionBusy={scm.actionBusy}
                             headerCheckState={scm.headerCheckState}
+                            repoRoot={scm.repo?.repoRoot ?? null}
                             onFocusRow={setFocusedRowKey}
                             onToggleAll={scm.toggleAll}
                             onSelectFile={scm.selectFile}
                             onToggleStageFile={scm.toggleStageFile}
                             onDiscardFile={scm.requestDiscardFile}
+                            onOpenFile={onOpenFile}
                           />
                         </div>
                       );
@@ -829,11 +849,13 @@ type RowRendererProps = {
   selectedPath: string | null;
   actionBusy: string | null;
   headerCheckState: CheckState;
+  repoRoot: string | null;
   onFocusRow: (key: string | null) => void;
   onToggleAll: () => Promise<void> | void;
   onSelectFile: (entry: SourceControlFileEntry) => Promise<void>;
   onToggleStageFile: (entry: SourceControlFileEntry) => Promise<void>;
   onDiscardFile: (entry: SourceControlFileEntry) => void;
+  onOpenFile?: (absolutePath: string) => void;
 };
 
 const RowRenderer = memo(function RowRenderer(props: RowRendererProps) {
@@ -902,10 +924,12 @@ const EntryRow = memo(function EntryRow({
   focused,
   selectedPath,
   actionBusy,
+  repoRoot,
   onFocusRow,
   onSelectFile,
   onToggleStageFile,
   onDiscardFile,
+  onOpenFile,
 }: RowRendererProps & {
   row: Extract<RowDescriptor, { kind: "entry" }>;
 }) {
@@ -921,101 +945,184 @@ const EntryRow = memo(function EntryRow({
   const isDiscardBusy = actionBusy === `discard:${entry.path}`;
   const disabled = actionBusy !== null;
 
+  const absolutePath = repoRoot
+    ? joinPath(repoRoot.replace(/\\/g, "/"), entry.path.replace(/\\/g, "/"))
+    : null;
+  const isDeleted = entry.statusCode === "D";
+  const revealLabel = IS_MAC ? "Reveal in Finder" : "Reveal in File Manager";
+
   return (
-    <div
-      id={`scm-row-${row.key}`}
-      data-focused={focused || undefined}
-      data-selected={isSelected || undefined}
-      role="option"
-      aria-selected={isSelected}
-      onMouseDown={() => onFocusRow(row.key)}
-      className={cn(
-        "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-100",
-        focused
-          ? "bg-accent/60"
-          : isSelected
-            ? "bg-accent/55 text-foreground"
-            : "hover:bg-accent/30",
-      )}
-    >
-      <span
-        className={cn(
-          "pointer-events-none absolute inset-y-1 left-0 w-[2px] rounded-full transition-opacity",
-          statusAccent(entry.statusCode),
-          isSelected || focused
-            ? "opacity-100"
-            : "opacity-55 group-hover:opacity-95",
-        )}
-        aria-hidden
-      />
-      <button
-        type="button"
-        onClick={() => {
-          onFocusRow(row.key);
-          void onSelectFile(entry);
-        }}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-      >
-        {iconUrl ? (
-          <img src={iconUrl} alt="" className="size-4 shrink-0" />
-        ) : (
-          <span className="size-4 shrink-0" />
-        )}
-        <div className="flex min-w-0 flex-1 items-baseline gap-1.5 leading-none">
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          id={`scm-row-${row.key}`}
+          data-focused={focused || undefined}
+          data-selected={isSelected || undefined}
+          role="option"
+          aria-selected={isSelected}
+          onMouseDown={() => onFocusRow(row.key)}
+          className={cn(
+            "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-100",
+            focused
+              ? "bg-accent/60"
+              : isSelected
+                ? "bg-accent/55 text-foreground"
+                : "hover:bg-accent/30",
+          )}
+        >
           <span
             className={cn(
-              "truncate text-[12px] leading-tight",
+              "pointer-events-none absolute inset-y-1 left-0 w-[2px] rounded-full transition-opacity",
+              statusAccent(entry.statusCode),
               isSelected || focused
-                ? "font-semibold text-foreground"
-                : "font-medium text-foreground/95",
-              pathLabel ? "max-w-[58%] shrink-0" : "min-w-0 flex-1",
+                ? "opacity-100"
+                : "opacity-55 group-hover:opacity-95",
             )}
+            aria-hidden
+          />
+          <button
+            type="button"
+            onClick={() => {
+              onFocusRow(row.key);
+              void onSelectFile(entry);
+            }}
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
           >
-            {fileName}
-          </span>
-          {pathLabel ? (
-            <span className="min-w-0 flex-1 truncate text-[10.5px] leading-tight text-muted-foreground/75">
-              {pathLabel}
-            </span>
-          ) : null}
-        </div>
-      </button>
+            {iconUrl ? (
+              <img src={iconUrl} alt="" className="size-4 shrink-0" />
+            ) : (
+              <span className="size-4 shrink-0" />
+            )}
+            <div className="flex min-w-0 flex-1 items-baseline gap-1.5 leading-none">
+              <span
+                className={cn(
+                  "truncate text-[12px] leading-tight",
+                  isSelected || focused
+                    ? "font-semibold text-foreground"
+                    : "font-medium text-foreground/95",
+                  pathLabel ? "max-w-[58%] shrink-0" : "min-w-0 flex-1",
+                )}
+              >
+                {fileName}
+              </span>
+              {pathLabel ? (
+                <span className="min-w-0 flex-1 truncate text-[10.5px] leading-tight text-muted-foreground/75">
+                  {pathLabel}
+                </span>
+              ) : null}
+            </div>
+          </button>
 
-      {showDiscard ? (
-        <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 data-[focused=true]:opacity-100 data-[selected=true]:opacity-100">
-          <IconActionButton
-            label={`Discard ${entry.path}`}
-            disabled={disabled}
-            side="top"
-            onClick={() => onDiscardFile(entry)}
-          >
-            {isDiscardBusy ? (
+          {showDiscard ? (
+            <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 data-[focused=true]:opacity-100 data-[selected=true]:opacity-100">
+              <IconActionButton
+                label={`Discard ${entry.path}`}
+                disabled={disabled}
+                side="top"
+                onClick={() => onDiscardFile(entry)}
+              >
+                {isDiscardBusy ? (
+                  <Spinner className="size-3" />
+                ) : (
+                  <HugeiconsIcon
+                    icon={RemoveSquareIcon}
+                    size={11}
+                    strokeWidth={1.9}
+                  />
+                )}
+              </IconActionButton>
+            </div>
+          ) : null}
+
+          <span className="flex size-5 shrink-0 items-center justify-center">
+            {isStageBusy ? (
               <Spinner className="size-3" />
             ) : (
-              <HugeiconsIcon
-                icon={RemoveSquareIcon}
-                size={11}
-                strokeWidth={1.9}
+              <Checkbox
+                aria-label={`Stage ${entry.path}`}
+                checked={checkboxValue(entry.checkState)}
+                disabled={disabled}
+                onCheckedChange={() => void onToggleStageFile(entry)}
+                className="size-3.5"
               />
             )}
-          </IconActionButton>
+          </span>
         </div>
-      ) : null}
+      </ContextMenuTrigger>
 
-      <span className="flex size-5 shrink-0 items-center justify-center">
-        {isStageBusy ? (
-          <Spinner className="size-3" />
-        ) : (
-          <Checkbox
-            aria-label={`Stage ${entry.path}`}
-            checked={checkboxValue(entry.checkState)}
+      <ContextMenuContent className={COMPACT_CONTENT}>
+        {/* Open actions */}
+        <ContextMenuItem
+          className={COMPACT_ITEM}
+          onSelect={() => {
+            onFocusRow(row.key);
+            void onSelectFile(entry);
+          }}
+        >
+          Open Diff
+        </ContextMenuItem>
+        {!isDeleted && onOpenFile && absolutePath ? (
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            onSelect={() => onOpenFile(absolutePath)}
+          >
+            Open File
+          </ContextMenuItem>
+        ) : null}
+
+        <ContextMenuSeparator />
+
+        {/* Stage / Unstage */}
+        <ContextMenuItem
+          className={COMPACT_ITEM}
+          disabled={disabled}
+          onSelect={() => void onToggleStageFile(entry)}
+        >
+          {entry.checkState === "checked" ? "Unstage" : "Stage"}
+        </ContextMenuItem>
+        {entry.unstaged ? (
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            variant="destructive"
             disabled={disabled}
-            onCheckedChange={() => void onToggleStageFile(entry)}
-            className="size-3.5"
-          />
-        )}
-      </span>
-    </div>
+            onSelect={() => onDiscardFile(entry)}
+          >
+            Discard Changes
+          </ContextMenuItem>
+        ) : null}
+
+        <ContextMenuSeparator />
+
+        {/* Copy paths */}
+        <ContextMenuItem
+          className={COMPACT_ITEM}
+          onSelect={() => void copyToClipboard(entry.path.replace(/\\/g, "/"))}
+        >
+          Copy Relative Path
+        </ContextMenuItem>
+        {absolutePath ? (
+          <ContextMenuItem
+            className={COMPACT_ITEM}
+            onSelect={() => void copyToClipboard(absolutePath)}
+          >
+            Copy Absolute Path
+          </ContextMenuItem>
+        ) : null}
+
+        {/* Reveal in Finder — only for existing files */}
+        {!isDeleted && absolutePath ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              className={COMPACT_ITEM}
+              onSelect={() => void revealInFinder(absolutePath)}
+            >
+              {revealLabel}
+            </ContextMenuItem>
+          </>
+        ) : null}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 });
 
