@@ -26,6 +26,7 @@ import {
   buildSharedExtensions,
   languageCompartment,
   vimCompartment,
+  wrapCompartment,
 } from "./lib/extensions";
 import { resolveLanguage } from "./lib/languageResolver";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
@@ -75,6 +76,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const themeExt = useEditorThemeExt();
     const vimMode = usePreferencesStore((s) => s.vimMode);
+    const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
     const languageRef = useRef<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
 
@@ -151,6 +153,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         vimCompartment.of(
           usePreferencesStore.getState().vimMode ? Prec.highest(vim()) : [],
         ),
+        wrapCompartment.of(
+          usePreferencesStore.getState().editorWordWrap
+            ? EditorView.lineWrapping
+            : [],
+        ),
         vimHandlersExtension(() => ({
           save: () => {
             void (async () => {
@@ -216,6 +223,16 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         effects: vimCompartment.reconfigure(vimMode ? Prec.highest(vim()) : []),
       });
     }, [vimMode]);
+
+    useEffect(() => {
+      const view = cmRef.current?.view;
+      if (!view) return;
+      view.dispatch({
+        effects: wrapCompartment.reconfigure(
+          editorWordWrap ? EditorView.lineWrapping : [],
+        ),
+      });
+    }, [editorWordWrap]);
 
     useEffect(() => {
       const ext = path.split(".").pop()?.toLowerCase() ?? null;

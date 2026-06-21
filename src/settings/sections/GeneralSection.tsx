@@ -22,6 +22,7 @@ import {
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
+  setEditorWordWrap,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
   setExplorerGitDecorations,
@@ -79,6 +80,7 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
@@ -189,6 +191,15 @@ export function GeneralSection() {
           <Switch
             checked={vimMode}
             onCheckedChange={(v) => void setVimMode(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Word wrap"
+          description="Wrap long lines instead of scrolling horizontally."
+        >
+          <Switch
+            checked={editorWordWrap}
+            onCheckedChange={(v) => void setEditorWordWrap(v)}
           />
         </SettingRow>
         <SettingRow
