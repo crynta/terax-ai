@@ -401,9 +401,10 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalFontFamily:
       get<string>(KEY_TERMINAL_FONT_FAMILY) ??
       DEFAULT_PREFERENCES.terminalFontFamily,
-    terminalFontWeight:
+    terminalFontWeight: coerceFontWeight(
       get<string>(KEY_TERMINAL_FONT_WEIGHT) ??
-      DEFAULT_PREFERENCES.terminalFontWeight,
+        DEFAULT_PREFERENCES.terminalFontWeight,
+    ),
     terminalLetterSpacing:
       get<number>(KEY_TERMINAL_LETTER_SPACING) ??
       DEFAULT_PREFERENCES.terminalLetterSpacing,
@@ -606,8 +607,15 @@ export async function setTerminalFontFamily(value: string): Promise<void> {
   await writePref(KEY_TERMINAL_FONT_FAMILY, value.trim());
 }
 
+const TERMINAL_FONT_WEIGHT_VALUES = new Set(["normal", "500", "600", "bold"]);
+
+export function coerceFontWeight(value: string): string {
+  const v = value.trim();
+  return TERMINAL_FONT_WEIGHT_VALUES.has(v) ? v : "normal";
+}
+
 export async function setTerminalFontWeight(value: string): Promise<void> {
-  await writePref(KEY_TERMINAL_FONT_WEIGHT, value.trim());
+  await writePref(KEY_TERMINAL_FONT_WEIGHT, coerceFontWeight(value));
 }
 
 export async function setTerminalLetterSpacing(value: number): Promise<void> {
