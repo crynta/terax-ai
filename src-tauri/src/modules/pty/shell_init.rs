@@ -302,6 +302,171 @@ mod unix {
             format!("rename {} -> {}: {e}", tmp.display(), path.display())
         })
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::process::Command;
+
+        fn has_zsh() -> bool {
+            Command::new("zsh").arg("--version").output().is_ok()
+        }
+
+        fn quote_zsh_path(path: &Path) -> String {
+            let raw = path.to_string_lossy();
+            format!("'{}'", raw.replace('\'', "'\\''"))
+        }
+
+        fn write_zsh_wrapper(dir: &Path) {
+            fs::create_dir_all(dir).unwrap();
+            fs::write(dir.join(".zshenv"), ZSHENV).unwrap();
+            fs::write(dir.join(".zprofile"), ZPROFILE).unwrap();
+            fs::write(dir.join(".zshrc"), ZSHRC).unwrap();
+            fs::write(dir.join(".zlogin"), ZLOGIN).unwrap();
+        }
+
+        #[test]
+        fn zsh_histfile_uses_user_home_not_wrapper_zdotdir() {
+            if !has_zsh() {
+                eprintln!("skipping zsh history test: zsh not found");
+                return;
+            }
+
+            let tmp = tempfile::tempdir().unwrap();
+            let wrapper = tmp.path().join("wrapper");
+            let home = tmp.path().join("home");
+            write_zsh_wrapper(&wrapper);
+            fs::create_dir_all(&home).unwrap();
+            fs::write(
+                home.join(".zshrc"),
+                r#"[ -z "$HISTFILE" ] && HISTFILE="$HOME/.zsh_history""#,
+            )
+            .unwrap();
+
+            let out = Command::new("zsh")
+                .arg("-i")
+                .arg("-c")
+                .arg(r#"print -r -- "$HISTFILE""#)
+                .env("HOME", &home)
+                .env("ZDOTDIR", &wrapper)
+                .env("__TERAX_HOOKS_LOADED", "1")
+                .env_remove("HISTFILE")
+                .env_remove("TERAX_USER_ZDOTDIR")
+                .output()
+                .unwrap();
+
+            assert!(
+                out.status.success(),
+                "zsh failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert_eq!(
+                String::from_utf8_lossy(&out.stdout).trim(),
+                home.join(".zsh_history").to_string_lossy()
+            );
+        }
+
+        #[test]
+        fn zsh_history_is_read_after_user_zshrc_sets_histfile() {
+            if !has_zsh() {
+                eprintln!("skipping zsh history read test: zsh not found");
+                return;
+            }
+
+            let tmp = tempfile::tempdir().unwrap();
+            let wrapper = tmp.path().join("wrapper");
+            let home = tmp.path().join("home");
+            write_zsh_wrapper(&wrapper);
+            fs::create_dir_all(&home).unwrap();
+            fs::write(
+                home.join(".zshrc"),
+                r#"[ -z "$HISTFILE" ] && HISTFILE="$HOME/.zsh_history""#,
+            )
+            .unwrap();
+            fs::write(
+                home.join(".zsh_history"),
+                ": 1:0;terax-history-regression-command\n",
+            )
+            .unwrap();
+
+            let out = Command::new("zsh")
+                .arg("-i")
+                .arg("-c")
+                .arg(r#"builtin fc -l 1"#)
+                .env("HOME", &home)
+                .env("ZDOTDIR", &wrapper)
+                .env("__TERAX_HOOKS_LOADED", "1")
+                .env_remove("HISTFILE")
+                .env_remove("TERAX_USER_ZDOTDIR")
+                .output()
+                .unwrap();
+
+            assert!(
+                out.status.success(),
+                "zsh failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&out.stdout).contains("terax-history-regression-command"),
+                "history output did not include expected command: {}",
+                String::from_utf8_lossy(&out.stdout)
+            );
+        }
+
+        #[test]
+        fn zshenv_user_zdotdir_override_controls_later_user_zshrc() {
+            if !has_zsh() {
+                eprintln!("skipping zsh ZDOTDIR override test: zsh not found");
+                return;
+            }
+
+            let tmp = tempfile::tempdir().unwrap();
+            let wrapper = tmp.path().join("wrapper");
+            let home = tmp.path().join("home");
+            let original_zdotdir = tmp.path().join("orig");
+            let alternate_zdotdir = tmp.path().join("alt");
+            let seen = tmp.path().join("seen");
+            write_zsh_wrapper(&wrapper);
+            fs::create_dir_all(&home).unwrap();
+            fs::create_dir_all(&original_zdotdir).unwrap();
+            fs::create_dir_all(&alternate_zdotdir).unwrap();
+
+            fs::write(
+                original_zdotdir.join(".zshenv"),
+                format!("export ZDOTDIR={}\n", quote_zsh_path(&alternate_zdotdir)),
+            )
+            .unwrap();
+            fs::write(
+                original_zdotdir.join(".zshrc"),
+                format!("echo orig > {}\n", quote_zsh_path(&seen)),
+            )
+            .unwrap();
+            fs::write(
+                alternate_zdotdir.join(".zshrc"),
+                format!("echo alt > {}\n", quote_zsh_path(&seen)),
+            )
+            .unwrap();
+
+            let out = Command::new("zsh")
+                .arg("-d")
+                .arg("-i")
+                .arg("-c")
+                .arg("true")
+                .env("HOME", &home)
+                .env("ZDOTDIR", &wrapper)
+                .env("TERAX_USER_ZDOTDIR", &original_zdotdir)
+                .env("__TERAX_HOOKS_LOADED", "1")
+                .output()
+                .unwrap();
+
+            assert!(
+                out.status.success(),
+                "zsh failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert_eq!(fs::read_to_string(seen).unwrap().trim(), "alt");
+        }
+    }
 }
 
 #[cfg(windows)]
