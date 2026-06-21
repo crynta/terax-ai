@@ -5,6 +5,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -19,13 +20,18 @@ import type { ThemePref } from "@/modules/settings/store";
 import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
+  setAgentNotifications,
   setAutostart,
   setEditorWordWrap,
+  setEditorAutoSave,
+  setEditorAutoSaveDelay,
+  setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
   setTerminalLetterSpacing,
   setTerminalFontSize,
+  setTerminalCursorBlink,
   setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
@@ -39,7 +45,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 
@@ -57,6 +63,9 @@ const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const ZOOM_STEP = 0.05;
+const AUTO_SAVE_STEP = 100;
+const AUTO_SAVE_MIN = 100;
+const AUTO_SAVE_MAX = 60000;
 
 export function GeneralSection() {
   const { mode, setMode } = useTheme();
@@ -65,9 +74,17 @@ export function GeneralSection() {
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
+  const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
+  const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
+  const explorerGitDecorations = usePreferencesStore(
+    (s) => s.explorerGitDecorations,
+  );
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
+  );
+  const terminalCursorBlink = usePreferencesStore(
+    (s) => s.terminalCursorBlink,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalLetterSpacing = usePreferencesStore(
@@ -76,6 +93,7 @@ export function GeneralSection() {
   const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
+  const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
 
   useEffect(() => {
     let alive = true;
@@ -176,6 +194,21 @@ export function GeneralSection() {
             onCheckedChange={(v) => void setEditorWordWrap(v)}
           />
         </SettingRow>
+        <SettingRow
+          title="Auto save"
+          description="Automatically save files after a delay when changes are detected."
+        >
+          <Switch
+            checked={editorAutoSave}
+            onCheckedChange={(v) => void setEditorAutoSave(v)}
+          />
+        </SettingRow>
+        {editorAutoSave && (
+          <AutoSaveDelayInput
+            value={editorAutoSaveDelay}
+            onChange={(v) => void setEditorAutoSaveDelay(v)}
+          />
+        )}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -187,6 +220,15 @@ export function GeneralSection() {
           <Switch
             checked={showHidden}
             onCheckedChange={(v) => void setShowHidden(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Git decorations"
+          description="Tint changed files and dim gitignored entries in the file explorer."
+        >
+          <Switch
+            checked={explorerGitDecorations}
+            onCheckedChange={(v) => void setExplorerGitDecorations(v)}
           />
         </SettingRow>
       </div>
@@ -229,17 +271,18 @@ export function GeneralSection() {
           />
         </SettingRow>
         <SettingRow
-          title="Font family"
-          description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
+          title="Cursor blinking"
+          description="Blink the terminal cursor. Off by default for lower idle CPU, matching VS Code and the macOS terminal."
         >
-          <input
-            type="text"
-            value={terminalFontFamily}
-            placeholder="Auto-detect"
-            onChange={(e) => void setTerminalFontFamily(e.target.value)}
-            className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+          <Switch
+            checked={terminalCursorBlink}
+            onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
         </SettingRow>
+        <FontFamilyInput
+          value={terminalFontFamily}
+          onCommit={(v) => void setTerminalFontFamily(v)}
+        />
         <SettingRow
           title="Letter spacing"
           description="Extra horizontal space between characters (px). Use negative values to tighten Nerd Fonts."
@@ -304,6 +347,19 @@ export function GeneralSection() {
       </div>
 
       <div className="flex flex-col gap-2">
+        <Label>Agents</Label>
+        <SettingRow
+          title="Coding agent notifications"
+          description="Alert when Claude Code or Codex running in a terminal needs your input or finishes. Desktop notification when Terax is unfocused, in-app otherwise."
+        >
+          <Switch
+            checked={agentNotifications}
+            onCheckedChange={(v) => void setAgentNotifications(v)}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
         <Label>Startup</Label>
         <div className="flex flex-col gap-2">
           <SettingRow
@@ -337,3 +393,99 @@ function Label({ children }: { children: React.ReactNode }) {
     </span>
   );
 }
+
+function FontFamilyInput({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  // Commit (and trim) only on blur/Enter so a trailing space can be typed
+  // mid-edit, e.g. "JetBrains Mono ".
+  const commit = () => {
+    const next = draft.trim();
+    if (next !== draft) setDraft(next);
+    if (next !== value) onCommit(next);
+  };
+
+  return (
+    <SettingRow
+      title="Font family"
+      description='Nerd Font name for icons (e.g. "CaskaydiaCove Nerd Font Mono"). Leave blank to auto-detect.'
+    >
+      <input
+        type="text"
+        value={draft}
+        placeholder="Auto-detect"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+      />
+    </SettingRow>
+  );
+}
+
+function AutoSaveDelayInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const commit = () => {
+    const n = Number(draft);
+    if (!Number.isFinite(n)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = Math.min(
+      AUTO_SAVE_MAX,
+      Math.max(AUTO_SAVE_MIN, Math.round(n)),
+    );
+    setDraft(String(clamped));
+    if (clamped !== value) onChange(clamped);
+  };
+
+  return (
+    <SettingRow
+      title="Auto save delay"
+      description="Delay before unsaved changes are saved automatically."
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={AUTO_SAVE_MIN}
+          max={AUTO_SAVE_MAX}
+          step={AUTO_SAVE_STEP}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.currentTarget.blur();
+            }
+          }}
+          className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
+        <span className="text-[11px] text-muted-foreground">ms</span>
+      </div>
+    </SettingRow>
+  );
+}
+

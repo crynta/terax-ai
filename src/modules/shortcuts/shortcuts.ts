@@ -5,7 +5,10 @@ import { IS_MAC, MOD_PROP } from "@/lib/platform";
  */
 
 export type ShortcutId =
+  | "commandPalette.open"
+  | "commandPalette.content"
   | "tab.new"
+  | "tab.newBlock"
   | "tab.newPrivate"
   | "tab.newPreview"
   | "tab.newEditor"
@@ -13,20 +16,27 @@ export type ShortcutId =
   | "tab.next"
   | "tab.prev"
   | "tab.selectByIndex"
+  | "space.next"
+  | "space.prev"
+  | "space.overview"
   | "pane.splitRight"
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
   | "pane.source"
+  | "terminal.clear"
+  | "terminal.toggleInput"
+  | "blocks.prev"
+  | "blocks.next"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
   | "view.zoomIn"
   | "view.zoomOut"
   | "view.zoomReset"
+  | "view.zenMode"
   | "ai.toggle"
   | "ai.askSelection"
-  | "shortcuts.open"
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
@@ -35,7 +45,9 @@ export type ShortcutId =
 export type ShortcutGroup =
   | "General"
   | "Tabs"
+  | "Spaces"
   | "Panes"
+  | "Terminal"
   | "Search"
   | "AI"
   | "View"
@@ -59,22 +71,34 @@ export type Shortcut = {
 
 export const SHORTCUTS: Shortcut[] = [
   {
+    id: "commandPalette.open",
+    label: "Open command palette",
+    group: "General",
+    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
+  },
+  {
+    id: "commandPalette.content",
+    label: "Find in files",
+    group: "General",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "p" }],
+  },
+  {
     id: "settings.open",
     label: "Open settings",
     group: "General",
     defaultBindings: [{ [MOD_PROP]: true, key: "," }],
   },
   {
-    id: "shortcuts.open",
-    label: "Show keyboard shortcuts",
-    group: "General",
-    defaultBindings: [{ [MOD_PROP]: true, key: "k" }],
-  },
-  {
     id: "tab.new",
     label: "New tab",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "t" }],
+  },
+  {
+    id: "tab.newBlock",
+    label: "New Blocks terminal",
+    group: "Tabs",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "t" }],
   },
   {
     id: "tab.newPrivate",
@@ -84,9 +108,10 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "tab.newPreview",
-    label: "New preview tab",
+    label: "New web preview",
     group: "Tabs",
-    defaultBindings: [{ [MOD_PROP]: true, key: "p" }],
+    // Cmd/Ctrl+P now opens the command palette, so web preview moves here.
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "o" }],
   },
   {
     id: "tab.newEditor",
@@ -131,22 +156,71 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "g" }],
   },
   {
+    id: "terminal.clear",
+    label: "Clear terminal",
+    group: "Terminal",
+    // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
+    // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
+    // unbound and let users assign their own in settings.
+    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
+  },
+  {
+    id: "terminal.toggleInput",
+    label: "Toggle Shell / AI input",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "u" }],
+  },
+  {
+    id: "blocks.prev",
+    label: "Previous command block",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowUp" }],
+    allowRepeat: true,
+  },
+  {
+    id: "blocks.next",
+    label: "Next command block",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowDown" }],
+    allowRepeat: true,
+  },
+  {
     id: "tab.next",
     label: "Next tab",
     group: "Tabs",
     defaultBindings: [{ ctrl: true, key: "Tab" }],
+    allowRepeat: true,
   },
   {
     id: "tab.prev",
     label: "Previous tab",
     group: "Tabs",
     defaultBindings: [{ ctrl: true, shift: true, key: "Tab" }],
+    allowRepeat: true,
   },
   {
     id: "tab.selectByIndex",
     label: "Jump to tab 1–9",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "1" }],
+  },
+  {
+    id: "space.next",
+    label: "Next space",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "]" }],
+  },
+  {
+    id: "space.prev",
+    label: "Previous space",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "[" }],
+  },
+  {
+    id: "space.overview",
+    label: "Open spaces",
+    group: "Spaces",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "s" }],
   },
   {
     id: "explorer.search",
@@ -170,13 +244,19 @@ export const SHORTCUTS: Shortcut[] = [
     id: "ai.askSelection",
     label: "Ask AI about selection",
     group: "AI",
-    defaultBindings: [{ [MOD_PROP]: true, key: "l" }],
+    defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
   },
   {
     id: "sidebar.toggle",
     label: "Toggle file explorer",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, key: "b" }],
+    // Plain Mod+B toggles the sidebar everywhere EXCEPT a focused terminal,
+    // where it's handed to the shell / Claude Code (its "run in background"
+    // key). Mod+Shift+B always toggles, including from inside a terminal.
+    defaultBindings: [
+      { [MOD_PROP]: true, key: "b" },
+      { [MOD_PROP]: true, shift: true, key: "b" },
+    ],
   },
   {
     id: "explorer.focus",
@@ -210,6 +290,12 @@ export const SHORTCUTS: Shortcut[] = [
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, key: "0" }],
   },
+  {
+    id: "view.zenMode",
+    label: "Toggle zen mode",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "z" }],
+  },
   // Editor entries are display-only: CodeMirror's historyKeymap binds these
   // keys natively. We register them here so the shortcuts dialog can surface
   // them — they don't have App-level handlers, so `useGlobalShortcuts` falls
@@ -233,6 +319,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
   "Panes",
+  "Terminal",
   "View",
   "Search",
   "AI",

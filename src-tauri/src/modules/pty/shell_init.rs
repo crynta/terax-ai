@@ -16,6 +16,9 @@ const ZLOGIN_SCRIPT: &str = include_str!("scripts/zlogin.zsh");
 const ZSHRC_SCRIPT: &str = include_str!("scripts/zshrc.zsh");
 #[cfg(windows)]
 const FISH_INIT_SCRIPT: &str = include_str!("scripts/init.fish");
+#[cfg(unix)]
+const FISH_REINSTALL_PROMPT: &str =
+    "functions -q __terax_install_prompt; and __terax_install_prompt";
 
 #[cfg(windows)]
 fn bashrc_script() -> &'static str {
@@ -50,15 +53,32 @@ fn fish_init_script() -> &'static str {
 pub fn build_command(
     cwd: Option<String>,
     workspace: WorkspaceEnv,
+    blocks: bool,
 ) -> Result<CommandBuilder, String> {
     #[cfg(unix)]
     {
         let _ = workspace;
-        unix::build(cwd)
+        unix::build(cwd, blocks)
     }
     #[cfg(windows)]
     {
-        windows::build(cwd, workspace)
+        windows::build(cwd, workspace, blocks)
+    }
+}
+
+pub fn detect_shell_name() -> String {
+    #[cfg(unix)]
+    {
+        let (_, path) = unix::Shell::detect();
+        path.rsplit('/').next().unwrap_or("").to_string()
+    }
+    #[cfg(windows)]
+    {
+        windows_shell_path()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .unwrap_or_default()
     }
 }
 
@@ -82,10 +102,23 @@ fn ensure_utf8_locale(cmd: &mut CommandBuilder) {
     cmd.env("LANG", fallback);
 }
 
-fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>) {
+fn apply_common(cmd: &mut CommandBuilder, cwd: Option<String>, blocks: bool) {
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERAX_TERMINAL", "1");
+    if blocks {
+        cmd.env("TERAX_BLOCKS", "1");
+    }
+    for (key, value) in workspace::appimage_env_overrides() {
+        match value {
+            Some(v) => {
+                cmd.env(key, v);
+            }
+            None => {
+                cmd.env_remove(key);
+            }
+        }
+    }
     ensure_utf8_locale(cmd);
 
     let resolved_cwd = cwd
@@ -158,10 +191,10 @@ mod unix {
         }
     }
 
-    pub fn build(cwd: Option<String>) -> Result<CommandBuilder, String> {
+    pub fn build(cwd: Option<String>, blocks: bool) -> Result<CommandBuilder, String> {
         let (shell, shell_path) = Shell::detect();
         let mut cmd = CommandBuilder::new(&shell_path);
-        super::apply_common(&mut cmd, cwd);
+        super::apply_common(&mut cmd, cwd, blocks);
 
         match shell {
             Shell::Zsh => {
@@ -201,7 +234,14 @@ mod unix {
                 if let Err(e) = prepare_fish_conf_d() {
                     log::warn!("fish shell integration disabled: {e}");
                 }
+                // fish 4.0+ writes its own OSC 133 A/B; ours would double it.
+                cmd.env("fish_features", "no-mark-prompt");
                 cmd.arg("-i");
+                // Re-assert our prompt after config.fish (-C runs last), so a
+                // framework prompt (starship etc.) loaded there can't override
+                // the markers and break cwd tracking.
+                cmd.arg("-C");
+                cmd.arg(super::FISH_REINSTALL_PROMPT);
             }
             Shell::Other => {
                 log::info!(
@@ -310,8 +350,13 @@ mod windows {
         args: Vec<String>,
     }
 
-    pub fn build(cwd: Option<String>, workspace: WorkspaceEnv) -> Result<CommandBuilder, String> {
+    pub fn build(
+        cwd: Option<String>,
+        workspace: WorkspaceEnv,
+        blocks: bool,
+    ) -> Result<CommandBuilder, String> {
         if let WorkspaceEnv::Wsl { distro } = workspace {
+            let _ = blocks;
             return build_wsl(cwd, distro);
         }
         let shell_path = super::windows_shell_path();
@@ -323,7 +368,7 @@ mod windows {
         let is_powershell = shell_name == "pwsh.exe" || shell_name == "powershell.exe";
 
         let mut cmd = CommandBuilder::new(&shell_path);
-        super::apply_common(&mut cmd, cwd);
+        super::apply_common(&mut cmd, cwd, blocks);
 
         if is_powershell {
             match prepare_ps_profile() {
@@ -450,6 +495,8 @@ mod windows {
                 args.push("-i".to_string());
             }
             (ShellKind::Fish, WslShellIntegration::Fish) => {
+                args.push("env".to_string());
+                args.push("fish_features=no-mark-prompt".to_string());
                 args.push(shell_path.to_string());
                 args.push("-i".to_string());
             }
@@ -694,6 +741,8 @@ mod windows {
                     "--cd".to_string(),
                     "/home/vinicios/repo".to_string(),
                     "--exec".to_string(),
+                    "env".to_string(),
+                    "fish_features=no-mark-prompt".to_string(),
                     "/usr/bin/fish".to_string(),
                     "-i".to_string(),
                 ]

@@ -1,3 +1,6 @@
+minimumReleaseAge: 4320
+minimumReleaseAgeStrict: true
 allowBuilds:
-  esbuild: set this to true or false
-  msw: set this to true or false
+  esbuild: true
+  msgpackr-extract: false
+  msw: true
