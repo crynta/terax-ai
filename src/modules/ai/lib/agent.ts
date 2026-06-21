@@ -301,11 +301,33 @@ export function buildConfiguredLanguageModel(
 const PLAN_MODE_PROMPT = `## PLAN MODE — ACTIVE
 Mutating tools (write_file, edit, multi_edit, create_directory) will queue their changes for the user to review as a single diff. Do NOT execute bash_run or bash_background while plan mode is active — restrict yourself to reads (read_file, grep, glob, list_directory) and the queued mutations. After queueing the full set of edits, stop and return a brief summary; do not continue acting until the user has accepted/rejected.`;
 
+/** Models known to emit XML tool calls instead of JSON (e.g. Qwen via Ollama).
+ *  We append an explicit instruction to use JSON format for tool calls. */
+const XML_TOOL_CALL_MODELS = new Set<string>([
+  "qwen3.5",
+  "qwen3.5:14b",
+  "qwen3.5:32b",
+  "qwen3.5-coder",
+  "qwen3.5-coder:14b",
+  "qwen3.5-coder:32b",
+  "qwen2.5",
+  "qwen2.5:14b",
+  "qwen2.5:32b",
+  "qwen2.5:72b",
+  "qwen2.5-coder",
+  "qwen2.5-coder:14b",
+  "qwen2.5-coder:32b",
+]);
+
+const JSON_TOOL_CALL_INSTRUCTION = `\n\n## Tool call format
+When calling tools, use the JSON tool call format. Do NOT use XML tags.`;
+
 function buildStableSystem(
   modelId: string,
   persona: { name: string; instructions: string } | null,
   customInstructions: string | undefined,
   projectMemory: string | null,
+  resolvedModelId?: string,
 ): string {
   const base = selectSystemPrompt(modelId);
   const personaBlock = persona?.instructions.trim()
@@ -318,7 +340,12 @@ function buildStableSystem(
     projectMemory && projectMemory.trim().length > 0
       ? `\n\n## PROJECT — TERAX.md\n${projectMemory.trim()}`
       : "";
-  return `${base}${memoryBlock}${personaBlock}${customBlock}`;
+  const toolFormatBlock =
+    resolvedModelId &&
+    XML_TOOL_CALL_MODELS.has(resolvedModelId.toLowerCase())
+      ? JSON_TOOL_CALL_INSTRUCTION
+      : "";
+  return `${base}${memoryBlock}${personaBlock}${customBlock}${toolFormatBlock}`;
 }
 
 // OpenAI / Gemini / DeepSeek apply prefix caching automatically; only
@@ -407,11 +434,23 @@ export async function runAgentStream(opts: RunAgentOptions) {
   const info = resolveModel(modelId, endpoints);
   const provider = info.provider;
 
+  const resolvedModelId =
+    modelId === "lmstudio-local"
+      ? opts.lmstudioModelId
+      : modelId === "mlx-local"
+        ? opts.mlxModelId
+        : modelId === "ollama-local"
+          ? opts.ollamaModelId
+          : modelId === "openai-compatible-custom"
+            ? opts.openaiCompatibleModelId
+            : getModel(modelId).id;
+
   const stableSystem = buildStableSystem(
     modelId,
     opts.agentPersona ?? null,
     opts.customInstructions,
     opts.projectMemory ?? null,
+    resolvedModelId,
   );
 
   const history = await convertToModelMessages(opts.uiMessages);
