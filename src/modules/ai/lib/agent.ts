@@ -10,6 +10,7 @@ import {
 import {
   DEFAULT_MODEL_ID,
   endpointIdFromCompatModel,
+  getModel,
   getModelContextLimit,
   isCompatModelId,
   LMSTUDIO_DEFAULT_BASE_URL,
@@ -21,6 +22,7 @@ import {
   resolveModel,
   selectSystemPrompt,
   type CustomEndpoint,
+  type ModelId,
   type ProviderId,
 } from "../config";
 import { buildTools, type ToolContext } from "../tools/tools";
@@ -443,7 +445,7 @@ export async function runAgentStream(opts: RunAgentOptions) {
           ? opts.ollamaModelId
           : modelId === "openai-compatible-custom"
             ? opts.openaiCompatibleModelId
-            : getModel(modelId).id;
+            : getModel(modelId as ModelId).id;
 
   const stableSystem = buildStableSystem(
     modelId,
