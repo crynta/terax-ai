@@ -22,12 +22,14 @@ import {
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
+  setEditorWordWrap,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
   setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
+  setTerminalFontWeight,
   setTerminalLetterSpacing,
   setTerminalFontSize,
   setTerminalCursorBlink,
@@ -58,6 +60,12 @@ const APPEARANCE: {
   { id: "dark", label: "Dark", icon: Moon02Icon },
 ];
 
+const TERMINAL_FONT_WEIGHTS = [
+  { value: "normal", label: "Normal" },
+  { value: "500", label: "Medium" },
+  { value: "600", label: "Semi-Bold" },
+  { value: "bold", label: "Bold" },
+] as const;
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
@@ -72,6 +80,7 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
@@ -85,6 +94,7 @@ export function GeneralSection() {
     (s) => s.terminalCursorBlink,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
+  const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalLetterSpacing = usePreferencesStore(
     (s) => s.terminalLetterSpacing,
   );
@@ -184,6 +194,15 @@ export function GeneralSection() {
           />
         </SettingRow>
         <SettingRow
+          title="Word wrap"
+          description="Wrap long lines instead of scrolling horizontally."
+        >
+          <Switch
+            checked={editorWordWrap}
+            onCheckedChange={(v) => void setEditorWordWrap(v)}
+          />
+        </SettingRow>
+        <SettingRow
           title="Auto save"
           description="Automatically save files after a delay when changes are detected."
         >
@@ -272,6 +291,33 @@ export function GeneralSection() {
           value={terminalFontFamily}
           onCommit={(v) => void setTerminalFontFamily(v)}
         />
+        <SettingRow
+          title="Font weight"
+          description="Thickness of terminal characters"
+        >
+          <Select
+            value={terminalFontWeight}
+            onValueChange={(v) => void setTerminalFontWeight(v)}
+          >
+            <SelectTrigger
+              value={terminalFontWeight}
+              className="h-8 w-28 text-[12px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TERMINAL_FONT_WEIGHTS.map((w) => (
+                <SelectItem
+                  key={w.value}
+                  value={w.value}
+                  className="text-[12px]"
+                >
+                  {w.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
         <SettingRow
           title="Letter spacing"
           description="Extra horizontal space between characters (px). Use negative values to tighten Nerd Fonts."

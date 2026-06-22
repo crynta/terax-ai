@@ -25,6 +25,7 @@ import {
   applyCursorBlink,
   applyFontFamily,
   applyFontSize,
+  applyFontWeight,
   applyLetterSpacing,
   applyTheme as applyPoolTheme,
   applyScrollback,
@@ -879,6 +880,11 @@ export function useTerminalSession({
   useEffect(() => {
     applyFontFamily(fontFamily);
   }, [fontFamily]);
+
+  const fontWeight = usePreferencesStore((p) => p.terminalFontWeight);
+  useEffect(() => {
+    applyFontWeight(fontWeight);
+  }, [fontWeight]);
 
   const letterSpacing = usePreferencesStore((p) => p.terminalLetterSpacing);
   useEffect(() => {
