@@ -25,6 +25,7 @@ import {
   applyCursorBlink,
   applyFontFamily,
   applyFontSize,
+  applyFontWeight,
   applyLetterSpacing,
   applyTheme as applyPoolTheme,
   applyScrollback,
@@ -544,6 +545,7 @@ async function openPtyForSession(
     },
     cwd,
     s.blocks,
+    usePreferencesStore.getState().terminalShell || undefined,
   );
   // Only resize if the bound dims changed during the spawn: a same-size
   // ResizePseudoConsole during conhost warmup is a known ConPTY trigger for
@@ -879,6 +881,11 @@ export function useTerminalSession({
   useEffect(() => {
     applyFontFamily(fontFamily);
   }, [fontFamily]);
+
+  const fontWeight = usePreferencesStore((p) => p.terminalFontWeight);
+  useEffect(() => {
+    applyFontWeight(fontWeight);
+  }, [fontWeight]);
 
   const letterSpacing = usePreferencesStore((p) => p.terminalLetterSpacing);
   useEffect(() => {

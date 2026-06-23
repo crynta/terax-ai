@@ -22,12 +22,15 @@ import {
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
+  setEditorWordWrap,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
   setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
   setTerminalFontFamily,
+  setTerminalFontWeight,
+  setTerminalShell,
   setTerminalLetterSpacing,
   setTerminalFontSize,
   setTerminalCursorBlink,
@@ -43,6 +46,7 @@ import {
   Sun03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
@@ -58,7 +62,16 @@ const APPEARANCE: {
   { id: "dark", label: "Dark", icon: Moon02Icon },
 ];
 
+const TERMINAL_FONT_WEIGHTS = [
+  { value: "normal", label: "Normal" },
+  { value: "500", label: "Medium" },
+  { value: "600", label: "Semi-Bold" },
+  { value: "bold", label: "Bold" },
+] as const;
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
+
+type ShellInfo = { name: string; path: string; integrated: boolean };
+const SHELL_AUTO = "auto";
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const ZOOM_STEP = 0.05;
@@ -72,6 +85,7 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
@@ -85,6 +99,9 @@ export function GeneralSection() {
     (s) => s.terminalCursorBlink,
   );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
+  const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
+  const terminalShell = usePreferencesStore((s) => s.terminalShell);
+  const [shells, setShells] = useState<ShellInfo[]>([]);
   const terminalLetterSpacing = usePreferencesStore(
     (s) => s.terminalLetterSpacing,
   );
@@ -106,6 +123,12 @@ export function GeneralSection() {
     return () => {
       alive = false;
     };
+  }, []);
+
+  useEffect(() => {
+    void invoke<ShellInfo[]>("pty_list_shells")
+      .then(setShells)
+      .catch(() => {});
   }, []);
 
   const onToggleAutostart = async (next: boolean) => {
@@ -181,6 +204,15 @@ export function GeneralSection() {
           <Switch
             checked={vimMode}
             onCheckedChange={(v) => void setVimMode(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Word wrap"
+          description="Wrap long lines instead of scrolling horizontally."
+        >
+          <Switch
+            checked={editorWordWrap}
+            onCheckedChange={(v) => void setEditorWordWrap(v)}
           />
         </SettingRow>
         <SettingRow
@@ -272,6 +304,69 @@ export function GeneralSection() {
           value={terminalFontFamily}
           onCommit={(v) => void setTerminalFontFamily(v)}
         />
+        <SettingRow
+          title="Font weight"
+          description="Thickness of terminal characters"
+        >
+          <Select
+            value={terminalFontWeight}
+            onValueChange={(v) => void setTerminalFontWeight(v)}
+          >
+            <SelectTrigger
+              value={terminalFontWeight}
+              className="h-8 w-28 text-[12px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TERMINAL_FONT_WEIGHTS.map((w) => (
+                <SelectItem
+                  key={w.value}
+                  value={w.value}
+                  className="text-[12px]"
+                >
+                  {w.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          title="Default shell"
+          description={
+            shells.find((s) => s.path === terminalShell)?.integrated === false
+              ? "Command blocks and directory tracking are unavailable for this shell."
+              : "Shell for new terminal tabs. Existing tabs keep their shell."
+          }
+        >
+          <Select
+            value={terminalShell || SHELL_AUTO}
+            onValueChange={(v) =>
+              void setTerminalShell(v === SHELL_AUTO ? "" : v)
+            }
+          >
+            <SelectTrigger
+              value={terminalShell || SHELL_AUTO}
+              className="h-8 w-40 text-[12px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={SHELL_AUTO} className="text-[12px]">
+                Auto
+              </SelectItem>
+              {shells.map((s) => (
+                <SelectItem
+                  key={s.path}
+                  value={s.path}
+                  className="text-[12px]"
+                >
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
         <SettingRow
           title="Letter spacing"
           description="Extra horizontal space between characters (px). Use negative values to tighten Nerd Fonts."

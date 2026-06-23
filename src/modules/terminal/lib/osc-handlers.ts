@@ -1,3 +1,4 @@
+import { IS_WINDOWS } from "@/lib/platform";
 import type { IMarker, Terminal } from "@xterm/xterm";
 
 const MAX_OSC52_CLIPBOARD_BYTES = 1024 * 1024;
@@ -108,7 +109,13 @@ function parseOsc7(data: string): string | null {
     path = decodeURIComponent(path);
   } catch {}
   // /C:/Users/foo -> C:/Users/foo so it's a valid Windows path.
-  if (/^\/[A-Za-z]:/.test(path)) path = path.slice(1);
+  if (/^\/[A-Za-z]:/.test(path)) {
+    path = path.slice(1);
+  } else if (IS_WINDOWS) {
+    // git-bash (MSYS) reports cwd as /c/Users/foo; map it to C:/Users/foo.
+    const drive = path.match(/^\/([A-Za-z])(\/.*)?$/);
+    if (drive) path = `${drive[1].toUpperCase()}:${drive[2] ?? "/"}`;
+  }
   return path;
 }
 

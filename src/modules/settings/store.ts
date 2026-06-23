@@ -153,11 +153,14 @@ export type Preferences = {
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
+  editorWordWrap: boolean;
   showHidden: boolean;
   explorerGitDecorations: boolean;
   terminalWebglEnabled: boolean;
   terminalCursorBlink: boolean;
   terminalFontFamily: string;
+  terminalFontWeight: string;
+  terminalShell: string;
   terminalLetterSpacing: number;
   terminalFontSize: number;
   terminalScrollback: number;
@@ -205,12 +208,15 @@ const KEY_VOICE_CLEANUP_ENABLED = "voiceCleanupEnabled";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
+const KEY_EDITOR_WORD_WRAP = "editorWordWrap";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_EXPLORER_GIT_DECORATIONS = "explorerGitDecorations";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_CURSOR_BLINK = "terminalCursorBlink";
 const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
+const KEY_TERMINAL_FONT_WEIGHT = "terminalFontWeight";
+const KEY_TERMINAL_SHELL = "terminalShell";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
@@ -272,11 +278,14 @@ export const DEFAULT_PREFERENCES: Preferences = {
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
+  editorWordWrap: false,
   showHidden: false,
   explorerGitDecorations: true,
   terminalWebglEnabled: true,
   terminalCursorBlink: false,
   terminalFontFamily: "",
+  terminalFontWeight: "normal",
+  terminalShell: "",
   terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
@@ -423,6 +432,8 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds
     ).filter(isKnownModelId),
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    editorWordWrap:
+      get<boolean>(KEY_EDITOR_WORD_WRAP) ?? DEFAULT_PREFERENCES.editorWordWrap,
     showHidden:
       get<boolean>(KEY_SHOW_HIDDEN) ??
       get<boolean>(LEGACY_KEY_SHOW_HIDDEN_DIRS) ??
@@ -439,6 +450,12 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalFontFamily:
       get<string>(KEY_TERMINAL_FONT_FAMILY) ??
       DEFAULT_PREFERENCES.terminalFontFamily,
+    terminalFontWeight: coerceFontWeight(
+      get<string>(KEY_TERMINAL_FONT_WEIGHT) ??
+        DEFAULT_PREFERENCES.terminalFontWeight,
+    ),
+    terminalShell:
+      get<string>(KEY_TERMINAL_SHELL) ?? DEFAULT_PREFERENCES.terminalShell,
     terminalLetterSpacing:
       get<number>(KEY_TERMINAL_LETTER_SPACING) ??
       DEFAULT_PREFERENCES.terminalLetterSpacing,
@@ -633,6 +650,10 @@ export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
 
+export async function setEditorWordWrap(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_WORD_WRAP, value);
+}
+
 export async function setShowHidden(value: boolean): Promise<void> {
   await writePref(KEY_SHOW_HIDDEN, value);
 }
@@ -651,6 +672,21 @@ export async function setTerminalCursorBlink(value: boolean): Promise<void> {
 
 export async function setTerminalFontFamily(value: string): Promise<void> {
   await writePref(KEY_TERMINAL_FONT_FAMILY, value.trim());
+}
+
+const TERMINAL_FONT_WEIGHT_VALUES = new Set(["normal", "500", "600", "bold"]);
+
+export function coerceFontWeight(value: string): string {
+  const v = value.trim();
+  return TERMINAL_FONT_WEIGHT_VALUES.has(v) ? v : "normal";
+}
+
+export async function setTerminalFontWeight(value: string): Promise<void> {
+  await writePref(KEY_TERMINAL_FONT_WEIGHT, coerceFontWeight(value));
+}
+
+export async function setTerminalShell(value: string): Promise<void> {
+  await writePref(KEY_TERMINAL_SHELL, value.trim());
 }
 
 export async function setTerminalLetterSpacing(value: number): Promise<void> {
@@ -757,11 +793,14 @@ export async function onPreferencesChange(
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_EDITOR_WORD_WRAP]: "editorWordWrap",
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_EXPLORER_GIT_DECORATIONS]: "explorerGitDecorations",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_CURSOR_BLINK]: "terminalCursorBlink",
     [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
+    [KEY_TERMINAL_FONT_WEIGHT]: "terminalFontWeight",
+    [KEY_TERMINAL_SHELL]: "terminalShell",
     [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",

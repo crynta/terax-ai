@@ -9,6 +9,7 @@ import { getLaunchDir } from "@/lib/launchDir";
 import { usePresence } from "@/lib/usePresence";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AgentNotificationsBridge } from "@/modules/agents";
 import {
   AgentRunBridge,
@@ -72,7 +73,6 @@ import {
   hasLeaf,
   leafIds,
   navigateFocusedBlocks,
-  respawnSession,
   type TerminalPaneHandle,
   useTerminalFileDrop,
   writeToSession,
@@ -100,6 +100,7 @@ import {
   WorkspaceInputBar,
 } from "./components/WorkspaceInputBar";
 import { WorkspaceSurface } from "./components/WorkspaceSurface";
+import { useAppCloseGuard } from "./hooks/useAppCloseGuard";
 import { useTabCloseGuards } from "./hooks/useTabCloseGuards";
 import { useWorkspaceSwitcher } from "./hooks/useWorkspaceSwitcher";
 
@@ -392,6 +393,9 @@ export default function App() {
     cancelDeleteClose,
     handlePathDeleted,
   } = useTabCloseGuards({ tabs, disposeTab });
+
+  const { pendingAppClose, confirmAppClose, cancelAppClose } =
+    useAppCloseGuard(tabsRef);
 
   useEffect(() => {
     const live = new Set<number>();
@@ -856,11 +860,9 @@ export default function App() {
         (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
       );
       if (!tab || tab.kind !== "terminal") return;
-      const isLast =
-        leafIds(tab.paneTree).length === 1 &&
-        all.filter((t) => t.kind === "terminal").length === 1;
-      if (isLast) {
-        void respawnSession(leafId, tab.cwd);
+      // Last pane of the last tab: quit instead of respawning a shell.
+      if (leafIds(tab.paneTree).length === 1 && all.length === 1) {
+        void getCurrentWindow().close();
       } else {
         closePaneByLeaf(leafId);
       }
@@ -1282,6 +1284,9 @@ export default function App() {
             pendingDeleteTabs={pendingDeleteTabs}
             onCancelDeleteClose={cancelDeleteClose}
             onConfirmDeleteClose={confirmDeleteClose}
+            pendingAppClose={pendingAppClose}
+            onCancelAppClose={cancelAppClose}
+            onConfirmAppClose={confirmAppClose}
           />
         </div>
       </TooltipProvider>

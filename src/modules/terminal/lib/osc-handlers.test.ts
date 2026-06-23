@@ -7,6 +7,9 @@ import {
   registerPromptTracker,
 } from "./osc-handlers";
 
+// git-bash path mapping is Windows-only; exercise that branch.
+vi.mock("@/lib/platform", () => ({ IS_WINDOWS: true }));
+
 /**
  * Minimal in-memory fake of the xterm `Terminal` surface we touch — just
  * enough to register OSC handlers and invoke them with crafted payloads.
@@ -46,6 +49,19 @@ describe("OSC 7 cwd handler — gated by OSC 133 in-command state", () => {
     handlers.get(7)?.("file://host/home/me/project");
 
     expect(onCwd).toHaveBeenCalledWith("/home/me/project");
+  });
+
+  it("maps git-bash /c/ cwd to a Windows drive path", () => {
+    const { term, handlers } = makeFakeTerm();
+    const state = createShellIntegrationState();
+    const onCwd = vi.fn();
+    registerPromptTracker(term, state);
+    registerCwdHandler(term, onCwd, state);
+
+    handlers.get(133)?.("A");
+    handlers.get(7)?.("file:///c/Users/leo/project");
+
+    expect(onCwd).toHaveBeenCalledWith("C:/Users/leo/project");
   });
 
   it("rejects OSC 7 emitted while a command is running", () => {

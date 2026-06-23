@@ -742,9 +742,14 @@ export const FileExplorer = memo(
                     className={COMPACT_ITEM}
                     variant="destructive"
                     onSelect={(e) => {
-                      e.preventDefault();
-                      if (deleteConfirm) void tree.deletePath(menuTarget.path);
-                      else setDeleteConfirm(true);
+                      if (deleteConfirm) {
+                        void tree.deletePath(menuTarget.path);
+                      } else {
+                        // Keep the menu open on the first click so the user
+                        // can confirm; let it close normally on the second.
+                        e.preventDefault();
+                        setDeleteConfirm(true);
+                      }
                     }}
                   >
                     {deleteConfirm ? "Click again to confirm" : "Delete"}

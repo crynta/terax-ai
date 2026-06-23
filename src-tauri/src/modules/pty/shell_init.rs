@@ -54,15 +54,33 @@ pub fn build_command(
     cwd: Option<String>,
     workspace: WorkspaceEnv,
     blocks: bool,
+    shell: Option<String>,
 ) -> Result<CommandBuilder, String> {
+    let shell = sanitize_shell_override(shell);
     #[cfg(unix)]
     {
         let _ = workspace;
-        unix::build(cwd, blocks)
+        unix::build(cwd, blocks, shell)
     }
     #[cfg(windows)]
     {
-        windows::build(cwd, workspace, blocks)
+        windows::build(cwd, workspace, blocks, shell)
+    }
+}
+
+// Honor the override only if it matches an enumerated shell, so a tampered
+// setting can't spawn an arbitrary binary across the IPC boundary.
+fn sanitize_shell_override(shell: Option<String>) -> Option<String> {
+    let candidate = shell.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())?;
+    let target = std::fs::canonicalize(&candidate).ok();
+    let allowed = list_shells().into_iter().any(|s| {
+        s.path == candidate || (target.is_some() && std::fs::canonicalize(&s.path).ok() == target)
+    });
+    if allowed {
+        Some(candidate)
+    } else {
+        log::warn!("ignoring non-enumerated shell override '{candidate}'");
+        None
     }
 }
 
@@ -79,6 +97,26 @@ pub fn detect_shell_name() -> String {
             .and_then(|s| s.to_str())
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_default()
+    }
+}
+
+#[derive(serde::Serialize)]
+pub struct ShellInfo {
+    pub name: String,
+    pub path: String,
+    /// True when Terax injects OSC 7/133 integration for this shell (cwd
+    /// tracking, command blocks, agent detection). Others spawn bare.
+    pub integrated: bool,
+}
+
+pub fn list_shells() -> Vec<ShellInfo> {
+    #[cfg(unix)]
+    {
+        unix::list_shells()
+    }
+    #[cfg(windows)]
+    {
+        windows::list_shells()
     }
 }
 
@@ -159,19 +197,36 @@ mod unix {
     }
 
     impl Shell {
+        pub fn classify(path: &str) -> Shell {
+            match path.rsplit('/').next().unwrap_or("") {
+                "zsh" => Shell::Zsh,
+                "bash" => Shell::Bash,
+                "fish" => Shell::Fish,
+                _ => Shell::Other,
+            }
+        }
+
         pub fn detect() -> (Shell, String) {
             let path = login_shell()
                 .or_else(|| std::env::var("SHELL").ok())
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "/bin/zsh".into());
-            let name = path.rsplit('/').next().unwrap_or("").to_string();
-            let shell = match name.as_str() {
-                "zsh" => Shell::Zsh,
-                "bash" => Shell::Bash,
-                "fish" => Shell::Fish,
-                _ => Shell::Other,
-            };
-            (shell, path)
+            (Self::classify(&path), path)
+        }
+
+        // A configured override wins only when it points at a real file;
+        // otherwise fall back to the user's login shell.
+        pub fn resolve(shell_override: Option<String>) -> (Shell, String) {
+            if let Some(path) = shell_override
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+            {
+                if Path::new(&path).is_file() {
+                    return (Self::classify(&path), path);
+                }
+                log::warn!("configured shell '{path}' not found, using auto-detect");
+            }
+            Self::detect()
         }
     }
 
@@ -191,8 +246,42 @@ mod unix {
         }
     }
 
-    pub fn build(cwd: Option<String>, blocks: bool) -> Result<CommandBuilder, String> {
-        let (shell, shell_path) = Shell::detect();
+    pub fn list_shells() -> Vec<super::ShellInfo> {
+        use std::collections::HashSet;
+        let mut out = Vec::new();
+        let mut seen = HashSet::new();
+        let (_, login) = Shell::detect();
+        let mut candidates = vec![login];
+        if let Ok(content) = fs::read_to_string("/etc/shells") {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                candidates.push(line.to_string());
+            }
+        }
+        for path in candidates {
+            if !seen.insert(path.clone()) || !Path::new(&path).is_file() {
+                continue;
+            }
+            let integrated = !matches!(Shell::classify(&path), Shell::Other);
+            let name = path.rsplit('/').next().unwrap_or(&path).to_string();
+            out.push(super::ShellInfo {
+                name,
+                path,
+                integrated,
+            });
+        }
+        out
+    }
+
+    pub fn build(
+        cwd: Option<String>,
+        blocks: bool,
+        shell_override: Option<String>,
+    ) -> Result<CommandBuilder, String> {
+        let (shell, shell_path) = Shell::resolve(shell_override);
         let mut cmd = CommandBuilder::new(&shell_path);
         super::apply_common(&mut cmd, cwd, blocks);
 
@@ -302,6 +391,45 @@ mod unix {
             format!("rename {} -> {}: {e}", tmp.display(), path.display())
         })
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::Shell;
+
+        #[test]
+        fn classify_maps_known_shells() {
+            assert!(matches!(Shell::classify("/bin/zsh"), Shell::Zsh));
+            assert!(matches!(Shell::classify("/usr/bin/bash"), Shell::Bash));
+            assert!(matches!(
+                Shell::classify("/opt/homebrew/bin/fish"),
+                Shell::Fish
+            ));
+            assert!(matches!(Shell::classify("/bin/sh"), Shell::Other));
+            assert!(matches!(Shell::classify("/usr/bin/nu"), Shell::Other));
+        }
+
+        #[test]
+        fn resolve_uses_an_existing_override() {
+            let exe = std::env::current_exe().unwrap();
+            let path = exe.to_string_lossy().into_owned();
+            let (_, resolved) = Shell::resolve(Some(path.clone()));
+            assert_eq!(resolved, path);
+        }
+
+        #[test]
+        fn resolve_falls_back_when_override_missing() {
+            let (_, path) = Shell::resolve(Some("/no/such/shell/xyz".into()));
+            assert!(!path.is_empty());
+            assert_ne!(path, "/no/such/shell/xyz");
+        }
+
+        #[test]
+        fn resolve_falls_back_on_empty_override() {
+            let (_, fallback) = Shell::resolve(Some("   ".into()));
+            let (_, detected) = Shell::detect();
+            assert_eq!(fallback, detected);
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -354,18 +482,25 @@ mod windows {
         cwd: Option<String>,
         workspace: WorkspaceEnv,
         blocks: bool,
+        shell: Option<String>,
     ) -> Result<CommandBuilder, String> {
         if let WorkspaceEnv::Wsl { distro } = workspace {
-            let _ = blocks;
+            let _ = (blocks, shell);
             return build_wsl(cwd, distro);
         }
-        let shell_path = super::windows_shell_path();
+        let shell_path = shell
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .filter(|p| p.is_file())
+            .unwrap_or_else(super::windows_shell_path);
         let shell_name = shell_path
             .file_name()
             .and_then(|s| s.to_str())
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_default();
         let is_powershell = shell_name == "pwsh.exe" || shell_name == "powershell.exe";
+        let is_bash = shell_name == "bash.exe";
 
         let mut cmd = CommandBuilder::new(&shell_path);
         super::apply_common(&mut cmd, cwd, blocks);
@@ -382,6 +517,22 @@ mod windows {
                 }
                 Err(e) => {
                     log::warn!("powershell shell integration disabled: {e}");
+                }
+            }
+        } else if is_bash {
+            // git-bash's /etc/profile cd's to $HOME unless CHERE_INVOKING is
+            // set; keep the cwd we configured in apply_common.
+            cmd.env("CHERE_INVOKING", "1");
+            // Native git-bash: same OSC 7/133 rcfile as Unix bash, in the
+            // forward-slash form MSYS bash accepts.
+            match prepare_bash_rcfile() {
+                Ok(rc) => {
+                    cmd.arg("--rcfile");
+                    cmd.arg(rc.to_string_lossy().replace('\\', "/"));
+                    cmd.arg("-i");
+                }
+                Err(e) => {
+                    log::warn!("bash shell integration disabled: {e}");
                 }
             }
         } else {
@@ -595,6 +746,76 @@ mod windows {
         let file = dir.join("profile.ps1");
         write_if_changed(&file, PROFILE_PS1)?;
         Ok(file)
+    }
+
+    fn prepare_bash_rcfile() -> Result<PathBuf, String> {
+        let dir = integration_root()?.join("bash");
+        fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+        let rc = dir.join("bashrc");
+        write_if_changed(&rc, &normalize_script(super::bashrc_script()))?;
+        Ok(rc)
+    }
+
+    pub fn list_shells() -> Vec<super::ShellInfo> {
+        fn add(out: &mut Vec<super::ShellInfo>, name: &str, path: PathBuf, integrated: bool) {
+            if path.is_file() {
+                out.push(super::ShellInfo {
+                    name: name.to_string(),
+                    path: path.to_string_lossy().into_owned(),
+                    integrated,
+                });
+            }
+        }
+
+        let mut out = Vec::new();
+        if let Some(p) = super::which_in_path("pwsh.exe") {
+            add(&mut out, "PowerShell", p, true);
+        } else if let Some(pf) = std::env::var_os("ProgramFiles").map(PathBuf::from) {
+            add(
+                &mut out,
+                "PowerShell",
+                pf.join("PowerShell").join("7").join("pwsh.exe"),
+                true,
+            );
+        }
+        let system32 = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+            .join("System32");
+        add(
+            &mut out,
+            "Windows PowerShell",
+            system32
+                .join("WindowsPowerShell")
+                .join("v1.0")
+                .join("powershell.exe"),
+            true,
+        );
+        add(&mut out, "Command Prompt", system32.join("cmd.exe"), false);
+        if let Some(p) = git_bash_path() {
+            add(&mut out, "Git Bash", p, true);
+        }
+        out
+    }
+
+    fn git_bash_path() -> Option<PathBuf> {
+        // Git for Windows install locations only. A bash.exe on PATH is usually
+        // the WSL launcher in System32, which is the separate WSL switcher.
+        for var in ["ProgramFiles", "ProgramFiles(x86)", "LocalAppData"] {
+            if let Some(base) = std::env::var_os(var).map(PathBuf::from) {
+                for rel in [
+                    r"Git\bin\bash.exe",
+                    r"Git\usr\bin\bash.exe",
+                    r"Programs\Git\bin\bash.exe",
+                ] {
+                    let candidate = base.join(rel);
+                    if candidate.is_file() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+        None
     }
 
     fn write_if_changed(path: &Path, content: &str) -> Result<(), String> {
@@ -811,4 +1032,24 @@ fn which_in_path(name: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_shell_override;
+
+    #[test]
+    fn rejects_non_enumerated_override() {
+        let exe = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(sanitize_shell_override(Some(exe)), None);
+    }
+
+    #[test]
+    fn empty_or_missing_override_is_none() {
+        assert_eq!(sanitize_shell_override(Some("   ".into())), None);
+        assert_eq!(sanitize_shell_override(None), None);
+    }
 }

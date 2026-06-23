@@ -19,7 +19,7 @@ jobs:
     steps:
       # On a `release` event the default checkout lands on the tag (detached
       # HEAD); create-pull-request needs a branch base, so check out main.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: main
 
