@@ -3,7 +3,8 @@ import { native } from "@/modules/ai/lib/native";
 import type { Tab } from "@/modules/tabs";
 import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { isLeaf, type PaneNode } from "@/modules/terminal/lib/panes";
-import type { WorkspaceEnv } from "@/modules/workspace";
+import { parseWorkspaceScopeKey, type WorkspaceEnv } from "@/modules/workspace";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { activeSpaceEnv, freshTabCwd } from "./activeSpace";
 import { freshTerminalTab, hydrateTabs } from "./serialize";
 import { loadAll, saveActiveId, saveSpacesList, type SpaceMeta } from "./store";
@@ -59,7 +60,9 @@ export function useSpacesBoot({
             id: DEFAULT_SPACE_ID,
             name: "Default",
             root,
-            env: { kind: "local" },
+            env: parseWorkspaceScopeKey(
+              usePreferencesStore.getState().defaultWorkspaceEnv,
+            ),
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
