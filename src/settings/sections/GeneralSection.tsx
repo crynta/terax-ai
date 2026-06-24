@@ -21,6 +21,7 @@ import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
+  setConfirmCloseTerminal,
   setAutostart,
   setEditorWordWrap,
   setEditorAutoSave,
@@ -109,6 +110,9 @@ export function GeneralSection() {
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
+  const confirmCloseTerminal = usePreferencesStore(
+    (s) => s.confirmCloseTerminal,
+  );
 
   useEffect(() => {
     let alive = true;
@@ -441,6 +445,21 @@ export function GeneralSection() {
             onCheckedChange={(v) => void setAgentNotifications(v)}
           />
         </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Confirmations</Label>
+        <div className="flex flex-col gap-2">
+          <SettingRow
+            title="Confirm closing a running terminal"
+            description="Ask before closing a terminal tab or quitting while a foreground process is still running."
+          >
+            <Switch
+              checked={confirmCloseTerminal}
+              onCheckedChange={(v) => void setConfirmCloseTerminal(v)}
+            />
+          </SettingRow>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">

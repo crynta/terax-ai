@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { leafHasForegroundProcess, leafIds } from "@/modules/terminal";
 import { nextActiveInSpace, type Tab } from "@/modules/tabs";
 
@@ -31,7 +32,7 @@ export function useTabCloseGuards({ tabs, disposeTab }: Params) {
         setPendingCloseTab(id);
         return;
       }
-      if (t?.kind === "terminal") {
+      if (t?.kind === "terminal" && usePreferencesStore.getState().confirmCloseTerminal) {
         const leaves = leafIds(t.paneTree);
         const checks = await Promise.all(leaves.map(leafHasForegroundProcess));
         if (checks.some(Boolean)) {
