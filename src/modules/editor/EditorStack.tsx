@@ -10,6 +10,7 @@ type Props = {
   onDirtyChange: (id: number, dirty: boolean) => void;
   registerHandle: (id: number, handle: EditorPaneHandle | null) => void;
   onCloseTab: (id: number) => void;
+  onOverrideLanguage?: (id: number, lang: string | null) => void;
   onSetMarkdownView: (id: number, mode: "rendered" | "raw") => void;
 };
 
@@ -19,6 +20,7 @@ export function EditorStack({
   onDirtyChange,
   registerHandle,
   onCloseTab,
+  onOverrideLanguage,
   onSetMarkdownView,
 }: Props) {
   const editors = tabs.filter(
@@ -32,6 +34,8 @@ export function EditorStack({
   const registerRef = useRef(registerHandle);
   const dirtyRef = useRef(onDirtyChange);
   const closeRef = useRef(onCloseTab);
+  const overrideRef = useRef(onOverrideLanguage);
+
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -41,12 +45,18 @@ export function EditorStack({
   useEffect(() => {
     closeRef.current = onCloseTab;
   }, [onCloseTab]);
+  useEffect(() => {
+    overrideRef.current = onOverrideLanguage;
+  }, [onOverrideLanguage]);
 
   const refCallbacks = useRef(
     new Map<number, (h: EditorPaneHandle | null) => void>(),
   );
   const dirtyCallbacks = useRef(new Map<number, (dirty: boolean) => void>());
   const closeCallbacks = useRef(new Map<number, () => void>());
+  const overrideCallbacks = useRef(
+    new Map<number, (lang: string | null) => void>(),
+  );
 
   const getRefCallback = (id: number) => {
     let cb = refCallbacks.current.get(id);
@@ -72,6 +82,14 @@ export function EditorStack({
     }
     return cb;
   };
+  const getOverrideCallback = (id: number) => {
+    let cb = overrideCallbacks.current.get(id);
+    if (!cb) {
+      cb = (lang: string | null) => overrideRef.current?.(id, lang);
+      overrideCallbacks.current.set(id, cb);
+    }
+    return cb;
+  };
 
   // Drop callback entries for closed tabs to avoid unbounded growth.
   useEffect(() => {
@@ -84,6 +102,9 @@ export function EditorStack({
     }
     for (const id of closeCallbacks.current.keys()) {
       if (!live.has(id)) closeCallbacks.current.delete(id);
+    }
+    for (const id of overrideCallbacks.current.keys()) {
+      if (!live.has(id)) overrideCallbacks.current.delete(id);
     }
   }, [editors]);
 
@@ -113,6 +134,8 @@ export function EditorStack({
               <EditorPane
                 ref={getRefCallback(t.id)}
                 path={t.path}
+                overrideLanguage={t.overrideLanguage}
+                onOverrideLanguageChange={getOverrideCallback(t.id)}
                 onDirtyChange={getDirtyCallback(t.id)}
                 onClose={getCloseCallback(t.id)}
               />

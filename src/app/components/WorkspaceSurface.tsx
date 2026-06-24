@@ -25,6 +25,7 @@ type Props = {
   registerEditorHandle: EditorStackProps["registerHandle"];
   onEditorDirtyChange: EditorStackProps["onDirtyChange"];
   onEditorCloseTab: EditorStackProps["onCloseTab"];
+  onEditorOverrideLanguage: EditorStackProps["onOverrideLanguage"];
   registerPreviewHandle: PreviewStackProps["registerHandle"];
   onPreviewUrlChange: PreviewStackProps["onUrlChange"];
   onAiDiffAccept: AiDiffStackProps["onAccept"];
@@ -51,6 +52,7 @@ export function WorkspaceSurface({
   registerEditorHandle,
   onEditorDirtyChange,
   onEditorCloseTab,
+  onEditorOverrideLanguage,
   registerPreviewHandle,
   onPreviewUrlChange,
   onAiDiffAccept,
@@ -100,6 +102,7 @@ export function WorkspaceSurface({
           registerHandle={registerEditorHandle}
           onDirtyChange={onEditorDirtyChange}
           onCloseTab={onEditorCloseTab}
+          onOverrideLanguage={onEditorOverrideLanguage}
           onSetMarkdownView={onSetMarkdownView}
         />
       </div>

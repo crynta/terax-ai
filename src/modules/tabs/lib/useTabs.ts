@@ -49,6 +49,7 @@ export type EditorTab = TabBase & {
    * is replaced by the next single-click rather than accumulating.
    */
   preview: boolean;
+  overrideLanguage?: string | null;
 };
 
 export type PreviewTab = TabBase & {
@@ -128,6 +129,7 @@ export type TabPatch = Partial<{
   url: string;
   /** Empty string resets a terminal tab to its cwd-derived name. */
   customTitle: string;
+  overrideLanguage: string | null;
 }>;
 
 function basename(path: string): string {
@@ -684,6 +686,18 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return targetId;
   }, []);
 
+  const setOverrideLanguage = useCallback((id: number, lang: string | null) => {
+    setTabs((curr) =>
+      curr.map((t) => {
+        if (t.id !== id || t.kind !== "editor") return t;
+        return {
+          ...t,
+          overrideLanguage: lang,
+        };
+      }),
+    );
+  }, []);
+
   const setMarkdownView = useCallback(
     (id: number, mode: "rendered" | "raw") => {
       setTabs((curr) =>
@@ -924,6 +938,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           ...(patch.title !== undefined && { title: patch.title }),
           ...(patch.dirty !== undefined && { dirty: patch.dirty }),
           ...(patch.path !== undefined && { path: patch.path }),
+          ...(patch.overrideLanguage !== undefined && {
+            overrideLanguage: patch.overrideLanguage,
+          }),
         };
       }),
     );
@@ -1117,6 +1134,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     removeTabsForSpace,
     markBooted,
     setActiveSpaceForNewTabs,
+    setOverrideLanguage,
     newTab,
     newBlockTab,
     newAgentTab,

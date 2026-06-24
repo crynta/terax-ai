@@ -9,7 +9,7 @@ import {
   SearchQuery,
   setSearchQuery,
 } from "@codemirror/search";
-import { type Extension, Prec } from "@codemirror/state";
+import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { vim } from "@replit/codemirror-vim";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
@@ -20,6 +20,7 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
@@ -28,7 +29,7 @@ import {
   vimCompartment,
   wrapCompartment,
 } from "./lib/extensions";
-import { resolveLanguage } from "./lib/languageResolver";
+import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { useDocument } from "./lib/useDocument";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
@@ -55,6 +56,8 @@ export type EditorPaneHandle = {
 
 type Props = {
   path: string;
+  overrideLanguage?: string | null;
+  onOverrideLanguageChange?: (lang: string | null) => void;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
@@ -67,7 +70,16 @@ function formatBytes(n: number): string {
 }
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
-  function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
+  function EditorPane(props, ref) {
+    const {
+      path,
+      overrideLanguage: propOverrideLanguage,
+      onOverrideLanguageChange,
+      onDirtyChange,
+      onSaved,
+      onClose,
+    } = props;
+
     const { doc, onChange, save, reload } = useDocument({
       path,
       onDirtyChange,
@@ -80,6 +92,21 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
     const languageRef = useRef<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
+
+    const [localOverrideLanguage, setLocalOverrideLanguage] = useState<
+      string | null
+    >(null);
+
+    const overrideLanguage =
+      propOverrideLanguage !== undefined
+        ? propOverrideLanguage
+        : localOverrideLanguage;
+
+    useEffect(() => {
+      if (!onOverrideLanguageChange) {
+        setLocalOverrideLanguage(null);
+      }
+    }, [onOverrideLanguageChange]);
 
     useEffect(() => {
       let cancelled = false;
@@ -252,32 +279,29 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }, [editorWordWrap]);
 
     useEffect(() => {
-      const ext = path.split(".").pop()?.toLowerCase() ?? null;
+      const ext =
+        overrideLanguage || (path.split(".").pop()?.toLowerCase() ?? null);
       languageRef.current = ext;
       if (doc.status !== "ready") return;
       let cancelled = false;
-      const resolve = async (): Promise<Extension> => {
-        if (path.toLowerCase().endsWith(".terax-theme")) {
-          const [{ json }, { colorSwatches }] = await Promise.all([
-            import("@codemirror/lang-json"),
-            import("./lib/colorSwatches"),
-          ]);
-          return [json(), colorSwatches()];
-        }
-        return (await resolveLanguage(path)) ?? [];
+      const resolve = async (): Promise<LanguageResult> => {
+        const resolvePath = overrideLanguage
+          ? `dummy.${overrideLanguage}`
+          : path;
+        return (await resolveLanguage(resolvePath)) ?? { ext: [], name: "" };
       };
-      void resolve().then((extension) => {
+      void resolve().then((result) => {
         if (cancelled) return;
         const view = cmRef.current?.view;
         if (!view) return;
         view.dispatch({
-          effects: languageCompartment.reconfigure(extension),
+          effects: languageCompartment.reconfigure(result?.ext),
         });
       });
       return () => {
         cancelled = true;
       };
-    }, [path, doc.status]);
+    }, [path, doc.status, overrideLanguage]);
 
     useImperativeHandle(
       ref,
