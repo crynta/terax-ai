@@ -3,6 +3,7 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   SHORTCUTS,
   matchBinding,
+  shouldDeferForTerminalFocus,
   type ShortcutId,
 } from "../shortcuts";
 
@@ -22,6 +23,7 @@ export function useGlobalShortcuts(
 
   // Access the shortcuts from the store
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+  const tuiFocus = usePreferencesStore((s) => s.terminalTuiFocus);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -31,6 +33,12 @@ export function useGlobalShortcuts(
         const bindings = userShortcuts[s.id] || s.defaultBindings;
         const isMatch = bindings.some((b) => matchBinding(e, b, s.id));
         if (!isMatch) continue;
+        const inTerminal = !!(e.target as HTMLElement | null)?.closest?.(
+          ".xterm",
+        );
+        if (shouldDeferForTerminalFocus(s, e, { enabled: tuiFocus, inTerminal })) {
+          return;
+        }
         if (options?.isDisabled?.(s.id, e)) return;
         const h = handlers[s.id];
         if (!h) return;
@@ -43,5 +51,5 @@ export function useGlobalShortcuts(
     window.addEventListener("keydown", onKey, { capture: true });
     return () =>
       window.removeEventListener("keydown", onKey, { capture: true });
-  }, [userShortcuts]);
+  }, [userShortcuts, tuiFocus]);
 }
