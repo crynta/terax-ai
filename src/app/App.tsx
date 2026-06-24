@@ -1144,7 +1144,6 @@ export default function App() {
                       onAiDiffReject={(id) => respondToApproval(id, false)}
                       onOpenCommitFile={openCommitFileDiffTab}
                       onGitHistorySearchHandle={setGitHistoryHandle}
-                      onEditorOverrideLanguage={setOverrideLanguage}
                       onSetMarkdownView={setMarkdownView}
                     />
                   </div>

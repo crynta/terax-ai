@@ -20,7 +20,6 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
@@ -57,7 +56,6 @@ export type EditorPaneHandle = {
 type Props = {
   path: string;
   overrideLanguage?: string | null;
-  onOverrideLanguageChange?: (lang: string | null) => void;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
@@ -71,14 +69,7 @@ function formatBytes(n: number): string {
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
   function EditorPane(props, ref) {
-    const {
-      path,
-      overrideLanguage: propOverrideLanguage,
-      onOverrideLanguageChange,
-      onDirtyChange,
-      onSaved,
-      onClose,
-    } = props;
+    const { path, overrideLanguage, onDirtyChange, onSaved, onClose } = props;
 
     const { doc, onChange, save, reload } = useDocument({
       path,
@@ -92,21 +83,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
     const languageRef = useRef<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
-
-    const [localOverrideLanguage, setLocalOverrideLanguage] = useState<
-      string | null
-    >(null);
-
-    const overrideLanguage =
-      propOverrideLanguage !== undefined
-        ? propOverrideLanguage
-        : localOverrideLanguage;
-
-    useEffect(() => {
-      if (!onOverrideLanguageChange) {
-        setLocalOverrideLanguage(null);
-      }
-    }, [onOverrideLanguageChange]);
 
     useEffect(() => {
       let cancelled = false;
@@ -288,14 +264,17 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         const resolvePath = overrideLanguage
           ? `dummy.${overrideLanguage}`
           : path;
-        return (await resolveLanguage(resolvePath)) ?? { ext: [], name: "" };
+        return (
+          (await resolveLanguage(resolvePath)) ?? { ext: [], name: "", id: "" }
+        );
       };
       void resolve().then((result) => {
         if (cancelled) return;
+        if (result.id) languageRef.current = result.id;
         const view = cmRef.current?.view;
         if (!view) return;
         view.dispatch({
-          effects: languageCompartment.reconfigure(result?.ext),
+          effects: languageCompartment.reconfigure(result.ext),
         });
       });
       return () => {

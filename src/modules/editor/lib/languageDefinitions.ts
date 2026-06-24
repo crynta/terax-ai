@@ -1,10 +1,9 @@
 import type { StreamParser } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 
-type LoaderResult = Extension | { token: unknown };
-type LanguageLoader = () => Promise<LoaderResult>;
+type LanguageLoader = () => Promise<Extension>;
 
-interface LanguageDefinition {
+export interface LanguageDefinition {
   name: string;
   extensions: string[];
   loader: LanguageLoader;

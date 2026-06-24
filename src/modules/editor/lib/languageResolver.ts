@@ -1,17 +1,28 @@
 import type { Extension } from "@codemirror/state";
-import { extensionMap, filenameMap } from "./languageDefinitions";
+import {
+  extensionMap,
+  filenameMap,
+  type LanguageDefinition,
+} from "./languageDefinitions";
 
 export interface LanguageResult {
   ext: Extension;
   name: string;
+  /** Canonical language id (primary extension), in sync with the resolved mode. */
+  id: string;
 }
+
 const cache = new Map<string, LanguageResult | null>();
 
-function extOf(name: string): string | null {
-  const lower = name.toLowerCase();
-  const dot = lower.lastIndexOf(".");
-  if (dot === -1 || dot === lower.length - 1) return null;
-  return lower.slice(dot + 1);
+function basenameOf(filename: string): string {
+  const lower = filename.toLowerCase();
+  return lower.split(/[\\/]/).pop() ?? lower;
+}
+
+function extOf(base: string): string | null {
+  const dot = base.lastIndexOf(".");
+  if (dot === -1 || dot === base.length - 1) return null;
+  return base.slice(dot + 1);
 }
 
 function prefixOf(base: string): string | null {
@@ -19,67 +30,62 @@ function prefixOf(base: string): string | null {
   return dot > 0 ? base.slice(0, dot) : null;
 }
 
-function isStreamParser(v: unknown): boolean {
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    typeof (v as { token?: unknown }).token === "function"
-  );
+// Order: exact filename, real extension, then filename prefix scoped to
+// name-based languages (so `Dockerfile.web` resolves while Go never captures
+// `go.sum`). Always returns a key so misses are negative-cached too.
+function match(base: string): {
+  key: string;
+  def: LanguageDefinition | undefined;
+} {
+  const byName = filenameMap.get(base);
+  if (byName) return { key: `name:${base}`, def: byName };
+
+  const ext = extOf(base);
+  if (ext) {
+    const byExt = extensionMap.get(ext);
+    if (byExt) return { key: `ext:${ext}`, def: byExt };
+  }
+
+  const prefix = prefixOf(base);
+  if (prefix) {
+    const byPrefix = filenameMap.get(prefix);
+    if (byPrefix) return { key: `name:${prefix}`, def: byPrefix };
+  }
+
+  return { key: ext ? `ext:${ext}` : `name:${base}`, def: undefined };
 }
 
-function cacheKey(filename: string): string | null {
-  const lower = filename.toLowerCase();
-  const base = lower.split(/[\\/]/).pop() ?? lower;
-  if (filenameMap.has(base)) return `name:${base}`;
-  const ext = extOf(base) ?? prefixOf(base);
-  return ext ? `ext:${ext}` : `name:${base}`;
-}
-
-export function resolveDisplayName(extOrFilename: string | null): string {
-  if (!extOrFilename) return "Plain Text";
-  const lower = extOrFilename.toLowerCase();
-  const base = lower.split(/[\\/]/).pop() ?? lower;
-
-  const def = filenameMap.get(base) ?? extensionMap.get(extOf(base) ?? base);
+export function resolveDisplayName(filename: string | null): string {
+  if (!filename) return "Plain Text";
+  const base = basenameOf(filename);
+  const { def } = match(base);
   if (def) return def.name;
-
   return base.charAt(0).toUpperCase() + base.slice(1);
 }
 
 export function resolveLanguageSync(filename: string): LanguageResult | null {
-  const key = cacheKey(filename);
-  return key ? (cache.get(key) ?? null) : null;
+  return cache.get(match(basenameOf(filename)).key) ?? null;
 }
 
 export async function resolveLanguage(
   filename: string,
 ): Promise<LanguageResult | null> {
-  const key = cacheKey(filename);
-  if (!key) return null;
+  const { key, def } = match(basenameOf(filename));
   const cached = cache.get(key);
   if (cached !== undefined) return cached;
-
-  const lower = filename.toLowerCase();
-  const base = lower.split(/[\\/]/).pop() ?? lower;
-  const extension = extOf(base) ?? prefixOf(base) ?? "";
-
-  const def = filenameMap.get(base) ?? extensionMap.get(extension);
   if (!def) {
     cache.set(key, null);
     return null;
   }
-
-  const raw = await def.loader();
-  const ext = isStreamParser(raw)
-    ? (raw as { token: Extension }).token
-    : (raw as Extension);
-  const result = { ext, name: def.name } as LanguageResult;
+  const result: LanguageResult = {
+    ext: await def.loader(),
+    name: def.name,
+    id: def.extensions[0] ?? "",
+  };
   cache.set(key, result);
   return result;
 }
 
 export function preloadLanguages(filenames: string[]): void {
-  for (const f of filenames) {
-    void resolveLanguage(f).catch(() => {});
-  }
+  for (const f of filenames) void resolveLanguage(f).catch(() => {});
 }

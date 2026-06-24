@@ -352,14 +352,15 @@ export function TabBar({
                         }}
                       >
                         <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
+                          {/* span, not button: a button nested in the TabsTrigger button is invalid DOM and breaks WebKit focus. */}
+                          <span
+                            role="button"
                             tabIndex={-1}
                             data-no-drag
                             className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm p-1 -m-1 transition-all hover:bg-accent hover:text-accent-foreground hover:ring-1 hover:ring-primary/30 hover:shadow-[0_0_4px_var(--color-popover-foreground)]"
                           >
                             <TabIcon tab={t} />
-                          </button>
+                          </span>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
                           align="start"
@@ -454,8 +455,8 @@ export function TabBar({
                     ) : null}
                   </span>
                   {tabs.length > 1 && (
-                    <button
-                      type="button"
+                    <span
+                      role="button"
                       aria-label="Close tab"
                       data-no-drag
                       onClick={(e) => {
@@ -469,7 +470,7 @@ export function TabBar({
                         size={11}
                         strokeWidth={2}
                       />
-                    </button>
+                    </span>
                   )}
                 </TabsTrigger>
               );
@@ -630,7 +631,10 @@ export function TabIcon({ tab }: { tab: Tab }) {
         alt=""
         className="size-3.5 shrink-0 object-contain"
         onError={(e) => {
-          e.currentTarget.src = fileIconUrl("dummy.txt");
+          const img = e.currentTarget;
+          if (img.dataset.fallback) return;
+          img.dataset.fallback = "1";
+          img.src = fileIconUrl("dummy.txt");
         }}
       />
     ) : null;
