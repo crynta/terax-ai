@@ -29,9 +29,10 @@ function isStreamParser(v: unknown): boolean {
 
 function cacheKey(filename: string): string | null {
   const lower = filename.toLowerCase();
-  const base = lower.split("/").pop() ?? lower;
+  const base = lower.split(/[\\/]/).pop() ?? lower;
+  if (filenameMap.has(base)) return `name:${base}`;
   const ext = extOf(base) ?? prefixOf(base);
-  return ext ? `ext:${ext}` : null;
+  return ext ? `ext:${ext}` : `name:${base}`;
 }
 
 export function resolveDisplayName(extOrFilename: string | null): string {
@@ -59,7 +60,7 @@ export async function resolveLanguage(
   if (cached !== undefined) return cached;
 
   const lower = filename.toLowerCase();
-  const base = lower.split("/").pop() ?? lower;
+  const base = lower.split(/[\\/]/).pop() ?? lower;
   const extension = extOf(base) ?? prefixOf(base) ?? "";
 
   const def = filenameMap.get(base) ?? extensionMap.get(extension);

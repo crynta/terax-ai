@@ -713,6 +713,9 @@ export function useTabs(initial?: Partial<TerminalTab>) {
               kind: "editor" as const,
               dirty: false,
               preview: false,
+              overrideLanguage:
+                (t as { overrideLanguage?: string | null }).overrideLanguage ??
+                null,
             };
           }
           if (mode === "rendered" && t.kind === "editor") {
@@ -724,6 +727,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
               cold: t.cold,
               title: t.title,
               path: t.path,
+              overrideLanguage: t.overrideLanguage ?? null,
             };
           }
           return t;

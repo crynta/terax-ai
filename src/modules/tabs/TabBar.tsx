@@ -395,10 +395,9 @@ export function TabBar({
                               />
                             )}
                           </DropdownMenuItem>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
                               setShowAllLanguages((v) => !v);
                             }}
                             className="w-full px-2.5 py-1.5 text-left text-xs text-primary/60 hover:text-primary rounded-lg transition-colors hover:bg-accent"
@@ -406,7 +405,7 @@ export function TabBar({
                             {showAllLanguages
                               ? "↑ Fewer languages"
                               : "↓ All languages"}
-                          </button>
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator className="my-1 border-t border-border/30" />
                           {(showAllLanguages
                             ? ALL_LANGUAGES
