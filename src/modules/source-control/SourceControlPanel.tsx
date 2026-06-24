@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
@@ -210,6 +211,7 @@ function BranchDropdown({
         onRefresh();
       } catch (e) {
         setError(String(e));
+        toast.error(String(e));
       }
     },
     [repoRoot, onRefresh],
