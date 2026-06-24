@@ -19,10 +19,10 @@ import {
   compatModelIdForEndpoint,
   getAutocompleteEligibleModels,
   getCompatModelInfo,
-  getModel,
   getProvider,
   isCompatModelId,
   providerNeedsKey,
+  resolveModel,
   type CustomEndpoint,
   type ModelId,
   type ProviderId,
@@ -532,6 +532,7 @@ function DefaultsBlock({
           <DefaultModelPicker
             defaultModel={defaultModel}
             configuredIds={configuredIds}
+            customEndpoints={customEndpoints}
           />
         </FieldRow>
         <AutocompleteRow
@@ -547,12 +548,21 @@ function DefaultsBlock({
 function DefaultModelPicker({
   defaultModel,
   configuredIds,
+  customEndpoints,
 }: {
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
+  customEndpoints: readonly CustomEndpoint[];
 }) {
-  const m = getModel(defaultModel);
-  const hasAny = configuredIds.size > 0;
+  // One chat model per configured custom endpoint, like the autocomplete row.
+  const compatItems = customEndpoints
+    .filter((e) => e.baseURL.trim() && e.modelId.trim())
+    .map((e) =>
+      getCompatModelInfo(compatModelIdForEndpoint(e.id), customEndpoints),
+    );
+  // resolveModel, not getModel: a compat-* default would make getModel throw.
+  const m = resolveModel(defaultModel, customEndpoints);
+  const hasAny = configuredIds.size > 0 || compatItems.length > 0;
 
   return (
     <DropdownMenu>
@@ -612,6 +622,31 @@ function DefaultModelPicker({
               </div>
             );
           })}
+          {compatItems.length > 0 && (
+            <div className="px-1 pt-1.5 first:pt-1">
+              <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                <ProviderIcon provider="openai-compatible" size={11} />
+                <span>Custom endpoints</span>
+              </div>
+              {compatItems.map((mod) => (
+                <DropdownMenuItem
+                  key={mod.id}
+                  onSelect={() => void setDefaultModel(mod.id as ModelId)}
+                  className={cn(
+                    "flex items-start gap-2 text-[12px]",
+                    mod.id === defaultModel && "bg-accent/50",
+                  )}
+                >
+                  <span className="flex flex-1 flex-col">
+                    <span>{mod.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {mod.description}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </div>
+          )}
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
