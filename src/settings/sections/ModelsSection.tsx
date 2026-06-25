@@ -231,7 +231,8 @@ export function ModelsSection() {
     // Drop the now-dead model id from favorites/recents before touching the
     // selection, so the recents push from a selection reset can't race it.
     const deadModelId = compatModelIdForEndpoint(id);
-    const { favoriteModelIds, recentModelIds } = usePreferencesStore.getState();
+    const { favoriteModelIds, recentModelIds, defaultModelId } =
+      usePreferencesStore.getState();
     if (favoriteModelIds.includes(deadModelId)) {
       await setFavoriteModelIds(
         favoriteModelIds.filter((m) => m !== deadModelId),
@@ -251,6 +252,16 @@ export function ModelsSection() {
         remaining[0]
           ? compatModelIdForEndpoint(remaining[0].id)
           : DEFAULT_MODEL_ID,
+      );
+    }
+
+    // Same dangling-id risk for the persisted chat default, which useAiBootstrap
+    // mirrors back into the selection on startup.
+    if (defaultModelId === deadModelId) {
+      await setDefaultModel(
+        (remaining[0]
+          ? compatModelIdForEndpoint(remaining[0].id)
+          : DEFAULT_MODEL_ID) as ModelId,
       );
     }
 
