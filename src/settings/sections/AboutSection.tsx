@@ -48,6 +48,9 @@ export function AboutSection() {
                   : "Check for updates";
   const onUpdateClick = () => {
     if (available) void install();
+    // No in-app installer on this platform (Linux): open the release page for
+    // the package/command instead of re-checking in place.
+    else if (manualAvailable) void openUrl(`${REPO_URL}/releases/latest`);
     else void check({ manual: true });
   };
 

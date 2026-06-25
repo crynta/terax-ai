@@ -21,6 +21,7 @@ import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
+  setNotifyUpdates,
   setAutostart,
   setEditorWordWrap,
   setEditorAutoSave,
@@ -109,6 +110,7 @@ export function GeneralSection() {
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
+  const notifyUpdates = usePreferencesStore((s) => s.notifyUpdates);
 
   useEffect(() => {
     let alive = true;
@@ -441,6 +443,21 @@ export function GeneralSection() {
             onCheckedChange={(v) => void setAgentNotifications(v)}
           />
         </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Confirmations</Label>
+        <div className="flex flex-col gap-2">
+          <SettingRow
+            title="Update notifications"
+            description="Automatically check for updates and show the update dialog when one is available. You can still check manually under About."
+          >
+            <Switch
+              checked={notifyUpdates}
+              onCheckedChange={(v) => void setNotifyUpdates(v)}
+            />
+          </SettingRow>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
