@@ -1,3 +1,5 @@
+import { usePreferencesStore } from "@/modules/settings/preferences";
+
 export type ToolContext = {
   /** Active terminal tab cwd, used to resolve relative paths. Null = home. */
   getCwd: () => string | null;
@@ -21,6 +23,13 @@ export type ToolContext = {
   /** Active chat session id — used by tools that persist per-session state (todos). */
   getSessionId: () => string | null;
 };
+
+// Skips the approval card (auto-executes) when bypass mode is on. The fs/shell
+// deny-lists in execute (checkWritableCanonical / checkShellCommand) still run;
+// bypass drops the prompt, not the guards. Agent spawn/steer have no deny-list.
+export function gateApproval(): boolean {
+  return !usePreferencesStore.getState().aiBypassPermissions;
+}
 
 export function resolvePath(rawPath: string, cwd: string | null): string {
   if (rawPath.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(rawPath))
