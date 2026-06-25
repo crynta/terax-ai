@@ -5368,6 +5368,7 @@ dependencies = [
 name = "terax"
 version = "0.8.2"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
  "dirs 6.0.0",
  "futures-util",
