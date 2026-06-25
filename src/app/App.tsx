@@ -594,7 +594,6 @@ export default function App() {
   const explorerGitDecorations = usePreferencesStore(
     (s) => s.explorerGitDecorations,
   );
-  const terminalTuiFocus = usePreferencesStore((s) => s.terminalTuiFocus);
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -656,7 +655,9 @@ export default function App() {
       "terminal.toggleInput": () =>
         window.dispatchEvent(new CustomEvent(TOGGLE_BLOCK_INPUT_EVENT)),
       "terminal.toggleTuiFocus": () => {
-        void setTerminalTuiFocus(!terminalTuiFocus);
+        void setTerminalTuiFocus(
+          !usePreferencesStore.getState().terminalTuiFocus,
+        );
       },
       "blocks.prev": () => navigateFocusedBlocks(-1),
       "blocks.next": () => navigateFocusedBlocks(1),
@@ -694,7 +695,6 @@ export default function App() {
       zoomIn,
       zoomOut,
       zoomReset,
-      terminalTuiFocus,
       setTerminalTuiFocus,
     ],
   );
