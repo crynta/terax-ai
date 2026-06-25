@@ -843,6 +843,8 @@ export async function setAgentNotifications(value: boolean): Promise<void> {
 
 export async function setDefaultWorkspaceEnv(value: string): Promise<void> {
   await writePref(KEY_DEFAULT_WORKSPACE_ENV, value);
+}
+
 export async function setNotifyUpdates(value: boolean): Promise<void> {
   await writePref(KEY_NOTIFY_UPDATES, value);
 }

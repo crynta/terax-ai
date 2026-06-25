@@ -42,7 +42,12 @@ export function UpdaterDialog() {
   // Off suppresses the auto-check, so status stays idle and this dialog never
   // opens. Manual checks live in About (its own updater instance).
   const notifyUpdates = usePreferencesStore((s) => s.notifyUpdates);
-  const { status, install, dismiss } = useUpdater({ autoCheck: notifyUpdates });
+  const hydrated = usePreferencesStore((s) => s.hydrated);
+  // Gate on hydration: notifyUpdates defaults to true, so without this the
+  // mount check could fire before a persisted off-state loads.
+  const { status, install, dismiss } = useUpdater({
+    autoCheck: hydrated && notifyUpdates,
+  });
   const [copied, setCopied] = useState(false);
   const [distro, setDistro] = useState<DistroKey>("arch");
   const manualVersion =
