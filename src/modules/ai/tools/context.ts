@@ -26,7 +26,8 @@ export type ToolContext = {
 
 // Skips the approval card (auto-executes) when bypass mode is on. The fs/shell
 // deny-lists in execute (checkWritableCanonical / checkShellCommand) still run;
-// bypass drops the prompt, not the guards. Agent spawn/steer have no deny-list.
+// bypass drops the prompt, not the guards. Agent spawn/steer have no deny-list,
+// so they stay always-approved even under bypass (see agent.ts).
 export function gateApproval(): boolean {
   return !usePreferencesStore.getState().aiBypassPermissions;
 }

@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import { useManagedAgentsStore } from "@/modules/agents/store/managedAgentsStore";
 import { writeToSession } from "@/modules/terminal";
-import { gateApproval, type ToolContext } from "./context";
+import type { ToolContext } from "./context";
 
 // Claude Code's TUI treats a trailing CR in the same write chunk as the text
 // as a literal newline, not a submit. Send the Enter as a separate chunk once
@@ -35,7 +35,9 @@ export function buildManagedAgentTools(ctx: ToolContext) {
             "The full, self-contained task prompt for the Claude Code agent.",
           ),
       }),
-      needsApproval: gateApproval,
+      // Always require approval, even under bypass: spawning an autonomous
+      // agent has no in-execute deny-list, so the prompt is the only gate.
+      needsApproval: true,
       execute: async ({ prompt }) => {
         const sessionId = ctx.getSessionId();
         if (!sessionId) return { error: "no active chat session" };
@@ -67,7 +69,8 @@ export function buildManagedAgentTools(ctx: ToolContext) {
             "One clear, self-contained instruction for the agent. No control characters.",
           ),
       }),
-      needsApproval: gateApproval,
+      // Always require approval, even under bypass (steers an autonomous agent).
+      needsApproval: true,
       execute: async ({ instruction }) => {
         const sessionId = ctx.getSessionId();
         const store = useManagedAgentsStore.getState();
