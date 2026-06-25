@@ -375,7 +375,7 @@ export function GeneralSection() {
             </SelectContent>
           </Select>
         </SettingRow>
-        {wslDistros.length > 0 && (
+        {(wslDistros.length > 0 || defaultWorkspaceEnv !== "local") && (
           <SettingRow
             title="Workspace environment"
             description="Where new spaces run, terminal and AI agent alike: Windows or a WSL distro. Existing spaces keep theirs; switch any from the status bar."
@@ -403,6 +403,17 @@ export function GeneralSection() {
                     WSL: {d.name}
                   </SelectItem>
                 ))}
+                {defaultWorkspaceEnv.startsWith("wsl:") &&
+                  !wslDistros.some(
+                    (d) => `wsl:${d.name}` === defaultWorkspaceEnv,
+                  ) && (
+                    <SelectItem
+                      value={defaultWorkspaceEnv}
+                      className="text-[12px]"
+                    >
+                      {defaultWorkspaceEnv.slice("wsl:".length)} (unavailable)
+                    </SelectItem>
+                  )}
               </SelectContent>
             </Select>
           </SettingRow>
