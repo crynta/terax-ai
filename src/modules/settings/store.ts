@@ -160,6 +160,7 @@ export type Preferences = {
   zoomLevel: number;
   agentNotifications: boolean;
   defaultWorkspaceEnv: string;
+  notifyUpdates: boolean;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
@@ -249,6 +250,7 @@ const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_DEFAULT_WORKSPACE_ENV = "defaultWorkspaceEnv";
+const KEY_NOTIFY_UPDATES = "notifyUpdates";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
@@ -330,6 +332,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   zoomLevel: 1.0,
   agentNotifications: true,
   defaultWorkspaceEnv: "local",
+  notifyUpdates: true,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
@@ -499,6 +502,8 @@ export async function loadPreferences(): Promise<Preferences> {
     defaultWorkspaceEnv:
       get<string>(KEY_DEFAULT_WORKSPACE_ENV) ??
       DEFAULT_PREFERENCES.defaultWorkspaceEnv,
+    notifyUpdates:
+      get<boolean>(KEY_NOTIFY_UPDATES) ?? DEFAULT_PREFERENCES.notifyUpdates,
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
@@ -838,6 +843,8 @@ export async function setAgentNotifications(value: boolean): Promise<void> {
 
 export async function setDefaultWorkspaceEnv(value: string): Promise<void> {
   await writePref(KEY_DEFAULT_WORKSPACE_ENV, value);
+export async function setNotifyUpdates(value: boolean): Promise<void> {
+  await writePref(KEY_NOTIFY_UPDATES, value);
 }
 
 export async function setShortcuts(
@@ -905,6 +912,7 @@ export async function onPreferencesChange(
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
     [KEY_DEFAULT_WORKSPACE_ENV]: "defaultWorkspaceEnv",
+    [KEY_NOTIFY_UPDATES]: "notifyUpdates",
     [KEY_SHORTCUTS]: "shortcuts",
     [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
