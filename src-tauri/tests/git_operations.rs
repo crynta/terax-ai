@@ -529,3 +529,38 @@ fn checkout_branch_rejects_unsafe_names() {
     let err_dash_long = operations::checkout_branch(&fx.registry, &fx.repo_str(), "--detach", &fx.workspace).unwrap_err();
     assert!(matches!(err_dash_long, GitError::InvalidPath(p) if p == "--detach"));
 }
+
+#[test]
+fn list_branches_keeps_current_branch_local_and_surfaces_worktrees() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    fx.write_file("a.txt", "a\n");
+    fx.run_git(&["add", "."]);
+    fx.run_git(&["commit", "-q", "-m", "init"]);
+    fx.run_git(&["branch", "feature"]);
+
+    let wt = TempDir::new().unwrap();
+    let wt_path = wt.path().join("linked");
+    fx.run_git(&["worktree", "add", "-q", wt_path.to_str().unwrap(), "feature"]);
+
+    let result = operations::list_branches(&fx.registry, &fx.repo_str(), &fx.workspace)
+        .expect("list_branches");
+
+    // current branch stays local+head despite the main worktree being listed
+    let main = result
+        .branches
+        .iter()
+        .find(|b| b.name == "main")
+        .expect("main branch present");
+    assert_eq!(main.kind, "local");
+    assert!(main.is_head);
+    assert!(main.worktree_path.is_none());
+
+    let feature: Vec<_> = result.branches.iter().filter(|b| b.name == "feature").collect();
+    assert_eq!(feature.len(), 1);
+    assert_eq!(feature[0].kind, "worktree");
+    assert!(!feature[0].is_head);
+    assert!(feature[0].worktree_path.is_some());
+}

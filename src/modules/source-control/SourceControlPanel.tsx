@@ -172,11 +172,18 @@ function BranchDropdown({
   const [branches, setBranches] = useState<GitBranchEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkingOut, setCheckingOut] = useState(false);
   const requestRef = useRef(0);
+  const checkoutInFlight = useRef(false);
 
   const loadBranches = useCallback(async () => {
-    if (!repoRoot) return;
     const id = ++requestRef.current;
+    if (!repoRoot) {
+      setBranches([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -202,16 +209,19 @@ function BranchDropdown({
 
   const handleCheckout = useCallback(
     async (branch: string) => {
-      if (!repoRoot) return;
-      setError(null);
+      if (!repoRoot || checkoutInFlight.current) return;
+      checkoutInFlight.current = true;
+      setCheckingOut(true);
       try {
         await native.gitCheckoutBranch(repoRoot, branch);
         setBranches([]);
         setOpen(false);
         onRefresh();
       } catch (e) {
-        setError(String(e));
         toast.error(String(e));
+      } finally {
+        checkoutInFlight.current = false;
+        setCheckingOut(false);
       }
     },
     [repoRoot, onRefresh],
@@ -231,7 +241,8 @@ function BranchDropdown({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground transition-colors hover:bg-foreground/10"
+          disabled={checkingOut}
+          className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground transition-colors hover:bg-foreground/10 disabled:cursor-default disabled:opacity-70"
         >
           <HugeiconsIcon
             icon={FolderGitTwoIcon}
