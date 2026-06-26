@@ -995,6 +995,12 @@ export default function App() {
             openSpacesOverview: () => setSwitcherOpen(true),
             newSpace: () => void handleNewSpace(),
             switchSpace: (id) => useSpaces.getState().setActive(id),
+            terminalTabs: tabs.filter(
+              (t) =>
+                t.kind === "terminal" &&
+                t.spaceId === (activeSpaceId ?? DEFAULT_SPACE_ID),
+            ),
+            switchTab: (id) => setActiveId(id),
           })
         : [],
     [
