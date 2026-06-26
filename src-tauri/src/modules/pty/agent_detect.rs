@@ -24,6 +24,18 @@ enum Status {
     Waiting,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum MarkerEvent {
+    Working,
+    Attention,
+    Finished,
+}
+
+struct ParsedMarker<'a> {
+    agent: Option<&'a str>,
+    event: MarkerEvent,
+}
+
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Transition {
     Started { agent: String },
@@ -43,13 +55,31 @@ pub struct AgentSignal {
 impl Transition {
     pub fn into_signal(self, id: u32) -> AgentSignal {
         match self {
-            Transition::Started { agent } => {
-                AgentSignal { id, kind: "started", agent: Some(agent) }
-            }
-            Transition::Working => AgentSignal { id, kind: "working", agent: None },
-            Transition::Attention => AgentSignal { id, kind: "attention", agent: None },
-            Transition::Finished => AgentSignal { id, kind: "finished", agent: None },
-            Transition::Exited => AgentSignal { id, kind: "exited", agent: None },
+            Transition::Started { agent } => AgentSignal {
+                id,
+                kind: "started",
+                agent: Some(agent),
+            },
+            Transition::Working => AgentSignal {
+                id,
+                kind: "working",
+                agent: None,
+            },
+            Transition::Attention => AgentSignal {
+                id,
+                kind: "attention",
+                agent: None,
+            },
+            Transition::Finished => AgentSignal {
+                id,
+                kind: "finished",
+                agent: None,
+            },
+            Transition::Exited => AgentSignal {
+                id,
+                kind: "exited",
+                agent: None,
+            },
         }
     }
 }
@@ -160,25 +190,30 @@ impl AgentDetector {
     }
 
     fn handle_osc777<F: FnMut(Transition)>(&mut self, pt: &[u8], emit: &mut F) {
-        if let Some(event) = pt.strip_prefix(TERAX_MARKER) {
+        if pt.starts_with(TERAX_MARKER) {
             // Self-arms so notifications work even when no shell preexec fired
             // (bash, Windows, tmux, wrappers).
-            match event {
-                b"working" => {
-                    self.ensure_armed(emit);
-                    self.set_working(emit);
+            if let Some(marker) = parse_terax_marker(pt) {
+                let agent = marker.agent.unwrap_or("claude");
+                if marker.agent.is_some() && !self.agents.iter().any(|a| a == agent) {
+                    return;
                 }
-                b"attention" => {
-                    self.ensure_armed(emit);
-                    self.status = Status::Waiting;
-                    emit(Transition::Attention);
+                match marker.event {
+                    MarkerEvent::Working => {
+                        self.ensure_armed(agent, emit);
+                        self.set_working(emit);
+                    }
+                    MarkerEvent::Attention => {
+                        self.ensure_armed(agent, emit);
+                        self.status = Status::Waiting;
+                        emit(Transition::Attention);
+                    }
+                    MarkerEvent::Finished => {
+                        self.ensure_armed(agent, emit);
+                        self.status = Status::Waiting;
+                        emit(Transition::Finished);
+                    }
                 }
-                b"finished" => {
-                    self.ensure_armed(emit);
-                    self.status = Status::Waiting;
-                    emit(Transition::Finished);
-                }
-                _ => {}
             }
             return;
         }
@@ -206,11 +241,13 @@ impl AgentDetector {
         }
     }
 
-    fn ensure_armed<F: FnMut(Transition)>(&mut self, emit: &mut F) {
+    fn ensure_armed<F: FnMut(Transition)>(&mut self, agent: &str, emit: &mut F) {
         if !self.armed {
             self.armed = true;
             self.status = Status::Working;
-            emit(Transition::Started { agent: "claude".into() });
+            emit(Transition::Started {
+                agent: agent.into(),
+            });
         }
     }
 
@@ -246,6 +283,49 @@ impl AgentDetector {
     }
 }
 
+fn parse_terax_marker(pt: &[u8]) -> Option<ParsedMarker<'_>> {
+    let rest = pt.strip_prefix(TERAX_MARKER)?;
+    match rest {
+        b"working" => Some(ParsedMarker {
+            agent: None,
+            event: MarkerEvent::Working,
+        }),
+        b"attention" => Some(ParsedMarker {
+            agent: None,
+            event: MarkerEvent::Attention,
+        }),
+        b"finished" => Some(ParsedMarker {
+            agent: None,
+            event: MarkerEvent::Finished,
+        }),
+        _ => {
+            let i = rest.iter().position(|b| *b == b';')?;
+            let (agent, event) = (&rest[..i], &rest[i + 1..]);
+            if !is_valid_marker_agent(agent) {
+                return None;
+            }
+            let agent = std::str::from_utf8(agent).ok()?;
+            let event = match event {
+                b"working" => MarkerEvent::Working,
+                b"attention" => MarkerEvent::Attention,
+                b"finished" => MarkerEvent::Finished,
+                _ => return None,
+            };
+            Some(ParsedMarker {
+                agent: Some(agent),
+                event,
+            })
+        }
+    }
+}
+
+fn is_valid_marker_agent(agent: &[u8]) -> bool {
+    !agent.is_empty()
+        && agent
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,13 +344,18 @@ mod tests {
     }
 
     fn started(agent: &str) -> Transition {
-        Transition::Started { agent: agent.into() }
+        Transition::Started {
+            agent: agent.into(),
+        }
     }
 
     #[test]
     fn arms_on_agent_command() {
         let mut d = AgentDetector::new();
-        assert_eq!(run(&mut d, &osc("133;C;claude -p hello")), vec![started("claude")]);
+        assert_eq!(
+            run(&mut d, &osc("133;C;claude -p hello")),
+            vec![started("claude")]
+        );
     }
 
     #[test]
@@ -281,13 +366,19 @@ mod tests {
             vec![started("codex")]
         );
         let mut d2 = AgentDetector::new();
-        assert_eq!(run(&mut d2, &osc("133;C;npx claude")), vec![started("claude")]);
+        assert_eq!(
+            run(&mut d2, &osc("133;C;npx claude")),
+            vec![started("claude")]
+        );
     }
 
     #[test]
     fn arms_on_dash_suffixed_alias() {
         let mut d = AgentDetector::new();
-        assert_eq!(run(&mut d, &osc("133;C;claude-enigma")), vec![started("claude")]);
+        assert_eq!(
+            run(&mut d, &osc("133;C;claude-enigma")),
+            vec![started("claude")]
+        );
     }
 
     #[test]
@@ -310,10 +401,19 @@ mod tests {
     fn terax_marker_drives_status() {
         let mut d = AgentDetector::new();
         run(&mut d, &osc("133;C;claude"));
-        assert_eq!(run(&mut d, &osc("777;notify;Terax;attention")), vec![Transition::Attention]);
-        assert_eq!(run(&mut d, &osc("777;notify;Terax;working")), vec![Transition::Working]);
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;attention")),
+            vec![Transition::Attention]
+        );
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;working")),
+            vec![Transition::Working]
+        );
         assert!(run(&mut d, &osc("777;notify;Terax;working")).is_empty());
-        assert_eq!(run(&mut d, &osc("777;notify;Terax;finished")), vec![Transition::Finished]);
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;finished")),
+            vec![Transition::Finished]
+        );
     }
 
     #[test]
@@ -326,12 +426,64 @@ mod tests {
     }
 
     #[test]
+    fn qualified_terax_marker_auto_arms_provider() {
+        let mut d = AgentDetector::new();
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;codex;attention")),
+            vec![started("codex"), Transition::Attention]
+        );
+    }
+
+    #[test]
+    fn qualified_terax_marker_uses_provider_when_already_armed() {
+        let mut d = AgentDetector::new();
+        run(&mut d, &osc("133;C;codex"));
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;codex;finished")),
+            vec![Transition::Finished]
+        );
+    }
+
+    #[test]
+    fn unqualified_terax_marker_keeps_legacy_claude_auto_arm() {
+        let mut d = AgentDetector::new();
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;attention")),
+            vec![started("claude"), Transition::Attention]
+        );
+    }
+
+    #[test]
+    fn terax_marker_rejects_empty_provider() {
+        let mut d = AgentDetector::new();
+        assert!(run(&mut d, &osc("777;notify;Terax;;attention")).is_empty());
+    }
+
+    #[test]
+    fn terax_marker_rejects_provider_with_spaces() {
+        let mut d = AgentDetector::new();
+        assert!(run(&mut d, &osc("777;notify;Terax;bad provider;attention")).is_empty());
+    }
+
+    #[test]
+    fn terax_marker_rejects_unknown_provider() {
+        let mut d = AgentDetector::new();
+        assert!(run(&mut d, &osc("777;notify;Terax;other;attention")).is_empty());
+    }
+
+    #[test]
     fn generic_osc777_and_osc9_attention_only_when_armed() {
         let mut d = AgentDetector::new();
         assert!(run(&mut d, &osc("777;notify;Other;ready")).is_empty());
         run(&mut d, &osc("133;C;codex"));
-        assert_eq!(run(&mut d, &osc("777;notify;Codex;ready")), vec![Transition::Attention]);
-        assert_eq!(run(&mut d, &osc("9;needs you")), vec![Transition::Attention]);
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Codex;ready")),
+            vec![Transition::Attention]
+        );
+        assert_eq!(
+            run(&mut d, &osc("9;needs you")),
+            vec![Transition::Attention]
+        );
         assert!(run(&mut d, &osc("9;4;1;50")).is_empty());
     }
 
@@ -383,6 +535,9 @@ mod tests {
         seq.extend(std::iter::repeat_n(b'x', OSC_MAX + 100));
         seq.extend_from_slice(&[ESC, ST_FINAL]);
         assert!(run(&mut d, &seq).is_empty());
-        assert_eq!(run(&mut d, &osc("777;notify;Terax;attention")), vec![Transition::Attention]);
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;attention")),
+            vec![Transition::Attention]
+        );
     }
 }
