@@ -158,6 +158,8 @@ export type Preferences = {
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
+  historyMaxEntries: number;
+  historyDbPath: string;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -210,6 +212,8 @@ const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
+const KEY_HISTORY_MAX_ENTRIES = "historyMaxEntries";
+const KEY_HISTORY_DB_PATH = "historyDbPath";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -275,6 +279,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
+  historyMaxEntries: 50_000,
+  historyDbPath: "",
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -437,6 +443,12 @@ export async function loadPreferences(): Promise<Preferences> {
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
     ),
+    historyMaxEntries:
+      get<number>(KEY_HISTORY_MAX_ENTRIES) ??
+      DEFAULT_PREFERENCES.historyMaxEntries,
+    historyDbPath:
+      get<string>(KEY_HISTORY_DB_PATH) ??
+      DEFAULT_PREFERENCES.historyDbPath,
   };
 }
 
@@ -679,6 +691,15 @@ export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
 
+export async function setHistoryMaxEntries(value: number): Promise<void> {
+  const clamped = Number.isFinite(value) ? Math.max(0, Math.round(value)) : 50_000;
+  await writePref(KEY_HISTORY_MAX_ENTRIES, clamped);
+}
+
+export async function setHistoryDbPath(value: string): Promise<void> {
+  await writePref(KEY_HISTORY_DB_PATH, value);
+}
+
 export async function setShortcuts(
   value: Record<ShortcutId, KeyBinding[]> | {},
 ): Promise<void> {
@@ -744,6 +765,8 @@ export async function onPreferencesChange(
     [KEY_SHORTCUTS]: "shortcuts",
     [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
+    [KEY_HISTORY_MAX_ENTRIES]: "historyMaxEntries",
+    [KEY_HISTORY_DB_PATH]: "historyDbPath",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().

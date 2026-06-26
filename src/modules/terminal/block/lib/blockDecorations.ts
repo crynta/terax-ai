@@ -13,6 +13,8 @@ import {
 } from "./modeMachine";
 import { readRangeText } from "./readBlock";
 import type { BlockMeta } from "./types";
+import { historyRecord } from "./history";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 
 const OK_RULER = "#5fb3b3";
 const FAIL_RULER = "#e5706b";
@@ -72,6 +74,7 @@ export type BlockDecorationsOptions = {
   onCwd?: (cwd: string) => void;
   onMode?: (mode: BlockMode) => void;
   onViewport?: () => void;
+  sessionId?: string;
 };
 
 export class BlockDecorations {
@@ -89,6 +92,7 @@ export class BlockDecorations {
   private readonly onCwd?: (cwd: string) => void;
   private readonly onMode?: (mode: BlockMode) => void;
   private readonly onViewport?: () => void;
+  private readonly sessionId: string;
   private viewportRaf: number | null = null;
 
   constructor(
@@ -98,6 +102,7 @@ export class BlockDecorations {
     this.onCwd = opts?.onCwd;
     this.onMode = opts?.onMode;
     this.onViewport = opts?.onViewport;
+    this.sessionId = opts?.sessionId ?? "";
     this.term.options.cursorInactiveStyle = "none";
     const osc133 = term.parser.registerOscHandler(133, (data) => {
       this.onOsc133(data);
@@ -525,6 +530,8 @@ export class BlockDecorations {
       const old = this.entries.shift();
       if (old) this.disposeEntry(old);
     }
+    const maxEntries = usePreferencesStore.getState().historyMaxEntries;
+    historyRecord(lb.command, exit, this.sessionId, maxEntries);
     this.scheduleViewport();
   }
 
