@@ -10,7 +10,7 @@ import { usePresence } from "@/lib/usePresence";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AgentNotificationsBridge } from "@/modules/agents";
+import { AgentNotificationsBridge, nextAttentionTarget } from "@/modules/agents";
 import {
   AgentRunBridge,
   AiMiniWindow,
@@ -627,6 +627,20 @@ export default function App() {
 
   const [zenMode, setZenMode] = useState(false);
 
+  // Focus an agent's tab, switching to its space first so the header and tab
+  // strip don't end up showing a different space than the focused pane.
+  const activateAgentTarget = useCallback(
+    (tabId: number, leafId: number) => {
+      const space = tabsRef.current.find((t) => t.id === tabId)?.spaceId;
+      if (space && space !== useSpaces.getState().activeId) {
+        useSpaces.getState().setActive(space);
+      }
+      setActiveId(tabId);
+      focusPane(tabId, leafId);
+    },
+    [setActiveId, focusPane],
+  );
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "commandPalette.open": () => openCommandPalette("commands"),
@@ -658,6 +672,10 @@ export default function App() {
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
+      "agent.focusAttention": () => {
+        const t = nextAttentionTarget();
+        if (t) activateAgentTarget(t.tabId, t.leafId);
+      },
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
       "explorer.focus": toggleExplorerFocus,
@@ -689,6 +707,7 @@ export default function App() {
       zoomIn,
       zoomOut,
       zoomReset,
+      activateAgentTarget,
     ],
   );
 
@@ -798,13 +817,7 @@ export default function App() {
     [focusPane],
   );
 
-  const onActivateAgent = useCallback(
-    (tabId: number, leafId: number) => {
-      setActiveId(tabId);
-      focusPane(tabId, leafId);
-    },
-    [setActiveId, focusPane],
-  );
+  const onActivateAgent = activateAgentTarget;
 
   const onActivateLocalAgent = useCallback(() => {
     openPanel();
