@@ -1,6 +1,6 @@
 export type TerminalKeyEvent = Pick<
   KeyboardEvent,
-  "altKey" | "ctrlKey" | "metaKey" | "key" | "code"
+  "altKey" | "ctrlKey" | "metaKey" | "shiftKey" | "key" | "code"
 >;
 
 export type PlatformOpts = { isMac: boolean };
@@ -42,4 +42,46 @@ export function terminalDeleteSequence(
   }
   if (event.ctrlKey && !event.altKey && !event.metaKey) return "\x17";
   return null;
+}
+
+export type TerminalClipboardIntent = "copy" | "paste";
+
+export type ClipboardOpts = {
+  isMac: boolean;
+  /** Windows-Terminal-style no-Shift copy/paste (default on, toggleable). */
+  smartCopyPaste: boolean;
+  hasSelection: boolean;
+};
+
+/**
+ * Decide whether a key event is a terminal clipboard action.
+ *
+ * Ctrl+Shift+C / Ctrl+Shift+V always copy/paste; those combos never collide
+ * with the shell, so they work regardless of the smart-mode preference.
+ *
+ * Smart mode (Windows-Terminal style, on by default):
+ *   Ctrl+C → "copy" only when text is selected; with no selection it returns
+ *            null so the SIGINT (\x03) reaches the shell unchanged.
+ *   Ctrl+V → "paste".
+ *
+ * macOS owns Cmd+C/Cmd+V natively and keeps Ctrl+C as SIGINT, so this returns
+ * null there and never shadows the interrupt.
+ */
+export function terminalClipboardIntent(
+  event: TerminalKeyEvent,
+  opts: ClipboardOpts,
+): TerminalClipboardIntent | null {
+  if (opts.isMac) return null;
+  if (!event.ctrlKey || event.altKey || event.metaKey) return null;
+  // Match physical position (event.code) as well as the character so Ctrl+C/V
+  // work on non-Latin layouts (e.g. Cyrillic) where event.key is not "c"/"v".
+  const isC = event.code === "KeyC" || event.key.toLowerCase() === "c";
+  const isV = event.code === "KeyV" || event.key.toLowerCase() === "v";
+  if (!isC && !isV) return null;
+
+  if (event.shiftKey) return isC ? "copy" : "paste";
+
+  if (!opts.smartCopyPaste) return null;
+  if (isV) return "paste";
+  return opts.hasSelection ? "copy" : null;
 }

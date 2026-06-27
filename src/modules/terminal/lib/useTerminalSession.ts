@@ -29,6 +29,7 @@ import {
   applyLetterSpacing,
   applyTheme as applyPoolTheme,
   applyScrollback,
+  applySmartCopyPaste,
   applyWebglPreference,
   configureRendererPool,
   discardRetainedSlot,
@@ -906,6 +907,11 @@ export function useTerminalSession({
   useEffect(() => {
     applyCursorBlink(cursorBlink);
   }, [cursorBlink]);
+
+  const smartCopyPaste = usePreferencesStore((p) => p.terminalSmartCopyPaste);
+  useEffect(() => {
+    applySmartCopyPaste(smartCopyPaste);
+  }, [smartCopyPaste]);
 
   const bgActive = usePreferencesStore(
     (p) => p.backgroundKind === "image" && !!p.backgroundImageId,

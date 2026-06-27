@@ -146,6 +146,7 @@ export type Preferences = {
   explorerGitDecorations: boolean;
   terminalWebglEnabled: boolean;
   terminalCursorBlink: boolean;
+  terminalSmartCopyPaste: boolean;
   terminalFontFamily: string;
   terminalFontWeight: string;
   terminalShell: string;
@@ -198,6 +199,7 @@ const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_EXPLORER_GIT_DECORATIONS = "explorerGitDecorations";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_CURSOR_BLINK = "terminalCursorBlink";
+const KEY_TERMINAL_SMART_COPY_PASTE = "terminalSmartCopyPaste";
 const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
 const KEY_TERMINAL_FONT_WEIGHT = "terminalFontWeight";
 const KEY_TERMINAL_SHELL = "terminalShell";
@@ -263,6 +265,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   explorerGitDecorations: true,
   terminalWebglEnabled: true,
   terminalCursorBlink: false,
+  terminalSmartCopyPaste: true,
   terminalFontFamily: "",
   terminalFontWeight: "normal",
   terminalShell: "",
@@ -401,6 +404,9 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalCursorBlink:
       get<boolean>(KEY_TERMINAL_CURSOR_BLINK) ??
       DEFAULT_PREFERENCES.terminalCursorBlink,
+    terminalSmartCopyPaste:
+      get<boolean>(KEY_TERMINAL_SMART_COPY_PASTE) ??
+      DEFAULT_PREFERENCES.terminalSmartCopyPaste,
     terminalFontFamily:
       get<string>(KEY_TERMINAL_FONT_FAMILY) ??
       DEFAULT_PREFERENCES.terminalFontFamily,
@@ -608,6 +614,10 @@ export async function setTerminalCursorBlink(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_CURSOR_BLINK, value);
 }
 
+export async function setTerminalSmartCopyPaste(value: boolean): Promise<void> {
+  await writePref(KEY_TERMINAL_SMART_COPY_PASTE, value);
+}
+
 export async function setTerminalFontFamily(value: string): Promise<void> {
   await writePref(KEY_TERMINAL_FONT_FAMILY, value.trim());
 }
@@ -732,6 +742,7 @@ export async function onPreferencesChange(
     [KEY_EXPLORER_GIT_DECORATIONS]: "explorerGitDecorations",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_CURSOR_BLINK]: "terminalCursorBlink",
+    [KEY_TERMINAL_SMART_COPY_PASTE]: "terminalSmartCopyPaste",
     [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
     [KEY_TERMINAL_FONT_WEIGHT]: "terminalFontWeight",
     [KEY_TERMINAL_SHELL]: "terminalShell",
