@@ -86,6 +86,11 @@ import {
 import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import {
+  usePushToTalk,
+  useVoiceController,
+  VoiceHud,
+} from "@/modules/voice";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -300,6 +305,44 @@ export default function App() {
 
   useEditorFileSync({ tabs, tabsRef, editorRefs });
   useThemeFileEditing({ tabsRef, openFileTab });
+
+  const resolveVoiceTarget = useCallback((): ((text: string) => void) => {
+    const active = document.activeElement;
+    const aiFocused =
+      panelOpen && !!active?.closest('[data-voice-target="ai"]');
+    const editorHandle = isEditorTab
+      ? (editorRefs.current.get(activeId) ?? null)
+      : null;
+    if (!aiFocused && editorHandle) {
+      return (text) => editorHandle.insertText(text);
+    }
+    if (!aiFocused && isTerminalTab && activeLeafId !== null) {
+      const leafId = activeLeafId;
+      return (text) => writeToSession(leafId, text);
+    }
+    if (hasComposer) {
+      return (text) => {
+        openPanel();
+        window.dispatchEvent(
+          new CustomEvent<string>("terax:ai-voice-insert", { detail: text }),
+        );
+        focusInput(null);
+      };
+    }
+    return () => {};
+  }, [
+    panelOpen,
+    isEditorTab,
+    activeId,
+    isTerminalTab,
+    activeLeafId,
+    hasComposer,
+    openPanel,
+    focusInput,
+  ]);
+
+  useVoiceController({ resolveTarget: resolveVoiceTarget });
+  usePushToTalk();
 
   const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
@@ -1266,5 +1309,10 @@ export default function App() {
     </ThemeProvider>
   );
 
-  return <AiComposerProvider>{shell}</AiComposerProvider>;
+  return (
+    <AiComposerProvider>
+      {shell}
+      <VoiceHud />
+    </AiComposerProvider>
+  );
 }

@@ -1,6 +1,6 @@
 pub mod modules;
 
-use modules::{agent, fs, git, history, net, pty, secrets, shell, workspace};
+use modules::{agent, fs, git, history, net, pty, secrets, shell, voice, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -152,6 +152,8 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .setup(|_app| {
+            voice::install_fn_monitor(_app.handle());
+
             // macOS skips parent() for the settings window, so tie its lifecycle
             // to the main window here instead. Other platforms keep parent().
             #[cfg(target_os = "macos")]
