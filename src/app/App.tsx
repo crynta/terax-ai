@@ -396,6 +396,19 @@ export default function App() {
   useEffect(() => {
     mruRef.current = [activeId, ...mruRef.current.filter((id) => id !== activeId)];
   }, [activeId]);
+
+  // When the user navigates to a terminal tab, clear any "needs input" status
+  // on agents running in that tab — they can see the agent, no notification needed.
+  useEffect(() => {
+    const tab = tabs.find((t) => t.id === activeId);
+    if (!tab || tab.kind !== "terminal") return;
+    const store = useAgentStore.getState();
+    for (const s of Object.values(store.sessions)) {
+      if (s.tabId === activeId && s.status === "waiting") {
+        store.setStatus(s.leafId, "idle");
+      }
+    }
+  }, [activeId, tabs]);
   useEffect(() => {
     const live = new Set(tabs.map((t) => t.id));
     mruRef.current = mruRef.current.filter((id) => live.has(id));
