@@ -36,6 +36,15 @@ describe("resolveDisplayName", () => {
     expect(resolveDisplayName("json.backup")).not.toBe("JSON");
   });
 
+  it("resolves shell dotfiles", () => {
+    expect(resolveDisplayName(".zshrc")).toBe("Shell");
+    expect(resolveDisplayName(".zshenv")).toBe("Shell");
+    expect(resolveDisplayName(".zprofile")).toBe("Shell");
+    expect(resolveDisplayName(".bashrc")).toBe("Shell");
+    expect(resolveDisplayName(".bash_profile")).toBe("Shell");
+    expect(resolveDisplayName(".profile")).toBe("Shell");
+  });
+
   it("falls back to a capitalized basename for unknown files", () => {
     expect(resolveDisplayName("notes")).toBe("Notes");
     expect(resolveDisplayName(null)).toBe("Plain Text");
