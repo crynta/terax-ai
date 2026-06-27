@@ -1,4 +1,5 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
+import { showMinimap } from "@replit/codemirror-minimap";
 import { indentUnit } from "@codemirror/language";
 import { lintGutter } from "@codemirror/lint";
 import { search } from "@codemirror/search";
@@ -10,6 +11,7 @@ export const languageCompartment = new Compartment();
 export const readOnlyCompartment = new Compartment();
 export const wrapCompartment = new Compartment();
 export const vimCompartment = new Compartment();
+export const minimapCompartment = new Compartment();
 
 // Only what basicSetup doesn't already cover, to avoid duplicate extensions.
 // basicSetup gives us line numbers, fold gutter, history, indentOnInput,
@@ -93,4 +95,16 @@ export function buildSharedExtensions(): Extension[] {
       },
     }),
   ];
+}
+
+export function buildMinimapExt(enabled: boolean): Extension {
+  if (!enabled) return [];
+  return showMinimap.compute(["doc"], () => ({
+    create: () => {
+      const dom = document.createElement("div");
+      return { dom };
+    },
+    displayText: "characters",
+    showOverlay: "always",
+  }));
 }
