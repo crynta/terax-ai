@@ -15,6 +15,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
 import { AgentIcon } from "../lib/agentIcon";
+import { displayAgent } from "../lib/format";
 import type { AgentNotification, AgentStatus } from "../lib/types";
 import { useAgentStore } from "../store/agentStore";
 
@@ -54,7 +55,9 @@ function StatusRow({
         size={16}
         className="shrink-0 text-muted-foreground"
       />
-      <span className="flex-1 truncate text-sm text-foreground">{agent}</span>
+      <span className="flex-1 truncate text-sm text-foreground">
+        {displayAgent(agent)}
+      </span>
       <span
         className={cn(
           "flex items-center gap-1.5 text-xs",
@@ -73,6 +76,62 @@ const NOTIF_LABEL: Record<AgentNotification["kind"], string> = {
   finished: "finished",
   error: "failed",
 };
+
+const HOOK_AGENTS = [
+  { id: "claude", label: "Claude Code" },
+  { id: "codex", label: "Codex" },
+  { id: "gemini", label: "Gemini" },
+] as const;
+
+function HookAgentRow({
+  id,
+  label,
+  ready,
+  installing,
+  onEnable,
+}: {
+  id: string;
+  label: string;
+  ready: boolean;
+  installing: boolean;
+  onEnable: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1">
+      <AgentIcon agent={id} size={14} className="shrink-0 text-muted-foreground" />
+      <span className="flex-1 truncate text-[12px] text-muted-foreground">
+        {label}
+      </span>
+      {ready ? (
+        <span className="flex items-center gap-1 text-[11px] font-medium text-primary">
+          <HugeiconsIcon
+            icon={CheckmarkCircle02Icon}
+            size={13}
+            strokeWidth={1.75}
+          />
+          enabled
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onEnable}
+          disabled={installing}
+          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
+        >
+          {installing ? (
+            <HugeiconsIcon
+              icon={Loading03Icon}
+              size={12}
+              strokeWidth={1.75}
+              className="animate-spin"
+            />
+          ) : null}
+          {installing ? "Enabling" : "Enable"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function NotificationRow({
   n,
@@ -105,7 +164,7 @@ function NotificationRow({
         )}
       </span>
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-        {n.agent}{" "}
+        {displayAgent(n.agent)}{" "}
         <span className="text-muted-foreground">{NOTIF_LABEL[n.kind]}</span>
       </span>
       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
@@ -117,12 +176,13 @@ function NotificationRow({
 
 export function NotificationBell({ onActivate, onActivateLocal }: Props) {
   const [open, setOpen] = useState(false);
-  const [hooksReady, setHooksReady] = useState<boolean | null>(null);
-  const [installing, setInstalling] = useState(false);
+  const [hooks, setHooks] = useState<Record<string, boolean>>({});
+  const [installing, setInstalling] = useState<string | null>(null);
   const sessions = useAgentStore((s) => s.sessions);
   const localAgent = useAgentStore((s) => s.localAgent);
   const notifications = useAgentStore((s) => s.notifications);
   const markAllRead = useAgentStore((s) => s.markAllRead);
+  const clearNotifications = useAgentStore((s) => s.clearNotifications);
 
   const active = useMemo(() => Object.values(sessions), [sessions]);
   const activeCount = active.length + (localAgent ? 1 : 0);
@@ -137,9 +197,11 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
   const badge = waitingCount + unreadDone;
 
   const refreshHooks = () => {
-    invoke<boolean>("agent_claude_hooks_status")
-      .then(setHooksReady)
-      .catch(() => setHooksReady(null));
+    for (const a of HOOK_AGENTS) {
+      invoke<boolean>("agent_hooks_status", { agent: a.id })
+        .then((ok) => setHooks((h) => ({ ...h, [a.id]: ok })))
+        .catch(() => setHooks((h) => ({ ...h, [a.id]: false })));
+    }
   };
 
   const onOpenChange = (next: boolean) => {
@@ -150,15 +212,15 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
     }
   };
 
-  const enableClaudeHooks = async () => {
-    setInstalling(true);
+  const enableHooks = async (id: string) => {
+    setInstalling(id);
     try {
-      await invoke("agent_enable_claude_hooks");
-      setHooksReady(true);
+      await invoke("agent_enable_hooks", { agent: id });
+      setHooks((h) => ({ ...h, [id]: true }));
     } catch {
-      setHooksReady(false);
+      setHooks((h) => ({ ...h, [id]: false }));
     } finally {
-      setInstalling(false);
+      setInstalling(null);
     }
   };
 
@@ -205,22 +267,33 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
         sideOffset={8}
         className="w-80 overflow-hidden p-0 gap-0.5"
       >
-        <div className="flex h-10 items-center px-3 pt-0.5">
+        <div className="flex h-10 items-center gap-2 px-3 pt-0.5">
           <span className="flex gap-1 text-[13px] text-foreground">
             Notifications
           </span>
-          {activeCount > 0 ? (
-            <span className="ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-              {activeCount} active
-            </span>
-          ) : null}
+          <div className="ml-auto flex items-center gap-2">
+            {activeCount > 0 ? (
+              <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+                {activeCount} active
+              </span>
+            ) : null}
+            {notifications.length > 0 ? (
+              <button
+                type="button"
+                onClick={clearNotifications}
+                className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {empty ? (
           <div className="border-t border-border/60 px-3 py-5 text-center text-xs leading-relaxed text-muted-foreground">
             No agent activity yet.
             <br />
-            Run the Terax agent or Claude Code to track it here.
+            Run the Terax agent or a coding agent to track it here.
           </div>
         ) : (
           <div className="max-h-80 overflow-y-auto border-t border-border/60 p-1">
@@ -252,38 +325,21 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
           </div>
         )}
 
-        <div className="border-t flex justify-center border-border/60 p-1">
-          {hooksReady ? (
-            <div className="flex items-center gap-2 px-2 py-1.5 text-[11px] text-muted-foreground">
-              <HugeiconsIcon
-                icon={CheckmarkCircle02Icon}
-                size={13}
-                strokeWidth={1.75}
-                className="text-primary"
-              />
-              Claude Code alerts enabled
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={enableClaudeHooks}
-              disabled={installing}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
-            >
-              <HugeiconsIcon
-                icon={installing ? Loading03Icon : Notification03Icon}
-                size={14}
-                strokeWidth={1.75}
-                className={cn(installing && "animate-spin")}
-              />
-              {installing ? "Enabling..." : "Enable Claude Code alerts"}
-            </button>
-          )}
-          {hooksReady === false && !installing ? (
-            <p className="px-2 pt-1 text-[11px] text-destructive">
-              Could not update Claude Code config.
-            </p>
-          ) : null}
+        <div className="border-t border-border/60 p-1">
+          <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
+            <HugeiconsIcon icon={Notification03Icon} size={11} strokeWidth={2} />
+            Agent alerts
+          </div>
+          {HOOK_AGENTS.map((a) => (
+            <HookAgentRow
+              key={a.id}
+              id={a.id}
+              label={a.label}
+              ready={hooks[a.id] === true}
+              installing={installing === a.id}
+              onEnable={() => enableHooks(a.id)}
+            />
+          ))}
         </div>
       </PopoverContent>
     </Popover>
