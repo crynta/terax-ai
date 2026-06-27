@@ -5,9 +5,10 @@ const ST_FINAL: u8 = b'\\';
 
 const OSC_MAX: usize = 2048;
 
-const DEFAULT_AGENTS: &[&str] = &["claude", "codex"];
+const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini"];
 
-// OSC 777 marker our Claude Code hooks emit via `terminalSequence`.
+// OSC 777 marker our agent hooks emit. Legacy 3-field `notify;Terax;<event>`
+// (Claude) or 4-field `notify;Terax;<agent>;<event>` (Codex/Gemini).
 const TERAX_MARKER: &[u8] = b"notify;Terax;";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -160,21 +161,24 @@ impl AgentDetector {
     }
 
     fn handle_osc777<F: FnMut(Transition)>(&mut self, pt: &[u8], emit: &mut F) {
-        if let Some(event) = pt.strip_prefix(TERAX_MARKER) {
-            // Self-arms so notifications work even when no shell preexec fired
-            // (bash, Windows, tmux, wrappers).
+        if let Some(tail) = pt.strip_prefix(TERAX_MARKER) {
+            let (agent, event) = match tail.iter().position(|&c| c == b';') {
+                Some(i) => (std::str::from_utf8(&tail[..i]).unwrap_or("claude"), &tail[i + 1..]),
+                None => ("claude", tail),
+            };
+            // Self-arms when no shell preexec fired (bash, Windows, tmux).
             match event {
                 b"working" => {
-                    self.ensure_armed(emit);
+                    self.ensure_armed(agent, emit);
                     self.set_working(emit);
                 }
                 b"attention" => {
-                    self.ensure_armed(emit);
+                    self.ensure_armed(agent, emit);
                     self.status = Status::Waiting;
                     emit(Transition::Attention);
                 }
                 b"finished" => {
-                    self.ensure_armed(emit);
+                    self.ensure_armed(agent, emit);
                     self.status = Status::Waiting;
                     emit(Transition::Finished);
                 }
@@ -206,11 +210,11 @@ impl AgentDetector {
         }
     }
 
-    fn ensure_armed<F: FnMut(Transition)>(&mut self, emit: &mut F) {
+    fn ensure_armed<F: FnMut(Transition)>(&mut self, agent: &str, emit: &mut F) {
         if !self.armed {
             self.armed = true;
             self.status = Status::Working;
-            emit(Transition::Started { agent: "claude".into() });
+            emit(Transition::Started { agent: agent.to_string() });
         }
     }
 
@@ -323,6 +327,27 @@ mod tests {
             run(&mut d, &osc("777;notify;Terax;attention")),
             vec![started("claude"), Transition::Attention]
         );
+    }
+
+    #[test]
+    fn four_field_marker_self_arms_named_agent() {
+        // Fresh arm already implies Working, so `working` emits only Started.
+        let mut d = AgentDetector::new();
+        assert_eq!(run(&mut d, &osc("777;notify;Terax;codex;working")), vec![started("codex")]);
+        let mut g = AgentDetector::new();
+        assert_eq!(
+            run(&mut g, &osc("777;notify;Terax;gemini;finished")),
+            vec![started("gemini"), Transition::Finished]
+        );
+    }
+
+    #[test]
+    fn four_field_marker_drives_status_after_preexec() {
+        let mut d = AgentDetector::new();
+        run(&mut d, &osc("133;C;gemini"));
+        assert_eq!(run(&mut d, &osc("777;notify;Terax;gemini;attention")), vec![Transition::Attention]);
+        assert_eq!(run(&mut d, &osc("777;notify;Terax;gemini;working")), vec![Transition::Working]);
+        assert_eq!(run(&mut d, &osc("777;notify;Terax;gemini;finished")), vec![Transition::Finished]);
     }
 
     #[test]

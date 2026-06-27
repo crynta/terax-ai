@@ -112,6 +112,21 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if args.get(1).map(String::as_str) == Some("__terax_notify") {
+            if let (Some(agent), Some(event)) = (args.get(2), args.get(3)) {
+                agent::emit_conout_marker(agent, event);
+            }
+            use std::io::Write;
+            let mut out = std::io::stdout();
+            let _ = out.write_all(b"{}");
+            let _ = out.flush();
+            std::process::exit(0);
+        }
+    }
+
     let cli_dir = parse_launch_dir();
     workspace::init_launch_cwd(cli_dir.as_deref());
 
@@ -232,8 +247,8 @@ pub fn run() {
             workspace::workspace_current_dir,
             get_launch_dir,
             open_settings_window,
-            agent::agent_enable_claude_hooks,
-            agent::agent_claude_hooks_status,
+            agent::agent_enable_hooks,
+            agent::agent_hooks_status,
             secrets::secrets_get,
             secrets::secrets_set,
             secrets::secrets_delete,
