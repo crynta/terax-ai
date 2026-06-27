@@ -4,9 +4,6 @@ use portable_pty::CommandBuilder;
 
 use crate::modules::workspace::{self, WorkspaceEnv};
 
-const FISH_POST_CONFIG_COMMAND: &str =
-    "functions -q __terax_install_prompt; and __terax_install_prompt";
-
 #[cfg(windows)]
 const BASHRC_SCRIPT: &str = include_str!("scripts/bashrc.bash");
 #[cfg(windows)]
@@ -185,8 +182,6 @@ mod unix {
     use std::path::{Path, PathBuf};
 
     use portable_pty::CommandBuilder;
-
-    use super::FISH_POST_CONFIG_COMMAND;
 
     const ZSHENV: &str = include_str!("scripts/zshenv.zsh");
     const ZPROFILE: &str = include_str!("scripts/zprofile.zsh");
@@ -469,8 +464,6 @@ mod windows {
 
     use crate::modules::workspace::WorkspaceEnv;
     use portable_pty::CommandBuilder;
-
-    use super::FISH_POST_CONFIG_COMMAND;
 
     const PROFILE_PS1: &str = include_str!("scripts/profile.ps1");
 
