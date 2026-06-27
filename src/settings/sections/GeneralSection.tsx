@@ -22,6 +22,7 @@ import {
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
+  setEditorMinimap,
   setEditorWordWrap,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
@@ -86,6 +87,7 @@ export function GeneralSection() {
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
+  const editorMinimap = usePreferencesStore((s) => s.editorMinimap);
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
@@ -213,6 +215,15 @@ export function GeneralSection() {
           <Switch
             checked={editorWordWrap}
             onCheckedChange={(v) => void setEditorWordWrap(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Minimap"
+          description="Show a scaled overview of the file on the right side of the editor."
+        >
+          <Switch
+            checked={editorMinimap}
+            onCheckedChange={(v) => void setEditorMinimap(v)}
           />
         </SettingRow>
         <SettingRow
