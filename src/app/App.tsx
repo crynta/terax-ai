@@ -627,6 +627,20 @@ export default function App() {
 
   const [zenMode, setZenMode] = useState(false);
 
+  // Focus an agent's tab, switching to its space first so the header and tab
+  // strip don't end up showing a different space than the focused pane.
+  const activateAgentTarget = useCallback(
+    (tabId: number, leafId: number) => {
+      const space = tabsRef.current.find((t) => t.id === tabId)?.spaceId;
+      if (space && space !== useSpaces.getState().activeId) {
+        useSpaces.getState().setActive(space);
+      }
+      setActiveId(tabId);
+      focusPane(tabId, leafId);
+    },
+    [setActiveId, focusPane],
+  );
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "commandPalette.open": () => openCommandPalette("commands"),
@@ -660,10 +674,7 @@ export default function App() {
       "ai.askSelection": askFromSelection,
       "agent.focusAttention": () => {
         const t = nextAttentionTarget();
-        if (t) {
-          setActiveId(t.tabId);
-          focusPane(t.tabId, t.leafId);
-        }
+        if (t) activateAgentTarget(t.tabId, t.leafId);
       },
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
@@ -696,8 +707,7 @@ export default function App() {
       zoomIn,
       zoomOut,
       zoomReset,
-      setActiveId,
-      focusPane,
+      activateAgentTarget,
     ],
   );
 
@@ -807,13 +817,7 @@ export default function App() {
     [focusPane],
   );
 
-  const onActivateAgent = useCallback(
-    (tabId: number, leafId: number) => {
-      setActiveId(tabId);
-      focusPane(tabId, leafId);
-    },
-    [setActiveId, focusPane],
-  );
+  const onActivateAgent = activateAgentTarget;
 
   const onActivateLocalAgent = useCallback(() => {
     openPanel();

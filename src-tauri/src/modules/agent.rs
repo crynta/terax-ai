@@ -209,6 +209,13 @@ pub fn agent_enable_hooks(agent: String) -> Result<(), String> {
     Ok(())
 }
 
+// The raw OSC 777 bytes the detector parses. Kept in one place so the Windows
+// CONOUT$ path can't drift from what the Unix /dev/tty hook emits.
+#[cfg(any(windows, test))]
+fn conout_marker(agent: &str, event: &str) -> String {
+    format!("\x1b]777;notify;Terax;{agent};{event}\x07")
+}
+
 // Windows has no /dev/tty: the hook calls `terax.exe __terax_notify ...` and we
 // write the marker into the ConPTY console. GUI-subsystem release inherits no
 // console, so attach to the hook runner's first.
@@ -223,13 +230,12 @@ pub fn emit_conout_marker(agent: &str, event: &str) {
     unsafe {
         AttachConsole(ATTACH_PARENT_PROCESS);
     }
-    let marker = format!("\x1b]777;notify;Terax;{agent};{event}\x07");
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .open("CONOUT$")
     {
-        let _ = f.write_all(marker.as_bytes());
+        let _ = f.write_all(conout_marker(agent, event).as_bytes());
     }
 }
 
@@ -289,6 +295,15 @@ mod tests {
             let twice = merge_hooks(once.clone(), s);
             assert_eq!(once, twice, "{agent} not idempotent");
         }
+    }
+
+    #[test]
+    fn conout_marker_matches_detector_format() {
+        // Exactly the bytes pty/agent_detect parses (ESC ] 777 ; ... BEL).
+        assert_eq!(
+            conout_marker("gemini", "attention"),
+            "\u{1b}]777;notify;Terax;gemini;attention\u{7}"
+        );
     }
 
     #[cfg(unix)]

@@ -77,11 +77,7 @@ const NOTIF_LABEL: Record<AgentNotification["kind"], string> = {
   error: "failed",
 };
 
-const HOOK_AGENTS = [
-  { id: "claude", label: "Claude Code" },
-  { id: "codex", label: "Codex" },
-  { id: "gemini", label: "Gemini" },
-] as const;
+const HOOK_AGENTS = ["claude", "codex", "gemini"] as const;
 
 function HookAgentRow({
   id,
@@ -197,10 +193,10 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
   const badge = waitingCount + unreadDone;
 
   const refreshHooks = () => {
-    for (const a of HOOK_AGENTS) {
-      invoke<boolean>("agent_hooks_status", { agent: a.id })
-        .then((ok) => setHooks((h) => ({ ...h, [a.id]: ok })))
-        .catch(() => setHooks((h) => ({ ...h, [a.id]: false })));
+    for (const id of HOOK_AGENTS) {
+      invoke<boolean>("agent_hooks_status", { agent: id })
+        .then((ok) => setHooks((h) => ({ ...h, [id]: ok })))
+        .catch(() => setHooks((h) => ({ ...h, [id]: false })));
     }
   };
 
@@ -330,14 +326,14 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
             <HugeiconsIcon icon={Notification03Icon} size={11} strokeWidth={2} />
             Agent alerts
           </div>
-          {HOOK_AGENTS.map((a) => (
+          {HOOK_AGENTS.map((id) => (
             <HookAgentRow
-              key={a.id}
-              id={a.id}
-              label={a.label}
-              ready={hooks[a.id] === true}
-              installing={installing === a.id}
-              onEnable={() => enableHooks(a.id)}
+              key={id}
+              id={id}
+              label={displayAgent(id)}
+              ready={hooks[id] === true}
+              installing={installing === id}
+              onEnable={() => enableHooks(id)}
             />
           ))}
         </div>

@@ -162,8 +162,17 @@ impl AgentDetector {
 
     fn handle_osc777<F: FnMut(Transition)>(&mut self, pt: &[u8], emit: &mut F) {
         if let Some(tail) = pt.strip_prefix(TERAX_MARKER) {
+            // PTY output is untrusted: only self-arm for known agents.
             let (agent, event) = match tail.iter().position(|&c| c == b';') {
-                Some(i) => (std::str::from_utf8(&tail[..i]).unwrap_or("claude"), &tail[i + 1..]),
+                Some(i) => {
+                    let Ok(name) = std::str::from_utf8(&tail[..i]) else {
+                        return;
+                    };
+                    if !self.agents.iter().any(|a| a == name) {
+                        return;
+                    }
+                    (name, &tail[i + 1..])
+                }
                 None => ("claude", tail),
             };
             // Self-arms when no shell preexec fired (bash, Windows, tmux).
@@ -338,6 +347,17 @@ mod tests {
         assert_eq!(
             run(&mut g, &osc("777;notify;Terax;gemini;finished")),
             vec![started("gemini"), Transition::Finished]
+        );
+    }
+
+    #[test]
+    fn four_field_marker_ignores_unknown_agent() {
+        let mut d = AgentDetector::new();
+        assert!(run(&mut d, &osc("777;notify;Terax;evil;attention")).is_empty());
+        // A known agent in the same chunk still works.
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;codex;attention")),
+            vec![started("codex"), Transition::Attention]
         );
     }
 
