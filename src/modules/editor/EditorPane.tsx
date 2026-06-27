@@ -23,8 +23,10 @@ import {
 } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
+  buildMinimapExt,
   buildSharedExtensions,
   languageCompartment,
+  minimapCompartment,
   vimCompartment,
   wrapCompartment,
 } from "./lib/extensions";
@@ -81,6 +83,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const themeExt = useEditorThemeExt();
     const vimMode = usePreferencesStore((s) => s.vimMode);
     const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
+    const editorMinimap = usePreferencesStore((s) => s.editorMinimap);
     const languageRef = useRef<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
 
@@ -169,6 +172,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
             ? EditorView.lineWrapping
             : [],
         ),
+        minimapCompartment.of(
+          buildMinimapExt(usePreferencesStore.getState().editorMinimap),
+        ),
         vimHandlersExtension(() => ({
           save: () => {
             void (async () => {
@@ -253,6 +259,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         ),
       });
     }, [editorWordWrap]);
+
+    useEffect(() => {
+      const view = cmRef.current?.view;
+      if (!view) return;
+      view.dispatch({
+        effects: minimapCompartment.reconfigure(buildMinimapExt(editorMinimap)),
+      });
+    }, [editorMinimap]);
 
     useEffect(() => {
       const ext =
