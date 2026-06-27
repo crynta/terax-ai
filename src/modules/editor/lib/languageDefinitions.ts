@@ -262,6 +262,18 @@ export const LANGUAGES: LanguageDefinition[] = [
       defineLanguage(
         import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
       ),
+    filenames: [
+      ".zshrc",
+      ".zshenv",
+      ".zprofile",
+      ".zlogin",
+      ".zlogout",
+      ".bashrc",
+      ".bash_profile",
+      ".bash_aliases",
+      ".bash_logout",
+      ".profile",
+    ],
     userSelectable: true,
   },
   {
