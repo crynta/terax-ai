@@ -51,16 +51,21 @@ export const usePreferencesStore = create<State>((set) => ({
   init: () => {
     if (initPromise) return initPromise;
     initPromise = (async () => {
-      const prefs = await loadPreferences();
-      set({ ...prefs, hydrated: true });
-      mirrorBgFastPath(prefs.backgroundKind, prefs.backgroundImageId);
-      void onPreferencesChange((key, value) => {
-        set({ [key]: value } as Partial<State>);
-        if (key === "backgroundKind" || key === "backgroundImageId") {
-          const s = usePreferencesStore.getState();
-          mirrorBgFastPath(s.backgroundKind, s.backgroundImageId);
-        }
-      });
+      try {
+        const prefs = await loadPreferences();
+        set({ ...prefs, hydrated: true });
+        mirrorBgFastPath(prefs.backgroundKind, prefs.backgroundImageId);
+        void onPreferencesChange((key, value) => {
+          set({ [key]: value } as Partial<State>);
+          if (key === "backgroundKind" || key === "backgroundImageId") {
+            const s = usePreferencesStore.getState();
+            mirrorBgFastPath(s.backgroundKind, s.backgroundImageId);
+          }
+        });
+      } catch (e) {
+        initPromise = null;
+        throw e;
+      }
     })();
     return initPromise;
   },
