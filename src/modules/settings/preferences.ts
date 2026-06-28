@@ -12,7 +12,7 @@ type State = Preferences & {
   init: () => Promise<void>;
 };
 
-let initialized = false;
+let initPromise: Promise<void> | null = null;
 
 const FAST_BG_KIND_KEY = "terax-ui-bg-kind-shadow";
 const FAST_BG_IMAGE_ID_KEY = "terax-ui-bg-image-shadow";
@@ -48,18 +48,20 @@ export function readBgFastPath(): {
 export const usePreferencesStore = create<State>((set) => ({
   ...DEFAULT_PREFERENCES,
   hydrated: false,
-  init: async () => {
-    if (initialized) return;
-    initialized = true;
-    const prefs = await loadPreferences();
-    set({ ...prefs, hydrated: true });
-    mirrorBgFastPath(prefs.backgroundKind, prefs.backgroundImageId);
-    void onPreferencesChange((key, value) => {
-      set({ [key]: value } as Partial<State>);
-      if (key === "backgroundKind" || key === "backgroundImageId") {
-        const s = usePreferencesStore.getState();
-        mirrorBgFastPath(s.backgroundKind, s.backgroundImageId);
-      }
-    });
+  init: () => {
+    if (initPromise) return initPromise;
+    initPromise = (async () => {
+      const prefs = await loadPreferences();
+      set({ ...prefs, hydrated: true });
+      mirrorBgFastPath(prefs.backgroundKind, prefs.backgroundImageId);
+      void onPreferencesChange((key, value) => {
+        set({ [key]: value } as Partial<State>);
+        if (key === "backgroundKind" || key === "backgroundImageId") {
+          const s = usePreferencesStore.getState();
+          mirrorBgFastPath(s.backgroundKind, s.backgroundImageId);
+        }
+      });
+    })();
+    return initPromise;
   },
 }));
