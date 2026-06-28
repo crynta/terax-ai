@@ -21,6 +21,7 @@ import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
+  setAiBypassPermissions,
   setAutostart,
   setEditorWordWrap,
   setEditorAutoSave,
@@ -109,6 +110,9 @@ export function GeneralSection() {
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
+  const aiBypassPermissions = usePreferencesStore(
+    (s) => s.aiBypassPermissions,
+  );
 
   useEffect(() => {
     let alive = true;
@@ -439,6 +443,15 @@ export function GeneralSection() {
           <Switch
             checked={agentNotifications}
             onCheckedChange={(v) => void setAgentNotifications(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Bypass approvals (YOLO)"
+          description="Let the AI agent run edits and shell commands without per-action approval. Convenient but risky: the agent can modify files and run commands unprompted. Also toggleable from the AI bar."
+        >
+          <Switch
+            checked={aiBypassPermissions}
+            onCheckedChange={(v) => void setAiBypassPermissions(v)}
           />
         </SettingRow>
       </div>
