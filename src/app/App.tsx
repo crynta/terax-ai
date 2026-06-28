@@ -284,6 +284,7 @@ export default function App() {
   const miniOpen = useChatStore((s) => s.mini.open);
   const miniPresence = usePresence(miniOpen, 200);
   const openMini = useChatStore((s) => s.openMini);
+  const newSession = useChatStore((s) => s.newSession);
   const focusInput = useChatStore((s) => s.focusInput);
   const openPanel = useChatStore((s) => s.openPanel);
   const panelOpen = useChatStore((s) => s.panelOpen);
@@ -427,13 +428,16 @@ export default function App() {
       void openSettingsWindow("models");
       return;
     }
-    if (panelOpen) {
-      useChatStore.getState().closePanel();
+    const store = useChatStore.getState();
+    if (panelOpen || miniOpen) {
+      store.closePanel();
+      store.closeMini();
     } else {
       openPanel();
+      store.openMini();
       focusInput(null);
     }
-  }, [hasComposer, panelOpen, openPanel, focusInput]);
+  }, [hasComposer, panelOpen, miniOpen, openPanel, focusInput]);
 
   const attachSelection = useChatStore((s) => s.attachSelection);
 
@@ -675,6 +679,10 @@ export default function App() {
       "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
+      "ai.newThread": () => {
+        newSession();
+        focusInput(null);
+      },
       "ai.askSelection": askFromSelection,
       "agent.focusAttention": () => {
         const t = nextAttentionTarget();
@@ -706,6 +714,8 @@ export default function App() {
       focusNextPaneInTab,
       toggleSourceControl,
       togglePanelAndFocus,
+      newSession,
+      focusInput,
       askFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
@@ -720,6 +730,15 @@ export default function App() {
     (id: ShortcutId, e: KeyboardEvent) => {
       if (id === "editor.undo" || id === "editor.redo") {
         return activeTab?.kind !== "editor";
+      }
+      if (id === "ai.newThread") {
+        // Only when focus is inside the AI surface (conversation popup or
+        // the docked input bar) — otherwise Cmd+N falls through.
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        return !(target as HTMLElement | null)?.closest?.(
+          "[data-ai-mini-window], [data-ai-input-bar]",
+        );
       }
       if (id === "ai.askSelection") {
         const target =
