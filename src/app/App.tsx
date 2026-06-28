@@ -397,14 +397,17 @@ export default function App() {
     mruRef.current = [activeId, ...mruRef.current.filter((id) => id !== activeId)];
   }, [activeId]);
 
-  // When the user navigates to a terminal tab, clear any "needs input" status
-  // on agents running in that tab — they can see the agent, no notification needed.
+  // When the user navigates to a terminal tab, reset any non-idle agent status
+  // back to idle — they are looking at the terminal so notifications are moot,
+  // and a Ctrl+C interrupt won't fire a finished signal so "working" would
+  // otherwise get stuck. If the agent is genuinely still working the backend
+  // will fire the next "working" signal and promote it back immediately.
   useEffect(() => {
     const tab = tabs.find((t) => t.id === activeId);
     if (!tab || tab.kind !== "terminal") return;
     const store = useAgentStore.getState();
     for (const s of Object.values(store.sessions)) {
-      if (s.tabId === activeId && s.status === "waiting") {
+      if (s.tabId === activeId && s.status !== "idle") {
         store.setStatus(s.leafId, "idle");
       }
     }
