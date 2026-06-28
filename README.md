@@ -108,6 +108,7 @@ Latest installers are on the [Releases](https://github.com/crynta/terax-ai/relea
 - **Arch / AUR:** `yay -S terax-bin` (or `paru`, etc.). Tracks the latest release.
 - **NixOS / Nix**: use the official flake — `nix profile install github:crynta/terax-ai` (non-NixOS), or import the flake and add `inputs.terax.packages.${pkgs.system}.terax` to `environment.systemPackages` (NixOS). The `nixosModules.terax` output is also available for a simpler setup.
 - **AppImage:** needs FUSE. Without it: `./Terax_*.AppImage --appimage-extract-and-run`. On Wayland with rendering glitches, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`. Otherwise the `.deb` / `.rpm` packages link against the system GTK stack and tend to be smoother.
+- **X11 with high idle CPU or sluggish input:** WebKit's GPU compositing can spin on some drivers (NVIDIA proprietary is the common case). Try setting `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `WEBKIT_DISABLE_COMPOSITING_MODE=1`.
 
 ## Configure AI
 
