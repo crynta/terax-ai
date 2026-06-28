@@ -14,6 +14,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   ArrowDown01Icon,
   Folder01Icon,
   Home03Icon,
@@ -22,7 +28,13 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useState } from "react";
+import { IS_LINUX, IS_MAC, IS_WINDOWS } from "@/lib/platform";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import {
+  copyToClipboard,
+  relativePath,
+  revealInFinder,
+} from "@/modules/explorer/lib/contextActions";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { segmentsFromCwd } from "./lib/pathUtils";
 
@@ -45,6 +57,30 @@ function basename(path: string): string {
 }
 
 export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
+  const fullPath = filePath ?? cwd;
+  const openTargetPath = filePath ? dirname(filePath) : cwd;
+  const relativeToCwd =
+    cwd && fullPath ? relativePath(cwd, fullPath).replace(/\\/g, "/") : null;
+  const openFolderLabel = IS_MAC
+    ? "Reveal in Finder"
+    : IS_WINDOWS
+      ? "Reveal in Explorer"
+      : IS_LINUX
+        ? "Reveal in File Manager"
+        : "Reveal Folder";
+  const copyFullPath = useCallback(async () => {
+    if (!fullPath) return;
+    await copyToClipboard(fullPath);
+  }, [fullPath]);
+  const copyRelativeToCwd = useCallback(async () => {
+    if (!relativeToCwd) return;
+    await copyToClipboard(relativeToCwd);
+  }, [relativeToCwd]);
+  const openFolder = useCallback(async () => {
+    if (!openTargetPath) return;
+    await revealInFinder(openTargetPath);
+  }, [openTargetPath]);
+
   // File mode: dir segments navigate; filename is the terminal leaf.
   if (filePath) {
     const dir = dirname(filePath);
@@ -53,35 +89,52 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
     const first = segments[0];
     const middle = segments.slice(1);
     return (
-      <Breadcrumb>
-        <BreadcrumbList className="gap-1 text-xs sm:gap-1.5">
-          {first ? (
-            <BreadcrumbSegment
-              label={first.label}
-              isHome={first.isHome}
-              onClick={() => onCd(first.fullPath)}
-            />
-          ) : null}
-          {middle.length > 0 ? (
-            <CollapsedSegments segments={middle} onCd={onCd} />
-          ) : null}
-          {middle.map((s) => (
-            <span
-              key={s.fullPath}
-              className="contents max-md:hidden"
-            >
-              <BreadcrumbSegment
-                label={s.label}
-                isHome={s.isHome}
-                onClick={() => onCd(s.fullPath)}
-              />
-            </span>
-          ))}
-          <BreadcrumbItem>
-            <BreadcrumbPage className="text-foreground">{name}</BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div>
+            <Breadcrumb>
+              <BreadcrumbList className="gap-1 text-xs sm:gap-1.5">
+                {first ? (
+                  <BreadcrumbSegment
+                    label={first.label}
+                    isHome={first.isHome}
+                    onClick={() => onCd(first.fullPath)}
+                  />
+                ) : null}
+                {middle.length > 0 ? (
+                  <CollapsedSegments segments={middle} onCd={onCd} />
+                ) : null}
+                {middle.map((s) => (
+                  <span key={s.fullPath} className="contents max-md:hidden">
+                    <BreadcrumbSegment
+                      label={s.label}
+                      isHome={s.isHome}
+                      onClick={() => onCd(s.fullPath)}
+                    />
+                  </span>
+                ))}
+                <BreadcrumbItem>
+                  <BreadcrumbPage className="text-foreground">{name}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={() => void openFolder()}>
+            {openFolderLabel}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!relativeToCwd}
+            onSelect={() => void copyRelativeToCwd()}
+          >
+            Copy relative path
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void copyFullPath()}>
+            Copy full path
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     );
   }
 
@@ -98,36 +151,56 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
   const firstParent = parents[0];
   const middleParents = parents.slice(1);
   return (
-    <Breadcrumb>
-      <BreadcrumbList className="gap-1 text-xs sm:gap-1.5">
-        {firstParent ? (
-          <BreadcrumbSegment
-            label={firstParent.label}
-            isHome={firstParent.isHome}
-            onClick={() => onCd(firstParent.fullPath)}
-          />
-        ) : null}
-        {middleParents.length > 0 ? (
-          <CollapsedSegments segments={middleParents} onCd={onCd} />
-        ) : null}
-        {middleParents.map((s) => (
-          <span key={s.fullPath} className="contents max-md:hidden">
-            <BreadcrumbSegment
-              label={s.label}
-              isHome={s.isHome}
-              onClick={() => onCd(s.fullPath)}
-            />
-          </span>
-        ))}
-        <BreadcrumbItem>
-          <CurrentSegmentDropdown
-            label={current.label}
-            path={current.fullPath}
-            onCd={onCd}
-          />
-        </BreadcrumbItem>
-      </BreadcrumbList>
-    </Breadcrumb>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div>
+          <Breadcrumb>
+            <BreadcrumbList className="gap-1 text-xs sm:gap-1.5">
+              {firstParent ? (
+                <BreadcrumbSegment
+                  label={firstParent.label}
+                  isHome={firstParent.isHome}
+                  onClick={() => onCd(firstParent.fullPath)}
+                />
+              ) : null}
+              {middleParents.length > 0 ? (
+                <CollapsedSegments segments={middleParents} onCd={onCd} />
+              ) : null}
+              {middleParents.map((s) => (
+                <span key={s.fullPath} className="contents max-md:hidden">
+                  <BreadcrumbSegment
+                    label={s.label}
+                    isHome={s.isHome}
+                    onClick={() => onCd(s.fullPath)}
+                  />
+                </span>
+              ))}
+              <BreadcrumbItem>
+                <CurrentSegmentDropdown
+                  label={current.label}
+                  path={current.fullPath}
+                  onCd={onCd}
+                />
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onSelect={() => void openFolder()}>
+          {openFolderLabel}
+        </ContextMenuItem>
+        <ContextMenuItem
+          disabled={!relativeToCwd}
+          onSelect={() => void copyRelativeToCwd()}
+        >
+          Copy relative path
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => void copyFullPath()}>
+          Copy full path
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
