@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { Tab } from "@/modules/tabs";
 import { leafHasForegroundProcess, leafIds } from "@/modules/terminal";
 
@@ -23,7 +24,10 @@ export function useAppCloseGuard(tabsRef: RefObject<Tab[]>) {
       .onCloseRequested(async (event) => {
         if (forceClose.current) return;
         event.preventDefault();
-        if (await anyTerminalBusy(tabsRef.current)) {
+        if (
+          usePreferencesStore.getState().confirmCloseTerminal &&
+          (await anyTerminalBusy(tabsRef.current))
+        ) {
           setPendingAppClose(true);
         } else {
           forceClose.current = true;
