@@ -37,6 +37,7 @@ export type ShortcutId =
   | "view.zenMode"
   | "ai.toggle"
   | "ai.askSelection"
+  | "agent.focusAttention"
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
@@ -245,6 +246,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Ask AI about selection",
     group: "AI",
     defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
+  },
+  {
+    id: "agent.focusAttention",
+    label: "Jump to agent needing attention",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "a" }],
   },
   {
     id: "sidebar.toggle",

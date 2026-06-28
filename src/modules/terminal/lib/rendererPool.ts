@@ -10,6 +10,10 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { type FontWeight, Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
 import {
+  readTerminalClipboard,
+  writeTerminalClipboard,
+} from "./terminalClipboard";
+import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
@@ -277,7 +281,7 @@ function createSlot(): Slot {
     if (isTerminalCopy(event)) {
       if (event.type === "keydown" && slot.term.hasSelection()) {
         const sel = slot.term.getSelection();
-        if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        if (sel) void writeTerminalClipboard(sel);
       }
       event.preventDefault();
       return false;
@@ -294,12 +298,10 @@ function createSlot(): Slot {
     }
     if (isTerminalPaste(event)) {
       if (event.type === "keydown") {
-        void navigator.clipboard
-          .readText()
-          .then((text) => {
-            if (text) slot.term.paste(text);
-          })
-          .catch(() => {});
+        const targetLeafId = slot.currentLeafId;
+        void readTerminalClipboard().then((text) => {
+          if (text && slot.currentLeafId === targetLeafId) slot.term.paste(text);
+        });
       }
       event.preventDefault();
       return false;
