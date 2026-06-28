@@ -21,6 +21,10 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "/**" }, { "path": "**" }]
+    },
     "log:default",
     "os:default",
     "notification:default",
