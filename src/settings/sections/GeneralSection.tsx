@@ -1,3 +1,4 @@
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -5,7 +6,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -18,26 +18,27 @@ import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
 import {
-  TERMINAL_FONT_SIZES,
-  TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
-  setEditorWordWrap,
+  setDefaultWorkspaceEnv,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
+  setEditorWordWrap,
   setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
-  setTerminalFontFamily,
-  setTerminalFontWeight,
-  setTerminalShell,
-  setTerminalLetterSpacing,
-  setTerminalFontSize,
   setTerminalCursorBlink,
+  setTerminalFontFamily,
+  setTerminalFontSize,
+  setTerminalFontWeight,
+  setTerminalLetterSpacing,
   setTerminalScrollback,
+  setTerminalShell,
   setTerminalWebglEnabled,
   setVimMode,
   setZoomLevel,
+  TERMINAL_FONT_SIZES,
+  TERMINAL_SCROLLBACK_PRESETS,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
 import {
@@ -95,13 +96,13 @@ export function GeneralSection() {
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
-  const terminalCursorBlink = usePreferencesStore(
-    (s) => s.terminalCursorBlink,
-  );
+  const terminalCursorBlink = usePreferencesStore((s) => s.terminalCursorBlink);
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
   const [shells, setShells] = useState<ShellInfo[]>([]);
+  const [wslDistros, setWslDistros] = useState<{ name: string }[]>([]);
+  const defaultWorkspaceEnv = usePreferencesStore((s) => s.defaultWorkspaceEnv);
   const terminalLetterSpacing = usePreferencesStore(
     (s) => s.terminalLetterSpacing,
   );
@@ -129,6 +130,9 @@ export function GeneralSection() {
     void invoke<ShellInfo[]>("pty_list_shells")
       .then(setShells)
       .catch(() => {});
+    void invoke<{ name: string }[]>("wsl_list_distros")
+      .then(setWslDistros)
+      .catch(() => {});
   }, []);
 
   const onToggleAutostart = async (next: boolean) => {
@@ -143,10 +147,7 @@ export function GeneralSection() {
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionHeader
-        title="General"
-        description="Mode, editor, and startup."
-      />
+      <SectionHeader title="General" description="Mode, editor, and startup." />
 
       <div className="flex flex-col gap-2">
         <Label>Appearance</Label>
@@ -270,15 +271,12 @@ export function GeneralSection() {
                       ⓘ
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    className="max-w-65 text-[11px]"
-                  >
-                    xterm's WebGL renderer caches glyphs in a GPU texture
-                    atlas. On some macOS setups (especially with Nerd Fonts),
-                    the atlas corrupts and terminal text becomes unreadable.
-                    Turn this off as a fallback — performance dips slightly,
-                    but text renders correctly via the DOM renderer.
+                  <TooltipContent side="top" className="max-w-65 text-[11px]">
+                    xterm's WebGL renderer caches glyphs in a GPU texture atlas.
+                    On some macOS setups (especially with Nerd Fonts), the atlas
+                    corrupts and terminal text becomes unreadable. Turn this off
+                    as a fallback — performance dips slightly, but text renders
+                    correctly via the DOM renderer.
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -332,11 +330,13 @@ export function GeneralSection() {
           </Select>
         </SettingRow>
         <SettingRow
-          title="Default shell"
+          title="Integrated terminal shell"
           description={
             shells.find((s) => s.path === terminalShell)?.integrated === false
               ? "Command blocks and directory tracking are unavailable for this shell."
-              : "Shell for new terminal tabs. Existing tabs keep their shell."
+              : wslDistros.length > 0
+                ? "Shell for the integrated terminal. WSL spaces use the distro login shell. Existing tabs keep their shell."
+                : "Shell for new terminal tabs. Existing tabs keep their shell."
           }
         >
           <Select
@@ -356,17 +356,56 @@ export function GeneralSection() {
                 Auto
               </SelectItem>
               {shells.map((s) => (
-                <SelectItem
-                  key={s.path}
-                  value={s.path}
-                  className="text-[12px]"
-                >
+                <SelectItem key={s.path} value={s.path} className="text-[12px]">
                   {s.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </SettingRow>
+        {(wslDistros.length > 0 || defaultWorkspaceEnv !== "local") && (
+          <SettingRow
+            title="Workspace environment"
+            description="Where new spaces run, terminal and AI agent alike: Windows or a WSL distro. Existing spaces keep theirs; switch any from the status bar."
+          >
+            <Select
+              value={defaultWorkspaceEnv}
+              onValueChange={(v) => void setDefaultWorkspaceEnv(v)}
+            >
+              <SelectTrigger
+                value={defaultWorkspaceEnv}
+                className="h-8 w-40 text-[12px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local" className="text-[12px]">
+                  Windows
+                </SelectItem>
+                {wslDistros.map((d) => (
+                  <SelectItem
+                    key={d.name}
+                    value={`wsl:${d.name}`}
+                    className="text-[12px]"
+                  >
+                    WSL: {d.name}
+                  </SelectItem>
+                ))}
+                {defaultWorkspaceEnv.startsWith("wsl:") &&
+                  !wslDistros.some(
+                    (d) => `wsl:${d.name}` === defaultWorkspaceEnv,
+                  ) && (
+                    <SelectItem
+                      value={defaultWorkspaceEnv}
+                      className="text-[12px]"
+                    >
+                      {defaultWorkspaceEnv.slice("wsl:".length)} (unavailable)
+                    </SelectItem>
+                  )}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
         <SettingRow
           title="Letter spacing"
           description="Extra horizontal space between characters (px). Use negative values to tighten Nerd Fonts."
@@ -397,7 +436,11 @@ export function GeneralSection() {
             </SelectTrigger>
             <SelectContent>
               {TERMINAL_FONT_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)} className="text-[12px]">
+                <SelectItem
+                  key={size}
+                  value={String(size)}
+                  className="text-[12px]"
+                >
                   {size} px
                 </SelectItem>
               ))}
@@ -572,4 +615,3 @@ function AutoSaveDelayInput({
     </SettingRow>
   );
 }
-

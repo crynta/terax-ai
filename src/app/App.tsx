@@ -653,7 +653,11 @@ export default function App() {
       "tab.close": handleCloseTabOrPane,
       "tab.next": () => stepSwitcher(1),
       "tab.prev": () => stepSwitcher(-1),
-      "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
+      "tab.selectByIndex": (e) =>
+        selectByIndex(
+          parseInt(e.key, 10) - 1,
+          activeSpaceId ?? DEFAULT_SPACE_ID,
+        ),
       "space.next": () => cycleSpace(1),
       "space.prev": () => cycleSpace(-1),
       "space.overview": () => setSwitcherOpen(true),
@@ -696,6 +700,7 @@ export default function App() {
       openNewBlockTab,
       openNewPrivateTab,
       openPreviewTab,
+      activeSpaceId,
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
