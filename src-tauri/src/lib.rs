@@ -1,6 +1,6 @@
 pub mod modules;
 
-use modules::{agent, fs, git, net, pty, secrets, shell, workspace};
+use modules::{agent, fs, git, history, net, pty, secrets, shell, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -112,10 +112,28 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if args.get(1).map(String::as_str) == Some("__terax_notify") {
+            if let (Some(agent), Some(event)) = (args.get(2), args.get(3)) {
+                agent::emit_conout_marker(agent, event);
+            }
+            use std::io::Write;
+            let mut out = std::io::stdout();
+            let _ = out.write_all(b"{}");
+            let _ = out.flush();
+            std::process::exit(0);
+        }
+    }
+
     let cli_dir = parse_launch_dir();
     workspace::init_launch_cwd(cli_dir.as_deref());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "linux")]
+    let builder = builder.plugin(tauri_plugin_clipboard_manager::init());
+    builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Skip restoring VISIBLE — frontend calls window.show() after first
@@ -159,6 +177,8 @@ pub fn run() {
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
+        .manage(history::HistoryState::default())
+        .manage(fs::grep::ContentSearchState::default())
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
             workspace::bootstrap_registry(&registry);
@@ -175,6 +195,9 @@ pub fn run() {
             pty::pty_close,
             pty::pty_close_all,
             pty::pty_has_foreground_process,
+            pty::pty_has_foreground_job,
+            pty::pty_shell_name,
+            pty::pty_list_shells,
             fs::tree::list_subdirs,
             fs::tree::fs_read_dir,
             fs::file::fs_read_file,
@@ -185,11 +208,13 @@ pub fn run() {
             fs::mutate::fs_create_dir,
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
+            fs::mutate::fs_copy,
             fs::watch::fs_watch_add,
             fs::watch::fs_watch_remove,
             fs::search::fs_search,
             fs::search::fs_list_files,
             fs::grep::fs_grep,
+            fs::grep::fs_grep_interactive,
             fs::grep::fs_glob,
             git::commands::git_resolve_repo,
             git::commands::git_panel_snapshot,
@@ -208,6 +233,8 @@ pub fn run() {
             git::commands::git_commit_files,
             git::commands::git_commit_file_diff,
             git::commands::git_remote_url,
+            git::commands::git_list_branches,
+            git::commands::git_checkout_branch,
             shell::shell_run_command,
             shell::shell_session_open,
             shell::shell_session_run,
@@ -223,8 +250,8 @@ pub fn run() {
             workspace::workspace_current_dir,
             get_launch_dir,
             open_settings_window,
-            agent::agent_enable_claude_hooks,
-            agent::agent_claude_hooks_status,
+            agent::agent_enable_hooks,
+            agent::agent_hooks_status,
             secrets::secrets_get,
             secrets::secrets_set,
             secrets::secrets_delete,
@@ -232,6 +259,10 @@ pub fn run() {
             net::lm_ping,
             net::ai_http_request,
             net::ai_http_stream,
+            history::history_suggest,
+            history::history_commands,
+            history::history_record,
+            history::history_list,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

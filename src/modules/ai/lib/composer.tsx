@@ -9,7 +9,7 @@ import {
 import { useWhisperRecording } from "../hooks/useWhisperRecording";
 import { expandSnippetTokens, type Snippet } from "../lib/snippets";
 import { tryRunSlashCommand, type SlashCommandMeta } from "./slashCommands";
-import { getOrCreateChat, useChatStore } from "../store/chatStore";
+import { getChat, useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 
@@ -304,13 +304,16 @@ export function AiComposerProvider({ children }: ProviderProps) {
     }
 
     if (!sessionId) return;
-    const chat = getOrCreateChat(sessionId);
-    void chat.sendMessage({ role: "user", parts } as Parameters<
-      typeof chat.sendMessage
-    >[0]);
     const store = useChatStore.getState();
     store.patchAgentMeta({ hitStepCap: false, compactionNotice: null });
     if (!store.mini.open) store.openMini();
+    void (async () => {
+      const { getOrCreateChat } = await import("../store/chatRuntime");
+      const chat = getOrCreateChat(sessionId);
+      void chat.sendMessage({ role: "user", parts } as Parameters<
+        typeof chat.sendMessage
+      >[0]);
+    })();
     setValue("");
     setFiles([]);
     setPickedSnippets([]);
@@ -321,7 +324,7 @@ export function AiComposerProvider({ children }: ProviderProps) {
 
   const stop = () => {
     if (!sessionId) return;
-    void getOrCreateChat(sessionId).stop();
+    void getChat(sessionId)?.stop();
   };
 
   const canSend =

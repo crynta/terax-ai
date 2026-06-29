@@ -1,0 +1,20 @@
+[
+  {
+    "name": "main window startup JS (eager modulepreload)",
+    "path": [
+      "dist/assets/main-*.js",
+      "dist/assets/react-*.js",
+      "dist/assets/radix-*.js",
+      "dist/assets/alert-dialog-*.js",
+      "dist/assets/xterm-*.js"
+    ],
+    "limit": "540 KB",
+    "gzip": true
+  },
+  {
+    "name": "total client JS",
+    "path": ["dist/assets/*.js"],
+    "limit": "1500 KB",
+    "gzip": true
+  }
+]

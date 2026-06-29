@@ -9,6 +9,7 @@ export type DirEntry = {
   kind: "file" | "dir" | "symlink";
   size: number;
   mtime: number;
+  gitignored: boolean;
 };
 
 type ChildrenState =
@@ -60,6 +61,21 @@ function isUnder(key: string, root: string): boolean {
   return key === root || key.startsWith(`${root}/`);
 }
 
+// mtime/size are ignored on purpose: the tree never renders them, so a watcher
+// refetch that only bumps mtime (saving a file) must not count as a change.
+function sameDirListing(a: DirEntry[], b: DirEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].name !== b[i].name ||
+      a[i].kind !== b[i].kind ||
+      a[i].gitignored !== b[i].gitignored
+    )
+      return false;
+  }
+  return true;
+}
+
 type Options = {
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
@@ -68,6 +84,8 @@ type Options = {
 export function useFileTree(rootPath: string | null, options?: Options) {
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const showHiddenRef = useRef(showHidden);
+  const gitDecorations = usePreferencesStore((s) => s.explorerGitDecorations);
+  const gitDecorationsRef = useRef(gitDecorations);
   const [nodes, setNodes] = useState<TreeState>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [pendingCreate, setPendingCreate] = useState<PendingCreate | null>(
@@ -82,6 +100,10 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   useEffect(() => {
     showHiddenRef.current = showHidden;
   }, [showHidden]);
+
+  useEffect(() => {
+    gitDecorationsRef.current = gitDecorations;
+  }, [gitDecorations]);
 
   useEffect(() => {
     expandedRef.current = expanded;
@@ -103,13 +125,21 @@ export function useFileTree(rootPath: string | null, options?: Options) {
   }, []);
 
   const fetchChildren = useCallback(async (path: string) => {
-    setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
+    if (nodesRef.current[path]?.status !== "loaded") {
+      setNodes((s) => ({ ...s, [path]: { status: "loading" } }));
+    }
     try {
       const entries = await invoke<DirEntry[]>("fs_read_dir", {
         path,
         showHidden: showHiddenRef.current,
+        gitDecorations: gitDecorationsRef.current,
         workspace: currentWorkspaceEnv(),
       });
+
+      const prev = nodesRef.current[path];
+      if (prev?.status === "loaded" && sameDirListing(prev.entries, entries)) {
+        return;
+      }
 
       const liveDirs = new Set(
         entries.filter((e) => e.kind === "dir").map((e) => joinPath(path, e.name)),
@@ -216,11 +246,11 @@ export function useFileTree(rootPath: string | null, options?: Options) {
       .filter(([, state]) => state.status === "loaded")
       .map(([path]) => path);
     for (const path of loadedPaths) void fetchChildren(path);
-    // Re-list loaded directories when the visibility preference changes.
+    // Re-list loaded directories when visibility or git-decoration prefs change.
     // `nodes` is intentionally omitted so ordinary tree edits don't refetch
     // every expanded directory.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHidden, rootPath, fetchChildren]);
+  }, [showHidden, gitDecorations, rootPath, fetchChildren]);
 
   const toggle = useCallback(
     (path: string) => {
@@ -362,6 +392,34 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     [fetchChildren, options],
   );
 
+  const movePath = useCallback(
+    async (from: string, toDir: string) => {
+      const name = from.slice(from.lastIndexOf("/") + 1);
+      const to = joinPath(toDir, name);
+      if (to === from) return;
+      const target = nodesRef.current[toDir];
+      if (
+        target?.status === "loaded" &&
+        target.entries.some((e) => e.name === name)
+      ) {
+        console.warn(`move skipped: "${name}" already exists in ${toDir}`);
+        return;
+      }
+      try {
+        await invoke("fs_rename", {
+          from,
+          to,
+          workspace: currentWorkspaceEnv(),
+        });
+        options?.onPathRenamed?.(from, to);
+        await Promise.all([fetchChildren(dirname(from)), fetchChildren(toDir)]);
+      } catch (e) {
+        console.error("fs_rename (move) failed:", e);
+      }
+    },
+    [fetchChildren, options],
+  );
+
   return {
     nodes,
     expanded,
@@ -377,6 +435,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     cancelRename,
     commitRename,
     deletePath,
+    movePath,
     joinPath,
   };
 }

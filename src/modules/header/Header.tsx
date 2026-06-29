@@ -1,30 +1,22 @@
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { WindowControls } from "@/components/WindowControls";
-import { IS_MAC, KEY_SEP, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import {
-  getBindingTokens,
-  SHORTCUTS,
-  type ShortcutId,
-} from "@/modules/shortcuts/shortcuts";
+import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { NotificationBell } from "@/modules/agents";
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
-import { NotificationBell } from "@/modules/agents";
 import {
-  GridViewIcon,
-  LayoutTwoColumnIcon,
-  LayoutTwoRowIcon,
+  CommandIcon,
   Settings01Icon,
   SidebarLeftIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   SearchInline,
   type SearchInlineHandle,
@@ -36,6 +28,7 @@ type Props = {
   activeId: number;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onNewBlock: () => void;
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
@@ -45,13 +38,15 @@ type Props = {
   onPin: (id: number) => void;
   /** Set a terminal tab's custom label; empty string resets to default. */
   onRename: (id: number, title: string) => void;
+  /** Move a dragged tab to a new position (insertion gap index). */
+  onReorder: (fromId: number, toGapIndex: number) => void;
+  onOverrideLanguage?: (id: number, lang: string | null) => void;
   onToggleSidebar: () => void;
-  onSplit: (dir: "row" | "col") => void;
-  /** Active tab is a terminal and below the per-tab pane cap. */
-  canSplit: boolean;
+  onOpenCommandPalette: () => void;
   onActivateAgent: (tabId: number, leafId: number) => void;
   onActivateLocalAgent: () => void;
   onOpenSettings: () => void;
+  spaceSwitcher: ReactNode;
   searchTarget: SearchTarget;
   searchRef: RefObject<SearchInlineHandle | null>;
 };
@@ -63,6 +58,7 @@ export function Header({
   activeId,
   onSelect,
   onNew,
+  onNewBlock,
   onNewPrivate,
   onNewPreview,
   onNewEditor,
@@ -70,29 +66,19 @@ export function Header({
   onClose,
   onPin,
   onRename,
+  onReorder,
+  onOverrideLanguage,
   onToggleSidebar,
-  onSplit,
-  canSplit,
+  onOpenCommandPalette,
   onActivateAgent,
   onActivateLocalAgent,
   onOpenSettings,
+  spaceSwitcher,
   searchTarget,
   searchRef,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
-  const userShortcuts = usePreferencesStore((s) => s.shortcuts);
-
-  const tokensFor = (id: ShortcutId): string => {
-    const s = SHORTCUTS.find((s) => s.id === id);
-    if (!s) return "";
-    const bindings = userShortcuts[id] || s.defaultBindings;
-    if (!bindings || bindings.length === 0) return "";
-    return getBindingTokens(bindings[0]).join(KEY_SEP);
-  };
-
-  const splitRightTokens = tokensFor("pane.splitRight");
-  const splitDownTokens = tokensFor("pane.splitDown");
 
   useEffect(() => {
     const el = rootRef.current;
@@ -136,67 +122,39 @@ export function Header({
           <HugeiconsIcon icon={SidebarLeftIcon} size={18} strokeWidth={1.75} />
         </Button>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
-              title="Split terminal"
-              disabled={!canSplit}
-            >
-              <HugeiconsIcon icon={GridViewIcon} size={16} strokeWidth={1.75} />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-44">
-            <DropdownMenuItem onSelect={() => onSplit("row")}>
-              <HugeiconsIcon
-                icon={LayoutTwoColumnIcon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Split right</span>
-              {splitRightTokens && (
-                <span className="text-xs text-muted-foreground">
-                  {splitRightTokens}
-                </span>
-              )}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onSplit("col")}>
-              <HugeiconsIcon
-                icon={LayoutTwoRowIcon}
-                size={14}
-                strokeWidth={1.75}
-              />
-              <span className="flex-1">Split down</span>
-              {splitDownTokens && (
-                <span className="text-xs text-muted-foreground">
-                  {splitDownTokens}
-                </span>
-              )}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={onOpenCommandPalette}
+          title="Command palette"
+          className="shrink-0 gap-1.5 rounded-md px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <HugeiconsIcon icon={CommandIcon} size={14} strokeWidth={1.75} />
+        </Button>
 
-        {!IS_MAC && <NotificationBell
+        {!IS_MAC && (
+          <NotificationBell
             onActivate={onActivateAgent}
             onActivateLocal={onActivateLocalAgent}
-          />}
+          />
+        )}
       </div>
 
-      {!IS_MAC && <span className="mx-1 h-5 w-px shrink-0 bg-border" />}
+      {!IS_MAC && <span className="mx-1 h-full w-px shrink-0 bg-border/70" />}
 
-      {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border" />}
+      {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border/70" />}
 
       <div
         className="flex min-w-0 flex-1 items-center gap-2"
         data-tauri-drag-region
       >
+        {spaceSwitcher}
         <TabBar
           tabs={tabs}
           activeId={activeId}
           onSelect={onSelect}
           onNew={onNew}
+          onNewBlock={onNewBlock}
           onNewPrivate={onNewPrivate}
           onNewPreview={onNewPreview}
           onNewEditor={onNewEditor}
@@ -204,6 +162,8 @@ export function Header({
           onClose={onClose}
           onPin={onPin}
           onRename={onRename}
+          onReorder={onReorder}
+          onOverrideLanguage={onOverrideLanguage}
           compact={compact}
         />
         <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
@@ -225,7 +185,7 @@ export function Header({
 
       {USE_CUSTOM_WINDOW_CONTROLS && (
         <>
-          <span className="ml-1 h-5 w-px shrink-0 bg-border" />
+          <span className="ml-1 h-5 w-px shrink-0 bg-border/60" />
           <WindowControls />
         </>
       )}

@@ -14,7 +14,7 @@ jobs:
   frontend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v6
 
@@ -29,19 +29,33 @@ jobs:
         run: pnpm audit --prod --audit-level high
         continue-on-error: true
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Type-check
-        run: pnpm exec tsc --noEmit
+        run: pnpm check-types
 
       - name: Test
         run: pnpm test
 
+      - name: React Compiler healthcheck (advisory)
+        run: pnpm exec react-compiler-healthcheck
+        continue-on-error: true
+
       - name: Build frontend
         run: pnpm build
+
+      - name: Size budget
+        run: pnpm size
+
+      - name: Dead code (advisory)
+        run: pnpm knip
+        continue-on-error: true
 
   rust:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Linux build dependencies
         run: |
@@ -62,7 +76,7 @@ jobs:
 
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-nextest
+          tool: cargo-nextest,cargo-machete
 
       - name: cargo check
         working-directory: src-tauri
@@ -71,6 +85,11 @@ jobs:
       - name: cargo clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Unused crates (advisory)
+        working-directory: src-tauri
+        run: cargo machete
+        continue-on-error: true
 
       - name: cargo nextest
         working-directory: src-tauri
@@ -84,7 +103,7 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -108,7 +127,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: rust
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Linux build dependencies
         run: |
