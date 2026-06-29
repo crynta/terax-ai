@@ -995,7 +995,7 @@ mod windows {
                     "/usr/bin/fish".to_string(),
                     "-i".to_string(),
                     "-C".to_string(),
-                    super::FISH_REINSTALL_PROMPT.to_string(),
+                    super::super::FISH_REINSTALL_PROMPT.to_string(),
                 ]
             );
         }
