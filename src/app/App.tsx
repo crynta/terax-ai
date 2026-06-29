@@ -262,7 +262,9 @@ export default function App() {
     sidebarRef,
     sidebarWidthRef,
     sidebarView,
+    initialSidebarCollapsed,
     persistSidebarView,
+    persistSidebarCollapsed,
     toggleSidebar,
     cycleSidebarView,
     persistSidebarWidth,
@@ -1098,13 +1100,16 @@ export default function App() {
               <ResizablePanel
                 id="sidebar"
                 panelRef={sidebarRef}
-                defaultSize={`${sidebarWidthRef.current}px`}
+                defaultSize={
+                  initialSidebarCollapsed ? "0px" : `${sidebarWidthRef.current}px`
+                }
                 minSize={`${SIDEBAR_MIN_WIDTH}px`}
                 maxSize={`${SIDEBAR_MAX_WIDTH}px`}
                 collapsible
                 collapsedSize={0}
                 onResize={(size) => {
                   if (size.inPixels > 0) persistSidebarWidth(size.inPixels);
+                  persistSidebarCollapsed(size.inPixels <= 0);
                 }}
               >
                 <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
