@@ -96,10 +96,12 @@ pub async fn pty_open(
 
 // Input is the latency-critical path: raw body + id header skips JSON
 // serialization of every keystroke on both sides of the IPC boundary.
+// Async + spawn_blocking so the write runs off the webview main thread;
+// a burst of keystrokes under a sync command would stall that thread.
 #[tauri::command]
-pub fn pty_write(
-    state: tauri::State<PtyState>,
-    request: tauri::ipc::Request,
+pub async fn pty_write(
+    state: tauri::State<'_, PtyState>,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<(), String> {
     let id: u32 = request
         .headers()
@@ -110,6 +112,7 @@ pub fn pty_write(
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("pty_write: expected raw body".to_string());
     };
+    let bytes = bytes.clone();
     let session = state
         .sessions
         .read()
@@ -120,19 +123,23 @@ pub fn pty_write(
             log::warn!("pty_write: unknown id={id}");
             "no session".to_string()
         })?;
-    // Bind to a local so the MutexGuard temporary drops before `session` —
-    // see rustc note on tail-expression temporary drop order.
-    let result = session
-        .writer
-        .lock()
-        .unwrap()
-        .write_all(bytes)
-        .map_err(|e| {
-            // EPIPE is expected if the child already exited.
-            log::debug!("pty_write id={id} failed: {e}");
-            e.to_string()
-        });
-    result
+    tauri::async_runtime::spawn_blocking(move || {
+        // EPIPE is expected if the child already exited.
+        session
+            .writer
+            .lock()
+            .unwrap()
+            .write_all(&bytes)
+            .map_err(|e| {
+                log::debug!("pty_write id={id} failed: {e}");
+                e.to_string()
+            })
+    })
+    .await
+    .map_err(|e| {
+        log::error!("pty_write join failed: {e}");
+        e.to_string()
+    })?
 }
 
 #[tauri::command]
