@@ -237,9 +237,18 @@ pub fn run() {
                         WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
                     ) {
                         if let Some(settings) = handle.get_webview_window("settings") {
-                            if let Err(e) = settings.close() {
-                                log::debug!("settings window close failed: {e}");
-                            }
+                            let _ = settings.hide();
+                            let h = handle.clone();
+                            // Tauri's window-event handler runs on the main event
+                            // loop with no ambient Tokio reactor, so `tokio::spawn`
+                            // would panic ("no reactor running") and abort the app.
+                            // Use Tauri's managed runtime, which is thread-agnostic.
+                            tauri::async_runtime::spawn(async move {
+                                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                                if let Some(s) = h.get_webview_window("settings") {
+                                    let _ = s.close();
+                                }
+                            });
                         }
                     }
                 });

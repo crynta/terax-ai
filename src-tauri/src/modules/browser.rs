@@ -122,12 +122,20 @@ pub fn browser_close(app: AppHandle, label: String) -> Result<(), String> {
 }
 
 fn browser_close_inner(app: &AppHandle, label: &str) {
-    // WebviewBuilder::new creates a webview (not a webview-window), so we
-    // look it up via get_webview rather than get_webview_window.
-    if let Some(wv) = app.get_webview(label) {
-        if let Err(e) = wv.close() {
-            log::warn!("failed to close child webview '{label}': {e}");
-        }
+    if let Some(_wv) = app.get_webview(label) {
+        let app_handle = app.clone();
+        let label_owned = label.to_string();
+        // `browser_close` is a synchronous command, so there is no ambient Tokio
+        // reactor here; `tokio::spawn` would panic and abort the app. Spawn on
+        // Tauri's managed runtime instead (callable from any thread).
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            if let Some(wv) = app_handle.get_webview(&label_owned) {
+                if let Err(e) = wv.close() {
+                    log::warn!("failed to close child webview '{label_owned}': {e}");
+                }
+            }
+        });
     }
 }
 
