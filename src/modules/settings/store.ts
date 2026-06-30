@@ -109,6 +109,14 @@ export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
   "xcode-light": "Xcode Light",
 };
 
+export type TerminalCursorStyle = "bar" | "block" | "underline";
+
+export const TERMINAL_CURSOR_STYLES: { value: TerminalCursorStyle; label: string }[] = [
+  { value: "bar", label: "Bar" },
+  { value: "block", label: "Block" },
+  { value: "underline", label: "Underline" },
+];
+
 export type Preferences = {
   theme: ThemePref;
   themeId: string;
@@ -146,6 +154,7 @@ export type Preferences = {
   explorerGitDecorations: boolean;
   terminalWebglEnabled: boolean;
   terminalCursorBlink: boolean;
+  terminalCursorStyle: TerminalCursorStyle;
   terminalFontFamily: string;
   terminalFontWeight: string;
   terminalShell: string;
@@ -199,6 +208,7 @@ const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_EXPLORER_GIT_DECORATIONS = "explorerGitDecorations";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
 const KEY_TERMINAL_CURSOR_BLINK = "terminalCursorBlink";
+const KEY_TERMINAL_CURSOR_STYLE = "terminalCursorStyle";
 const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
 const KEY_TERMINAL_FONT_WEIGHT = "terminalFontWeight";
 const KEY_TERMINAL_SHELL = "terminalShell";
@@ -265,6 +275,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   explorerGitDecorations: true,
   terminalWebglEnabled: true,
   terminalCursorBlink: false,
+  terminalCursorStyle: "bar",
   terminalFontFamily: "",
   terminalFontWeight: "normal",
   terminalShell: "",
@@ -404,6 +415,11 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalCursorBlink:
       get<boolean>(KEY_TERMINAL_CURSOR_BLINK) ??
       DEFAULT_PREFERENCES.terminalCursorBlink,
+    terminalCursorStyle: ((): TerminalCursorStyle => {
+      const stored = get<string>(KEY_TERMINAL_CURSOR_STYLE);
+      if (stored === "bar" || stored === "block" || stored === "underline") return stored;
+      return DEFAULT_PREFERENCES.terminalCursorStyle;
+    })(),
     terminalFontFamily:
       get<string>(KEY_TERMINAL_FONT_FAMILY) ??
       DEFAULT_PREFERENCES.terminalFontFamily,
@@ -613,6 +629,10 @@ export async function setTerminalCursorBlink(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_CURSOR_BLINK, value);
 }
 
+export async function setTerminalCursorStyle(value: TerminalCursorStyle): Promise<void> {
+  await writePref(KEY_TERMINAL_CURSOR_STYLE, value);
+}
+
 export async function setTerminalFontFamily(value: string): Promise<void> {
   await writePref(KEY_TERMINAL_FONT_FAMILY, value.trim());
 }
@@ -741,6 +761,7 @@ export async function onPreferencesChange(
     [KEY_EXPLORER_GIT_DECORATIONS]: "explorerGitDecorations",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
     [KEY_TERMINAL_CURSOR_BLINK]: "terminalCursorBlink",
+    [KEY_TERMINAL_CURSOR_STYLE]: "terminalCursorStyle",
     [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
     [KEY_TERMINAL_FONT_WEIGHT]: "terminalFontWeight",
     [KEY_TERMINAL_SHELL]: "terminalShell",

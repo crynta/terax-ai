@@ -20,6 +20,7 @@ import type { ThemePref } from "@/modules/settings/store";
 import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
+  TERMINAL_CURSOR_STYLES,
   setAgentNotifications,
   setShowAgentsTab,
   setAutostart,
@@ -35,6 +36,7 @@ import {
   setTerminalLetterSpacing,
   setTerminalFontSize,
   setTerminalCursorBlink,
+  setTerminalCursorStyle,
   setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
@@ -99,6 +101,7 @@ export function GeneralSection() {
   const terminalCursorBlink = usePreferencesStore(
     (s) => s.terminalCursorBlink,
   );
+  const terminalCursorStyle = usePreferencesStore((s) => s.terminalCursorStyle);
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
@@ -301,6 +304,26 @@ export function GeneralSection() {
             checked={terminalCursorBlink}
             onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
+        </SettingRow>
+        <SettingRow
+          title="Cursor style"
+          description="Shape of the terminal cursor. Block fills the character cell; bar is a thin vertical line; underline sits below the character."
+        >
+          <Select
+            value={terminalCursorStyle}
+            onValueChange={(v) => void setTerminalCursorStyle(v as "bar" | "block" | "underline")}
+          >
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TERMINAL_CURSOR_STYLES.map((s) => (
+                <SelectItem key={s.value} value={s.value} className="text-[12px]">
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingRow>
         <FontFamilyInput
           value={terminalFontFamily}
