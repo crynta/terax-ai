@@ -23,6 +23,7 @@ import {
   acquireSlot,
   applyBackgroundActive,
   applyCursorBlink,
+  applyCursorStyle,
   applyFontFamily,
   applyFontSize,
   applyFontWeight,
@@ -906,6 +907,11 @@ export function useTerminalSession({
   useEffect(() => {
     applyCursorBlink(cursorBlink);
   }, [cursorBlink]);
+
+  const cursorStyle = usePreferencesStore((p) => p.terminalCursorStyle);
+  useEffect(() => {
+    applyCursorStyle(cursorStyle);
+  }, [cursorStyle]);
 
   const bgActive = usePreferencesStore(
     (p) => p.backgroundKind === "image" && !!p.backgroundImageId,

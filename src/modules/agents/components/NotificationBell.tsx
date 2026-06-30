@@ -65,7 +65,7 @@ function StatusRow({
         )}
       >
         {waiting ? <span className="size-1.5 rounded-full bg-primary" /> : null}
-        {waiting ? "waiting" : "working"}
+        {waiting ? "waiting" : status === "idle" ? "idle" : "working"}
       </span>
     </button>
   );

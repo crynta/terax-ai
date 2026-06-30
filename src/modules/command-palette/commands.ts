@@ -24,6 +24,7 @@ import type { PaletteItem } from "./types";
 export const COMMAND_GROUPS = [
   "General",
   "Spaces",
+  "Terminals",
   "Tabs",
   "Panes",
   "Git",
@@ -45,6 +46,7 @@ export type CommandPaletteActionContext = {
   openNewPreview: () => void;
   openGitGraph: () => void;
   toggleSourceControl: () => void;
+  toggleFilesExplorer: () => void;
   closeActiveTabOrPane: () => void;
   splitPaneRight: () => void;
   splitPaneDown: () => void;
@@ -60,6 +62,8 @@ export type CommandPaletteActionContext = {
   openSpacesOverview: () => void;
   newSpace: () => void;
   switchSpace: (id: string) => void;
+  terminalTabs: { id: number; title: string; customTitle?: string }[];
+  switchTab: (id: number) => void;
 };
 
 const noop = () => {};
@@ -133,6 +137,15 @@ export function createCommandItems(
       disabledReason:
         sp.id === ctx.activeSpaceId ? "Current space" : undefined,
       run: () => ctx.switchSpace(sp.id),
+    })),
+    ...ctx.terminalTabs.map((tab) => ({
+      id: `terminals.switch.${tab.id}`,
+      title: tab.customTitle || tab.title,
+      group: "Terminals" as const,
+      keywords: ["terminal", "switch", "tab", tab.customTitle ?? "", tab.title],
+      icon: TerminalIcon,
+      disabledReason: tab.id === ctx.activeId ? "Current tab" : undefined,
+      run: () => ctx.switchTab(tab.id),
     })),
     {
       id: "tab.new",
@@ -225,6 +238,15 @@ export function createCommandItems(
       icon: SourceCodeIcon,
       shortcutId: "pane.source",
       run: ctx.toggleSourceControl,
+    },
+    {
+      id: "sidebar.files",
+      title: "Show Files sidebar",
+      group: "View",
+      keywords: ["files", "explorer", "sidebar", "file tree"],
+      icon: SidebarLeftIcon,
+      shortcutId: "sidebar.files",
+      run: ctx.toggleFilesExplorer,
     },
     {
       id: "search.content",

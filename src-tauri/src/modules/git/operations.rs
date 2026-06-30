@@ -8,8 +8,8 @@ use crate::modules::git::process::{
     read_text_file, run_git,
 };
 use crate::modules::git::types::{
-    DiscardEntry, GitBranchEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult,
-    GitDiffContentResult, GitDiffResult, GitLogEntry, GitOutput, GitPanelSnapshot,
+    DiscardEntry, GitBlameLineInfo, GitBranchEntry, GitBranchListResult, GitCommitFileChange,
+    GitCommitResult, GitDiffContentResult, GitDiffResult, GitLogEntry, GitOutput, GitPanelSnapshot,
     GitPushResult, GitRepoInfo, GitStatusSnapshot, TextSource, DEFAULT_TIMEOUT_SECS,
     NETWORK_TIMEOUT_SECS,
 };
@@ -1145,6 +1145,59 @@ pub fn checkout_branch(
         DEFAULT_TIMEOUT_SECS,
     )?;
     ensure_success(&output, "git checkout failed")
+}
+
+pub fn blame_line(
+    registry: &WorkspaceRegistry,
+    cwd: &str,
+    path: &str,
+    line: u32,
+    workspace: &WorkspaceEnv,
+) -> Result<Option<GitBlameLineInfo>> {
+    if line == 0 {
+        return Ok(None);
+    }
+    let dir = canonical_dir(registry, cwd, workspace)?;
+    if !registry.is_authorized(&dir.local_path) {
+        return Err(GitError::PathOutsideWorkspace(dir.local_path));
+    }
+    ensure_git_available(&dir.workspace)?;
+
+    let line_spec = format!("{},{}", line, line);
+    let output = run_git(
+        &dir.workspace,
+        Some(&dir.git_path),
+        ["blame", "-L", &line_spec, "--porcelain", "--", path],
+        DEFAULT_TIMEOUT_SECS,
+    )?;
+
+    if output.exit_code != Some(0) {
+        return Ok(None);
+    }
+
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut author: Option<String> = None;
+    let mut timestamp: Option<i64> = None;
+
+    for line_text in text.lines() {
+        if let Some(name) = line_text.strip_prefix("author ") {
+            author = Some(name.to_string());
+        } else if let Some(ts) = line_text.strip_prefix("author-time ") {
+            if let Ok(t) = ts.trim().parse::<i64>() {
+                timestamp = Some(t);
+            }
+        }
+        if author.is_some() && timestamp.is_some() {
+            break;
+        }
+    }
+
+    Ok(match (author, timestamp) {
+        (Some(a), Some(t)) if a != "Not Committed Yet" => {
+            Some(GitBlameLineInfo { author: a, timestamp: t })
+        }
+        _ => None,
+    })
 }
 
 #[cfg(test)]
