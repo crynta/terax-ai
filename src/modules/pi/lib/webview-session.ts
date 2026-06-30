@@ -845,6 +845,9 @@ export async function webviewSessionStop(
   // can resolve after the stop.
   pendingApprovals.clearForSession(sessionId);
   pendingQuestions.clearForSession(sessionId);
+  // Drop any recorded single-use approval grants on the Rust side so they don't
+  // linger past teardown (best effort — never blocks the stop).
+  invoke("pi_agent_session_forget", { sessionId }).catch(() => {});
 
   const now = new Date().toISOString();
   const session = updateSession(sessionId, { status: "stopped" });
@@ -902,8 +905,10 @@ export async function webviewSessionDelete(
   pendingQuestions.clearForSession(sessionId);
   sessions.delete(sessionId);
 
-  // Remove the durable transcript blob (best effort — never blocks deletion).
+  // Remove the durable transcript blob and any Rust-side approval grants
+  // (best effort — never blocks deletion).
   invoke("pi_store_delete_transcript", { sessionId }).catch(() => {});
+  invoke("pi_agent_session_forget", { sessionId }).catch(() => {});
 
   const result: PiSessionDeleteResult = {
     events: [

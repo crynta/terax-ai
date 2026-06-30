@@ -273,6 +273,10 @@ describe("Pi webview session backend", () => {
 
       expect(agent.abort).toHaveBeenCalled();
       expect(result.session.status).toBe("stopped");
+      // Outstanding Rust-side approval grants are forgotten on teardown.
+      expect(mockInvoke).toHaveBeenCalledWith("pi_agent_session_forget", {
+        sessionId: session.id,
+      });
     });
   });
 
@@ -297,6 +301,9 @@ describe("Pi webview session backend", () => {
       const result = await webviewSession.webviewSessionDelete(session.id);
 
       expect(result.events[0].type).toBe(PI_SESSION_EVENT.Deleted);
+      expect(mockInvoke).toHaveBeenCalledWith("pi_agent_session_forget", {
+        sessionId: session.id,
+      });
 
       // Verify the session is gone
       await expect(

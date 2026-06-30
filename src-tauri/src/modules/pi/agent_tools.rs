@@ -115,10 +115,25 @@ impl PiAgentToolState {
 
         // Bind the tool's working directory to a live, user-authorized workspace
         // root. This is the actual filesystem boundary; the native dispatcher only
-        // canonicalizes cwd, it does not authorize it.
+        // canonicalizes cwd, it does not authorize it. A rejection here is a
+        // security-relevant denial, so audit it (the same as a policy block).
         let workspace_env = request.workspace_env.clone().unwrap_or_default();
-        if workspace::authorize_spawn_cwd(registry, Some(&request.cwd), &workspace_env)?.is_none() {
-            return Err("agent tool request requires a workspace cwd".to_string());
+        let cwd_authorization =
+            workspace::authorize_spawn_cwd(registry, Some(&request.cwd), &workspace_env);
+        let cwd_error = match cwd_authorization {
+            Ok(Some(_)) => None,
+            Ok(None) => Some("agent tool request requires a workspace cwd".to_string()),
+            Err(message) => Some(message),
+        };
+        if let Some(message) = cwd_error {
+            self.record(
+                &request,
+                false,
+                false,
+                CapabilityAuditOutcome::Blocked,
+                Some(message.clone()),
+            );
+            return Err(message);
         }
 
         let key = GrantKey::new(
@@ -470,6 +485,11 @@ mod tests {
             error.contains("outside the authorized workspace") || error.contains("not accessible"),
             "{error}"
         );
+        // A cwd rejection is a security-relevant denial and must be audited.
+        let audit = state.audit_entries();
+        assert_eq!(audit.len(), 1);
+        assert_eq!(audit[0].outcome, CapabilityAuditOutcome::Blocked);
+        assert!(!audit[0].allowed);
     }
 
     #[test]
