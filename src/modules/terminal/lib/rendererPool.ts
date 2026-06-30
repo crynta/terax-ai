@@ -70,6 +70,15 @@ export type Slot = {
   lastW: number;
   lastH: number;
   lastUsedAt: number;
+  // Dedup window for self-sent keyCode-229 chars vs xterm's own onData
+  // (see attachCustomKeyEventHandler): macOS emits both our self-send and a
+  // textarea-input onData for the same keystroke, so without coordination
+  // each keystroke doubles. The keystroke's keydown(kc=229) and textarea
+  // input(onData) can arrive in either order, so we dedup both directions.
+  lastOdChar: string | null;
+  lastOdAt: number;
+  selfSentChar: string | null;
+  selfSentAt: number;
 };
 
 const slots: Slot[] = [];
@@ -237,17 +246,52 @@ function createSlot(): Slot {
     lastW: 0,
     lastH: 0,
     lastUsedAt: 0,
+    lastOdChar: null,
+    lastOdAt: 0,
+    selfSentChar: null,
+    selfSentAt: 0,
   };
 
   term.attachCustomKeyEventHandler((event) => {
     // During IME composition the browser is assembling a multi-keystroke
-    // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
-    // Raw keydown events — including the Enter that commits a candidate —
-    // must NOT be forwarded to the PTY; xterm will receive the final
-    // composed string through its own compositionend handler instead.
-    // keyCode 229 ("Process") is what Chromium reports for every key
-    // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // character (Chinese pinyin -> hanzi, Korean jamo -> syllable, etc.).
+    // Raw keydown events -- including the Enter that commits a candidate --
+    // must NOT be forwarded to the PTY; xterm receives the final composed
+    // string through its own compositionend handler instead.
+    if (event.isComposing) return false;
+
+    // macOS WKWebView tags ordinary fast typing as keyCode 229; xterm then
+    // reads chars from textarea input events, which coalesce under fast typing
+    // and drop keys. Forward kc=229 chars ourselves and dedup with onData.
+    if (
+      event.type === "keydown" &&
+      event.keyCode === 229 &&
+      event.key.length === 1
+    ) {
+      const leafId229 = slot.currentLeafId;
+      if (leafId229 !== null) {
+        const bridge229 = adapter?.resolveLeaf(leafId229);
+        if (bridge229) {
+          // xterm's textarea-input onData may have already fired for this
+          // keystroke just before keydown; if so, the char is already on its
+          // way and self-sending would double it. Otherwise self-send and mark
+          // so a trailing onData is dropped.
+          if (
+            slot.lastOdChar === event.key &&
+            Date.now() - slot.lastOdAt < 200
+          ) {
+            slot.lastOdChar = null;
+            event.preventDefault();
+            return false;
+          }
+          slot.selfSentChar = event.key;
+          slot.selfSentAt = Date.now();
+          bridge229.writeToPty(event.key);
+          event.preventDefault();
+          return false;
+        }
+      }
+    }
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
@@ -301,6 +345,21 @@ function createSlot(): Slot {
 
   term.onData((data) => {
     const leafId = slot.currentLeafId;
+    // Drop xterm's own onData when it duplicates a char we already self-sent
+    // for a keyCode-229 keystroke within the dedup window. macOS fires both,
+    // so without this the self-send + onData would double the character.
+    if (
+      slot.selfSentChar !== null &&
+      data === slot.selfSentChar &&
+      Date.now() - slot.selfSentAt < 200
+    ) {
+      slot.selfSentChar = null;
+      return;
+    }
+    // Record this onData so a trailing keydown(kc=229) for the same char
+    // knows not to self-send ( onData-arrived-first ordering ).
+    slot.lastOdChar = data.length === 1 ? data : null;
+    slot.lastOdAt = Date.now();
     if (leafId === null) return;
     adapter?.resolveLeaf(leafId)?.writeToPty(data);
   });
