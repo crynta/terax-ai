@@ -1,11 +1,37 @@
 pub mod modules;
 
 use modules::{agent, fs, git, history, net, pty, secrets, shell, workspace};
+#[cfg(target_os = "linux")]
+use serde::Deserialize;
+#[cfg(target_os = "linux")]
+use std::fs as std_fs;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
 use tauri::{PhysicalPosition, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
+#[cfg(target_os = "linux")]
+use tauri_plugin_window_state::WindowExt;
+
+#[cfg(target_os = "linux")]
+const MAIN_WINDOW_SIZE_STORE: &str = "main-window-size.json";
+#[cfg(target_os = "linux")]
+const SETTINGS_STORE: &str = "terax-settings.json";
+#[cfg(target_os = "linux")]
+const MAIN_WINDOW_MIN_WIDTH: u32 = 420;
+#[cfg(target_os = "linux")]
+const MAIN_WINDOW_MIN_HEIGHT: u32 = 280;
+#[cfg(target_os = "linux")]
+const MAIN_WINDOW_MAX_WIDTH: u32 = 16_384;
+#[cfg(target_os = "linux")]
+const MAIN_WINDOW_MAX_HEIGHT: u32 = 16_384;
+
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, Deserialize)]
+struct MainWindowSize {
+    width: u32,
+    height: u32,
+}
 
 /// Drained on first read so HMR / re-mounts can't replay the launch dir.
 #[derive(Default)]
@@ -30,6 +56,127 @@ fn parse_launch_dir() -> Option<String> {
         return Some(crate::modules::fs::to_canon(&canon));
     }
     None
+}
+
+#[cfg(target_os = "linux")]
+fn linux_window_state_flags() -> StateFlags {
+    let mut flags = StateFlags::all() & !StateFlags::VISIBLE & !StateFlags::SIZE;
+
+    if !linux_position_restore_supported() {
+        flags &= !StateFlags::POSITION;
+    }
+
+    flags
+}
+
+fn window_state_flags() -> StateFlags {
+    #[cfg(target_os = "linux")]
+    {
+        linux_window_state_flags()
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        StateFlags::all() & !StateFlags::VISIBLE
+    }
+}
+
+fn window_state_plugin() -> tauri_plugin_window_state::Builder {
+    let builder = tauri_plugin_window_state::Builder::new().with_state_flags(window_state_flags());
+
+    #[cfg(target_os = "linux")]
+    {
+        builder.skip_initial_state("main")
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        builder
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_position_restore_supported() -> bool {
+    if let Ok(backends) = std::env::var("GDK_BACKEND") {
+        if let Some(backend) = backends
+            .split(',')
+            .map(str::trim)
+            .find(|backend| !backend.is_empty())
+        {
+            return backend.eq_ignore_ascii_case("x11");
+        }
+    }
+
+    !std::env::var("XDG_SESSION_TYPE")
+        .map(|value| value.eq_ignore_ascii_case("wayland"))
+        .unwrap_or(false)
+        && std::env::var_os("WAYLAND_DISPLAY").is_none()
+}
+
+#[cfg(target_os = "linux")]
+fn restore_window_state_enabled(app: &tauri::AppHandle) -> bool {
+    let Some(path) = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join(SETTINGS_STORE))
+    else {
+        return true;
+    };
+
+    let Ok(settings) = std_fs::read(path) else {
+        return true;
+    };
+    let Ok(settings) = serde_json::from_slice::<serde_json::Value>(&settings) else {
+        return true;
+    };
+    settings
+        .get("restoreWindowState")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(true)
+}
+
+#[cfg(target_os = "linux")]
+fn read_main_window_size(app: &tauri::AppHandle) -> Option<MainWindowSize> {
+    let path = app.path().app_data_dir().ok()?.join(MAIN_WINDOW_SIZE_STORE);
+    let size = serde_json::from_slice::<MainWindowSize>(&std_fs::read(path).ok()?).ok()?;
+    ((MAIN_WINDOW_MIN_WIDTH..=MAIN_WINDOW_MAX_WIDTH).contains(&size.width)
+        && (MAIN_WINDOW_MIN_HEIGHT..=MAIN_WINDOW_MAX_HEIGHT).contains(&size.height))
+    .then_some(size)
+}
+
+#[cfg(target_os = "linux")]
+fn create_linux_main_window(app: &mut tauri::App) -> tauri::Result<()> {
+    let app_handle = app.handle().clone();
+    let Some(mut config) = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .cloned()
+    else {
+        return Ok(());
+    };
+
+    let restore_state = restore_window_state_enabled(&app_handle);
+    if restore_state {
+        if let Some(size) = read_main_window_size(&app_handle) {
+            config.width = size.width as f64;
+            config.height = size.height as f64;
+        }
+    }
+
+    let window = WebviewWindowBuilder::from_config(&app_handle, &config)?.build()?;
+
+    // Some Linux compositors ignore the builder-time decorations flag.
+    let _ = window.set_decorations(false);
+
+    if restore_state {
+        let _ = window.restore_state(window_state_flags());
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -139,11 +286,7 @@ pub fn run() {
         // Skip restoring VISIBLE — frontend calls window.show() after first
         // paint so the user never sees a transparent window-shadow flash on
         // Windows/Linux.
-        .plugin(
-            tauri_plugin_window_state::Builder::new()
-                .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
-                .build(),
-        )
+        .plugin(window_state_plugin().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_os::init())
@@ -155,6 +298,9 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .setup(|_app| {
+            #[cfg(target_os = "linux")]
+            create_linux_main_window(_app)?;
+
             // macOS skips parent() for the settings window, so tie its lifecycle
             // to the main window here instead. Other platforms keep parent().
             #[cfg(target_os = "macos")]
