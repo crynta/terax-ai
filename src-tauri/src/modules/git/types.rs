@@ -131,6 +131,13 @@ pub struct GitBranchListResult {
     pub branches: Vec<GitBranchEntry>,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBlameLineInfo {
+    pub author: String,
+    pub timestamp: i64,
+}
+
 pub(crate) struct GitOutput {
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,

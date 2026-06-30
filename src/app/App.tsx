@@ -24,7 +24,7 @@ import {
   useSelectionAskAi,
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
-import { native } from "@/modules/ai/lib/native";
+import { native, type GitBlameLineInfo } from "@/modules/ai/lib/native";
 import {
   CommandPalette,
   createCommandItems,
@@ -164,6 +164,8 @@ export default function App() {
     useState<EditorPaneHandle | null>(null);
   const [gitHistoryHandle, setGitHistoryHandle] =
     useState<GitHistorySearchHandle | null>(null);
+  const [blameInfo, setBlameInfo] = useState<GitBlameLineInfo | null>(null);
+  const blameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
@@ -336,6 +338,11 @@ export default function App() {
         : null,
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
+    const tab = tabsRef.current.find((t) => t.id === activeId);
+    if (!tab || tab.kind !== "editor") {
+      if (blameDebounceRef.current) clearTimeout(blameDebounceRef.current);
+      setBlameInfo(null);
+    }
   }, [activeId, activeLeafId]);
 
   const handleSearchReady = useCallback(
@@ -898,6 +905,27 @@ export default function App() {
     [updateTab],
   );
 
+  const handleEditorCursorChange = useCallback(
+    (id: number, line: number, _col: number) => {
+      if (id !== activeId) return;
+      const tab = tabsRef.current.find((t) => t.id === id);
+      if (!tab || tab.kind !== "editor") return;
+      const filePath = tab.path;
+      const cwd = explorerRoot ?? launchCwd ?? home;
+      if (!cwd || !filePath || line < 1) {
+        setBlameInfo(null);
+        return;
+      }
+      if (blameDebounceRef.current) clearTimeout(blameDebounceRef.current);
+      blameDebounceRef.current = setTimeout(() => {
+        native.gitBlame(cwd, filePath, line).then(setBlameInfo).catch(() => {
+          setBlameInfo(null);
+        });
+      }, 300);
+    },
+    [activeId, explorerRoot, launchCwd, home],
+  );
+
   const handleRenameTab = useCallback(
     (id: number, title: string) => updateTab(id, { customTitle: title.trim() }),
     [updateTab],
@@ -1224,6 +1252,7 @@ export default function App() {
                       registerEditorHandle={registerEditorHandle}
                       onEditorDirtyChange={handleEditorDirty}
                       onEditorCloseTab={disposeTab}
+                      onEditorCursorChange={handleEditorCursorChange}
                       registerPreviewHandle={registerPreviewHandle}
                       onPreviewUrlChange={handlePreviewUrl}
                       onAiDiffAccept={(id) => respondToApproval(id, true)}
@@ -1259,6 +1288,7 @@ export default function App() {
               onWorkspaceChange={handleWorkspaceChange}
               onOpenMini={openMini}
               hasComposer={hasComposer}
+              blameInfo={blameInfo}
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true
               }
