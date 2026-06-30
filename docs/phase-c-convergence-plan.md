@@ -142,11 +142,14 @@ so behavior is byte-for-byte unchanged (850 tests + the `ai-chat` e2e cover it).
 `useComposerRuntime()` is the single selection point where a pi runtime gets
 chosen by flag.
 
+**Update 2026-07-01: the pi-runtime mock now exists** (`pi-mock.ts`), built on
+pi-ai's official faux provider (`registerFauxProvider`), returned by
+`resolveAgentModel` under the `terax.e2e` flag. A unit test drives it at the
+pi-ai event-protocol level (start -> text_delta -> done). So blocker (1) below
+is cleared; (2) and (3) remain.
+
 **Deliberately not forced yet (needs the running app):**
-1. *A pi-runtime mock.* The Stage 0 mock targets the AI-SDK `MockLanguageModelV3`.
-   Pi runs on `pi-ai`'s `Model` protocol (different streaming/tool shape), so a
-   deterministic offline pi model is a separate, larger mock than the AI-SDK one.
-   Without it the pi-backed path is not e2e-verifiable.
+1. ~~A pi-runtime mock.~~ DONE (`pi-mock.ts` + `pi-mock.test.ts`).
 2. *Response rendering + focus wiring.* A pi-backed quick-ask must surface its
    transcript and status somewhere (route to the existing pi sidebar/workspace,
    or render `PiTranscript` inside the mini window) and thread App-level focus
