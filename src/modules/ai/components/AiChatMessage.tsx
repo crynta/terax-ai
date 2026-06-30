@@ -2,8 +2,11 @@ import ArrowRight01Icon from "@hugeicons/core-free-icons/ArrowRight01Icon";
 import CodeIcon from "@hugeicons/core-free-icons/CodeIcon";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
 import HashtagIcon from "@hugeicons/core-free-icons/HashtagIcon";
+import Speaker01Icon from "@hugeicons/core-free-icons/Speaker01Icon";
+import StopCircleIcon from "@hugeicons/core-free-icons/StopCircleIcon";
 import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   DynamicToolUIPart,
   ToolUIPart,
@@ -11,9 +14,11 @@ import type {
   UIMessagePart,
 } from "ai";
 import { motion } from "motion/react";
-import { memo, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   Message,
+  MessageAction,
+  MessageActions,
   MessageContent,
   MessageResponse,
 } from "@/components/ai-elements/message";
@@ -31,6 +36,22 @@ import {
 import { cn } from "@/lib/utils";
 import { SLASH_COMMANDS, TERAX_CMD_RE } from "../lib/slashCommands";
 import { AiToolApproval } from "./AiToolApproval";
+import { lazy, Suspense } from "react";
+
+const GLBViewer = lazy(() =>
+  import("./GLBViewer").then((m) => ({ default: m.GLBViewer })),
+);
+
+function GLBViewerLazy({ modelUrl }: { modelUrl: string }) {
+  return (
+    <Suspense fallback={<div className="h-[300px] rounded-md bg-muted/30" />}>
+      <GLBViewer
+        modelUrl={modelUrl}
+        className="h-[300px] w-full rounded-md border border-border/40"
+      />
+    </Suspense>
+  );
+}
 
 function CommandSnippet({ name }: { name: string }) {
   const meta = SLASH_COMMANDS[name];
@@ -205,7 +226,7 @@ export const RenderedMessage = memo(function RenderedMessage({
   return (
     <Message from={message.role}>
       <MessageContent>
-        <div className="flex flex-col gap-3">
+        <div className="group relative flex flex-col gap-3">
           {groups.map((g) => {
             if (g.kind === "reads") {
               return (
@@ -235,6 +256,7 @@ export const RenderedMessage = memo(function RenderedMessage({
               </PartAppear>
             );
           })}
+          {!streaming && <TtsActionButton message={message} />}
         </div>
       </MessageContent>
     </Message>
@@ -492,6 +514,27 @@ const RenderedTool = memo(function RenderedTool({
     );
   }
 
+  if (toolName === "generate_3d_model" && part.state === "output-available") {
+    const output =
+      "output" in part
+        ? (part.output as { modelUrl?: string; error?: string })
+        : null;
+    if (output?.modelUrl) {
+      return (
+        <div className="flex flex-col gap-2">
+          <Tool
+            toolName={toolName}
+            state={part.state}
+            input={part.input}
+            output={output}
+            defaultOpen={false}
+          />
+          <GLBViewerLazy modelUrl={output.modelUrl} />
+        </div>
+      );
+    }
+  }
+
   return (
     <Tool
       toolName={toolName}
@@ -503,3 +546,50 @@ const RenderedTool = memo(function RenderedTool({
     />
   );
 });
+
+function TtsActionButton({ message }: { message: UIMessage }) {
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const isSpeaking = speakingId === message.id;
+
+  const handleSpeak = useCallback(() => {
+    if (isSpeaking) {
+      invoke("tts_stop").catch(() => {});
+      setSpeakingId(null);
+      return;
+    }
+
+    const parts = message.parts ?? [];
+    const text = parts
+      .filter(
+        (p): p is Extract<typeof p, { type: "text" }> => p.type === "text",
+      )
+      .map((p) => p.text)
+      .join("\n");
+    if (!text.trim()) return;
+
+    setSpeakingId(message.id);
+    invoke("tts_speak", {
+      text: text.trim().slice(0, 4000),
+      provider: "cartesia",
+    })
+      .then(() => setSpeakingId(null))
+      .catch(() => setSpeakingId(null));
+  }, [message, isSpeaking]);
+
+  return (
+    <MessageActions className="absolute -right-1 -top-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <MessageAction
+        tooltip={isSpeaking ? "Stop speaking" : "Read aloud"}
+        onClick={handleSpeak}
+        size="icon-xs"
+        className="size-5 text-muted-foreground hover:text-foreground"
+      >
+        <HugeiconsIcon
+          icon={isSpeaking ? StopCircleIcon : Speaker01Icon}
+          size={11}
+          strokeWidth={1.75}
+        />
+      </MessageAction>
+    </MessageActions>
+  );
+}

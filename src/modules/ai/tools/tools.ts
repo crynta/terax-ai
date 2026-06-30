@@ -1,3 +1,4 @@
+import { build3DTools } from "./three_d";
 import { buildManagedAgentTools } from "./agent";
 import { buildEditTools } from "./edit";
 import { buildFsTools } from "./fs";
@@ -42,6 +43,7 @@ export function buildTools(ctx: import("./context").ToolContext) {
     ...buildManagedAgentTools(ctx),
     ...buildOverlayTools(ctx),
     ...buildScreenTools(ctx),
+    ...build3DTools(ctx),
   } as const;
 }
 

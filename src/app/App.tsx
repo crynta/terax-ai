@@ -294,6 +294,12 @@ export default function App() {
     );
   }, [tabs]);
 
+  useEffect(() => {
+    void import("@/modules/ai/agents/registry").then((m) =>
+      m.loadDynamicAgents(),
+    );
+  }, []);
+
   useAppEditorFileSync({ editorRefs, tabs, tabsRef });
   useAppThemeEditing({ openFileTab, tabsRef });
 

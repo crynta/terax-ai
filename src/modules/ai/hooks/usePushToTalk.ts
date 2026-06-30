@@ -8,10 +8,13 @@ export function usePushToTalk({
   onStart,
   onStop,
   enabled = true,
+  shortcut = "Alt+Space",
 }: {
   onStart: () => void;
   onStop: () => void;
   enabled?: boolean;
+  /** Global shortcut to register, e.g. "Alt+Space". Honors the user setting. */
+  shortcut?: string;
 }) {
   const [state, setState] = useState<PttState>("idle");
   const unlistenRef = useRef<(() => void) | null>(null);
@@ -41,7 +44,7 @@ export function usePushToTalk({
     let cancelled = false;
     (async () => {
       try {
-        await invoke("ptt_register");
+        await invoke("ptt_register", { shortcut });
       } catch (e) {
         console.warn("PTT register failed:", e);
       }
@@ -68,7 +71,8 @@ export function usePushToTalk({
       unlistenRef.current = () => {
         unlistenStart();
         unlistenStop();
-        invoke("ptt_unregister").catch(() => {});
+        // Unregister the SAME shortcut that was registered for this effect run.
+        invoke("ptt_unregister", { shortcut }).catch(() => {});
       };
     })();
 
@@ -77,7 +81,7 @@ export function usePushToTalk({
       unlistenRef.current?.();
       unlistenRef.current = null;
     };
-  }, [enabled]);
+  }, [enabled, shortcut]);
 
   return { state, recording: state === "recording", activate, deactivate };
 }

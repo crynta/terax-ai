@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import {
   type FormEvent,
   useCallback,
@@ -6,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { usePushToTalk } from "@/modules/ai/hooks/usePushToTalk";
 import { PiComposer } from "@/modules/pi/components/PiComposer";
 import {
   type PendingPiDestructiveAction,
@@ -61,6 +63,7 @@ import { usePiProviderKeyStatus } from "@/modules/pi/lib/usePiProviderKeyStatus"
 import { usePiRuntimeActions } from "@/modules/pi/lib/usePiRuntimeActions";
 import { usePiSessionEventStream } from "@/modules/pi/lib/usePiSessionEventStream";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   SidebarPanelBody,
   SidebarPanelFrame,
@@ -798,6 +801,83 @@ export function PiPanel({
 
   const { launchLocalAgent, launchLocalAgentWithPrompt, openLocalAgentDocs } =
     usePiLocalAgentLaunch({ onOpenLocalAgent, prompt, workspaceEnv });
+
+  const pushToTalkShortcut = usePreferencesStore((s) => s.pushToTalkShortcut);
+  const pttMediaRef = useRef<MediaRecorder | null>(null);
+  const pttChunksRef = useRef<Blob[]>([]);
+  const pttCancelledRef = useRef(false);
+  const pttGenRef = useRef(0);
+  usePushToTalk({
+    enabled: true,
+    shortcut: pushToTalkShortcut,
+    onStart: () => {
+      if (selectedSession === null || !selectedSessionSendable) return;
+      pttCancelledRef.current = false;
+      pttChunksRef.current = [];
+      // Per-activation token: if a newer press/release happens while
+      // getUserMedia is still resolving, the stale stream is dropped instead of
+      // overwriting (and leaking) the active recorder.
+      const gen = ++pttGenRef.current;
+      if (typeof MediaRecorder === "undefined") return;
+      navigator.mediaDevices
+        ?.getUserMedia({ audio: true })
+        .then((stream) => {
+          if (pttCancelledRef.current || gen !== pttGenRef.current) {
+            stream.getTracks().forEach((t) => {
+              t.stop();
+            });
+            return;
+          }
+          const rec = new MediaRecorder(stream);
+          rec.ondataavailable = (e) => {
+            if (e.data.size > 0) pttChunksRef.current.push(e.data);
+          };
+          rec.start();
+          pttMediaRef.current = rec;
+        })
+        .catch(() => {});
+    },
+    onStop: () => {
+      pttCancelledRef.current = true;
+      const rec = pttMediaRef.current;
+      if (!rec) return;
+      rec.onstop = () => {
+        const blob = new Blob(pttChunksRef.current, {
+          type: rec.mimeType || "audio/webm",
+        });
+        blob.arrayBuffer().then((buf) => {
+          invoke<{ text: string }>("transcribe_audio", {
+            audioData: Array.from(new Uint8Array(buf)),
+            mimeType: blob.type,
+            provider: "deepgram",
+          })
+            .then((r) => {
+              if (r.text.trim()) setPrompt(r.text.trim());
+            })
+            .catch(() => {});
+        });
+        rec.stream.getTracks().forEach((t) => {
+          t.stop();
+        });
+        pttMediaRef.current = null;
+      };
+      rec.stop();
+    },
+  });
+
+  useEffect(() => {
+    return () => {
+      pttCancelledRef.current = true;
+      const rec = pttMediaRef.current;
+      if (rec && rec.state !== "inactive") {
+        rec.stream.getTracks().forEach((t) => {
+          t.stop();
+        });
+        rec.stop();
+        pttMediaRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <>
