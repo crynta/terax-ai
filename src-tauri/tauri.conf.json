@@ -82,7 +82,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNCQUJGRDhBQjYwRTM0NjkKUldScE5BNjJpdjJyT3dIN0dqbUpHaDA4QW1GaDVmTTllRXdZVk96dFNTRUZ3Y2hiVGszYjFqRloK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUyRDZCOTg0N0EzQjhGMTUKUldRVmp6dDZoTG5XVXNiNWNWZG9kVWhaZk5yQStoNHE4eDJJYkp1dENvUGIwV0RwUkxoeGxBOFQK",
       "endpoints": [
         "https://github.com/crynta/terax-ai/releases/latest/download/latest.json"
       ]
