@@ -1,5 +1,5 @@
 /**
- * Pi SDK Webview Bridge — Agent Session Factory
+ * Pi SDK Webview Bridge - Agent Session Factory
  *
  * Creates Pi SDK Agent instances that run entirely in the webview,
  * using Tauri IPC for file/shell operations and LLM API calls.
@@ -29,12 +29,14 @@ import {
   type TSchema,
   Type,
 } from "@earendil-works/pi-ai";
+import { isE2eMockEnabled } from "@/modules/ai/lib/mockFlags";
 import { formatQuestionAnswers } from "@/modules/pi/lib/question-registry";
 import type {
   PiQuestionAnswer,
   PiQuestionOption,
 } from "@/modules/pi/lib/sessions";
 import { piEnv } from "./pi-env";
+import { ensureMockPiModel } from "./pi-mock";
 import { installProxiedFetch, uninstallProxiedFetch } from "./pi-http";
 import { executeAgentTool, grantAgentTool } from "./pi-tools";
 import type { NativeToolResult } from "./pi-tools";
@@ -262,7 +264,7 @@ function createAgentTools(cwd: string, sessionId: string): AgentTool[] {
  * Create AgentTools from MCP server tool descriptors.
  *
  * Execution routes through the Rust MCP module via the
- * `mcp_call_tool` Tauri command — no sidecar dependency.
+ * `mcp_call_tool` Tauri command - no sidecar dependency.
  */
 async function discoverMcpTools(
   cwd: string,
@@ -372,6 +374,12 @@ export function resolveAgentModel(options: {
   modelId: string;
   baseUrl?: string;
 }): Model<Api> {
+  // E2E (Phase C): when the flag is set there are no real provider keys, so all
+  // pi sessions use the deterministic offline faux model. Mirrors the AI-SDK
+  // mock on the chat side. Never reachable in normal use.
+  if (isE2eMockEnabled()) {
+    return ensureMockPiModel();
+  }
   const model = getModel(options.provider as never, options.modelId as never);
   if (options.baseUrl) {
     return { ...model, baseUrl: options.baseUrl };
@@ -559,7 +567,7 @@ export async function createTauriAgent(
       );
 
       if (!result.ok) {
-        // Compaction failed — return original messages (will likely fail at the API)
+        // Compaction failed - return original messages (will likely fail at the API)
         console.warn("Context compaction failed:", result.error);
         return messages;
       }
@@ -581,7 +589,7 @@ export async function createTauriAgent(
 }
 
 /**
- * Feature flag — controls whether to use webview agent or sidecar.
+ * Feature flag - controls whether to use webview agent or sidecar.
  */
 export const USE_WEBVIEW_AGENT = true;
 
