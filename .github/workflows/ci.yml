@@ -46,6 +46,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Coverage floor
+        run: pnpm test:coverage
+
       - name: Build frontend
         run: pnpm build
 

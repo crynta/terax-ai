@@ -8,6 +8,40 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async ({ mode }) => ({
   plugins: [react(), tailwindcss()],
+  test: {
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.d.ts",
+        "src/components/ui/**",
+        "src/components/ai-elements/**",
+        "src/**/index.ts",
+        "src/main.tsx",
+      ],
+      // Targeted ratchets on well-tested pure logic. A per-file floor guards
+      // those modules against coverage decay without imposing a fragile global
+      // percentage on a heavily UI-driven codebase. Raise/extend as more pure
+      // logic gets covered.
+      thresholds: {
+        "src/modules/ai/lib/agentRun.ts": { lines: 90, functions: 90 },
+        "src/modules/git-history/lib/graph.ts": { lines: 95, functions: 95 },
+        "src/modules/git-history/lib/remoteWebUrl.ts": {
+          lines: 95,
+          functions: 95,
+        },
+        "src/modules/editor/lib/diffCache.ts": { lines: 95, functions: 95 },
+        "src/modules/editor/lib/autocomplete/prompt.ts": {
+          lines: 95,
+          functions: 95,
+        },
+        "src/modules/theme/validateTheme.ts": { lines: 90, functions: 95 },
+        "src/modules/theme/applyTheme.ts": { lines: 90, functions: 90 },
+      },
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
