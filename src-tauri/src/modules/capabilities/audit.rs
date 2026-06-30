@@ -4,6 +4,27 @@ use std::sync::{Arc, Mutex};
 
 const DEFAULT_AUDIT_CAPACITY: usize = 1_000;
 
+/// Upper bound on a single audit entry's `message`. Tool results (especially
+/// MCP responses) can be arbitrarily large; without this a misbehaving server
+/// could bloat the in-memory ledger. Bounded at the ledger choke point so every
+/// caller is protected regardless of how it builds the message.
+const MAX_AUDIT_MESSAGE_LEN: usize = 4_096;
+
+/// Truncate on a UTF-8 char boundary, appending a marker noting how much was
+/// dropped. Returns the input unchanged when already within the limit.
+fn bound_audit_message(message: String) -> String {
+    if message.len() <= MAX_AUDIT_MESSAGE_LEN {
+        return message;
+    }
+    // Find the largest char boundary <= the limit so we never split a codepoint.
+    let mut end = MAX_AUDIT_MESSAGE_LEN;
+    while end > 0 && !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    let dropped = message.len() - end;
+    format!("{}… (truncated {dropped} bytes)", &message[..end])
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CapabilityAuditOutcome {
@@ -76,6 +97,7 @@ impl CapabilityAuditLog {
     }
 
     pub fn record(&self, mut entry: CapabilityAuditEntry) -> CapabilityAuditEntry {
+        entry.message = entry.message.map(bound_audit_message);
         let Ok(mut state) = self.inner.lock() else {
             return entry;
         };
@@ -206,6 +228,49 @@ mod tests {
             ));
         }
         assert_eq!(log.entries().len(), 1000);
+    }
+
+    #[test]
+    fn record_bounds_oversized_message() {
+        let log = CapabilityAuditLog::with_capacity(4);
+        let huge = "a".repeat(MAX_AUDIT_MESSAGE_LEN * 4);
+        let recorded = log.record(CapabilityAuditEntry::new(
+            "s",
+            "c",
+            "t",
+            true,
+            true,
+            CapabilityAuditOutcome::Failed,
+            Some(huge),
+        ));
+        let message = recorded.message.expect("message present");
+        assert!(message.len() <= MAX_AUDIT_MESSAGE_LEN + 32);
+        assert!(message.contains("truncated"));
+    }
+
+    #[test]
+    fn record_preserves_small_message_and_utf8() {
+        let log = CapabilityAuditLog::with_capacity(4);
+        let recorded = log.record(CapabilityAuditEntry::new(
+            "s",
+            "c",
+            "t",
+            true,
+            true,
+            CapabilityAuditOutcome::Succeeded,
+            Some("café ☕ ok".into()),
+        ));
+        assert_eq!(recorded.message.as_deref(), Some("café ☕ ok"));
+    }
+
+    #[test]
+    fn bound_audit_message_respects_char_boundaries() {
+        // A string of multi-byte chars longer than the limit must not panic and
+        // must remain valid UTF-8 after truncation.
+        let s = "☕".repeat(MAX_AUDIT_MESSAGE_LEN);
+        let bounded = bound_audit_message(s);
+        assert!(bounded.len() <= MAX_AUDIT_MESSAGE_LEN + 32);
+        assert!(bounded.contains("truncated"));
     }
 
     #[test]
