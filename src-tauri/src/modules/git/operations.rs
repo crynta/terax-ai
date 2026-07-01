@@ -81,6 +81,65 @@ fn resolve_repo_in_authorized(
     }))
 }
 
+/// Resolve every git repository reachable from `cwd` for the source-control panel.
+/// If `cwd` is itself inside a repo, returns that single repo root. Otherwise treats
+/// `cwd` as a multi-repo container and returns each immediate child that is its own
+/// repository (dir or worktree), sorted. Enables one panel to show all sub-repos when
+/// the opened workspace root is just a container (e.g. a git-worktree workspace).
+pub fn discover_repos(
+    registry: &WorkspaceRegistry,
+    cwd: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<Vec<String>> {
+    let cwd = canonical_dir(registry, cwd, workspace)?;
+    if !registry.is_authorized(&cwd.local_path) {
+        return Err(GitError::PathOutsideWorkspace(cwd.local_path));
+    }
+    ensure_git_available(&cwd.workspace)?;
+
+    // Directory itself inside a repo → that single repo is the whole result.
+    if let Some(root_line) = git_stdout_line_opt(
+        &cwd.workspace,
+        &cwd.git_path,
+        ["rev-parse", "--show-toplevel"],
+    )? {
+        let canonical_root = canonical_dir(registry, &root_line, &cwd.workspace)?;
+        let _ = registry.authorize(&canonical_root.local_path);
+        return Ok(vec![canonical_root.git_path]);
+    }
+
+    // Otherwise scan immediate children; each holding a `.git` (dir or worktree file)
+    // is its own repository.
+    // ponytail: one level deep, local FS only — matches the worktree workspace layout;
+    // recurse or honor a config depth if a deeper container ever shows up.
+    let mut roots: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(&cwd.local_path)
+        .map_err(GitError::Io)?
+        .flatten()
+    {
+        let path = entry.path();
+        if !path.is_dir() || !path.join(".git").exists() {
+            continue;
+        }
+        let Some(child_str) = path.to_str() else {
+            continue;
+        };
+        let child = canonical_dir(registry, child_str, &cwd.workspace)?;
+        if let Some(root_line) = git_stdout_line_opt(
+            &child.workspace,
+            &child.git_path,
+            ["rev-parse", "--show-toplevel"],
+        )? {
+            let canonical_root = canonical_dir(registry, &root_line, &child.workspace)?;
+            let _ = registry.authorize(&canonical_root.local_path);
+            roots.push(canonical_root.git_path);
+        }
+    }
+    roots.sort();
+    roots.dedup();
+    Ok(roots)
+}
+
 pub fn panel_snapshot(
     registry: &WorkspaceRegistry,
     cwd: &str,

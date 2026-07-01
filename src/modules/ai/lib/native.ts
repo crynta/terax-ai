@@ -268,6 +268,11 @@ export const native = {
       cwd,
       workspace: currentWorkspaceEnv(),
     }),
+  gitDiscoverRepos: (cwd: string) =>
+    invoke<string[]>("git_discover_repos", {
+      cwd,
+      workspace: currentWorkspaceEnv(),
+    }),
   gitStatus: (repoRoot: string) =>
     invoke<GitStatusSnapshot>("git_status", {
       repoRoot,

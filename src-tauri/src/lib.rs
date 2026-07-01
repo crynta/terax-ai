@@ -218,6 +218,7 @@ pub fn run() {
             fs::grep::fs_glob,
             git::commands::git_resolve_repo,
             git::commands::git_panel_snapshot,
+            git::commands::git_discover_repos,
             git::commands::git_status,
             git::commands::git_diff,
             git::commands::git_diff_content,
