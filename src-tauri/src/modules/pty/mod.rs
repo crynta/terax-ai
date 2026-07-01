@@ -93,9 +93,10 @@ pub async fn pty_open(
 
 // Input is the latency-critical path: raw body + id header skips JSON
 // serialization of every keystroke on both sides of the IPC boundary. Bytes
-// are handed to the session's writer thread via an unbounded channel, so
-// `send` is non-blocking and arrival order is preserved across a burst of
-// keystrokes (the writer thread serializes the actual write_all calls).
+// are handed to the session's writer thread via a channel, so arrival order
+// is preserved across a burst of keystrokes (the writer thread serializes the
+// actual write_all calls). The queue is byte-bounded: past WRITE_QUEUE_CAP we
+// return a backpressure error instead of letting a stuck PTY grow memory.
 #[tauri::command]
 pub async fn pty_write(
     state: tauri::State<'_, PtyState>,
@@ -111,6 +112,7 @@ pub async fn pty_write(
         return Err("pty_write: expected raw body".to_string());
     };
     let bytes = bytes.clone();
+    let len = bytes.len();
     let session = state
         .sessions
         .read()
@@ -121,10 +123,22 @@ pub async fn pty_write(
             log::warn!("pty_write: unknown id={id}");
             "no session".to_string()
         })?;
-    session.write_tx.send(bytes).map_err(|_| {
-        log::debug!("pty_write id={id}: writer channel closed");
-        "no session".to_string()
-    })
+    // Reserve queue capacity first so two racing writers can't both sneak past
+    // the cap. Rolled back on send failure (writer thread died -> channel
+    // closed) so a dead session reports "no session" rather than backpressure.
+    let prev = session.queued_bytes.fetch_add(len, Ordering::Relaxed);
+    if prev + len > session::WRITE_QUEUE_CAP {
+        session.queued_bytes.fetch_sub(len, Ordering::Relaxed);
+        return Err("pty_write: input backlog full".to_string());
+    }
+    match session.write_tx.send(bytes) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            session.queued_bytes.fetch_sub(len, Ordering::Relaxed);
+            log::debug!("pty_write id={id}: writer channel closed");
+            Err("no session".to_string())
+        }
+    }
 }
 
 #[tauri::command]
