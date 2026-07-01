@@ -60,6 +60,12 @@ export type TauriAgentOptions = {
   modelId: string;
   /** Optional base URL override */
   baseUrl?: string;
+  /**
+   * Custom (OpenAI-compatible) endpoint id, when the model is a custom
+   * endpoint. Its API key lives under `compat-<id>-api-key` in the keyring,
+   * not under the provider name, so it needs a dedicated lookup.
+   */
+  customEndpointId?: string;
   /** Initial thinking level */
   thinkingLevel?: string;
   /**
@@ -516,6 +522,10 @@ export async function createTauriAgent(
     },
     streamFn: proxiedStreamSimple,
     getApiKey: async (provider: string) => {
+      // Custom endpoints key by endpoint id, not provider name.
+      if (options.customEndpointId) {
+        return piEnv.getCustomEndpointApiKey(options.customEndpointId);
+      }
       return piEnv.getApiKeyForProvider(provider);
     },
     toolExecution: "parallel",

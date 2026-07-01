@@ -107,6 +107,26 @@ export const piEnv = {
     }
   },
 
+  /**
+   * Resolve the API key for a custom (OpenAI-compatible) endpoint. These are
+   * keyed by endpoint id in the app keyring (`compat-<id>-api-key`), NOT by
+   * provider name, so `getApiKeyForProvider` cannot find them.
+   */
+  async getCustomEndpointApiKey(
+    endpointId: string,
+  ): Promise<string | undefined> {
+    try {
+      return (
+        (await invoke<string | null>("secrets_get", {
+          service: KEYRING_SERVICE,
+          account: `compat-${endpointId}-api-key`,
+        })) ?? undefined
+      );
+    } catch {
+      return undefined;
+    }
+  },
+
   /** Get an API key from the OS keychain via Tauri secrets */
   async getApiKey(service: string, account: string): Promise<string | null> {
     try {

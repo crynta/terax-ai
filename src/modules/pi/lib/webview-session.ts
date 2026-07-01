@@ -324,6 +324,7 @@ export async function webviewSessionCreate(
     provider,
     modelId,
     baseUrl: providerConfig?.baseUrl,
+    customEndpointId: providerConfig?.customEndpointId,
     thinkingLevel: providerConfig?.thinkingLevel,
     // Auto-approve mode skips the interactive gate (and the question tool),
     // since there is no user to respond during an unattended run.
@@ -685,6 +686,7 @@ async function rehydrateSession(
     provider,
     modelId,
     baseUrl: providerConfig?.baseUrl,
+    customEndpointId: providerConfig?.customEndpointId,
     thinkingLevel:
       providerConfig?.thinkingLevel ?? stored.thinkingLevel ?? undefined,
     approvalGate: (toolName, toolCallId, input) =>
