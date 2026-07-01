@@ -232,7 +232,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "search.focus",
-    label: "Find in terminal",
+    label: "Find",
     group: "Search",
     defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
   },
