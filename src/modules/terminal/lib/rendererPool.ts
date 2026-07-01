@@ -939,6 +939,12 @@ export function applyFontFamily(family: string): void {
     slot.term.options.fontFamily = resolved;
     refitSlot(slot);
   }
+  // Register the new family as a local FontFace so the WebGL atlas can resolve
+  // it (WKWebView won't otherwise), then rebuild any stale atlases so glyphs
+  // baked in the old/fallback font get re-rasterized (#898).
+  void registerLocalFont(family).then(() => {
+    for (const slot of slots) clearWebglAtlas(slot);
+  });
 }
 
 export function applyFontWeight(weight: string): void {
