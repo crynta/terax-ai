@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -28,6 +29,8 @@ import {
   setRestoreWindowState,
   setShowHidden,
   setTerminalCursorBlink,
+  setTerminalComposerSyntaxMode,
+  setTerminalComposerSyntaxRules,
   setTerminalFontFamily,
   setTerminalFontSize,
   setTerminalFontWeight,
@@ -40,6 +43,11 @@ import {
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
 } from "@/modules/settings/store";
+import {
+  COMPOSER_SYNTAX_MODES,
+  type ComposerSyntaxRule,
+  resolveComposerSyntaxMode,
+} from "@/modules/terminal/composer/composerLanguage";
 import { useTheme } from "@/modules/theme";
 import {
   ComputerIcon,
@@ -97,6 +105,12 @@ export function GeneralSection() {
     (s) => s.terminalWebglEnabled,
   );
   const terminalCursorBlink = usePreferencesStore((s) => s.terminalCursorBlink);
+  const terminalComposerSyntaxMode = usePreferencesStore(
+    (s) => s.terminalComposerSyntaxMode,
+  );
+  const terminalComposerSyntaxRules = usePreferencesStore(
+    (s) => s.terminalComposerSyntaxRules,
+  );
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
@@ -143,6 +157,31 @@ export function GeneralSection() {
     } catch (e) {
       console.error("autostart toggle failed", e);
     }
+  };
+
+  const updateComposerRule = (
+    index: number,
+    patch: Partial<ComposerSyntaxRule>,
+  ) => {
+    const next = terminalComposerSyntaxRules.map((rule, i) =>
+      i === index ? { ...rule, ...patch } : rule,
+    );
+    void setTerminalComposerSyntaxRules(next);
+  };
+  const removeComposerRule = (index: number) => {
+    void setTerminalComposerSyntaxRules(
+      terminalComposerSyntaxRules.filter((_, i) => i !== index),
+    );
+  };
+  const addComposerRule = () => {
+    void setTerminalComposerSyntaxRules([
+      ...terminalComposerSyntaxRules,
+      {
+        id: newComposerRuleId(),
+        pattern: "",
+        mode: terminalComposerSyntaxMode,
+      },
+    ]);
   };
 
   return (
@@ -297,6 +336,92 @@ export function GeneralSection() {
             checked={terminalCursorBlink}
             onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
+        </SettingRow>
+        <SettingRow
+          title="Composer syntax mode"
+          description="Default highlighting for terminal composer drafts. Input text is not transformed."
+        >
+          <Select
+            value={terminalComposerSyntaxMode}
+            onValueChange={(v) =>
+              void setTerminalComposerSyntaxMode(resolveComposerSyntaxMode(v))
+            }
+          >
+            <SelectTrigger size="sm" className="h-8 w-36 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COMPOSER_SYNTAX_MODES.map((mode) => (
+                <SelectItem
+                  key={mode.id}
+                  value={mode.id}
+                  className="text-[12px]"
+                >
+                  {mode.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          title="Composer syntax rules"
+          description="Regex rules matched against the active AI CLI name. First match wins."
+        >
+          <div className="flex w-full max-w-82 flex-col gap-2">
+            {terminalComposerSyntaxRules.map((rule, index) => (
+              <div key={rule.id} className="flex gap-1.5">
+                <Input
+                  value={rule.pattern}
+                  placeholder="claude|codex|gemini"
+                  className="h-8 min-w-0 flex-1 text-[12px]"
+                  onChange={(e) =>
+                    updateComposerRule(index, { pattern: e.target.value })
+                  }
+                />
+                <Select
+                  value={rule.mode}
+                  onValueChange={(v) =>
+                    updateComposerRule(index, {
+                      mode: resolveComposerSyntaxMode(v),
+                    })
+                  }
+                >
+                  <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COMPOSER_SYNTAX_MODES.map((mode) => (
+                      <SelectItem
+                        key={mode.id}
+                        value={mode.id}
+                        className="text-[12px]"
+                      >
+                        {mode.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-[12px]"
+                  onClick={() => removeComposerRule(index)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 self-start px-2 text-[12px]"
+              onClick={addComposerRule}
+            >
+              Add rule
+            </Button>
+          </div>
         </SettingRow>
         <FontFamilyInput
           value={terminalFontFamily}
@@ -614,4 +739,10 @@ function AutoSaveDelayInput({
       </div>
     </SettingRow>
   );
+}
+
+function newComposerRuleId(): string {
+  return `composer-rule-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
 }

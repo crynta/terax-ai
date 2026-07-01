@@ -3,6 +3,8 @@ import { AiInputBarConnect } from "@/modules/ai";
 import { Chip } from "@/modules/ai/components/Chip";
 import { ChipsRow } from "@/modules/ai/components/ChipsRow";
 import { useComposer } from "@/modules/ai/lib/composer";
+import { TerminalPromptQueue } from "@/modules/terminal/composer/TerminalPromptQueue";
+import { useTerminalComposerStore } from "@/modules/terminal/composer/terminalComposerStore";
 import { useBlockController } from "@/modules/terminal/lib/blockController";
 import { focusLeafInput } from "@/modules/terminal/lib/useTerminalSession";
 import { useTheme } from "@/modules/theme";
@@ -25,6 +27,11 @@ const AiComposerInput = lazy(() =>
     default: m.AiComposerInput,
   })),
 );
+const TerminalComposer = lazy(() =>
+  import("@/modules/terminal/composer/TerminalComposer").then((m) => ({
+    default: m.TerminalComposer,
+  })),
+);
 
 export const TOGGLE_BLOCK_INPUT_EVENT = "terax:toggle-block-input";
 
@@ -37,6 +44,9 @@ type Props = {
   hasComposer: boolean;
   panelOpen: boolean;
   keysLoaded: boolean;
+  terminalComposerOpen: boolean;
+  onTerminalComposerClose: () => void;
+  onTerminalComposerSend: (text: string) => void;
   onConnect: () => void;
 };
 
@@ -49,6 +59,9 @@ export function WorkspaceInputBar({
   hasComposer,
   panelOpen,
   keysLoaded,
+  terminalComposerOpen,
+  onTerminalComposerClose,
+  onTerminalComposerSend,
   onConnect,
 }: Props) {
   const c = useComposer();
@@ -73,9 +86,21 @@ export function WorkspaceInputBar({
   const showToggle = isBlockTab && hasComposer;
   const [mode, setMode] = useState<"shell" | "ai">("shell");
   const effectiveMode = !isBlockTab ? "ai" : hasComposer ? mode : "shell";
+  const terminalComposerVisible =
+    isTerminalTab && activeLeafId !== null && terminalComposerOpen;
+  const terminalQueueCount = useTerminalComposerStore((state) =>
+    activeLeafId === null ? 0 : (state.queues[activeLeafId]?.length ?? 0),
+  );
+  const terminalQueueVisible =
+    isTerminalTab && activeLeafId !== null && terminalQueueCount > 0;
 
-  const mounted = keysLoaded || isBlockTab;
-  const open = isBlockTab || (keysLoaded && panelOpen);
+  const mounted =
+    terminalComposerVisible || terminalQueueVisible || keysLoaded || isBlockTab;
+  const open =
+    terminalComposerVisible ||
+    terminalQueueVisible ||
+    isBlockTab ||
+    (keysLoaded && panelOpen);
 
   const [aiLoaded, setAiLoaded] = useState(false);
   useEffect(() => {
@@ -190,7 +215,26 @@ export function WorkspaceInputBar({
       className="terax-reveal"
       aria-hidden={!open}
     >
-      <div>{content}</div>
+      {terminalQueueVisible && activeLeafId !== null && (
+        <TerminalPromptQueue
+          leafId={activeLeafId}
+          onSend={onTerminalComposerSend}
+        />
+      )}
+      <div>
+        {terminalComposerVisible && activeLeafId !== null ? (
+          <Suspense fallback={null}>
+            <TerminalComposer
+              key={activeLeafId}
+              leafId={activeLeafId}
+              onSend={onTerminalComposerSend}
+              onClose={onTerminalComposerClose}
+            />
+          </Suspense>
+        ) : (
+          content
+        )}
+      </div>
     </div>
   );
 }

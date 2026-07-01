@@ -73,10 +73,12 @@ import {
   hasLeaf,
   leafIds,
   navigateFocusedBlocks,
+  submitToLeaf,
   type TerminalPaneHandle,
   useTerminalFileDrop,
   writeToSession,
 } from "@/modules/terminal";
+import { useTerminalComposerStore } from "@/modules/terminal/composer/terminalComposerStore";
 import {
   SpaceSwitcher,
   useSpaces,
@@ -273,6 +275,7 @@ export default function App() {
 
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [terminalComposerOpen, setTerminalComposerOpen] = useState(false);
   const [paletteInitialMode, setPaletteInitialMode] = useState<
     "commands" | "content"
   >("commands");
@@ -299,6 +302,31 @@ export default function App() {
   const isBlockTab = activeTerminalTab?.blocks === true;
   const isEditorTab = activeTab?.kind === "editor";
   const isGitHistoryTab = activeTab?.kind === "git-history";
+
+  const closeTerminalComposer = useCallback(
+    () => setTerminalComposerOpen(false),
+    [],
+  );
+  const toggleTerminalComposer = useCallback(() => {
+    if (!activeTerminalTab || activeLeafId === null) return;
+    setTerminalComposerOpen((open) => !open);
+  }, [activeTerminalTab, activeLeafId]);
+  const sendTerminalComposerText = useCallback(
+    (text: string) => {
+      if (activeLeafId === null) return;
+      submitToLeaf(activeLeafId, text);
+      setTerminalComposerOpen(false);
+      terminalRefs.current.get(activeLeafId)?.focus();
+    },
+    [activeLeafId],
+  );
+  const sendNextQueuedTerminalPrompt = useCallback(() => {
+    if (activeLeafId === null) return;
+    const item = useTerminalComposerStore.getState().dequeueNext(activeLeafId);
+    if (!item) return;
+    submitToLeaf(activeLeafId, item.text);
+    terminalRefs.current.get(activeLeafId)?.focus();
+  }, [activeLeafId]);
 
   useEditorFileSync({ tabs, tabsRef, editorRefs });
   useThemeFileEditing({ tabsRef, openFileTab });
@@ -673,6 +701,8 @@ export default function App() {
       },
       "terminal.toggleInput": () =>
         window.dispatchEvent(new CustomEvent(TOGGLE_BLOCK_INPUT_EVENT)),
+      "terminalComposer.toggle": toggleTerminalComposer,
+      "terminalComposer.sendQueued": sendNextQueuedTerminalPrompt,
       "blocks.prev": () => navigateFocusedBlocks(-1),
       "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => searchInlineRef.current?.focus(),
@@ -707,6 +737,8 @@ export default function App() {
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
       toggleSourceControl,
+      toggleTerminalComposer,
+      sendNextQueuedTerminalPrompt,
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
@@ -742,10 +774,19 @@ export default function App() {
       }
       if (
         id === "terminal.toggleInput" ||
+        id === "terminalComposer.toggle" ||
+        id === "terminalComposer.sendQueued" ||
         id === "blocks.prev" ||
         id === "blocks.next"
       ) {
-        return !(activeTab?.kind === "terminal" && activeTab.blocks === true);
+        if (
+          id === "terminal.toggleInput" ||
+          id === "blocks.prev" ||
+          id === "blocks.next"
+        ) {
+          return !(activeTab?.kind === "terminal" && activeTab.blocks === true);
+        }
+        return activeTab?.kind !== "terminal";
       }
       if (id === "sidebar.toggle") {
         // Ctrl+B is also Claude Code's "run in background" key. While a terminal
@@ -989,6 +1030,7 @@ export default function App() {
             closeActiveTabOrPane: handleCloseTabOrPane,
             splitPaneRight: () => splitActivePaneInActiveTab("row"),
             splitPaneDown: () => splitActivePaneInActiveTab("col"),
+            toggleTerminalComposer,
             focusSearch: () => searchInlineRef.current?.focus(),
             focusExplorerSearch: () => explorerRef.current?.focusSearch(),
             toggleSidebar,
@@ -1018,6 +1060,7 @@ export default function App() {
       toggleSourceControl,
       handleCloseTabOrPane,
       splitActivePaneInActiveTab,
+      toggleTerminalComposer,
       toggleSidebar,
       togglePanelAndFocus,
       askFromSelection,
@@ -1181,6 +1224,9 @@ export default function App() {
                     hasComposer={hasComposer}
                     panelOpen={panelOpen}
                     keysLoaded={keysLoaded}
+                    terminalComposerOpen={terminalComposerOpen}
+                    onTerminalComposerClose={closeTerminalComposer}
+                    onTerminalComposerSend={sendTerminalComposerText}
                     onConnect={() => void openSettingsWindow("models")}
                   />
                 </div>

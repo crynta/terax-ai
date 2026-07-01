@@ -18,7 +18,12 @@ import {
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 import "../block/block.css";
-import { ensureAgentActivityListener, isAgentActivePty } from "./agentActivity";
+import {
+  activeAgentForPty,
+  ensureAgentActivityListener,
+  isAgentActivePty,
+  subscribeAgentActivity,
+} from "./agentActivity";
 import {
   acquireSlot,
   applyBackgroundActive,
@@ -286,6 +291,18 @@ export function leafIdForPty(ptyId: number): number | null {
     if (s.pty?.id === ptyId) return leafId;
   }
   return null;
+}
+
+export function activeAgentForLeaf(leafId: number): string | null {
+  const s = sessions.get(leafId);
+  if (!s?.pty) return null;
+  return activeAgentForPty(s.pty.id);
+}
+
+export function subscribeTerminalAgentActivity(
+  listener: () => void,
+): () => void {
+  return subscribeAgentActivity(listener);
 }
 
 function leafBusy(s: Session): boolean {
