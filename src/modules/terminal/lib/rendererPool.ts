@@ -819,12 +819,11 @@ function attachWebgl(slot: Slot): void {
 
 // Rebuild a slot's GPU glyph atlas so any fallback glyphs baked in before the
 // configured font was resident get re-rasterized in the correct font.
+// Terminal.clearTextureAtlas (xterm 6.0.0) drops the active renderer's atlas;
+// the refresh then repaints it against the now-registered font.
 function clearWebglAtlas(slot: Slot): void {
-  const addon = slot.webglAddon as unknown as {
-    clearTextureAtlas?: () => void;
-  } | null;
   try {
-    addon?.clearTextureAtlas?.();
+    slot.term.clearTextureAtlas();
   } catch {}
   try {
     slot.term.refresh(0, slot.term.rows - 1);
