@@ -110,6 +110,15 @@ pub fn app_capability_manifest() -> CapabilityManifest {
                 RiskLevel::Medium,
                 &["app", "mcp"],
             ),
+            app_tool(
+                "app.secrets",
+                "app secret access",
+                "Read or write an API key in the OS keychain (first-party Settings), through Rust policy and audit.",
+                object_schema(serde_json::json!({}), &[]),
+                CapabilityKind::SecretAccess,
+                RiskLevel::Medium,
+                &["app", "secrets"],
+            ),
         ],
     }
 }

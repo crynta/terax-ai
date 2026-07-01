@@ -78,6 +78,7 @@ pub enum CapabilityKind {
     AgentRun,
     BrowserAutomation,
     McpTool,
+    SecretAccess,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
