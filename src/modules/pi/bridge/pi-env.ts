@@ -5,6 +5,7 @@
  * Routes through Tauri IPC for real values.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { KEYRING_SERVICE } from "@/modules/ai/config";
 
 let _cwd: string | null = null;
 
@@ -89,11 +90,15 @@ export const piEnv = {
       }
     }
 
-    // Fall back to secrets store
+    // Fall back to the OS keychain. This MUST be the same keyring the app's
+    // Settings writes to (KEYRING_SERVICE), not a separate "terax-pi" service,
+    // or keys the user configures in Settings are invisible to the pi agent and
+    // it sends requests with no auth header. The account format matches the
+    // ai keyring's `${provider}-api-key` convention.
     try {
       return (
         (await invoke<string | null>("secrets_get", {
-          service: "terax-pi",
+          service: KEYRING_SERVICE,
           account: `${provider}-api-key`,
         })) ?? undefined
       );
