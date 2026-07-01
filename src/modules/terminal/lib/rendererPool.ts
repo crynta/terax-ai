@@ -18,6 +18,11 @@ import {
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
+import {
+  clearLiveTerminalSelections,
+  isReleasedMoveDuringSelection,
+  isTerminalSelectionStart,
+} from "./stuckSelectionGuard";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -79,6 +84,8 @@ let adapter: SlotAdapter | null = null;
 let windowActive =
   typeof document === "undefined" || (!document.hidden && document.hasFocus());
 let windowActivityBound = false;
+let stuckSelectionGuardBound = false;
+let terminalSelectionMouseDown = false;
 let cursorBlinkEnabled = false;
 
 function bindWindowActivityListeners(): void {
@@ -88,6 +95,48 @@ function bindWindowActivityListeners(): void {
   window.addEventListener("focus", sync);
   window.addEventListener("blur", sync);
   document.addEventListener("visibilitychange", sync);
+}
+
+function bindStuckSelectionGuard(): void {
+  if (stuckSelectionGuardBound || typeof window === "undefined") return;
+  stuckSelectionGuardBound = true;
+
+  const clearTrackedSelection = () => {
+    if (!terminalSelectionMouseDown) return;
+    terminalSelectionMouseDown = false;
+    clearLiveTerminalSelections(slots);
+  };
+
+  window.addEventListener(
+    "mousedown",
+    (event) => {
+      terminalSelectionMouseDown = isTerminalSelectionStart(
+        event,
+        event.target,
+      );
+    },
+    { capture: true },
+  );
+  window.addEventListener(
+    "mouseup",
+    (event) => {
+      if (event.button === 0) terminalSelectionMouseDown = false;
+    },
+    { capture: true },
+  );
+  window.addEventListener(
+    "mousemove",
+    (event) => {
+      if (isReleasedMoveDuringSelection(terminalSelectionMouseDown, event)) {
+        clearTrackedSelection();
+      }
+    },
+    { capture: true },
+  );
+  window.addEventListener("blur", clearTrackedSelection);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clearTrackedSelection();
+  });
 }
 
 function setWindowActive(active: boolean): void {
@@ -105,6 +154,7 @@ function setWindowActive(active: boolean): void {
 export function configureRendererPool(a: SlotAdapter): void {
   adapter = a;
   bindWindowActivityListeners();
+  bindStuckSelectionGuard();
 }
 
 export function forEachSlot(fn: (slot: Slot) => void): void {
