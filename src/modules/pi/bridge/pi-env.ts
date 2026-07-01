@@ -74,13 +74,19 @@ export const piEnv = {
    * Tries env vars via Tauri IPC, falls back to secrets store.
    */
   async getApiKeyForProvider(provider: string): Promise<string | undefined> {
-    // Try env var first
+    // Try env var first. Guarded: `pi_env_api_key` may be absent (it was a
+    // sidecar-era command), and an unhandled rejection here would abort key
+    // resolution instead of letting the secrets-store fallback run.
     const envName = PROVIDER_ENV_KEYS[provider];
     if (envName) {
-      const value = await invoke<string | null>("pi_env_api_key", {
-        name: envName,
-      });
-      if (value) return value;
+      try {
+        const value = await invoke<string | null>("pi_env_api_key", {
+          name: envName,
+        });
+        if (value) return value;
+      } catch {
+        // Command missing or errored; fall through to the secrets store.
+      }
     }
 
     // Fall back to secrets store

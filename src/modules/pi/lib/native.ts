@@ -268,7 +268,6 @@ export const piNative = {
   appCapabilityAudit: () =>
     invoke<CapabilityAuditEntry[]>("app_capability_audit"),
   sessionsHistory: () => invoke<PiSessionsList>("pi_sessions_history"),
-  sessionsList: () => invoke<PiSessionsList>("pi_sessions_list"),
   sessionCreate: (
     title?: string,
     cwd?: string | null,

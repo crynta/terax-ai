@@ -111,7 +111,10 @@ export function usePiPanelRefreshers({
 
   const refreshSessions = useCallback(async () => {
     try {
-      applyLiveSessionList(await piNative.sessionsList());
+      // Post-sidecar, the persisted history is the single session source
+      // (`pi_sessions_list` was removed with the Rust host supervisor). Apply it
+      // with the live-merge semantics so vanished sessions are marked stopped.
+      applyLiveSessionList(await piNative.sessionsHistory());
     } catch (error) {
       setRuntimeState(toErrorState(error));
     }

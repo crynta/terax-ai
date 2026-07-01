@@ -27,11 +27,19 @@ export async function resolveSkillFiles(
 ): Promise<SkillForPrompt[]> {
   if (skillsMode === "off" || !cwd) return [];
 
-  const status = await invoke<PiSkillsStatus>("pi_skills_status", {
-    workspaceRoot: cwd,
-    workspace: { kind: "local" },
-    includeProfile: true,
-  });
+  // Guarded: skill scanning is best-effort. If the backing command is absent or
+  // errors, skip skill injection rather than failing pi session creation (this
+  // runs on the create/resume path in webview-session.ts).
+  let status: PiSkillsStatus;
+  try {
+    status = await invoke<PiSkillsStatus>("pi_skills_status", {
+      workspaceRoot: cwd,
+      workspace: { kind: "local" },
+      includeProfile: true,
+    });
+  } catch {
+    return [];
+  }
 
   // Filter out skills with warnings
   let valid = status.skills.filter((s: PiSkillInfo) => s.warnings.length === 0);
