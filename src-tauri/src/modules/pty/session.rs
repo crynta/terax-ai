@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -39,7 +40,10 @@ pub struct Session {
     //      the Tauri worker thread that triggered the close.
     //   2. `killer` — best-effort kill (redundant on Windows once Job
     //      closed, but harmless and required on Unix where there is no Job).
-    //   3. `writer` — closes the input side of the master pipe.
+    //   3. `write_tx` — drops the last channel sender, so the dedicated
+    //      writer thread drains and exits, releasing the input-side writer
+    //      clone it holds. (The reader thread's writer clone, used for DA
+    //      replies, is released when the killed child's EOF unwinds it.)
     //   4. `master` — last; ClosePseudoConsole on Windows. By now the child
     //      is dead and conhost has nothing left to drain.
     #[cfg(windows)]
@@ -47,7 +51,10 @@ pub struct Session {
     /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
     pub shell_pid: u32,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
-    pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    // Input bytes are queued here and drained by a single dedicated writer
+    // thread, so a burst of pty_write calls stays in arrival order rather than
+    // racing for the writer lock from independent spawn_blocking jobs.
+    pub write_tx: Sender<Vec<u8>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     // Set by the waiter once the child exits, so pty_open can reap a shell
     // that died before it was registered.
@@ -137,6 +144,25 @@ pub fn spawn(
     ));
     guard.disarm();
 
+    // Dedicated writer thread: serializes all input writes in arrival order
+    // so concurrent pty_write calls can't reach `writer.lock()` out of order
+    // and scramble a fast burst of keystrokes. Unbounded channel => send never
+    // blocks the IPC caller; the thread exits when the last sender drops.
+    let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
+    let writer_for_writer = writer.clone();
+    thread::Builder::new()
+        .name("terax-pty-writer".into())
+        .spawn(move || {
+            for bytes in write_rx {
+                if let Ok(mut w) = writer_for_writer.lock() {
+                    if let Err(e) = w.write_all(&bytes) {
+                        log::debug!("pty writer thread write failed: {e}");
+                    }
+                }
+            }
+        })
+        .expect("spawn pty writer thread");
+
     let shell_pid = child.process_id().unwrap_or(0);
 
     #[cfg(windows)]
@@ -158,7 +184,7 @@ pub fn spawn(
         _job: job,
         shell_pid,
         killer: Mutex::new(killer),
-        writer: writer.clone(),
+        write_tx,
         master: Mutex::new(pair.master),
         exited: exited.clone(),
     });
@@ -337,13 +363,14 @@ mod tests {
         drop(pair.slave);
 
         let killer = child.clone_killer();
-        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
-            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
+        // take_writer so the writer side is owned and dropped with the test,
+        // but the Session no longer stores it directly.
+        drop(pair.master.take_writer().expect("writer"));
 
         let session = Arc::new(Session {
             shell_pid: child.process_id().unwrap_or(0),
             killer: Mutex::new(killer),
-            writer,
+            write_tx: mpsc::channel().0,
             master: Mutex::new(pair.master),
             exited: Arc::new(AtomicBool::new(false)),
         });
@@ -386,13 +413,12 @@ mod tests {
         let _ = child.wait();
 
         let killer = child.clone_killer();
-        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
-            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
+        drop(pair.master.take_writer().expect("writer"));
 
         let session = Arc::new(Session {
             shell_pid: 0,
             killer: Mutex::new(killer),
-            writer,
+            write_tx: mpsc::channel().0,
             master: Mutex::new(pair.master),
             exited: Arc::new(AtomicBool::new(false)),
         });
