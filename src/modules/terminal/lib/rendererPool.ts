@@ -24,6 +24,19 @@ const FIT_DEBOUNCE_MS = 8;
 const PTY_RESIZE_DEBOUNCE_MS = 256;
 const SNAPSHOT_SCROLLBACK_CAP = 5_000;
 
+// Dedup window for self-sent keyCode-229 chars vs xterm's own onData. macOS
+// WKWebView fires both our self-send and a textarea-input onData for the same
+// keystroke; without coordination each keystroke doubles.
+const KEY_229_DEDUP_MS = 200;
+// Backstop cap on a pending queue. The 200ms window already bounds real
+// growth; this just guards a runaway (e.g. a misbehaving IME flood).
+const DEDUP_QUEUE_MAX = 64;
+type PendingKey = { char: string; at: number };
+
+function prunePending(q: PendingKey[], now: number): void {
+  while (q.length > 0 && now - q[0].at >= KEY_229_DEDUP_MS) q.shift();
+}
+
 export type SlotAdapter = {
   resolveLeaf(leafId: number): LeafBridge | null;
   evictLeaf(leafId: number): void;
@@ -70,15 +83,14 @@ export type Slot = {
   lastW: number;
   lastH: number;
   lastUsedAt: number;
-  // Dedup window for self-sent keyCode-229 chars vs xterm's own onData
-  // (see attachCustomKeyEventHandler): macOS emits both our self-send and a
-  // textarea-input onData for the same keystroke, so without coordination
-  // each keystroke doubles. The keystroke's keydown(kc=229) and textarea
-  // input(onData) can arrive in either order, so we dedup both directions.
-  lastOdChar: string | null;
-  lastOdAt: number;
-  selfSentChar: string | null;
-  selfSentAt: number;
+  // FIFOs of pending keyCode-229 keystrokes awaiting their counterpart, in
+  // both orderings: selfSentQueue holds chars we forwarded directly that xterm
+  // may still echo via onData; onDataQueue holds chars xterm already forwarded
+  // that a trailing keydown(kc=229) must not re-send. A single slot gets
+  // overwritten under fast typing (cd -> ccd), so we keep an ordered queue per
+  // direction and consume the oldest matching entry.
+  selfSentQueue: PendingKey[];
+  onDataQueue: PendingKey[];
 };
 
 const slots: Slot[] = [];
@@ -246,10 +258,8 @@ function createSlot(): Slot {
     lastW: 0,
     lastH: 0,
     lastUsedAt: 0,
-    lastOdChar: null,
-    lastOdAt: 0,
-    selfSentChar: null,
-    selfSentAt: 0,
+    selfSentQueue: [],
+    onDataQueue: [],
   };
 
   term.attachCustomKeyEventHandler((event) => {
@@ -272,20 +282,25 @@ function createSlot(): Slot {
       if (leafId229 !== null) {
         const bridge229 = adapter?.resolveLeaf(leafId229);
         if (bridge229) {
+          const now = Date.now();
           // xterm's textarea-input onData may have already fired for this
           // keystroke just before keydown; if so, the char is already on its
-          // way and self-sending would double it. Otherwise self-send and mark
-          // so a trailing onData is dropped.
-          if (
-            slot.lastOdChar === event.key &&
-            Date.now() - slot.lastOdAt < 200
-          ) {
-            slot.lastOdChar = null;
+          // way and self-sending would double it. Consume the oldest matching
+          // pending onData entry instead of self-sending.
+          prunePending(slot.onDataQueue, now);
+          const odIdx = slot.onDataQueue.findIndex(
+            (e) => e.char === event.key,
+          );
+          if (odIdx >= 0) {
+            slot.onDataQueue.splice(odIdx, 1);
             event.preventDefault();
             return false;
           }
-          slot.selfSentChar = event.key;
-          slot.selfSentAt = Date.now();
+          // Otherwise self-send and enqueue so a trailing onData is dropped.
+          slot.selfSentQueue.push({ char: event.key, at: now });
+          if (slot.selfSentQueue.length > DEDUP_QUEUE_MAX) {
+            slot.selfSentQueue.shift();
+          }
           bridge229.writeToPty(event.key);
           event.preventDefault();
           return false;
@@ -345,21 +360,25 @@ function createSlot(): Slot {
 
   term.onData((data) => {
     const leafId = slot.currentLeafId;
-    // Drop xterm's own onData when it duplicates a char we already self-sent
-    // for a keyCode-229 keystroke within the dedup window. macOS fires both,
-    // so without this the self-send + onData would double the character.
-    if (
-      slot.selfSentChar !== null &&
-      data === slot.selfSentChar &&
-      Date.now() - slot.selfSentAt < 200
-    ) {
-      slot.selfSentChar = null;
-      return;
+    const now = Date.now();
+    if (data.length === 1) {
+      // Drop xterm's own onData when it duplicates a char we already self-sent
+      // for a keyCode-229 keystroke within the dedup window. Consume the oldest
+      // matching pending entry so a fast burst (cd) dedups each char, not just
+      // the most recent one.
+      prunePending(slot.selfSentQueue, now);
+      const ssIdx = slot.selfSentQueue.findIndex((e) => e.char === data);
+      if (ssIdx >= 0) {
+        slot.selfSentQueue.splice(ssIdx, 1);
+        return;
+      }
+      // Record this onData so a trailing keydown(kc=229) for the same char
+      // knows not to self-send (onData-arrived-first ordering).
+      slot.onDataQueue.push({ char: data, at: now });
+      if (slot.onDataQueue.length > DEDUP_QUEUE_MAX) {
+        slot.onDataQueue.shift();
+      }
     }
-    // Record this onData so a trailing keydown(kc=229) for the same char
-    // knows not to self-send ( onData-arrived-first ordering ).
-    slot.lastOdChar = data.length === 1 ? data : null;
-    slot.lastOdAt = Date.now();
     if (leafId === null) return;
     adapter?.resolveLeaf(leafId)?.writeToPty(data);
   });

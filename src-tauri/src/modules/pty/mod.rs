@@ -6,7 +6,6 @@ mod session;
 pub(crate) mod shell_init;
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
@@ -95,9 +94,10 @@ pub async fn pty_open(
 }
 
 // Input is the latency-critical path: raw body + id header skips JSON
-// serialization of every keystroke on both sides of the IPC boundary.
-// Async + spawn_blocking so the write runs off the webview main thread;
-// a burst of keystrokes under a sync command would stall that thread.
+// serialization of every keystroke on both sides of the IPC boundary. Bytes
+// are handed to the session's writer thread via an unbounded channel, so
+// `send` is non-blocking and arrival order is preserved across a burst of
+// keystrokes (the writer thread serializes the actual write_all calls).
 #[tauri::command]
 pub async fn pty_write(
     state: tauri::State<'_, PtyState>,
@@ -123,23 +123,10 @@ pub async fn pty_write(
             log::warn!("pty_write: unknown id={id}");
             "no session".to_string()
         })?;
-    tauri::async_runtime::spawn_blocking(move || {
-        // EPIPE is expected if the child already exited.
-        session
-            .writer
-            .lock()
-            .unwrap()
-            .write_all(&bytes)
-            .map_err(|e| {
-                log::debug!("pty_write id={id} failed: {e}");
-                e.to_string()
-            })
+    session.write_tx.send(bytes).map_err(|_| {
+        log::debug!("pty_write id={id}: writer channel closed");
+        "no session".to_string()
     })
-    .await
-    .map_err(|e| {
-        log::error!("pty_write join failed: {e}");
-        e.to_string()
-    })?
 }
 
 #[tauri::command]
