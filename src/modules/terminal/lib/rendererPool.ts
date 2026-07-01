@@ -1,4 +1,4 @@
-import { resolveFontFamily } from "@/lib/fonts";
+import { registerLocalFont, resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -804,9 +804,31 @@ function attachWebgl(slot: Slot): void {
     for (const c of after) if (!before.has(c)) added.push(c);
     slot.webglAddon = webgl;
     slot.webglCanvases = added;
+    // WKWebView hides system fonts from the WebGL atlas rasterizer unless they
+    // are registered FontFaces, so some cells bake as the fallback font — the
+    // "two fonts" effect (#898). Register the configured font, then rebuild the
+    // atlas so it re-rasterizes in the correct font.
+    const fam = usePreferencesStore.getState().terminalFontFamily;
+    void registerLocalFont(fam).then(() => {
+      if (slot.webglAddon === webgl) clearWebglAtlas(slot);
+    });
   } catch (e) {
     console.warn("[terax-webgl] unavailable:", e);
   }
+}
+
+// Rebuild a slot's GPU glyph atlas so any fallback glyphs baked in before the
+// configured font was resident get re-rasterized in the correct font.
+function clearWebglAtlas(slot: Slot): void {
+  const addon = slot.webglAddon as unknown as {
+    clearTextureAtlas?: () => void;
+  } | null;
+  try {
+    addon?.clearTextureAtlas?.();
+  } catch {}
+  try {
+    slot.term.refresh(0, slot.term.rows - 1);
+  } catch {}
 }
 
 function disposeSlotWebgl(slot: Slot): void {
