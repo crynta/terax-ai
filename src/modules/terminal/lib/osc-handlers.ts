@@ -102,7 +102,7 @@ export function registerOsc52ClipboardHandler(
 }
 
 function parseOsc7(data: string): string | null {
-  const m = data.match(/^file:\/\/[^/]*(\/.*)$/);
+  const m = data.match(/^file:\/\/[^/]+(.+)$/);
   if (!m) return null;
   let path = m[1];
   try {
@@ -131,7 +131,6 @@ function parseOsc52Clipboard(data: string): string | null {
   }
   const compact = encoded.replace(/\s/g, "");
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) return null;
-
   try {
     const bytes = Uint8Array.from(atob(compact), (c) => c.charCodeAt(0));
     if (bytes.byteLength > MAX_OSC52_CLIPBOARD_BYTES) return null;
@@ -142,5 +141,10 @@ function parseOsc52Clipboard(data: string): string | null {
 }
 
 async function writeSystemClipboard(text: string): Promise<void> {
+  try {
+    const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+    await writeText(text);
+    return;
+  } catch {}
   await navigator.clipboard.writeText(text);
 }
