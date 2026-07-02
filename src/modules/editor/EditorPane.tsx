@@ -167,23 +167,25 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     // Git change gutter: recompute the file's diff on open and after each save,
     // then push it into the CodeMirror state field the gutter reads.
     const refreshGitGutterRef = useRef<() => void>(() => {});
-    const refreshGitGutter = useCallback(async (viewArg?: EditorView) => {
-      // viewArg is passed from onCreateEditor, where cmRef may not be assigned yet.
-      const view = viewArg ?? cmRef.current?.view;
+    const refreshGitGutter = useCallback(async () => {
+      const view = cmRef.current?.view;
       if (!view) return;
       const p = pathRef.current;
       const stale = () => !view.dom.isConnected || pathRef.current !== p;
       try {
-        const slash = p.lastIndexOf("/");
-        const dir = slash > 0 ? p.slice(0, slash) : p;
+        const norm = p.replace(/\\/g, "/");
+        const slash = norm.lastIndexOf("/");
+        const dir = slash > 0 ? norm.slice(0, slash) : norm;
         const repo = await native.gitResolveRepo(dir);
         if (stale()) return;
         if (!repo) {
           view.dispatch({ effects: setGitChanges.of(emptyGitChanges()) });
           return;
         }
-        const root = repo.repoRoot.replace(/\/+$/, "");
-        const rel = p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
+        const root = repo.repoRoot.replace(/\\/g, "/").replace(/\/+$/, "");
+        const rel = norm.startsWith(`${root}/`)
+          ? norm.slice(root.length + 1)
+          : norm;
         const { diffText } = await native.gitDiff(repo.repoRoot, rel, false);
         if (stale()) return;
         view.dispatch({ effects: setGitChanges.of(parseUnifiedDiff(diffText)) });
@@ -194,9 +196,19 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     refreshGitGutterRef.current = () => void refreshGitGutter();
 
     useEffect(() => {
-      // doc.status flips to "ready" on open and whenever `path` reloads, so this
-      // covers both open and file switches.
-      if (doc.status === "ready") void refreshGitGutter();
+      // Single refresh trigger for open + reload. doc.status flips to "ready" on
+      // both; the CodeMirror view may not be mounted yet on first open, so retry
+      // on the next frame until it exists rather than firing a second trigger.
+      if (doc.status !== "ready") return;
+      let raf = 0;
+      const run = () => {
+        if (cmRef.current?.view) void refreshGitGutter();
+        else raf = requestAnimationFrame(run);
+      };
+      run();
+      return () => {
+        if (raf) cancelAnimationFrame(raf);
+      };
     }, [doc.status, refreshGitGutter]);
 
     const extensions = useMemo(
@@ -468,7 +480,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           ref={cmRef}
           value={doc.content}
           onChange={onChange}
-          onCreateEditor={(view) => void refreshGitGutter(view)}
           theme={themeExt}
           extensions={extensions}
           height="100%"

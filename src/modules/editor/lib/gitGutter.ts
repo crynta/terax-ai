@@ -18,7 +18,7 @@ export const emptyGitChanges = (): GitChanges => ({
 /**
  * Parse a `git diff` unified patch into per-line change kinds against the NEW
  * (worktree) file, so a gutter can mark added / modified / deleted lines.
- * ponytail: diff is worktree-vs-index (recomputed on save); good enough for the
+ * Note: diff is worktree-vs-index (recomputed on save); good enough for the
  * edit→save loop. For staged-line accuracy switch the source to `git diff HEAD`.
  */
 export function parseUnifiedDiff(diffText: string): GitChanges {
