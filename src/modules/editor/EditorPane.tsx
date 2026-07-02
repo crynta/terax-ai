@@ -1,5 +1,6 @@
-import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
 import { endpointIdFromCompatModel } from "@/modules/ai/config";
+import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
+import { useLspExtension } from "@/modules/lsp";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
 import { redo, undo } from "@codemirror/commands";
@@ -12,6 +13,7 @@ import {
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { vim } from "@replit/codemirror-vim";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
   forwardRef,
@@ -20,19 +22,20 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import {
   buildSharedExtensions,
   languageCompartment,
+  lspCompartment,
   vimCompartment,
   wrapCompartment,
 } from "./lib/extensions";
 import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
-import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { useDocument } from "./lib/useDocument";
+import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
-import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 
 initVimGlobals();
 
@@ -82,6 +85,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const vimMode = usePreferencesStore((s) => s.vimMode);
     const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
     const languageRef = useRef<string | null>(null);
+    const [langId, setLangId] = useState<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -89,7 +93,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       const refresh = async () => {
         const s = usePreferencesStore.getState();
         const provider = s.autocompleteProvider;
-        if (provider === "lmstudio" || provider === "mlx" || provider === "ollama") {
+        if (
+          provider === "lmstudio" ||
+          provider === "mlx" ||
+          provider === "ollama"
+        ) {
           apiKeyRef.current = null;
           return;
         }
@@ -180,6 +188,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         })),
         ...buildSharedExtensions(),
         languageCompartment.of([]),
+        lspCompartment.of([]),
         inlineCompletion({
           getPrefs: () => {
             const s = usePreferencesStore.getState();
@@ -254,6 +263,15 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       });
     }, [editorWordWrap]);
 
+    const lspExt = useLspExtension(path, langId, doc.status === "ready");
+    useEffect(() => {
+      const view = cmRef.current?.view;
+      if (!view) return;
+      view.dispatch({
+        effects: lspCompartment.reconfigure(lspExt ?? []),
+      });
+    }, [lspExt]);
+
     useEffect(() => {
       const ext =
         overrideLanguage || (path.split(".").pop()?.toLowerCase() ?? null);
@@ -271,6 +289,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       void resolve().then((result) => {
         if (cancelled) return;
         if (result.id) languageRef.current = result.id;
+        setLangId(result.id || ext);
         const view = cmRef.current?.view;
         if (!view) return;
         view.dispatch({
@@ -354,7 +373,15 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }
     if (doc.status === "binary" || doc.status === "toolarge") {
       const ext = path.split(".").pop()?.toLowerCase() ?? "";
-      const isImage = ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"].includes(ext);
+      const isImage = [
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "webp",
+        "svg",
+        "ico",
+      ].includes(ext);
       const isVideo = ["mp4", "webm", "ogg", "mov"].includes(ext);
       const isAudio = ["mp3", "wav", "flac", "aac", "m4a"].includes(ext);
       const isPdf = ext === "pdf";
@@ -370,10 +397,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
                 decoding="async"
                 className="max-w-full max-h-full object-contain rounded-md border border-border shadow-sm"
                 style={{
-                  backgroundImage: 'conic-gradient(#e5e7eb 0.25turn, #f3f4f6 0.25turn 0.5turn, #e5e7eb 0.5turn 0.75turn, #f3f4f6 0.75turn)',
-                  backgroundSize: '20px 20px',
+                  backgroundImage:
+                    "conic-gradient(#e5e7eb 0.25turn, #f3f4f6 0.25turn 0.5turn, #e5e7eb 0.5turn 0.75turn, #f3f4f6 0.75turn)",
+                  backgroundSize: "20px 20px",
                 }}
-                alt={path.split('/').pop()}
+                alt={path.split("/").pop()}
               />
             )}
             {isVideo && (
@@ -398,7 +426,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               <iframe
                 src={assetUrl}
                 className="w-full h-full border-none"
-                title={path.split('/').pop()}
+                title={path.split("/").pop()}
               />
             )}
           </div>

@@ -42,6 +42,11 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Shim keeps the ~117 kB CJS protocol package out of the bundle.
+      "vscode-languageserver-protocol": path.resolve(
+        __dirname,
+        "./src/modules/lsp/lib/protocolShim.ts",
+      ),
     },
   },
   build: {
