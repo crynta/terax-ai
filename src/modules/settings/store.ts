@@ -692,7 +692,7 @@ export async function setAgentNotifications(value: boolean): Promise<void> {
 }
 
 export async function setHistoryMaxEntries(value: number): Promise<void> {
-  const clamped = Number.isFinite(value) ? Math.max(0, Math.round(value)) : 50_000;
+  const clamped = Number.isFinite(value) ? Math.max(1, Math.round(value)) : 50_000;
   await writePref(KEY_HISTORY_MAX_ENTRIES, clamped);
 }
 

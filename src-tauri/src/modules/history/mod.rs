@@ -142,14 +142,32 @@ fn history_db_path(custom_path: &str) -> PathBuf {
         .join("history.db")
 }
 
-fn ensure(state: &HistoryState) -> std::sync::MutexGuard<'_, Option<Inner>> {
-    ensure_with_config(state, "", 50_000)
+fn ensure(
+    state: &HistoryState,
+    app: &tauri::AppHandle,
+) -> std::sync::MutexGuard<'_, Option<Inner>> {
+    use tauri_plugin_store::StoreExt;
+    let (db_path, max_entries) = if let Some(store) = app.get_store("terax-settings.json") {
+        let db_path = store
+            .get("historyDbPath")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let max_entries = store
+            .get("historyMaxEntries")
+            .and_then(|v| v.as_u64().map(|n| n as usize))
+            .unwrap_or(50_000);
+        (db_path, max_entries)
+    } else {
+        ("".to_string(), 50_000)
+    };
+    ensure_with_config(state, &db_path, max_entries)
 }
 
 fn ensure_with_config<'a>(
     state: &'a HistoryState,
     db_path: &str,
-    _max_entries: usize,
+    max_entries: usize,
 ) -> std::sync::MutexGuard<'a, Option<Inner>> {
     let mut guard = state.inner.lock().unwrap();
     if guard.is_none() {
@@ -168,6 +186,9 @@ fn ensure_with_config<'a>(
                         log::warn!("[history] seed failed: {e}");
                     }
                 }
+                if let Err(e) = db_conn.trim(max_entries) {
+                    log::warn!("[history] initial trim failed: {e}");
+                }
                 Some(db_conn)
             }
             Err(e) => {
@@ -185,19 +206,24 @@ fn ensure_with_config<'a>(
 }
 
 #[tauri::command]
-pub fn history_suggest(state: tauri::State<'_, HistoryState>, line: String) -> Option<String> {
-    let guard = ensure(&state);
+pub fn history_suggest(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, HistoryState>,
+    line: String,
+) -> Option<String> {
+    let guard = ensure(&state, &app);
     let inner = guard.as_ref()?;
     suggest(&inner.index.as_ref()?.entries, &line)
 }
 
 #[tauri::command]
 pub fn history_commands(
+    app: tauri::AppHandle,
     state: tauri::State<'_, HistoryState>,
     prefix: String,
     limit: Option<usize>,
 ) -> Vec<String> {
-    let guard = ensure(&state);
+    let guard = ensure(&state, &app);
     match guard.as_ref().and_then(|i| i.index.as_ref()) {
         Some(idx) => complete_commands(&idx.entries, &idx.path_cmds, &prefix, limit.unwrap_or(50)),
         None => Vec::new(),
@@ -206,11 +232,12 @@ pub fn history_commands(
 
 #[tauri::command]
 pub fn history_list(
+    app: tauri::AppHandle,
     state: tauri::State<'_, HistoryState>,
     query: String,
     limit: Option<usize>,
 ) -> Vec<String> {
-    let guard = ensure(&state);
+    let guard = ensure(&state, &app);
     match guard.as_ref().and_then(|i| i.index.as_ref()) {
         Some(idx) => list(&idx.entries, &query, limit.unwrap_or(200)),
         None => Vec::new(),
@@ -222,12 +249,13 @@ pub fn history_list(
 // unavailable.
 #[tauri::command]
 pub fn history_list_full(
+    app: tauri::AppHandle,
     state: tauri::State<'_, HistoryState>,
     query: String,
     limit: Option<usize>,
     offset: Option<usize>,
 ) -> Vec<HistoryEntry> {
-    let guard = ensure(&state);
+    let guard = ensure(&state, &app);
     let Some(inner) = guard.as_ref() else {
         return Vec::new();
     };
@@ -257,6 +285,7 @@ pub fn history_list_full(
 // so passwords typed into a running command never enter history.
 #[tauri::command]
 pub fn history_record(
+    app: tauri::AppHandle,
     state: tauri::State<'_, HistoryState>,
     command: String,
     exit_code: Option<i32>,
@@ -267,7 +296,7 @@ pub fn history_record(
     if cmd.is_empty() {
         return;
     }
-    let mut guard = ensure(&state);
+    let mut guard = ensure(&state, &app);
     let Some(inner) = guard.as_mut() else {
         return;
     };
@@ -306,8 +335,11 @@ pub fn history_record(
 }
 
 #[tauri::command]
-pub fn history_clear(state: tauri::State<'_, HistoryState>) -> Result<(), String> {
-    let mut guard = ensure(&state);
+pub fn history_clear(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, HistoryState>,
+) -> Result<(), String> {
+    let mut guard = ensure(&state, &app);
     let Some(inner) = guard.as_mut() else {
         return Ok(());
     };
@@ -325,13 +357,35 @@ pub fn history_clear(state: tauri::State<'_, HistoryState>) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn history_delete(state: tauri::State<'_, HistoryState>, id: i64) -> Result<(), String> {
-    let guard = ensure(&state);
-    let Some(inner) = guard.as_ref() else {
+pub fn history_delete(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, HistoryState>,
+    id: i64,
+) -> Result<(), String> {
+    let mut guard = ensure(&state, &app);
+    let Some(inner) = guard.as_mut() else {
         return Ok(());
     };
+
+    let mut cmd_to_delete = None;
     if let Some(db) = &inner.db {
+        if let Ok(Some(cmd)) = db.get_command(id) {
+            cmd_to_delete = Some(cmd);
+        }
         db.delete(id).map_err(|e| e.to_string())?;
     }
+
+    if let Some(cmd) = cmd_to_delete {
+        if let Some(idx) = &mut inner.index {
+            if let Some(pos) = idx.entries.iter().position(|e| e.cmd == cmd) {
+                if idx.entries[pos].count <= 1 {
+                    idx.entries.remove(pos);
+                } else {
+                    idx.entries[pos].count -= 1;
+                }
+            }
+        }
+    }
+
     Ok(())
 }

@@ -15,6 +15,7 @@ import { readRangeText } from "./readBlock";
 import type { BlockMeta } from "./types";
 import { historyRecord } from "./history";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { redactSensitive } from "@/modules/ai/lib/redact";
 
 const OK_RULER = "#5fb3b3";
 const FAIL_RULER = "#e5706b";
@@ -531,7 +532,8 @@ export class BlockDecorations {
       if (old) this.disposeEntry(old);
     }
     const maxEntries = usePreferencesStore.getState().historyMaxEntries;
-    historyRecord(lb.command, exit, this.sessionId, maxEntries);
+    const redactedCommand = redactSensitive(lb.command);
+    historyRecord(redactedCommand, exit, this.sessionId, maxEntries);
     this.scheduleViewport();
   }
 

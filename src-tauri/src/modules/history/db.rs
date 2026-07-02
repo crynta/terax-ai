@@ -24,18 +24,32 @@ impl Db {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
         }
-        let conn = match Connection::open(path) {
-            Ok(c) => c,
+
+        let open_and_init = |p: &Path| -> DbResult<Self> {
+            let conn = Connection::open(p)?;
+            let db = Self { conn };
+            db.init()?;
+            Ok(db)
+        };
+
+        match open_and_init(path) {
+            Ok(db) => Ok(db),
             Err(e) => {
-                log::warn!("[history] failed to open history db: {e}; rotating to .bak");
+                log::warn!("[history] failed to open/init history db: {e}; rotating to .bak");
                 let bak = path.with_extension("db.bak");
                 let _ = std::fs::rename(path, bak);
-                Connection::open(path)?
+
+                let mut wal = path.as_os_str().to_os_string();
+                wal.push("-wal");
+                let _ = std::fs::remove_file(wal);
+
+                let mut shm = path.as_os_str().to_os_string();
+                shm.push("-shm");
+                let _ = std::fs::remove_file(shm);
+
+                open_and_init(path)
             }
-        };
-        let db = Self { conn };
-        db.init()?;
-        Ok(db)
+        }
     }
 
     fn init(&self) -> DbResult<()> {
@@ -49,11 +63,11 @@ impl Db {
                 command    TEXT    NOT NULL,
                 timestamp  INTEGER NOT NULL,
                 exit_code  INTEGER,
-                session_id TEXT    NOT NULL DEFAULT ''
+                session_id TEXT    NOT NULL DEFAULT '',
+                UNIQUE(command, timestamp)
             );
 
             CREATE INDEX IF NOT EXISTS idx_history_ts  ON history(timestamp DESC);
-            CREATE INDEX IF NOT EXISTS idx_history_cmd ON history(command);
             ",
         )
     }
@@ -67,11 +81,21 @@ impl Db {
         session_id: &str,
     ) -> DbResult<i64> {
         self.conn.execute(
-            "INSERT INTO history (command, timestamp, exit_code, session_id)
+            "INSERT OR IGNORE INTO history (command, timestamp, exit_code, session_id)
              VALUES (?1, ?2, ?3, ?4)",
             params![command, timestamp, exit_code, session_id],
         )?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn get_command(&self, id: i64) -> DbResult<Option<String>> {
+        let mut stmt = self.conn.prepare("SELECT command FROM history WHERE id = ?1")?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Delete a single entry by id.
@@ -105,11 +129,15 @@ impl Db {
         limit: usize,
         offset: usize,
     ) -> DbResult<Vec<FullEntry>> {
-        let pattern = format!("%{}%", query.to_lowercase());
+        let escaped = query.to_lowercase()
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{}%", escaped);
         let mut stmt = self.conn.prepare(
             "SELECT id, command, timestamp, exit_code, session_id
              FROM history
-             WHERE lower(command) LIKE ?1
+             WHERE lower(command) LIKE ?1 ESCAPE '\\'
              ORDER BY timestamp DESC
              LIMIT ?2 OFFSET ?3",
         )?;

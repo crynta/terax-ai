@@ -107,7 +107,5 @@ fn disk_write_failure_graceful() {
     let bad_path = blocker.join("history.db");
     // The module tries to create parent dirs; this should fail gracefully.
     let result = Db::open(&bad_path);
-    // We don't assert Ok or Err specifically — both are acceptable. The point
-    // is that the process must not panic or abort.
-    drop(result);
+    assert!(result.is_err());
 }
