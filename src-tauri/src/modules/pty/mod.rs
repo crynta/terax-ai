@@ -37,6 +37,16 @@ impl PtyState {
     pub(super) fn take(&self, id: u32) -> Option<Arc<Session>> {
         self.sessions.write().unwrap().remove(&id)
     }
+
+    pub(crate) fn shell_pids(&self, ids: &[u32]) -> Vec<(u32, u32)> {
+        let sessions = self.sessions.read().unwrap();
+        ids.iter()
+            .filter_map(|id| {
+                let shell_pid = sessions.get(id)?.shell_pid;
+                (shell_pid != 0).then_some((*id, shell_pid))
+            })
+            .collect()
+    }
 }
 
 #[tauri::command]

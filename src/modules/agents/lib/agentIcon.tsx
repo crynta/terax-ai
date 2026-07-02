@@ -10,7 +10,12 @@ function iconFor(agent: string): IconSvgElement {
   const a = agent.toLowerCase();
   if (a.includes("claude")) return ClaudeIcon;
   if (a.includes("gemini")) return GoogleGeminiIcon;
-  if (a.includes("codex") || a.includes("gpt") || a.includes("openai"))
+  if (
+    a.includes("codex") ||
+    a.includes("gpt") ||
+    a.includes("openai") ||
+    a.includes("opencode")
+  )
     return ChatGptIcon;
   return RoboticIcon;
 }

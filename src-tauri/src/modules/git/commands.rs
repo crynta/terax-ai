@@ -2,7 +2,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::modules::git::operations;
 use crate::modules::git::types::{
-    DiscardEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult,
+    DiscardEntry, GitBlameLineInfo, GitBranchListResult, GitCommitFileChange, GitCommitResult,
     GitDiffContentResult, GitDiffResult, GitLogEntry, GitPanelSnapshot, GitPushResult,
     GitRepoInfo, GitStatusSnapshot,
 };
@@ -306,6 +306,21 @@ pub async fn git_checkout_branch(
     let workspace = WorkspaceEnv::from_option(workspace);
     blocking(app, move |r| {
         operations::checkout_branch(r, &repo_root, &branch, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_blame(
+    cwd: String,
+    path: String,
+    line: u32,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<Option<GitBlameLineInfo>, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::blame_line(r, &cwd, &path, line, &workspace).map_err(Into::into)
     })
     .await
 }

@@ -40,7 +40,7 @@ export const useAgentStore = create<AgentStoreState>((set) => ({
             leafId,
             tabId,
             agent,
-            status: "working",
+            status: "idle",
             startedAt: now,
             lastActivityAt: now,
             attentionSince: null,

@@ -11,6 +11,8 @@ import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AgentNotificationsBridge, nextAttentionTarget } from "@/modules/agents";
+import { useAgentStore } from "@/modules/agents/store/agentStore";
+import { AgentsPanel } from "@/modules/agents-panel";
 import {
   AgentRunBridge,
   AiMiniWindow,
@@ -22,7 +24,7 @@ import {
   useSelectionAskAi,
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
-import { native } from "@/modules/ai/lib/native";
+import { native, type GitBlameLineInfo } from "@/modules/ai/lib/native";
 import {
   CommandPalette,
   createCommandItems,
@@ -162,6 +164,8 @@ export default function App() {
     useState<EditorPaneHandle | null>(null);
   const [gitHistoryHandle, setGitHistoryHandle] =
     useState<GitHistorySearchHandle | null>(null);
+  const [blameInfo, setBlameInfo] = useState<GitBlameLineInfo | null>(null);
+  const blameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
@@ -258,6 +262,21 @@ export default function App() {
     [tabs, activeSpaceId],
   );
 
+  const agentStoreSessions = useAgentStore((s) => s.sessions);
+  const agentSessions = useMemo(
+    () => Object.values(agentStoreSessions),
+    [agentStoreSessions],
+  );
+  const agentsByTabId = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const s of agentSessions) {
+      map.set(s.tabId, s.agent);
+    }
+    return map;
+  }, [agentSessions]);
+
+  const showAgentsTab = usePreferencesStore((s) => s.showAgentsTab);
+
   const {
     sidebarRef,
     sidebarWidthRef,
@@ -269,7 +288,7 @@ export default function App() {
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
-  } = useSidebarPanel(explorerRef);
+  } = useSidebarPanel(explorerRef, showAgentsTab);
 
   const [newEditorOpen, setNewEditorOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -286,6 +305,7 @@ export default function App() {
   const miniOpen = useChatStore((s) => s.mini.open);
   const miniPresence = usePresence(miniOpen, 200);
   const openMini = useChatStore((s) => s.openMini);
+  const toggleMini = useChatStore((s) => s.toggleMini);
   const focusInput = useChatStore((s) => s.focusInput);
   const openPanel = useChatStore((s) => s.openPanel);
   const panelOpen = useChatStore((s) => s.panelOpen);
@@ -318,6 +338,11 @@ export default function App() {
         : null,
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
+    const tab = tabsRef.current.find((t) => t.id === activeId);
+    if (!tab || tab.kind !== "editor") {
+      if (blameDebounceRef.current) clearTimeout(blameDebounceRef.current);
+      setBlameInfo(null);
+    }
   }, [activeId, activeLeafId]);
 
   const handleSearchReady = useCallback(
@@ -379,6 +404,23 @@ export default function App() {
   const mruRef = useRef<number[]>([activeId]);
   useEffect(() => {
     mruRef.current = [activeId, ...mruRef.current.filter((id) => id !== activeId)];
+  }, [activeId]);
+
+  // When the user NAVIGATES to a terminal tab, reset any non-idle agent status
+  // back to idle — they are looking at it so notifications are moot, and
+  // Ctrl+C won't fire a finished signal so "working" would otherwise get stuck.
+  // Uses tabsRef (not tabs) so this only fires on activeId change, not on every
+  // tab title update (which would kill real-time "working" display).
+  useEffect(() => {
+    const tab = tabsRef.current.find((t) => t.id === activeId);
+    if (!tab || tab.kind !== "terminal") return;
+    const store = useAgentStore.getState();
+    for (const s of Object.values(store.sessions)) {
+      if (s.tabId === activeId && s.status !== "idle") {
+        store.setStatus(s.leafId, "idle");
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
   useEffect(() => {
     const live = new Set(tabs.map((t) => t.id));
@@ -668,6 +710,7 @@ export default function App() {
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
       "pane.source": toggleSourceControl,
+      "sidebar.files": () => cycleSidebarView("explorer"),
       "terminal.clear": () => {
         clearFocusedTerminal();
       },
@@ -677,6 +720,13 @@ export default function App() {
       "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
+      "ai.toggleMini": () => {
+        if (!hasComposer) {
+          void openSettingsWindow("models");
+          return;
+        }
+        toggleMini();
+      },
       "ai.askSelection": askFromSelection,
       "agent.focusAttention": () => {
         const t = nextAttentionTarget();
@@ -707,7 +757,9 @@ export default function App() {
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
       toggleSourceControl,
+      hasComposer,
       togglePanelAndFocus,
+      toggleMini,
       askFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
@@ -853,6 +905,27 @@ export default function App() {
     [updateTab],
   );
 
+  const handleEditorCursorChange = useCallback(
+    (id: number, line: number, _col: number) => {
+      if (id !== activeId) return;
+      const tab = tabsRef.current.find((t) => t.id === id);
+      if (!tab || tab.kind !== "editor") return;
+      const filePath = tab.path;
+      const cwd = explorerRoot ?? launchCwd ?? home;
+      if (!cwd || !filePath || line < 1) {
+        setBlameInfo(null);
+        return;
+      }
+      if (blameDebounceRef.current) clearTimeout(blameDebounceRef.current);
+      blameDebounceRef.current = setTimeout(() => {
+        native.gitBlame(cwd, filePath, line).then(setBlameInfo).catch(() => {
+          setBlameInfo(null);
+        });
+      }, 300);
+    },
+    [activeId, explorerRoot, launchCwd, home],
+  );
+
   const handleRenameTab = useCallback(
     (id: number, title: string) => updateTab(id, { customTitle: title.trim() }),
     [updateTab],
@@ -986,6 +1059,7 @@ export default function App() {
             openNewPreview: () => openPreviewTab(""),
             openGitGraph: openGitGraphFromContext,
             toggleSourceControl,
+            toggleFilesExplorer: () => cycleSidebarView("explorer"),
             closeActiveTabOrPane: handleCloseTabOrPane,
             splitPaneRight: () => splitActivePaneInActiveTab("row"),
             splitPaneDown: () => splitActivePaneInActiveTab("col"),
@@ -1001,6 +1075,12 @@ export default function App() {
             openSpacesOverview: () => setSwitcherOpen(true),
             newSpace: () => void handleNewSpace(),
             switchSpace: (id) => useSpaces.getState().setActive(id),
+            terminalTabs: tabs.filter(
+              (t) =>
+                t.kind === "terminal" &&
+                t.spaceId === (activeSpaceId ?? DEFAULT_SPACE_ID),
+            ),
+            switchTab: (id) => setActiveId(id),
           })
         : [],
     [
@@ -1016,6 +1096,7 @@ export default function App() {
       openPreviewTab,
       openGitGraphFromContext,
       toggleSourceControl,
+      cycleSidebarView,
       handleCloseTabOrPane,
       splitActivePaneInActiveTab,
       toggleSidebar,
@@ -1089,6 +1170,7 @@ export default function App() {
               searchTarget={searchTarget}
               searchRef={searchInlineRef}
               onOverrideLanguage={setOverrideLanguage}
+              agentsByTabId={agentsByTabId}
             />
           )}
 
@@ -1128,6 +1210,12 @@ export default function App() {
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
                       />
+                    ) : sidebarView === "agents" ? (
+                      <AgentsPanel
+                        sessions={agentSessions}
+                        tabs={tabs}
+                        onSelectTerminal={activateAgentTarget}
+                      />
                     ) : (
                       <SourceControlPanel
                         open
@@ -1143,6 +1231,8 @@ export default function App() {
                     activeView={sidebarView}
                     onSelectView={persistSidebarView}
                     changedCount={sourceControl.changedCount}
+                    showAgentsTab={showAgentsTab}
+                    agentCount={agentSessions.filter((s) => s.status !== "idle").length}
                   />
                 </div>
               </ResizablePanel>
@@ -1162,6 +1252,7 @@ export default function App() {
                       registerEditorHandle={registerEditorHandle}
                       onEditorDirtyChange={handleEditorDirty}
                       onEditorCloseTab={disposeTab}
+                      onEditorCursorChange={handleEditorCursorChange}
                       registerPreviewHandle={registerPreviewHandle}
                       onPreviewUrlChange={handlePreviewUrl}
                       onAiDiffAccept={(id) => respondToApproval(id, true)}
@@ -1197,6 +1288,7 @@ export default function App() {
               onWorkspaceChange={handleWorkspaceChange}
               onOpenMini={openMini}
               hasComposer={hasComposer}
+              blameInfo={blameInfo}
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true
               }
