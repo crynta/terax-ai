@@ -28,6 +28,13 @@ import {
   vimCompartment,
   wrapCompartment,
 } from "./lib/extensions";
+import { native } from "@/modules/ai/lib/native";
+import {
+  emptyGitChanges,
+  gitChangeGutter,
+  parseUnifiedDiff,
+  setGitChanges,
+} from "./lib/gitGutter";
 import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { useDocument } from "./lib/useDocument";
@@ -157,6 +164,41 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       if (doc.status === "ready") applyPendingGoto();
     }, [doc.status, applyPendingGoto]);
 
+    // Git change gutter: recompute the file's diff on open and after each save,
+    // then push it into the CodeMirror state field the gutter reads.
+    const refreshGitGutterRef = useRef<() => void>(() => {});
+    const refreshGitGutter = useCallback(async (viewArg?: EditorView) => {
+      // viewArg is passed from onCreateEditor, where cmRef may not be assigned yet.
+      const view = viewArg ?? cmRef.current?.view;
+      if (!view) return;
+      const p = pathRef.current;
+      const stale = () => !view.dom.isConnected || pathRef.current !== p;
+      try {
+        const slash = p.lastIndexOf("/");
+        const dir = slash > 0 ? p.slice(0, slash) : p;
+        const repo = await native.gitResolveRepo(dir);
+        if (stale()) return;
+        if (!repo) {
+          view.dispatch({ effects: setGitChanges.of(emptyGitChanges()) });
+          return;
+        }
+        const root = repo.repoRoot.replace(/\/+$/, "");
+        const rel = p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p;
+        const { diffText } = await native.gitDiff(repo.repoRoot, rel, false);
+        if (stale()) return;
+        view.dispatch({ effects: setGitChanges.of(parseUnifiedDiff(diffText)) });
+      } catch {
+        /* ignore — the gutter just stays empty */
+      }
+    }, []);
+    refreshGitGutterRef.current = () => void refreshGitGutter();
+
+    useEffect(() => {
+      // doc.status flips to "ready" on open and whenever `path` reloads, so this
+      // covers both open and file switches.
+      if (doc.status === "ready") void refreshGitGutter();
+    }, [doc.status, refreshGitGutter]);
+
     const extensions = useMemo(
       () => [
         // basicSetup is added before user extensions by @uiw/react-codemirror,
@@ -174,11 +216,13 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
             void (async () => {
               await saveRef.current();
               onSavedRef.current?.();
+              refreshGitGutterRef.current();
             })();
           },
           close: () => onCloseRef.current?.(),
         })),
         ...buildSharedExtensions(),
+        gitChangeGutter,
         languageCompartment.of([]),
         inlineCompletion({
           getPrefs: () => {
@@ -227,6 +271,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               void (async () => {
                 await saveRef.current();
                 onSavedRef.current?.();
+                refreshGitGutterRef.current();
               })();
               return true;
             },
@@ -423,6 +468,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           ref={cmRef}
           value={doc.content}
           onChange={onChange}
+          onCreateEditor={(view) => void refreshGitGutter(view)}
           theme={themeExt}
           extensions={extensions}
           height="100%"
