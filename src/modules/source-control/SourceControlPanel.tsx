@@ -11,6 +11,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -52,14 +57,12 @@ import {
   AiContentGenerator02Icon,
   Alert02Icon,
   ArrowDown01Icon,
-  ArrowRight01Icon,
   ArrowUp01Icon,
   CheckmarkCircle01Icon,
   Download01Icon,
   Folder01Icon,
   FolderCloudIcon,
   FolderGitTwoIcon,
-  GitBranchIcon,
   Refresh01Icon,
   RemoveSquareIcon,
   Tick02Icon,
@@ -76,6 +79,11 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import type { PanelImperativeHandle } from "react-resizable-panels";
+import {
+  CommitHistorySection,
+  HISTORY_HEADER_PX,
+} from "./CommitHistorySection";
 import type { SourceControlSummary } from "./useSourceControl";
 import {
   useSourceControlPanel,
@@ -96,7 +104,50 @@ type Props = {
   }) => void;
   onOpenFile?: (absolutePath: string) => void;
   onNavigateToPath?: (path: string) => void;
+  onOpenCommitFile?: (input: {
+    repoRoot: string;
+    sha: string;
+    shortSha: string;
+    subject: string;
+    path: string;
+    originalPath: string | null;
+  }) => void;
 };
+
+const HISTORY_HEIGHT_STORAGE_KEY = "terax.sourceControl.history.height";
+const HISTORY_COLLAPSED_STORAGE_KEY = "terax.sourceControl.history.collapsed";
+const HISTORY_DEFAULT_HEIGHT = 220;
+const HISTORY_MIN_HEIGHT = 100;
+const HISTORY_MAX_HEIGHT = 600;
+
+function clampHistoryHeight(height: number): number {
+  return Math.min(
+    HISTORY_MAX_HEIGHT,
+    Math.max(HISTORY_MIN_HEIGHT, Math.round(height)),
+  );
+}
+
+function readHistoryHeight(): number {
+  try {
+    const stored = window.localStorage.getItem(HISTORY_HEIGHT_STORAGE_KEY);
+    const parsed = stored ? Number.parseInt(stored, 10) : NaN;
+    return Number.isFinite(parsed)
+      ? clampHistoryHeight(parsed)
+      : HISTORY_DEFAULT_HEIGHT;
+  } catch {
+    return HISTORY_DEFAULT_HEIGHT;
+  }
+}
+
+function readHistoryCollapsed(): boolean {
+  try {
+    return (
+      window.localStorage.getItem(HISTORY_COLLAPSED_STORAGE_KEY) === "1"
+    );
+  } catch {
+    return false;
+  }
+}
 
 const SOURCE_CONTROL_TOOLTIP_CLASS =
   "border border-border/70 bg-zinc-950 text-zinc-100 shadow-lg shadow-black/30 dark:border-border/60 dark:bg-zinc-950 dark:text-zinc-100";
@@ -348,6 +399,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   onOpenDiff,
   onOpenFile,
   onNavigateToPath,
+  onOpenCommitFile,
 }: Props) {
   const scm = useSourceControlPanel(open, sourceControl, onOpenDiff);
   const refreshAnimationRef = useRef<number | null>(null);
@@ -355,13 +407,61 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
+  const historyPanelRef = useRef<PanelImperativeHandle | null>(null);
+  const historyHeightRef = useRef(readHistoryHeight());
+  const historyWriteTimerRef = useRef(0);
+  const [historyCollapsed, setHistoryCollapsed] =
+    useState(readHistoryCollapsed);
 
   useEffect(() => {
     return () => {
       if (refreshAnimationRef.current) {
         window.clearTimeout(refreshAnimationRef.current);
       }
+      if (historyWriteTimerRef.current) {
+        window.clearTimeout(historyWriteTimerRef.current);
+      }
     };
+  }, []);
+
+  const persistHistoryHeight = useCallback((next: number) => {
+    historyHeightRef.current = next;
+    if (historyWriteTimerRef.current) {
+      window.clearTimeout(historyWriteTimerRef.current);
+    }
+    historyWriteTimerRef.current = window.setTimeout(() => {
+      historyWriteTimerRef.current = 0;
+      try {
+        window.localStorage.setItem(HISTORY_HEIGHT_STORAGE_KEY, String(next));
+      } catch {
+        // storage may fail in private mode
+      }
+    }, 200);
+  }, []);
+
+  const persistHistoryCollapsed = useCallback((collapsed: boolean) => {
+    setHistoryCollapsed((prev) => {
+      if (prev === collapsed) return prev;
+      try {
+        window.localStorage.setItem(
+          HISTORY_COLLAPSED_STORAGE_KEY,
+          collapsed ? "1" : "0",
+        );
+      } catch {
+        // storage may fail in private mode
+      }
+      return collapsed;
+    });
+  }, []);
+
+  const toggleHistoryCollapsed = useCallback(() => {
+    const panel = historyPanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) {
+      panel.resize(`${clampHistoryHeight(historyHeightRef.current)}px`);
+    } else {
+      panel.collapse();
+    }
   }, []);
 
   const isRefreshing = scm.panelState === "loading";
@@ -717,28 +817,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           </div>
         </header>
 
-        {onOpenGitGraph ? (
-          <button
-            type="button"
-            onClick={() => onOpenGitGraph()}
-            className="group flex shrink-0 cursor-pointer items-center gap-2 border-b border-border/40 px-3 py-2 text-left text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-          >
-            <HugeiconsIcon
-              icon={GitBranchIcon}
-              size={13}
-              strokeWidth={1.85}
-              className="shrink-0"
-            />
-            <span className="flex-1 text-[12px] font-medium">Commit Graph</span>
-            <HugeiconsIcon
-              icon={ArrowRight01Icon}
-              size={12}
-              strokeWidth={2}
-              className="shrink-0 opacity-50 transition-transform group-hover:translate-x-0.5"
-            />
-          </button>
-        ) : null}
-
         {scm.panelState === "loading" ? (
           <PanelCenter title="Loading repository" />
         ) : null}
@@ -763,7 +841,15 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         ) : null}
 
         {scm.panelState === "ready" && scm.status ? (
-          <>
+          <ResizablePanelGroup
+            orientation="vertical"
+            className="min-h-0 flex-1"
+          >
+            <ResizablePanel
+              id="scm-changes"
+              minSize="160px"
+              className="flex min-h-0 flex-col"
+            >
             <div className="relative shrink-0 space-y-2 border-b border-border/40 bg-gradient-to-b from-card/65 to-card/30 px-2.5 pb-2.5 pt-2.5">
               <div
                 className={cn(
@@ -962,7 +1048,35 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 </div>
               </div>
             )}
-          </>
+            </ResizablePanel>
+            <ResizableHandle />
+            <ResizablePanel
+              id="scm-history"
+              panelRef={historyPanelRef}
+              defaultSize={
+                historyCollapsed
+                  ? `${HISTORY_HEADER_PX}px`
+                  : `${historyHeightRef.current}px`
+              }
+              minSize={`${HISTORY_MIN_HEIGHT}px`}
+              collapsible
+              collapsedSize={`${HISTORY_HEADER_PX}px`}
+              onResize={(size) => {
+                const collapsed = size.inPixels <= HISTORY_HEADER_PX;
+                if (!collapsed) persistHistoryHeight(size.inPixels);
+                persistHistoryCollapsed(collapsed);
+              }}
+            >
+              <CommitHistorySection
+                repoRoot={scm.repo?.repoRoot ?? null}
+                refreshKey={`${scm.status.branch}:${scm.status.ahead}:${scm.status.behind}:${scm.status.changedFiles.length}`}
+                collapsed={historyCollapsed}
+                onToggleCollapsed={toggleHistoryCollapsed}
+                onOpenCommitFile={onOpenCommitFile ?? (() => {})}
+                onOpenGitGraph={onOpenGitGraph}
+              />
+            </ResizablePanel>
+          </ResizablePanelGroup>
         ) : null}
       </aside>
 

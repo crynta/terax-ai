@@ -1136,6 +1136,7 @@ export default function App() {
                         onOpenGitGraph={openGitGraphFromContext}
                         onOpenFile={handleOpenFile}
                         onNavigateToPath={cdInNewTab}
+                        onOpenCommitFile={openCommitFileDiffTab}
                       />
                     )}
                   </div>
