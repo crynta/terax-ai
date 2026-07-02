@@ -13,6 +13,7 @@ import {
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { saveSession, type SessionState } from "./sessionStore";
 
 // Matches the renderer slot pool size — over this we'd evict an active leaf.
 export const MAX_PANES_PER_TAB = 4;
@@ -241,8 +242,11 @@ export function planSpaceRemoval(
   return { tabs: next, disposeLeafIds, activeId };
 }
 
-export function useTabs(initial?: Partial<TerminalTab>) {
+export function useTabs(initialSession?: SessionState | null, initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
+    if (initialSession && initialSession.tabs.length > 0) {
+      return initialSession.tabs;
+    }
     const tabId = 1;
     const leafId = 2;
     return [
@@ -258,10 +262,24 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       },
     ];
   });
-  const [activeId, setActiveId] = useState(1);
+  const [activeId, setActiveId] = useState(() => initialSession ? initialSession.activeId : 1);
   // Gates warming until boot resolves the restore, so no shell spawns before it.
   const [booted, setBooted] = useState(false);
+  
   const nextIdRef = useRef(3);
+  useState(() => {
+    if (initialSession && initialSession.tabs.length > 0) {
+      let maxId = 0;
+      for (const t of initialSession.tabs) {
+        maxId = Math.max(maxId, t.id);
+        if (t.kind === "terminal") {
+          const ids = leafIds((t as TerminalTab).paneTree);
+          for (const lid of ids) maxId = Math.max(maxId, lid);
+        }
+      }
+      nextIdRef.current = maxId + 1;
+    }
+  });
   const activeSpaceIdRef = useRef(DEFAULT_SPACE_ID);
   const tabsRef = useRef(tabs);
   const activeIdRef = useRef(activeId);
@@ -273,6 +291,12 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   useEffect(() => {
     activeIdRef.current = activeId;
   }, [activeId]);
+
+  useEffect(() => {
+    if (booted) {
+      saveSession(tabs, activeId).catch(console.error);
+    }
+  }, [tabs, activeId, booted]);
 
   // Activating a cold tab warms it: one choke point for every activation path.
   useEffect(() => {
