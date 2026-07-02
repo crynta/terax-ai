@@ -161,6 +161,8 @@ export type Preferences = {
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
+  historyMaxEntries: number;
+  historyDbPath: string;
   lspActivation: Record<string, LspActivation>;
   lspCustomServers: LspCustomServer[];
 };
@@ -228,6 +230,8 @@ const KEY_DEFAULT_WORKSPACE_ENV = "defaultWorkspaceEnv";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
+const KEY_HISTORY_MAX_ENTRIES = "historyMaxEntries";
+const KEY_HISTORY_DB_PATH = "historyDbPath";
 const KEY_LSP_ACTIVATION = "lspActivation";
 const KEY_LSP_CUSTOM_SERVERS = "lspCustomServers";
 
@@ -296,6 +300,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
+  historyMaxEntries: 50_000,
+  historyDbPath: "",
   lspActivation: {},
   lspCustomServers: [],
 };
@@ -461,6 +467,12 @@ export async function loadPreferences(): Promise<Preferences> {
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
     ),
+    historyMaxEntries:
+      get<number>(KEY_HISTORY_MAX_ENTRIES) ??
+      DEFAULT_PREFERENCES.historyMaxEntries,
+    historyDbPath:
+      get<string>(KEY_HISTORY_DB_PATH) ??
+      DEFAULT_PREFERENCES.historyDbPath,
     lspActivation:
       get<Record<string, LspActivation>>(KEY_LSP_ACTIVATION) ??
       DEFAULT_PREFERENCES.lspActivation,
@@ -731,6 +743,13 @@ export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
 
+export async function setHistoryMaxEntries(value: number): Promise<void> {
+  const clamped = Number.isFinite(value) ? Math.max(1, Math.round(value)) : 50_000;
+  await writePref(KEY_HISTORY_MAX_ENTRIES, clamped);
+}
+
+export async function setHistoryDbPath(value: string): Promise<void> {
+  await writePref(KEY_HISTORY_DB_PATH, value);
 export async function setDefaultWorkspaceEnv(value: string): Promise<void> {
   await writePref(KEY_DEFAULT_WORKSPACE_ENV, value);
 }
@@ -801,6 +820,8 @@ export async function onPreferencesChange(
     [KEY_SHORTCUTS]: "shortcuts",
     [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
+    [KEY_HISTORY_MAX_ENTRIES]: "historyMaxEntries",
+    [KEY_HISTORY_DB_PATH]: "historyDbPath",
     [KEY_LSP_ACTIVATION]: "lspActivation",
     [KEY_LSP_CUSTOM_SERVERS]: "lspCustomServers",
   };

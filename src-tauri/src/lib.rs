@@ -269,6 +269,9 @@ pub fn run() {
             history::history_commands,
             history::history_record,
             history::history_list,
+            history::history_list_full,
+            history::history_clear,
+            history::history_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

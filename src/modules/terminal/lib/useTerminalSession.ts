@@ -612,6 +612,7 @@ function bindLeafToSlot(leafId: number, s: Session): void {
             const set = blockViewportListeners.get(leafId);
             if (set) for (const l of set) l();
           },
+          sessionId: String(leafId),
         });
         s.blockDecorations = deco;
         const onGridFocus = () => {
