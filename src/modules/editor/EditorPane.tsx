@@ -7,6 +7,8 @@ import { redo, undo } from "@codemirror/commands";
 import {
   findNext,
   findPrevious,
+  replaceAll,
+  replaceNext,
   SearchQuery,
   setSearchQuery,
 } from "@codemirror/search";
@@ -39,10 +41,20 @@ import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
 
 initVimGlobals();
 
+/** Options carried alongside the search term into CodeMirror's search state. */
+export type EditorSearchOptions = {
+  replace?: string;
+  caseSensitive?: boolean;
+  regexp?: boolean;
+  wholeWord?: boolean;
+};
+
 export type EditorPaneHandle = {
-  setQuery: (q: string) => void;
+  setQuery: (q: string, opts?: EditorSearchOptions) => void;
   findNext: () => void;
   findPrevious: () => void;
+  replaceNext: () => void;
+  replaceAll: () => void;
   clearQuery: () => void;
   focus: () => void;
   getSelection: () => string | null;
@@ -81,6 +93,9 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
     const cmRef = useRef<ReactCodeMirrorRef>(null);
+    // Track the last search criteria so typing in the replace field (which
+    // re-issues setQuery) doesn't keep jumping the selection to the next match.
+    const lastFindKeyRef = useRef("");
     const themeExt = useEditorThemeExt();
     const vimMode = usePreferencesStore((s) => s.vimMode);
     const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
@@ -304,15 +319,27 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     useImperativeHandle(
       ref,
       () => ({
-        setQuery: (q: string) => {
+        setQuery: (q: string, opts?: EditorSearchOptions) => {
           const view = cmRef.current?.view;
           if (!view) return;
           view.dispatch({
             effects: setSearchQuery.of(
-              new SearchQuery({ search: q, caseSensitive: false }),
+              new SearchQuery({
+                search: q,
+                replace: opts?.replace ?? "",
+                caseSensitive: opts?.caseSensitive ?? false,
+                regexp: opts?.regexp ?? false,
+                wholeWord: opts?.wholeWord ?? false,
+              }),
             ),
           });
-          if (q) findNext(view);
+          // Only advance the selection when the match criteria changed — not
+          // when only the replacement text changed.
+          const findKey = `${q} ${opts?.caseSensitive ? 1 : 0}${
+            opts?.regexp ? 1 : 0
+          }${opts?.wholeWord ? 1 : 0}`;
+          if (q && findKey !== lastFindKeyRef.current) findNext(view);
+          lastFindKeyRef.current = findKey;
         },
         findNext: () => {
           const view = cmRef.current?.view;
@@ -322,7 +349,16 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           const view = cmRef.current?.view;
           if (view) findPrevious(view);
         },
+        replaceNext: () => {
+          const view = cmRef.current?.view;
+          if (view) replaceNext(view);
+        },
+        replaceAll: () => {
+          const view = cmRef.current?.view;
+          if (view) replaceAll(view);
+        },
         clearQuery: () => {
+          lastFindKeyRef.current = "";
           const view = cmRef.current?.view;
           if (!view) return;
           view.dispatch({
@@ -464,7 +500,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
             autocompletion: true,
             highlightActiveLine: true,
             highlightSelectionMatches: true,
-            searchKeymap: true,
+            // The unified header search bar (SearchInline) is the single
+            // find/replace surface and drives the search state directly, so
+            // CodeMirror's built-in panel keymap (Cmd/Ctrl+F etc.) is disabled
+            // to avoid a competing second surface.
+            searchKeymap: false,
           }}
         />
       </div>

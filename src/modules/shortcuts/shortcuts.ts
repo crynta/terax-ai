@@ -29,6 +29,7 @@ export type ShortcutId =
   | "blocks.prev"
   | "blocks.next"
   | "search.focus"
+  | "search.replace"
   | "explorer.search"
   | "explorer.focus"
   | "view.zoomIn"
@@ -231,9 +232,17 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "search.focus",
-    label: "Find in terminal",
+    label: "Find",
     group: "Search",
     defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
+  },
+  {
+    id: "search.replace",
+    label: "Find & replace in editor",
+    group: "Search",
+    // Only claimed while an editor is focused (see shortcutsDisabled); in a
+    // terminal Ctrl+H must stay backspace (^H).
+    defaultBindings: [{ [MOD_PROP]: true, key: "h" }],
   },
   {
     id: "ai.toggle",

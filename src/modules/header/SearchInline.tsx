@@ -4,7 +4,11 @@ import { KEY_SEP } from "@/lib/platform";
 import type { EditorPaneHandle } from "@/modules/editor";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
-import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowDown01Icon,
+  Cancel01Icon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { SearchAddon } from "@xterm/addon-search";
 import {
@@ -25,7 +29,12 @@ const TERM_DECORATIONS = {
 };
 
 export type SearchTarget =
-  | { kind: "terminal"; addon: SearchAddon; focus: () => void }
+  | {
+      kind: "terminal";
+      addon: SearchAddon;
+      focus: () => void;
+      getSelection: () => string | null;
+    }
   | { kind: "editor"; handle: EditorPaneHandle; focus: () => void }
   | {
       kind: "git-history";
@@ -34,7 +43,11 @@ export type SearchTarget =
     }
   | null;
 
-export type SearchInlineHandle = { focus: () => void };
+export type SearchInlineHandle = {
+  focus: () => void;
+  /** Reveal the replace row (editor only) and focus the search field. */
+  focusReplace: () => void;
+};
 
 type Props = {
   target: SearchTarget;
@@ -42,9 +55,43 @@ type Props = {
   compact?: boolean;
 };
 
+/** Small square toggle chip used for the editor search modifiers. */
+function SearchToggle({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-pressed={active}
+      className={`flex h-5 min-w-5 items-center justify-center rounded px-1 text-[11px] font-medium leading-none transition-colors ${
+        active
+          ? "bg-primary/85 text-primary-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 export const SearchInline = forwardRef<SearchInlineHandle, Props>(
   function SearchInline({ target, compact }, ref) {
     const [q, setQ] = useState("");
+    const [replaceVal, setReplaceVal] = useState("");
+    const [replaceOpen, setReplaceOpen] = useState(false);
+    const [caseSensitive, setCaseSensitive] = useState(false);
+    const [regexp, setRegexp] = useState(false);
+    const [wholeWord, setWholeWord] = useState(false);
     // In compact mode the field is hidden behind an icon until activated.
     // In normal mode the field is always present.
     const [openInCompact, setOpenInCompact] = useState(false);
@@ -58,6 +105,8 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     }, []);
 
     const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+
+    const isEditor = target?.kind === "editor";
 
     const shortcutText = useMemo(() => {
       const s = SHORTCUTS.find((s) => s.id === "search.focus");
@@ -80,14 +129,39 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
 
     const expanded = !compact || openInCompact;
 
-    const focus = useCallback(() => {
+    const focusInput = useCallback(() => {
       pendingFocusRef.current = true;
       if (compact) setOpenInCompact(true);
       else inputRef.current?.focus();
       if (inputRef.current) pendingFocusRef.current = false;
     }, [compact]);
 
-    useImperativeHandle(ref, () => ({ focus }), [focus]);
+    // Seed the query from the active selection so "select text → Cmd+F/Cmd+H"
+    // starts searching that text. Single-line selections only — a multi-line
+    // block isn't a sensible search term.
+    const prefillFromSelection = useCallback(() => {
+      let sel: string | null = null;
+      if (target?.kind === "editor") sel = target.handle.getSelection();
+      else if (target?.kind === "terminal") sel = target.getSelection();
+      if (sel && sel.length > 0 && !sel.includes("\n")) setQ(sel);
+    }, [target]);
+
+    const openSearch = useCallback(
+      (replace: boolean) => {
+        prefillFromSelection();
+        if (replace) setReplaceOpen(true);
+        focusInput();
+      },
+      [prefillFromSelection, focusInput],
+    );
+
+    const focus = useCallback(() => openSearch(false), [openSearch]);
+    const focusReplace = useCallback(() => openSearch(true), [openSearch]);
+
+    useImperativeHandle(ref, () => ({ focus, focusReplace }), [
+      focus,
+      focusReplace,
+    ]);
 
     const clearTarget = useCallback(() => {
       if (!target) return;
@@ -103,21 +177,31 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     // Target switched (terminal ↔ editor) or removed → drop highlights.
     useEffect(() => clearTarget, [clearTarget]);
 
-    const applyIncremental = (next: string) => {
+    // Single place that pushes the current query + modifiers into the active
+    // target. Editor targets carry the replacement text and modifiers; the
+    // terminal keeps its original incremental behaviour untouched.
+    useEffect(() => {
       if (!target) return;
       if (target.kind === "terminal") {
-        if (next) {
-          target.addon.findNext(next, {
+        if (q) {
+          target.addon.findNext(q, {
             incremental: true,
             decorations: TERM_DECORATIONS,
           });
         } else {
           target.addon.clearDecorations();
         }
+      } else if (target.kind === "editor") {
+        target.handle.setQuery(q, {
+          replace: replaceVal,
+          caseSensitive,
+          regexp,
+          wholeWord,
+        });
       } else {
-        target.handle.setQuery(next);
+        target.handle.setQuery(q);
       }
-    };
+    }, [q, replaceVal, caseSensitive, regexp, wholeWord, target]);
 
     const findDirection = (forward: boolean) => {
       if (!target || !q) return;
@@ -132,60 +216,134 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
       // git-history: the list filters live; Enter has no next/prev semantics.
     };
 
+    const doReplaceNext = () => {
+      if (target?.kind !== "editor" || !q) return;
+      // Make sure the latest replacement text is in the query before replacing.
+      target.handle.setQuery(q, {
+        replace: replaceVal,
+        caseSensitive,
+        regexp,
+        wholeWord,
+      });
+      target.handle.replaceNext();
+    };
+
+    const doReplaceAll = () => {
+      if (target?.kind !== "editor" || !q) return;
+      target.handle.setQuery(q, {
+        replace: replaceVal,
+        caseSensitive,
+        regexp,
+        wholeWord,
+      });
+      target.handle.replaceAll();
+    };
+
+    const dismiss = () => {
+      clearTarget();
+      setQ("");
+      setReplaceOpen(false);
+      if (compact) setOpenInCompact(false);
+      restoreTargetFocus();
+    };
+
     return (
       <div
         className="relative h-7 shrink-0 transition-[width] duration-200 ease-out"
-        style={{ width: expanded ? 192 : 28 }}
+        style={{ width: expanded ? (isEditor ? 264 : 192) : 28 }}
       >
         {expanded ? (
-          <div className="absolute inset-0 animate-in fade-in-0 duration-150">
-            <HugeiconsIcon
-              icon={Search01Icon}
-              size={13}
-              strokeWidth={1.75}
-              className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              ref={setInputRef}
-              value={q}
-              placeholder={placeholder}
-              className="h-7 w-full bg-muted/80 pr-7 pl-7 text-[13px]! placeholder:text-muted-foreground/70 focus-visible:ring-0"
-              onChange={(e) => {
-                const next = e.target.value;
-                setQ(next);
-                applyIncremental(next);
-              }}
-              onBlur={() => {
-                if (compact && !q) setOpenInCompact(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  findDirection(!e.shiftKey);
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  clearTarget();
-                  setQ("");
-                  if (compact) {
-                    setOpenInCompact(false);
-                  }
-                  restoreTargetFocus();
-                }
-              }}
-            />
-            {q && (
-              <button
-                type="button"
-                onClick={() => {
-                  setQ("");
-                  clearTarget();
-                  inputRef.current?.focus();
+          <div className="flex h-full items-center gap-1 animate-in fade-in-0 duration-150">
+            <div className="relative min-w-0 flex-1">
+              <HugeiconsIcon
+                icon={Search01Icon}
+                size={13}
+                strokeWidth={1.75}
+                className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                ref={setInputRef}
+                value={q}
+                placeholder={placeholder}
+                className="h-7 w-full bg-muted/80 pr-7 pl-7 text-[13px]! placeholder:text-muted-foreground/70 focus-visible:ring-0"
+                onChange={(e) => setQ(e.target.value)}
+                onBlur={() => {
+                  if (compact && !q) setOpenInCompact(false);
                 }}
-                className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label="Clear search"
-              >
-                <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />
-              </button>
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    findDirection(!e.shiftKey);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    dismiss();
+                  }
+                }}
+              />
+              {q && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQ("");
+                    clearTarget();
+                    inputRef.current?.focus();
+                  }}
+                  className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label="Clear search"
+                >
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={11}
+                    strokeWidth={2}
+                  />
+                </button>
+              )}
+            </div>
+
+            {isEditor && (
+              <div className="flex shrink-0 items-center gap-0.5">
+                <SearchToggle
+                  active={caseSensitive}
+                  onClick={() => setCaseSensitive((v) => !v)}
+                  title="Match case"
+                >
+                  Aa
+                </SearchToggle>
+                <SearchToggle
+                  active={wholeWord}
+                  onClick={() => setWholeWord((v) => !v)}
+                  title="Match whole word"
+                >
+                  W
+                </SearchToggle>
+                <SearchToggle
+                  active={regexp}
+                  onClick={() => setRegexp((v) => !v)}
+                  title="Use regular expression"
+                >
+                  .*
+                </SearchToggle>
+                <button
+                  type="button"
+                  onClick={() => setReplaceOpen((v) => !v)}
+                  aria-pressed={replaceOpen}
+                  title="Toggle replace"
+                  className={`flex h-5 w-5 items-center justify-center rounded transition-colors ${
+                    replaceOpen
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  }`}
+                >
+                  <HugeiconsIcon
+                    icon={ArrowDown01Icon}
+                    size={13}
+                    strokeWidth={2}
+                    className={`transition-transform ${
+                      replaceOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+              </div>
             )}
           </div>
         ) : (
@@ -199,6 +357,44 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
             >
               <HugeiconsIcon icon={Search01Icon} size={15} strokeWidth={1.75} />
             </Button>
+          </div>
+        )}
+
+        {isEditor && expanded && replaceOpen && (
+          <div className="absolute top-[calc(100%+4px)] right-0 z-50 w-[264px] rounded-md border border-border bg-popover p-1 shadow-md animate-in fade-in-0 zoom-in-95 duration-100">
+            <div className="flex items-center gap-1">
+              <input
+                value={replaceVal}
+                placeholder="Replace"
+                onChange={(e) => setReplaceVal(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    doReplaceNext();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    dismiss();
+                  }
+                }}
+                className="h-6 min-w-0 flex-1 rounded bg-muted/70 px-2 text-[13px] text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={doReplaceNext}
+                title="Replace next match (Enter)"
+                className="h-6 shrink-0 rounded px-2 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                Replace
+              </button>
+              <button
+                type="button"
+                onClick={doReplaceAll}
+                title="Replace all matches"
+                className="h-6 shrink-0 rounded px-2 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                All
+              </button>
+            </div>
           </div>
         )}
       </div>

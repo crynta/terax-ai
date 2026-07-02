@@ -676,6 +676,7 @@ export default function App() {
       "blocks.prev": () => navigateFocusedBlocks(-1),
       "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => searchInlineRef.current?.focus(),
+      "search.replace": () => searchInlineRef.current?.focusReplace(),
       "ai.toggle": togglePanelAndFocus,
       "ai.askSelection": askFromSelection,
       "agent.focusAttention": () => {
@@ -721,6 +722,11 @@ export default function App() {
   const shortcutsDisabled = useCallback(
     (id: ShortcutId, e: KeyboardEvent) => {
       if (id === "editor.undo" || id === "editor.redo") {
+        return activeTab?.kind !== "editor";
+      }
+      if (id === "search.replace") {
+        // Replace only applies to the editor; elsewhere let Ctrl+H fall through
+        // (in a terminal it must remain backspace / ^H).
         return activeTab?.kind !== "editor";
       }
       if (id === "ai.askSelection") {
@@ -864,6 +870,8 @@ export default function App() {
         kind: "terminal",
         addon: activeSearchAddon,
         focus: () => terminalRefs.current.get(activeLeafId)?.focus(),
+        getSelection: () =>
+          terminalRefs.current.get(activeLeafId)?.getSelection() ?? null,
       };
     if (isEditorTab && activeEditorHandle)
       return {
