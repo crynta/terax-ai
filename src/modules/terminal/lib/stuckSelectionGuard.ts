@@ -25,11 +25,10 @@ export function isReleasedMoveDuringSelection(
   return trackingSelection && event.buttons === 0;
 }
 
-export function clearLiveTerminalSelections(
-  slots: Iterable<TerminalSelectionSlot>,
+export function clearLiveTerminalSelection(
+  slot: TerminalSelectionSlot | null,
+  leafId: number,
 ): void {
-  for (const slot of slots) {
-    if (slot.currentLeafId === null) continue;
-    slot.term.clearSelection();
-  }
+  if (slot?.currentLeafId !== leafId) return;
+  slot.term.clearSelection();
 }

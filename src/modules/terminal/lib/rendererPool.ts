@@ -19,7 +19,7 @@ import {
   terminalWordNavigationSequence,
 } from "./keymap";
 import {
-  clearLiveTerminalSelections,
+  clearLiveTerminalSelection,
   isReleasedMoveDuringSelection,
   isTerminalSelectionStart,
 } from "./stuckSelectionGuard";
@@ -85,7 +85,7 @@ let windowActive =
   typeof document === "undefined" || (!document.hidden && document.hasFocus());
 let windowActivityBound = false;
 let stuckSelectionGuardBound = false;
-let terminalSelectionMouseDown = false;
+let terminalSelectionDrag: { slot: Slot; leafId: number } | null = null;
 let cursorBlinkEnabled = false;
 
 function bindWindowActivityListeners(): void {
@@ -101,33 +101,45 @@ function bindStuckSelectionGuard(): void {
   if (stuckSelectionGuardBound || typeof window === "undefined") return;
   stuckSelectionGuardBound = true;
 
+  const getTrackedSelectionDrag = (
+    target: EventTarget | null,
+  ): { slot: Slot; leafId: number } | null => {
+    if (!(target instanceof Node)) return null;
+    const slot =
+      slots.find(
+        (slot) => slot.currentLeafId !== null && slot.host.contains(target),
+      ) ?? null;
+    if (slot === null || slot.currentLeafId === null) return null;
+    return { slot, leafId: slot.currentLeafId };
+  };
+
   const clearTrackedSelection = () => {
-    if (!terminalSelectionMouseDown) return;
-    terminalSelectionMouseDown = false;
-    clearLiveTerminalSelections(slots);
+    const drag = terminalSelectionDrag;
+    if (!drag) return;
+    terminalSelectionDrag = null;
+    clearLiveTerminalSelection(drag.slot, drag.leafId);
   };
 
   window.addEventListener(
     "mousedown",
     (event) => {
-      terminalSelectionMouseDown = isTerminalSelectionStart(
-        event,
-        event.target,
-      );
+      terminalSelectionDrag = isTerminalSelectionStart(event, event.target)
+        ? getTrackedSelectionDrag(event.target)
+        : null;
     },
     { capture: true },
   );
   window.addEventListener(
     "mouseup",
     (event) => {
-      if (event.button === 0) terminalSelectionMouseDown = false;
+      if (event.button === 0) terminalSelectionDrag = null;
     },
     { capture: true },
   );
   window.addEventListener(
     "mousemove",
     (event) => {
-      if (isReleasedMoveDuringSelection(terminalSelectionMouseDown, event)) {
+      if (isReleasedMoveDuringSelection(terminalSelectionDrag !== null, event)) {
         clearTrackedSelection();
       }
     },

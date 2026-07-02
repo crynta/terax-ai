@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  clearLiveTerminalSelections,
+  clearLiveTerminalSelection,
   isReleasedMoveDuringSelection,
   isTerminalSelectionStart,
 } from "./stuckSelectionGuard";
@@ -27,16 +27,26 @@ describe("stuck terminal selection guard", () => {
     expect(isReleasedMoveDuringSelection(false, { buttons: 0 })).toBe(false);
   });
 
-  it("clears selections only on live terminal slots", () => {
+  it("clears selection only on the tracked live terminal slot", () => {
     const liveClear = vi.fn();
+    const otherClear = vi.fn();
     const retainedClear = vi.fn();
 
-    clearLiveTerminalSelections([
+    clearLiveTerminalSelection(
       { currentLeafId: 1, term: { clearSelection: liveClear } },
+      1,
+    );
+    clearLiveTerminalSelection(
+      { currentLeafId: 2, term: { clearSelection: otherClear } },
+      1,
+    );
+    clearLiveTerminalSelection(
       { currentLeafId: null, term: { clearSelection: retainedClear } },
-    ]);
+      1,
+    );
 
     expect(liveClear).toHaveBeenCalledOnce();
+    expect(otherClear).not.toHaveBeenCalled();
     expect(retainedClear).not.toHaveBeenCalled();
   });
 });
