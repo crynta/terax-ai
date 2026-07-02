@@ -6,7 +6,7 @@ import { useTerminalComposerStore } from "./terminalComposerStore";
 
 type Props = {
   leafId: number;
-  onSend: (text: string) => void;
+  onSend: (text: string) => boolean;
 };
 
 export function TerminalPromptQueue({ leafId, onSend }: Props) {
@@ -14,17 +14,16 @@ export function TerminalPromptQueue({ leafId, onSend }: Props) {
     (state) => state.queues[leafId] ?? [],
   );
   const dequeueById = useTerminalComposerStore((state) => state.dequeueById);
-  const dequeueNext = useTerminalComposerStore((state) => state.dequeueNext);
 
   if (queued.length === 0) return null;
 
   const sendById = (id: string) => {
-    const item = dequeueById(leafId, id);
-    if (item) onSend(item.text);
+    const item = queued.find((entry) => entry.id === id);
+    if (item && onSend(item.text)) dequeueById(leafId, id);
   };
   const sendNext = () => {
-    const item = dequeueNext(leafId);
-    if (item) onSend(item.text);
+    const item = queued[0];
+    if (item && onSend(item.text)) dequeueById(leafId, item.id);
   };
 
   return (

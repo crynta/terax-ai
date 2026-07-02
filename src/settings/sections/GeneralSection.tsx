@@ -57,7 +57,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LspServersGroup } from "../components/LspServersGroup";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
@@ -112,6 +112,13 @@ export function GeneralSection() {
   const terminalComposerSyntaxRules = usePreferencesStore(
     (s) => s.terminalComposerSyntaxRules,
   );
+  const [composerSyntaxRulesDraft, setComposerSyntaxRulesDraft] = useState(
+    terminalComposerSyntaxRules,
+  );
+  const composerSyntaxRulesDraftRef = useRef(terminalComposerSyntaxRules);
+  const composerSyntaxRulesPersistTimer = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null);
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
@@ -160,29 +167,65 @@ export function GeneralSection() {
     }
   };
 
+  useEffect(() => {
+    setComposerSyntaxRulesDraft(terminalComposerSyntaxRules);
+    composerSyntaxRulesDraftRef.current = terminalComposerSyntaxRules;
+  }, [terminalComposerSyntaxRules]);
+  useEffect(
+    () => () => {
+      if (composerSyntaxRulesPersistTimer.current === null) return;
+      clearTimeout(composerSyntaxRulesPersistTimer.current);
+      void setTerminalComposerSyntaxRules(composerSyntaxRulesDraftRef.current);
+    },
+    [],
+  );
+  const persistComposerSyntaxRules = (rules: ComposerSyntaxRule[]) => {
+    if (composerSyntaxRulesPersistTimer.current !== null) {
+      clearTimeout(composerSyntaxRulesPersistTimer.current);
+      composerSyntaxRulesPersistTimer.current = null;
+    }
+    void setTerminalComposerSyntaxRules(rules);
+  };
+  const scheduleComposerSyntaxRulesPersist = (rules: ComposerSyntaxRule[]) => {
+    if (composerSyntaxRulesPersistTimer.current !== null) {
+      clearTimeout(composerSyntaxRulesPersistTimer.current);
+    }
+    composerSyntaxRulesPersistTimer.current = setTimeout(() => {
+      composerSyntaxRulesPersistTimer.current = null;
+      void setTerminalComposerSyntaxRules(rules);
+    }, 300);
+  };
   const updateComposerRule = (
     index: number,
     patch: Partial<ComposerSyntaxRule>,
+    persist: "debounced" | "now" = "debounced",
   ) => {
-    const next = terminalComposerSyntaxRules.map((rule, i) =>
+    const next = composerSyntaxRulesDraft.map((rule, i) =>
       i === index ? { ...rule, ...patch } : rule,
     );
-    void setTerminalComposerSyntaxRules(next);
+    setComposerSyntaxRulesDraft(next);
+    composerSyntaxRulesDraftRef.current = next;
+    if (persist === "now") persistComposerSyntaxRules(next);
+    else scheduleComposerSyntaxRulesPersist(next);
   };
   const removeComposerRule = (index: number) => {
-    void setTerminalComposerSyntaxRules(
-      terminalComposerSyntaxRules.filter((_, i) => i !== index),
-    );
+    const next = composerSyntaxRulesDraft.filter((_, i) => i !== index);
+    setComposerSyntaxRulesDraft(next);
+    composerSyntaxRulesDraftRef.current = next;
+    persistComposerSyntaxRules(next);
   };
   const addComposerRule = () => {
-    void setTerminalComposerSyntaxRules([
-      ...terminalComposerSyntaxRules,
+    const next = [
+      ...composerSyntaxRulesDraft,
       {
         id: newComposerRuleId(),
         pattern: "",
         mode: terminalComposerSyntaxMode,
       },
-    ]);
+    ];
+    setComposerSyntaxRulesDraft(next);
+    composerSyntaxRulesDraftRef.current = next;
+    persistComposerSyntaxRules(next);
   };
 
   return (
@@ -371,7 +414,7 @@ export function GeneralSection() {
           description="Regex rules matched against the active AI CLI name. First match wins."
         >
           <div className="flex w-full max-w-82 flex-col gap-2">
-            {terminalComposerSyntaxRules.map((rule, index) => (
+            {composerSyntaxRulesDraft.map((rule, index) => (
               <div key={rule.id} className="flex gap-1.5">
                 <Input
                   value={rule.pattern}
@@ -380,13 +423,22 @@ export function GeneralSection() {
                   onChange={(e) =>
                     updateComposerRule(index, { pattern: e.target.value })
                   }
+                  onBlur={() =>
+                    persistComposerSyntaxRules(
+                      composerSyntaxRulesDraftRef.current,
+                    )
+                  }
                 />
                 <Select
                   value={rule.mode}
                   onValueChange={(v) =>
-                    updateComposerRule(index, {
-                      mode: resolveComposerSyntaxMode(v),
-                    })
+                    updateComposerRule(
+                      index,
+                      {
+                        mode: resolveComposerSyntaxMode(v),
+                      },
+                      "now",
+                    )
                   }
                 >
                   <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">

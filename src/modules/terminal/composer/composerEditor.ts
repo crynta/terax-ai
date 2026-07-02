@@ -1,4 +1,8 @@
-import { autocompletion, closeBrackets } from "@codemirror/autocomplete";
+import {
+  autocompletion,
+  closeBrackets,
+  completionStatus,
+} from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import {
   bracketMatching,
@@ -46,6 +50,12 @@ export type ComposerEditorHandle = {
   setSyntaxExtension: (extension: Extension) => void;
   destroy: () => void;
 };
+
+function clear(view: EditorView) {
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: "" },
+  });
+}
 
 function editorTheme(fontFamily: string, fontSize: number) {
   return EditorView.theme({
@@ -106,7 +116,7 @@ function editorTheme(fontFamily: string, fontSize: number) {
   });
 }
 
-const composerHighlightStyle = HighlightStyle.define([
+export const composerHighlightStyle = HighlightStyle.define([
   {
     tag: [t.heading, t.heading1, t.heading2, t.heading3, t.heading4],
     color: "var(--composer-syntax-heading)",
@@ -151,65 +161,9 @@ export function codeMirrorKeyForBinding(binding: KeyBinding): string {
 export function createComposerEditor(
   opts: ComposerEditorOptions,
 ): ComposerEditorHandle {
-  const clear = (view: EditorView) => {
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: "" },
-    });
-  };
   const themeComp = new Compartment();
   const syntaxComp = new Compartment();
-
-  const submitKeys = Prec.highest(
-    keymap.of([
-      ...opts.sendKeys.map((key) => ({
-        key,
-        run: (view: EditorView) => {
-          if (!opts.onSend(view.state.doc.toString())) return true;
-          clear(view);
-          return true;
-        },
-      })),
-      ...opts.queueKeys.map((key) => ({
-        key,
-        run: (view: EditorView) => {
-          if (!opts.onQueue(view.state.doc.toString())) return true;
-          clear(view);
-          return true;
-        },
-      })),
-      {
-        key: "Escape",
-        run: () => {
-          opts.onClose();
-          return true;
-        },
-      },
-    ]),
-  );
-
-  const state = EditorState.create({
-    doc: opts.doc,
-    extensions: [
-      history(),
-      drawSelection({ cursorBlinkRate: 1100 }),
-      EditorState.allowMultipleSelections.of(true),
-      EditorView.lineWrapping,
-      placeholder("Draft terminal input"),
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged) opts.onChange(update.state.doc.toString());
-      }),
-      submitKeys,
-      closeBrackets(),
-      bracketMatching(),
-      autocompletion({
-        override: opts.shellCompletion ? [composerShellCompletionSource] : undefined,
-      }),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
-      syntaxComp.of(opts.syntaxExtension),
-      syntaxHighlighting(composerHighlightStyle, { fallback: true }),
-      themeComp.of(editorTheme(opts.fontFamily, opts.fontSize)),
-    ],
-  });
+  const state = createComposerEditorState(opts, themeComp, syntaxComp);
 
   const view = new EditorView({ state, parent: opts.parent });
 
@@ -235,4 +189,66 @@ export function createComposerEditor(
     },
     destroy: () => view.destroy(),
   };
+}
+
+export function createComposerEditorState(
+  opts: ComposerEditorOptions,
+  themeComp = new Compartment(),
+  syntaxComp = new Compartment(),
+): EditorState {
+  const submitKeys = Prec.highest(
+    keymap.of([
+      ...opts.sendKeys.map((key) => ({
+        key,
+        run: (view: EditorView) => {
+          if (!opts.onSend(view.state.doc.toString())) return true;
+          clear(view);
+          return true;
+        },
+      })),
+      ...opts.queueKeys.map((key) => ({
+        key,
+        run: (view: EditorView) => {
+          if (!opts.onQueue(view.state.doc.toString())) return true;
+          clear(view);
+          return true;
+        },
+      })),
+      {
+        key: "Escape",
+        run: (view: EditorView) => {
+          if (completionStatus(view.state) !== null) return false;
+          opts.onClose();
+          return true;
+        },
+      },
+    ]),
+  );
+
+  const state = EditorState.create({
+    doc: opts.doc,
+    extensions: [
+      history(),
+      drawSelection({ cursorBlinkRate: 1100 }),
+      EditorState.allowMultipleSelections.of(true),
+      EditorView.lineWrapping,
+      placeholder("Draft terminal input"),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) opts.onChange(update.state.doc.toString());
+      }),
+      submitKeys,
+      closeBrackets(),
+      bracketMatching(),
+      autocompletion({
+        override: opts.shellCompletion
+          ? [composerShellCompletionSource]
+          : undefined,
+      }),
+      keymap.of([...defaultKeymap, ...historyKeymap]),
+      syntaxComp.of(opts.syntaxExtension),
+      syntaxHighlighting(composerHighlightStyle, { fallback: true }),
+      themeComp.of(editorTheme(opts.fontFamily, opts.fontSize)),
+    ],
+  });
+  return state;
 }

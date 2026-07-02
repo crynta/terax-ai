@@ -320,13 +320,24 @@ export default function App() {
     },
     [activeLeafId],
   );
+  const sendTerminalQueuedPromptText = useCallback(
+    (text: string): boolean => {
+      if (activeLeafId === null) return false;
+      if (!submitToLeaf(activeLeafId, text)) return false;
+      terminalRefs.current.get(activeLeafId)?.focus();
+      return true;
+    },
+    [activeLeafId],
+  );
   const sendNextQueuedTerminalPrompt = useCallback(() => {
     if (activeLeafId === null) return;
-    const item = useTerminalComposerStore.getState().dequeueNext(activeLeafId);
+    const store = useTerminalComposerStore.getState();
+    const item = store.queuedFor(activeLeafId)[0];
     if (!item) return;
-    submitToLeaf(activeLeafId, item.text);
-    terminalRefs.current.get(activeLeafId)?.focus();
-  }, [activeLeafId]);
+    if (sendTerminalQueuedPromptText(item.text)) {
+      store.dequeueById(activeLeafId, item.id);
+    }
+  }, [activeLeafId, sendTerminalQueuedPromptText]);
 
   useEditorFileSync({ tabs, tabsRef, editorRefs });
   useThemeFileEditing({ tabsRef, openFileTab });
@@ -1227,6 +1238,7 @@ export default function App() {
                     terminalComposerOpen={terminalComposerOpen}
                     onTerminalComposerClose={closeTerminalComposer}
                     onTerminalComposerSend={sendTerminalComposerText}
+                    onTerminalQueuedPromptSend={sendTerminalQueuedPromptText}
                     onConnect={() => void openSettingsWindow("models")}
                   />
                 </div>

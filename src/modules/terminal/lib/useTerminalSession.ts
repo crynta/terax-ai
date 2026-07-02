@@ -163,9 +163,9 @@ export function writeToSession(leafId: number, data: string): boolean {
   return true;
 }
 
-export function submitToLeaf(leafId: number, text: string): void {
+export function submitToLeaf(leafId: number, text: string): boolean {
   const s = sessions.get(leafId);
-  if (!s || s.shellExited) return;
+  if (!s || s.shellExited) return false;
   s.everSubmitted = true;
   // Bracketed paste keeps a multiline command atomic; trailing CR runs it.
   const data = text.includes("\n")
@@ -173,6 +173,7 @@ export function submitToLeaf(leafId: number, text: string): void {
     : `${text}\r`;
   if (s.pty) void s.pty.write(data);
   else queuePendingInput(s, data);
+  return true;
 }
 
 export function interruptLeaf(leafId: number): void {

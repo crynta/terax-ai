@@ -203,85 +203,81 @@ export function TerminalComposer({ leafId, onSend, onClose }: Props) {
   };
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild className="select-text">
-        <div className="shrink-0 border-t border-border/60 bg-card/75 px-3 py-2">
+    <div className="shrink-0 border-t border-border/60 bg-card/75 px-3 py-2">
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
           <button
             type="button"
             aria-label="Resize terminal composer"
-            title="Drag to resize composer"
+            title="Drag to resize composer. Right-click to change syntax."
             onPointerDown={beginResize}
             className="-mx-3 -mt-2 mb-1 flex h-2 w-[calc(100%+1.5rem)] cursor-ns-resize items-center justify-center"
           >
             <span className="h-px w-12 rounded-full bg-border/70 transition-colors hover:bg-foreground/40" />
           </button>
-          <div className="flex items-start gap-2 rounded-md border border-border/50 bg-background/70 px-2.5 py-2 shadow-sm">
-            <div
-              ref={hostRef}
-              className={cn("min-w-0 flex-1 overflow-hidden text-sm")}
-              style={{ height: composerHeight }}
-            />
-            <div className="flex shrink-0 items-center gap-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                title="Queue"
-                onClick={queueCurrent}
+        </ContextMenuTrigger>
+        <ContextMenuContent className="min-w-44">
+          <ContextMenuLabel className="text-[11px] text-muted-foreground">
+            Syntax mode
+          </ContextMenuLabel>
+          <ContextMenuRadioGroup
+            value={syntaxMode}
+            onValueChange={(value) =>
+              setSyntaxOverride(resolveComposerSyntaxMode(value))
+            }
+          >
+            {COMPOSER_SYNTAX_MODES.map((mode) => (
+              <ContextMenuRadioItem
+                key={mode.id}
+                value={mode.id}
+                className="text-[12px]"
               >
-                <HugeiconsIcon icon={TerminalIcon} size={14} strokeWidth={2} />
-              </Button>
-              <Button
-                type="button"
-                variant="default"
-                size="icon"
-                className="h-7 w-7"
-                title="Send"
-                onClick={sendCurrent}
-              >
-                <HugeiconsIcon
-                  icon={ArrowRight01Icon}
-                  size={14}
-                  strokeWidth={2}
-                />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                title="Close"
-                onClick={onClose}
-              >
-                <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} />
-              </Button>
-            </div>
-          </div>
+                {mode.label}
+              </ContextMenuRadioItem>
+            ))}
+          </ContextMenuRadioGroup>
+        </ContextMenuContent>
+      </ContextMenu>
+      <div className="flex items-start gap-2 rounded-md border border-border/50 bg-background/70 px-2.5 py-2 shadow-sm">
+        <div
+          ref={hostRef}
+          className={cn("min-w-0 flex-1 overflow-hidden text-sm")}
+          style={{ height: composerHeight }}
+        />
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            title="Queue"
+            onClick={queueCurrent}
+          >
+            <HugeiconsIcon icon={TerminalIcon} size={14} strokeWidth={2} />
+          </Button>
+          <Button
+            type="button"
+            variant="default"
+            size="icon"
+            className="h-7 w-7"
+            title="Send"
+            onClick={sendCurrent}
+          >
+            <HugeiconsIcon icon={ArrowRight01Icon} size={14} strokeWidth={2} />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            title="Close"
+            onClick={onClose}
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={14} strokeWidth={2} />
+          </Button>
         </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="min-w-44">
-        <ContextMenuLabel className="text-[11px] text-muted-foreground">
-          Syntax mode
-        </ContextMenuLabel>
-        <ContextMenuRadioGroup
-          value={syntaxMode}
-          onValueChange={(value) =>
-            setSyntaxOverride(resolveComposerSyntaxMode(value))
-          }
-        >
-          {COMPOSER_SYNTAX_MODES.map((mode) => (
-            <ContextMenuRadioItem
-              key={mode.id}
-              value={mode.id}
-              className="text-[12px]"
-            >
-              {mode.label}
-            </ContextMenuRadioItem>
-          ))}
-        </ContextMenuRadioGroup>
-      </ContextMenuContent>
-    </ContextMenu>
+      </div>
+    </div>
   );
 }
 

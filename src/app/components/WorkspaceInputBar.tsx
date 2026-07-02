@@ -47,6 +47,7 @@ type Props = {
   terminalComposerOpen: boolean;
   onTerminalComposerClose: () => void;
   onTerminalComposerSend: (text: string) => void;
+  onTerminalQueuedPromptSend: (text: string) => boolean;
   onConnect: () => void;
 };
 
@@ -62,6 +63,7 @@ export function WorkspaceInputBar({
   terminalComposerOpen,
   onTerminalComposerClose,
   onTerminalComposerSend,
+  onTerminalQueuedPromptSend,
   onConnect,
 }: Props) {
   const c = useComposer();
@@ -218,7 +220,7 @@ export function WorkspaceInputBar({
       {terminalQueueVisible && activeLeafId !== null && (
         <TerminalPromptQueue
           leafId={activeLeafId}
-          onSend={onTerminalComposerSend}
+          onSend={onTerminalQueuedPromptSend}
         />
       )}
       <div>

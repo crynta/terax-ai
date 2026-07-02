@@ -2,7 +2,7 @@ import { listen } from "@tauri-apps/api/event";
 
 type AgentSignal = { id: number; kind: string; agent?: string | null };
 
-const active = new Map<number, string>();
+const active = new Map<number, string | null>();
 const listeners = new Set<() => void>();
 let onExited: ((ptyId: number) => void) | null = null;
 let bound = false;
@@ -15,7 +15,7 @@ export function ensureAgentActivityListener(exited: (ptyId: number) => void) {
   bound = true;
   listen<AgentSignal>("terax:agent-signal", (e) => {
     if (e.payload.kind === "started") {
-      active.set(e.payload.id, e.payload.agent ?? "");
+      active.set(e.payload.id, e.payload.agent || null);
       notify();
     }
     if (e.payload.kind === "exited") {
