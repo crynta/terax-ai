@@ -148,6 +148,17 @@ function titleFromUrl(url: string): string {
 
 export const DEFAULT_SPACE_ID = "default";
 
+// Returns the tab at position `idx` within the given space, or undefined when
+// idx is out of range or no matching space tab exists.
+export function pickTabBySpaceIndex(
+  tabs: Tab[],
+  idx: number,
+  spaceId: string,
+): Tab | undefined {
+  const pool = tabs.filter((t) => t.spaceId === spaceId);
+  return pool[idx];
+}
+
 // Next active after close, scoped to the closing tab's space. null = last tab of
 // its space, which callers treat as "refuse to close".
 export function nextActiveInSpace(
@@ -951,8 +962,10 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   }, []);
 
   const selectByIndex = useCallback(
-    (idx: number) => {
-      const t = tabs[idx];
+    (idx: number, spaceId?: string) => {
+      const t = spaceId
+        ? pickTabBySpaceIndex(tabs, idx, spaceId)
+        : tabs[idx];
       if (t) setActiveId(t.id);
     },
     [tabs],
