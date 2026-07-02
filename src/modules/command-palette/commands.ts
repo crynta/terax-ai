@@ -26,6 +26,7 @@ export const COMMAND_GROUPS = [
   "Spaces",
   "Tabs",
   "Panes",
+  "Terminal",
   "Git",
   "Search",
   "View",
@@ -48,6 +49,7 @@ export type CommandPaletteActionContext = {
   closeActiveTabOrPane: () => void;
   splitPaneRight: () => void;
   splitPaneDown: () => void;
+  toggleTerminalComposer: () => void;
   focusSearch: () => void;
   focusExplorerSearch: () => void;
   toggleSidebar: () => void;
@@ -148,9 +150,19 @@ export function createCommandItems(
       title: "New block terminal",
       group: "Tabs",
       keywords: ["blocks", "warp", "command blocks", "terminal"],
-      icon: DashboardSquare01Icon,
-      run: ctx.openNewBlock,
-    },
+    icon: DashboardSquare01Icon,
+    run: ctx.openNewBlock,
+  },
+  {
+    id: "terminalComposer.toggle",
+    title: "Open terminal composer",
+    group: "Terminal",
+    keywords: ["composer", "draft", "prompt", "queue", "terminal"],
+    icon: TerminalIcon,
+    shortcutId: "terminalComposer.toggle",
+    disabledReason: activeTerminalTab ? undefined : "No terminal tab",
+    run: ctx.toggleTerminalComposer,
+  },
     {
       id: "tab.newPrivate",
       title: "New private terminal",

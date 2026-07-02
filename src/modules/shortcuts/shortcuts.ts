@@ -26,6 +26,10 @@ export type ShortcutId =
   | "pane.source"
   | "terminal.clear"
   | "terminal.toggleInput"
+  | "terminalComposer.toggle"
+  | "terminalComposer.send"
+  | "terminalComposer.queue"
+  | "terminalComposer.sendQueued"
   | "blocks.prev"
   | "blocks.next"
   | "search.focus"
@@ -49,6 +53,7 @@ export type ShortcutGroup =
   | "Spaces"
   | "Panes"
   | "Terminal"
+  | "Composer"
   | "Search"
   | "AI"
   | "View"
@@ -171,6 +176,34 @@ export const SHORTCUTS: Shortcut[] = [
     group: "Terminal",
     defaultBindings: [{ [MOD_PROP]: true, key: "u" }],
   },
+  {
+    id: "terminalComposer.toggle",
+    label: "Toggle terminal composer",
+    group: "Composer",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "e" }],
+  },
+
+  {
+    id: "terminalComposer.send",
+    label: "Send composer draft",
+    group: "Composer",
+    defaultBindings: [{ [MOD_PROP]: true, key: "Enter" }],
+  },
+
+  {
+    id: "terminalComposer.queue",
+    label: "Queue composer draft",
+    group: "Composer",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "Enter" }],
+  },
+
+  {
+    id: "terminalComposer.sendQueued",
+    label: "Send next queued terminal prompt",
+    group: "Composer",
+    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "Enter" }],
+  },
+
   {
     id: "blocks.prev",
     label: "Previous command block",
@@ -327,6 +360,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "Tabs",
   "Panes",
   "Terminal",
+  "Composer",
   "View",
   "Search",
   "AI",

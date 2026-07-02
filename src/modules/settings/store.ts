@@ -15,6 +15,14 @@ import {
   WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
+import {
+  DEFAULT_COMPOSER_SYNTAX_RULES,
+  DEFAULT_COMPOSER_SYNTAX_MODE,
+  normalizeComposerSyntaxRules,
+  resolveComposerSyntaxMode,
+  type ComposerSyntaxRule,
+  type ComposerSyntaxMode,
+} from "@/modules/terminal/composer/composerLanguage";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
@@ -154,6 +162,8 @@ export type Preferences = {
   terminalLetterSpacing: number;
   terminalFontSize: number;
   terminalScrollback: number;
+  terminalComposerSyntaxMode: ComposerSyntaxMode;
+  terminalComposerSyntaxRules: ComposerSyntaxRule[];
   lastWslDistro: string | null;
   zoomLevel: number;
   agentNotifications: boolean;
@@ -221,6 +231,8 @@ const KEY_TERMINAL_SHELL = "terminalShell";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
+const KEY_TERMINAL_COMPOSER_SYNTAX_MODE = "terminalComposerSyntaxMode";
+const KEY_TERMINAL_COMPOSER_SYNTAX_RULES = "terminalComposerSyntaxRules";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
@@ -289,6 +301,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
+  terminalComposerSyntaxMode: DEFAULT_COMPOSER_SYNTAX_MODE,
+  terminalComposerSyntaxRules: DEFAULT_COMPOSER_SYNTAX_RULES,
   lastWslDistro: null,
   zoomLevel: 1.0,
   agentNotifications: true,
@@ -441,6 +455,12 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalScrollback: clampScrollback(
       get<number>(KEY_TERMINAL_SCROLLBACK) ??
         DEFAULT_PREFERENCES.terminalScrollback,
+    ),
+    terminalComposerSyntaxMode: resolveComposerSyntaxMode(
+      get<string>(KEY_TERMINAL_COMPOSER_SYNTAX_MODE),
+    ),
+    terminalComposerSyntaxRules: normalizeComposerSyntaxRules(
+      get<ComposerSyntaxRule[]>(KEY_TERMINAL_COMPOSER_SYNTAX_RULES),
     ),
     lastWslDistro:
       get<string | null>(KEY_LAST_WSL_DISTRO) ??
@@ -706,6 +726,24 @@ export async function setTerminalScrollback(value: number): Promise<void> {
   await writePref(KEY_TERMINAL_SCROLLBACK, clampScrollback(value));
 }
 
+export async function setTerminalComposerSyntaxMode(
+  value: ComposerSyntaxMode,
+): Promise<void> {
+  await writePref(
+    KEY_TERMINAL_COMPOSER_SYNTAX_MODE,
+    resolveComposerSyntaxMode(value),
+  );
+}
+
+export async function setTerminalComposerSyntaxRules(
+  value: ComposerSyntaxRule[],
+): Promise<void> {
+  await writePref(
+    KEY_TERMINAL_COMPOSER_SYNTAX_RULES,
+    normalizeComposerSyntaxRules(value),
+  );
+}
+
 export async function setLastWslDistro(value: string | null): Promise<void> {
   await writePref(KEY_LAST_WSL_DISTRO, value);
 }
@@ -794,6 +832,8 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+    [KEY_TERMINAL_COMPOSER_SYNTAX_MODE]: "terminalComposerSyntaxMode",
+    [KEY_TERMINAL_COMPOSER_SYNTAX_RULES]: "terminalComposerSyntaxRules",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",

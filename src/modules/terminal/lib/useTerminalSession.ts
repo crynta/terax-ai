@@ -18,7 +18,12 @@ import {
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 import "../block/block.css";
-import { ensureAgentActivityListener, isAgentActivePty } from "./agentActivity";
+import {
+  activeAgentForPty,
+  ensureAgentActivityListener,
+  isAgentActivePty,
+  subscribeAgentActivity,
+} from "./agentActivity";
 import {
   acquireSlot,
   applyBackgroundActive,
@@ -142,9 +147,10 @@ const PENDING_INPUT_MAX = 256 * 1024;
 
 // Input typed before the pty attaches is queued and flushed on attach. Cap the
 // queue so a large paste into a still-spawning pane can't grow it without bound.
-function queuePendingInput(s: Session, data: string): void {
-  if (s.pendingInput.length + data.length > PENDING_INPUT_MAX) return;
+function queuePendingInput(s: Session, data: string): boolean {
+  if (s.pendingInput.length + data.length > PENDING_INPUT_MAX) return false;
   s.pendingInput += data;
+  return true;
 }
 
 export function writeToSession(leafId: number, data: string): boolean {
@@ -154,20 +160,20 @@ export function writeToSession(leafId: number, data: string): boolean {
     void s.pty.write(data);
     return true;
   }
-  queuePendingInput(s, data);
-  return true;
+  return queuePendingInput(s, data);
 }
 
-export function submitToLeaf(leafId: number, text: string): void {
+export function submitToLeaf(leafId: number, text: string): boolean {
   const s = sessions.get(leafId);
-  if (!s || s.shellExited) return;
-  s.everSubmitted = true;
+  if (!s || s.shellExited) return false;
   // Bracketed paste keeps a multiline command atomic; trailing CR runs it.
   const data = text.includes("\n")
     ? `\x1b[200~${text}\x1b[201~\r`
     : `${text}\r`;
   if (s.pty) void s.pty.write(data);
-  else queuePendingInput(s, data);
+  else if (!queuePendingInput(s, data)) return false;
+  s.everSubmitted = true;
+  return true;
 }
 
 export function interruptLeaf(leafId: number): void {
@@ -286,6 +292,18 @@ export function leafIdForPty(ptyId: number): number | null {
     if (s.pty?.id === ptyId) return leafId;
   }
   return null;
+}
+
+export function activeAgentForLeaf(leafId: number): string | null {
+  const s = sessions.get(leafId);
+  if (!s?.pty) return null;
+  return activeAgentForPty(s.pty.id);
+}
+
+export function subscribeTerminalAgentActivity(
+  listener: () => void,
+): () => void {
+  return subscribeAgentActivity(listener);
 }
 
 function leafBusy(s: Session): boolean {
