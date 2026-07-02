@@ -147,9 +147,10 @@ const PENDING_INPUT_MAX = 256 * 1024;
 
 // Input typed before the pty attaches is queued and flushed on attach. Cap the
 // queue so a large paste into a still-spawning pane can't grow it without bound.
-function queuePendingInput(s: Session, data: string): void {
-  if (s.pendingInput.length + data.length > PENDING_INPUT_MAX) return;
+function queuePendingInput(s: Session, data: string): boolean {
+  if (s.pendingInput.length + data.length > PENDING_INPUT_MAX) return false;
   s.pendingInput += data;
+  return true;
 }
 
 export function writeToSession(leafId: number, data: string): boolean {
@@ -159,20 +160,19 @@ export function writeToSession(leafId: number, data: string): boolean {
     void s.pty.write(data);
     return true;
   }
-  queuePendingInput(s, data);
-  return true;
+  return queuePendingInput(s, data);
 }
 
 export function submitToLeaf(leafId: number, text: string): boolean {
   const s = sessions.get(leafId);
   if (!s || s.shellExited) return false;
-  s.everSubmitted = true;
   // Bracketed paste keeps a multiline command atomic; trailing CR runs it.
   const data = text.includes("\n")
     ? `\x1b[200~${text}\x1b[201~\r`
     : `${text}\r`;
   if (s.pty) void s.pty.write(data);
-  else queuePendingInput(s, data);
+  else if (!queuePendingInput(s, data)) return false;
+  s.everSubmitted = true;
   return true;
 }
 
