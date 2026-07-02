@@ -1284,4 +1284,88 @@ mod tests {
         )));
         assert!(!looks_like_no_head(&mk("fatal: pathspec did not match")));
     }
+
+    fn git_init(dir: &std::path::Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        let ok = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir)
+            .status()
+            .expect("spawn git init")
+            .success();
+        assert!(ok, "git init failed for {dir:?}");
+    }
+
+    fn base_names(mut roots: Vec<String>) -> Vec<String> {
+        roots.sort();
+        roots
+            .iter()
+            .map(|r| {
+                std::path::Path::new(r)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn discover_repos_lists_child_repos_of_a_container() {
+        // container is NOT a repo; it holds two child repos + one plain dir.
+        let tmp = tempfile::tempdir().unwrap();
+        let container = tmp.path().join("workspace");
+        git_init(&container.join("repoA"));
+        git_init(&container.join("repoB"));
+        std::fs::create_dir_all(container.join("plain")).unwrap();
+
+        let registry = WorkspaceRegistry::default();
+        registry.authorize(&container).unwrap();
+        let ws = WorkspaceEnv::default();
+
+        let roots = discover_repos(&registry, container.to_str().unwrap(), &ws).unwrap();
+        assert_eq!(base_names(roots), vec!["repoA", "repoB"]);
+    }
+
+    #[test]
+    fn discover_repos_returns_single_repo_when_cwd_is_inside_one() {
+        // cwd is inside a repo → just that repo, not a child scan.
+        let tmp = tempfile::tempdir().unwrap();
+        let container = tmp.path().join("workspace");
+        let repo = container.join("repoA");
+        git_init(&repo);
+        std::fs::create_dir_all(repo.join("sub")).unwrap();
+
+        let registry = WorkspaceRegistry::default();
+        registry.authorize(&container).unwrap();
+        let ws = WorkspaceEnv::default();
+
+        // From the repo root and from a nested subdir, both resolve to the one repo.
+        assert_eq!(
+            base_names(discover_repos(&registry, repo.to_str().unwrap(), &ws).unwrap()),
+            vec!["repoA"],
+        );
+        assert_eq!(
+            base_names(discover_repos(&registry, repo.join("sub").to_str().unwrap(), &ws).unwrap()),
+            vec!["repoA"],
+        );
+    }
+
+    #[test]
+    fn discover_repos_rejects_unauthorized_path() {
+        // A path outside every authorized root must be denied, not scanned.
+        let tmp = tempfile::tempdir().unwrap();
+        let authorized = tmp.path().join("authorized");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&authorized).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        let registry = WorkspaceRegistry::default();
+        registry.authorize(&authorized).unwrap();
+        let ws = WorkspaceEnv::default();
+
+        let err = discover_repos(&registry, outside.to_str().unwrap(), &ws)
+            .expect_err("unauthorized path must be rejected");
+        assert!(matches!(err, GitError::PathOutsideWorkspace(_)));
+    }
 }
