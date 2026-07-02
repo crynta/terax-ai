@@ -1071,9 +1071,11 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 repoRoot={scm.repo?.repoRoot ?? null}
                 refreshKey={`${scm.status.branch}:${scm.status.ahead}:${scm.status.behind}:${scm.status.changedFiles.length}`}
                 collapsed={historyCollapsed}
+                topCommitPushed={!!scm.status.upstream && scm.status.ahead === 0}
                 onToggleCollapsed={toggleHistoryCollapsed}
                 onOpenCommitFile={onOpenCommitFile ?? (() => {})}
                 onOpenGitGraph={onOpenGitGraph}
+                onDidUndoCommit={() => void scm.refresh()}
               />
             </ResizablePanel>
           </ResizablePanelGroup>

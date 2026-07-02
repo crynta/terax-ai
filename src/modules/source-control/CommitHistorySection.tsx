@@ -1,3 +1,13 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -11,11 +21,13 @@ import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import {
   ArrowDown01Icon,
   ArrowRight01Icon,
+  ArrowTurnBackwardIcon,
   GitBranchIcon,
   Refresh01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 export const HISTORY_HEADER_PX = 29;
 
@@ -36,9 +48,11 @@ type Props = {
   repoRoot: string | null;
   refreshKey: unknown;
   collapsed: boolean;
+  topCommitPushed: boolean;
   onToggleCollapsed: () => void;
   onOpenCommitFile: (input: CommitFileDiffOpenInput) => void;
   onOpenGitGraph?: () => void;
+  onDidUndoCommit?: () => void;
 };
 
 type LoadStatus = "idle" | "initial" | "more" | "error";
@@ -97,9 +111,11 @@ export function CommitHistorySection({
   repoRoot,
   refreshKey,
   collapsed,
+  topCommitPushed,
   onToggleCollapsed,
   onOpenCommitFile,
   onOpenGitGraph,
+  onDidUndoCommit,
 }: Props) {
   const [commits, setCommits] = useState<GitLogEntry[]>([]);
   const [loadStatus, setLoadStatus] = useState<LoadStatus>("idle");
@@ -255,6 +271,26 @@ export function CommitHistorySection({
     void loadInitial();
   }, [loadInitial]);
 
+  const [pendingUndo, setPendingUndo] = useState<GitLogEntry | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+
+  const confirmUndo = useCallback(async () => {
+    const commit = pendingUndo;
+    if (!commit || !repoRoot || undoBusy) return;
+    setUndoBusy(true);
+    try {
+      await native.gitUndoCommit(repoRoot, commit.sha);
+      setPendingUndo(null);
+      void loadInitial();
+      onDidUndoCommit?.();
+    } catch (err) {
+      setPendingUndo(null);
+      toast.error(`Undo commit failed: ${normalizeError(err)}`);
+    } finally {
+      setUndoBusy(false);
+    }
+  }, [loadInitial, onDidUndoCommit, pendingUndo, repoRoot, undoBusy]);
+
   const nowMs = Date.now();
 
   return (
@@ -349,7 +385,7 @@ export function CommitHistorySection({
             </p>
           ) : (
             <div data-files-tick={filesTick}>
-              {commits.map((commit) => (
+              {commits.map((commit, index) => (
                 <CommitRow
                   key={commit.sha}
                   commit={commit}
@@ -361,6 +397,8 @@ export function CommitHistorySection({
                       : null
                   }
                   repoRoot={repoRoot}
+                  canUndo={index === 0 && commit.parents.length > 0}
+                  onRequestUndo={setPendingUndo}
                   onToggle={toggleCommit}
                   onRetryFiles={fetchFiles}
                   onOpenCommitFile={onOpenCommitFile}
@@ -375,6 +413,40 @@ export function CommitHistorySection({
           )}
         </div>
       )}
+
+      <AlertDialog
+        open={pendingUndo !== null}
+        onOpenChange={(o) => {
+          if (!o && !undoBusy) setPendingUndo(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Undo last commit?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingUndo
+                ? `"${pendingUndo.subject}" will be removed from history and its changes returned to the staged area.${
+                    topCommitPushed
+                      ? " This commit looks already pushed; undoing it rewrites history and the branch will diverge from its upstream."
+                      : ""
+                  }`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={undoBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={undoBusy}
+              onClick={(event) => {
+                event.preventDefault();
+                void confirmUndo();
+              }}
+            >
+              {undoBusy ? "Undoing" : "Undo Commit"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -385,6 +457,8 @@ const CommitRow = memo(function CommitRow({
   expanded,
   filesEntry,
   repoRoot,
+  canUndo,
+  onRequestUndo,
   onToggle,
   onRetryFiles,
   onOpenCommitFile,
@@ -394,6 +468,8 @@ const CommitRow = memo(function CommitRow({
   expanded: boolean;
   filesEntry: FilesEntry | null;
   repoRoot: string | null;
+  canUndo: boolean;
+  onRequestUndo: (commit: GitLogEntry) => void;
   onToggle: (sha: string) => void;
   onRetryFiles: (sha: string) => void;
   onOpenCommitFile: (input: CommitFileDiffOpenInput) => void;
@@ -401,34 +477,57 @@ const CommitRow = memo(function CommitRow({
   const isMerge = commit.parents.length > 1;
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => onToggle(commit.sha)}
-        title={`${commit.subject}\n${commit.shortSha} by ${commit.author}`}
-        className={cn(
-          "flex w-full cursor-pointer items-center gap-1.5 px-2 py-[5px] text-left transition-colors hover:bg-foreground/[0.05]",
-          expanded && "bg-foreground/[0.04]",
-        )}
-      >
-        <HugeiconsIcon
-          icon={expanded ? ArrowDown01Icon : ArrowRight01Icon}
-          size={10}
-          strokeWidth={2.2}
-          className="shrink-0 text-muted-foreground/70"
-        />
-        <span
+      <div className="group relative">
+        <button
+          type="button"
+          onClick={() => onToggle(commit.sha)}
+          title={`${commit.subject}\n${commit.shortSha} by ${commit.author}`}
           className={cn(
-            "size-1.5 shrink-0 rounded-full",
-            isMerge ? "bg-muted-foreground/50" : "bg-primary/70",
+            "flex w-full cursor-pointer items-center gap-1.5 px-2 py-[5px] text-left transition-colors hover:bg-foreground/[0.05]",
+            expanded && "bg-foreground/[0.04]",
           )}
-        />
-        <span className="min-w-0 flex-1 truncate text-[11.5px] leading-tight text-foreground/90">
-          {commit.subject}
-        </span>
-        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/70">
-          {relativeTime(commit.timestampSecs, nowMs)}
-        </span>
-      </button>
+        >
+          <HugeiconsIcon
+            icon={expanded ? ArrowDown01Icon : ArrowRight01Icon}
+            size={10}
+            strokeWidth={2.2}
+            className="shrink-0 text-muted-foreground/70"
+          />
+          <span
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              isMerge ? "bg-muted-foreground/50" : "bg-primary/70",
+            )}
+          />
+          <span className="min-w-0 flex-1 truncate text-[11.5px] leading-tight text-foreground/90">
+            {commit.subject}
+          </span>
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/70">
+            {relativeTime(commit.timestampSecs, nowMs)}
+          </span>
+        </button>
+        {canUndo ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Undo last commit"
+                onClick={() => onRequestUndo(commit)}
+                className="absolute right-1 top-1/2 hidden -translate-y-1/2 cursor-pointer items-center justify-center rounded bg-card p-1 text-muted-foreground shadow-sm transition-colors hover:text-foreground group-hover:flex"
+              >
+                <HugeiconsIcon
+                  icon={ArrowTurnBackwardIcon}
+                  size={12}
+                  strokeWidth={1.9}
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="text-[10.5px]">
+              Undo last commit
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
 
       {expanded ? (
         <div className="border-b border-border/30 pb-1">

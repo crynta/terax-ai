@@ -436,6 +436,50 @@ pub fn commit(
     })
 }
 
+pub fn undo_last_commit(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    expected_head_sha: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<()> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+
+    let head = git_stdout_line_opt(&repo_root.workspace, &repo_root.git_path, ["rev-parse", "HEAD"])?
+        .ok_or(GitError::CommandFailed {
+            context: "failed to resolve HEAD",
+            detail: String::new(),
+        })?;
+    if head != expected_head_sha {
+        return Err(GitError::command(
+            "git reset",
+            "HEAD changed since the commit list was loaded; refresh and try again",
+        ));
+    }
+
+    let has_parent = git_stdout_line_opt(
+        &repo_root.workspace,
+        &repo_root.git_path,
+        ["rev-parse", "--verify", "--quiet", "HEAD~1"],
+    )?
+    .is_some();
+    if !has_parent {
+        return Err(GitError::command(
+            "git reset",
+            "cannot undo the initial commit",
+        ));
+    }
+
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["reset", "--soft", "HEAD~1"],
+        DEFAULT_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git reset failed")?;
+    Ok(())
+}
+
 pub fn push(
     registry: &WorkspaceRegistry,
     repo_root: &str,

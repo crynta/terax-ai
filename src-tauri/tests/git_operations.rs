@@ -564,3 +564,88 @@ fn list_branches_keeps_current_branch_local_and_surfaces_worktrees() {
     assert!(!feature[0].is_head);
     assert!(feature[0].worktree_path.is_some());
 }
+
+#[test]
+fn undo_last_commit_moves_changes_back_to_index() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    fx.write_file("a.txt", "alpha\n");
+    fx.run_git(&["add", "a.txt"]);
+    fx.run_git(&["commit", "-q", "-m", "first"]);
+    fx.write_file("b.txt", "beta\n");
+    fx.run_git(&["add", "b.txt"]);
+    fx.run_git(&["commit", "-q", "-m", "second"]);
+
+    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace)
+        .expect("log");
+    assert_eq!(entries.len(), 2);
+    let head_sha = entries[0].sha.clone();
+
+    operations::undo_last_commit(&fx.registry, &fx.repo_str(), &head_sha, &fx.workspace)
+        .expect("undo");
+
+    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace)
+        .expect("log after undo");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].subject, "first");
+
+    let snap = operations::status(&fx.registry, &fx.repo_str(), &fx.workspace).unwrap();
+    let entry = snap
+        .changed_files
+        .iter()
+        .find(|f| f.path == "b.txt")
+        .expect("b.txt back in index");
+    assert!(entry.staged);
+}
+
+#[test]
+fn undo_last_commit_rejects_stale_head_sha() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    fx.write_file("a.txt", "alpha\n");
+    fx.run_git(&["add", "a.txt"]);
+    fx.run_git(&["commit", "-q", "-m", "first"]);
+    fx.write_file("b.txt", "beta\n");
+    fx.run_git(&["add", "b.txt"]);
+    fx.run_git(&["commit", "-q", "-m", "second"]);
+
+    let err = operations::undo_last_commit(
+        &fx.registry,
+        &fx.repo_str(),
+        "0000000000000000000000000000000000000000",
+        &fx.workspace,
+    )
+    .expect_err("stale sha must be rejected");
+    assert!(matches!(err, GitError::CommandFailed { .. }));
+
+    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace)
+        .expect("log");
+    assert_eq!(entries.len(), 2, "history must be untouched");
+}
+
+#[test]
+fn undo_last_commit_rejects_initial_commit() {
+    if skip_if_no_git() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    fx.write_file("a.txt", "alpha\n");
+    fx.run_git(&["add", "a.txt"]);
+    fx.run_git(&["commit", "-q", "-m", "first"]);
+
+    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace)
+        .expect("log");
+    let head_sha = entries[0].sha.clone();
+
+    let err = operations::undo_last_commit(&fx.registry, &fx.repo_str(), &head_sha, &fx.workspace)
+        .expect_err("initial commit cannot be undone");
+    assert!(matches!(err, GitError::CommandFailed { .. }));
+
+    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace)
+        .expect("log");
+    assert_eq!(entries.len(), 1, "history must be untouched");
+}
