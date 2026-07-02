@@ -18,6 +18,11 @@ import {
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
+import {
+  clearLiveTerminalSelection,
+  isReleasedMoveDuringSelection,
+  isTerminalSelectionStart,
+} from "./stuckSelectionGuard";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -79,6 +84,8 @@ let adapter: SlotAdapter | null = null;
 let windowActive =
   typeof document === "undefined" || (!document.hidden && document.hasFocus());
 let windowActivityBound = false;
+let stuckSelectionGuardBound = false;
+let terminalSelectionDrag: { slot: Slot; leafId: number } | null = null;
 let cursorBlinkEnabled = false;
 
 function bindWindowActivityListeners(): void {
@@ -88,6 +95,60 @@ function bindWindowActivityListeners(): void {
   window.addEventListener("focus", sync);
   window.addEventListener("blur", sync);
   document.addEventListener("visibilitychange", sync);
+}
+
+function bindStuckSelectionGuard(): void {
+  if (stuckSelectionGuardBound || typeof window === "undefined") return;
+  stuckSelectionGuardBound = true;
+
+  const getTrackedSelectionDrag = (
+    target: EventTarget | null,
+  ): { slot: Slot; leafId: number } | null => {
+    if (!(target instanceof Node)) return null;
+    const slot =
+      slots.find(
+        (slot) => slot.currentLeafId !== null && slot.host.contains(target),
+      ) ?? null;
+    if (slot === null || slot.currentLeafId === null) return null;
+    return { slot, leafId: slot.currentLeafId };
+  };
+
+  const clearTrackedSelection = () => {
+    const drag = terminalSelectionDrag;
+    if (!drag) return;
+    terminalSelectionDrag = null;
+    clearLiveTerminalSelection(drag.slot, drag.leafId);
+  };
+
+  window.addEventListener(
+    "mousedown",
+    (event) => {
+      terminalSelectionDrag = isTerminalSelectionStart(event, event.target)
+        ? getTrackedSelectionDrag(event.target)
+        : null;
+    },
+    { capture: true },
+  );
+  window.addEventListener(
+    "mouseup",
+    (event) => {
+      if (event.button === 0) terminalSelectionDrag = null;
+    },
+    { capture: true },
+  );
+  window.addEventListener(
+    "mousemove",
+    (event) => {
+      if (isReleasedMoveDuringSelection(terminalSelectionDrag !== null, event)) {
+        clearTrackedSelection();
+      }
+    },
+    { capture: true },
+  );
+  window.addEventListener("blur", clearTrackedSelection);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) clearTrackedSelection();
+  });
 }
 
 function setWindowActive(active: boolean): void {
@@ -105,6 +166,7 @@ function setWindowActive(active: boolean): void {
 export function configureRendererPool(a: SlotAdapter): void {
   adapter = a;
   bindWindowActivityListeners();
+  bindStuckSelectionGuard();
 }
 
 export function forEachSlot(fn: (slot: Slot) => void): void {
