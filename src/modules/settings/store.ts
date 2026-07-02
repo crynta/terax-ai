@@ -415,8 +415,11 @@ export async function loadPreferences(): Promise<Preferences> {
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
     editorWordWrap:
       get<boolean>(KEY_EDITOR_WORD_WRAP) ?? DEFAULT_PREFERENCES.editorWordWrap,
-    diffViewMode:
-      get<DiffViewMode>(KEY_DIFF_VIEW_MODE) === "split" ? "split" : "inline",
+    diffViewMode: ((): DiffViewMode => {
+      const stored = get<string>(KEY_DIFF_VIEW_MODE);
+      if (stored === "inline" || stored === "split") return stored;
+      return DEFAULT_PREFERENCES.diffViewMode;
+    })(),
     showHidden:
       get<boolean>(KEY_SHOW_HIDDEN) ??
       get<boolean>(LEGACY_KEY_SHOW_HIDDEN_DIRS) ??

@@ -221,16 +221,13 @@ export function GeneralSection() {
         </SettingRow>
         <SettingRow
           title="Diff view"
-          description="How file diffs are laid out: inline in a single column, or side by side like VS Code."
+          description="How git diffs are laid out: inline in a single column, or side by side like VS Code."
         >
           <Select
             value={diffViewMode}
             onValueChange={(v) => void setDiffViewMode(v as DiffViewMode)}
           >
-            <SelectTrigger
-              value={diffViewMode}
-              className="h-8 w-36 text-[12px]"
-            >
+            <SelectTrigger className="h-8 w-36 text-[12px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
