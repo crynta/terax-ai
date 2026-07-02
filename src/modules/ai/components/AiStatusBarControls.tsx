@@ -170,9 +170,8 @@ export function AiStatusBarControls() {
         </Kbd>
       </Button>
       <IconBtn
-        title={miniOpen ? "Mini-window open" : "Open conversation"}
+        title={`${miniOpen ? "Close" : "Open"} AI chat window (${fmtShortcut("⇧", MOD_KEY, "I")})`}
         onClick={openMini}
-        disabled={miniOpen}
       >
         <HugeiconsIcon icon={Message01Icon} size={13} strokeWidth={1.75} />
       </IconBtn>
