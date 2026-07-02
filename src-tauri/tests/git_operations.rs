@@ -613,13 +613,23 @@ fn undo_last_commit_rejects_stale_head_sha() {
     fx.run_git(&["add", "b.txt"]);
     fx.run_git(&["commit", "-q", "-m", "second"]);
 
+    // A sha that exists and has a parent but is no longer HEAD: the atomic
+    // compare-and-swap must refuse to move the ref.
+    let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace)
+        .expect("log");
+    let stale_sha = entries[1].sha.clone();
+    let err =
+        operations::undo_last_commit(&fx.registry, &fx.repo_str(), &stale_sha, &fx.workspace)
+            .expect_err("stale sha must be rejected");
+    assert!(matches!(err, GitError::CommandFailed { .. }));
+
     let err = operations::undo_last_commit(
         &fx.registry,
         &fx.repo_str(),
-        "0000000000000000000000000000000000000000",
+        "not-a-sha",
         &fx.workspace,
     )
-    .expect_err("stale sha must be rejected");
+    .expect_err("malformed sha must be rejected");
     assert!(matches!(err, GitError::CommandFailed { .. }));
 
     let entries = operations::log(&fx.registry, &fx.repo_str(), 10, None, &fx.workspace)

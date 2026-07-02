@@ -179,6 +179,7 @@ export function CommitHistorySection({
     if (loadStatus !== "idle") return;
     const last = commitsRef.current[commitsRef.current.length - 1];
     if (!last) return;
+    const requestId = requestIdRef.current;
     inflightMoreRef.current = true;
     setLoadStatus("more");
     try {
@@ -186,6 +187,7 @@ export function CommitHistorySection({
         limit: PAGE_SIZE,
         beforeSha: last.sha,
       });
+      if (requestId !== requestIdRef.current) return;
       const seen = new Set(commitsRef.current.map((c) => c.sha));
       const merged = [...commitsRef.current];
       for (const e of entries) if (!seen.has(e.sha)) merged.push(e);
@@ -193,8 +195,9 @@ export function CommitHistorySection({
       if (entries.length < PAGE_SIZE) setEndReached(true);
       setLoadStatus("idle");
     } catch (err) {
-      setError(normalizeError(err));
-      setLoadStatus("error");
+      if (requestId !== requestIdRef.current) return;
+      toast.error(`Failed to load older commits: ${normalizeError(err)}`);
+      setLoadStatus("idle");
     } finally {
       inflightMoreRef.current = false;
     }
@@ -517,7 +520,7 @@ const CommitRow = memo(function CommitRow({
                 type="button"
                 aria-label="Undo last commit"
                 onClick={() => onRequestUndo(commit)}
-                className="absolute right-1 top-1/2 hidden -translate-y-1/2 cursor-pointer items-center justify-center rounded bg-card p-1 text-muted-foreground shadow-sm transition-colors hover:text-foreground group-hover:flex"
+                className="absolute right-1 top-1/2 flex -translate-y-1/2 cursor-pointer items-center justify-center rounded bg-card p-1 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/40 group-hover:opacity-100"
               >
                 <HugeiconsIcon
                   icon={ArrowTurnBackwardIcon}

@@ -445,38 +445,51 @@ pub fn undo_last_commit(
     let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
     ensure_git_available(&repo_root.workspace)?;
 
-    let head = git_stdout_line_opt(&repo_root.workspace, &repo_root.git_path, ["rev-parse", "HEAD"])?
-        .ok_or(GitError::CommandFailed {
-            context: "failed to resolve HEAD",
-            detail: String::new(),
-        })?;
-    if head != expected_head_sha {
+    if expected_head_sha.len() != 40
+        || !expected_head_sha.bytes().all(|b| b.is_ascii_hexdigit())
+    {
         return Err(GitError::command(
-            "git reset",
-            "HEAD changed since the commit list was loaded; refresh and try again",
+            "git update-ref",
+            "expected a full commit sha",
         ));
     }
 
-    let has_parent = git_stdout_line_opt(
+    // Derive the parent from the expected sha, not from HEAD, so a racing
+    // commit cannot redirect which commit gets undone.
+    let parent = git_stdout_line_opt(
         &repo_root.workspace,
         &repo_root.git_path,
-        ["rev-parse", "--verify", "--quiet", "HEAD~1"],
+        [
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{expected_head_sha}^"),
+        ],
     )?
-    .is_some();
-    if !has_parent {
-        return Err(GitError::command(
-            "git reset",
-            "cannot undo the initial commit",
-        ));
-    }
+    .ok_or_else(|| GitError::command("git update-ref", "cannot undo the initial commit"))?;
 
+    // A soft reset is just a ref move; update-ref with an old-value check makes
+    // it an atomic compare-and-swap, so HEAD moving after the commit list was
+    // loaded fails the update instead of discarding the wrong commit.
     let output = run_git(
         &repo_root.workspace,
         Some(&repo_root.git_path),
-        ["reset", "--soft", "HEAD~1"],
+        [
+            "update-ref",
+            "-m",
+            "reset: moving to HEAD~1 (undo last commit)",
+            "HEAD",
+            &parent,
+            expected_head_sha,
+        ],
         DEFAULT_TIMEOUT_SECS,
     )?;
-    ensure_success(&output, "git reset failed")?;
+    if output.exit_code != Some(0) {
+        return Err(GitError::command(
+            "git update-ref",
+            "HEAD changed since the commit list was loaded; refresh and try again",
+        ));
+    }
     Ok(())
 }
 
