@@ -4,7 +4,6 @@ mod session;
 pub(crate) mod shell_init;
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
@@ -93,11 +92,15 @@ pub async fn pty_open(
 }
 
 // Input is the latency-critical path: raw body + id header skips JSON
-// serialization of every keystroke on both sides of the IPC boundary.
+// serialization of every keystroke on both sides of the IPC boundary. Bytes
+// are handed to the session's writer thread via a channel, so arrival order
+// is preserved across a burst of keystrokes (the writer thread serializes the
+// actual write_all calls). The queue is byte-bounded: past WRITE_QUEUE_CAP we
+// return a backpressure error instead of letting a stuck PTY grow memory.
 #[tauri::command]
-pub fn pty_write(
-    state: tauri::State<PtyState>,
-    request: tauri::ipc::Request,
+pub async fn pty_write(
+    state: tauri::State<'_, PtyState>,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<(), String> {
     let id: u32 = request
         .headers()
@@ -108,6 +111,8 @@ pub fn pty_write(
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("pty_write: expected raw body".to_string());
     };
+    let bytes = bytes.clone();
+    let len = bytes.len();
     let session = state
         .sessions
         .read()
@@ -118,19 +123,22 @@ pub fn pty_write(
             log::warn!("pty_write: unknown id={id}");
             "no session".to_string()
         })?;
-    // Bind to a local so the MutexGuard temporary drops before `session` —
-    // see rustc note on tail-expression temporary drop order.
-    let result = session
-        .writer
-        .lock()
-        .unwrap()
-        .write_all(bytes)
-        .map_err(|e| {
-            // EPIPE is expected if the child already exited.
-            log::debug!("pty_write id={id} failed: {e}");
-            e.to_string()
-        });
-    result
+    // Reserve queue capacity first so two racing writers can't both sneak past
+    // the cap. Rolled back on send failure (writer thread died -> channel
+    // closed) so a dead session reports "no session" rather than backpressure.
+    let prev = session.queued_bytes.fetch_add(len, Ordering::Relaxed);
+    if prev + len > session::WRITE_QUEUE_CAP {
+        session.queued_bytes.fetch_sub(len, Ordering::Relaxed);
+        return Err("pty_write: input backlog full".to_string());
+    }
+    match session.write_tx.send(bytes) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            session.queued_bytes.fetch_sub(len, Ordering::Relaxed);
+            log::debug!("pty_write id={id}: writer channel closed");
+            Err("no session".to_string())
+        }
+    }
 }
 
 #[tauri::command]
