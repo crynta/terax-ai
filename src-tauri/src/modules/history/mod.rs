@@ -8,8 +8,9 @@ use parse::{
 };
 use serde::Serialize;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+use regex::Regex;
 
 struct Index {
     entries: Vec<HistEntry>,
@@ -38,7 +39,7 @@ pub struct HistoryEntry {
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
+        .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
 
@@ -171,35 +172,50 @@ fn ensure_with_config<'a>(
 ) -> std::sync::MutexGuard<'a, Option<Inner>> {
     let mut guard = state.inner.lock().unwrap();
     if guard.is_none() {
-        let shell_entries = read_histories();
-        let index = Index {
-            entries: build_index(shell_entries.clone()),
-            path_cmds: scan_path(),
-        };
-
         let path = history_db_path(db_path);
-        let db = match Db::open(&path) {
-            Ok(mut db_conn) => {
-                // On first launch, seed the DB from shell history.
-                if db_conn.is_empty().unwrap_or(true) && !shell_entries.is_empty() {
-                    if let Err(e) = db_conn.seed(&shell_entries) {
-                        log::warn!("[history] seed failed: {e}");
+        
+        let mut db_conn_opt = None;
+        let mut entries = Vec::new();
+
+        match Db::open(&path) {
+            Ok(db_conn) => {
+                let is_empty = db_conn.is_empty().unwrap_or(true);
+                if is_empty {
+                    let shell_entries = read_histories();
+                    if !shell_entries.is_empty() {
+                        if let Err(e) = db_conn.seed(&shell_entries) {
+                            log::warn!("[history] seed failed: {e}");
+                        }
                     }
                 }
                 if let Err(e) = db_conn.trim(max_entries) {
                     log::warn!("[history] initial trim failed: {e}");
                 }
-                Some(db_conn)
+                
+                match db_conn.load_all() {
+                    Ok(rows) => {
+                        entries = rows;
+                    }
+                    Err(e) => {
+                        log::error!("[history] failed to load entries from db: {e}");
+                    }
+                }
+                db_conn_opt = Some(db_conn);
             }
             Err(e) => {
                 log::error!("[history] could not open history db: {e}");
-                None
+                entries = read_histories();
             }
+        }
+
+        let index = Index {
+            entries: build_index(entries),
+            path_cmds: scan_path(),
         };
 
         *guard = Some(Inner {
             index: Some(index),
-            db,
+            db: db_conn_opt,
         });
     }
     guard
@@ -280,6 +296,41 @@ pub fn history_list_full(
     }
 }
 
+fn redact_command(cmd: &str) -> String {
+    static RE_PATTERNS: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+    let patterns = RE_PATTERNS.get_or_init(|| {
+        vec![
+            (Regex::new(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b").unwrap(), "<REDACTED:openai-key>"),
+            (Regex::new(r"\bsk-ant-[A-Za-z0-9_-]{20,}\b").unwrap(), "<REDACTED:anthropic-key>"),
+            (Regex::new(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b").unwrap(), "<REDACTED:aws-access-key>"),
+            (Regex::new(r"\bgh[opsur]_[A-Za-z0-9]{36,}\b").unwrap(), "<REDACTED:github-token>"),
+            (Regex::new(r"\bgithub_pat_[A-Za-z0-9_]{40,}\b").unwrap(), "<REDACTED:github-pat>"),
+            (Regex::new(r"\bAIza[0-9A-Za-z_-]{35}\b").unwrap(), "<REDACTED:google-api-key>"),
+            (Regex::new(r"\bxox[bpsare]-[A-Za-z0-9-]{10,}\b").unwrap(), "<REDACTED:slack-token>"),
+            (Regex::new(r"\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{24,}\b").unwrap(), "<REDACTED:stripe-key>"),
+            (Regex::new(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b").unwrap(), "<REDACTED:jwt>"),
+            (Regex::new(r"\bBearer\s+[A-Za-z0-9._-]{20,}").unwrap(), "<REDACTED:bearer>"),
+        ]
+    });
+
+    let mut out = cmd.to_string();
+    for (re, replacement) in patterns {
+        out = re.replace_all(&out, *replacement).into_owned();
+    }
+    
+    static RE_ENV: OnceLock<Regex> = OnceLock::new();
+    let re_env = RE_ENV.get_or_init(|| {
+        Regex::new(r"(?i)\b((?:[A-Z][A-Z0-9_]*)?(?:API[_-]?KEY|SECRET(?:[_-]?KEY)?|ACCESS[_-]?TOKEN|AUTH[_-]?TOKEN|PASSWORD|PASSWD|PRIVATE[_-]?KEY|CLIENT[_-]?SECRET)[A-Z0-9_]*)\s*[:=]\s*(['\"]?)([^\s'\"`;|&]+)\2").unwrap()
+    });
+    out = re_env.replace_all(&out, |caps: &regex::Captures| {
+        let name = &caps[1];
+        let q = &caps[2];
+        format!("{}={}<REDACTED>{}", name, q, q)
+    }).into_owned();
+
+    out
+}
+
 // Called on every accepted command so in-memory history stays hot without a
 // re-read. Only ever fed prompt-mode commands, never raw running-mode input,
 // so passwords typed into a running command never enter history.
@@ -296,6 +347,8 @@ pub fn history_record(
     if cmd.is_empty() {
         return;
     }
+    let cmd = redact_command(cmd);
+    
     let mut guard = ensure(&state, &app);
     let Some(inner) = guard.as_mut() else {
         return;
@@ -307,7 +360,7 @@ pub fn history_record(
 
     // Persist to disk first.
     if let Some(db) = &inner.db {
-        match db.insert(cmd, n, exit_code, sess) {
+        match db.insert(&cmd, n, exit_code, sess) {
             Ok(_) => {
                 if let Err(e) = db.trim(max) {
                     log::warn!("[history] trim failed: {e}");
@@ -325,7 +378,7 @@ pub fn history_record(
                 e.last = n;
             }
             None => idx.entries.push(HistEntry {
-                cmd: cmd.to_string(),
+                cmd: cmd.clone(),
                 count: 1,
                 last: n,
             }),

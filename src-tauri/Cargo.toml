@@ -48,7 +48,11 @@ tokio = { version = "1", default-features = false, features = ["rt"] }
 tempfile = "3"
 notify = "8.2.0"
 rusqlite = { version = "0.31", features = ["bundled"] }
+<<<<<<< HEAD
 which = "8.0.4"
+=======
+regex = "1"
+>>>>>>> 9a8a1d4 (feat(history): add backend redaction, use millisecond timestamps, and seed index from DB)
 
 [dev-dependencies]
 proptest = "1"
