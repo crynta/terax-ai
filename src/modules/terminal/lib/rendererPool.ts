@@ -286,12 +286,34 @@ function createSlot(): Slot {
       event.preventDefault();
       return false;
     }
+    if (isNativeCopy(event)) {
+      if (slot.term.hasSelection()) {
+        if (event.type === "keydown") {
+          const sel = slot.term.getSelection();
+          if (sel) void navigator.clipboard.writeText(sel).catch(() => {});
+        }
+        event.preventDefault();
+        return false;
+      }
+    }
     if (isTerminalPaste(event)) {
       if (event.type === "keydown") {
         const targetLeafId = slot.currentLeafId;
         void readTerminalClipboard().then((text) => {
           if (text && slot.currentLeafId === targetLeafId) slot.term.paste(text);
         });
+      }
+      event.preventDefault();
+      return false;
+    }
+    if (isNativePaste(event)) {
+      if (event.type === "keydown") {
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) slot.term.paste(text);
+          })
+          .catch(() => {});
       }
       event.preventDefault();
       return false;
@@ -1055,11 +1077,49 @@ function isTerminalCopy(e: KeyboardEvent): boolean {
   );
 }
 
+function isNativeCopy(e: KeyboardEvent): boolean {
+  if (IS_MAC) {
+    return (
+      e.metaKey &&
+      !e.ctrlKey &&
+      !e.shiftKey &&
+      !e.altKey &&
+      (e.code === "KeyC" || e.key === "c" || e.key === "C")
+    );
+  }
+  return (
+    e.ctrlKey &&
+    !e.shiftKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    (e.code === "KeyC" || e.key === "c" || e.key === "C")
+  );
+}
+
 function isTerminalPaste(e: KeyboardEvent): boolean {
   return (
     !IS_MAC &&
     e.ctrlKey &&
     e.shiftKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    (e.code === "KeyV" || e.key === "v" || e.key === "V")
+  );
+}
+
+function isNativePaste(e: KeyboardEvent): boolean {
+  if (IS_MAC) {
+    return (
+      e.metaKey &&
+      !e.ctrlKey &&
+      !e.shiftKey &&
+      !e.altKey &&
+      (e.code === "KeyV" || e.key === "v" || e.key === "V")
+    );
+  }
+  return (
+    e.ctrlKey &&
+    !e.shiftKey &&
     !e.altKey &&
     !e.metaKey &&
     (e.code === "KeyV" || e.key === "v" || e.key === "V")
