@@ -595,6 +595,9 @@ export default function App() {
   const explorerGitDecorations = usePreferencesStore(
     (s) => s.explorerGitDecorations,
   );
+  const sourceControlUndoCommit = usePreferencesStore(
+    (s) => s.sourceControlUndoCommit,
+  );
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -1137,6 +1140,7 @@ export default function App() {
                         onOpenFile={handleOpenFile}
                         onNavigateToPath={cdInNewTab}
                         onOpenCommitFile={openCommitFileDiffTab}
+                        showUndoCommit={sourceControlUndoCommit}
                       />
                     )}
                   </div>

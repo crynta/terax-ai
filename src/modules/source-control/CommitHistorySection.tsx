@@ -49,6 +49,7 @@ type Props = {
   refreshKey: unknown;
   collapsed: boolean;
   topCommitPushed: boolean;
+  showUndoCommit: boolean;
   onToggleCollapsed: () => void;
   onOpenCommitFile: (input: CommitFileDiffOpenInput) => void;
   onOpenGitGraph?: () => void;
@@ -112,6 +113,7 @@ export function CommitHistorySection({
   refreshKey,
   collapsed,
   topCommitPushed,
+  showUndoCommit,
   onToggleCollapsed,
   onOpenCommitFile,
   onOpenGitGraph,
@@ -397,7 +399,9 @@ export function CommitHistorySection({
                       : null
                   }
                   repoRoot={repoRoot}
-                  canUndo={index === 0 && commit.parents.length > 0}
+                  canUndo={
+                    showUndoCommit && index === 0 && commit.parents.length > 0
+                  }
                   onRequestUndo={setPendingUndo}
                   onToggle={toggleCommit}
                   onRetryFiles={fetchFiles}

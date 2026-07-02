@@ -112,6 +112,7 @@ type Props = {
     path: string;
     originalPath: string | null;
   }) => void;
+  showUndoCommit?: boolean;
 };
 
 const HISTORY_HEIGHT_STORAGE_KEY = "terax.sourceControl.history.height";
@@ -400,6 +401,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   onOpenFile,
   onNavigateToPath,
   onOpenCommitFile,
+  showUndoCommit = true,
 }: Props) {
   const scm = useSourceControlPanel(open, sourceControl, onOpenDiff);
   const refreshAnimationRef = useRef<number | null>(null);
@@ -1076,6 +1078,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 onOpenCommitFile={onOpenCommitFile ?? (() => {})}
                 onOpenGitGraph={onOpenGitGraph}
                 onDidUndoCommit={() => void scm.refresh()}
+                showUndoCommit={showUndoCommit}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
