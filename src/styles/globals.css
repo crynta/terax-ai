@@ -187,8 +187,21 @@ html[data-chrome="borderless"] #settings-root {
   height: 100%;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid var(--border);
+  box-shadow: inset 0 0 0 1px var(--border);
   background: var(--background);
+}
+html[data-chrome="borderless"] #settings-root {
+  border-radius: 8px;
+}
+html[data-chrome="borderless"][data-window-maximized="true"] .terax-bg-surface,
+html[data-chrome="borderless"][data-window-maximized="true"] #root,
+html[data-chrome="borderless"][data-window-maximized="true"] #settings-root {
+  border-radius: 0;
+}
+html[data-chrome="borderless"][data-window-maximized="true"] #root,
+html[data-chrome="borderless"][data-window-maximized="true"] #settings-root {
+  height: 100%;
+  box-shadow: none;
 }
 
 /*
