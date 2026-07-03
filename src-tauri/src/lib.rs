@@ -213,6 +213,7 @@ pub fn run() {
             fs::watch::fs_watch_add,
             fs::watch::fs_watch_remove,
             lsp::lsp_detect,
+            lsp::lsp_host_pid,
             lsp::lsp_resolve_root,
             lsp::lsp_spawn,
             lsp::lsp_send,
@@ -270,6 +271,15 @@ pub fn run() {
             history::history_record,
             history::history_list,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Servers exit on stdin EOF, but destructors are not guaranteed
+            // on process exit; kill explicitly.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<lsp::LspState>() {
+                    state.kill_all();
+                }
+            }
+        });
 }
