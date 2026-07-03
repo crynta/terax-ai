@@ -72,6 +72,38 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+type SearchOverviewMark = { id: string; top: number; active: boolean };
+
+const MAX_SEARCH_OVERVIEW_MARKS = 1000;
+
+function collectSearchOverviewMarks(
+  view: EditorView,
+  query: string,
+): SearchOverviewMark[] {
+  const needle = query.toLocaleLowerCase();
+  if (!needle) return [];
+  const doc = view.state.doc;
+  const haystack = doc.toString().toLocaleLowerCase();
+  const activeFrom = view.state.selection.main.from;
+  const activeTo = view.state.selection.main.to;
+  const marks: SearchOverviewMark[] = [];
+  let from = 0;
+  while (marks.length < MAX_SEARCH_OVERVIEW_MARKS) {
+    const index = haystack.indexOf(needle, from);
+    if (index < 0) break;
+    const to = index + needle.length;
+    const line = doc.lineAt(index).number;
+    const top = doc.lines <= 1 ? 0 : ((line - 1) / (doc.lines - 1)) * 100;
+    marks.push({
+      id: `${index}:${to}`,
+      top,
+      active: activeFrom === index && activeTo === to,
+    });
+    from = Math.max(to, index + 1);
+  }
+  return marks;
+}
+
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
   function EditorPane(props, ref) {
     const { path, overrideLanguage, onDirtyChange, onSaved, onClose } = props;
@@ -88,6 +120,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
     const languageRef = useRef<string | null>(null);
     const [langId, setLangId] = useState<string | null>(null);
+    const [searchOverviewMarks, setSearchOverviewMarks] = useState<
+      SearchOverviewMark[]
+    >([]);
+    const searchQueryRef = useRef("");
     const apiKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -182,6 +218,31 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     useEffect(() => {
       if (doc.status === "ready") applyPendingGoto();
     }, [doc.status, applyPendingGoto]);
+
+    const refreshSearchOverviewMarks = useCallback(() => {
+      const view = cmRef.current?.view;
+      if (!view || !searchQueryRef.current) {
+        setSearchOverviewMarks([]);
+        return;
+      }
+      setSearchOverviewMarks(
+        collectSearchOverviewMarks(view, searchQueryRef.current),
+      );
+    }, []);
+
+    const handleChange = useCallback(
+      (next: string) => {
+        onChange(next);
+        if (!searchQueryRef.current) return;
+        requestAnimationFrame(refreshSearchOverviewMarks);
+      },
+      [onChange, refreshSearchOverviewMarks],
+    );
+
+    useEffect(() => {
+      if (doc.status !== "ready") setSearchOverviewMarks([]);
+      else refreshSearchOverviewMarks();
+    }, [doc.status, refreshSearchOverviewMarks]);
 
     const extensions = useMemo(
       () => [
@@ -326,27 +387,39 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         setQuery: (q: string) => {
           const view = cmRef.current?.view;
           if (!view) return;
+          searchQueryRef.current = q;
           view.dispatch({
             effects: setSearchQuery.of(
               new SearchQuery({ search: q, caseSensitive: false }),
             ),
           });
-          if (q) findNext(view);
+          if (q) {
+            findNext(view);
+            setSearchOverviewMarks(collectSearchOverviewMarks(view, q));
+          } else {
+            setSearchOverviewMarks([]);
+          }
         },
         findNext: () => {
           const view = cmRef.current?.view;
-          if (view) findNext(view);
+          if (!view) return;
+          findNext(view);
+          refreshSearchOverviewMarks();
         },
         findPrevious: () => {
           const view = cmRef.current?.view;
-          if (view) findPrevious(view);
+          if (!view) return;
+          findPrevious(view);
+          refreshSearchOverviewMarks();
         },
         clearQuery: () => {
           const view = cmRef.current?.view;
           if (!view) return;
+          searchQueryRef.current = "";
           view.dispatch({
             effects: setSearchQuery.of(new SearchQuery({ search: "" })),
           });
+          setSearchOverviewMarks([]);
         },
         focus: () => {
           cmRef.current?.view?.focus();
@@ -373,7 +446,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           if (view) redo(view);
         },
       }),
-      [path, applyPendingGoto],
+      [path, applyPendingGoto, refreshSearchOverviewMarks],
     );
 
     if (doc.status === "loading") {
@@ -465,11 +538,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }
 
     return (
-      <div className="flex h-full min-h-0 flex-col zoom-exempt">
+      <div className="relative flex h-full min-h-0 flex-col zoom-exempt">
         <CodeMirror
           ref={cmRef}
           value={doc.content}
-          onChange={onChange}
+          onChange={handleChange}
           theme={themeExt}
           extensions={extensions}
           height="100%"
@@ -486,6 +559,24 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
             searchKeymap: true,
           }}
         />
+        {searchOverviewMarks.length > 0 && (
+          <div
+            className="pointer-events-none absolute top-2 right-0 bottom-2 z-10 w-2"
+            aria-hidden="true"
+          >
+            {searchOverviewMarks.map((mark) => (
+              <span
+                key={mark.id}
+                className={
+                  mark.active
+                    ? "absolute right-0 h-1.5 w-2 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.75)]"
+                    : "absolute right-0 h-1 w-1.5 rounded-full bg-amber-400/70"
+                }
+                style={{ top: `${mark.top}%` }}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
   },

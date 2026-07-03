@@ -21,15 +21,44 @@ import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { ThemesSection } from "./sections/ThemesSection";
 
-const TABS: { id: SettingsTab; label: string; icon: typeof Settings01Icon, component: () => JSX.Element }[] =
-  [
-    { id: "general", label: "General", icon: Settings01Icon, component: GeneralSection },
-    { id: "themes", label: "Themes", icon: PaintBoardIcon, component: ThemesSection },
-    { id: "shortcuts", label: "Shortcuts", icon: KeyboardIcon, component: ShortcutsSection },
-    { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
-    { id: "agents", label: "Agents", icon: UserMultiple02Icon, component: AgentsSection },
-    { id: "about", label: "About", icon: InformationCircleIcon, component: AboutSection },
-  ];
+const TABS: {
+  id: SettingsTab;
+  label: string;
+  icon: typeof Settings01Icon;
+  component: () => JSX.Element;
+}[] = [
+  {
+    id: "general",
+    label: "General",
+    icon: Settings01Icon,
+    component: GeneralSection,
+  },
+  {
+    id: "themes",
+    label: "Themes",
+    icon: PaintBoardIcon,
+    component: ThemesSection,
+  },
+  {
+    id: "shortcuts",
+    label: "Shortcuts",
+    icon: KeyboardIcon,
+    component: ShortcutsSection,
+  },
+  { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
+  {
+    id: "agents",
+    label: "Agents",
+    icon: UserMultiple02Icon,
+    component: AgentsSection,
+  },
+  {
+    id: "about",
+    label: "About",
+    icon: InformationCircleIcon,
+    component: AboutSection,
+  },
+];
 
 const VALID_TABS: SettingsTab[] = [
   "general",
@@ -53,7 +82,7 @@ function readInitialTab(): SettingsTab {
 export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const init = usePreferencesStore((s) => s.init);
-  const ActiveSection = TABS.find(t => t.id === active)?.component;
+  const ActiveSection = TABS.find((t) => t.id === active)?.component;
 
   useEffect(() => {
     void init();
@@ -82,8 +111,9 @@ export function SettingsApp() {
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
       <header
         data-tauri-drag-region
-        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
-          }`}
+        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
+          IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
+        }`}
       >
         <Tabs
           value={active}
@@ -108,7 +138,7 @@ export function SettingsApp() {
         {USE_CUSTOM_WINDOW_CONTROLS && <WindowControls closeOnly />}
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <main className="terax-scrollbar min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-7">
         <div className="mx-auto w-full max-w-160">
           {ActiveSection && <ActiveSection />}
         </div>
