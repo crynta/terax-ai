@@ -23,6 +23,7 @@ import {
   setDefaultWorkspaceEnv,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
+  setEditorFormatOnSave,
   setEditorWordWrap,
   setExplorerGitDecorations,
   setRestoreWindowState,
@@ -90,6 +91,7 @@ export function GeneralSection() {
   const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
+  const editorFormatOnSave = usePreferencesStore((s) => s.editorFormatOnSave);
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const explorerGitDecorations = usePreferencesStore(
     (s) => s.explorerGitDecorations,
@@ -232,6 +234,15 @@ export function GeneralSection() {
             onChange={(v) => void setEditorAutoSaveDelay(v)}
           />
         )}
+        <SettingRow
+          title="Format on save"
+          description="Format through the language server before an explicit save. Requires an active LSP for the file."
+        >
+          <Switch
+            checked={editorFormatOnSave}
+            onCheckedChange={(v) => void setEditorFormatOnSave(v)}
+          />
+        </SettingRow>
       </div>
 
       <LspServersGroup />

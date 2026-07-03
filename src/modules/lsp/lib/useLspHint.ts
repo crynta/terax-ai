@@ -4,12 +4,13 @@ import { useWorkspaceEnvStore } from "@/modules/workspace";
 import { useEffect, useState } from "react";
 import { detectBinary } from "./detect";
 import { type LspPreset, serverForLanguage } from "./presets";
-import { useLspRuntimeStore } from "./runtimeStore";
+import { type LspSessionStatus, useLspRuntimeStore } from "./runtimeStore";
 
 export type LspHint =
   | { kind: "enable"; preset: LspPreset }
   | { kind: "install"; preset: LspPreset }
-  | { kind: "active"; preset: LspPreset };
+  | { kind: "active"; preset: LspPreset; status: LspSessionStatus }
+  | { kind: "error"; preset: LspPreset; reason: string };
 
 export function useLspHint(filePath: string | null): LspHint | null {
   const [langId, setLangId] = useState<string | null>(null);
@@ -39,10 +40,13 @@ export function useLspHint(filePath: string | null): LspHint | null {
   const detected = useLspRuntimeStore((s) =>
     preset ? s.detected[preset.command] : undefined,
   );
-  const hasSession = useLspRuntimeStore((s) =>
+  const session = useLspRuntimeStore((s) =>
     preset
-      ? Object.values(s.sessions).some((x) => x.presetId === preset.id)
-      : false,
+      ? Object.values(s.sessions).find((x) => x.presetId === preset.id)
+      : undefined,
+  );
+  const failure = useLspRuntimeStore((s) =>
+    preset ? s.failed[preset.id] : undefined,
   );
 
   useEffect(() => {
@@ -54,7 +58,9 @@ export function useLspHint(filePath: string | null): LspHint | null {
   if (!preset || envKind !== "local") return null;
   if (activation === "dismissed") return null;
   if (activation === "enabled") {
-    return hasSession ? { kind: "active", preset } : null;
+    if (session) return { kind: "active", preset, status: session.status };
+    if (failure) return { kind: "error", preset, reason: failure };
+    return null;
   }
   if (detected === undefined) return null;
   return detected ? { kind: "enable", preset } : { kind: "install", preset };

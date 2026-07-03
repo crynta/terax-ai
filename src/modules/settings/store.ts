@@ -161,6 +161,7 @@ export type Preferences = {
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
+  editorFormatOnSave: boolean;
   lspActivation: Record<string, LspActivation>;
   lspCustomServers: LspCustomServer[];
 };
@@ -228,6 +229,7 @@ const KEY_DEFAULT_WORKSPACE_ENV = "defaultWorkspaceEnv";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
+const KEY_EDITOR_FORMAT_ON_SAVE = "editorFormatOnSave";
 const KEY_LSP_ACTIVATION = "lspActivation";
 const KEY_LSP_CUSTOM_SERVERS = "lspCustomServers";
 
@@ -296,6 +298,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
+  editorFormatOnSave: false,
   lspActivation: {},
   lspCustomServers: [],
 };
@@ -461,6 +464,9 @@ export async function loadPreferences(): Promise<Preferences> {
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
     ),
+    editorFormatOnSave:
+      get<boolean>(KEY_EDITOR_FORMAT_ON_SAVE) ??
+      DEFAULT_PREFERENCES.editorFormatOnSave,
     lspActivation:
       get<Record<string, LspActivation>>(KEY_LSP_ACTIVATION) ??
       DEFAULT_PREFERENCES.lspActivation,
@@ -727,6 +733,10 @@ export async function setEditorAutoSaveDelay(value: number): Promise<void> {
   await writePref(KEY_EDITOR_AUTO_SAVE_DELAY, clampAutoSaveDelay(value));
 }
 
+export async function setEditorFormatOnSave(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_FORMAT_ON_SAVE, value);
+}
+
 export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
@@ -801,6 +811,7 @@ export async function onPreferencesChange(
     [KEY_SHORTCUTS]: "shortcuts",
     [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
+    [KEY_EDITOR_FORMAT_ON_SAVE]: "editorFormatOnSave",
     [KEY_LSP_ACTIVATION]: "lspActivation",
     [KEY_LSP_CUSTOM_SERVERS]: "lspCustomServers",
   };
