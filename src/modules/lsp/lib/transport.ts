@@ -7,11 +7,13 @@ export type LspSpawnConfig = {
   args: string[];
   root: string;
   env?: Record<string, string>;
+  maxMemoryMb?: number;
 };
 
 export type LspExitInfo = {
   code: number | null;
   stderrTail: string;
+  reason: string | null;
 };
 
 type ServerRequest = {
@@ -60,6 +62,7 @@ export class TauriLspTransport implements Transport {
       args: config.args,
       env: config.env ?? null,
       root: config.root,
+      maxRssMb: config.maxMemoryMb ?? null,
       workspace: currentWorkspaceEnv(),
       onMessage,
       onExit,

@@ -163,6 +163,7 @@ export type Preferences = {
   editorAutoSaveDelay: number;
   historyMaxEntries: number;
   historyDbPath: string;
+  editorFormatOnSave: boolean;
   lspActivation: Record<string, LspActivation>;
   lspCustomServers: LspCustomServer[];
 };
@@ -232,6 +233,7 @@ const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
 const KEY_HISTORY_MAX_ENTRIES = "historyMaxEntries";
 const KEY_HISTORY_DB_PATH = "historyDbPath";
+const KEY_EDITOR_FORMAT_ON_SAVE = "editorFormatOnSave";
 const KEY_LSP_ACTIVATION = "lspActivation";
 const KEY_LSP_CUSTOM_SERVERS = "lspCustomServers";
 
@@ -302,6 +304,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   editorAutoSaveDelay: 1000,
   historyMaxEntries: 50_000,
   historyDbPath: "",
+  editorFormatOnSave: false,
   lspActivation: {},
   lspCustomServers: [],
 };
@@ -473,6 +476,9 @@ export async function loadPreferences(): Promise<Preferences> {
     historyDbPath:
       get<string>(KEY_HISTORY_DB_PATH) ??
       DEFAULT_PREFERENCES.historyDbPath,
+    editorFormatOnSave:
+      get<boolean>(KEY_EDITOR_FORMAT_ON_SAVE) ??
+      DEFAULT_PREFERENCES.editorFormatOnSave,
     lspActivation:
       get<Record<string, LspActivation>>(KEY_LSP_ACTIVATION) ??
       DEFAULT_PREFERENCES.lspActivation,
@@ -739,6 +745,10 @@ export async function setEditorAutoSaveDelay(value: number): Promise<void> {
   await writePref(KEY_EDITOR_AUTO_SAVE_DELAY, clampAutoSaveDelay(value));
 }
 
+export async function setEditorFormatOnSave(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_FORMAT_ON_SAVE, value);
+}
+
 export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
@@ -822,6 +832,7 @@ export async function onPreferencesChange(
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
     [KEY_HISTORY_MAX_ENTRIES]: "historyMaxEntries",
     [KEY_HISTORY_DB_PATH]: "historyDbPath",
+    [KEY_EDITOR_FORMAT_ON_SAVE]: "editorFormatOnSave",
     [KEY_LSP_ACTIVATION]: "lspActivation",
     [KEY_LSP_CUSTOM_SERVERS]: "lspCustomServers",
   };

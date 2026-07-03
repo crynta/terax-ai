@@ -8,6 +8,9 @@ export type LspPreset = {
   /** languageResolver id -> LSP languageId */
   languages: Record<string, string>;
   rootMarkers: string[];
+  initializationOptions?: unknown;
+  env?: Record<string, string>;
+  maxMemoryMb?: number;
   /** Absent for user-defined servers. */
   install?: { command: string; docsUrl: string };
 };
@@ -25,6 +28,7 @@ export const LSP_PRESETS: LspPreset[] = [
       jsx: "javascriptreact",
     },
     rootMarkers: ["tsconfig.json", "jsconfig.json", "package.json"],
+    initializationOptions: { maxTsServerMemory: 3072 },
     install: {
       command: "npm install -g typescript-language-server typescript",
       docsUrl:
@@ -38,6 +42,20 @@ export const LSP_PRESETS: LspPreset[] = [
     args: [],
     languages: { rs: "rust" },
     rootMarkers: ["Cargo.toml"],
+    // Measured: default profile settles at ~3 GB resident, this one at ~1 GB,
+    // trading analysis inside proc macros and cargo-check diagnostics.
+    initializationOptions: {
+      cachePriming: { enable: false },
+      lru: { capacity: 32 },
+      checkOnSave: false,
+      procMacro: { enable: false },
+      cargo: { buildScripts: { enable: false } },
+      diagnostics: {
+        disabled: ["unresolved-proc-macro", "unresolved-macro-call"],
+      },
+    },
+    env: { CARGO_BUILD_JOBS: "2" },
+    maxMemoryMb: 3072,
     install: {
       command: "rustup component add rust-analyzer",
       docsUrl: "https://rust-analyzer.github.io/book/installation.html",

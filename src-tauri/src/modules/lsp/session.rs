@@ -14,12 +14,18 @@ use super::framing::{encode_frame, FrameDecoder};
 const READ_BUF: usize = 32 * 1024;
 const STDERR_LINE_CAP: usize = 512;
 const STDERR_TAIL_LINES: usize = 8;
+const MEM_POLL_INTERVAL: Duration = Duration::from_secs(30);
+// Workspace loading transiently peaks far above steady state; only police
+// steady state.
+const MEM_STARTUP_GRACE: Duration = Duration::from_secs(120);
+const DEFAULT_MAX_RSS_MB: u64 = 4096;
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LspExit {
     pub code: Option<i32>,
     pub stderr_tail: String,
+    pub reason: Option<String>,
 }
 
 pub struct LspSession {
@@ -40,8 +46,15 @@ impl LspSession {
             .map_err(|e| format!("lsp write failed: {e}"))
     }
 
+    // Servers fork helpers (cargo check, rustc, proc-macro hosts); killing
+    // only the leader leaves them burning CPU. Unix: signal the process
+    // group. Windows: the Job Object covers the tree.
     pub fn kill(&self) {
         *self.stdin.lock().unwrap() = None;
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
+        }
         let _ = self.child.kill();
     }
 }
@@ -60,6 +73,7 @@ pub fn spawn(
     args: &[String],
     extra_env: &std::collections::HashMap<String, String>,
     root: &std::path::Path,
+    max_rss_mb: Option<u64>,
     on_message: Channel<Response>,
     on_exit: Channel<LspExit>,
 ) -> Result<Arc<LspSession>, String> {
@@ -72,6 +86,14 @@ pub fn spawn(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     crate::modules::proc::hide_console(&mut cmd);
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        cmd.pre_exec(|| {
+            libc::setpgid(0, 0);
+            Ok(())
+        });
+    }
 
     let child = Arc::new(
         SharedChild::spawn(&mut cmd)
@@ -182,6 +204,46 @@ pub fn spawn(
         })
         .map_err(|e| e.to_string())?;
 
+    let kill_reason: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    {
+        let cap_mb = max_rss_mb.unwrap_or(DEFAULT_MAX_RSS_MB);
+        let pid = child.id();
+        let session_w = session.clone();
+        let exited_m = exited.clone();
+        let reason_w = kill_reason.clone();
+        thread::Builder::new()
+            .name(format!("terax-lsp-memwatch-{id}"))
+            .spawn(move || {
+                let grace_deadline = Instant::now() + MEM_STARTUP_GRACE;
+                while Instant::now() < grace_deadline {
+                    if exited_m.load(Ordering::Acquire) {
+                        return;
+                    }
+                    thread::sleep(Duration::from_secs(1));
+                }
+                loop {
+                    if exited_m.load(Ordering::Acquire) {
+                        return;
+                    }
+                    if let Some(rss) = super::rss::rss_bytes(pid) {
+                        let rss_mb = rss / (1024 * 1024);
+                        if rss_mb > cap_mb {
+                            log::warn!(
+                                "lsp id={id} rss {rss_mb} MB over budget {cap_mb} MB; killing"
+                            );
+                            *reason_w.lock().unwrap() = Some(format!(
+                                "Killed after exceeding the {cap_mb} MB memory budget ({rss_mb} MB resident)."
+                            ));
+                            session_w.kill();
+                            return;
+                        }
+                    }
+                    thread::sleep(MEM_POLL_INTERVAL);
+                }
+            })
+            .map_err(|e| e.to_string())?;
+    }
+
     let child_waiter = child;
     let exited_w = exited;
     thread::Builder::new()
@@ -209,6 +271,7 @@ pub fn spawn(
             let exit = LspExit {
                 code,
                 stderr_tail: tail.join("\n"),
+                reason: kill_reason.lock().unwrap().take(),
             };
             if on_exit.send(exit).is_err() {
                 log::debug!("lsp id={id} exit send failed (channel closed)");
@@ -248,6 +311,48 @@ mod tests {
                 break;
             }
             assert!(Instant::now() < deadline, "child alive 2s after drop");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn kill_takes_down_process_group() {
+        let mut cmd = Command::new("/bin/sh");
+        cmd.args(["-c", "sleep 30 & echo $!; wait"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped());
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
+        let child = Arc::new(SharedChild::spawn(&mut cmd).expect("spawn"));
+        let stdin = child.take_stdin();
+        let mut stdout = child.take_stdout().expect("stdout");
+
+        let mut buf = [0u8; 32];
+        let n = stdout.read(&mut buf).expect("read grandchild pid");
+        let grandchild: i32 = String::from_utf8_lossy(&buf[..n])
+            .trim()
+            .parse()
+            .expect("pid");
+
+        let session = dummy_session(child.clone(), stdin);
+        session.kill();
+        let _ = child.wait();
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let alive = unsafe { libc::kill(grandchild, 0) } == 0;
+            if !alive {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "grandchild survived group kill",
+            );
             thread::sleep(Duration::from_millis(20));
         }
     }

@@ -7,6 +7,8 @@ import { setLspActivation } from "@/modules/settings/store";
 import {
   Cancel01Icon,
   Copy01Icon,
+  Loading03Icon,
+  RefreshIcon,
   SourceCodeIcon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
@@ -15,6 +17,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useState } from "react";
 import { redetectBinary } from "../lib/detect";
 import type { LspPreset } from "../lib/presets";
+import { restartPresetSessions } from "../lib/sessionManager";
 import { useLspHint } from "../lib/useLspHint";
 
 type Props = {
@@ -22,7 +25,7 @@ type Props = {
 };
 
 const PILL_CLASS =
-  "flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full bg-accent/70 px-2 text-[10.5px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground";
+  "terax-pill-in flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full bg-accent/70 px-2 text-[10.5px] font-medium text-muted-foreground transition-colors duration-200 hover:bg-accent hover:text-foreground";
 
 export function LspStatusPill({ filePath }: Props) {
   const hint = useLspHint(filePath);
@@ -30,7 +33,7 @@ export function LspStatusPill({ filePath }: Props) {
 
   if (hint.kind === "enable") {
     return (
-      <span className={PILL_CLASS}>
+      <span key={`enable-${hint.preset.id}`} className={PILL_CLASS}>
         <button
           type="button"
           className="flex items-center gap-1"
@@ -46,10 +49,68 @@ export function LspStatusPill({ filePath }: Props) {
   }
 
   if (hint.kind === "install") {
-    return <InstallPill preset={hint.preset} />;
+    return (
+      <InstallPill key={`install-${hint.preset.id}`} preset={hint.preset} />
+    );
   }
 
-  return <ActivePill preset={hint.preset} />;
+  if (hint.kind === "error") {
+    return (
+      <ErrorPill
+        key={`error-${hint.preset.id}`}
+        preset={hint.preset}
+        reason={hint.reason}
+      />
+    );
+  }
+
+  return (
+    <ActivePill
+      key={`active-${hint.preset.id}`}
+      preset={hint.preset}
+      starting={hint.status === "starting"}
+    />
+  );
+}
+
+function ErrorPill({ preset, reason }: { preset: LspPreset; reason: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={PILL_CLASS}
+          title="Language server stopped"
+        >
+          <span className="size-1.5 rounded-full bg-destructive" />
+          <span>{preset.name} LSP</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-72 p-3 text-xs">
+        <div className="mb-1 font-medium text-foreground">
+          {preset.name} language server stopped
+        </div>
+        <p className="mb-2 text-muted-foreground">{reason}</p>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={() => void restartPresetSessions(preset.id)}
+          >
+            <HugeiconsIcon icon={RefreshIcon} size={11} strokeWidth={1.9} />
+            Restart
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={() => void setLspActivation(preset.id, "dismissed")}
+          >
+            Disable
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function DismissButton({ preset }: { preset: LspPreset }) {
@@ -148,16 +209,33 @@ function InstallPill({ preset }: { preset: LspPreset }) {
   );
 }
 
-function ActivePill({ preset }: { preset: LspPreset }) {
+function ActivePill({
+  preset,
+  starting,
+}: {
+  preset: LspPreset;
+  starting: boolean;
+}) {
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
           className={PILL_CLASS}
-          title="Language server active"
+          title={
+            starting ? "Language server starting" : "Language server active"
+          }
         >
-          <span className="size-1.5 rounded-full bg-emerald-500" />
+          {starting ? (
+            <HugeiconsIcon
+              icon={Loading03Icon}
+              size={11}
+              strokeWidth={2}
+              className="animate-spin"
+            />
+          ) : (
+            <span className="size-1.5 rounded-full bg-emerald-500" />
+          )}
           <span>{preset.name} LSP</span>
         </button>
       </PopoverTrigger>
@@ -166,16 +244,26 @@ function ActivePill({ preset }: { preset: LspPreset }) {
           {preset.name} language server
         </div>
         <p className="mb-2 text-muted-foreground">
-          <code className="text-foreground">{preset.command}</code> is running
-          for this workspace.
+          <code className="text-foreground">{preset.command}</code>{" "}
+          {starting ? "is starting" : "is running"} for this workspace.
         </p>
-        <button
-          type="button"
-          className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={() => void setLspActivation(preset.id, "dismissed")}
-        >
-          Disable
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={() => void restartPresetSessions(preset.id)}
+          >
+            <HugeiconsIcon icon={RefreshIcon} size={11} strokeWidth={1.9} />
+            Restart
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            onClick={() => void setLspActivation(preset.id, "dismissed")}
+          >
+            Disable
+          </button>
+        </div>
       </PopoverContent>
     </Popover>
   );

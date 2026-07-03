@@ -1,19 +1,23 @@
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import type { Extension } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { TeraxLspClient } from "./client";
 import { detectBinary } from "./detect";
+import { getLspNavigator } from "./navigator";
 import { type LspPreset, serverForLanguage } from "./presets";
 import { useLspRuntimeStore } from "./runtimeStore";
 import type { TauriLspTransport } from "./transport";
-import { pathToFileUri } from "./uri";
+import { fileUriToPath, pathToFileUri } from "./uri";
 
 const IDLE_SHUTDOWN_MS = 3 * 60 * 1000;
 const CRASH_WINDOW_MS = 5 * 60 * 1000;
 const MAX_CRASHES = 3;
 const SHUTDOWN_TIMEOUT_MS = 2000;
+const MAX_SESSIONS_PER_PRESET = 4;
+const CRASH_COOLDOWN_MS = [2_000, 10_000, 30_000];
 
 type Managed = {
   key: string;
@@ -34,12 +38,6 @@ export type LspDocHandle = {
 const sessions = new Map<string, Managed>();
 const creating = new Map<string, Promise<Managed | null>>();
 const crashTimes = new Map<string, number[]>();
-
-function dirname(path: string): string {
-  const segs = path.split(/[\\/]/);
-  segs.pop();
-  return segs.join("/") || "/";
-}
 
 function basename(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -71,13 +69,37 @@ export async function acquireDocExtension(
   if (prefs.lspActivation[preset.id] !== "enabled") return null;
   if (!(await detectBinary(preset.command))) return null;
 
-  const root =
-    (await invoke<string | null>("lsp_resolve_root", {
-      path,
-      markers: preset.rootMarkers,
-    }).catch(() => null)) ?? dirname(path);
+  // No project root means no session: a per-directory fallback multiplied
+  // servers per open file and burned gigabytes.
+  const markers = preset.rootMarkers.length > 0 ? preset.rootMarkers : [".git"];
+  const root = await invoke<string | null>("lsp_resolve_root", {
+    path,
+    markers,
+  }).catch(() => null);
+  if (!root) return null;
   const key = `${preset.id}\u0000${root}`;
   if (crashedOut(key)) return null;
+  if (
+    !sessions.has(key) &&
+    [...sessions.values()].filter((m) => m.preset.id === preset.id).length >=
+      MAX_SESSIONS_PER_PRESET
+  ) {
+    console.warn(
+      `[lsp] session cap reached for ${preset.id}, skipping ${root}`,
+    );
+    return null;
+  }
+
+  // A heavy server idling for a workspace with no open docs is wasted
+  // memory the moment another workspace needs one; evict it now instead
+  // of waiting out the grace period.
+  if (!sessions.has(key)) {
+    for (const m of sessions.values()) {
+      if (m.preset.id === preset.id && m.refs.size === 0 && !m.closing) {
+        void closeSession(m);
+      }
+    }
+  }
 
   const managed =
     sessions.get(key) ?? (await getOrCreateSession(key, preset, root));
@@ -86,18 +108,28 @@ export async function acquireDocExtension(
   const uri = pathToFileUri(path);
   const languageId = preset.languages[langId] ?? langId;
   const mod = await import("./client");
-  const extension = mod.languageServerWithTransport({
-    client: managed.client,
-    transport: managed.transport,
-    rootUri: pathToFileUri(managed.root),
-    workspaceFolders: [
-      { uri: pathToFileUri(managed.root), name: basename(managed.root) },
-    ],
-    documentUri: uri,
-    languageId,
-    allowHTMLContent: false,
-    synchronizationMethod: mod.SynchronizationMethod.Incremental,
-  }) as Extension;
+  const extension: Extension = [
+    mod.lspInteractions({
+      client: managed.client,
+      documentUri: uri,
+      onExternal: (extUri, line) => {
+        const target = fileUriToPath(extUri);
+        if (target) getLspNavigator()?.openFile(target, line);
+      },
+    }),
+    mod.languageServerWithTransport({
+      client: managed.client,
+      transport: managed.transport,
+      rootUri: pathToFileUri(managed.root),
+      workspaceFolders: [
+        { uri: pathToFileUri(managed.root), name: basename(managed.root) },
+      ],
+      documentUri: uri,
+      languageId,
+      allowHTMLContent: false,
+      synchronizationMethod: mod.SynchronizationMethod.Incremental,
+    }) as Extension,
+  ];
 
   addRef(managed, uri);
   let released = false;
@@ -142,9 +174,21 @@ async function createSession(
     import("./client"),
   ]);
 
+  if (TeraxLspClient.hostPid === null) {
+    TeraxLspClient.hostPid = await invoke<number>("lsp_host_pid").catch(
+      () => null,
+    );
+  }
+
   const transport = new TauriLspTransport();
   try {
-    await transport.start({ command: preset.command, args: preset.args, root });
+    await transport.start({
+      command: preset.command,
+      args: preset.args,
+      root,
+      env: preset.env,
+      maxMemoryMb: preset.maxMemoryMb,
+    });
   } catch (e) {
     recordCrash(key);
     store.removeSession(key, preset.id);
@@ -161,6 +205,7 @@ async function createSession(
     workspaceFolders: [{ uri: rootUri, name: basename(root) }],
     documentUri: rootUri,
     languageId: "",
+    initializationOptions: preset.initializationOptions,
     onClose: () => handleServerExit(key),
     onError: (e) => console.error(`[lsp:${preset.id}]`, e),
   });
@@ -185,9 +230,14 @@ async function createSession(
 
   void client.initializePromise.then(() => {
     if (sessions.get(key) === managed) {
-      useLspRuntimeStore
-        .getState()
-        .upsertSession({ key, presetId: preset.id, root, status: "running" });
+      const runtime = useLspRuntimeStore.getState();
+      runtime.clearFailed(preset.id);
+      runtime.upsertSession({
+        key,
+        presetId: preset.id,
+        root,
+        status: "running",
+      });
     }
   });
 
@@ -202,17 +252,48 @@ function handleServerExit(key: string): void {
   recordCrash(key);
   sessions.delete(key);
   managed.client.close();
-  useLspRuntimeStore.getState().removeSession(key, managed.preset.id);
-  const tail = managed.transport.exitInfo?.stderrTail;
+  useLspRuntimeStore.getState().removeSessionQuiet(key);
+  const info = managed.transport.exitInfo;
+  // Budget kills don't respawn: reloading would repay the startup peak
+  // that got the server killed. Restart from the pill is explicit.
+  if (info?.reason) {
+    crashTimes.set(
+      key,
+      Array.from({ length: MAX_CRASHES }, () => Date.now()),
+    );
+    useLspRuntimeStore.getState().setFailed(managed.preset.id, info.reason);
+    toast.error(`${managed.preset.name} language server stopped`, {
+      description: info.reason,
+    });
+    return;
+  }
+  const tail = info?.stderrTail;
   if (crashedOut(key)) {
+    useLspRuntimeStore
+      .getState()
+      .setFailed(
+        managed.preset.id,
+        tail ? tail.slice(-300) : "The server kept crashing.",
+      );
     toast.error(`${managed.preset.name} language server keeps crashing`, {
       description: tail ? tail.slice(-300) : "Giving up for this workspace.",
     });
-  } else if (tail) {
+    return;
+  }
+  if (tail) {
     toast.error(`${managed.preset.name} language server exited`, {
       description: tail.slice(-300),
     });
   }
+  // Delay the re-acquire trigger so an OOM-killed server doesn't respawn
+  // into an instant second memory spike.
+  const crashes = crashTimes.get(key)?.length ?? 1;
+  const delay =
+    CRASH_COOLDOWN_MS[Math.min(crashes - 1, CRASH_COOLDOWN_MS.length - 1)];
+  setTimeout(
+    () => useLspRuntimeStore.getState().bumpGeneration(managed.preset.id),
+    delay,
+  );
 }
 
 function addRef(managed: Managed, uri: string): void {
@@ -269,6 +350,21 @@ export async function stopPresetSessions(presetId: string): Promise<void> {
   for (const key of crashTimes.keys()) {
     if (key.startsWith(`${presetId}\u0000`)) crashTimes.delete(key);
   }
+}
+
+export async function lspFormatDocument(view: EditorView): Promise<void> {
+  if (sessions.size === 0) return;
+  const { formatDocumentAndWait } = await import("./client");
+  await formatDocumentAndWait(view);
+}
+
+// Open docs re-acquire automatically via the generation bump, so a stop
+// while still enabled is a restart.
+export async function restartPresetSessions(presetId: string): Promise<void> {
+  await stopPresetSessions(presetId);
+  const store = useLspRuntimeStore.getState();
+  store.clearFailed(presetId);
+  store.bumpGeneration(presetId);
 }
 
 // Disabling can happen in the Settings window; sessions live here. React to
