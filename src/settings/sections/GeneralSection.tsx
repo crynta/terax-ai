@@ -1,4 +1,3 @@
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -21,10 +20,6 @@ import {
   setAgentNotifications,
   setAutostart,
   setDefaultWorkspaceEnv,
-  setEditorAutoSave,
-  setEditorAutoSaveDelay,
-  setEditorFormatOnSave,
-  setEditorWordWrap,
   setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
@@ -36,7 +31,6 @@ import {
   setTerminalScrollback,
   setTerminalShell,
   setTerminalWebglEnabled,
-  setVimMode,
   setZoomLevel,
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
@@ -51,7 +45,6 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useState } from "react";
-import { LspServersGroup } from "../components/LspServersGroup";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 
@@ -78,20 +71,12 @@ const SHELL_AUTO = "auto";
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const ZOOM_STEP = 0.05;
-const AUTO_SAVE_STEP = 100;
-const AUTO_SAVE_MIN = 100;
-const AUTO_SAVE_MAX = 60000;
 
 export function GeneralSection() {
   const { mode, setMode } = useTheme();
 
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
-  const vimMode = usePreferencesStore((s) => s.vimMode);
-  const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
-  const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
-  const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
-  const editorFormatOnSave = usePreferencesStore((s) => s.editorFormatOnSave);
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const explorerGitDecorations = usePreferencesStore(
     (s) => s.explorerGitDecorations,
@@ -150,7 +135,10 @@ export function GeneralSection() {
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionHeader title="General" description="Mode, editor, and startup." />
+      <SectionHeader
+        title="General"
+        description="Mode, terminal, and startup."
+      />
 
       <div className="flex flex-col gap-2">
         <Label>Appearance</Label>
@@ -198,54 +186,6 @@ export function GeneralSection() {
           />
         </div>
       </div>
-
-      <div className="flex flex-col gap-2">
-        <Label>Editor</Label>
-        <SettingRow
-          title="Vim mode"
-          description="Enable Vim keybindings in the code editor."
-        >
-          <Switch
-            checked={vimMode}
-            onCheckedChange={(v) => void setVimMode(v)}
-          />
-        </SettingRow>
-        <SettingRow
-          title="Word wrap"
-          description="Wrap long lines instead of scrolling horizontally."
-        >
-          <Switch
-            checked={editorWordWrap}
-            onCheckedChange={(v) => void setEditorWordWrap(v)}
-          />
-        </SettingRow>
-        <SettingRow
-          title="Auto save"
-          description="Automatically save files after a delay when changes are detected."
-        >
-          <Switch
-            checked={editorAutoSave}
-            onCheckedChange={(v) => void setEditorAutoSave(v)}
-          />
-        </SettingRow>
-        {editorAutoSave && (
-          <AutoSaveDelayInput
-            value={editorAutoSaveDelay}
-            onChange={(v) => void setEditorAutoSaveDelay(v)}
-          />
-        )}
-        <SettingRow
-          title="Format on save"
-          description="Format through the language server before an explicit save. Requires an active LSP for the file."
-        >
-          <Switch
-            checked={editorFormatOnSave}
-            onCheckedChange={(v) => void setEditorFormatOnSave(v)}
-          />
-        </SettingRow>
-      </div>
-
-      <LspServersGroup />
 
       <div className="flex flex-col gap-2">
         <Label>Explorer</Label>
@@ -572,60 +512,6 @@ function FontFamilyInput({
         }}
         className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
       />
-    </SettingRow>
-  );
-}
-
-function AutoSaveDelayInput({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  const [draft, setDraft] = useState(String(value));
-
-  useEffect(() => {
-    setDraft(String(value));
-  }, [value]);
-
-  const commit = () => {
-    const n = Number(draft);
-    if (!Number.isFinite(n)) {
-      setDraft(String(value));
-      return;
-    }
-    const clamped = Math.min(
-      AUTO_SAVE_MAX,
-      Math.max(AUTO_SAVE_MIN, Math.round(n)),
-    );
-    setDraft(String(clamped));
-    if (clamped !== value) onChange(clamped);
-  };
-
-  return (
-    <SettingRow
-      title="Auto save delay"
-      description="Delay before unsaved changes are saved automatically."
-    >
-      <div className="flex items-center gap-2">
-        <Input
-          type="number"
-          min={AUTO_SAVE_MIN}
-          max={AUTO_SAVE_MAX}
-          step={AUTO_SAVE_STEP}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.currentTarget.blur();
-            }
-          }}
-          className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-        />
-        <span className="text-[11px] text-muted-foreground">ms</span>
-      </div>
     </SettingRow>
   );
 }

@@ -92,7 +92,7 @@ function ServerRow({
       <div className="flex items-center gap-1.5">
         <button
           type="button"
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="cursor-pointer rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={() => void redetectBinary(server.command)}
           title="Detect again"
         >
@@ -101,7 +101,7 @@ function ServerRow({
         {custom ? (
           <button
             type="button"
-            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
+            className="cursor-pointer rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
             onClick={() => {
               void setLspActivation(server.id, null);
               void setLspCustomServers(
