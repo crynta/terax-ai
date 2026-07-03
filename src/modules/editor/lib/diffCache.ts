@@ -1,7 +1,4 @@
-import {
-  native,
-  type GitDiffContentResult,
-} from "@/modules/ai/lib/native";
+import { type GitDiffContentResult, native } from "@/modules/ai/lib/native";
 import { currentWorkspaceScopeKey } from "@/modules/workspace";
 
 const DIFF_CACHE_LIMIT = 6;

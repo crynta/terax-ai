@@ -1,46 +1,86 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import {
+  BoxIcon,
+  BracketsIcon,
+  CodeIcon,
+  File01Icon,
+  FlashIcon,
+  Folder01Icon,
+  FunctionIcon,
+  HashtagIcon,
+  Key01Icon,
+  LeftToRightListBulletIcon,
+  MathIcon,
+  PackageIcon,
+  PuzzleIcon,
+  TextFontIcon,
+  AbsoluteIcon,
+} from "@hugeicons/core-free-icons";
 
 type IconGroup = "fn" | "val" | "type" | "iface" | "misc";
 type ThemeSpec = Parameters<typeof EditorView.theme>[0];
+type IconDef = readonly (readonly [string, Record<string, string | number>])[];
 
-const ICONS: [kind: string, glyph: string, group: IconGroup][] = [
-  ["function", "ƒ", "fn"],
-  ["method", "ƒ", "fn"],
-  ["constructor", "ƒ", "fn"],
-  ["variable", "x", "val"],
-  ["property", "p", "val"],
-  ["field", "f", "val"],
-  ["class", "C", "type"],
-  ["struct", "S", "type"],
-  ["enum", "E", "type"],
-  ["enummember", "e", "type"],
-  ["event", "e", "type"],
-  ["interface", "I", "iface"],
-  ["type", "T", "iface"],
-  ["typeparameter", "T", "iface"],
-  ["namespace", "N", "iface"],
-  ["module", "M", "iface"],
-  ["keyword", "k", "misc"],
-  ["constant", "c", "misc"],
-  ["snippet", "s", "misc"],
-  ["text", "t", "misc"],
-  ["unit", "u", "misc"],
-  ["value", "=", "misc"],
-  ["operator", "±", "misc"],
-  ["reference", "r", "misc"],
-  ["file", "□", "misc"],
-  ["folder", "▸", "misc"],
-  ["color", "●", "misc"],
+const SVG_ATTR: Record<string, string> = {
+  strokeWidth: "stroke-width",
+  strokeLinecap: "stroke-linecap",
+  strokeLinejoin: "stroke-linejoin",
+  fillRule: "fill-rule",
+  clipRule: "clip-rule",
+};
+
+function iconMask(icon: IconDef): string {
+  const body = icon
+    .map(([tag, attrs]) => {
+      const a = Object.entries(attrs)
+        .filter(([k]) => k !== "key")
+        .map(([k, v]) => `${SVG_ATTR[k] ?? k}="${v}"`)
+        .join(" ");
+      return `<${tag} ${a}/>`;
+    })
+    .join("");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">${body}</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
+const ICONS: [kind: string, icon: IconDef, group: IconGroup][] = [
+  ["function", FunctionIcon, "fn"],
+  ["method", FunctionIcon, "fn"],
+  ["constructor", FunctionIcon, "fn"],
+  ["variable", AbsoluteIcon, "val"],
+  ["property", HashtagIcon, "val"],
+  ["field", HashtagIcon, "val"],
+  ["class", BoxIcon, "type"],
+  ["struct", BoxIcon, "type"],
+  ["enum", LeftToRightListBulletIcon, "type"],
+  ["enummember", LeftToRightListBulletIcon, "type"],
+  ["event", FlashIcon, "type"],
+  ["interface", PuzzleIcon, "iface"],
+  ["type", BracketsIcon, "iface"],
+  ["typeparameter", BracketsIcon, "iface"],
+  ["namespace", PackageIcon, "iface"],
+  ["module", PackageIcon, "iface"],
+  ["keyword", Key01Icon, "misc"],
+  ["constant", MathIcon, "misc"],
+  ["snippet", CodeIcon, "misc"],
+  ["text", TextFontIcon, "misc"],
+  ["unit", CodeIcon, "misc"],
+  ["value", CodeIcon, "misc"],
+  ["operator", CodeIcon, "misc"],
+  ["reference", CodeIcon, "misc"],
+  ["file", File01Icon, "misc"],
+  ["folder", Folder01Icon, "misc"],
+  ["color", CodeIcon, "misc"],
 ];
 
 const GROUP_COLORS: Record<IconGroup, { light: string; dark: string }> = {
-  fn: { light: "#7c3aed", dark: "#c084fc" },
-  val: { light: "#2563eb", dark: "#75beff" },
-  type: { light: "#d97706", dark: "#ee9d28" },
-  iface: { light: "#0d9488", dark: "#2dd4bf" },
-  misc: { light: "#6b7280", dark: "#9ca3af" },
+  fn: { light: "#8a7bb8", dark: "#b3a6d9" },
+  val: { light: "#6889b8", dark: "#93b0d6" },
+  type: { light: "#b3925f", dark: "#d1b285" },
+  iface: { light: "#5f9e96", dark: "#8ec4bc" },
+  misc: { light: "#848a93", dark: "#9aa0a8" },
 };
 
 const SEVERITY_COLORS = {
@@ -52,12 +92,12 @@ const SEVERITY_COLORS = {
 
 function iconRules(mode: "light" | "dark"): ThemeSpec {
   const rules: ThemeSpec = {};
-  for (const [kind, glyph, group] of ICONS) {
-    const color = GROUP_COLORS[group][mode];
+  for (const [kind, icon, group] of ICONS) {
+    const mask = iconMask(icon);
     rules[`.cm-completionIcon-${kind}`] = {
-      backgroundColor: `color-mix(in srgb, ${color} 14%, transparent)`,
-      color,
-      "&:after": { content: `'${glyph}'` },
+      backgroundColor: GROUP_COLORS[group][mode],
+      WebkitMaskImage: mask,
+      maskImage: mask,
     };
   }
   return rules;
@@ -197,18 +237,18 @@ const chrome = EditorView.theme({
   },
   ".cm-completionIcon": {
     boxSizing: "border-box",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "16px",
-    height: "16px",
+    width: "14px",
+    height: "14px",
     flexShrink: "0",
-    borderRadius: "4px",
-    fontSize: "10px",
-    fontWeight: "600",
     opacity: "1",
     padding: "0",
-    "&:after": { verticalAlign: "baseline" },
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+    WebkitMaskSize: "contain",
+    maskSize: "contain",
+    WebkitMaskPosition: "center",
+    maskPosition: "center",
+    "&:after": { content: "none" },
   },
   ".cm-tooltip.cm-completionInfo": {
     padding: "0",
@@ -270,6 +310,8 @@ const chrome = EditorView.theme({
   ".cm-tooltip ::-webkit-scrollbar-track": { background: "transparent" },
 });
 
+const THEME: Extension = [chrome, modeTheme("light"), modeTheme("dark")];
+
 export function chromeTheme(): Extension {
-  return [chrome, modeTheme("light"), modeTheme("dark")];
+  return THEME;
 }
