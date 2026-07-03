@@ -8,6 +8,11 @@ import { chromeTheme } from "./chromeTheme";
 
 // Compartments allow runtime reconfiguration without rebuilding state.
 export const languageCompartment = new Compartment();
+
+export const READONLY_EXTENSIONS: Extension[] = [
+  EditorState.readOnly.of(true),
+  EditorView.editable.of(false),
+];
 export const readOnlyCompartment = new Compartment();
 export const wrapCompartment = new Compartment();
 export const vimCompartment = new Compartment();
