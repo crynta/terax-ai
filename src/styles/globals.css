@@ -163,6 +163,16 @@
 
 :root {
   --app-zoom: 1;
+  --scrollbar-thumb: color-mix(
+    in srgb,
+    var(--muted-foreground) 42%,
+    transparent
+  );
+  --scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--muted-foreground) 62%,
+    transparent
+  );
 }
 
 html[data-chrome="borderless"] .terax-bg-surface {
@@ -228,14 +238,35 @@ html[data-chrome="borderless"] #settings-root {
 
 .cm-editor,
 .cm-scroller {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--scrollbar-thumb) transparent !important;
+  -ms-overflow-style: auto !important;
 }
 .cm-editor::-webkit-scrollbar,
 .cm-scroller::-webkit-scrollbar {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
+  width: 10px !important;
+  height: 10px !important;
+  display: block !important;
+}
+.cm-editor::-webkit-scrollbar-track,
+.cm-scroller::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+.cm-editor::-webkit-scrollbar-thumb,
+.cm-scroller::-webkit-scrollbar-thumb {
+  min-height: 28px !important;
+  border: 2px solid transparent !important;
+  border-radius: 999px !important;
+  background-clip: content-box !important;
+  background-color: var(--scrollbar-thumb) !important;
+}
+.cm-editor::-webkit-scrollbar-thumb:hover,
+.cm-scroller::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover) !important;
+}
+.cm-editor::-webkit-scrollbar-corner,
+.cm-scroller::-webkit-scrollbar-corner {
+  background: transparent !important;
 }
 
 body {
@@ -298,11 +329,6 @@ textarea,
   display: none !important;
 }
 
-/* Kill native scrollbars everywhere by default — Linux/Windows ship chunky
- * Chromium bars that break the chrome, and macOS WKWebView flashes its overlay
- * scrollbar briefly during layout transitions (AI panel open, pane split,
- * window resize) which looks like a glitch. Visible scroll affordances are
- * provided per-region via shadcn <ScrollArea>. */
 html,
 html *,
 html *::before,
@@ -314,6 +340,88 @@ html *::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
+}
+
+.terax-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  -ms-overflow-style: auto;
+}
+
+.terax-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  display: block;
+}
+
+.terax-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terax-scrollbar::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+  background-color: var(--scrollbar-thumb);
+}
+
+.terax-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+.terax-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.terminal-pane-scrollbar .xterm .xterm-viewport,
+.terminal-pane-scrollbar .xterm-viewport {
+  scrollbar-width: thin !important;
+  scrollbar-color: var(--scrollbar-thumb) transparent !important;
+  -ms-overflow-style: auto !important;
+}
+
+.terminal-pane-scrollbar .xterm .xterm-viewport::-webkit-scrollbar,
+.terminal-pane-scrollbar .xterm-viewport::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+  display: block !important;
+}
+
+.terminal-pane-scrollbar .xterm .xterm-viewport::-webkit-scrollbar-track,
+.terminal-pane-scrollbar .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+.terminal-pane-scrollbar .xterm .xterm-viewport::-webkit-scrollbar-thumb,
+.terminal-pane-scrollbar .xterm-viewport::-webkit-scrollbar-thumb {
+  min-height: 28px !important;
+  border: 2px solid transparent !important;
+  border-radius: 999px !important;
+  background-clip: content-box !important;
+  background-color: var(--scrollbar-thumb) !important;
+}
+
+.terminal-pane-scrollbar .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover,
+.terminal-pane-scrollbar .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover) !important;
+}
+
+.terminal-pane-scrollbar .xterm .xterm-viewport::-webkit-scrollbar-corner,
+.terminal-pane-scrollbar .xterm-viewport::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+.terminal-pane-scrollbar .xterm .scrollbar.vertical {
+  display: block !important;
+  visibility: visible !important;
+  width: 10px !important;
+  height: auto !important;
+  pointer-events: auto !important;
+}
+
+.terminal-pane-scrollbar .xterm .scrollbar.horizontal {
+  display: none !important;
 }
 
 /* Motion tokens. Reduced-motion zeroes the durations as a global snap. */

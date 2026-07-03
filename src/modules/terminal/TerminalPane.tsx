@@ -67,6 +67,7 @@ export const TerminalPane = memo(
       onCwd: (c) => onCwd?.(leafId, c),
     });
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: theme tokens intentionally trigger terminal repaint
     useEffect(() => {
       // Defer one frame so CSS-variable token resolution sees the new class.
       const id = requestAnimationFrame(() => session.applyTheme());
@@ -94,7 +95,7 @@ export const TerminalPane = memo(
     if (blocks) {
       return (
         <div
-          className="zoom-exempt flex h-full w-full flex-col"
+          className="terminal-pane-scrollbar zoom-exempt flex h-full w-full flex-col"
           style={hideStyle}
         >
           <div className="relative min-h-0 flex-1">
@@ -139,7 +140,7 @@ export const TerminalPane = memo(
     return (
       <div
         ref={containerRef}
-        className="zoom-exempt h-full w-full"
+        className="terminal-pane-scrollbar zoom-exempt h-full w-full"
         style={hideStyle}
       />
     );

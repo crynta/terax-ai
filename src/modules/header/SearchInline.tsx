@@ -4,7 +4,12 @@ import { KEY_SEP } from "@/lib/platform";
 import type { EditorPaneHandle } from "@/modules/editor";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
-import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
+import {
+  ArrowDown01Icon,
+  ArrowUp01Icon,
+  Cancel01Icon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { SearchAddon } from "@xterm/addon-search";
 import {
@@ -132,10 +137,12 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
       // git-history: the list filters live; Enter has no next/prev semantics.
     };
 
+    const canNavigate = !!q && target?.kind !== "git-history";
+
     return (
       <div
         className="relative h-7 shrink-0 transition-[width] duration-200 ease-out"
-        style={{ width: expanded ? 192 : 28 }}
+        style={{ width: expanded ? 244 : 28 }}
       >
         {expanded ? (
           <div className="absolute inset-0 animate-in fade-in-0 duration-150">
@@ -149,7 +156,7 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
               ref={setInputRef}
               value={q}
               placeholder={placeholder}
-              className="h-7 w-full bg-muted/80 pr-7 pl-7 text-[13px]! placeholder:text-muted-foreground/70 focus-visible:ring-0"
+              className="h-7 w-full bg-muted/80 pr-20 pl-7 text-[13px]! placeholder:text-muted-foreground/70 focus-visible:ring-0"
               onChange={(e) => {
                 const next = e.target.value;
                 setQ(next);
@@ -173,20 +180,59 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
                 }
               }}
             />
-            {q && (
+            <div className="absolute top-1/2 right-1.5 flex -translate-y-1/2 items-center gap-0.5">
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
-                  setQ("");
-                  clearTarget();
+                  findDirection(false);
                   inputRef.current?.focus();
                 }}
-                className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label="Clear search"
+                disabled={!canNavigate}
+                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
+                aria-label="Previous search match"
+                title="Previous match"
               >
-                <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />
+                <HugeiconsIcon icon={ArrowUp01Icon} size={11} strokeWidth={2} />
               </button>
-            )}
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  findDirection(true);
+                  inputRef.current?.focus();
+                }}
+                disabled={!canNavigate}
+                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
+                aria-label="Next search match"
+                title="Next match"
+              >
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  size={11}
+                  strokeWidth={2}
+                />
+              </button>
+              {q && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setQ("");
+                    clearTarget();
+                    inputRef.current?.focus();
+                  }}
+                  className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label="Clear search"
+                >
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={11}
+                    strokeWidth={2}
+                  />
+                </button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-end animate-in fade-in-0 duration-150">
