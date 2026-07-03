@@ -14,6 +14,7 @@ import type { WorkspaceEnv } from "@/modules/workspace";
 import { IncognitoIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { CwdBreadcrumb } from "./CwdBreadcrumb";
+import { DiagnosticsBadge } from "./DiagnosticsBadge";
 import { WorkspaceEnvSelector } from "./WorkspaceEnvSelector";
 
 type Props = {
@@ -47,6 +48,7 @@ export function StatusBar({
         <WorkspaceEnvSelector onSelect={onWorkspaceChange} />
         <CwdBreadcrumb cwd={cwd} filePath={filePath} home={home} onCd={onCd} />
         <LspStatusPill filePath={filePath ?? null} />
+        <DiagnosticsBadge filePath={filePath ?? null} />
         {privateActive ? (
           <Tooltip>
             <TooltipTrigger asChild>
