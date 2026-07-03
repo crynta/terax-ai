@@ -1,5 +1,6 @@
 mod env;
 mod framing;
+mod rss;
 mod session;
 
 use std::collections::HashMap;
@@ -29,6 +30,19 @@ impl LspState {
     pub(super) fn take(&self, id: u32) -> Option<Arc<LspSession>> {
         self.sessions.write().unwrap().remove(&id)
     }
+
+    pub fn kill_all(&self) {
+        let drained: Vec<Arc<LspSession>> =
+            self.sessions.write().unwrap().drain().map(|(_, s)| s).collect();
+        for session in drained {
+            session.kill();
+        }
+    }
+}
+
+#[tauri::command]
+pub fn lsp_host_pid() -> u32 {
+    std::process::id()
 }
 
 #[tauri::command]
@@ -51,6 +65,7 @@ pub async fn lsp_spawn(
     args: Vec<String>,
     env: Option<HashMap<String, String>>,
     root: String,
+    max_rss_mb: Option<u64>,
     workspace: Option<WorkspaceEnv>,
     on_message: Channel<Response>,
     on_exit: Channel<session::LspExit>,
@@ -63,11 +78,14 @@ pub async fn lsp_spawn(
         .ok_or("lsp: workspace root is required")?;
 
     let id = state.next_id.fetch_add(1, Ordering::Relaxed);
+    let spawn_log = format!("cmd={command} root={}", root.display());
     let session = tauri::async_runtime::spawn_blocking(move || {
         let binary = env::resolve_binary(&command)
             .ok_or_else(|| format!("lsp: binary not found: {command}"))?;
         let extra_env = env.unwrap_or_default();
-        session::spawn(id, app, &binary, &args, &extra_env, &root, on_message, on_exit)
+        session::spawn(
+            id, app, &binary, &args, &extra_env, &root, max_rss_mb, on_message, on_exit,
+        )
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -85,7 +103,7 @@ pub async fn lsp_spawn(
     if exited {
         state.take(id);
     }
-    log::info!("lsp spawned id={id}");
+    log::info!("lsp spawned id={id} {spawn_log}");
     Ok(id)
 }
 
