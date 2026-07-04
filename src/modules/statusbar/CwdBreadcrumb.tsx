@@ -66,10 +66,7 @@ export function CwdBreadcrumb({ cwd, filePath, home, onCd }: Props) {
             <CollapsedSegments segments={middle} onCd={onCd} />
           ) : null}
           {middle.map((s) => (
-            <span
-              key={s.fullPath}
-              className="contents max-md:hidden"
-            >
+            <span key={s.fullPath} className="contents max-md:hidden">
               <BreadcrumbSegment
                 label={s.label}
                 isHome={s.isHome}
@@ -144,14 +141,10 @@ function BreadcrumbSegment({
     <>
       <BreadcrumbItem>
         <BreadcrumbLink asChild>
-          <button
-            type="button"
-            onClick={onClick}
-            className="cursor-pointer"
-          >
+          <button type="button" onClick={onClick} className="cursor-pointer">
             <Badge
               variant="outline"
-              className="gap-1 text-muted-foreground hover:text-foreground"
+              className="gap-1 rounded-sm text-muted-foreground hover:text-foreground"
             >
               {isHome ? (
                 <HugeiconsIcon

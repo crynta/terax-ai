@@ -16,6 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
 import { AgentIcon } from "../lib/agentIcon";
 import { displayAgent } from "../lib/format";
+import { ShortcutTip } from "@/modules/shortcuts/ShortcutTip";
 import type { AgentNotification, AgentStatus } from "../lib/types";
 import { useAgentStore } from "../store/agentStore";
 
@@ -94,7 +95,11 @@ function HookAgentRow({
 }) {
   return (
     <div className="flex items-center gap-2 px-2 py-1">
-      <AgentIcon agent={id} size={14} className="shrink-0 text-muted-foreground" />
+      <AgentIcon
+        agent={id}
+        size={14}
+        className="shrink-0 text-muted-foreground"
+      />
       <span className="flex-1 truncate text-[12px] text-muted-foreground">
         {label}
       </span>
@@ -239,25 +244,29 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          title="Agent notifications"
-        >
-          <HugeiconsIcon
-            icon={Notification01Icon}
-            size={16}
-            strokeWidth={1.75}
-          />
-          {badge > 0 ? (
-            <span className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-semibold leading-none text-primary-foreground">
-              {badge > 9 ? "9+" : badge}
-            </span>
-          ) : null}
-        </Button>
-      </PopoverTrigger>
+      <ShortcutTip
+        label="Agent notifications"
+        shortcutId="agent.focusAttention"
+      >
+        <PopoverTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="relative size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <HugeiconsIcon
+              icon={Notification01Icon}
+              size={16}
+              strokeWidth={1.75}
+            />
+            {badge > 0 ? (
+              <span className="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-semibold leading-none text-primary-foreground">
+                {badge > 9 ? "9+" : badge}
+              </span>
+            ) : null}
+          </Button>
+        </PopoverTrigger>
+      </ShortcutTip>
       <PopoverContent
         align="end"
         sideOffset={8}
@@ -323,7 +332,11 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
 
         <div className="border-t border-border/60 p-1">
           <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-            <HugeiconsIcon icon={Notification03Icon} size={11} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={Notification03Icon}
+              size={11}
+              strokeWidth={2}
+            />
             Agent alerts
           </div>
           {HOOK_AGENTS.map((id) => (

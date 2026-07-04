@@ -31,15 +31,23 @@ export type ShortcutId =
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
+  | "explorer.newFile"
+  | "explorer.newFolder"
+  | "explorer.refresh"
+  | "git.fetch"
+  | "git.pull"
+  | "git.refresh"
   | "view.zoomIn"
   | "view.zoomOut"
   | "view.zoomReset"
   | "view.zenMode"
   | "ai.toggle"
+  | "ai.toggleMini"
   | "ai.askSelection"
   | "agent.focusAttention"
   | "settings.open"
   | "sidebar.toggle"
+  | "statusbar.toggle"
   | "editor.undo"
   | "editor.redo";
 
@@ -50,6 +58,7 @@ export type ShortcutGroup =
   | "Panes"
   | "Terminal"
   | "Search"
+  | "Git"
   | "AI"
   | "View"
   | "Editor";
@@ -149,7 +158,7 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus previous pane",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
-  },  
+  },
   {
     id: "pane.source",
     label: "Toggle source panel",
@@ -242,6 +251,12 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "i" }],
   },
   {
+    id: "ai.toggleMini",
+    label: "Toggle conversation window",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "m" }],
+  },
+  {
     id: "ai.askSelection",
     label: "Ask AI about selection",
     group: "AI",
@@ -266,10 +281,52 @@ export const SHORTCUTS: Shortcut[] = [
     ],
   },
   {
+    id: "statusbar.toggle",
+    label: "Toggle status bar",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "j" }],
+  },
+  {
     id: "explorer.focus",
     label: "Toggle file explorer focus",
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "e" }],
+  },
+  {
+    id: "explorer.newFile",
+    label: "Explorer: new file",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, key: "n" }],
+  },
+  {
+    id: "explorer.newFolder",
+    label: "Explorer: new folder",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "n" }],
+  },
+  {
+    id: "explorer.refresh",
+    label: "Explorer: refresh",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "r" }],
+  },
+  {
+    id: "git.fetch",
+    label: "Git: fetch from remote",
+    group: "Git",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "u" }],
+  },
+  {
+    id: "git.pull",
+    label: "Git: pull (fast-forward)",
+    group: "Git",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "l" }],
+  },
+  {
+    id: "git.refresh",
+    label: "Git: refresh status",
+    group: "Git",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "g" }],
   },
   {
     id: "view.zoomIn",
@@ -325,10 +382,12 @@ export const SHORTCUTS: Shortcut[] = [
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
+  "Spaces",
   "Panes",
   "Terminal",
   "View",
   "Search",
+  "Git",
   "AI",
   "Editor",
 ];
@@ -339,7 +398,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
 export function matchBinding(
   e: KeyboardEvent,
   binding: KeyBinding,
-  id?: ShortcutId
+  id?: ShortcutId,
 ): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();

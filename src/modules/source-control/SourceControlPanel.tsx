@@ -27,7 +27,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
@@ -48,6 +47,9 @@ import {
   COMPACT_ITEM,
 } from "@/modules/explorer/lib/menuItemClass";
 import { joinPath } from "@/modules/explorer/lib/useFileTree";
+import { useGlobalShortcuts } from "@/modules/shortcuts";
+import type { ShortcutId } from "@/modules/shortcuts/shortcuts";
+import { useShortcutText } from "@/modules/shortcuts/useShortcutText";
 import {
   AiContentGenerator02Icon,
   Alert02Icon,
@@ -67,20 +69,21 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type KeyboardEvent,
   memo,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
-  type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import type { SourceControlSummary } from "./useSourceControl";
 import {
-  useSourceControlPanel,
   type CheckState,
   type SourceControlFileEntry,
+  useSourceControlPanel,
 } from "./useSourceControlPanel";
 
 type Props = {
@@ -457,6 +460,19 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     void sourceControl.runRemoteAction("pull");
   }, [sourceControl]);
 
+  // Panel-scoped: these fire only while the source-control view is mounted.
+  useGlobalShortcuts({
+    "git.fetch": () => {
+      if (canFetch) handleFetch();
+    },
+    "git.pull": () => {
+      if (canPull) handlePull();
+    },
+    "git.refresh": () => {
+      if (!isRefreshing && !scm.actionBusy) handleRefresh();
+    },
+  });
+
   const rows = useMemo<RowDescriptor[]>(() => {
     const result: RowDescriptor[] = [];
     if (isDiverged) {
@@ -660,6 +676,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               disabled={!canFetch}
               onClick={handleFetch}
               side="bottom"
+              shortcutId="git.fetch"
             >
               {fetchBusy ? (
                 <Spinner className="size-3" />
@@ -686,6 +703,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               disabled={!canPull}
               onClick={handlePull}
               side="bottom"
+              shortcutId="git.pull"
             >
               {pullBusy ? (
                 <Spinner className="size-3" />
@@ -702,6 +720,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               disabled={isRefreshing || !!scm.actionBusy}
               onClick={handleRefresh}
               side="bottom"
+              shortcutId="git.refresh"
             >
               {isRefreshing ? (
                 <Spinner className="size-3.5" />
@@ -1328,26 +1347,44 @@ function IconActionButton({
   side = "left",
   onClick,
   children,
+  shortcutId,
 }: {
   label: string;
   disabled?: boolean;
   side?: "left" | "top" | "right" | "bottom";
   onClick: () => void;
   children: ReactNode;
+  shortcutId?: ShortcutId;
 }) {
+  const shortcutText = useShortcutText(shortcutId);
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          className="size-6 p-3 cursor-pointer rounded-md text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
-          aria-label={label}
-          disabled={disabled}
-          onClick={onClick}
+        <span
+          className={cn(
+            "group/tip flex shrink-0 items-center rounded-md transition-all duration-[calc(250ms*var(--terax-anim,1))]",
+            !disabled &&
+              "hover:bg-muted hover:pr-1 dark:hover:bg-muted/50 [&:hover_button]:text-foreground",
+          )}
         >
-          {children}
-        </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="size-6 p-3 cursor-pointer rounded-md text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
+            aria-label={label}
+            disabled={disabled}
+            onClick={onClick}
+          >
+            {children}
+          </Button>
+          {shortcutText && !disabled && (
+            <span className="flex max-w-0 items-center overflow-hidden opacity-0 transition-all duration-[calc(250ms*var(--terax-anim,1))] ease-out group-hover/tip:ml-1 group-hover/tip:max-w-16 group-hover/tip:opacity-100">
+              <kbd className="rounded border border-border/50 bg-card px-1 py-px font-sans text-[10px] font-medium leading-none whitespace-nowrap text-muted-foreground select-none">
+                {shortcutText}
+              </kbd>
+            </span>
+          )}
+        </span>
       </TooltipTrigger>
       <TooltipContent
         side={side}

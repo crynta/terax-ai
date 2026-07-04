@@ -23,6 +23,7 @@ import {
   useState,
 } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useShortcutText } from "@/modules/shortcuts/useShortcutText";
 import { fileIconUrl } from "./lib/iconResolver";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
@@ -76,6 +77,7 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   const [searching, setSearching] = useState(false);
   const [truncated, setTruncated] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const shortcutText = useShortcutText("explorer.search");
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastKeyboardNavAt = useRef(0);
 
@@ -205,8 +207,13 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
               }
             }}
             placeholder="Search files…"
-            className="h-7 pr-7 pl-6.5 text-xs"
+            className="h-8 rounded-md border-border/50 bg-muted/40 pr-7 pl-6.5 text-xs transition-colors placeholder:text-muted-foreground/60 hover:bg-muted/60 focus-visible:border-ring/50 focus-visible:bg-muted/60 focus-visible:ring-0"
           />
+          {!query && shortcutText ? (
+            <kbd className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 rounded border border-border/50 bg-card px-1 py-px font-sans text-[10px] font-medium leading-none text-muted-foreground select-none">
+              {shortcutText}
+            </kbd>
+          ) : null}
           {query ? (
             <button
               type="button"

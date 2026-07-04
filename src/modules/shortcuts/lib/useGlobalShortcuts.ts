@@ -1,10 +1,6 @@
-import { useEffect, useRef } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import {
-  SHORTCUTS,
-  matchBinding,
-  type ShortcutId,
-} from "../shortcuts";
+import { useEffect, useRef } from "react";
+import { matchBinding, SHORTCUTS, type ShortcutId } from "../shortcuts";
 
 export type ShortcutHandler = (e: KeyboardEvent) => void;
 export type ShortcutHandlers = Partial<Record<ShortcutId, ShortcutHandler>>;

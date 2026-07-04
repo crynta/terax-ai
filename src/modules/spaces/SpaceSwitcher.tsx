@@ -12,6 +12,7 @@ import {
   ArrowRight01Icon,
   Cancel01Icon,
   Delete02Icon,
+  Home03Icon,
   PencilEdit02Icon,
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
@@ -243,6 +244,12 @@ export function SpaceSwitcher({
           title={shortcut ? `Spaces · ${shortcut}` : "Spaces"}
           className="flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-muted-foreground/90 outline-none transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
         >
+          <HugeiconsIcon
+            icon={Home03Icon}
+            size={13}
+            strokeWidth={1.75}
+            className="shrink-0 opacity-80"
+          />
           <span className="max-w-36 truncate text-xs font-medium">
             {current.name}
           </span>

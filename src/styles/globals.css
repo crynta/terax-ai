@@ -316,11 +316,12 @@ html *::-webkit-scrollbar {
   display: none;
 }
 
-/* Motion tokens. Reduced-motion zeroes the durations as a global snap. */
+/* Motion tokens, scaled by the animation-speed preference (--terax-anim).
+   Reduced-motion zeroes the durations as a global snap. */
 :root {
-  --dur-fast: 160ms;
-  --dur-base: 240ms;
-  --dur-slow: 320ms;
+  --dur-fast: calc(160ms * var(--terax-anim, 1));
+  --dur-base: calc(240ms * var(--terax-anim, 1));
+  --dur-slow: calc(320ms * var(--terax-anim, 1));
   --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
 }

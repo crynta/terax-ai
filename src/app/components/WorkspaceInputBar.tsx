@@ -25,6 +25,11 @@ const AiComposerInput = lazy(() =>
     default: m.AiComposerInput,
   })),
 );
+const ComposerControls = lazy(() =>
+  import("@/modules/ai/components/AiComposerInput").then((m) => ({
+    default: m.ComposerControls,
+  })),
+);
 
 export const TOGGLE_BLOCK_INPUT_EVENT = "terax:toggle-block-input";
 
@@ -134,6 +139,13 @@ export function WorkspaceInputBar({
         <div className="flex flex-col gap-2 rounded-lg px-1 py-1">
           <ChipsRow
             leading={terminalChips}
+            trailing={
+              renderAi && effectiveMode === "ai" ? (
+                <Suspense fallback={null}>
+                  <ComposerControls />
+                </Suspense>
+              ) : undefined
+            }
             files={c.files}
             onRemoveFile={c.removeFile}
             snippets={c.pickedSnippets}

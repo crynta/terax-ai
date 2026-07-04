@@ -144,6 +144,11 @@ export type Preferences = {
   recentModelIds: string[];
   vimMode: boolean;
   editorWordWrap: boolean;
+  sidebarStartCollapsed: boolean;
+  statusBarVisible: boolean;
+  animationSpeed: AnimationSpeed;
+  /** Duration multiplier used when animationSpeed is "custom". */
+  animationSpeedCustom: number;
   showHidden: boolean;
   explorerGitDecorations: boolean;
   terminalWebglEnabled: boolean;
@@ -165,6 +170,16 @@ export type Preferences = {
   lspActivation: Record<string, LspActivation>;
   lspCustomServers: LspCustomServer[];
 };
+
+export type AnimationSpeed = "off" | "fast" | "normal" | "slow" | "custom";
+
+export const ANIMATION_CUSTOM_MIN = 0;
+export const ANIMATION_CUSTOM_MAX = 2.5;
+
+export function clampAnimationCustom(v: number): number {
+  if (!Number.isFinite(v)) return 1;
+  return Math.min(ANIMATION_CUSTOM_MAX, Math.max(ANIMATION_CUSTOM_MIN, v));
+}
 
 export type LspActivation = "enabled" | "dismissed";
 
@@ -211,6 +226,10 @@ const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
 const KEY_EDITOR_WORD_WRAP = "editorWordWrap";
+const KEY_SIDEBAR_START_COLLAPSED = "sidebarStartCollapsed";
+const KEY_STATUS_BAR_VISIBLE = "statusBarVisible";
+const KEY_ANIMATION_SPEED = "animationSpeed";
+const KEY_ANIMATION_SPEED_CUSTOM = "animationSpeedCustom";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_EXPLORER_GIT_DECORATIONS = "explorerGitDecorations";
@@ -281,6 +300,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   recentModelIds: [],
   vimMode: false,
   editorWordWrap: false,
+  sidebarStartCollapsed: false,
+  statusBarVisible: true,
+  animationSpeed: "normal",
+  animationSpeedCustom: 1,
   showHidden: false,
   explorerGitDecorations: true,
   terminalWebglEnabled: true,
@@ -413,6 +436,26 @@ export async function loadPreferences(): Promise<Preferences> {
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
     editorWordWrap:
       get<boolean>(KEY_EDITOR_WORD_WRAP) ?? DEFAULT_PREFERENCES.editorWordWrap,
+    sidebarStartCollapsed:
+      get<boolean>(KEY_SIDEBAR_START_COLLAPSED) ??
+      DEFAULT_PREFERENCES.sidebarStartCollapsed,
+    statusBarVisible:
+      get<boolean>(KEY_STATUS_BAR_VISIBLE) ??
+      DEFAULT_PREFERENCES.statusBarVisible,
+    animationSpeed: ((): AnimationSpeed => {
+      const stored = get<string>(KEY_ANIMATION_SPEED);
+      return stored === "off" ||
+        stored === "fast" ||
+        stored === "normal" ||
+        stored === "slow" ||
+        stored === "custom"
+        ? stored
+        : DEFAULT_PREFERENCES.animationSpeed;
+    })(),
+    animationSpeedCustom: clampAnimationCustom(
+      get<number>(KEY_ANIMATION_SPEED_CUSTOM) ??
+        DEFAULT_PREFERENCES.animationSpeedCustom,
+    ),
     showHidden:
       get<boolean>(KEY_SHOW_HIDDEN) ??
       get<boolean>(LEGACY_KEY_SHOW_HIDDEN_DIRS) ??
@@ -648,6 +691,22 @@ export async function setEditorWordWrap(value: boolean): Promise<void> {
   await writePref(KEY_EDITOR_WORD_WRAP, value);
 }
 
+export async function setSidebarStartCollapsed(value: boolean): Promise<void> {
+  await writePref(KEY_SIDEBAR_START_COLLAPSED, value);
+}
+
+export async function setStatusBarVisible(value: boolean): Promise<void> {
+  await writePref(KEY_STATUS_BAR_VISIBLE, value);
+}
+
+export async function setAnimationSpeed(value: AnimationSpeed): Promise<void> {
+  await writePref(KEY_ANIMATION_SPEED, value);
+}
+
+export async function setAnimationSpeedCustom(value: number): Promise<void> {
+  await writePref(KEY_ANIMATION_SPEED_CUSTOM, clampAnimationCustom(value));
+}
+
 export async function setShowHidden(value: boolean): Promise<void> {
   await writePref(KEY_SHOW_HIDDEN, value);
 }
@@ -794,6 +853,10 @@ export async function onPreferencesChange(
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
     [KEY_EDITOR_WORD_WRAP]: "editorWordWrap",
+    [KEY_SIDEBAR_START_COLLAPSED]: "sidebarStartCollapsed",
+    [KEY_STATUS_BAR_VISIBLE]: "statusBarVisible",
+    [KEY_ANIMATION_SPEED]: "animationSpeed",
+    [KEY_ANIMATION_SPEED_CUSTOM]: "animationSpeedCustom",
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_EXPLORER_GIT_DECORATIONS]: "explorerGitDecorations",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",

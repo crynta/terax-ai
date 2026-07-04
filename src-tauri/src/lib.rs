@@ -11,6 +11,31 @@ use tauri_plugin_window_state::StateFlags;
 #[derive(Default)]
 struct LaunchDir(Mutex<Option<String>>);
 
+/// Vertically centers the traffic lights in the custom 44px header the way
+/// Safari/Xcode do it: attach an empty unified-compact NSToolbar, and AppKit
+/// lays the buttons out in the taller titlebar region natively — across
+/// resizes, fullscreen transitions and macOS versions (incl. Tahoe's glass
+/// titlebar). No frame fighting, unlike tao's drawRect-based inset, which is
+/// broken under a webview (tauri-apps/tauri#14072).
+#[cfg(target_os = "macos")]
+fn install_titlebar_toolbar(window: &tauri::WebviewWindow) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSToolbar, NSWindow, NSWindowToolbarStyle};
+
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    unsafe {
+        let ns_window = &*(ptr as *const NSWindow);
+        let toolbar = NSToolbar::new(mtm);
+        ns_window.setToolbar(Some(&toolbar));
+        ns_window.setToolbarStyle(NSWindowToolbarStyle::UnifiedCompact);
+    }
+}
+
 #[tauri::command]
 fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
     state.0.lock().expect("LaunchDir mutex poisoned").take()
@@ -142,6 +167,9 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
+                // Settings is a fixed-size utility window — always open it at
+                // its declared 900x700, never a stale saved size/maximized state.
+                .skip_initial_state("settings")
                 .build(),
         )
         .plugin(tauri_plugin_autostart::Builder::new().build())
@@ -159,6 +187,7 @@ pub fn run() {
             // to the main window here instead. Other platforms keep parent().
             #[cfg(target_os = "macos")]
             if let Some(main) = _app.get_webview_window("main") {
+                install_titlebar_toolbar(&main);
                 let handle = _app.handle().clone();
                 main.on_window_event(move |event| {
                     if matches!(

@@ -62,6 +62,12 @@ keyring = { version = "3.6", default-features = false, features = [
 ] }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] }
+objc2-app-kit = { version = "0.3", features = [
+	"NSWindow",
+	"NSView",
+	"NSResponder",
+	"NSToolbar",
+] }
 
 # WebKitGTK can't read external clipboard copies; mac/win webviews can.
 [target.'cfg(target_os = "linux")'.dependencies]

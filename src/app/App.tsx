@@ -7,6 +7,10 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
+import {
+  useAnimationScale,
+  useAnimationScaleFactor,
+} from "@/lib/useAnimationScale";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
 import { isMarkdownPath } from "@/lib/utils";
@@ -64,7 +68,7 @@ import {
   useSpaces,
   useSpacesBoot,
 } from "@/modules/spaces";
-import { StatusBar } from "@/modules/statusbar";
+import { StatusBar, useStatusBarCollapsed } from "@/modules/statusbar";
 import {
   TabSwitcherHud,
   useTabSwitcher,
@@ -165,6 +169,7 @@ export default function App() {
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   useTerminalFileDrop();
+  useAnimationScale();
   const explorerRef = useRef<FileExplorerHandle>(null);
 
   // Drives session disposal off the pane tree, not React lifecycles —
@@ -266,6 +271,7 @@ export default function App() {
     sidebarWidthRef,
     sidebarView,
     initialSidebarCollapsed,
+    sidebarCollapsed,
     persistSidebarView,
     persistSidebarCollapsed,
     toggleSidebar,
@@ -287,7 +293,10 @@ export default function App() {
     [],
   );
   const miniOpen = useChatStore((s) => s.mini.open);
-  const miniPresence = usePresence(miniOpen, 200);
+  // Exit must outlive the scaled close animation (200ms × speed factor),
+  // else the window unmounts mid-animation or lingers after it.
+  const animFactor = useAnimationScaleFactor();
+  const miniPresence = usePresence(miniOpen, Math.round(200 * animFactor) + 40);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
   const openPanel = useChatStore((s) => s.openPanel);
@@ -648,6 +657,16 @@ export default function App() {
     [setActiveId, focusPane],
   );
 
+  // Expand the sidebar on the explorer view without toggling it closed when
+  // it's already there (unlike cycleSidebarView's cycle semantics).
+  const revealExplorer = useCallback(() => {
+    persistSidebarView("explorer");
+    const p = sidebarRef.current;
+    if (p && p.getSize().asPercentage <= 0) {
+      p.resize(`${sidebarWidthRef.current}px`);
+    }
+  }, [persistSidebarView, sidebarRef, sidebarWidthRef]);
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "commandPalette.open": () => openCommandPalette("commands"),
@@ -682,6 +701,7 @@ export default function App() {
       "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
+      "ai.toggleMini": () => useChatStore.getState().toggleMini(),
       "ai.askSelection": askFromSelection,
       "agent.focusAttention": () => {
         const t = nextAttentionTarget();
@@ -689,7 +709,17 @@ export default function App() {
       },
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
+      "statusbar.toggle": () => useStatusBarCollapsed.getState().toggle(),
       "explorer.focus": toggleExplorerFocus,
+      "explorer.newFile": () => {
+        revealExplorer();
+        requestAnimationFrame(() => explorerRef.current?.newFile());
+      },
+      "explorer.newFolder": () => {
+        revealExplorer();
+        requestAnimationFrame(() => explorerRef.current?.newFolder());
+      },
+      "explorer.refresh": () => explorerRef.current?.refresh(),
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
@@ -716,6 +746,7 @@ export default function App() {
       askFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
+      revealExplorer,
       zoomIn,
       zoomOut,
       zoomReset,
@@ -752,17 +783,15 @@ export default function App() {
       ) {
         return !(activeTab?.kind === "terminal" && activeTab.blocks === true);
       }
-      if (id === "sidebar.toggle") {
-        // Ctrl+B is also Claude Code's "run in background" key. While a terminal
-        // is focused, let Ctrl+B reach the shell/Claude instead of toggling the
-        // sidebar. Ctrl+Shift+B (second binding) still toggles it from anywhere.
+      if (id === "sidebar.toggle" || id === "explorer.newFile") {
+        // Plain Ctrl+B is Claude Code's "run in background", Ctrl+N is
+        // readline's next-history. While a terminal is focused let those
+        // reach the shell; Shift variants still fire from anywhere.
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
         const inTerminal = !!(target as HTMLElement | null)?.closest?.(
           ".xterm",
         );
-        // Only defer the plain (no-shift) Ctrl/⌘+B binding; the Shift variant
-        // is the always-on toggle and is never claimed by the terminal.
         return inTerminal && !e.shiftKey;
       }
       return false;
@@ -998,6 +1027,7 @@ export default function App() {
             focusSearch: () => searchInlineRef.current?.focus(),
             focusExplorerSearch: () => explorerRef.current?.focusSearch(),
             toggleSidebar,
+            toggleStatusBar: () => useStatusBarCollapsed.getState().toggle(),
             toggleAi: togglePanelAndFocus,
             askAiSelection: askFromSelection,
             openSettings: () => void openSettingsWindow(),
@@ -1162,7 +1192,14 @@ export default function App() {
                   />
                 </div>
               </ResizablePanel>
-              <ResizableHandle withHandle />
+              <ResizableHandle
+                withHandle={!sidebarCollapsed}
+                className={
+                  sidebarCollapsed
+                    ? "data-[separator=hover]:bg-border"
+                    : undefined
+                }
+              />
               <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="relative min-h-0 flex-1">

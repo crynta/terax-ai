@@ -1,16 +1,28 @@
 import { Popover, PopoverAnchor } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
 import { usePresence } from "@/lib/usePresence";
+import { cn } from "@/lib/utils";
+import { ShortcutTip } from "@/modules/shortcuts/ShortcutTip";
+// Deep import; the statusbar barrel pulls in StatusBar → @/modules/ai (cycle).
+import { useStatusBarCollapsed } from "@/modules/statusbar/lib/useStatusBarCollapsed";
+import {
+  Add01Icon,
+  Cancel01Icon,
+  LayoutBottomIcon,
+  Message01Icon,
+  Mic01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
-import { useComposer } from "../lib/composer";
+import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
 import { useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import { AgentSwitcher } from "./AgentSwitcher";
+import { IconBtn, ModelDropdown } from "./AiStatusBarControls";
 import { FilePickerContent } from "./FilePicker";
-import { SnippetPickerContent, type PickerItem } from "./SnippetPicker";
+import { type PickerItem, SnippetPickerContent } from "./SnippetPicker";
 
 type SnippetTrigger = {
   start: number;
@@ -56,6 +68,108 @@ function detectFileTrigger(value: string, caret: number): FileTrigger | null {
     if (/\s/.test(ch)) return null;
   }
   return null;
+}
+
+/** Composer control cluster — rendered on the chips row (WorkspaceInputBar),
+ *  one line above the textarea, so the input line stays clean. */
+export function ComposerControls() {
+  const c = useComposer();
+  const statusBarCollapsed = useStatusBarCollapsed((s) => s.collapsed);
+  const showStatusBar = useStatusBarCollapsed((s) => s.toggle);
+  const toggleMini = useChatStore((s) => s.toggleMini);
+  const miniOpen = useChatStore((s) => s.mini.open);
+  const closePanel = useChatStore((s) => s.closePanel);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept={ACCEPTED_FILES}
+        className="hidden"
+        onChange={(e) => {
+          void c.addFiles(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      <IconBtn
+        title="Attach file or image"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={c.isBusy}
+      >
+        <HugeiconsIcon icon={Add01Icon} size={13} strokeWidth={2} />
+      </IconBtn>
+      {c.voice.supported && c.voice.hasKey && (
+        <IconBtn
+          title={
+            c.voice.recording
+              ? "Stop & transcribe"
+              : c.voice.transcribing
+                ? "Transcribing…"
+                : "Voice input"
+          }
+          onClick={() =>
+            c.voice.recording ? c.voice.stop() : void c.voice.start()
+          }
+          disabled={c.isBusy || c.voice.transcribing}
+          className={cn(
+            c.voice.recording &&
+              "bg-destructive/10 text-destructive hover:bg-destructive/15",
+          )}
+        >
+          {c.voice.recording ? (
+            <span className="size-2 animate-pulse rounded-full bg-destructive" />
+          ) : c.voice.transcribing ? (
+            <Spinner className="size-3" />
+          ) : (
+            <HugeiconsIcon icon={Mic01Icon} size={13} strokeWidth={1.75} />
+          )}
+        </IconBtn>
+      )}
+      <ShortcutTip
+        label={miniOpen ? "Close conversation" : "Open conversation"}
+        shortcutId="ai.toggleMini"
+      >
+        <IconBtn
+          title={miniOpen ? "Close conversation" : "Open conversation"}
+          onClick={toggleMini}
+          className={cn(miniOpen && "bg-accent text-foreground")}
+        >
+          <HugeiconsIcon icon={Message01Icon} size={13} strokeWidth={1.75} />
+        </IconBtn>
+      </ShortcutTip>
+      <ModelDropdown />
+      <AgentSwitcher />
+      {statusBarCollapsed && (
+        <ShortcutTip label="Show status bar" shortcutId="statusbar.toggle">
+          <IconBtn
+            title="Show status bar"
+            onClick={showStatusBar}
+            className="animate-in fade-in-0"
+          >
+            <HugeiconsIcon
+              icon={LayoutBottomIcon}
+              size={14}
+              strokeWidth={1.75}
+            />
+          </IconBtn>
+        </ShortcutTip>
+      )}
+      {statusBarCollapsed && (
+        <ShortcutTip label="Close AI panel" shortcutId="ai.toggle">
+          <IconBtn
+            title="Close AI panel"
+            onClick={closePanel}
+            className="animate-in fade-in-0"
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={2} />
+          </IconBtn>
+        </ShortcutTip>
+      )}
+    </div>
+  );
 }
 
 export function AiComposerInput() {
@@ -264,7 +378,6 @@ export function AiComposerInput() {
                 "placeholder:text-muted-foreground/60",
               )}
             />
-            <AgentSwitcher />
           </div>
         </PopoverAnchor>
         {fileTrigger ? (

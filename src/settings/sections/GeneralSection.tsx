@@ -18,7 +18,12 @@ import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
 import {
+  ANIMATION_CUSTOM_MAX,
+  ANIMATION_CUSTOM_MIN,
+  type AnimationSpeed,
   setAgentNotifications,
+  setAnimationSpeed,
+  setAnimationSpeedCustom,
   setAutostart,
   setDefaultWorkspaceEnv,
   setEditorAutoSave,
@@ -28,6 +33,8 @@ import {
   setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
+  setSidebarStartCollapsed,
+  setStatusBarVisible,
   setTerminalCursorBlink,
   setTerminalFontFamily,
   setTerminalFontSize,
@@ -65,6 +72,14 @@ const APPEARANCE: {
   { id: "dark", label: "Dark", icon: Moon02Icon },
 ];
 
+const ANIMATION_SPEEDS: { value: AnimationSpeed; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "fast", label: "Fast" },
+  { value: "normal", label: "Normal" },
+  { value: "slow", label: "Slow" },
+  { value: "custom", label: "Custom" },
+];
+
 const TERMINAL_FONT_WEIGHTS = [
   { value: "normal", label: "Normal" },
   { value: "500", label: "Medium" },
@@ -82,35 +97,15 @@ const AUTO_SAVE_STEP = 100;
 const AUTO_SAVE_MIN = 100;
 const AUTO_SAVE_MAX = 60000;
 
+/** General: appearance mode, zoom, startup and notifications. */
 export function GeneralSection() {
   const { mode, setMode } = useTheme();
 
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
-  const vimMode = usePreferencesStore((s) => s.vimMode);
-  const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
-  const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
-  const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
-  const editorFormatOnSave = usePreferencesStore((s) => s.editorFormatOnSave);
-  const showHidden = usePreferencesStore((s) => s.showHidden);
-  const explorerGitDecorations = usePreferencesStore(
-    (s) => s.explorerGitDecorations,
+  const sidebarStartCollapsed = usePreferencesStore(
+    (s) => s.sidebarStartCollapsed,
   );
-  const terminalWebglEnabled = usePreferencesStore(
-    (s) => s.terminalWebglEnabled,
-  );
-  const terminalCursorBlink = usePreferencesStore((s) => s.terminalCursorBlink);
-  const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
-  const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
-  const terminalShell = usePreferencesStore((s) => s.terminalShell);
-  const [shells, setShells] = useState<ShellInfo[]>([]);
-  const [wslDistros, setWslDistros] = useState<{ name: string }[]>([]);
-  const defaultWorkspaceEnv = usePreferencesStore((s) => s.defaultWorkspaceEnv);
-  const terminalLetterSpacing = usePreferencesStore(
-    (s) => s.terminalLetterSpacing,
-  );
-  const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
-  const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
 
@@ -129,15 +124,6 @@ export function GeneralSection() {
     };
   }, []);
 
-  useEffect(() => {
-    void invoke<ShellInfo[]>("pty_list_shells")
-      .then(setShells)
-      .catch(() => {});
-    void invoke<{ name: string }[]>("wsl_list_distros")
-      .then(setWslDistros)
-      .catch(() => {});
-  }, []);
-
   const onToggleAutostart = async (next: boolean) => {
     try {
       if (next) await enable();
@@ -150,10 +136,13 @@ export function GeneralSection() {
 
   return (
     <div className="flex flex-col gap-6">
-      <SectionHeader title="General" description="Mode, editor, and startup." />
+      <SectionHeader
+        title="General"
+        description="Appearance mode, zoom, startup and notifications."
+      />
 
       <div className="flex flex-col gap-2">
-        <Label>Appearance</Label>
+        <GroupLabel>Appearance</GroupLabel>
         <div className="grid grid-cols-3 gap-2">
           {APPEARANCE.map((o) => (
             <button
@@ -174,12 +163,13 @@ export function GeneralSection() {
         </div>
         <p className="text-[11px] text-muted-foreground">
           For theme, background and customization, see the{" "}
-          <strong className="font-medium text-foreground">Themes</strong> tab.
+          <strong className="font-medium text-foreground">Themes</strong>{" "}
+          section.
         </p>
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Zoom</Label>
+        <GroupLabel>Zoom</GroupLabel>
         <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
           <div className="flex items-center justify-between gap-3">
             <span className="text-[11.5px] text-muted-foreground">
@@ -200,7 +190,67 @@ export function GeneralSection() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Editor</Label>
+        <GroupLabel>Startup</GroupLabel>
+        <SettingRow
+          title="Launch at login"
+          description="Open Terax automatically when you sign in."
+        >
+          <Switch
+            checked={autostart}
+            onCheckedChange={(v) => void onToggleAutostart(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Restore window position & size"
+          description="Reopen the main window where you left it. Applies on next launch."
+        >
+          <Switch
+            checked={restoreWindowState}
+            onCheckedChange={(v) => void setRestoreWindowState(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Start with sidebar hidden"
+          description="Always launch with the sidebar collapsed instead of restoring its last state. Toggle it any time from the header or shortcut."
+        >
+          <Switch
+            checked={sidebarStartCollapsed}
+            onCheckedChange={(v) => void setSidebarStartCollapsed(v)}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <GroupLabel>Notifications</GroupLabel>
+        <SettingRow
+          title="Coding agent notifications"
+          description="Alert when Claude Code or Codex running in a terminal needs your input or finishes. Desktop notification when Terax is unfocused, in-app otherwise."
+        >
+          <Switch
+            checked={agentNotifications}
+            onCheckedChange={(v) => void setAgentNotifications(v)}
+          />
+        </SettingRow>
+      </div>
+    </div>
+  );
+}
+
+/** Code editor behavior. */
+export function EditorSettingsSection() {
+  const vimMode = usePreferencesStore((s) => s.vimMode);
+  const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
+  const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
+  const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
+  const editorFormatOnSave = usePreferencesStore((s) => s.editorFormatOnSave);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="Editor"
+        description="Keybindings, wrapping and saving behavior."
+      />
+      <div className="flex flex-col gap-2">
         <SettingRow
           title="Vim mode"
           description="Enable Vim keybindings in the code editor."
@@ -244,11 +294,112 @@ export function GeneralSection() {
           />
         </SettingRow>
       </div>
+    </div>
+  );
+}
 
+/** Language servers. */
+export function LspSettingsSection() {
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="Language servers"
+        description="Code intelligence for the editor: completions, diagnostics, navigation."
+      />
       <LspServersGroup />
+    </div>
+  );
+}
 
+/** Interface chrome: status bar and animations. */
+export function InterfaceSettingsSection() {
+  const statusBarVisible = usePreferencesStore((s) => s.statusBarVisible);
+  const animationSpeed = usePreferencesStore((s) => s.animationSpeed);
+  const animationSpeedCustom = usePreferencesStore(
+    (s) => s.animationSpeedCustom,
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="Interface"
+        description="Window chrome and interface animations."
+      />
       <div className="flex flex-col gap-2">
-        <Label>Explorer</Label>
+        <SettingRow
+          title="Show status bar"
+          description="The bottom bar with the workspace path, LSP status and the AI agent button. Also toggled from the command palette or its shortcut."
+        >
+          <Switch
+            checked={statusBarVisible}
+            onCheckedChange={(v) => void setStatusBarVisible(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Animation speed"
+          description="Speed of interface animations: sidebar, status bar, search field, keybind hints."
+        >
+          <Select
+            value={animationSpeed}
+            onValueChange={(v) => void setAnimationSpeed(v as AnimationSpeed)}
+          >
+            <SelectTrigger
+              value={animationSpeed}
+              className="h-8 w-28 text-[12px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ANIMATION_SPEEDS.map((s) => (
+                <SelectItem
+                  key={s.value}
+                  value={s.value}
+                  className="text-[12px]"
+                >
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        {animationSpeed === "custom" && (
+          <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11.5px] text-muted-foreground">
+                Duration multiplier — higher is slower, 0 disables animations
+              </span>
+              <span className="tabular-nums text-[11px] text-muted-foreground">
+                {animationSpeedCustom.toFixed(2)}×
+              </span>
+            </div>
+            <Slider
+              value={[animationSpeedCustom]}
+              min={ANIMATION_CUSTOM_MIN}
+              max={ANIMATION_CUSTOM_MAX}
+              step={0.05}
+              onValueChange={(v) => void setAnimationSpeedCustom(v[0] ?? 1)}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** File explorer behavior. */
+export function ExplorerSettingsSection() {
+  const showHidden = usePreferencesStore((s) => s.showHidden);
+  const explorerGitDecorations = usePreferencesStore(
+    (s) => s.explorerGitDecorations,
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="Explorer"
+        description="File tree visibility and git decorations."
+      />
+      <div className="flex flex-col gap-2">
         <SettingRow
           title="Show hidden files"
           description="Include dot-prefixed files and folders (.env, .gitignore, .config) in the file explorer and search."
@@ -268,9 +419,44 @@ export function GeneralSection() {
           />
         </SettingRow>
       </div>
+    </div>
+  );
+}
 
+/** Integrated terminal: renderer, font, shell. */
+export function TerminalSettingsSection() {
+  const terminalWebglEnabled = usePreferencesStore(
+    (s) => s.terminalWebglEnabled,
+  );
+  const terminalCursorBlink = usePreferencesStore((s) => s.terminalCursorBlink);
+  const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
+  const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
+  const terminalShell = usePreferencesStore((s) => s.terminalShell);
+  const defaultWorkspaceEnv = usePreferencesStore((s) => s.defaultWorkspaceEnv);
+  const terminalLetterSpacing = usePreferencesStore(
+    (s) => s.terminalLetterSpacing,
+  );
+  const terminalFontSize = usePreferencesStore((s) => s.terminalFontSize);
+  const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
+  const [shells, setShells] = useState<ShellInfo[]>([]);
+  const [wslDistros, setWslDistros] = useState<{ name: string }[]>([]);
+
+  useEffect(() => {
+    void invoke<ShellInfo[]>("pty_list_shells")
+      .then(setShells)
+      .catch(() => {});
+    void invoke<{ name: string }[]>("wsl_list_distros")
+      .then(setWslDistros)
+      .catch(() => {});
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="Terminal"
+        description="Renderer, font, shell and scrollback."
+      />
       <div className="flex flex-col gap-2">
-        <Label>Terminal</Label>
         <SettingRow
           title={
             <span className="inline-flex items-center gap-1.5">
@@ -486,48 +672,11 @@ export function GeneralSection() {
           </Select>
         </SettingRow>
       </div>
-
-      <div className="flex flex-col gap-2">
-        <Label>Agents</Label>
-        <SettingRow
-          title="Coding agent notifications"
-          description="Alert when Claude Code or Codex running in a terminal needs your input or finishes. Desktop notification when Terax is unfocused, in-app otherwise."
-        >
-          <Switch
-            checked={agentNotifications}
-            onCheckedChange={(v) => void setAgentNotifications(v)}
-          />
-        </SettingRow>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label>Startup</Label>
-        <div className="flex flex-col gap-2">
-          <SettingRow
-            title="Launch at login"
-            description="Open Terax automatically when you sign in."
-          >
-            <Switch
-              checked={autostart}
-              onCheckedChange={(v) => void onToggleAutostart(v)}
-            />
-          </SettingRow>
-          <SettingRow
-            title="Restore window position & size"
-            description="Reopen the main window where you left it. Applies on next launch."
-          >
-            <Switch
-              checked={restoreWindowState}
-              onCheckedChange={(v) => void setRestoreWindowState(v)}
-            />
-          </SettingRow>
-        </div>
-      </div>
     </div>
   );
 }
 
-function Label({ children }: { children: React.ReactNode }) {
+function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
       {children}

@@ -371,7 +371,7 @@ export function CommandPalette({
                     onSelect={() => setQuery(hint.sigil)}
                     className="text-[12.5px]"
                   >
-                    <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
+                    <kbd className="rounded border border-border/50 bg-card px-1.5 py-0.5 font-mono text-[11px]">
                       {hint.sigil}
                     </kbd>
                     <span>{hint.label}</span>

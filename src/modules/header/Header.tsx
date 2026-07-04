@@ -4,6 +4,7 @@ import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { NotificationBell } from "@/modules/agents";
 import type { Tab } from "@/modules/tabs";
 import { TabBar } from "@/modules/tabs";
+import { ShortcutTip } from "@/modules/shortcuts/ShortcutTip";
 import {
   CommandIcon,
   Settings01Icon,
@@ -92,15 +93,29 @@ export function Header({
   }, []);
 
   const settingsButton = (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-      onClick={onOpenSettings}
-      title="Settings"
-    >
-      <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
-    </Button>
+    <ShortcutTip label="Settings" shortcutId="settings.open">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        onClick={onOpenSettings}
+      >
+        <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
+      </Button>
+    </ShortcutTip>
+  );
+
+  const commandPaletteButton = (
+    <ShortcutTip label="Command palette" shortcutId="commandPalette.open">
+      <Button
+        size="icon"
+        variant="ghost"
+        onClick={onOpenCommandPalette}
+        className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <HugeiconsIcon icon={CommandIcon} size={16} strokeWidth={1.75} />
+      </Button>
+    </ShortcutTip>
   );
 
   return (
@@ -112,25 +127,21 @@ export function Header({
       }`}
     >
       <div className="flex shrink-0 items-center gap-0.5">
-        <Button
-          onClick={onToggleSidebar}
-          title="Toggle sidebar"
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <HugeiconsIcon icon={SidebarLeftIcon} size={18} strokeWidth={1.75} />
-        </Button>
-
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          onClick={onOpenCommandPalette}
-          title="Command palette"
-          className="shrink-0 gap-1.5 rounded-md px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
-        >
-          <HugeiconsIcon icon={CommandIcon} size={14} strokeWidth={1.75} />
-        </Button>
+        <ShortcutTip label="Toggle sidebar" shortcutId="sidebar.toggle">
+          <Button
+            onClick={onToggleSidebar}
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <HugeiconsIcon
+              icon={SidebarLeftIcon}
+              size={18}
+              strokeWidth={1.75}
+              className="size-4.5"
+            />
+          </Button>
+        </ShortcutTip>
 
         {!IS_MAC && (
           <NotificationBell
@@ -169,7 +180,7 @@ export function Header({
         <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
       </div>
 
-      <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
+      <SearchInline ref={searchRef} target={searchTarget} compact />
 
       {IS_MAC && (
         <>
@@ -177,11 +188,17 @@ export function Header({
             onActivate={onActivateAgent}
             onActivateLocal={onActivateLocalAgent}
           />
+          {commandPaletteButton}
           {settingsButton}
         </>
       )}
 
-      {!IS_MAC && settingsButton}
+      {!IS_MAC && (
+        <>
+          {commandPaletteButton}
+          {settingsButton}
+        </>
+      )}
 
       {USE_CUSTOM_WINDOW_CONTROLS && (
         <>

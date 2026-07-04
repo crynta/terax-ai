@@ -15,7 +15,7 @@ export function showAgentToast({ agent, title, body, onActivate }: AgentToastArg
     description: hint ? (
       <span className="flex items-center gap-1.5">
         {body ? <span className="min-w-0 truncate">{body}</span> : null}
-        <kbd className="ml-auto shrink-0 rounded border border-border/60 bg-muted/60 px-1 py-px text-[10px] font-medium text-muted-foreground">
+        <kbd className="ml-auto shrink-0 rounded border border-border/50 bg-card px-1 py-px text-[10px] font-medium text-muted-foreground">
           {hint}
         </kbd>
       </span>
