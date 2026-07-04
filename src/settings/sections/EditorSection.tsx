@@ -1,10 +1,22 @@
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  AUTO_SAVE_DELAY_MAX,
+  AUTO_SAVE_DELAY_MIN,
+  clampAutoSaveDelay,
+  type EditorFormatter,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
   setEditorFormatOnSave,
+  setEditorFormatter,
   setEditorWordWrap,
   setVimMode,
 } from "@/modules/settings/store";
@@ -14,8 +26,6 @@ import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 
 const AUTO_SAVE_STEP = 100;
-const AUTO_SAVE_MIN = 100;
-const AUTO_SAVE_MAX = 60000;
 
 export function EditorSection() {
   const vimMode = usePreferencesStore((s) => s.vimMode);
@@ -23,6 +33,7 @@ export function EditorSection() {
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const editorFormatOnSave = usePreferencesStore((s) => s.editorFormatOnSave);
+  const editorFormatter = usePreferencesStore((s) => s.editorFormatter);
 
   return (
     <div className="flex flex-col gap-6">
@@ -72,13 +83,35 @@ export function EditorSection() {
         )}
         <SettingRow
           title="Format on save"
-          description="Format through the language server before an explicit save. Requires an active LSP for the file."
+          description="Format the file on explicit save (Cmd+S / :w) with the formatter below."
         >
           <Switch
             checked={editorFormatOnSave}
             onCheckedChange={(v) => void setEditorFormatOnSave(v)}
           />
         </SettingRow>
+        {editorFormatOnSave && (
+          <SettingRow
+            title="Formatter"
+            description="Language server formats the buffer before writing; Biome and Prettier run on the saved file from your PATH."
+          >
+            <Select
+              value={editorFormatter}
+              onValueChange={(v) =>
+                void setEditorFormatter(v as EditorFormatter)
+              }
+            >
+              <SelectTrigger className="h-8 w-40 text-[12px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="lsp">Language server</SelectItem>
+                <SelectItem value="biome">Biome</SelectItem>
+                <SelectItem value="prettier">Prettier</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
       </div>
 
       <LspServersGroup />
@@ -113,10 +146,7 @@ function AutoSaveDelayInput({
       setDraft(String(value));
       return;
     }
-    const clamped = Math.min(
-      AUTO_SAVE_MAX,
-      Math.max(AUTO_SAVE_MIN, Math.round(n)),
-    );
+    const clamped = clampAutoSaveDelay(n);
     setDraft(String(clamped));
     if (clamped !== value) onChange(clamped);
   };
@@ -129,8 +159,8 @@ function AutoSaveDelayInput({
       <div className="flex items-center gap-2">
         <Input
           type="number"
-          min={AUTO_SAVE_MIN}
-          max={AUTO_SAVE_MAX}
+          min={AUTO_SAVE_DELAY_MIN}
+          max={AUTO_SAVE_DELAY_MAX}
           step={AUTO_SAVE_STEP}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

@@ -136,9 +136,16 @@ export function useDocument({ path, onDirtyChange }: Options) {
 
   const save = useCallback(async () => {
     clearAutoSaveTimer();
-    if (!dirty) return;
+    if (bufferRef.current === savedRef.current) return;
     await saveNow();
-  }, [dirty, clearAutoSaveTimer, saveNow]);
+  }, [clearAutoSaveTimer, saveNow]);
+
+  // Adopt externally formatted content as the saved baseline before the
+  // matching editor dispatch lands, so the buffer never flashes dirty.
+  const markSaved = useCallback((content: string) => {
+    savedRef.current = content;
+    setDirty(bufferRef.current !== content);
+  }, []);
 
   const onChange = useCallback(
     (next: string) => {
@@ -160,5 +167,5 @@ export function useDocument({ path, onDirtyChange }: Options) {
 
   useEffect(() => clearAutoSaveTimer, [path, clearAutoSaveTimer]);
 
-  return { doc, dirty, onChange, save, reload };
+  return { doc, dirty, onChange, save, reload, markSaved };
 }
