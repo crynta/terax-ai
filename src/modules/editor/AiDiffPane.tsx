@@ -22,7 +22,7 @@ type Props = {
   onReject: () => void;
 };
 
-const SHARED_EXT: Extension[] = buildSharedExtensions();
+const SHARED_EXT: readonly Extension[] = buildSharedExtensions();
 const READONLY_EXT: Extension[] = [
   EditorState.readOnly.of(true),
   EditorView.editable.of(false),

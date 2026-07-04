@@ -1,5 +1,18 @@
-import type { Extension, Text } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { highlightingFor, language } from "@codemirror/language";
+import {
+  type Extension,
+  StateEffect,
+  StateField,
+  type Text,
+} from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  keymap,
+  ViewPlugin,
+} from "@codemirror/view";
+import { highlightCode } from "@lezer/highlight";
 import {
   LanguageServerClient,
   languageServerPlugin,
@@ -50,6 +63,138 @@ export async function formatDocumentAndWait(
   return true;
 }
 
+function highlightBlock(el: HTMLElement, view: EditorView): void {
+  const lang = view.state.facet(language);
+  const code = el.textContent;
+  if (!lang || !code) return;
+  const frag = document.createDocumentFragment();
+  highlightCode(
+    code,
+    lang.parser.parse(code),
+    { style: (tags) => highlightingFor(view.state, tags) },
+    (text, classes) => {
+      if (!classes) {
+        frag.appendChild(document.createTextNode(text));
+        return;
+      }
+      const span = document.createElement("span");
+      span.className = classes;
+      span.textContent = text;
+      frag.appendChild(span);
+    },
+    () => frag.appendChild(document.createTextNode("\n")),
+  );
+  el.replaceChildren(frag);
+}
+
+// Tooltip docs arrive as plain markdown-rendered code; tokenize them with
+// the file's own parser so signatures match the editor theme. Tooltips are
+// direct children of the editor DOM, so the outer observer never fires on
+// typing; the subtree observer lives only while a tooltip is mounted.
+const hoverCodeHighlight = ViewPlugin.define((view) => {
+  const seen = new WeakSet<HTMLElement>();
+  const inner = new Map<Element, MutationObserver>();
+
+  const scan = (root: Element) => {
+    const blocks = root.querySelectorAll<HTMLElement>(
+      ".documentation pre code",
+    );
+    for (const el of blocks) {
+      if (seen.has(el)) continue;
+      seen.add(el);
+      highlightBlock(el, view);
+    }
+  };
+
+  const outer = new MutationObserver((muts) => {
+    for (const m of muts) {
+      for (const node of m.addedNodes) {
+        if (
+          !(node instanceof Element) ||
+          !node.classList.contains("cm-tooltip")
+        ) {
+          continue;
+        }
+        scan(node);
+        const ob = new MutationObserver(() => scan(node));
+        ob.observe(node, { childList: true, subtree: true });
+        inner.set(node, ob);
+      }
+      for (const node of m.removedNodes) {
+        if (!(node instanceof Element)) continue;
+        inner.get(node)?.disconnect();
+        inner.delete(node);
+      }
+    }
+  });
+  outer.observe(view.dom, { childList: true });
+
+  return {
+    destroy: () => {
+      outer.disconnect();
+      for (const ob of inner.values()) ob.disconnect();
+      inner.clear();
+    },
+  };
+});
+
+const setLinkRange = StateEffect.define<{ from: number; to: number } | null>();
+const linkMark = Decoration.mark({ class: "cm-lsp-link" });
+
+const linkField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(deco, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setLinkRange)) {
+        return e.value
+          ? Decoration.set([linkMark.range(e.value.from, e.value.to)])
+          : Decoration.none;
+      }
+    }
+    return tr.docChanged ? Decoration.none : deco;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+function currentLink(view: EditorView): { from: number; to: number } | null {
+  const iter = view.state.field(linkField).iter();
+  return iter.value ? { from: iter.from, to: iter.to } : null;
+}
+
+function updateLink(view: EditorView, event: MouseEvent | null): void {
+  const prev = currentLink(view);
+  let next: { from: number; to: number } | null = null;
+  if (event && (event.metaKey || event.ctrlKey)) {
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    if (pos != null) next = view.state.wordAt(pos);
+  }
+  if (prev?.from === next?.from && prev?.to === next?.to) return;
+  view.dispatch({ effects: setLinkRange.of(next) });
+}
+
+// Cmd/Ctrl-hover underlines the symbol under the pointer, matching the
+// mod-click go-to-definition affordance.
+const linkHover: Extension = [
+  linkField,
+  EditorView.domEventHandlers({
+    mousemove: (event, view) => updateLink(view, event),
+    keyup: (event, view) => {
+      if (event.key === "Meta" || event.key === "Control") {
+        updateLink(view, null);
+      }
+    },
+    mouseleave: (_e, view) => updateLink(view, null),
+  }),
+  EditorView.theme({
+    ".cm-lsp-link": {
+      textDecoration: "underline",
+      textUnderlineOffset: "2.5px",
+      color: "var(--primary)",
+      cursor: "pointer",
+    },
+  }),
+];
+
 export function lspInteractions(opts: {
   client: TeraxLspClient;
   documentUri: string;
@@ -96,6 +241,8 @@ export function lspInteractions(opts: {
   };
 
   return [
+    hoverCodeHighlight,
+    linkHover,
     keymap.of([
       {
         key: "F12",

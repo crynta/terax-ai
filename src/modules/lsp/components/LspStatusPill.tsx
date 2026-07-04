@@ -25,7 +25,7 @@ type Props = {
 };
 
 const PILL_CLASS =
-  "terax-pill-in flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-full bg-accent/70 px-2 text-[10.5px] font-medium text-muted-foreground transition-colors duration-200 hover:bg-accent hover:text-foreground";
+  "terax-pill-in ml-1.5 flex h-6 shrink-0 cursor-pointer [&_button]:cursor-pointer items-center gap-1 rounded-full border border-border/50 bg-accent/50 px-2 text-[10.5px] font-medium text-muted-foreground transition-colors duration-200 hover:bg-accent hover:text-foreground";
 
 export function LspStatusPill({ filePath }: Props) {
   const hint = useLspHint(filePath);
@@ -86,7 +86,11 @@ function ErrorPill({ preset, reason }: { preset: LspPreset; reason: string }) {
           <span>{preset.name} LSP</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-72 p-3 text-xs">
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-72 p-3 text-xs [&_button]:cursor-pointer"
+      >
         <div className="mb-1 font-medium text-foreground">
           {preset.name} language server stopped
         </div>
@@ -155,7 +159,11 @@ function InstallPill({ preset }: { preset: LspPreset }) {
         </PopoverTrigger>
         <DismissButton preset={preset} />
       </span>
-      <PopoverContent side="top" align="start" className="w-80 p-3 text-xs">
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-80 p-3 text-xs [&_button]:cursor-pointer"
+      >
         <div className="mb-2 font-medium text-foreground">
           {preset.name} language server
         </div>
@@ -239,7 +247,11 @@ function ActivePill({
           <span>{preset.name} LSP</span>
         </button>
       </PopoverTrigger>
-      <PopoverContent side="top" align="start" className="w-64 p-3 text-xs">
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-64 p-3 text-xs [&_button]:cursor-pointer"
+      >
         <div className="mb-1 font-medium text-foreground">
           {preset.name} language server
         </div>

@@ -18,6 +18,7 @@ const MAX_CRASHES = 3;
 const SHUTDOWN_TIMEOUT_MS = 2000;
 const MAX_SESSIONS_PER_PRESET = 4;
 const CRASH_COOLDOWN_MS = [2_000, 10_000, 30_000];
+const EVICTION_MIN_AGE_MS = 10_000;
 
 type Managed = {
   key: string;
@@ -28,6 +29,7 @@ type Managed = {
   refs: Map<string, number>;
   idleTimer: ReturnType<typeof setTimeout> | null;
   closing: boolean;
+  bornAt: number;
 };
 
 export type LspDocHandle = {
@@ -90,12 +92,17 @@ export async function acquireDocExtension(
     return null;
   }
 
-  // A heavy server idling for a workspace with no open docs is wasted
-  // memory the moment another workspace needs one; evict it now instead
-  // of waiting out the grace period.
+  // Evict idle sessions of other roots; the age guard keeps simultaneous
+  // multi-root opens from evicting each other's newborn sessions.
   if (!sessions.has(key)) {
+    const now = Date.now();
     for (const m of sessions.values()) {
-      if (m.preset.id === preset.id && m.refs.size === 0 && !m.closing) {
+      if (
+        m.preset.id === preset.id &&
+        m.refs.size === 0 &&
+        !m.closing &&
+        now - m.bornAt > EVICTION_MIN_AGE_MS
+      ) {
         void closeSession(m);
       }
     }
@@ -219,6 +226,7 @@ async function createSession(
     refs: new Map(),
     idleTimer: null,
     closing: false,
+    bornAt: Date.now(),
   };
   sessions.set(key, managed);
   // Exit can beat the map insert when the binary dies instantly (e.g. a
