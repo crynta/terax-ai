@@ -162,9 +162,12 @@ export type Preferences = {
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
   editorFormatOnSave: boolean;
+  editorFormatter: EditorFormatter;
   lspActivation: Record<string, LspActivation>;
   lspCustomServers: LspCustomServer[];
 };
+
+export type EditorFormatter = "lsp" | "biome" | "prettier";
 
 export type LspActivation = "enabled" | "dismissed";
 
@@ -230,6 +233,7 @@ const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
 const KEY_EDITOR_FORMAT_ON_SAVE = "editorFormatOnSave";
+const KEY_EDITOR_FORMATTER = "editorFormatter";
 const KEY_LSP_ACTIVATION = "lspActivation";
 const KEY_LSP_CUSTOM_SERVERS = "lspCustomServers";
 
@@ -299,6 +303,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
   editorFormatOnSave: false,
+  editorFormatter: "lsp",
   lspActivation: {},
   lspCustomServers: [],
 };
@@ -467,6 +472,9 @@ export async function loadPreferences(): Promise<Preferences> {
     editorFormatOnSave:
       get<boolean>(KEY_EDITOR_FORMAT_ON_SAVE) ??
       DEFAULT_PREFERENCES.editorFormatOnSave,
+    editorFormatter:
+      get<EditorFormatter>(KEY_EDITOR_FORMATTER) ??
+      DEFAULT_PREFERENCES.editorFormatter,
     lspActivation:
       get<Record<string, LspActivation>>(KEY_LSP_ACTIVATION) ??
       DEFAULT_PREFERENCES.lspActivation,
@@ -720,9 +728,15 @@ export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
 }
 
-function clampAutoSaveDelay(v: number): number {
+export const AUTO_SAVE_DELAY_MIN = 100;
+export const AUTO_SAVE_DELAY_MAX = 60000;
+
+export function clampAutoSaveDelay(v: number): number {
   if (!Number.isFinite(v)) return 1000;
-  return Math.min(60000, Math.max(100, Math.round(v)));
+  return Math.min(
+    AUTO_SAVE_DELAY_MAX,
+    Math.max(AUTO_SAVE_DELAY_MIN, Math.round(v)),
+  );
 }
 
 export async function setEditorAutoSave(value: boolean): Promise<void> {
@@ -735,6 +749,12 @@ export async function setEditorAutoSaveDelay(value: number): Promise<void> {
 
 export async function setEditorFormatOnSave(value: boolean): Promise<void> {
   await writePref(KEY_EDITOR_FORMAT_ON_SAVE, value);
+}
+
+export async function setEditorFormatter(
+  value: EditorFormatter,
+): Promise<void> {
+  await writePref(KEY_EDITOR_FORMATTER, value);
 }
 
 export async function setAgentNotifications(value: boolean): Promise<void> {
@@ -812,6 +832,7 @@ export async function onPreferencesChange(
     [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
     [KEY_EDITOR_FORMAT_ON_SAVE]: "editorFormatOnSave",
+    [KEY_EDITOR_FORMATTER]: "editorFormatter",
     [KEY_LSP_ACTIVATION]: "lspActivation",
     [KEY_LSP_CUSTOM_SERVERS]: "lspCustomServers",
   };

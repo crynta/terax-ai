@@ -2,6 +2,7 @@ import { detectMonoFontFamily } from "@/lib/fonts";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import {
+  AbsoluteIcon,
   BoxIcon,
   BracketsIcon,
   CodeIcon,
@@ -16,7 +17,6 @@ import {
   PackageIcon,
   PuzzleIcon,
   TextFontIcon,
-  AbsoluteIcon,
 } from "@hugeicons/core-free-icons";
 
 type IconGroup = "fn" | "val" | "type" | "iface" | "misc";
@@ -310,7 +310,11 @@ const chrome = EditorView.theme({
   ".cm-tooltip ::-webkit-scrollbar-track": { background: "transparent" },
 });
 
-const THEME: Extension = [chrome, modeTheme("light"), modeTheme("dark")];
+const THEME: Extension = Object.freeze([
+  chrome,
+  modeTheme("light"),
+  modeTheme("dark"),
+]);
 
 export function chromeTheme(): Extension {
   return THEME;

@@ -18,7 +18,7 @@ export const lspCompartment = new Compartment();
 // bracketMatching, closeBrackets, autocompletion, highlightActiveLine,
 // highlightSelectionMatches and the search keymap.
 // Singleton: per-pane instances would inject duplicate style modules.
-const SHARED_EXTENSIONS: Extension[] = [
+const SHARED_EXTENSIONS: readonly Extension[] = Object.freeze([
   indentUnit.of("  "),
   EditorState.tabSize.of(2),
   search({ top: true }),
@@ -95,8 +95,8 @@ const SHARED_EXTENSIONS: Extension[] = [
       borderColor: "var(--border)",
     },
   }),
-];
+]);
 
-export function buildSharedExtensions(): Extension[] {
+export function buildSharedExtensions(): readonly Extension[] {
   return SHARED_EXTENSIONS;
 }
