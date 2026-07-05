@@ -68,7 +68,7 @@ The composer derives `isBusy` from `agentMeta.status` so it can mount safely bef
 Tool definitions live under `src/modules/ai/tools/`:
 
 - Read-only tools (`read_file`, `list_directory`, `grep`, `glob`) auto-execute after passing the security deny-list.
-- Mutating tools (`write_file`, `edit`, `multi_edit`, `create_directory`, `bash_run`, `bash_background`, `bash_session_run`) set `needsApproval: true`. The AI SDK pauses and the UI renders an approval card.
+- Mutating tools (`write_file`, `edit`, `multi_edit`, `create_directory`, `bash_run`, `bash_background`) set `needsApproval: true`. The AI SDK pauses and the UI renders an approval card.
 - `edit` / `multi_edit` enforce a read-before-edit invariant: the model must have read the file earlier in the session.
 - In plan mode, mutating tools queue edits for batch review instead of applying them immediately.
 
