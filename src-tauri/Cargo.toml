@@ -1,6 +1,6 @@
 [package]
 name = "terax"
-version = "0.7.1"
+version = "0.8.2"
 description = "Terax — an open-source AI-native terminal emulator"
 authors = ["crynta"]
 license = "Apache-2.0"
@@ -19,23 +19,25 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 portable-pty = "0.9"
-dirs = "5"
+dirs = "6"
 log = "0.4"
 ignore = "0.4"
 grep-regex = "0.1"
 grep-searcher = "0.1"
 grep-matcher = "0.1"
 globset = "0.4"
+nucleo-matcher = "0.3"
 shared_child = "1"
 tauri-plugin-log = "2"
 tauri-plugin-os = "2"
 tauri-plugin-store = "2"
 tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
 reqwest = { version = "0.12", default-features = false, features = [
 	"rustls-tls",
 	"stream",
@@ -43,6 +45,12 @@ reqwest = { version = "0.12", default-features = false, features = [
 bytes = "1"
 futures-util = "0.3"
 tokio = { version = "1", default-features = false, features = ["rt"] }
+tempfile = "3"
+notify = "8.2.0"
+which = "8.0.4"
+
+[dev-dependencies]
+proptest = "1"
 tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
@@ -52,16 +60,25 @@ libc = "0.2"
 keyring = { version = "3.6", default-features = false, features = [
 	"apple-native",
 ] }
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] }
+
+# WebKitGTK can't read external clipboard copies; mac/win webviews can.
+[target.'cfg(target_os = "linux")'.dependencies]
+tauri-plugin-clipboard-manager = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [
 	"windows-native",
 ] }
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
 	"Win32_Foundation",
 	"Win32_Security",
+	"Win32_System_Console",
 	"Win32_System_JobObjects",
+	"Win32_System_ProcessStatus",
 	"Win32_System_Threading",
+	"Win32_System_Diagnostics_ToolHelp",
 ] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use crate::modules::git::errors::{GitError, Result};
@@ -18,7 +19,7 @@ pub fn split_upstream(upstream: &str) -> (Option<String>, Option<String>) {
 }
 
 pub fn display_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    crate::modules::fs::to_canon(path)
 }
 
 fn normalize_git_path(path: &str) -> String {
@@ -62,45 +63,64 @@ pub fn authorized_repo_root(
 }
 
 pub fn resolve_within_repo(repo_root: &Path, rel: &str) -> Result<PathBuf> {
-    if rel.is_empty() {
-        return Err(GitError::InvalidPath(rel.into()));
-    }
     if !is_safe_pathspec(rel) {
         return Err(GitError::InvalidPath(rel.into()));
     }
     let joined = repo_root.join(rel);
-    let canonical = match std::fs::canonicalize(&joined) {
-        Ok(p) => p,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return canonicalize_parent(repo_root, &joined, rel)
+    match std::fs::canonicalize(&joined) {
+        Ok(canonical) => {
+            if !canonical.starts_with(repo_root) {
+                return Err(GitError::PathOutsideWorkspace(canonical));
+            }
+            Ok(canonical)
         }
-        Err(e) => return Err(GitError::Io(e)),
-    };
-    if !canonical.starts_with(repo_root) {
-        return Err(GitError::PathOutsideWorkspace(canonical));
+        // Deleted path (staging a removal): validate via nearest existing ancestor.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            resolve_deleted_within_repo(repo_root, &joined, rel)
+        }
+        Err(e) => Err(GitError::Io(e)),
     }
-    Ok(canonical)
 }
 
 pub fn is_safe_pathspec(rel: &str) -> bool {
-    !rel.is_empty()
-        && !rel.contains(':')
-        && !rel.contains('\0')
-        && !rel.chars().any(|c| (c as u32) < 0x20)
+    if rel.is_empty() || rel.contains(':') || rel.contains('\0') {
+        return false;
+    }
+    if rel.chars().any(|c| (c as u32) < 0x20) {
+        return false;
+    }
+    // Reject `.`/`..` so the deleted-path branch can't be used to escape the repo.
+    !rel.split(['/', '\\']).any(|c| c == "." || c == "..")
 }
 
-fn canonicalize_parent(repo_root: &Path, joined: &Path, rel: &str) -> Result<PathBuf> {
-    let parent = joined
-        .parent()
-        .ok_or_else(|| GitError::InvalidPath(rel.into()))?;
-    let canonical_parent = std::fs::canonicalize(parent).map_err(GitError::Io)?;
-    if !canonical_parent.starts_with(repo_root) {
-        return Err(GitError::PathOutsideWorkspace(canonical_parent));
+fn resolve_deleted_within_repo(repo_root: &Path, joined: &Path, rel: &str) -> Result<PathBuf> {
+    let mut tail: Vec<&OsStr> = Vec::new();
+    let mut cursor = joined;
+    loop {
+        let name = cursor
+            .file_name()
+            .ok_or_else(|| GitError::InvalidPath(rel.into()))?;
+        let parent = cursor
+            .parent()
+            .ok_or_else(|| GitError::InvalidPath(rel.into()))?;
+        tail.push(name);
+        match std::fs::canonicalize(parent) {
+            Ok(canonical_parent) => {
+                if !canonical_parent.starts_with(repo_root) {
+                    return Err(GitError::PathOutsideWorkspace(canonical_parent));
+                }
+                let mut resolved = canonical_parent;
+                for component in tail.iter().rev() {
+                    resolved.push(component);
+                }
+                return Ok(resolved);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                cursor = parent;
+            }
+            Err(e) => return Err(GitError::Io(e)),
+        }
     }
-    let file_name = joined
-        .file_name()
-        .ok_or_else(|| GitError::InvalidPath(rel.into()))?;
-    Ok(canonical_parent.join(file_name))
 }
 
 #[cfg(test)]
@@ -146,6 +166,35 @@ mod tests {
     fn resolve_within_repo_rejects_nul_path() {
         let tmp = std::env::temp_dir();
         let err = resolve_within_repo(&tmp, "evil\0path");
+        assert!(matches!(err, Err(GitError::InvalidPath(_))));
+    }
+
+    #[test]
+    fn safe_pathspec_rejects_dot_components() {
+        assert!(!is_safe_pathspec("../escape"));
+        assert!(!is_safe_pathspec("a/../b"));
+        assert!(!is_safe_pathspec("./a"));
+        assert!(!is_safe_pathspec("a/."));
+        assert!(!is_safe_pathspec(".."));
+    }
+
+    #[test]
+    fn resolve_within_repo_handles_deleted_directory() {
+        let base = std::env::temp_dir().join("terax_git_deleted_dir_test");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("envs/__pycache__")).unwrap();
+        let repo_root = std::fs::canonicalize(&base).unwrap();
+        std::fs::remove_dir_all(repo_root.join("envs")).unwrap();
+        let resolved =
+            resolve_within_repo(&repo_root, "envs/__pycache__/g1.pyc").expect("deleted path");
+        assert_eq!(resolved, repo_root.join("envs/__pycache__/g1.pyc"));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_within_repo_rejects_deleted_escape() {
+        let tmp = std::env::temp_dir();
+        let err = resolve_within_repo(&tmp, "../outside.txt");
         assert!(matches!(err, Err(GitError::InvalidPath(_))));
     }
 }

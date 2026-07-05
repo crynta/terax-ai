@@ -1,3 +1,8 @@
+import { endpointIdFromCompatModel } from "@/modules/ai/config";
+import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
+import { lspFormatDocument, useLspExtension } from "@/modules/lsp";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { onKeysChanged } from "@/modules/settings/store";
 import { redo, undo } from "@codemirror/commands";
 import {
   findNext,
@@ -5,32 +10,42 @@ import {
   SearchQuery,
   setSearchQuery,
 } from "@codemirror/search";
-import { keymap } from "@codemirror/view";
-import { usePreferencesStore } from "@/modules/settings/preferences";
+import { Prec } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
+import { vim } from "@replit/codemirror-vim";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { EDITOR_THEME_EXT } from "./lib/themes";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
-import { Prec, type Extension } from "@codemirror/state";
-import { vim } from "@replit/codemirror-vim";
+import { toast } from "sonner";
+import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
+import { diagnosticsReporter } from "./lib/diagnosticsReporter";
+import { useDiagnosticsStore } from "./lib/diagnosticsStore";
 import {
   buildSharedExtensions,
   languageCompartment,
+  lspCompartment,
   vimCompartment,
+  wrapCompartment,
 } from "./lib/extensions";
+import {
+  applyFormattedContent,
+  readFileText,
+  runExternalFormatter,
+} from "./lib/externalFormat";
+import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
+import { useDocument } from "./lib/useDocument";
+import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
 
 initVimGlobals();
-import { resolveLanguage } from "./lib/languageResolver";
-import { useDocument } from "./lib/useDocument";
-import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
-import { getKey } from "@/modules/ai/lib/keyring";
-import { onKeysChanged } from "@/modules/settings/store";
 
 export type EditorPaneHandle = {
   setQuery: (q: string) => void;
@@ -42,6 +57,8 @@ export type EditorPaneHandle = {
   getPath: () => string;
   /** Re-read the file from disk. Skips silently if the buffer is dirty. */
   reload: () => boolean;
+  /** Move the cursor to a 1-based line and center it, once content is ready. */
+  gotoLine: (line: number) => void;
   /** Apply CodeMirror's undo/redo commands. */
   undo: () => void;
   redo: () => void;
@@ -49,6 +66,7 @@ export type EditorPaneHandle = {
 
 type Props = {
   path: string;
+  overrideLanguage?: string | null;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
@@ -61,22 +79,43 @@ function formatBytes(n: number): string {
 }
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
-  function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
-    const { doc, onChange, save, reload } = useDocument({ path, onDirtyChange });
+  function EditorPane(props, ref) {
+    const { path, overrideLanguage, onDirtyChange, onSaved, onClose } = props;
+
+    const { doc, onChange, save, reload, markSaved } = useDocument({
+      path,
+      onDirtyChange,
+    });
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
+    const markSavedRef = useRef(markSaved);
+    markSavedRef.current = markSaved;
     const cmRef = useRef<ReactCodeMirrorRef>(null);
-    const editorThemeId = usePreferencesStore((s) => s.editorTheme);
+    const themeExt = useEditorThemeExt();
     const vimMode = usePreferencesStore((s) => s.vimMode);
+    const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
     const languageRef = useRef<string | null>(null);
+    const [langId, setLangId] = useState<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
       let cancelled = false;
       const refresh = async () => {
-        const provider = usePreferencesStore.getState().autocompleteProvider;
-        if (provider === "lmstudio" || provider === "mlx" || provider === "ollama") {
+        const s = usePreferencesStore.getState();
+        const provider = s.autocompleteProvider;
+        if (
+          provider === "lmstudio" ||
+          provider === "mlx" ||
+          provider === "ollama"
+        ) {
           apiKeyRef.current = null;
+          return;
+        }
+        // OpenAI-compatible keys live in a per-endpoint keyring slot.
+        if (provider === "openai-compatible") {
+          const eid = endpointIdFromCompatModel(s.autocompleteModelId);
+          const k = eid ? await getCustomEndpointKey(eid) : null;
+          if (!cancelled) apiKeyRef.current = k;
           return;
         }
         const k = await getKey(provider);
@@ -88,7 +127,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         unlistenKeys = un;
       });
       const unsubPrefs = usePreferencesStore.subscribe((state, prev) => {
-        if (state.autocompleteProvider !== prev.autocompleteProvider) {
+        if (
+          state.autocompleteProvider !== prev.autocompleteProvider ||
+          state.autocompleteModelId !== prev.autocompleteModelId
+        ) {
           void refresh();
         }
       });
@@ -98,8 +140,6 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         unsubPrefs();
       };
     }, []);
-    const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
-
     // Stabilize save + onSaved via refs so the extensions array never changes
     // identity — a new identity makes @uiw/react-codemirror reconfigure the
     // whole state, wiping the language compartment.
@@ -109,9 +149,66 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     onSavedRef.current = onSaved;
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+    const lspActiveRef = useRef(false);
+    const warnedNoLspRef = useRef(false);
+
+    const performSave = useCallback(async () => {
+      const view = cmRef.current?.view;
+      const prefs = usePreferencesStore.getState();
+      const formatter = prefs.editorFormatter;
+      if (prefs.editorFormatOnSave && formatter === "lsp" && view) {
+        if (lspActiveRef.current) {
+          await lspFormatDocument(view).catch(() => {});
+        } else if (!warnedNoLspRef.current) {
+          warnedNoLspRef.current = true;
+          toast.warning("Format on save skipped", {
+            description:
+              "No active language server for this file. Enable one in the statusbar, or pick Biome/Prettier in Settings.",
+          });
+        }
+      }
+      await saveRef.current();
+      if (prefs.editorFormatOnSave && formatter !== "lsp") {
+        const error = await runExternalFormatter(formatter, pathRef.current);
+        if (error) {
+          toast.error(`${formatter} format failed`, { description: error });
+        } else {
+          const text = await readFileText(pathRef.current);
+          if (text !== null && view) {
+            markSavedRef.current(text);
+            applyFormattedContent(view, text);
+          }
+        }
+      }
+      onSavedRef.current?.();
+    }, []);
+    const performSaveRef = useRef(performSave);
+    performSaveRef.current = performSave;
 
     const pathRef = useRef(path);
     pathRef.current = path;
+
+    const pendingLineRef = useRef<number | null>(null);
+    const statusRef = useRef(doc.status);
+    statusRef.current = doc.status;
+
+    const applyPendingGoto = useCallback(() => {
+      const view = cmRef.current?.view;
+      const line = pendingLineRef.current;
+      if (!view || line == null || statusRef.current !== "ready") return;
+      const target = Math.max(1, Math.min(line, view.state.doc.lines));
+      const at = view.state.doc.line(target).from;
+      view.dispatch({
+        selection: { anchor: at },
+        effects: EditorView.scrollIntoView(at, { y: "center" }),
+      });
+      view.focus();
+      pendingLineRef.current = null;
+    }, []);
+
+    useEffect(() => {
+      if (doc.status === "ready") applyPendingGoto();
+    }, [doc.status, applyPendingGoto]);
 
     const extensions = useMemo(
       () => [
@@ -120,21 +217,33 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         vimCompartment.of(
           usePreferencesStore.getState().vimMode ? Prec.highest(vim()) : [],
         ),
+        wrapCompartment.of(
+          usePreferencesStore.getState().editorWordWrap
+            ? EditorView.lineWrapping
+            : [],
+        ),
         vimHandlersExtension(() => ({
           save: () => {
-            void (async () => {
-              await saveRef.current();
-              onSavedRef.current?.();
-            })();
+            void performSaveRef.current();
           },
           close: () => onCloseRef.current?.(),
         })),
         ...buildSharedExtensions(),
         languageCompartment.of([]),
+        lspCompartment.of([]),
+        diagnosticsReporter(() => pathRef.current),
         inlineCompletion({
           getPrefs: () => {
             const s = usePreferencesStore.getState();
             const p = s.autocompleteProvider;
+            // autocompleteModelId holds the compat- id of the chosen endpoint.
+            const compatEp =
+              p === "openai-compatible"
+                ? s.customEndpoints.find(
+                    (e) =>
+                      e.id === endpointIdFromCompatModel(s.autocompleteModelId),
+                  )
+                : undefined;
             const modelId =
               p === "lmstudio"
                 ? s.lmstudioModelId
@@ -143,8 +252,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
                   : p === "ollama"
                     ? s.ollamaModelId
                     : p === "openai-compatible"
-                      ? s.openaiCompatibleModelId
-                      : s.autocompleteModelId;
+                      ? (compatEp?.modelId ?? "")
+                      : p === "openrouter"
+                        ? s.openrouterModelId
+                        : s.autocompleteModelId;
             return {
               enabled: s.autocompleteEnabled,
               provider: p,
@@ -153,7 +264,8 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               lmstudioBaseURL: s.lmstudioBaseURL,
               mlxBaseURL: s.mlxBaseURL,
               ollamaBaseURL: s.ollamaBaseURL,
-              openaiCompatibleBaseURL: s.openaiCompatibleBaseURL,
+              openaiCompatibleBaseURL:
+                compatEp?.baseURL ?? s.openaiCompatibleBaseURL,
             };
           },
           getPath: () => pathRef.current,
@@ -164,10 +276,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
             key: "Mod-s",
             preventDefault: true,
             run: () => {
-              void (async () => {
-                await saveRef.current();
-                onSavedRef.current?.();
-              })();
+              void performSaveRef.current();
               return true;
             },
           },
@@ -180,38 +289,63 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       const view = cmRef.current?.view;
       if (!view) return;
       view.dispatch({
-        effects: vimCompartment.reconfigure(
-          vimMode ? Prec.highest(vim()) : [],
-        ),
+        effects: vimCompartment.reconfigure(vimMode ? Prec.highest(vim()) : []),
       });
     }, [vimMode]);
 
     useEffect(() => {
-      let cancelled = false;
-      const ext = path.split(".").pop()?.toLowerCase() ?? null;
+      const view = cmRef.current?.view;
+      if (!view) return;
+      view.dispatch({
+        effects: wrapCompartment.reconfigure(
+          editorWordWrap ? EditorView.lineWrapping : [],
+        ),
+      });
+    }, [editorWordWrap]);
+
+    const lspExt = useLspExtension(path, langId, doc.status === "ready");
+    useEffect(() => {
+      lspActiveRef.current = lspExt !== null;
+      const view = cmRef.current?.view;
+      if (!view) return;
+      view.dispatch({
+        effects: lspCompartment.reconfigure(lspExt ?? []),
+      });
+    }, [lspExt]);
+
+    useEffect(
+      () => () => useDiagnosticsStore.getState().report(pathRef.current, null),
+      [],
+    );
+
+    useEffect(() => {
+      const ext =
+        overrideLanguage || (path.split(".").pop()?.toLowerCase() ?? null);
       languageRef.current = ext;
-      const resolve = async (): Promise<Extension> => {
-        if (path.toLowerCase().endsWith(".terax-theme")) {
-          const [{ json }, { colorSwatches }] = await Promise.all([
-            import("@codemirror/lang-json"),
-            import("./lib/colorSwatches"),
-          ]);
-          return [json(), colorSwatches()];
-        }
-        return (await resolveLanguage(path)) ?? [];
+      if (doc.status !== "ready") return;
+      let cancelled = false;
+      const resolve = async (): Promise<LanguageResult> => {
+        const resolvePath = overrideLanguage
+          ? `dummy.${overrideLanguage}`
+          : path;
+        return (
+          (await resolveLanguage(resolvePath)) ?? { ext: [], name: "", id: "" }
+        );
       };
-      void resolve().then((extension) => {
+      void resolve().then((result) => {
         if (cancelled) return;
+        if (result.id) languageRef.current = result.id;
+        setLangId(result.id || ext);
         const view = cmRef.current?.view;
         if (!view) return;
         view.dispatch({
-          effects: languageCompartment.reconfigure(extension),
+          effects: languageCompartment.reconfigure(result.ext),
         });
       });
       return () => {
         cancelled = true;
       };
-    }, [path, doc.status]);
+    }, [path, doc.status, overrideLanguage]);
 
     useImperativeHandle(
       ref,
@@ -253,6 +387,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         },
         getPath: () => path,
         reload: () => reloadRef.current(),
+        gotoLine: (line: number) => {
+          pendingLineRef.current = line;
+          applyPendingGoto();
+        },
         undo: () => {
           const view = cmRef.current?.view;
           if (view) undo(view);
@@ -262,7 +400,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
           if (view) redo(view);
         },
       }),
-      [path],
+      [path, applyPendingGoto],
     );
 
     if (doc.status === "loading") {
@@ -279,29 +417,82 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         </div>
       );
     }
-    if (doc.status === "binary") {
+    if (doc.status === "binary" || doc.status === "toolarge") {
+      const ext = path.split(".").pop()?.toLowerCase() ?? "";
+      const isImage = [
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "webp",
+        "svg",
+        "ico",
+      ].includes(ext);
+      const isVideo = ["mp4", "webm", "ogg", "mov"].includes(ext);
+      const isAudio = ["mp3", "wav", "flac", "aac", "m4a"].includes(ext);
+      const isPdf = ext === "pdf";
+
+      if (isImage || isVideo || isAudio || isPdf) {
+        const assetUrl = convertFileSrc(path);
+        return (
+          <div className="flex h-full min-h-0 flex-col items-center justify-center bg-background p-4 overflow-auto">
+            {isImage && (
+              <img
+                src={assetUrl}
+                loading="lazy"
+                decoding="async"
+                className="max-w-full max-h-full object-contain rounded-md border border-border shadow-sm"
+                style={{
+                  backgroundImage:
+                    "conic-gradient(#e5e7eb 0.25turn, #f3f4f6 0.25turn 0.5turn, #e5e7eb 0.5turn 0.75turn, #f3f4f6 0.75turn)",
+                  backgroundSize: "20px 20px",
+                }}
+                alt={path.split("/").pop()}
+              />
+            )}
+            {isVideo && (
+              // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
+              <video
+                controls
+                preload="metadata"
+                className="max-w-full max-h-full"
+                src={assetUrl}
+              />
+            )}
+            {isAudio && (
+              // biome-ignore lint/a11y/useMediaCaption: local media preview opens arbitrary files with no caption track
+              <audio
+                controls
+                preload="metadata"
+                className="w-full max-w-md"
+                src={assetUrl}
+              />
+            )}
+            {isPdf && (
+              <iframe
+                src={assetUrl}
+                className="w-full h-full border-none"
+                title={path.split("/").pop()}
+              />
+            )}
+          </div>
+        );
+      }
+
       return (
         <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-          <div className="text-sm text-foreground">Binary file</div>
+          <div className="text-sm text-foreground">
+            {doc.status === "binary" ? "Binary file" : "File too large"}
+          </div>
           <div className="text-xs text-muted-foreground">
             {formatBytes(doc.size)} · preview not supported
           </div>
         </div>
       );
     }
-    if (doc.status === "toolarge") {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center">
-          <div className="text-sm text-foreground">File too large</div>
-          <div className="text-xs text-muted-foreground">
-            {formatBytes(doc.size)} exceeds the {formatBytes(doc.limit)} limit.
-          </div>
-        </div>
-      );
-    }
 
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-full min-h-0 flex-col zoom-exempt">
         <CodeMirror
           ref={cmRef}
           value={doc.content}

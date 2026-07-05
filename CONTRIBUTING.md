@@ -84,6 +84,23 @@ Terax positions itself as **lightweight, fast, production-grade**. Every PR is r
 
 If you're not sure how to measure perf or what counts as a hot path, ask in Discord or an issue. Better to confirm than get bounced.
 
+## Changes to core subsystems require a test
+
+The most common way a PR breaks Terax is a **local fix with global blast radius**: the diff solves one reported case, reads fine, passes type-check and clippy, and silently breaks the same subsystem in every other case. Review alone does not catch these. A test does.
+
+So if your change touches behavior in any of these load-bearing paths, the PR must add or extend a test that locks the invariant you're relying on:
+
+- **Shell/terminal spawn**: what shell launches, with which cwd, env, and login flags. A "fix" here can stop terminals from starting entirely.
+- **Workspace authorization**: which directories spawns, git, and AI tools may operate in. Both the allow and the deny side.
+- **Git command layer**: repo-root resolution, pathspec/argument guards, status parsing.
+- **Filesystem mutation**: atomic writes, symlink handling, no-data-loss on partial failure.
+- **IPC command surface and AI tool surface**: anything the webview or the agent can invoke.
+- **Pure logic with wide reach**: cwd inheritance, tab/split tree transforms, OSC/prompt parsing, the command guard.
+
+The bar for the test is real coverage of the contract, not a placeholder. Test the case that would actually break: the edge, the deny path, the "what happens one level above home". If you can't see how to test it, ask in Discord before opening the PR. That conversation is usually shorter than the revert.
+
+UI rendering, themes, syntax-highlight tables, and anything the type-checker already guarantees do not need tests.
+
 ## What Terax is not
 
 To set expectations:

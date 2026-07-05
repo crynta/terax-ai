@@ -1,8 +1,8 @@
-import { RangeSetBuilder, type Extension } from "@codemirror/state";
+import { type Extension, RangeSetBuilder } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
-  EditorView,
+  type EditorView,
   ViewPlugin,
   type ViewUpdate,
   WidgetType,

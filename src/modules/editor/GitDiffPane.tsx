@@ -1,22 +1,21 @@
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 import { unifiedMergeView } from "@codemirror/merge";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import {
+  commitDiffKey,
   fetchCommitDiff,
   fetchWorkingDiff,
   getCachedDiff,
   workingDiffKey,
-  commitDiffKey,
 } from "./lib/diffCache";
+import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import { resolveLanguage, resolveLanguageSync } from "./lib/languageResolver";
-import { EDITOR_THEME_EXT } from "./lib/themes";
+import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 
 type WorkingSource = {
   kind: "working";
@@ -102,7 +101,13 @@ function countDiffLines(patch: string): { added: number; removed: number } {
 type LoadState =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "loaded"; originalContent: string; modifiedContent: string; isBinary: boolean; fallbackPatch: string }
+  | {
+      kind: "loaded";
+      originalContent: string;
+      modifiedContent: string;
+      isBinary: boolean;
+      fallbackPatch: string;
+    }
   | { kind: "error"; message: string };
 
 function cacheKey(source: WorkingSource | CommitSource): string {
@@ -111,9 +116,7 @@ function cacheKey(source: WorkingSource | CommitSource): string {
     : commitDiffKey(source.repoRoot, source.sha, source.path);
 }
 
-function loadStateFromCache(
-  source: WorkingSource | CommitSource,
-): LoadState {
+function loadStateFromCache(source: WorkingSource | CommitSource): LoadState {
   const hit = getCachedDiff(cacheKey(source));
   if (!hit) return { kind: "idle" };
   return {
@@ -127,8 +130,7 @@ function loadStateFromCache(
 
 export function GitDiffPane({ source, chipLabel, active }: Props) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
-  const editorThemeId = usePreferencesStore((s) => s.editorTheme);
-  const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
+  const themeExt = useEditorThemeExt();
   const [state, setState] = useState<LoadState>(() =>
     active ? loadStateFromCache(source) : { kind: "idle" },
   );
@@ -202,7 +204,7 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
   const extensions = useMemo(
     () => [
       ...SHARED_EXT,
-      languageCompartment.of(initialLang ?? []),
+      languageCompartment.of(initialLang?.ext ?? []),
       ...READONLY_EXT,
       unifiedMergeView({
         original: originalContent,
@@ -227,12 +229,12 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
     if (useFallback || initialLang) return;
     if (state.kind !== "loaded") return;
     let cancelled = false;
-    resolveLanguage(path).then((ext) => {
+    resolveLanguage(path).then((res) => {
       if (cancelled) return;
       const view = cmRef.current?.view;
       if (!view) return;
       view.dispatch({
-        effects: languageCompartment.reconfigure(ext ?? []),
+        effects: languageCompartment.reconfigure(res?.ext ?? []),
       });
     });
     return () => {
@@ -241,7 +243,8 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
   }, [useFallback, path, initialLang, state.kind]);
 
   const stats = useMemo(
-    () => (useFallback ? countDiffLines(fallbackPatch) : { added: 0, removed: 0 }),
+    () =>
+      useFallback ? countDiffLines(fallbackPatch) : { added: 0, removed: 0 },
     [useFallback, fallbackPatch],
   );
 

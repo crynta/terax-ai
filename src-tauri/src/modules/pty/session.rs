@@ -6,10 +6,14 @@ use std::time::{Duration, Instant};
 
 use portable_pty::{native_pty_system, ChildKiller, MasterPty, PtySize};
 use tauri::ipc::{Channel, Response};
+use tauri::{AppHandle, Emitter, Manager};
 
+use super::agent_detect::AgentDetector;
 use super::da_filter::DaFilter;
 use super::shell_init;
 use crate::modules::workspace::WorkspaceEnv;
+
+const AGENT_EVENT: &str = "terax:agent-signal";
 
 // Flusher coalesces a short window after first-byte arrival so we send chunks,
 // not single bytes. MAX_IDLE is only a safety net for missed signals.
@@ -39,10 +43,15 @@ pub struct Session {
     //   4. `master` — last; ClosePseudoConsole on Windows. By now the child
     //      is dead and conhost has nothing left to drain.
     #[cfg(windows)]
-    _job: Option<super::job::PtyJob>,
+    _job: Option<crate::modules::proc::job::ProcessJob>,
+    /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
+    pub shell_pid: u32,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
+    // Set by the waiter once the child exits, so pty_open can reap a shell
+    // that died before it was registered.
+    pub(super) exited: Arc<AtomicBool>,
 }
 
 impl Drop for Session {
@@ -89,11 +98,16 @@ impl Drop for ChildKillGuard {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn spawn(
+    id: u32,
+    app: AppHandle,
     cols: u16,
     rows: u16,
     cwd: Option<String>,
     workspace: WorkspaceEnv,
+    blocks: bool,
+    shell: Option<String>,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
@@ -109,7 +123,7 @@ pub fn spawn(
     };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = shell_init::build_command(cwd, workspace)?;
+    let cmd = shell_init::build_command(cwd, workspace, blocks, shell)?;
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -123,9 +137,11 @@ pub fn spawn(
     ));
     guard.disarm();
 
+    let shell_pid = child.process_id().unwrap_or(0);
+
     #[cfg(windows)]
     let job = match child.process_id() {
-        Some(pid) => match super::job::PtyJob::create_for(pid) {
+        Some(pid) => match crate::modules::proc::job::ProcessJob::create_for(pid) {
             Ok(j) => Some(j),
             Err(e) => {
                 log::warn!("pty job-object setup failed for pid={pid}: {e}");
@@ -135,12 +151,16 @@ pub fn spawn(
         None => None,
     };
 
+    let exited = Arc::new(AtomicBool::new(false));
+
     let session = Arc::new(Session {
         #[cfg(windows)]
         _job: job,
+        shell_pid,
         killer: Mutex::new(killer),
         writer: writer.clone(),
         master: Mutex::new(pair.master),
+        exited: exited.clone(),
     });
 
     let pending: Arc<(Mutex<Vec<u8>>, Condvar)> = Arc::new((
@@ -150,24 +170,31 @@ pub fn spawn(
     let done = Arc::new(AtomicBool::new(false));
     let spawn_at = Instant::now();
 
+    let first_byte = Arc::new(AtomicBool::new(false));
+
     let pending_r = pending.clone();
     let writer_for_da = writer.clone();
+    let app_reader = app.clone();
+    let first_byte_r = first_byte;
     let reader_thread = thread::Builder::new()
         .name("terax-pty-reader".into())
         .spawn(move || {
             let mut buf = [0u8; READ_BUF];
             let mut filtered: Vec<u8> = Vec::with_capacity(READ_BUF);
             let mut da_filter = DaFilter::new();
+            let mut agent_detect = AgentDetector::new();
             let mut dropped_bytes: u64 = 0;
-            let mut logged_first = false;
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        if !logged_first {
-                            logged_first = true;
+                        if !first_byte_r.load(Ordering::Relaxed) {
+                            first_byte_r.store(true, Ordering::Release);
                             log::debug!("pty first byte after {}ms", spawn_at.elapsed().as_millis());
                         }
+                        agent_detect.process(&buf[..n], |t| {
+                            let _ = app_reader.emit(AGENT_EVENT, t.into_signal(id));
+                        });
                         filtered.clear();
                         da_filter.process(&buf[..n], &mut filtered, |reply| {
                             if let Ok(mut w) = writer_for_da.lock() {
@@ -193,6 +220,9 @@ pub fn spawn(
                     }
                 }
             }
+            agent_detect.finish(|t| {
+                let _ = app_reader.emit(AGENT_EVENT, t.into_signal(id));
+            });
             pending_r.1.notify_one();
             if dropped_bytes > 0 {
                 log::warn!("pty backpressure: dropped {dropped_bytes} bytes (cap {MAX_PENDING})");
@@ -235,6 +265,8 @@ pub fn spawn(
     let on_data_exit = on_data;
     let pending_e = pending;
     let done_e = done;
+    let app_waiter = app;
+    let exited_w = exited;
     thread::Builder::new()
         .name("terax-pty-waiter".into())
         .spawn(move || {
@@ -245,6 +277,7 @@ pub fn spawn(
                     -1
                 }
             };
+            exited_w.store(true, Ordering::Release);
             // Wait for the reader to hit EOF before taking a final snapshot of
             // `pending`, so the last line of output never races the Exit event.
             #[cfg(windows)]
@@ -270,8 +303,100 @@ pub fn spawn(
             if let Err(e) = on_exit.send(code) {
                 log::debug!("pty exit send failed (channel closed): {e}");
             }
+            if let Some(state) = app_waiter.try_state::<super::PtyState>() {
+                if let Some(s) = state.take(id) {
+                    drop_session(s);
+                }
+            }
         })
         .expect("spawn pty waiter thread");
 
     Ok((session, size))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use portable_pty::CommandBuilder;
+
+    #[test]
+    fn drop_kills_child_process() {
+        let pty_system = native_pty_system();
+        let size = PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let pair = pty_system.openpty(size).expect("openpty");
+
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg("sleep 30");
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+
+        let killer = child.clone_killer();
+        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
+            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
+
+        let session = Arc::new(Session {
+            shell_pid: child.process_id().unwrap_or(0),
+            killer: Mutex::new(killer),
+            writer,
+            master: Mutex::new(pair.master),
+            exited: Arc::new(AtomicBool::new(false)),
+        });
+
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "child must be alive before drop",
+        );
+
+        drop(session);
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut exited = false;
+        while Instant::now() < deadline {
+            if child.try_wait().unwrap().is_some() {
+                exited = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(exited, "child still running 2s after Session drop");
+    }
+
+    #[test]
+    fn drop_session_succeeds_after_child_already_exited() {
+        let pty_system = native_pty_system();
+        let size = PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        };
+        let pair = pty_system.openpty(size).expect("openpty");
+
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.arg("-c");
+        cmd.arg("exit 0");
+        let mut child = pair.slave.spawn_command(cmd).expect("spawn");
+        drop(pair.slave);
+        let _ = child.wait();
+
+        let killer = child.clone_killer();
+        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
+            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
+
+        let session = Arc::new(Session {
+            shell_pid: 0,
+            killer: Mutex::new(killer),
+            writer,
+            master: Mutex::new(pair.master),
+            exited: Arc::new(AtomicBool::new(false)),
+        });
+
+        drop_session(session);
+    }
 }

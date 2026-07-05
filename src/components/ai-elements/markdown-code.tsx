@@ -1,8 +1,22 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { isValidElement, type ReactNode } from "react";
 
 import { ChatCodeBlock } from "./chat-code";
+
+export function markdownCodeText(children?: ReactNode): string {
+  if (children == null || typeof children === "boolean") return "";
+  if (typeof children === "string" || typeof children === "number") {
+    return String(children);
+  }
+  if (Array.isArray(children)) {
+    return children.map((child) => markdownCodeText(child)).join("");
+  }
+  if (isValidElement<{ children?: ReactNode }>(children)) {
+    return markdownCodeText(children.props.children);
+  }
+  return "";
+}
 
 /**
  * Streamdown `components.code` override. Handles both inline (`code`) and
@@ -29,6 +43,6 @@ export function MarkdownCode({
     );
   }
 
-  const code = String(children ?? "").replace(/\n$/, "");
+  const code = markdownCodeText(children).replace(/\n$/, "");
   return <ChatCodeBlock code={code} lang={match[1] ?? null} />;
 }

@@ -11,24 +11,44 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
-  MODELS,
-  PROVIDERS,
+  type CustomEndpoint,
+  compatModelIdForEndpoint,
+  DEFAULT_MODEL_ID,
   getAutocompleteEligibleModels,
+  getCompatModelInfo,
   getModel,
   getProvider,
-  providerNeedsKey,
+  isCompatModelId,
+  MODELS,
   type ModelId,
+  PROVIDERS,
   type ProviderId,
   type ProviderInfo,
+  providerNeedsKey,
+  STT_PROVIDER_LABELS,
+  type SttProvider,
+  WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
-import { clearKey, getAllKeys, setKey } from "@/modules/ai/lib/keyring";
+import {
+  type CustomEndpointKeys,
+  clearCustomEndpointKey,
+  clearKey,
+  getAllCustomEndpointKeys,
+  getAllKeys,
+  setCustomEndpointKey,
+  setKey,
+} from "@/modules/ai/lib/keyring";
+import { useChatStore } from "@/modules/ai/store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   emitKeysChanged,
   setAutocompleteEnabled,
   setAutocompleteModelId,
   setAutocompleteProvider,
+  setCustomEndpoints,
   setDefaultModel,
+  setFavoriteModelIds,
+  setGroqSttModel,
   setLmstudioBaseURL,
   setLmstudioModelId,
   setMlxBaseURL,
@@ -38,6 +58,10 @@ import {
   setOpenaiCompatibleBaseURL,
   setOpenaiCompatibleContextLimit,
   setOpenaiCompatibleModelId,
+  setOpenrouterModelId,
+  setRecentModelIds,
+  setSttProvider,
+  setWhispercppBaseURL,
 } from "@/modules/settings/store";
 import {
   Add01Icon,
@@ -45,6 +69,8 @@ import {
   ArrowUpRight01Icon,
   Cancel01Icon,
   CheckmarkCircle02Icon,
+  ChevronDown,
+  Mic01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -83,9 +109,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     modelPlaceholder: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
     description:
       "Apple-silicon inference via mlx_lm.server (pip install mlx-lm).",
-    modelHint: (
-      <>The Hugging Face repo path you launched mlx_lm.server with.</>
-    ),
+    modelHint: <>The Hugging Face repo path you launched mlx_lm.server with.</>,
   },
   ollama: {
     urlPlaceholder: "http://localhost:11434/v1",
@@ -99,10 +123,21 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     description: "Any OpenAI-compatible endpoint — vLLM, Z.AI, Fireworks, etc.",
     modelHint: null,
   },
+  openrouter: {
+    urlPlaceholder: "",
+    modelPlaceholder: "anthropic/claude-sonnet-4-6, openai/gpt-5.5, …",
+    description: "Any model on OpenRouter — type its full provider/model id.",
+    modelHint: (
+      <>
+        Browse ids at <span className="font-mono">openrouter.ai/models</span>.
+      </>
+    ),
+  },
 };
 
 export function ModelsSection() {
   const [keys, setKeys] = useState<KeysMap | null>(null);
+  const [epKeys, setEpKeys] = useState<CustomEndpointKeys>({});
   const [adding, setAdding] = useState<Set<ProviderId>>(new Set());
 
   const defaultModel = usePreferencesStore((s) => s.defaultModelId);
@@ -117,10 +152,16 @@ export function ModelsSection() {
   const compatContextLimit = usePreferencesStore(
     (s) => s.openaiCompatibleContextLimit,
   );
+  const openrouterModelId = usePreferencesStore((s) => s.openrouterModelId);
+  const customEndpoints = usePreferencesStore((s) => s.customEndpoints);
 
   useEffect(() => {
     void getAllKeys().then(setKeys);
   }, []);
+
+  useEffect(() => {
+    void getAllCustomEndpointKeys(customEndpoints).then(setEpKeys);
+  }, [customEndpoints]);
 
   const onSaveKey = async (provider: ProviderId, value: string) => {
     await setKey(provider, value);
@@ -132,6 +173,75 @@ export function ModelsSection() {
     await clearKey(provider);
     setKeys((prev) => (prev ? { ...prev, [provider]: null } : prev));
     await emitKeysChanged();
+  };
+
+  const onSaveEndpointKey = async (endpointId: string, value: string) => {
+    await setCustomEndpointKey(endpointId, value);
+    setEpKeys((prev) => ({ ...prev, [endpointId]: value }));
+    await emitKeysChanged();
+  };
+
+  const onClearEndpointKey = async (endpointId: string) => {
+    await clearCustomEndpointKey(endpointId);
+    setEpKeys((prev) => ({ ...prev, [endpointId]: null }));
+    await emitKeysChanged();
+  };
+
+  const addCustomEndpoint = async () => {
+    const ep: CustomEndpoint = {
+      id: crypto.randomUUID().slice(0, 8),
+      name: "",
+      baseURL: "",
+      modelId: "",
+      contextLimit: 128_000,
+    };
+    await setCustomEndpoints([...customEndpoints, ep]);
+  };
+
+  const updateCustomEndpoint = async (
+    id: string,
+    patch: Partial<CustomEndpoint>,
+  ) => {
+    await setCustomEndpoints(
+      customEndpoints.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+    );
+  };
+
+  const removeCustomEndpoint = async (id: string) => {
+    await clearCustomEndpointKey(id);
+    setEpKeys((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
+    // Drop the now-dead model id from favorites/recents before touching the
+    // selection, so the recents push from a selection reset can't race it.
+    const deadModelId = compatModelIdForEndpoint(id);
+    const { favoriteModelIds, recentModelIds } = usePreferencesStore.getState();
+    if (favoriteModelIds.includes(deadModelId)) {
+      await setFavoriteModelIds(
+        favoriteModelIds.filter((m) => m !== deadModelId),
+      );
+    }
+    if (recentModelIds.includes(deadModelId)) {
+      await setRecentModelIds(recentModelIds.filter((m) => m !== deadModelId));
+    }
+
+    // If the deleted endpoint was the active model, the selection would dangle
+    // and the next send throws "Custom endpoint not found". Fall back to another
+    // endpoint when one remains, else the default model.
+    const remaining = customEndpoints.filter((e) => e.id !== id);
+    const { selectedModelId, setSelectedModelId } = useChatStore.getState();
+    if (selectedModelId === deadModelId) {
+      setSelectedModelId(
+        remaining[0]
+          ? compatModelIdForEndpoint(remaining[0].id)
+          : DEFAULT_MODEL_ID,
+      );
+    }
+
+    await setCustomEndpoints(remaining);
   };
 
   const localConfig = (id: ProviderId): LocalConfig | null => {
@@ -166,12 +276,21 @@ export function ModelsSection() {
           contextLimit: compatContextLimit,
           setContextLimit: setOpenaiCompatibleContextLimit,
         };
+      case "openrouter":
+        return {
+          baseURL: "",
+          modelId: openrouterModelId,
+          setBaseURL: async () => {},
+          setModelId: setOpenrouterModelId,
+          noBaseURL: true,
+        };
       default:
         return null;
     }
   };
 
   const isConfigured = (id: ProviderId): boolean => {
+    if (id === "openrouter") return !!keys?.[id] && !!openrouterModelId.trim();
     if (!isLocalProvider(id)) return !!keys?.[id];
     const cfg = localConfig(id);
     if (!cfg) return false;
@@ -189,11 +308,18 @@ export function ModelsSection() {
   );
   const visibleIds = new Set<ProviderId>(configuredIds);
   for (const id of adding) visibleIds.add(id);
-  const visibleProviders = PROVIDERS.filter((p) => visibleIds.has(p.id));
-  const addableProviders = PROVIDERS.filter((p) => !visibleIds.has(p.id));
+  const visibleProviders = PROVIDERS.filter(
+    (p) => p.id !== "openai-compatible" && visibleIds.has(p.id),
+  );
+  const addableProviders = PROVIDERS.filter(
+    (p) => p.id !== "openai-compatible" && !visibleIds.has(p.id),
+  );
 
   const removeProvider = (id: ProviderId) => {
-    if (isLocalProvider(id)) {
+    if (id === "openrouter") {
+      void setOpenrouterModelId("");
+      void onClearKey(id);
+    } else if (isLocalProvider(id)) {
       const cfg = localConfig(id);
       if (cfg) {
         void cfg.setModelId("");
@@ -225,7 +351,10 @@ export function ModelsSection() {
         defaultModel={defaultModel}
         configuredIds={configuredIds}
         keys={keys}
+        customEndpoints={customEndpoints}
       />
+
+      <VoiceBlock />
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
@@ -233,29 +362,41 @@ export function ModelsSection() {
           <AddProviderMenu
             providers={addableProviders}
             onAdd={addProvider}
+            onAddCompat={addCustomEndpoint}
           />
         </div>
 
-        {visibleProviders.length === 0 ? (
+        {visibleProviders.length === 0 && customEndpoints.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border/60 bg-card/40 px-4 py-8 text-center">
             <p className="text-[12px] text-muted-foreground">
               No providers connected yet.
             </p>
             <p className="mt-0.5 text-[10.5px] text-muted-foreground/70">
-              Click “Add provider” to connect a cloud or local model source.
+              Click "Add provider" to connect a cloud or local model source.
             </p>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             {visibleProviders.map((p) =>
-              isLocalProvider(p.id) ? (
+              p.id === "openrouter" ? (
                 <LocalProviderCard
                   key={p.id}
                   provider={p}
                   configured={configuredIds.has(p.id)}
                   config={localConfig(p.id)!}
                   meta={LOCAL_META[p.id]!}
-                  compatKey={p.id === "openai-compatible" ? keys[p.id] : undefined}
+                  compatKey={keys[p.id]}
+                  onSaveKey={(v) => onSaveKey(p.id, v)}
+                  onClearKey={() => onClearKey(p.id)}
+                  onRemove={() => removeProvider(p.id)}
+                />
+              ) : isLocalProvider(p.id) ? (
+                <LocalProviderCard
+                  key={p.id}
+                  provider={p}
+                  configured={configuredIds.has(p.id)}
+                  config={localConfig(p.id)!}
+                  meta={LOCAL_META[p.id]!}
                   onSaveKey={(v) => onSaveKey(p.id, v)}
                   onClearKey={() => onClearKey(p.id)}
                   onRemove={() => removeProvider(p.id)}
@@ -271,6 +412,17 @@ export function ModelsSection() {
                 />
               ),
             )}
+            {customEndpoints.map((ep) => (
+              <CustomEndpointCard
+                key={ep.id}
+                endpoint={ep}
+                endpointKey={epKeys[ep.id] ?? null}
+                onSaveKey={(v) => onSaveEndpointKey(ep.id, v)}
+                onClearKey={() => onClearEndpointKey(ep.id)}
+                onUpdate={(patch) => updateCustomEndpoint(ep.id, patch)}
+                onRemove={() => removeCustomEndpoint(ep.id)}
+              />
+            ))}
           </div>
         )}
       </div>
@@ -285,18 +437,22 @@ type LocalConfig = {
   setModelId: (v: string) => Promise<void>;
   contextLimit?: number;
   setContextLimit?: (v: number) => Promise<void>;
+  noBaseURL?: boolean;
 };
 
 function AddProviderMenu({
   providers,
   onAdd,
+  onAddCompat,
 }: {
   providers: readonly ProviderInfo[];
   onAdd: (id: ProviderId) => void;
+  onAddCompat: () => void;
 }) {
   const cloud = providers.filter((p) => !isLocalProvider(p.id));
-  const local = providers.filter((p) => isLocalProvider(p.id));
-  const disabled = providers.length === 0;
+  const local = providers.filter(
+    (p) => isLocalProvider(p.id) && p.id !== "openai-compatible",
+  );
 
   return (
     <DropdownMenu>
@@ -304,7 +460,6 @@ function AddProviderMenu({
         <Button
           size="sm"
           variant="outline"
-          disabled={disabled}
           className="h-7 gap-1.5 px-2.5 text-[11px]"
         >
           <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={2} />
@@ -322,16 +477,19 @@ function AddProviderMenu({
             ))}
           </>
         ) : null}
-        {local.length > 0 ? (
-          <>
-            <DropdownMenuLabel className="px-2 text-[10px] tracking-wide text-muted-foreground uppercase">
-              Local & custom
-            </DropdownMenuLabel>
-            {local.map((p) => (
-              <ProviderMenuItem key={p.id} provider={p} onAdd={onAdd} />
-            ))}
-          </>
-        ) : null}
+        <DropdownMenuLabel className="px-2 text-[10px] tracking-wide text-muted-foreground uppercase">
+          Local & custom
+        </DropdownMenuLabel>
+        {local.map((p) => (
+          <ProviderMenuItem key={p.id} provider={p} onAdd={onAdd} />
+        ))}
+        <DropdownMenuItem
+          onSelect={() => onAddCompat()}
+          className="flex items-center gap-2 text-[12px]"
+        >
+          <ProviderIcon provider="openai-compatible" size={13} />
+          <span>OpenAI Compatible</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -359,10 +517,12 @@ function DefaultsBlock({
   defaultModel,
   configuredIds,
   keys,
+  customEndpoints,
 }: {
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
   keys: KeysMap;
+  customEndpoints: readonly CustomEndpoint[];
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -374,7 +534,11 @@ function DefaultsBlock({
             configuredIds={configuredIds}
           />
         </FieldRow>
-        <AutocompleteRow keys={keys} configuredIds={configuredIds} />
+        <AutocompleteRow
+          keys={keys}
+          configuredIds={configuredIds}
+          customEndpoints={customEndpoints}
+        />
       </div>
     </div>
   );
@@ -457,27 +621,46 @@ function DefaultModelPicker({
 function AutocompleteRow({
   keys,
   configuredIds,
+  customEndpoints,
 }: {
   keys: KeysMap;
   configuredIds: Set<ProviderId>;
+  customEndpoints: readonly CustomEndpoint[];
 }) {
   const enabled = usePreferencesStore((s) => s.autocompleteEnabled);
   const provider = usePreferencesStore((s) => s.autocompleteProvider);
   const modelId = usePreferencesStore((s) => s.autocompleteModelId);
   const eligible = useMemo(() => getAutocompleteEligibleModels(), []);
 
-  // Fast cloud tiers + any configured local provider (one model id each).
+  // One selectable model per fully-configured OpenAI-compatible endpoint.
+  const compatItems = useMemo(
+    () =>
+      customEndpoints
+        .filter((e) => e.baseURL.trim() && e.modelId.trim())
+        .map((e) =>
+          getCompatModelInfo(compatModelIdForEndpoint(e.id), customEndpoints),
+        ),
+    [customEndpoints],
+  );
+
+  // Fast cloud tiers + configured local providers + named compat endpoints.
   const items = useMemo(() => {
     const local = PROVIDERS.filter(
-      (p) => isLocalProvider(p.id) && configuredIds.has(p.id),
+      (p) =>
+        isLocalProvider(p.id) &&
+        p.id !== "openai-compatible" &&
+        configuredIds.has(p.id),
     ).flatMap((p) => {
       const m = MODELS.find((x) => x.provider === p.id);
       return m ? [m] : [];
     });
-    return [...eligible, ...local];
-  }, [eligible, configuredIds]);
+    return [...eligible, ...local, ...compatItems];
+  }, [eligible, configuredIds, compatItems]);
 
   const currentModel = useMemo(() => {
+    if (provider === "openai-compatible" && isCompatModelId(modelId)) {
+      return getCompatModelInfo(modelId, customEndpoints);
+    }
     if (isLocalProvider(provider)) {
       return MODELS.find((m) => m.provider === provider) ?? eligible[0];
     }
@@ -486,11 +669,14 @@ function AutocompleteRow({
       MODELS.find((m) => m.id === modelId) ??
       eligible[0]
     );
-  }, [eligible, provider, modelId]);
+  }, [eligible, provider, modelId, customEndpoints]);
 
   const setModel = (id: string, providerId: ProviderId) => {
     void setAutocompleteProvider(providerId);
-    void setAutocompleteModelId(isLocalProvider(providerId) ? "" : id);
+    // Compat endpoints store their compat- id; other locals use their own field.
+    const keep =
+      providerId === "openai-compatible" || !isLocalProvider(providerId);
+    void setAutocompleteModelId(keep ? id : "");
   };
 
   const grouped = useMemo(() => {
@@ -543,7 +729,8 @@ function AutocompleteRow({
               {PROVIDERS.map((p) => {
                 const list = grouped.get(p.id);
                 if (!list || list.length === 0) return null;
-                const pConfigured = configuredIds.has(p.id);
+                const pConfigured =
+                  p.id === "openai-compatible" || configuredIds.has(p.id);
                 return (
                   <div key={p.id} className="px-1 pt-1.5 first:pt-1">
                     <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -608,8 +795,15 @@ function LocalProviderCard({
   onClearKey: () => Promise<void>;
   onRemove: () => void;
 }) {
-  const { baseURL, modelId, setBaseURL, setModelId, contextLimit, setContextLimit } =
-    config;
+  const {
+    baseURL,
+    modelId,
+    setBaseURL,
+    setModelId,
+    contextLimit,
+    setContextLimit,
+    noBaseURL,
+  } = config;
   const [urlDraft, setUrlDraft] = useState(baseURL);
   const [modelDraft, setModelDraft] = useState(modelId);
   const [contextDraft, setContextDraft] = useState(String(contextLimit ?? ""));
@@ -622,7 +816,8 @@ function LocalProviderCard({
   useEffect(() => setModelDraft(modelId), [modelId]);
   useEffect(() => setContextDraft(String(contextLimit ?? "")), [contextLimit]);
 
-  const supportsKey = provider.id === "openai-compatible";
+  const supportsKey =
+    provider.id === "openai-compatible" || provider.id === "openrouter";
 
   const test = async () => {
     setTestStatus("testing");
@@ -644,7 +839,11 @@ function LocalProviderCard({
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
             Connected
           </Badge>
         ) : null}
@@ -654,7 +853,11 @@ function LocalProviderCard({
           className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
           Docs
-          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
+          <HugeiconsIcon
+            icon={ArrowUpRight01Icon}
+            size={11}
+            strokeWidth={1.75}
+          />
         </button>
         <Button
           size="icon"
@@ -672,30 +875,32 @@ function LocalProviderCard({
       </span>
 
       <div className="mt-0.5 flex flex-col gap-2.5">
-        <FieldRow label="Base URL">
-          <div className="flex flex-1 gap-1.5">
-            <Input
-              value={urlDraft}
-              onChange={(e) => setUrlDraft(e.target.value)}
-              onBlur={() => {
-                const v = urlDraft.trim();
-                if (v !== baseURL) void setBaseURL(v);
-              }}
-              placeholder={meta.urlPlaceholder}
-              spellCheck={false}
-              className="h-8 flex-1 font-mono text-[11.5px]"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void test()}
-              disabled={!urlDraft.trim()}
-              className="h-8 px-3 text-[11px]"
-            >
-              Test
-            </Button>
-          </div>
-        </FieldRow>
+        {noBaseURL ? null : (
+          <FieldRow label="Base URL">
+            <div className="flex flex-1 gap-1.5">
+              <Input
+                value={urlDraft}
+                onChange={(e) => setUrlDraft(e.target.value)}
+                onBlur={() => {
+                  const v = urlDraft.trim();
+                  if (v !== baseURL) void setBaseURL(v);
+                }}
+                placeholder={meta.urlPlaceholder}
+                spellCheck={false}
+                className="h-8 flex-1 font-mono text-[11.5px]"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void test()}
+                disabled={!urlDraft.trim()}
+                className="h-8 px-3 text-[11px]"
+              >
+                Test
+              </Button>
+            </div>
+          </FieldRow>
+        )}
 
         <FieldRow label="Model ID">
           <Input
@@ -726,7 +931,9 @@ function LocalProviderCard({
                 spellCheck={false}
                 className="h-8 w-28 font-mono text-[11.5px]"
               />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
             </div>
           </FieldRow>
         ) : null}
@@ -745,7 +952,11 @@ function LocalProviderCard({
                   title="Remove key"
                   className="size-7 text-muted-foreground hover:text-destructive"
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
                 </Button>
               </div>
             ) : (
@@ -784,6 +995,235 @@ function LocalProviderCard({
           </p>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function CustomEndpointCard({
+  endpoint,
+  endpointKey,
+  onSaveKey,
+  onClearKey,
+  onUpdate,
+  onRemove,
+}: {
+  endpoint: CustomEndpoint;
+  endpointKey: string | null;
+  onSaveKey: (v: string) => Promise<void>;
+  onClearKey: () => Promise<void>;
+  onUpdate: (patch: Partial<CustomEndpoint>) => Promise<void>;
+  onRemove: () => void;
+}) {
+  const [expanded, setExpanded] = useState(!endpoint.baseURL.trim());
+  const [nameDraft, setNameDraft] = useState(endpoint.name);
+  const [urlDraft, setUrlDraft] = useState(endpoint.baseURL);
+  const [modelDraft, setModelDraft] = useState(endpoint.modelId);
+  const [contextDraft, setContextDraft] = useState(
+    String(endpoint.contextLimit ?? ""),
+  );
+  const [keyDraft, setKeyDraft] = useState("");
+  const [testStatus, setTestStatus] = useState<
+    "idle" | "testing" | "ok" | "fail"
+  >("idle");
+
+  useEffect(() => setNameDraft(endpoint.name), [endpoint.name]);
+  useEffect(() => setUrlDraft(endpoint.baseURL), [endpoint.baseURL]);
+  useEffect(() => setModelDraft(endpoint.modelId), [endpoint.modelId]);
+  useEffect(
+    () => setContextDraft(String(endpoint.contextLimit ?? "")),
+    [endpoint.contextLimit],
+  );
+
+  const configured = !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
+
+  const test = async () => {
+    setTestStatus("testing");
+    try {
+      const status = await invoke<number>("lm_ping", { baseUrl: urlDraft });
+      setTestStatus(status > 0 ? "ok" : "fail");
+    } catch {
+      setTestStatus("fail");
+    }
+  };
+
+  return (
+    <div className="flex flex-col rounded-lg border border-border/60 bg-card/60">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-2 px-3 py-2 text-left"
+      >
+        <HugeiconsIcon
+          icon={ChevronDown}
+          size={12}
+          strokeWidth={2}
+          className={cn(
+            "shrink-0 text-muted-foreground/60 transition-transform",
+            !expanded && "-rotate-90",
+          )}
+        />
+        <ProviderIcon provider="openai-compatible" size={15} />
+        <span className="text-[12.5px] font-medium truncate">
+          {endpoint.name || "OpenAI Compatible"}
+        </span>
+        {endpoint.modelId.trim() && (
+          <span className="text-[10.5px] text-muted-foreground truncate font-mono">
+            {endpoint.modelId}
+          </span>
+        )}
+        {configured ? (
+          <Badge
+            variant="outline"
+            className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
+          >
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
+            Connected
+          </Badge>
+        ) : null}
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          title="Remove endpoint"
+          className="ml-auto size-7 text-muted-foreground hover:text-destructive"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+        </Button>
+      </button>
+
+      {expanded && (
+        <div className="flex flex-col gap-2.5 border-t border-border/40 px-3 py-2.5">
+          <FieldRow label="Name">
+            <Input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onBlur={() => {
+                const v = nameDraft.trim();
+                if (v !== endpoint.name) void onUpdate({ name: v });
+              }}
+              placeholder="My endpoint"
+              spellCheck={false}
+              className="h-8 flex-1 text-[11.5px]"
+            />
+          </FieldRow>
+
+          <FieldRow label="Base URL">
+            <div className="flex flex-1 gap-1.5">
+              <Input
+                value={urlDraft}
+                onChange={(e) => setUrlDraft(e.target.value)}
+                onBlur={() => {
+                  const v = urlDraft.trim();
+                  if (v !== endpoint.baseURL) void onUpdate({ baseURL: v });
+                }}
+                placeholder="https://api.example.com/v1"
+                spellCheck={false}
+                className="h-8 flex-1 font-mono text-[11.5px]"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void test()}
+                disabled={!urlDraft.trim()}
+                className="h-8 px-3 text-[11px]"
+              >
+                Test
+              </Button>
+            </div>
+          </FieldRow>
+
+          <FieldRow label="Model ID">
+            <Input
+              value={modelDraft}
+              onChange={(e) => setModelDraft(e.target.value)}
+              onBlur={() => {
+                const v = modelDraft.trim();
+                if (v !== endpoint.modelId) void onUpdate({ modelId: v });
+              }}
+              placeholder="gpt-4o, qwen3-max, glm-4.6, …"
+              spellCheck={false}
+              className="h-8 font-mono text-[11.5px]"
+            />
+          </FieldRow>
+
+          <FieldRow label="Context">
+            <div className="flex flex-1 items-center gap-1.5">
+              <Input
+                value={contextDraft}
+                onChange={(e) => setContextDraft(e.target.value)}
+                onBlur={() => {
+                  const v = parseInt(contextDraft);
+                  if (Number.isFinite(v) && v >= 1000)
+                    void onUpdate({ contextLimit: v });
+                  else setContextDraft(String(endpoint.contextLimit ?? ""));
+                }}
+                placeholder="128000"
+                spellCheck={false}
+                className="h-8 w-28 font-mono text-[11.5px]"
+              />
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
+            </div>
+          </FieldRow>
+
+          <FieldRow label="API key">
+            {endpointKey ? (
+              <div className="flex flex-1 items-center gap-1.5">
+                <code className="flex-1 truncate rounded bg-muted/40 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+                  {`${endpointKey.slice(0, 4)}${"•".repeat(8)}${endpointKey.slice(-4)}`}
+                </code>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => void onClearKey()}
+                  title="Remove key"
+                  className="size-7 text-muted-foreground hover:text-destructive"
+                >
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-1 gap-1.5">
+                <Input
+                  type="password"
+                  value={keyDraft}
+                  onChange={(e) => setKeyDraft(e.target.value)}
+                  placeholder="Optional — leave empty for unauthenticated endpoints"
+                  spellCheck={false}
+                  className="h-8 flex-1 font-mono text-[11.5px]"
+                />
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    const v = keyDraft.trim();
+                    if (!v) return;
+                    await onSaveKey(v);
+                    setKeyDraft("");
+                  }}
+                  disabled={!keyDraft.trim()}
+                  className="h-8 px-3 text-[11px]"
+                >
+                  Save
+                </Button>
+              </div>
+            )}
+          </FieldRow>
+
+          <StatusLine status={testStatus} />
+        </div>
+      )}
     </div>
   );
 }
@@ -828,6 +1268,104 @@ function StatusLine({
     <span className="text-[10.5px] text-destructive/80">
       Could not reach the server.
     </span>
+  );
+}
+
+function VoiceBlock() {
+  const sttProvider = usePreferencesStore((s) => s.sttProvider);
+  const groqSttModel = usePreferencesStore((s) => s.groqSttModel);
+  const whispercppBaseURL = usePreferencesStore((s) => s.whispercppBaseURL);
+  const [urlDraft, setUrlDraft] = useState(whispercppBaseURL);
+  const [groqModelDraft, setGroqModelDraft] = useState(groqSttModel);
+
+  useEffect(() => setUrlDraft(whispercppBaseURL), [whispercppBaseURL]);
+  useEffect(() => setGroqModelDraft(groqSttModel), [groqSttModel]);
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <HugeiconsIcon icon={Mic01Icon} size={15} strokeWidth={1.5} />
+        <span className="text-[12.5px] font-medium">Voice input</span>
+      </div>
+
+      <FieldRow label="Provider">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              className="h-8 flex-1 justify-between gap-2 px-2.5 text-[11.5px]"
+            >
+              <span>{STT_PROVIDER_LABELS[sttProvider]}</span>
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                size={11}
+                strokeWidth={2}
+                className="opacity-70"
+              />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-44 p-1">
+            {(Object.keys(STT_PROVIDER_LABELS) as SttProvider[]).map((p) => (
+              <DropdownMenuItem
+                key={p}
+                onSelect={() => void setSttProvider(p)}
+                className={cn(
+                  "flex items-center gap-2 text-[12px]",
+                  p === sttProvider && "bg-accent/50",
+                )}
+              >
+                <span>{STT_PROVIDER_LABELS[p]}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </FieldRow>
+
+      <p className="text-[10.5px] leading-relaxed text-muted-foreground">
+        {sttProvider === "openai" &&
+          "Uses your official OpenAI API key and the Whisper model for transcription."}
+        {sttProvider === "groq" &&
+          "Uses your official Groq API key and Groq's Whisper endpoint for transcription."}
+        {sttProvider === "whispercpp" &&
+          "Connects to a local Whisper.cpp server for fully offline transcription."}
+      </p>
+
+      {sttProvider === "groq" && (
+        <div className="flex flex-col gap-2.5">
+          <FieldRow label="Model">
+            <Input
+              value={groqModelDraft}
+              onChange={(e) => setGroqModelDraft(e.target.value)}
+              onBlur={() => {
+                const v = groqModelDraft.trim();
+                if (v !== groqSttModel) void setGroqSttModel(v);
+              }}
+              placeholder="whisper-large-v3-turbo"
+              spellCheck={false}
+              className="h-8 font-mono text-[11.5px]"
+            />
+          </FieldRow>
+        </div>
+      )}
+
+      {sttProvider === "whispercpp" && (
+        <div className="flex flex-col gap-2.5">
+          <FieldRow label="Base URL">
+            <Input
+              value={urlDraft}
+              onChange={(e) => setUrlDraft(e.target.value)}
+              onBlur={() => {
+                const v = urlDraft.trim();
+                if (v !== whispercppBaseURL) void setWhispercppBaseURL(v);
+              }}
+              placeholder={WHISPERCPP_DEFAULT_BASE_URL}
+              spellCheck={false}
+              className="h-8 font-mono text-[11.5px]"
+            />
+          </FieldRow>
+        </div>
+      )}
+    </div>
   );
 }
 

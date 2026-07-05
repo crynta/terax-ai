@@ -147,7 +147,13 @@ fn status_label(index_status: char, worktree_status: char) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_porcelain_v2;
+    use super::*;
+
+    // Build one ordinary-change record (`1 ` entry) with the exact field layout
+    // git emits: `XY sub mH mI mW hH hI path`.
+    fn ordinary(xy: &str, path: &str) -> String {
+        format!("1 {xy} N... 100644 100644 100644 aaaa bbbb {path}\0")
+    }
 
     #[test]
     fn porcelain_v2_parses_branch_and_files() {
@@ -177,11 +183,110 @@ mod tests {
     }
 
     #[test]
-    fn porcelain_v2_handles_detached_head() {
-        let stdout = "# branch.oid abc\0# branch.head (detached)\0";
-        let parsed = parse_porcelain_v2(stdout);
+    fn handles_detached_head() {
+        let parsed = parse_porcelain_v2("# branch.oid abc\0# branch.head (detached)\0");
         assert!(parsed.is_detached);
         assert_eq!(parsed.branch, "(detached)");
         assert!(parsed.upstream.is_none());
+    }
+
+    #[test]
+    fn empty_input_yields_safe_defaults() {
+        let parsed = parse_porcelain_v2("");
+        assert_eq!(parsed.branch, "HEAD");
+        assert!(parsed.files.is_empty());
+        assert_eq!(parsed.ahead, 0);
+        assert_eq!(parsed.behind, 0);
+        assert!(!parsed.is_detached);
+        assert!(parsed.upstream.is_none());
+    }
+
+    // The whole point of skip_fields counting exact fields: a path with spaces
+    // must survive intact. A naive split-on-space would truncate it.
+    #[test]
+    fn preserves_paths_with_spaces() {
+        let parsed = parse_porcelain_v2(&ordinary(".M", "src/my file name.rs"));
+        assert_eq!(parsed.files.len(), 1);
+        assert_eq!(parsed.files[0].path, "src/my file name.rs");
+    }
+
+    // A rename record consumes the *next* NUL token as its original path. If that
+    // accounting is off, the entry after a rename gets eaten or misread.
+    #[test]
+    fn rename_consumes_orig_token_without_eating_next_entry() {
+        let stdout = format!(
+            "2 R. N... 100644 100644 100644 abc def R100 new.rs\0old.rs\0{}",
+            ordinary(".M", "after.rs"),
+        );
+        let parsed = parse_porcelain_v2(&stdout);
+        assert_eq!(parsed.files.len(), 2);
+        assert_eq!(parsed.files[0].path, "new.rs");
+        assert_eq!(parsed.files[0].original_path.as_deref(), Some("old.rs"));
+        assert_eq!(parsed.files[0].status_label, "Renamed");
+        assert_eq!(parsed.files[1].path, "after.rs");
+        assert!(parsed.files[1].original_path.is_none());
+    }
+
+    #[test]
+    fn unmerged_entry_parsed_and_labeled() {
+        // `u XY sub m1 m2 m3 mW h1 h2 h3 path` -> skip 9 fields to reach path.
+        let parsed =
+            parse_porcelain_v2("u UU N... 100644 100644 100644 100644 a b c conflict.rs\0");
+        assert_eq!(parsed.files.len(), 1);
+        let f = &parsed.files[0];
+        assert_eq!(f.path, "conflict.rs");
+        assert_eq!(f.status_label, "Unmerged");
+        assert!(f.staged);
+        assert!(f.unstaged);
+    }
+
+    #[test]
+    fn staged_unstaged_untracked_matrix() {
+        // (XY, staged, unstaged, untracked, label)
+        let cases = [
+            (".M", false, true, false, "Modified"), // unstaged edit
+            ("M.", true, false, false, "Modified"), // staged edit
+            ("MM", true, true, false, "Modified"),  // staged then edited again
+            ("A.", true, false, false, "Added"),
+            ("D.", true, false, false, "Deleted"),
+            (".D", false, true, false, "Deleted"),
+        ];
+        for (xy, staged, unstaged, untracked, label) in cases {
+            let parsed = parse_porcelain_v2(&ordinary(xy, "f.rs"));
+            let f = &parsed.files[0];
+            assert_eq!(f.staged, staged, "staged for {xy}");
+            assert_eq!(f.unstaged, unstaged, "unstaged for {xy}");
+            assert_eq!(f.untracked, untracked, "untracked for {xy}");
+            assert_eq!(f.status_label, label, "label for {xy}");
+        }
+    }
+
+    #[test]
+    fn untracked_is_unstaged_but_not_staged() {
+        let parsed = parse_porcelain_v2("? new.rs\0");
+        let f = &parsed.files[0];
+        assert!(f.untracked);
+        assert!(!f.staged);
+        assert!(f.unstaged);
+        assert_eq!(f.status_label, "Untracked");
+        assert_eq!(f.index_status, "?");
+        assert_eq!(f.worktree_status, "?");
+    }
+
+    #[test]
+    fn malformed_entries_are_skipped_without_panic() {
+        // Truncated `1 ` record (no fields/path) and a too-short XY must not panic
+        // and must not produce a file; valid entries around them still parse.
+        let parsed = parse_porcelain_v2("1 .M\0? ok.rs\0");
+        assert_eq!(parsed.files.len(), 1);
+        assert_eq!(parsed.files[0].path, "ok.rs");
+    }
+
+    #[test]
+    fn branch_ab_tolerates_non_numeric() {
+        let ok = parse_porcelain_v2("# branch.ab +5 -3\0");
+        assert_eq!((ok.ahead, ok.behind), (5, 3));
+        let garbage = parse_porcelain_v2("# branch.ab +x -y\0");
+        assert_eq!((garbage.ahead, garbage.behind), (0, 0));
     }
 }

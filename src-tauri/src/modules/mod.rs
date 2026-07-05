@@ -1,5 +1,8 @@
+pub mod agent;
 pub mod fs;
 pub mod git;
+pub mod history;
+pub mod lsp;
 pub mod net;
 pub mod proc;
 pub mod pty;

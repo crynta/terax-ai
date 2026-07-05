@@ -1,4 +1,8 @@
-import { CheckListIcon, SparklesIcon } from "@hugeicons/core-free-icons";
+import {
+  CheckListIcon,
+  ClaudeIcon,
+  SparklesIcon,
+} from "@hugeicons/core-free-icons";
 import { usePlanStore } from "../store/planStore";
 
 /**
@@ -12,6 +16,20 @@ export type SlashOutcome =
   | { kind: "handled"; toast?: string }
   | { kind: "send-prompt"; prompt: string; commandName?: string }
   | { kind: "none" };
+
+function claudeCodeDirective(request: string): string {
+  return `The user wants to drive a Claude Code agent through you. Their request:
+
+<request>
+${request}
+</request>
+
+You are the orchestrator, not the implementer. Do not write the code yourself.
+1. Call read_agent_output to see whether a Claude Code agent is already active in this session.
+2. If none is active: turn the request into one clear, complete, self-contained prompt (state the concrete goal, relevant constraints, and what "done" looks like) and call spawn_coding_agent with it.
+3. If one is active: read its latest output, then craft a precise follow-up and call send_to_agent.
+Sharpen vague requests into precise engineering instructions; keep each agent prompt focused on one coherent unit of work.`;
+}
 
 const INIT_PROMPT = `Scan this workspace and produce TERAX.md at the workspace root with:
 
@@ -42,6 +60,12 @@ export const SLASH_COMMANDS: Record<string, SlashCommandMeta> = {
     invocation: "/plan",
     label: "Plan mode",
     icon: CheckListIcon,
+  },
+  "claude-code": {
+    name: "claude-code",
+    invocation: "/claude-code",
+    label: "Delegate to Claude Code",
+    icon: ClaudeIcon,
   },
 };
 
@@ -79,6 +103,16 @@ export function tryRunSlashCommand(input: string): SlashOutcome {
         kind: "send-prompt",
         prompt: INIT_PROMPT,
         commandName: "init",
+      };
+    }
+    case "claude-code": {
+      if (!tail) {
+        return { kind: "handled", toast: "Usage: /claude-code <request>" };
+      }
+      return {
+        kind: "send-prompt",
+        prompt: claudeCodeDirective(tail),
+        commandName: "claude-code",
       };
     }
     default:
