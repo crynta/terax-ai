@@ -18,6 +18,7 @@ import {
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
+import { IS_MAC } from "@/lib/platform";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -1039,10 +1040,6 @@ export function getLiveSlotForLeaf(leafId: number): Slot | null {
     ) ?? null
   );
 }
-
-const IS_MAC =
-  typeof navigator !== "undefined" &&
-  /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 function isTerminalCopy(e: KeyboardEvent): boolean {
   if (IS_MAC) {

@@ -50,7 +50,6 @@ export type ShortcutGroup =
   | "Tabs"
   | "Spaces"
   | "Panes"
-  | "Terminal"
   | "Search"
   | "AI"
   | "View"
@@ -348,7 +347,6 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
   "Panes",
-  "Terminal",
   "View",
   "Search",
   "AI",
