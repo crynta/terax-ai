@@ -1,14 +1,15 @@
-import i18next from "i18next";
+import i18next, { type Resource } from "i18next";
 import { initReactI18next } from "react-i18next";
 import type { Language } from "@/modules/settings/store";
-import enSettings from "./locales/en/settings.json";
-import zhCNSettings from "./locales/zh-CN/settings.json";
 
 /**
  * i18n bootstrap. Imported for its side effect from every webview entry
  * (`src/main.tsx`, `src/settings/main.tsx`) so `useTranslation`/`t` work
  * anywhere in the tree. The active language is driven by the persisted
  * `language` preference (see ThemeProvider), not by a runtime detector.
+ *
+ * Locale bundles live in `./locales/<lng>/<namespace>.json` and are picked up
+ * automatically via Vite glob — adding a namespace is just adding a JSON file.
  */
 
 export const FALLBACK_LANGUAGE: Language = "en";
@@ -19,10 +20,21 @@ export const SUPPORTED_LANGUAGES: { id: Language; label: string }[] = [
   { id: "zh-CN", label: "简体中文" },
 ];
 
-export const resources = {
-  en: { settings: enSettings },
-  "zh-CN": { settings: zhCNSettings },
-} as const;
+const modules = import.meta.glob<{ default: Record<string, unknown> }>(
+  "./locales/**/*.json",
+  { eager: true },
+);
+
+export const resources: Resource = {};
+const namespaces = new Set<string>();
+for (const [path, mod] of Object.entries(modules)) {
+  // path === "./locales/<lng>/<ns>.json"
+  const match = path.match(/\.\/locales\/([^/]+)\/([^/]+)\.json$/);
+  if (!match) continue;
+  const [, lng, ns] = match;
+  namespaces.add(ns);
+  (resources[lng] ??= {})[ns] = mod.default;
+}
 
 if (!i18next.isInitialized) {
   void i18next.use(initReactI18next).init({
@@ -30,7 +42,8 @@ if (!i18next.isInitialized) {
     lng: FALLBACK_LANGUAGE,
     fallbackLng: FALLBACK_LANGUAGE,
     defaultNS: "settings",
-    ns: ["settings"],
+    fallbackNS: "common",
+    ns: [...namespaces],
     interpolation: { escapeValue: false },
     returnNull: false,
   });

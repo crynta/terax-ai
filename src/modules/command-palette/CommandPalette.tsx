@@ -26,6 +26,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { COMMAND_GROUPS } from "./commands";
 import { useCommandHistory } from "./hooks/useCommandHistory";
 import {
@@ -59,6 +60,7 @@ export function CommandPalette({
   onOpenContentHit,
   insertCommand,
 }: Props) {
+  const { t } = useTranslation("commandPalette");
   const [query, setQuery] = useState("");
   const [value, setValue] = useState("");
   const [page, setPage] = useState<"root" | "themes">("root");
@@ -203,19 +205,19 @@ export function CommandPalette({
   );
 
   const placeholder = inThemes
-    ? "Search themes..."
+    ? t("ui.placeholderThemes")
     : parsed.mode === "content"
-      ? "Find text in files..."
+      ? t("ui.placeholderContent")
       : parsed.mode === "history"
-        ? "Search command history..."
-        : "Type a command, > for history, # to find in files";
+        ? t("ui.placeholderHistory")
+        : t("ui.placeholderDefault");
 
   return (
     <CommandDialog
       open={open}
       onOpenChange={handleOpenChange}
-      title="Command Palette"
-      description="Run a command, switch theme, or search your workspace."
+      title={t("ui.dialogTitle")}
+      description={t("ui.dialogDescription")}
       className="top-1/2 w-[min(680px,calc(100vw-32px))] -translate-y-1/2"
     >
       <Command
@@ -235,7 +237,7 @@ export function CommandPalette({
         <ScrollArea className="max-h-[420px]">
           <CommandList className="max-h-none overflow-visible pr-3">
             {inThemes ? (
-              <CommandGroup heading="Themes">
+              <CommandGroup heading={t("ui.headingThemes")}>
                 <CommandItem
                   value="theme:back"
                   onSelect={exitThemes}
@@ -246,7 +248,7 @@ export function CommandPalette({
                     size={14}
                     strokeWidth={1.75}
                   />
-                  <span>Back</span>
+                  <span>{t("ui.back")}</span>
                 </CommandItem>
                 {themes.map((t) => (
                   <CommandItem
@@ -266,7 +268,9 @@ export function CommandPalette({
                     ) : null}
                   </CommandItem>
                 ))}
-                {themes.length === 0 ? <StatusItem label="No themes" /> : null}
+                {themes.length === 0 ? (
+                  <StatusItem label={t("ui.noThemes")} />
+                ) : null}
               </CommandGroup>
             ) : parsed.mode === "commands" ? (
               rankedCommands.length === 0 ? (
@@ -276,7 +280,7 @@ export function CommandPalette({
                   const rows = rankedCommands.filter((a) => a.group === group);
                   if (rows.length === 0) return null;
                   return (
-                    <CommandGroup key={group} heading={group}>
+                    <CommandGroup key={group} heading={t(`group.${group}`)}>
                       {rows.map((item) => (
                         <ActionItem
                           key={item.id}
@@ -293,17 +297,17 @@ export function CommandPalette({
                 })
               )
             ) : parsed.mode === "content" ? (
-              <CommandGroup heading="Contents">
+              <CommandGroup heading={t("ui.headingContents")}>
                 {!workspaceRoot ? (
-                  <StatusItem label="No workspace root" />
+                  <StatusItem label={t("ui.noWorkspaceRoot")} />
                 ) : parsed.term.length < CONTENT_SEARCH_MIN_QUERY ? (
-                  <StatusItem label="Type at least 2 characters" />
+                  <StatusItem label={t("ui.typeAtLeast2")} />
                 ) : (
                   <AsyncBody
                     loading={content.loading}
                     error={content.error}
                     empty={content.results.length === 0}
-                    emptyLabel="No matches"
+                    emptyLabel={t("ui.noMatches")}
                     onRetry={content.retry}
                   >
                     {content.results.map((hit) => (
@@ -330,15 +334,15 @@ export function CommandPalette({
                 )}
               </CommandGroup>
             ) : parsed.mode === "history" ? (
-              <CommandGroup heading="Command history">
+              <CommandGroup heading={t("ui.headingHistory")}>
                 {!insertCommand ? (
-                  <StatusItem label="Open a terminal to run history" />
+                  <StatusItem label={t("ui.openTerminalForHistory")} />
                 ) : (
                   <AsyncBody
                     loading={history.loading}
                     error={history.error}
                     empty={history.results.length === 0}
-                    emptyLabel="No history"
+                    emptyLabel={t("ui.noHistory")}
                     onRetry={history.retry}
                   >
                     {history.results.map((cmd) => (
@@ -363,7 +367,7 @@ export function CommandPalette({
                 )}
               </CommandGroup>
             ) : (
-              <CommandGroup heading="Search modes">
+              <CommandGroup heading={t("ui.searchModes")}>
                 {MODE_HINTS.map((hint) => (
                   <CommandItem
                     key={hint.sigil}
@@ -374,7 +378,11 @@ export function CommandPalette({
                     <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
                       {hint.sigil}
                     </kbd>
-                    <span>{hint.label}</span>
+                    <span>
+                      {hint.sigil === ">"
+                        ? t("ui.modeHintHistory")
+                        : t("ui.modeHintContent")}
+                    </span>
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -457,17 +465,18 @@ function AsyncBody({
   onRetry: () => void;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation("commandPalette");
   if (error) {
     return (
       <>
-        <StatusItem label="Search failed" tone="error" />
+        <StatusItem label={t("ui.searchFailed")} tone="error" />
         <CommandItem value="retry" onSelect={onRetry} className="text-[12.5px]">
-          <span>Retry</span>
+          <span>{t("ui.retry")}</span>
         </CommandItem>
       </>
     );
   }
-  if (empty && loading) return <StatusItem label="Searching..." />;
+  if (empty && loading) return <StatusItem label={t("ui.searching")} />;
   if (empty) return <StatusItem label={emptyLabel} />;
   return <>{children}</>;
 }
@@ -503,10 +512,11 @@ function StatusItem({
 }
 
 function EmptyHint() {
+  const { t } = useTranslation("commandPalette");
   return (
     <div className="flex flex-col items-center gap-2 px-4 py-10 text-center text-sm text-muted-foreground">
       <HugeiconsIcon icon={CommandIcon} size={18} strokeWidth={1.5} />
-      <span>No commands found. Type ? to see search modes.</span>
+      <span>{t("ui.noCommandsFound")}</span>
     </div>
   );
 }

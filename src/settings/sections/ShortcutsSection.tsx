@@ -45,10 +45,12 @@ export function ShortcutsSection() {
     const lower = search.toLowerCase();
     return base.filter(
       (s) =>
+        t(`shortcuts:label.${s.id}`).toLowerCase().includes(lower) ||
         s.label.toLowerCase().includes(lower) ||
+        t(`shortcuts:group.${s.group}`).toLowerCase().includes(lower) ||
         s.group.toLowerCase().includes(lower),
     );
-  }, [search]);
+  }, [search, t]);
 
   const onRecord = (id: ShortcutId, binding: KeyBinding) => {
     const next = { ...userShortcuts, [id]: [binding] };
@@ -117,7 +119,7 @@ export function ShortcutsSection() {
           return (
             <div key={group} className="flex flex-col gap-3">
               <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-                {group}
+                {t(`shortcuts:group.${group}`)}
               </h3>
               <div className="flex flex-col divide-y divide-border/40 rounded-lg border border-border/60 bg-card/40 overflow-hidden">
                 {items.map((s) => (
@@ -194,7 +196,9 @@ function ShortcutRow({
   return (
     <div className="group flex items-center justify-between px-3 py-2.5 transition-colors hover:bg-muted/30">
       <div className="flex flex-col gap-0.5">
-        <span className="text-[12.5px] font-medium">{shortcut.label}</span>
+        <span className="text-[12.5px] font-medium">
+          {t(`shortcuts:label.${shortcut.id}`)}
+        </span>
       </div>
 
       <div className="flex items-center gap-2">
