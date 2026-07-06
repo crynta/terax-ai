@@ -129,9 +129,10 @@ describe("OSC 133 command-state tracking", () => {
     handlers.get(133)?.("B");
     expect(onCommandState).toHaveBeenCalledTimes(1);
     handlers.get(133)?.("C;claude");
-    expect(onCommandState).toHaveBeenLastCalledWith(true);
+    expect(onCommandState).toHaveBeenLastCalledWith(true, "claude");
     handlers.get(133)?.("D;0");
-    expect(onCommandState).toHaveBeenLastCalledWith(false);
+    // D carries the exit status through as the third argument.
+    expect(onCommandState).toHaveBeenLastCalledWith(false, undefined, 0);
   });
 
   it("clears running state on a bare new prompt when D was lost", () => {
@@ -140,7 +141,7 @@ describe("OSC 133 command-state tracking", () => {
     registerPromptTracker(term, undefined, onCommandState);
 
     handlers.get(133)?.("C;vim");
-    expect(onCommandState).toHaveBeenLastCalledWith(true);
+    expect(onCommandState).toHaveBeenLastCalledWith(true, "vim");
     handlers.get(133)?.("A");
     expect(onCommandState).toHaveBeenLastCalledWith(false);
   });

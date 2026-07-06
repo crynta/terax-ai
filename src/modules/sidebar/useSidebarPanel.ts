@@ -1,5 +1,8 @@
 import { animationScale } from "@/lib/useAnimationScale";
-import { readSidebarStartCollapsedFastPath } from "@/modules/settings/preferences";
+import {
+  readSidebarDisabledFastPath,
+  readSidebarStartCollapsedFastPath,
+} from "@/modules/settings/preferences";
 import {
   type RefObject,
   useCallback,
@@ -47,7 +50,8 @@ function readSidebarView(): SidebarViewId {
 }
 
 function readSidebarCollapsed(): boolean {
-  // "Start with sidebar hidden" preference wins over the remembered state.
+  // A disabled sidebar starts closed; "start hidden" wins over last state.
+  if (readSidebarDisabledFastPath()) return true;
   if (readSidebarStartCollapsedFastPath()) return true;
   try {
     return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "1";
@@ -142,6 +146,18 @@ export function useSidebarPanel(
     });
   }, []);
 
+  /** Animated explicit open/close — used by shell-tool overrides. */
+  const setSidebarOpen = useCallback((open: boolean) => {
+    const p = sidebarRef.current;
+    if (!p) return;
+    const isOpen = p.getSize().asPercentage > 0;
+    if (open === isOpen) return;
+    animateSidebarPanel(() => {
+      if (open) p.resize(`${sidebarWidthRef.current}px`);
+      else p.collapse();
+    });
+  }, []);
+
   const cycleSidebarView = useCallback(
     (view: SidebarViewId) => {
       const panel = sidebarRef.current;
@@ -163,8 +179,12 @@ export function useSidebarPanel(
     [persistSidebarView, sidebarView],
   );
 
-  const persistSidebarWidth = useCallback((next: number) => {
+  const persistSidebarWidth = useCallback((raw: number) => {
     if (sidebarAnimating) return;
+    // Clamp before storing: a stray intermediate width (animation frame,
+    // HMR mid-transition) must never become the width the sidebar reopens
+    // to — programmatic resize() bypasses the panel's min size.
+    const next = clampSidebarWidth(raw);
     sidebarWidthRef.current = next;
     if (sidebarWidthWriteTimerRef.current) {
       window.clearTimeout(sidebarWidthWriteTimerRef.current);
@@ -229,6 +249,7 @@ export function useSidebarPanel(
     persistSidebarView,
     persistSidebarCollapsed,
     toggleSidebar,
+    setSidebarOpen,
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,

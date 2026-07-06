@@ -5,6 +5,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { ShortcutTip } from "@/modules/shortcuts/ShortcutTip";
 import {
   CheckmarkCircle02Icon,
   Loading03Icon,
@@ -16,7 +17,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
 import { AgentIcon } from "../lib/agentIcon";
 import { displayAgent } from "../lib/format";
-import { ShortcutTip } from "@/modules/shortcuts/ShortcutTip";
 import type { AgentNotification, AgentStatus } from "../lib/types";
 import { useAgentStore } from "../store/agentStore";
 
@@ -80,57 +80,59 @@ const NOTIF_LABEL: Record<AgentNotification["kind"], string> = {
 
 const HOOK_AGENTS = ["claude", "codex", "gemini"] as const;
 
-function HookAgentRow({
+/** One agent = one icon; its name slides out on hover (same affordance as
+ *  the keybinding chips). Enabled: full-color with a check dot; click turns
+ *  alerts off. Disabled: dimmed; click installs the hooks. */
+function HookAgentToggle({
   id,
   label,
   ready,
-  installing,
-  onEnable,
+  busy,
+  onToggle,
 }: {
   id: string;
   label: string;
   ready: boolean;
-  installing: boolean;
-  onEnable: () => void;
+  busy: boolean;
+  onToggle: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 px-2 py-1">
-      <AgentIcon
-        agent={id}
-        size={14}
-        className="shrink-0 text-muted-foreground"
-      />
-      <span className="flex-1 truncate text-[12px] text-muted-foreground">
-        {label}
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={busy}
+      className={cn(
+        "group/agent relative flex h-7 items-center rounded-md px-1.5 transition-all duration-[calc(250ms*var(--terax-anim,1))] hover:bg-accent",
+        ready
+          ? "text-foreground"
+          : "text-muted-foreground/50 hover:text-foreground",
+      )}
+    >
+      <span className="flex max-w-0 items-center overflow-hidden opacity-0 transition-all duration-[calc(250ms*var(--terax-anim,1))] ease-out group-hover/agent:mr-1.5 group-hover/agent:max-w-32 group-hover/agent:opacity-100">
+        <span className="text-[10.5px] whitespace-nowrap text-muted-foreground">
+          {busy ? `${label}…` : ready ? `${label} — on` : `Enable ${label}`}
+        </span>
       </span>
-      {ready ? (
-        <span className="flex items-center gap-1 text-[11px] font-medium text-primary">
+      {busy ? (
+        <HugeiconsIcon
+          icon={Loading03Icon}
+          size={14}
+          strokeWidth={1.75}
+          className="animate-spin"
+        />
+      ) : (
+        <AgentIcon agent={id} size={15} />
+      )}
+      {ready && !busy && (
+        <span className="absolute right-0 bottom-0 flex size-3 items-center justify-center rounded-full bg-popover text-primary">
           <HugeiconsIcon
             icon={CheckmarkCircle02Icon}
-            size={13}
-            strokeWidth={1.75}
+            size={11}
+            strokeWidth={2}
           />
-          enabled
         </span>
-      ) : (
-        <button
-          type="button"
-          onClick={onEnable}
-          disabled={installing}
-          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
-        >
-          {installing ? (
-            <HugeiconsIcon
-              icon={Loading03Icon}
-              size={12}
-              strokeWidth={1.75}
-              className="animate-spin"
-            />
-          ) : null}
-          {installing ? "Enabling" : "Enable"}
-        </button>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -213,13 +215,16 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
     }
   };
 
-  const enableHooks = async (id: string) => {
+  const toggleHooks = async (id: string) => {
+    const enable = hooks[id] !== true;
     setInstalling(id);
     try {
-      await invoke("agent_enable_hooks", { agent: id });
-      setHooks((h) => ({ ...h, [id]: true }));
+      await invoke(enable ? "agent_enable_hooks" : "agent_disable_hooks", {
+        agent: id,
+      });
+      setHooks((h) => ({ ...h, [id]: enable }));
     } catch {
-      setHooks((h) => ({ ...h, [id]: false }));
+      // leave the previous state; status refresh on next open corrects it
     } finally {
       setInstalling(null);
     }
@@ -247,6 +252,7 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
       <ShortcutTip
         label="Agent notifications"
         shortcutId="agent.focusAttention"
+        pinned={open}
       >
         <PopoverTrigger asChild>
           <Button
@@ -270,6 +276,8 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
       <PopoverContent
         align="end"
         sideOffset={8}
+        // No auto-focus: it landed the focus ring on the first agent icon.
+        onOpenAutoFocus={(e) => e.preventDefault()}
         className="w-80 overflow-hidden p-0 gap-0.5"
       >
         <div className="flex h-10 items-center gap-2 px-3 pt-0.5">
@@ -278,7 +286,7 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
           </span>
           <div className="ml-auto flex items-center gap-2">
             {activeCount > 0 ? (
-              <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+              <span className="rounded border border-border/50 bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium leading-none tabular-nums text-muted-foreground/80">
                 {activeCount} active
               </span>
             ) : null}
@@ -295,10 +303,21 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
         </div>
 
         {empty ? (
-          <div className="border-t border-border/60 px-3 py-5 text-center text-xs leading-relaxed text-muted-foreground">
-            No agent activity yet.
-            <br />
-            Run the Terax agent or a coding agent to track it here.
+          <div className="flex flex-col items-center gap-1.5 border-t border-border/60 px-4 py-7 text-center">
+            <div className="mb-1 flex size-9 items-center justify-center rounded-full border border-border/60 bg-muted/30 text-muted-foreground">
+              <HugeiconsIcon
+                icon={Notification01Icon}
+                size={16}
+                strokeWidth={1.5}
+              />
+            </div>
+            <span className="text-xs font-medium text-foreground">
+              No agent activity yet
+            </span>
+            <span className="max-w-60 text-[11px] leading-relaxed text-muted-foreground">
+              Progress and questions from the Terax agent, Claude Code, Codex or
+              Gemini land here.
+            </span>
           </div>
         ) : (
           <div className="max-h-80 overflow-y-auto border-t border-border/60 p-1">
@@ -330,25 +349,28 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
           </div>
         )}
 
-        <div className="border-t border-border/60 p-1">
-          <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
-            <HugeiconsIcon
-              icon={Notification03Icon}
-              size={11}
-              strokeWidth={2}
-            />
+        <div className="flex h-10 items-center gap-1.5 border-t border-border/60 px-3">
+          <HugeiconsIcon
+            icon={Notification03Icon}
+            size={11}
+            strokeWidth={2}
+            className="text-muted-foreground/60"
+          />
+          <span className="text-[10px] font-medium tracking-wide text-muted-foreground/60 uppercase">
             Agent alerts
+          </span>
+          <div className="ml-auto flex items-center gap-0.5">
+            {HOOK_AGENTS.map((id) => (
+              <HookAgentToggle
+                key={id}
+                id={id}
+                label={displayAgent(id)}
+                ready={hooks[id] === true}
+                busy={installing === id}
+                onToggle={() => void toggleHooks(id)}
+              />
+            ))}
           </div>
-          {HOOK_AGENTS.map((id) => (
-            <HookAgentRow
-              key={id}
-              id={id}
-              label={displayAgent(id)}
-              ready={hooks[id] === true}
-              installing={installing === id}
-              onEnable={() => enableHooks(id)}
-            />
-          ))}
         </div>
       </PopoverContent>
     </Popover>

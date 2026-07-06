@@ -7,6 +7,8 @@ export type SettingsTab =
   | "interface"
   | "explorer"
   | "terminal"
+  | "assist"
+  | "shelltools"
   | "themes"
   | "shortcuts"
   | "models"

@@ -1,4 +1,3 @@
-import { Kbd } from "@/components/ui/kbd";
 import {
   Popover,
   PopoverContent,
@@ -6,6 +5,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useShortcutLabel } from "@/modules/shortcuts";
+import { KbdChip } from "@/modules/shortcuts/KbdChip";
 import { labelFor, type Tab, TabIcon } from "@/modules/tabs";
 import {
   ArrowDown01Icon,
@@ -104,7 +104,9 @@ export function SpaceSwitcher({
   const [drop, setDrop] = useState<DropTarget | null>(null);
   const [overlay, setOverlay] = useState<{ x: number; y: number } | null>(null);
 
-  const current = spaces.find((s) => s.id === activeId);
+  // Fall back to the first space so a stale activeId (HMR store swap,
+  // deleted space) degrades gracefully instead of unmounting the pill.
+  const current = spaces.find((s) => s.id === activeId) ?? spaces[0];
 
   const tabsBySpace = useMemo(() => {
     const m = new Map<string, Tab[]>();
@@ -242,7 +244,7 @@ export function SpaceSwitcher({
         <button
           type="button"
           title={shortcut ? `Spaces · ${shortcut}` : "Spaces"}
-          className="flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-muted-foreground/90 outline-none transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
+          className="flex h-7 shrink-0 items-center gap-1.5 rounded-md pl-2 pr-1.5 text-muted-foreground/90 outline-none transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
         >
           <HugeiconsIcon
             icon={Home03Icon}
@@ -261,14 +263,18 @@ export function SpaceSwitcher({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={6} className="w-[20rem] p-1.5">
-        <div className="flex items-center justify-between px-1.5 pb-1.5 pt-0.5">
+      {/* Full-bleed sections split by edge-to-edge dividers — same chrome
+          as the Notifications popover. */}
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-[20rem] gap-0 overflow-hidden p-0"
+      >
+        <div className="flex h-10 items-center justify-between px-3 pt-0.5">
           <span className="text-xs font-semibold text-foreground">Spaces</span>
-          {shortcut && (
-            <Kbd className="h-5 bg-muted/70 text-[10px]">{shortcut}</Kbd>
-          )}
+          {shortcut && <KbdChip>{shortcut}</KbdChip>}
         </div>
-        <div className="-mx-0.5 max-h-[60vh] overflow-y-auto px-0.5">
+        <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto border-t border-border/60 p-1.5">
           {spaces.map((sp) => (
             <SpaceRow
               key={sp.id}
@@ -305,7 +311,7 @@ export function SpaceSwitcher({
             />
           ))}
         </div>
-        <div className="mt-1.5 border-t border-border/60 pt-1.5">
+        <div className="border-t border-border/60 p-1">
           <button
             type="button"
             onClick={onNewSpace}
@@ -395,7 +401,15 @@ function SpaceRow({
     drop?.kind === "space" && drop.spaceId === space.id ? drop.edge : null;
 
   return (
-    <div className={cn("relative", isDragging && "opacity-50")}>
+    <div
+      className={cn(
+        "relative rounded-lg border p-0.5 transition-colors",
+        isActive
+          ? "border-border/70 bg-card/60"
+          : "border-border/40 hover:border-border/70",
+        isDragging && "opacity-50",
+      )}
+    >
       {reorderEdge && <DropLine edge={reorderEdge} />}
       {/* biome-ignore lint/a11y/useSemanticElements: drag row hosts nested buttons, cannot be a <button> */}
       <div
@@ -419,7 +433,7 @@ function SpaceRow({
           moveTarget
             ? "bg-primary/10 ring-1 ring-inset ring-primary/40"
             : isActive
-              ? "bg-accent"
+              ? "bg-accent/70"
               : "hover:bg-accent/50",
         )}
       >
@@ -454,7 +468,7 @@ function SpaceRow({
         )}
         {!editing && (
           <>
-            <span className="shrink-0 px-1 text-[10px] tabular-nums text-muted-foreground/50 group-hover:hidden">
+            <span className="shrink-0 rounded border border-border/50 bg-muted/40 px-1.5 py-px text-[9.5px] leading-none tabular-nums text-muted-foreground/70 group-hover:hidden">
               {tabs.length}
             </span>
             <div
@@ -480,28 +494,37 @@ function SpaceRow({
         )}
       </div>
 
-      {expanded && (
-        <div className="flex flex-col gap-px py-0.5 pl-10 pr-0.5">
-          {tabs.map((t) => (
-            <TabRow
-              key={t.id}
-              tab={t}
-              dragging={dragging}
-              drop={drop}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onJump={() => onJumpTab(t.id)}
-              onClose={() => onCloseTab(t.id)}
-            />
-          ))}
-          {tabs.length === 0 && (
-            <span className="px-2 py-1 text-[10.5px] text-muted-foreground/50">
-              {draggingTabFromOther ? "Drop to move here" : "No tabs"}
-            </span>
-          )}
+      {/* Grid-rows trick animates open AND close without measuring height;
+          the middle wrapper clips the content while the row collapses. */}
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-[calc(250ms*var(--terax-anim,1))] ease-out",
+          expanded ? "[grid-template-rows:1fr]" : "[grid-template-rows:0fr]",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <div className="mx-1 mt-0.5 mb-0.5 flex flex-col gap-px border-t border-border/40 pt-1 pl-6">
+            {tabs.map((t) => (
+              <TabRow
+                key={t.id}
+                tab={t}
+                dragging={dragging}
+                drop={drop}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onJump={() => onJumpTab(t.id)}
+                onClose={() => onCloseTab(t.id)}
+              />
+            ))}
+            {tabs.length === 0 && (
+              <span className="px-2 py-1 text-[10.5px] text-muted-foreground/50">
+                {draggingTabFromOther ? "Drop to move here" : "No tabs"}
+              </span>
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

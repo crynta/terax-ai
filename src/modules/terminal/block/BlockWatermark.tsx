@@ -36,7 +36,7 @@ export function BlockWatermark({ leafId, subscribe }: Props) {
       aria-hidden
       className={cn(
         "pointer-events-none absolute inset-0 z-[5] flex select-none flex-col items-center justify-center gap-8",
-        "transition-[opacity,transform] duration-500 ease-out",
+        "transition-[opacity,transform] duration-[calc(500ms*var(--terax-anim,1))] ease-out",
         state === "visible"
           ? "translate-y-0 opacity-100"
           : "translate-y-2 opacity-0",

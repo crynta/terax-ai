@@ -104,7 +104,12 @@ export async function buildLanguageModel(
     }
     case "anthropic": {
       const { createAnthropic } = await import("@ai-sdk/anthropic");
-      built = createAnthropic({ apiKey: key })(resolvedModelId);
+      built = createAnthropic({
+        apiKey: key,
+        // The webview is a browser origin: Anthropic rejects CORS requests
+        // unless this opt-in header is present ("Load failed" otherwise).
+        headers: { "anthropic-dangerous-direct-browser-access": "true" },
+      })(resolvedModelId);
       break;
     }
     case "google": {
@@ -207,6 +212,11 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "claude-code":
+    case "codex":
+      // Routed through the CLI transport before model construction; reaching
+      // here means a mis-wired call site.
+      throw new Error(`${provider} runs via the local CLI, not an SDK model.`);
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);

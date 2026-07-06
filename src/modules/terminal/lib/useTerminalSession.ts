@@ -9,6 +9,7 @@ import {
   type VisibleBlocks,
 } from "../block/lib/blockDecorations";
 import type { BlockMode } from "../block/lib/modeMachine";
+import { createClassicSuggest } from "./classicSuggest";
 import { DormantRing } from "./dormantRing";
 import {
   createShellIntegrationState,
@@ -29,6 +30,7 @@ import {
   applyLetterSpacing,
   applyTheme as applyPoolTheme,
   applyScrollback,
+  applyTerminalPadding,
   applyWebglPreference,
   configureRendererPool,
   discardRetainedSlot,
@@ -42,8 +44,10 @@ import {
   poolSlotStats,
   refreshLeafSlot,
   releaseSlot,
+  setClassicKeyHook,
   setSlotFocused,
 } from "./rendererPool";
+import { trackLeafCommand, useShellToolStore } from "./shellToolStore";
 
 type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
@@ -78,6 +82,8 @@ type Session = {
   // Set by the block shell-input; called to pull focus back when the xterm
   // grid steals it at the prompt (e.g. on a click), so typing stays in the bar.
   inputFocus: (() => void) | null;
+  /** Replaces the prompt input text (registered by the blocks ShellInput). */
+  inputSetter: ((text: string) => void) | null;
   // Per-leaf unsent shell-input text; the single workspace bar swaps it on focus change.
   inputDraft: string;
   // Live "input has text" flag from the block shell-input (gates the watermark).
@@ -224,6 +230,26 @@ export function focusLeafInput(leafId: number): void {
   sessions.get(leafId)?.inputFocus?.();
 }
 
+export function setLeafInputSetter(
+  leafId: number,
+  fn: ((text: string) => void) | null,
+): void {
+  const s = sessions.get(leafId);
+  if (s) s.inputSetter = fn;
+}
+
+/** Puts a command into the prompt input (draft fallback when unmounted). */
+export function insertLeafInput(leafId: number, text: string): void {
+  const s = sessions.get(leafId);
+  if (!s) return;
+  if (s.inputSetter) {
+    s.inputSetter(text);
+    s.inputFocus?.();
+  } else {
+    s.inputDraft = text;
+  }
+}
+
 export function getLeafDraft(leafId: number): string {
   return sessions.get(leafId)?.inputDraft ?? "";
 }
@@ -332,14 +358,45 @@ async function leafHasForegroundJob(leafId: number): Promise<boolean> {
   }
 }
 
-function onLeafCommandState(leafId: number, running: boolean): void {
+const commandStartedAt = new Map<number, number>();
+const LONG_COMMAND_MS = 10_000;
+
+export type CommandDoneDetail = {
+  leafId: number;
+  command: string;
+  durationMs: number;
+  exitCode: number | null;
+};
+
+function onLeafCommandState(
+  leafId: number,
+  running: boolean,
+  exitCode: number | null = null,
+): void {
   const s = sessions.get(leafId);
   if (!s || s.commandRunning === running) return;
   s.commandRunning = running;
   if (!running) {
+    useShellToolStore.getState().setProgress(leafId, null);
+    // Long command finished while its tab is hidden → surface a toast.
+    const started = commandStartedAt.get(leafId);
+    commandStartedAt.delete(leafId);
+    if (started !== undefined) {
+      const durationMs = Date.now() - started;
+      if (durationMs >= LONG_COMMAND_MS && !s.visibleNow) {
+        const command =
+          useShellToolStore.getState().runningByLeaf[leafId] ?? "";
+        window.dispatchEvent(
+          new CustomEvent<CommandDoneDetail>("terax:command-done", {
+            detail: { leafId, command, durationMs, exitCode },
+          }),
+        );
+      }
+    }
     scheduleHiddenRelease(leafId, s);
     return;
   }
+  commandStartedAt.set(leafId, Date.now());
   cancelHiddenRelease(s);
   // A command started in a hidden released leaf (e.g. submitted by the AI):
   // rebind its retained slot so output parses live instead of filling the
@@ -456,6 +513,7 @@ function ensureSession(
     blockListeners: new Set(),
     blockDecorations: null,
     inputFocus: null,
+    inputSetter: null,
     inputDraft: "",
     inputActive: false,
     everSubmitted: false,
@@ -474,9 +532,27 @@ function ensureSession(
   return session;
 }
 
+// Cheap progress sniffing: last "NN%" in the chunk while a command runs.
+const progressRe = /(\d{1,3})(?:\.\d+)?%/g;
+const progressDecoder = new TextDecoder();
+
+function sniffProgress(leafId: number, s: Session, bytes: Uint8Array): void {
+  if (!s.commandRunning || bytes.length === 0) return;
+  // Only the tail — enough for any progress line, cheap for big chunks.
+  const tail = bytes.length > 512 ? bytes.subarray(bytes.length - 512) : bytes;
+  const text = progressDecoder.decode(tail);
+  let pct: number | null = null;
+  for (const m of text.matchAll(progressRe)) {
+    const n = Number(m[1]);
+    if (n >= 0 && n <= 100) pct = n;
+  }
+  if (pct !== null) useShellToolStore.getState().setProgress(leafId, pct);
+}
+
 function deliverPtyBytes(leafId: number, bytes: Uint8Array): void {
   const s = sessions.get(leafId);
   if (!s) return;
+  sniffProgress(leafId, s, bytes);
   // Retained slots keep parsing live (render paused); the ring is only for
   // leaves whose buffer was stolen or never bound.
   const slot = getLiveSlotForLeaf(leafId);
@@ -632,8 +708,24 @@ function bindLeafToSlot(leafId: number, s: Session): void {
       // 7 emitted by untrusted command output (remote SSH, `cat` of an
       // attacker file, etc.).
       const shellState = createShellIntegrationState();
-      const prompt = registerPromptTracker(term, shellState, (running) =>
-        onLeafCommandState(leafId, running),
+      // Fish-style ghost suggestions at the classic prompt (history → AI).
+      const ghost = createClassicSuggest({
+        term,
+        write: (data) => {
+          if (s.pty) void s.pty.write(data);
+        },
+        getCwd: () => s.lastCwd,
+      });
+      setClassicKeyHook(leafId, ghost.onKey);
+      const prompt = registerPromptTracker(
+        term,
+        shellState,
+        (running, command, exitCode) => {
+          onLeafCommandState(leafId, running, exitCode ?? null);
+          trackLeafCommand(leafId, running, command);
+          ghost.onCommandState(running, command, exitCode ?? null);
+        },
+        () => ghost.onInputStart(),
       );
       const cwd = registerCwdHandler(
         term,
@@ -646,7 +738,15 @@ function bindLeafToSlot(leafId: number, s: Session): void {
         shellState,
       );
       const osc52 = registerOsc52ClipboardHandler(term);
-      return [prompt.dispose, cwd, osc52];
+      return [
+        prompt.dispose,
+        cwd,
+        osc52,
+        () => {
+          setClassicKeyHook(leafId, null);
+          ghost.dispose();
+        },
+      ];
     },
     onSearchReady: (addon) => s.callbacks.onSearchReady?.(addon),
   });
@@ -797,6 +897,7 @@ export function disposeSession(leafId: number): void {
   sessions.delete(leafId);
   blockViewportListeners.delete(leafId);
   readyLeaves.delete(leafId);
+  useShellToolStore.getState().setActive(leafId, null);
   const waiters = readyWaiters.get(leafId);
   if (waiters) {
     readyWaiters.delete(leafId);
@@ -896,6 +997,21 @@ export function useTerminalSession({
   useEffect(() => {
     applyScrollback(scrollback);
   }, [scrollback]);
+
+  const terminalPadding = usePreferencesStore((p) => p.terminalPadding);
+  const terminalPaddingSides = usePreferencesStore(
+    (p) => p.terminalPaddingSides,
+  );
+  useEffect(() => {
+    applyTerminalPadding(
+      terminalPaddingSides ?? {
+        top: terminalPadding,
+        right: terminalPadding,
+        bottom: terminalPadding,
+        left: terminalPadding,
+      },
+    );
+  }, [terminalPadding, terminalPaddingSides]);
 
   const webglPref = usePreferencesStore((p) => p.terminalWebglEnabled);
   useEffect(() => {

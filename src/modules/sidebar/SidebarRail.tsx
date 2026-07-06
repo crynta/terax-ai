@@ -1,4 +1,6 @@
 import { cn } from "@/lib/utils";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { KbdChip } from "@/modules/shortcuts/KbdChip";
 import type { ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { useShortcutText } from "@/modules/shortcuts/useShortcutText";
 import { FolderGitTwoIcon, FolderTreeIcon } from "@hugeicons/core-free-icons";
@@ -65,6 +67,8 @@ function RailButton({
   onClick: () => void;
 }) {
   const shortcutText = useShortcutText(item.shortcutId);
+  const hintsOn = usePreferencesStore((s) => s.hoverKeybindHints);
+  const chip = hintsOn ? shortcutText : null;
   const showBadge = !!item.badge && item.badge > 0;
   return (
     <button
@@ -77,9 +81,12 @@ function RailButton({
         "focus-visible:ring-2 focus-visible:ring-primary/40",
         // Reserve room for the right-pinned keybinding chip whenever it can
         // be visible, so a truncated label never runs underneath it.
-        "hover:pr-10",
+        chip && "hover:pr-10",
         isActive
-          ? "bg-foreground/[0.07] pr-10 text-foreground dark:bg-foreground/[0.09]"
+          ? cn(
+              "bg-foreground/[0.07] text-foreground dark:bg-foreground/[0.09]",
+              chip && "pr-10",
+            )
           : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground",
       )}
     >
@@ -95,7 +102,7 @@ function RailButton({
           {item.badge > 99 ? "99+" : item.badge}
         </span>
       ) : null}
-      {shortcutText && (
+      {chip && (
         <span
           className={cn(
             // Pinned to the button's right edge so the centered label never
@@ -105,9 +112,7 @@ function RailButton({
             isActive && "opacity-100",
           )}
         >
-          <kbd className="rounded border border-border/50 bg-card px-1 py-px font-sans text-[10px] font-medium leading-none whitespace-nowrap text-muted-foreground select-none">
-            {shortcutText}
-          </kbd>
+          <KbdChip>{chip}</KbdChip>
         </span>
       )}
     </button>

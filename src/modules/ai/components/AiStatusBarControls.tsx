@@ -56,19 +56,21 @@ import { toggleFavoriteModel } from "../lib/modelPrefs";
 import { useChatStore } from "../store/chatStore";
 
 const PROVIDER_ICON = {
-  openai: ChatGptIcon,
-  anthropic: ClaudeIcon,
-  google: GoogleGeminiIcon,
-  xai: Grok02Icon,
-  cerebras: CpuIcon,
-  groq: FlashIcon,
-  deepseek: DeepseekIcon,
-  mistral: MistralIcon,
-  openrouter: GlobeIcon,
+  "openai": ChatGptIcon,
+  "anthropic": ClaudeIcon,
+  "google": GoogleGeminiIcon,
+  "xai": Grok02Icon,
+  "cerebras": CpuIcon,
+  "groq": FlashIcon,
+  "deepseek": DeepseekIcon,
+  "mistral": MistralIcon,
+  "openrouter": GlobeIcon,
   "openai-compatible": PlugIcon,
-  lmstudio: ComputerIcon,
-  mlx: AppleIcon,
-  ollama: ServerStack01Icon,
+  "lmstudio": ComputerIcon,
+  "mlx": AppleIcon,
+  "ollama": ServerStack01Icon,
+  "claude-code": ClaudeIcon,
+  "codex": ChatGptIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
@@ -79,7 +81,7 @@ export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
       className={cn(
         "flex h-6 items-center gap-1.5 rounded-md border border-border/60 bg-card px-2 text-xs",
         "text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground",
-        "animate-in slide-in-from-top-2 duration-200 ease-out",
+        "animate-in slide-in-from-top-2 duration-[calc(200ms*var(--terax-anim,1))] ease-out",
       )}
       title="Open AI agent"
     >

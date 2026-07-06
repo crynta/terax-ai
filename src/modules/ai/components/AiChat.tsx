@@ -552,7 +552,7 @@ const PartAppear = memo(function PartAppear({
   children: React.ReactNode;
 }) {
   return (
-    <div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out">
+    <div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-[calc(200ms*var(--terax-anim,1))] ease-out">
       {children}
     </div>
   );

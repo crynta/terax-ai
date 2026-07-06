@@ -1,8 +1,5 @@
-import { endpointIdFromCompatModel } from "@/modules/ai/config";
-import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
 import { lspFormatDocument, useLspExtension } from "@/modules/lsp";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { onKeysChanged } from "@/modules/settings/store";
 import { redo, undo } from "@codemirror/commands";
 import {
   findNext,
@@ -24,6 +21,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  createAutocompleteKeyWatcher,
+  snapshotAutocompletePrefs,
+} from "./lib/autocomplete/deps";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { diagnosticsReporter } from "./lib/diagnosticsReporter";
 import { useDiagnosticsStore } from "./lib/diagnosticsStore";
@@ -37,7 +38,11 @@ import {
 import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
 import { useDocument } from "./lib/useDocument";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
-import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
+import {
+  applyVimKeymaps,
+  initVimGlobals,
+  vimHandlersExtension,
+} from "./lib/vim";
 
 initVimGlobals();
 
@@ -85,52 +90,22 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const themeExt = useEditorThemeExt();
     const vimMode = usePreferencesStore((s) => s.vimMode);
+    const vimKeymaps = usePreferencesStore((s) => s.vimKeymaps);
     const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
+
+    // Global vim adapter state — re-applied whenever the pref changes.
+    useEffect(() => {
+      applyVimKeymaps(vimKeymaps);
+    }, [vimKeymaps]);
     const languageRef = useRef<string | null>(null);
     const [langId, setLangId] = useState<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
-      let cancelled = false;
-      const refresh = async () => {
-        const s = usePreferencesStore.getState();
-        const provider = s.autocompleteProvider;
-        if (
-          provider === "lmstudio" ||
-          provider === "mlx" ||
-          provider === "ollama"
-        ) {
-          apiKeyRef.current = null;
-          return;
-        }
-        // OpenAI-compatible keys live in a per-endpoint keyring slot.
-        if (provider === "openai-compatible") {
-          const eid = endpointIdFromCompatModel(s.autocompleteModelId);
-          const k = eid ? await getCustomEndpointKey(eid) : null;
-          if (!cancelled) apiKeyRef.current = k;
-          return;
-        }
-        const k = await getKey(provider);
-        if (!cancelled) apiKeyRef.current = k;
-      };
-      void refresh();
-      let unlistenKeys: (() => void) | undefined;
-      void onKeysChanged(() => void refresh()).then((un) => {
-        unlistenKeys = un;
+      const watcher = createAutocompleteKeyWatcher((k) => {
+        apiKeyRef.current = k;
       });
-      const unsubPrefs = usePreferencesStore.subscribe((state, prev) => {
-        if (
-          state.autocompleteProvider !== prev.autocompleteProvider ||
-          state.autocompleteModelId !== prev.autocompleteModelId
-        ) {
-          void refresh();
-        }
-      });
-      return () => {
-        cancelled = true;
-        unlistenKeys?.();
-        unsubPrefs();
-      };
+      return () => watcher.dispose();
     }, []);
     // Stabilize save + onSaved via refs so the extensions array never changes
     // identity — a new identity makes @uiw/react-codemirror reconfigure the
@@ -206,41 +181,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         lspCompartment.of([]),
         diagnosticsReporter(() => pathRef.current),
         inlineCompletion({
-          getPrefs: () => {
-            const s = usePreferencesStore.getState();
-            const p = s.autocompleteProvider;
-            // autocompleteModelId holds the compat- id of the chosen endpoint.
-            const compatEp =
-              p === "openai-compatible"
-                ? s.customEndpoints.find(
-                    (e) =>
-                      e.id === endpointIdFromCompatModel(s.autocompleteModelId),
-                  )
-                : undefined;
-            const modelId =
-              p === "lmstudio"
-                ? s.lmstudioModelId
-                : p === "mlx"
-                  ? s.mlxModelId
-                  : p === "ollama"
-                    ? s.ollamaModelId
-                    : p === "openai-compatible"
-                      ? (compatEp?.modelId ?? "")
-                      : p === "openrouter"
-                        ? s.openrouterModelId
-                        : s.autocompleteModelId;
-            return {
-              enabled: s.autocompleteEnabled,
-              provider: p,
-              modelId,
-              apiKey: apiKeyRef.current,
-              lmstudioBaseURL: s.lmstudioBaseURL,
-              mlxBaseURL: s.mlxBaseURL,
-              ollamaBaseURL: s.ollamaBaseURL,
-              openaiCompatibleBaseURL:
-                compatEp?.baseURL ?? s.openaiCompatibleBaseURL,
-            };
-          },
+          getPrefs: () => snapshotAutocompletePrefs(apiKeyRef.current),
           getPath: () => pathRef.current,
           getLanguage: () => languageRef.current,
         }),

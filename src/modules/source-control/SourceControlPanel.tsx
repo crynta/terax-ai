@@ -47,7 +47,9 @@ import {
   COMPACT_ITEM,
 } from "@/modules/explorer/lib/menuItemClass";
 import { joinPath } from "@/modules/explorer/lib/useFileTree";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
+import { KbdChip } from "@/modules/shortcuts/KbdChip";
 import type { ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { useShortcutText } from "@/modules/shortcuts/useShortcutText";
 import {
@@ -1177,7 +1179,7 @@ const EntryRow = memo(function EntryRow({
           aria-selected={isSelected}
           onMouseDown={() => onFocusRow(row.key)}
           className={cn(
-            "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-100",
+            "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-[calc(100ms*var(--terax-anim,1))]",
             focused
               ? "bg-accent/60"
               : isSelected
@@ -1357,6 +1359,8 @@ function IconActionButton({
   shortcutId?: ShortcutId;
 }) {
   const shortcutText = useShortcutText(shortcutId);
+  const hintsOn = usePreferencesStore((s) => s.hoverKeybindHints);
+  const chip = hintsOn ? shortcutText : null;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -1364,7 +1368,8 @@ function IconActionButton({
           className={cn(
             "group/tip flex shrink-0 items-center rounded-md transition-all duration-[calc(250ms*var(--terax-anim,1))]",
             !disabled &&
-              "hover:bg-muted hover:pr-1 dark:hover:bg-muted/50 [&:hover_button]:text-foreground",
+              "hover:bg-muted dark:hover:bg-muted/50 [&:hover_button]:text-foreground",
+            !disabled && chip && "hover:pr-1",
           )}
         >
           <Button
@@ -1377,11 +1382,9 @@ function IconActionButton({
           >
             {children}
           </Button>
-          {shortcutText && !disabled && (
+          {chip && !disabled && (
             <span className="flex max-w-0 items-center overflow-hidden opacity-0 transition-all duration-[calc(250ms*var(--terax-anim,1))] ease-out group-hover/tip:ml-1 group-hover/tip:max-w-16 group-hover/tip:opacity-100">
-              <kbd className="rounded border border-border/50 bg-card px-1 py-px font-sans text-[10px] font-medium leading-none whitespace-nowrap text-muted-foreground select-none">
-                {shortcutText}
-              </kbd>
+              <KbdChip>{chip}</KbdChip>
             </span>
           )}
         </span>
@@ -1431,7 +1434,7 @@ function CommitFeedback({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-3 top-[calc(100%-0.25rem)] z-20 flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg shadow-black/15 backdrop-blur transition-all duration-200",
+        "pointer-events-none absolute inset-x-3 top-[calc(100%-0.25rem)] z-20 flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg shadow-black/15 backdrop-blur transition-all duration-[calc(200ms*var(--terax-anim,1))]",
         isVisible ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0",
         isError
           ? "border-destructive/30 bg-card/95 text-destructive"

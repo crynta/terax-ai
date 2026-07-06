@@ -209,6 +209,53 @@ pub fn agent_enable_hooks(agent: String) -> Result<(), String> {
     Ok(())
 }
 
+// Strips our hook groups back out of the config; foreign hooks are kept.
+fn remove_hooks(mut root: Value, spec: &AgentSpec) -> Value {
+    {
+        let Some(obj) = root.as_object_mut() else {
+            return root;
+        };
+        let mut drop_hooks = false;
+        if let Some(hooks) = obj.get_mut("hooks").and_then(Value::as_object_mut) {
+            for (event, _) in spec.events {
+                if let Some(arr) = hooks.get_mut(*event).and_then(Value::as_array_mut) {
+                    arr.retain(|g| !is_ours(g) && !is_empty_group(g));
+                }
+            }
+            hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
+            drop_hooks = hooks.is_empty();
+        }
+        if drop_hooks {
+            obj.remove("hooks");
+        }
+    }
+    root
+}
+
+#[tauri::command]
+pub fn agent_disable_hooks(agent: String) -> Result<(), String> {
+    let spec = find(&agent)?;
+    let path = settings_path(spec)?;
+
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(s) => existing_config(Some(&s), &path)?,
+        // Nothing installed, nothing to remove.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("read {}: {e}", path.display())),
+    };
+
+    let cleaned = remove_hooks(existing, spec);
+    let out = serde_json::to_string_pretty(&cleaned).map_err(|e| e.to_string())?;
+
+    let tmp = path.with_extension("terax-tmp");
+    std::fs::write(&tmp, out).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("rename into {}: {e}", path.display())
+    })?;
+    Ok(())
+}
+
 // The raw OSC 777 bytes the detector parses. Kept in one place so the Windows
 // CONOUT$ path can't drift from what the Unix /dev/tty hook emits.
 #[cfg(any(windows, test))]

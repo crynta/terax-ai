@@ -47,6 +47,7 @@ import { setLspNavigator } from "@/modules/lsp";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { chromeHideMode } from "@/modules/settings/store";
 import {
   type ShortcutHandlers,
   type ShortcutId,
@@ -88,13 +89,22 @@ import {
   useTerminalFileDrop,
   writeToSession,
 } from "@/modules/terminal";
+import { setBroadcastGroup } from "@/modules/terminal/lib/rendererPool";
+import { useShellToolStore } from "@/modules/terminal/lib/shellToolStore";
+import {
+  type CommandDoneDetail,
+  submitToLeaf,
+} from "@/modules/terminal/lib/useTerminalSession";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { CloseDialogs } from "./components/CloseDialogs";
+import { MultiSshDialog } from "./components/MultiSshDialog";
 import {
   TOGGLE_BLOCK_INPUT_EVENT,
   WorkspaceInputBar,
@@ -103,6 +113,18 @@ import { WorkspaceSurface } from "./components/WorkspaceSurface";
 import { useAppCloseGuard } from "./hooks/useAppCloseGuard";
 import { useTabCloseGuards } from "./hooks/useTabCloseGuards";
 import { useWorkspaceSwitcher } from "./hooks/useWorkspaceSwitcher";
+
+/** Owns the mini-window open state so toggling it re-renders only this
+ *  host, not the whole App tree — that full re-render was a visible delay
+ *  between pressing the toggle and the window appearing. */
+function MiniWindowHost() {
+  const miniOpen = useChatStore((s) => s.mini.open);
+  // Exit must outlive the scaled close animation (200ms × speed factor),
+  // else the window unmounts mid-animation or lingers after it.
+  const animFactor = useAnimationScaleFactor();
+  const presence = usePresence(miniOpen, Math.round(200 * animFactor) + 40);
+  return presence.mounted ? <AiMiniWindow state={presence.state} /> : null;
+}
 
 export default function App() {
   const {
@@ -275,6 +297,7 @@ export default function App() {
     persistSidebarView,
     persistSidebarCollapsed,
     toggleSidebar,
+    setSidebarOpen,
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
@@ -292,11 +315,6 @@ export default function App() {
     },
     [],
   );
-  const miniOpen = useChatStore((s) => s.mini.open);
-  // Exit must outlive the scaled close animation (200ms × speed factor),
-  // else the window unmounts mid-animation or lingers after it.
-  const animFactor = useAnimationScaleFactor();
-  const miniPresence = usePresence(miniOpen, Math.round(200 * animFactor) + 40);
   const openMini = useChatStore((s) => s.openMini);
   const focusInput = useChatStore((s) => s.focusInput);
   const openPanel = useChatStore((s) => s.openPanel);
@@ -536,6 +554,60 @@ export default function App() {
     [newTab],
   );
 
+  // SSH profiles from ~/.ssh/config for the command palette.
+  const [sshHosts, setSshHosts] = useState<string[]>([]);
+  const [multiSshOpen, setMultiSshOpen] = useState(false);
+  const sshPaletteEnabled = usePreferencesStore((s) => s.sshPaletteEnabled);
+  useEffect(() => {
+    if (!sshPaletteEnabled) {
+      setSshHosts([]);
+      return;
+    }
+    invoke<string[]>("ssh_list_hosts")
+      .then(setSshHosts)
+      .catch(() => {});
+  }, [sshPaletteEnabled]);
+
+  const openSsh = useCallback(
+    (host: string) => {
+      const tabId = newTab();
+      // Wait one tick for the tab state to land; submitToLeaf queues the
+      // command until the PTY is ready, so no further racing.
+      setTimeout(() => {
+        const tab = tabsRef.current.find((x) => x.id === tabId);
+        if (!tab || tab.kind !== "terminal") return;
+        submitToLeaf(tab.activeLeafId, `ssh ${quoteShellArg(host)}`);
+      }, 80);
+    },
+    [newTab],
+  );
+
+  const connectMultiSsh = useCallback(
+    (hosts: string[], broadcast: boolean) => {
+      if (hosts.length === 0) return;
+      const tabId = newTab();
+      setTimeout(() => {
+        for (let i = 1; i < hosts.length; i++) {
+          // Alternate split direction for a rough grid.
+          splitActivePane(tabId, i % 2 === 1 ? "row" : "col");
+        }
+        setTimeout(() => {
+          const tab = tabsRef.current.find((x) => x.id === tabId);
+          if (!tab || tab.kind !== "terminal") return;
+          const leaves = leafIds(tab.paneTree);
+          leaves.forEach((leafId, i) => {
+            const host = hosts[i];
+            if (host) submitToLeaf(leafId, `ssh ${quoteShellArg(host)}`);
+          });
+          if (broadcast && leaves.length > 1) {
+            setBroadcastGroup(leaves, true);
+          }
+        }, 80);
+      }, 80);
+    },
+    [newTab, splitActivePane],
+  );
+
   const handleOpenFile = useCallback(
     (path: string, pin?: boolean) => {
       // Markdown opens in its rendered view by default; a per-tab toggle flips
@@ -657,6 +729,37 @@ export default function App() {
     [setActiveId, focusPane],
   );
 
+  // Long command finished in a hidden tab → toast with a jump action.
+  useEffect(() => {
+    const onDone = (e: Event) => {
+      if (!usePreferencesStore.getState().commandDoneToasts) return;
+      const d = (e as CustomEvent<CommandDoneDetail>).detail;
+      const tab = tabsRef.current.find(
+        (t) => t.kind === "terminal" && leafIds(t.paneTree).includes(d.leafId),
+      );
+      const secs = Math.round(d.durationMs / 1000);
+      const title = d.command
+        ? `${d.command.slice(0, 60)} — ${secs}s`
+        : `Command finished (${secs}s)`;
+      const show =
+        d.exitCode === 0 || d.exitCode === null ? toast.success : toast.error;
+      show(title, {
+        description:
+          d.exitCode !== null && d.exitCode !== 0
+            ? `Exited with code ${d.exitCode}`
+            : undefined,
+        action: tab
+          ? {
+              label: "Open",
+              onClick: () => activateAgentTarget(tab.id, d.leafId),
+            }
+          : undefined,
+      });
+    };
+    window.addEventListener("terax:command-done", onDone);
+    return () => window.removeEventListener("terax:command-done", onDone);
+  }, [activateAgentTarget]);
+
   // Expand the sidebar on the explorer view without toggling it closed when
   // it's already there (unlike cycleSidebarView's cycle semantics).
   const revealExplorer = useCallback(() => {
@@ -754,8 +857,73 @@ export default function App() {
     ],
   );
 
+  // Shell tool (nvim etc.) in the foreground of the active terminal leaf.
+  const activeShellTool = useShellToolStore((s) =>
+    activeLeafId != null ? (s.activeByLeaf[activeLeafId] ?? null) : null,
+  );
+
+  // Mirror the active leaf for imperative consumers (shortcut rebinds).
+  useEffect(() => {
+    useShellToolStore.getState().setActiveLeaf(activeLeafId);
+  }, [activeLeafId]);
+
+  // Chrome mode: the global "disable" preference wins, else the active
+  // shell tool's per-tool override (hide/disable while the tool runs).
+  const sidebarPrefDisabled = usePreferencesStore((s) => s.sidebarDisabled);
+  const statusBarPrefDisabled = usePreferencesStore((s) => s.statusBarDisabled);
+  const statusBarMode = statusBarPrefDisabled
+    ? "disable"
+    : chromeHideMode(activeShellTool?.hideStatusBar);
+  const sidebarMode = sidebarPrefDisabled
+    ? "disable"
+    : chromeHideMode(activeShellTool?.hideSidebar);
+  useEffect(() => {
+    useStatusBarCollapsed
+      .getState()
+      .setToolHidden(statusBarMode !== "off", statusBarMode === "disable");
+  }, [statusBarMode]);
+
+  // Per-tool override: collapse the sidebar for the tool, restore on exit —
+  // but only if we were the ones who closed it.
+  const sidebarHiddenByToolRef = useRef(false);
+  useEffect(() => {
+    if (sidebarMode !== "off") {
+      const p = sidebarRef.current;
+      if (p && p.getSize().asPercentage > 0) {
+        sidebarHiddenByToolRef.current = true;
+        setSidebarOpen(false);
+      }
+    } else if (sidebarHiddenByToolRef.current) {
+      sidebarHiddenByToolRef.current = false;
+      setSidebarOpen(true);
+    }
+  }, [sidebarMode, setSidebarOpen]);
+
   const shortcutsDisabled = useCallback(
     (id: ShortcutId, e: KeyboardEvent) => {
+      const eventInTerminal = (): boolean => {
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        return !!(target as HTMLElement | null)?.closest?.(".xterm");
+      };
+      // Chrome mode "disable" kills the toggles outright while the tool runs.
+      if (id === "statusbar.toggle" && statusBarMode === "disable") return true;
+      if (id === "sidebar.toggle" && sidebarMode === "disable") return true;
+      // A configured shell tool owns the terminal: hand keybindings to it
+      // while the terminal is focused. Mode "none" passes everything except
+      // the keep-list; "custom" passes only the picked ones.
+      if (activeShellTool) {
+        const mode =
+          activeShellTool.shortcutMode ??
+          (activeShellTool.blockShortcuts ? "none" : "all");
+        const pass =
+          mode === "none"
+            ? !activeShellTool.allowedShortcuts?.includes(id)
+            : mode === "custom"
+              ? (activeShellTool.blockedShortcuts?.includes(id) ?? false)
+              : false;
+        if (pass && eventInTerminal()) return true;
+      }
       if (id === "editor.undo" || id === "editor.redo") {
         return activeTab?.kind !== "editor";
       }
@@ -787,16 +955,11 @@ export default function App() {
         // Plain Ctrl+B is Claude Code's "run in background", Ctrl+N is
         // readline's next-history. While a terminal is focused let those
         // reach the shell; Shift variants still fire from anywhere.
-        const target =
-          (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
-          ".xterm",
-        );
-        return inTerminal && !e.shiftKey;
+        return eventInTerminal() && !e.shiftKey;
       }
       return false;
     },
-    [activeTab],
+    [activeTab, activeShellTool, statusBarMode, sidebarMode],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
@@ -1037,6 +1200,9 @@ export default function App() {
             openSpacesOverview: () => setSwitcherOpen(true),
             newSpace: () => void handleNewSpace(),
             switchSpace: (id) => useSpaces.getState().setActive(id),
+            sshHosts,
+            openSsh,
+            openMultiSsh: () => setMultiSshOpen(true),
           })
         : [],
     [
@@ -1059,6 +1225,8 @@ export default function App() {
       askFromSelection,
       activeSpaceId,
       handleNewSpace,
+      sshHosts,
+      openSsh,
     ],
   );
 
@@ -1253,6 +1421,7 @@ export default function App() {
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true
               }
+              shellTool={activeShellTool}
             />
           )}
 
@@ -1262,6 +1431,12 @@ export default function App() {
             onActivate={onActivateAgent}
           />
           <Toaster position="bottom-right" />
+          <MultiSshDialog
+            open={multiSshOpen}
+            hosts={sshHosts}
+            onOpenChange={setMultiSshOpen}
+            onConnect={connectMultiSsh}
+          />
 
           {hasComposer ? (
             <>
@@ -1273,9 +1448,7 @@ export default function App() {
             </>
           ) : null}
 
-          {hasComposer && miniPresence.mounted ? (
-            <AiMiniWindow state={miniPresence.state} />
-          ) : null}
+          {hasComposer ? <MiniWindowHost /> : null}
           {askPresence.mounted ? (
             <SelectionAskAi
               state={askPresence.state}

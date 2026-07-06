@@ -3,6 +3,7 @@ import { MAX_PANES_PER_TAB, type Tab } from "@/modules/tabs";
 import { leafIds } from "@/modules/terminal";
 import {
   Cancel01Icon,
+  CloudServerIcon,
   DashboardSquare01Icon,
   FileEditIcon,
   FileSearchIcon,
@@ -31,6 +32,7 @@ export const COMMAND_GROUPS = [
   "Search",
   "View",
   "AI",
+  "SSH",
 ] as const;
 
 export type CommandPaletteActionContext = {
@@ -62,6 +64,10 @@ export type CommandPaletteActionContext = {
   openSpacesOverview: () => void;
   newSpace: () => void;
   switchSpace: (id: string) => void;
+  /** Host aliases from ~/.ssh/config. */
+  sshHosts: string[];
+  openSsh: (host: string) => void;
+  openMultiSsh: () => void;
 };
 
 const noop = () => {};
@@ -290,6 +296,26 @@ export function createCommandItems(
       shortcutId: "statusbar.toggle",
       run: ctx.toggleStatusBar,
     },
+    ...ctx.sshHosts.map((host) => ({
+      id: `ssh.connect.${host}`,
+      title: `SSH: ${host}`,
+      group: "SSH" as const,
+      keywords: ["ssh", "remote", "connect", "host", host],
+      icon: CloudServerIcon,
+      run: () => ctx.openSsh(host),
+    })),
+    ...(ctx.sshHosts.length > 1
+      ? [
+          {
+            id: "ssh.multi",
+            title: "SSH: connect to multiple hosts...",
+            group: "SSH" as const,
+            keywords: ["ssh", "multi", "fanout", "cluster", "broadcast"],
+            icon: CloudServerIcon,
+            run: ctx.openMultiSsh,
+          },
+        ]
+      : []),
     {
       id: "ai.toggle",
       title: "Toggle AI agent",

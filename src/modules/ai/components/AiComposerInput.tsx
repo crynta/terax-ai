@@ -74,7 +74,15 @@ function detectFileTrigger(value: string, caret: number): FileTrigger | null {
  *  one line above the textarea, so the input line stays clean. */
 export function ComposerControls() {
   const c = useComposer();
-  const statusBarCollapsed = useStatusBarCollapsed((s) => s.collapsed);
+  const statusBarCollapsed = useStatusBarCollapsed(
+    (s) => s.collapsed || s.toolHidden,
+  );
+  // Show-bar button only for a user-collapsed bar: while a shell tool hides
+  // it (hide or disable), toggling `collapsed` wouldn't reveal anything —
+  // the tool brings the bar back by itself on exit.
+  const statusBarUserCollapsed = useStatusBarCollapsed(
+    (s) => s.collapsed && !s.toolHidden,
+  );
   const showStatusBar = useStatusBarCollapsed((s) => s.toggle);
   const toggleMini = useChatStore((s) => s.toggleMini);
   const miniOpen = useChatStore((s) => s.mini.open);
@@ -142,12 +150,12 @@ export function ComposerControls() {
       </ShortcutTip>
       <ModelDropdown />
       <AgentSwitcher />
-      {statusBarCollapsed && (
+      {statusBarUserCollapsed && (
         <ShortcutTip label="Show status bar" shortcutId="statusbar.toggle">
           <IconBtn
             title="Show status bar"
             onClick={showStatusBar}
-            className="animate-in fade-in-0"
+            className="animate-in fade-in-0 duration-[calc(150ms*var(--terax-anim,1))]"
           >
             <HugeiconsIcon
               icon={LayoutBottomIcon}
@@ -162,7 +170,7 @@ export function ComposerControls() {
           <IconBtn
             title="Close AI panel"
             onClick={closePanel}
-            className="animate-in fade-in-0"
+            className="animate-in fade-in-0 duration-[calc(150ms*var(--terax-anim,1))]"
           >
             <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={2} />
           </IconBtn>

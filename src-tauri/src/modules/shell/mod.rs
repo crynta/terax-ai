@@ -38,6 +38,38 @@ pub struct CommandOutput {
 /// the process is force-killed on timeout. We deliberately do NOT pipe into
 /// the user's interactive PTY — that would fight their input. AI tool calls
 /// are presented in chat as their own structured result.
+/// Host aliases from ~/.ssh/config (top-level `Host` lines; wildcard and
+/// negated patterns are skipped — they aren't connectable names).
+#[tauri::command]
+pub fn ssh_list_hosts() -> Vec<String> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    let Ok(content) = std::fs::read_to_string(home.join(".ssh/config")) else {
+        return Vec::new();
+    };
+    let mut hosts: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        let lower = line.to_ascii_lowercase();
+        let Some(rest) = lower
+            .strip_prefix("host ")
+            .map(|_| line[5..].trim())
+        else {
+            continue;
+        };
+        for h in rest.split_whitespace() {
+            if h.contains('*') || h.contains('?') || h.starts_with('!') {
+                continue;
+            }
+            if !hosts.iter().any(|e| e == h) {
+                hosts.push(h.to_string());
+            }
+        }
+    }
+    hosts
+}
+
 #[tauri::command]
 pub async fn shell_run_command(
     command: String,

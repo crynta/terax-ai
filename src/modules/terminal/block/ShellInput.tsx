@@ -10,7 +10,9 @@ import {
   setLeafDraft,
   setLeafInputActivity,
   setLeafInputFocus,
+  setLeafInputSetter,
 } from "../lib/useTerminalSession";
+import { type AiShellSuggest, createAiShellSuggest } from "./lib/aiSuggest";
 import {
   historyCommands,
   historyList,
@@ -68,9 +70,17 @@ export default function ShellInput({
   const fontRef = useRef({ fontFamily, fontSize });
   fontRef.current = { fontFamily, fontSize };
 
+  const aiRef = useRef<AiShellSuggest | null>(null);
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    // History wins (instant, free); the AI model only fills the gaps.
+    const ai = createAiShellSuggest({
+      getCwd: () => cbRef.current.getCwd(),
+      getRecent: () => commandsRef.current.slice(0, 15),
+    });
+    aiRef.current = ai;
     const handle = createShellEditor({
       parent: host,
       fontFamily: fontRef.current.fontFamily,
@@ -80,7 +90,10 @@ export default function ShellInput({
       getCwd: () => cbRef.current.getCwd(),
       onChange: (text) =>
         setLeafInputActivity(leafIdRef.current, text.length > 0),
-      suggest: historySuggest,
+      suggest: async (line) =>
+        (await historySuggest(line)) ??
+        (await aiRef.current?.suggest(line))?.[0] ??
+        null,
       historyList,
       onSubmit: (text) => {
         historyRecord(text);
@@ -96,6 +109,8 @@ export default function ShellInput({
     handleRef.current = handle;
     requestAnimationFrame(() => handleRef.current?.focus());
     return () => {
+      ai.dispose();
+      aiRef.current = null;
       handle.destroy();
       handleRef.current = null;
     };
@@ -106,6 +121,7 @@ export default function ShellInput({
   // tabs land with the cursor already in the input.
   useEffect(() => {
     setLeafInputFocus(leafId, () => handleRef.current?.focus());
+    setLeafInputSetter(leafId, (text) => handleRef.current?.setValue(text));
     handleRef.current?.setValue(getLeafDraft(leafId));
     requestAnimationFrame(() => {
       if (focusableRef.current && leafIdRef.current === leafId) {
@@ -117,6 +133,7 @@ export default function ShellInput({
       setLeafDraft(leafId, value);
       setLeafInputActivity(leafId, value.length > 0);
       setLeafInputFocus(leafId, null);
+      setLeafInputSetter(leafId, null);
     };
   }, [leafId]);
 

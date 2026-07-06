@@ -24,7 +24,7 @@ export function AgentStatusPill({ onClick }: Props) {
       onClick={onClick}
       className={cn(
         "flex h-6 items-center gap-1.5 rounded-md border px-1.5 text-[11px] transition-colors",
-        "animate-in fade-in-0 slide-in-from-top-1 duration-150 ease-out",
+        "animate-in fade-in-0 slide-in-from-top-1 duration-[calc(150ms*var(--terax-anim,1))] ease-out",
         tone,
       )}
       title="Open AI log"

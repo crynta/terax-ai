@@ -10,14 +10,14 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { type FontWeight, Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
 import {
-  readTerminalClipboard,
-  writeTerminalClipboard,
-} from "./terminalClipboard";
-import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
+import {
+  readTerminalClipboard,
+  writeTerminalClipboard,
+} from "./terminalClipboard";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -80,6 +80,100 @@ let windowActive =
   typeof document === "undefined" || (!document.hidden && document.hasFocus());
 let windowActivityBound = false;
 let cursorBlinkEnabled = false;
+// Per-leaf overrides from shell tools (nvim etc.); win over the global pref.
+const cursorBlinkOverrides = new Map<number, boolean>();
+
+export type LeafFontOverride = {
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: string;
+};
+const fontOverrides = new Map<number, LeafFontOverride>();
+
+export type PaddingSides = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
+
+let terminalPadding: PaddingSides = { top: 0, right: 0, bottom: 0, left: 0 };
+const paddingOverrides = new Map<number, PaddingSides>();
+
+// Classic-terminal ghost suggestions hook into the slot's single custom key
+// handler through this registry (xterm allows only one such handler).
+const classicKeyHooks = new Map<number, (ev: KeyboardEvent) => boolean>();
+
+// Multi-SSH input broadcast: leaf → all leaves (incl. itself) that should
+// receive its keystrokes. Maintained by App per tab.
+const broadcastGroups = new Map<number, number[]>();
+
+export function setBroadcastGroup(leaves: number[], enabled: boolean): void {
+  for (const id of leaves) {
+    if (enabled) broadcastGroups.set(id, leaves);
+    else broadcastGroups.delete(id);
+  }
+}
+
+export function setClassicKeyHook(
+  leafId: number,
+  hook: ((ev: KeyboardEvent) => boolean) | null,
+): void {
+  if (hook) classicKeyHooks.set(leafId, hook);
+  else classicKeyHooks.delete(leafId);
+}
+
+/** Positive padding goes on the leaf's container (the slot host fills its
+ *  content box); negative padding is emulated by growing the host past the
+ *  container with negative margins, clipping the terminal's edges. Either
+ *  way the fit addon picks the change up via its ResizeObserver. */
+function applyPaddingOnSlot(slot: Slot): void {
+  const leafId = slot.currentLeafId;
+  if (leafId === null) return;
+  const container = slot.host.parentElement;
+  if (!container || container.hasAttribute("data-terax-recycler")) return;
+  const p: PaddingSides = paddingOverrides.get(leafId) ?? terminalPadding;
+
+  const pos = (v: number) => (v > 0 ? v : 0);
+  const hasPositive =
+    pos(p.top) || pos(p.right) || pos(p.bottom) || pos(p.left);
+  const pad = hasPositive
+    ? `${pos(p.top)}px ${pos(p.right)}px ${pos(p.bottom)}px ${pos(p.left)}px`
+    : "";
+  if (container.style.padding !== pad) container.style.padding = pad;
+
+  const neg = (v: number) => (v < 0 ? v : 0);
+  const negX = -(neg(p.left) + neg(p.right));
+  const negY = -(neg(p.top) + neg(p.bottom));
+  if (negX > 0 || negY > 0) {
+    if (container.style.overflow !== "hidden") {
+      container.style.overflow = "hidden";
+    }
+    slot.host.style.margin = `${neg(p.top)}px ${neg(p.right)}px ${neg(p.bottom)}px ${neg(p.left)}px`;
+    slot.host.style.width = negX > 0 ? `calc(100% + ${negX}px)` : "100%";
+    slot.host.style.height = negY > 0 ? `calc(100% + ${negY}px)` : "100%";
+  } else if (slot.host.style.margin !== "") {
+    slot.host.style.margin = "";
+    slot.host.style.width = "100%";
+    slot.host.style.height = "100%";
+  }
+}
+
+export function applyTerminalPadding(padding: PaddingSides): void {
+  terminalPadding = padding;
+  for (const slot of slots) applyPaddingOnSlot(slot);
+}
+
+/** Shell-tool padding override for one leaf; null restores the global pref. */
+export function setLeafPaddingOverride(
+  leafId: number,
+  padding: PaddingSides | null,
+): void {
+  if (padding === null) paddingOverrides.delete(leafId);
+  else paddingOverrides.set(leafId, padding);
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (slot) applyPaddingOnSlot(slot);
+}
 
 function bindWindowActivityListeners(): void {
   if (windowActivityBound || typeof window === "undefined") return;
@@ -251,6 +345,12 @@ function createSlot(): Slot {
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
+    // Ghost-suggestion accept/dismiss gets first pick (classic tabs only).
+    const ghostHook = classicKeyHooks.get(leafId);
+    if (ghostHook && event.type === "keydown" && ghostHook(event)) {
+      event.preventDefault();
+      return false;
+    }
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
     const lineNavigation = terminalLineNavigationSequence(event, {
@@ -290,7 +390,8 @@ function createSlot(): Slot {
       if (event.type === "keydown") {
         const targetLeafId = slot.currentLeafId;
         void readTerminalClipboard().then((text) => {
-          if (text && slot.currentLeafId === targetLeafId) slot.term.paste(text);
+          if (text && slot.currentLeafId === targetLeafId)
+            slot.term.paste(text);
         });
       }
       event.preventDefault();
@@ -302,6 +403,14 @@ function createSlot(): Slot {
   term.onData((data) => {
     const leafId = slot.currentLeafId;
     if (leafId === null) return;
+    // Broadcast group (multi-SSH): mirror keystrokes to every sibling pane.
+    const group = broadcastGroups.get(leafId);
+    if (group) {
+      for (const sibling of group) {
+        adapter?.resolveLeaf(sibling)?.writeToPty(data);
+      }
+      return;
+    }
     adapter?.resolveLeaf(leafId)?.writeToPty(data);
   });
 
@@ -510,6 +619,8 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   }
 
   applyCursorBlinkOnSlot(slot, adapter?.isLeafFocused(p.leafId) ?? false);
+  applyFontOnSlot(slot);
+  applyPaddingOnSlot(slot);
 
   if (!fast && p.altScreen && !p.shellExited) {
     adapter?.resolveLeaf(p.leafId)?.kickPty(slot.term.cols, slot.term.rows);
@@ -562,6 +673,7 @@ function rewireSlot(slot: Slot, p: AcquireParams): void {
   if (slot.host.parentNode !== p.container) {
     p.container.appendChild(slot.host);
   }
+  applyPaddingOnSlot(slot);
   setupResizeObserver(slot, p);
   slot.fitAddon.fit();
   slot.lastW = p.container.clientWidth;
@@ -598,8 +710,11 @@ function setupResizeObserver(slot: Slot, p: AcquireParams): void {
     slot.fitTimer = setTimeout(() => {
       slot.fitTimer = null;
       if (slot.currentLeafId !== p.leafId || slot.parked) return;
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+      // Measure the host, not the container: container clientWidth/Height
+      // include padding, so padding changes would look size-neutral and
+      // skip the refit (and negative-padding growth only resizes the host).
+      const w = slot.host.clientWidth;
+      const h = slot.host.clientHeight;
       if (w === slot.lastW && h === slot.lastH) return;
       slot.lastW = w;
       slot.lastH = h;
@@ -609,6 +724,7 @@ function setupResizeObserver(slot: Slot, p: AcquireParams): void {
     }, FIT_DEBOUNCE_MS);
   });
   slot.observer.observe(container);
+  slot.observer.observe(slot.host);
 }
 
 export type SerializeOutput = {
@@ -896,8 +1012,59 @@ function refitSlot(slot: Slot): void {
     ?.resizePty(slot.term.cols, slot.term.rows);
 }
 
+function fontOverrideFor(slot: Slot): LeafFontOverride | undefined {
+  return slot.currentLeafId !== null
+    ? fontOverrides.get(slot.currentLeafId)
+    : undefined;
+}
+
+/** Effective font (global prefs merged with the leaf's shell-tool override). */
+function applyFontOnSlot(slot: Slot): void {
+  const prefs = usePreferencesStore.getState();
+  const o = fontOverrideFor(slot);
+  const size = Math.max(
+    4,
+    Math.round((o?.fontSize ?? prefs.terminalFontSize) * prefs.zoomLevel),
+  );
+  const family = resolveFontFamily(o?.fontFamily ?? prefs.terminalFontFamily);
+  const weight = (o?.fontWeight ?? prefs.terminalFontWeight) as FontWeight;
+  let refit = false;
+  if (slot.term.options.fontSize !== size) {
+    slot.term.options.fontSize = size;
+    refit = true;
+  }
+  if (slot.term.options.fontFamily !== family) {
+    slot.term.options.fontFamily = family;
+    refit = true;
+  }
+  if (slot.term.options.fontWeight !== weight) {
+    slot.term.options.fontWeight = weight;
+  }
+  if (refit) refitSlot(slot);
+}
+
+/** Shell-tool font override for one leaf; null restores the global prefs. */
+export function setLeafFontOverride(
+  leafId: number,
+  override: LeafFontOverride | null,
+): void {
+  const has =
+    override &&
+    (override.fontSize !== undefined ||
+      override.fontFamily !== undefined ||
+      override.fontWeight !== undefined);
+  if (has) fontOverrides.set(leafId, override);
+  else fontOverrides.delete(leafId);
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (slot) applyFontOnSlot(slot);
+}
+
 export function applyFontSize(size: number): void {
   for (const slot of slots) {
+    if (fontOverrideFor(slot)?.fontSize !== undefined) {
+      applyFontOnSlot(slot);
+      continue;
+    }
     if (slot.term.options.fontSize === size) continue;
     slot.term.options.fontSize = size;
     refitSlot(slot);
@@ -915,6 +1082,10 @@ export function applyLetterSpacing(spacing: number): void {
 export function applyFontFamily(family: string): void {
   const resolved = resolveFontFamily(family);
   for (const slot of slots) {
+    if (fontOverrideFor(slot)?.fontFamily !== undefined) {
+      applyFontOnSlot(slot);
+      continue;
+    }
     if (slot.term.options.fontFamily === resolved) continue;
     slot.term.options.fontFamily = resolved;
     refitSlot(slot);
@@ -923,6 +1094,10 @@ export function applyFontFamily(family: string): void {
 
 export function applyFontWeight(weight: string): void {
   for (const slot of slots) {
+    if (fontOverrideFor(slot)?.fontWeight !== undefined) {
+      applyFontOnSlot(slot);
+      continue;
+    }
     if (slot.term.options.fontWeight === weight) continue;
     slot.term.options.fontWeight = weight as FontWeight;
   }
@@ -965,9 +1140,27 @@ export function applyCursorBlink(enabled: boolean): void {
 }
 
 function applyCursorBlinkOnSlot(slot: Slot, focused: boolean): void {
-  const desired = shouldCursorBlink(cursorBlinkEnabled, windowActive, focused);
+  const leafId = slot.currentLeafId;
+  const base =
+    leafId !== null
+      ? (cursorBlinkOverrides.get(leafId) ?? cursorBlinkEnabled)
+      : cursorBlinkEnabled;
+  const desired = shouldCursorBlink(base, windowActive, focused);
   if (slot.term.options.cursorBlink === desired) return;
   slot.term.options.cursorBlink = desired;
+}
+
+/** Shell-tool override for one leaf's cursor blink; null restores the pref. */
+export function setLeafCursorBlinkOverride(
+  leafId: number,
+  value: boolean | null,
+): void {
+  if (value === null) cursorBlinkOverrides.delete(leafId);
+  else cursorBlinkOverrides.set(leafId, value);
+  const slot = slots.find((s) => s.currentLeafId === leafId);
+  if (slot) {
+    applyCursorBlinkOnSlot(slot, adapter?.isLeafFocused(leafId) ?? false);
+  }
 }
 
 export function getSlotForLeaf(leafId: number): Slot | null {

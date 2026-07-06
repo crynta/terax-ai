@@ -57,7 +57,7 @@ export function Chip({
       className={cn(
         "group inline-flex h-6 items-center gap-1.5 rounded-md border text-[11.5px] leading-none",
         children ? "px-2.5" : "px-2",
-        "animate-in fade-in-0 zoom-in-95 duration-150",
+        "animate-in fade-in-0 zoom-in-95 duration-[calc(150ms*var(--terax-anim,1))]",
         !onRemove && "pointer-events-none select-none",
         TONES[tone].box,
       )}

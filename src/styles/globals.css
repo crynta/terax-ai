@@ -11,6 +11,9 @@
 @theme inline {
     --font-heading: var(--font-sans);
     --font-sans: 'Inter Variable', sans-serif;
+    /* Default for every transition-* utility without an explicit duration —
+       ties the whole app's micro-transitions to the animation-speed pref. */
+    --default-transition-duration: calc(150ms * var(--terax-anim, 1));
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -135,6 +138,16 @@
   html {
     @apply font-sans;
     }
+  /* Every interactive control eases its hover/press state colors by
+   * default, scaled by the animation-speed preference. Utility transition
+   * classes on an element still win (they live in a later layer). */
+  button,
+  [role="button"] {
+    transition-property: color, background-color, border-color, opacity,
+      box-shadow;
+    transition-timing-function: ease-out;
+    transition-duration: calc(150ms * var(--terax-anim, 1));
+  }
 }
 
 :root {
@@ -189,6 +202,67 @@ html[data-chrome="borderless"] #settings-root {
   overflow: hidden;
   border: 1px solid var(--border);
   background: var(--background);
+}
+
+/* Classic-terminal completion menu: a dropdown anchored to the prompt via an
+ * xterm decoration (vim/Termius-style). The anchor cell itself is invisible;
+ * the menu hangs below it (or above, when the cursor is low). */
+.terax-term-menu-anchor {
+  overflow: visible;
+  z-index: 30;
+  pointer-events: none;
+}
+.terax-term-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 280px;
+  max-width: 520px;
+  max-height: 224px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--popover);
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+.terax-term-menu[data-flip="true"] {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+.terax-term-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--foreground);
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.terax-term-menu-row[data-selected="true"] {
+  background: var(--accent);
+}
+.terax-term-menu-typed {
+  color: var(--muted-foreground);
+}
+.terax-term-menu-badge {
+  margin-left: auto;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
 }
 
 /*

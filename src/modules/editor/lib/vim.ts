@@ -1,6 +1,7 @@
 import { Vim } from "@replit/codemirror-vim";
 import { type EditorView, ViewPlugin } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
+import type { VimKeymap } from "@/modules/settings/store";
 
 export type VimHandlers = { save: () => void; close: () => void };
 
@@ -68,4 +69,27 @@ export function initVimGlobals(): void {
   Vim.map("<Down>", "j", "visual");
   Vim.map("<Left>", "h", "visual");
   Vim.map("<Right>", "l", "visual");
+}
+
+// Vim.map is global to the vim adapter, so user mappings are applied once
+// per change, not per editor. Previous ones are unmapped first — otherwise
+// an edited or deleted row would leave its old mapping behind.
+let appliedKeymaps: VimKeymap[] = [];
+
+export function applyVimKeymaps(maps: VimKeymap[]): void {
+  for (const m of appliedKeymaps) {
+    try {
+      Vim.unmap(m.lhs, m.mode);
+    } catch {
+      // already unmapped
+    }
+  }
+  appliedKeymaps = [];
+  for (const m of maps) {
+    const lhs = m.lhs.trim();
+    const rhs = m.rhs.trim();
+    if (!lhs || !rhs) continue;
+    Vim.map(lhs, rhs, m.mode);
+    appliedKeymaps.push({ lhs, rhs, mode: m.mode });
+  }
 }

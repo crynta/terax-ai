@@ -9,8 +9,15 @@ type Props = {
 };
 
 export function SettingRow({ title, description, children, className }: Props) {
+  // Search haystack for the settings-wide live filter (string titles only —
+  // JSX titles still match via their description).
+  const haystack = [typeof title === "string" ? title : "", description ?? ""]
+    .join(" ")
+    .toLowerCase();
   return (
     <div
+      data-setting-row
+      data-search={haystack}
       className={cn(
         "flex items-start justify-between gap-4 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5",
         className,

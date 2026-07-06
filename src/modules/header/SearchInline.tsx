@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { EditorPaneHandle } from "@/modules/editor";
+import { KbdChip } from "@/modules/shortcuts/KbdChip";
 import { ShortcutTip } from "@/modules/shortcuts/ShortcutTip";
 import { useShortcutText } from "@/modules/shortcuts/useShortcutText";
 import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
@@ -107,14 +108,16 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
     };
 
     return (
-      <div
-        className="relative h-7 shrink-0 transition-[width] duration-[calc(200ms*var(--terax-anim,1))] ease-out"
-        style={{ width: expanded ? 192 : 28 }}
-      >
+      // Collapsed trigger sits in flow (its hover chip pushes neighbours via
+      // the header spacer, like every other header button); the opened field
+      // overlays leftwards on an opaque backdrop so clipped tabs never bleed
+      // through its translucent background.
+      <div className="relative h-7 shrink-0">
         <div
-          className={`absolute inset-0 transition-opacity duration-[calc(150ms*var(--terax-anim,1))] ease-out ${
+          className={`absolute top-0 right-0 z-10 h-7 rounded-md bg-card transition-[width,opacity] duration-[calc(200ms*var(--terax-anim,1))] ease-out ${
             expanded ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
+          style={{ width: expanded ? 192 : 28 }}
           aria-hidden={!expanded}
         >
           <HugeiconsIcon
@@ -153,9 +156,9 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
             }}
           />
           {!q && shortcutText && (
-            <kbd className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2 rounded border border-border/50 bg-card px-1 py-px font-sans text-[10px] font-medium leading-none text-muted-foreground select-none">
+            <KbdChip className="pointer-events-none absolute top-1/2 right-1.5 -translate-y-1/2">
               {shortcutText}
-            </kbd>
+            </KbdChip>
           )}
           {q && (
             <button
@@ -173,7 +176,7 @@ export const SearchInline = forwardRef<SearchInlineHandle, Props>(
           )}
         </div>
         <div
-          className={`absolute inset-0 flex items-center justify-end transition-opacity duration-[calc(150ms*var(--terax-anim,1))] ease-out ${
+          className={`flex h-7 items-center transition-opacity duration-[calc(150ms*var(--terax-anim,1))] ease-out ${
             expanded ? "pointer-events-none opacity-0" : "opacity-100"
           }`}
           aria-hidden={expanded}

@@ -11,6 +11,7 @@ import { BlockOverlay } from "./block/BlockOverlay";
 import { BlockWatermark } from "./block/BlockWatermark";
 import {
   focusLeafInput,
+  insertLeafInput,
   submitToLeaf,
   useTerminalSession,
 } from "./lib/useTerminalSession";
@@ -127,6 +128,7 @@ export const TerminalPane = memo(
               clearSearch={session.clearSearch}
               promptReady={promptReady}
               onRunAgain={(cmd) => submitToLeaf(leafId, cmd)}
+              onInsertCommand={(cmd) => insertLeafInput(leafId, cmd)}
               onRestoreFocus={() => {
                 if (session.blockMode === "prompt") focusLeafInput(leafId);
               }}

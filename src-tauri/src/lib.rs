@@ -1,6 +1,6 @@
 pub mod modules;
 
-use modules::{agent, fs, git, history, lsp, net, pty, secrets, shell, workspace};
+use modules::{agent, claude_code, fs, git, history, lsp, net, pty, secrets, shell, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -65,6 +65,11 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     };
 
     if let Some(window) = app.get_webview_window("settings") {
+        // Re-center over the main window only when coming back from hidden —
+        // never yank a window the user has already placed.
+        if !window.is_visible().unwrap_or(true) {
+            position_settings_window(&app, &window);
+        }
         let _ = window.set_always_on_top(true);
         let _ = window.show();
         let _ = window.set_focus();
@@ -76,7 +81,15 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         return Ok(());
     }
 
-    let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
+    create_settings_window(&app, url_path)?;
+    Ok(())
+}
+
+fn create_settings_window(
+    app: &tauri::AppHandle,
+    url_path: String,
+) -> Result<tauri::WebviewWindow, String> {
+    let builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(url_path.into()))
         .title("Settings")
         .inner_size(900.0, 700.0)
         .min_inner_size(820.0, 620.0)
@@ -115,6 +128,24 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         let _ = window.set_decorations(false);
     }
 
+    // Closing settings only hides it: the webview stays warm, so the next
+    // open is instant instead of paying webview + JS boot (~1s).
+    {
+        let win = window.clone();
+        window.on_window_event(move |event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = win.hide();
+            }
+        });
+    }
+
+    position_settings_window(app, &window);
+
+    Ok(window)
+}
+
+fn position_settings_window(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
     #[cfg(target_os = "macos")]
     if let Some(main) = app.get_webview_window("main") {
         if let (Ok(main_pos), Ok(main_size), Ok(settings_size)) = (
@@ -131,8 +162,10 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
             let _ = window.center();
         }
     }
-
-    Ok(())
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, window);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -195,14 +228,32 @@ pub fn run() {
                         WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
                     ) {
                         if let Some(settings) = handle.get_webview_window("settings") {
-                            let _ = settings.close();
+                            // destroy(), not close(): close would hit the
+                            // hide-on-close hook and keep the process alive
+                            // with zero visible windows.
+                            let _ = settings.destroy();
                         }
+                    }
+                });
+            }
+
+            // Pre-warm the settings window hidden shortly after startup so
+            // even the first open is instant. The frontend skips its
+            // auto-show when the URL carries ?prewarm.
+            {
+                let handle = _app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                    if handle.get_webview_window("settings").is_none() {
+                        let _ =
+                            create_settings_window(&handle, "settings.html?prewarm".to_string());
                     }
                 });
             }
             Ok(())
         })
         .manage(pty::PtyState::default())
+        .manage(claude_code::ClaudeCodeState::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
@@ -275,6 +326,7 @@ pub fn run() {
             shell::shell_session_open,
             shell::shell_session_run,
             shell::shell_session_close,
+            shell::ssh_list_hosts,
             shell::shell_bg_spawn,
             shell::shell_bg_logs,
             shell::shell_bg_kill,
@@ -287,6 +339,10 @@ pub fn run() {
             get_launch_dir,
             open_settings_window,
             agent::agent_enable_hooks,
+            claude_code::cli_agent_run,
+            claude_code::cli_agent_kill,
+            claude_code::cli_agent_available,
+            agent::agent_disable_hooks,
             agent::agent_hooks_status,
             secrets::secrets_get,
             secrets::secrets_set,

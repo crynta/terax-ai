@@ -1,4 +1,5 @@
 import { shortcutLabel } from "@/modules/shortcuts";
+import { KbdChip } from "@/modules/shortcuts/KbdChip";
 import { toast } from "sonner";
 import { AgentIcon } from "../lib/agentIcon";
 
@@ -9,15 +10,18 @@ type AgentToastArgs = {
   onActivate: () => void;
 };
 
-export function showAgentToast({ agent, title, body, onActivate }: AgentToastArgs) {
+export function showAgentToast({
+  agent,
+  title,
+  body,
+  onActivate,
+}: AgentToastArgs) {
   const hint = shortcutLabel("agent.focusAttention");
   toast(title, {
     description: hint ? (
       <span className="flex items-center gap-1.5">
         {body ? <span className="min-w-0 truncate">{body}</span> : null}
-        <kbd className="ml-auto shrink-0 rounded border border-border/50 bg-card px-1 py-px text-[10px] font-medium text-muted-foreground">
-          {hint}
-        </kbd>
+        <KbdChip className="ml-auto shrink-0">{hint}</KbdChip>
       </span>
     ) : (
       body

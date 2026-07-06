@@ -1,4 +1,9 @@
-import { applyStatusBarVisiblePref } from "@/modules/statusbar/lib/useStatusBarCollapsed";
+import {
+  applyStatusBarVisiblePref,
+  mirrorStatusBarDisabledFastPath,
+  mirrorStatusBarStartCollapsedFastPath,
+  readStatusBarDisabledFastPath,
+} from "@/modules/statusbar/lib/useStatusBarCollapsed";
 import { create } from "zustand";
 import {
   DEFAULT_PREFERENCES,
@@ -57,6 +62,30 @@ export function readSidebarStartCollapsedFastPath(): boolean {
   }
 }
 
+const FAST_SIDEBAR_DISABLED_KEY = "terax-sidebar-disabled-shadow";
+
+function mirrorSidebarDisabledFastPath(disabled: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      FAST_SIDEBAR_DISABLED_KEY,
+      disabled ? "1" : "0",
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Sync read at startup so a disabled sidebar never opens before hydration. */
+export function readSidebarDisabledFastPath(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(FAST_SIDEBAR_DISABLED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function readBgFastPath(): {
   active: boolean;
   imageId: string | null;
@@ -73,6 +102,10 @@ export function readBgFastPath(): {
 
 export const usePreferencesStore = create<State>((set) => ({
   ...DEFAULT_PREFERENCES,
+  // Shadow fast-paths: App wires these into effects on first render, so the
+  // pre-hydration values must already reflect the stored prefs.
+  sidebarDisabled: readSidebarDisabledFastPath(),
+  statusBarDisabled: readStatusBarDisabledFastPath(),
   hydrated: false,
   init: () => {
     if (initPromise) return initPromise;
@@ -82,7 +115,14 @@ export const usePreferencesStore = create<State>((set) => ({
         set({ ...prefs, hydrated: true });
         mirrorBgFastPath(prefs.backgroundKind, prefs.backgroundImageId);
         mirrorSidebarStartCollapsedFastPath(prefs.sidebarStartCollapsed);
-        applyStatusBarVisiblePref(prefs.statusBarVisible);
+        mirrorStatusBarStartCollapsedFastPath(prefs.statusBarStartCollapsed);
+        mirrorSidebarDisabledFastPath(prefs.sidebarDisabled);
+        mirrorStatusBarDisabledFastPath(prefs.statusBarDisabled);
+        // With "start hidden" on, keep the launch state collapsed instead of
+        // re-expanding to the last remembered visibility.
+        if (!prefs.statusBarStartCollapsed) {
+          applyStatusBarVisiblePref(prefs.statusBarVisible);
+        }
         void onPreferencesChange((key, value) => {
           set({ [key]: value } as Partial<State>);
           if (key === "backgroundKind" || key === "backgroundImageId") {
@@ -91,6 +131,15 @@ export const usePreferencesStore = create<State>((set) => ({
           }
           if (key === "sidebarStartCollapsed") {
             mirrorSidebarStartCollapsedFastPath(value === true);
+          }
+          if (key === "statusBarStartCollapsed") {
+            mirrorStatusBarStartCollapsedFastPath(value === true);
+          }
+          if (key === "sidebarDisabled") {
+            mirrorSidebarDisabledFastPath(value === true);
+          }
+          if (key === "statusBarDisabled") {
+            mirrorStatusBarDisabledFastPath(value === true);
           }
           if (key === "statusBarVisible") {
             applyStatusBarVisiblePref(value !== false);

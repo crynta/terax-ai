@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import type { Tab } from "@/modules/tabs";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useEffect, useMemo, useRef } from "react";
@@ -83,7 +84,9 @@ export function TerminalStack({
         return (
           <div
             key={t.id}
-            className="absolute inset-0"
+            // Blocks keep their own card chrome inset; classic panes get
+            // their gap solely from the terminal padding preference.
+            className={cn("absolute inset-0", t.blocks && "px-3 pt-2 pb-2")}
             style={{
               visibility: tabVisible ? "visible" : "hidden",
               pointerEvents: tabVisible ? "auto" : "none",

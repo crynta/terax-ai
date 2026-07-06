@@ -218,7 +218,7 @@ function ModeToggle({
     <div className="relative grid shrink-0 grid-cols-2 rounded-md p-0.5 text-[10.5px] ring-1 ring-inset ring-border/35">
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-[4px] bg-accent/60 transition-transform duration-200 ease-out"
+        className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-[4px] bg-accent/60 transition-transform duration-[calc(200ms*var(--terax-anim,1))] ease-out"
         style={{
           transform: mode === "ai" ? "translateX(100%)" : "translateX(0)",
         }}
