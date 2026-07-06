@@ -1,4 +1,4 @@
-import type { PiThinkingLevel } from "@/modules/pi/lib/provider";
+import type { PiAuthMode, PiThinkingLevel } from "@/modules/pi/lib/provider";
 import type { WorkspaceEnv } from "@/modules/workspace";
 
 export const PI_SESSION_EVENT_TYPES = [
@@ -80,6 +80,12 @@ export type PiSession = {
   lastPrompt: string | null;
   workspaceEnv?: WorkspaceEnv | null;
   thinkingLevel?: PiThinkingLevel | null;
+  authMode?: PiAuthMode | null;
+  providerId?: string | null;
+  modelId?: string | null;
+  sourceModelId?: string | null;
+  baseUrl?: string | null;
+  customEndpointId?: string | null;
   sdkSessionFile?: string | null;
   archivedAt?: string | null;
   forkedFrom?: PiSessionForkRef | null;

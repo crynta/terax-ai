@@ -479,6 +479,12 @@ pub fn pi_session_fork(
         last_prompt: None,
         workspace_env: parent.workspace_env.clone(),
         thinking_level: parent.thinking_level.clone(),
+        auth_mode: parent.auth_mode.clone(),
+        provider_id: parent.provider_id.clone(),
+        model_id: parent.model_id.clone(),
+        source_model_id: parent.source_model_id.clone(),
+        base_url: parent.base_url.clone(),
+        custom_endpoint_id: parent.custom_endpoint_id.clone(),
         sdk_session_file: None,
         archived_at: None,
         forked_from: Some(PiSessionForkRef {

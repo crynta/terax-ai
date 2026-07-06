@@ -168,6 +168,46 @@ function getSession(sessionId: string): SessionRecord {
   return record;
 }
 
+type PiSessionProviderMetadata = Pick<
+  PiSession,
+  | "authMode"
+  | "providerId"
+  | "modelId"
+  | "sourceModelId"
+  | "baseUrl"
+  | "customEndpointId"
+>;
+
+function sessionProviderMetadata(
+  providerConfig: PiProviderRuntimeConfig | null | undefined,
+  provider: string,
+  modelId: string,
+): PiSessionProviderMetadata {
+  return {
+    authMode: providerConfig?.authMode ?? "terax",
+    providerId: provider,
+    modelId,
+    sourceModelId: providerConfig?.sourceModelId ?? modelId,
+    baseUrl: providerConfig?.baseUrl ?? null,
+    customEndpointId: providerConfig?.customEndpointId ?? null,
+  };
+}
+
+function providerConfigFromSession(
+  session: PiSession,
+): PiProviderRuntimeConfig | null {
+  if (!session.providerId || !session.modelId) return null;
+  return {
+    authMode: session.authMode ?? "terax",
+    provider: session.providerId,
+    modelId: session.modelId,
+    sourceModelId: session.sourceModelId ?? session.modelId,
+    baseUrl: session.baseUrl ?? undefined,
+    customEndpointId: session.customEndpointId ?? undefined,
+    thinkingLevel: session.thinkingLevel ?? undefined,
+  };
+}
+
 /**
  * Emit a Pi session event in real-time via Tauri's event system.
  * This mirrors what the sidecar does — the UI listens for "pi:session-event"
@@ -346,6 +386,7 @@ export async function webviewSessionCreate(
     createdAt: now,
     updatedAt: now,
     lastPrompt: null,
+    ...sessionProviderMetadata(providerConfig, provider, modelId),
   };
 
   const approvalPolicies = await loadApprovalPolicies();
@@ -665,8 +706,11 @@ async function rehydrateSession(
     throw new Error(`Session ${sessionId} not found`);
   }
 
-  const provider = providerConfig?.provider ?? "anthropic";
-  const modelId = providerConfig?.modelId ?? "claude-sonnet-4-20250514";
+  const effectiveProviderConfig =
+    providerConfig ?? providerConfigFromSession(stored);
+  const provider = effectiveProviderConfig?.provider ?? "anthropic";
+  const modelId =
+    effectiveProviderConfig?.modelId ?? "claude-sonnet-4-20250514";
 
   let messages: AgentMessage[] = [];
   try {
@@ -685,10 +729,12 @@ async function rehydrateSession(
     sessionId,
     provider,
     modelId,
-    baseUrl: providerConfig?.baseUrl,
-    customEndpointId: providerConfig?.customEndpointId,
+    baseUrl: effectiveProviderConfig?.baseUrl,
+    customEndpointId: effectiveProviderConfig?.customEndpointId,
     thinkingLevel:
-      providerConfig?.thinkingLevel ?? stored.thinkingLevel ?? undefined,
+      effectiveProviderConfig?.thinkingLevel ??
+      stored.thinkingLevel ??
+      undefined,
     approvalGate: (toolName, toolCallId, input) =>
       requestToolApproval(sessionId, toolName, toolCallId, input),
     questionGate: (toolCallId, params, signal) =>
@@ -722,6 +768,14 @@ export async function webviewSessionResume(
   if (providerConfig) {
     record.modelId = providerConfig.modelId;
     record.providerId = providerConfig.provider;
+    Object.assign(
+      record.session,
+      sessionProviderMetadata(
+        providerConfig,
+        providerConfig.provider,
+        providerConfig.modelId,
+      ),
+    );
     record.agent.state.model = resolveAgentModel({
       provider: providerConfig.provider,
       modelId: providerConfig.modelId,
@@ -815,10 +869,13 @@ export async function webviewSessionRollback(
   // Preserve the active provider/model so the rebuilt agent keeps using it.
   const existing = sessions.get(sessionId);
   const providerConfig = existing
-    ? ({
+    ? (providerConfigFromSession(existing.session) ??
+      ({
+        authMode: "terax",
         provider: existing.providerId,
         modelId: existing.modelId,
-      } as PiProviderRuntimeConfig)
+        sourceModelId: existing.modelId,
+      } as PiProviderRuntimeConfig))
     : null;
 
   const result = await invoke<{

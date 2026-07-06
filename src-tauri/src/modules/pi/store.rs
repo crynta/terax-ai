@@ -423,6 +423,12 @@ mod tests {
             last_prompt: None,
             workspace_env: None,
             thinking_level: None,
+            auth_mode: None,
+            provider_id: None,
+            model_id: None,
+            source_model_id: None,
+            base_url: None,
+            custom_endpoint_id: None,
             sdk_session_file: None,
             archived_at: None,
             forked_from: None,
@@ -466,6 +472,24 @@ mod tests {
         assert_eq!(history.sessions.len(), 1);
         assert_eq!(history.sessions[0].status, "idle");
         assert_eq!(history.events, vec![idle]);
+    }
+
+    #[test]
+    fn provider_metadata_round_trips_through_history() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join(HISTORY_FILE_NAME);
+        let mut session = session("pi-provider", "idle");
+        session.auth_mode = Some(crate::modules::pi::PiAuthMode::Terax);
+        session.provider_id = Some("openai-compatible".to_string());
+        session.model_id = Some("zai/glm-4.5".to_string());
+        session.source_model_id = Some("compat:endpoint-1".to_string());
+        session.base_url = Some("https://gateway.example.test/v1".to_string());
+        session.custom_endpoint_id = Some("endpoint-1".to_string());
+
+        record_session_result_at_path(&path, &session, &[]).unwrap();
+        let history = load_from_path(&path).unwrap();
+
+        assert_eq!(history.sessions, vec![session]);
     }
 
     #[test]

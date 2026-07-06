@@ -97,6 +97,40 @@ describe("Pi webview session backend", () => {
       );
     });
 
+    it("persists provider metadata on created sessions", async () => {
+      const result = await webviewSession.webviewSessionCreate(
+        "Provider Session",
+        "/workspace",
+        {
+          authMode: "terax",
+          provider: "openai-compatible",
+          modelId: "zai/glm-4.5",
+          sourceModelId: "compat:endpoint-1",
+          baseUrl: "https://gateway.example.test/v1",
+          customEndpointId: "endpoint-1",
+        } as import("@/modules/pi/lib/provider").PiProviderRuntimeConfig,
+      );
+
+      expect(result.session).toMatchObject({
+        authMode: "terax",
+        providerId: "openai-compatible",
+        modelId: "zai/glm-4.5",
+        sourceModelId: "compat:endpoint-1",
+        baseUrl: "https://gateway.example.test/v1",
+        customEndpointId: "endpoint-1",
+      });
+      expect(mockInvoke).toHaveBeenCalledWith(
+        "pi_store_record_session",
+        expect.objectContaining({
+          session: expect.objectContaining({
+            providerId: "openai-compatible",
+            modelId: "zai/glm-4.5",
+            customEndpointId: "endpoint-1",
+          }),
+        }),
+      );
+    });
+
     it("uses defaults when optional params are omitted", async () => {
       const result = await webviewSession.webviewSessionCreate();
 
