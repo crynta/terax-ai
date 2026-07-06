@@ -1,163 +1,55 @@
-<div align="center">
-  <img src="public/logo.png" width="144" height="144" alt="Terax" />
-  <h1>Terax</h1>
+# Terax(個人客製化 fork)
 
-  <p><strong>Lightweight Terminal-first AI-native dev workspace.</strong></p>
+這是 [crynta/terax-ai](https://github.com/crynta/terax-ai) 的個人客製化分支,不是要提交回官方的一次性 patch,而是**長期疊在官方版本之上、持續維護的客製化層**。這個 repo 本身也當作雲端備份用。
 
-  <p>
-    <img src="https://img.shields.io/github/v/release/crynta/terax-ai?label=version&color=blue" alt="version" />
-    <img src="https://img.shields.io/github/downloads/crynta/terax-ai/total?label=downloads&color=blue" alt="downloads" />
-    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey" alt="platform" />
-    <a href="https://discord.gg/tyveTUyEp7"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
-  </p>
+## 為什麼會有這個 fork
 
-  <p>
-    <a href="https://terax.app">Website</a>
-    ·
-    <a href="https://terax.app/docs">Docs</a>
-    ·
-    <a href="https://github.com/crynta/Terax-website">Website's source code</a>
-  </p>
-</div>
+官方目前不打算提供、或還沒提供某些功能/修法,但日常使用上需要,所以在這裡對官方原始碼直接修改。官方會持續改版,所以每一筆客製化修改都必須清楚記錄「改了什麼、為什麼改、怎麼改」,下次官方發新版時才能快速、準確地在新版原始碼上重新套用,而不是每次都重新除錯一遍。
 
----
+完整的架構文件、開發慣例、品質標準,見 [`TERAX.md`](TERAX.md)(官方留下的架構真理來源)。給 Claude Code 之類 AI agent 接手用的入口在 [`CLAUDE.md`](CLAUDE.md)。
 
-Terax is a lightweight open-source terminal (ADE) built on Tauri 2 + Rust and React 19. A native PTY backend with a WebGL renderer, an agentic AI side-panel that runs against your own keys or fully local models, plus a code editor, file explorer, source control with a git graph, and a web preview pane built in. About 7-8 MB on disk. No telemetry. No account.
+## 目前的客製化修改
 
-## Screenshots
+分支 `fix/option-arrow-keycode-229`:
 
-<table>
-  <tr>
-    <td align="center"><img src="docs/terminal.png" alt="Terminal" /><br/><sub>Multi-tab terminal with WebGL rendering</sub></td>
-    <td align="center"><img src="docs/themes.png" alt="Themes and background image" /><br/><sub>Custom themes, presets, and background images</sub></td>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/web-preview.png" alt="Web preview" /><br/><sub>Web preview of local dev servers</sub></td>
-    <td align="center"><img src="docs/source-control.png" alt="Source control and git graph" /><br/><sub>Source control panel with git graph in history</sub></td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center"><img src="docs/ai-workflow.png" alt="AI window" /><br/><sub>Agentic AI workflow with edit diffs in the code editor</sub></td>
-  </tr>
-</table>
+- **修復 Option+方向鍵/Option+Backspace 在 macOS 上完全無反應**——macOS WKWebView 把 Option 修飾鍵誤標成 `keyCode 229`(IME 組字碼),原本的 IME 守衛把這些事件整個吞掉。已送官方 PR [#956](https://github.com/crynta/terax-ai/pull/956)。
+- **新增 Option+Z:對映到 shell readline 的 undo(`Ctrl+_`)**,用來撤銷終端機輸入行還沒送出的編輯。
+- **簡化 IME keyCode-229 守衛**:拿掉 Terax 自己重複、且更粗糙的 `keyCode === 229` 判斷,交還給 xterm.js 自己內建、更精確的 `CompositionHelper` 邏輯處理。
 
-## Features
+詳細根因分析、重現步驟、走過的彎路,見 [`FIX_NOTES.md`](FIX_NOTES.md)。
 
-### Terminal
+**已知問題(擱置,非本 fork 造成)**:CJK 輸入法直接輸入全形標點(例如 `Shift+,`)偶爾會漏掉第一個字元。根因在 `@xterm/xterm` 這個依賴套件本身的 `CompositionHelper._handleAnyTextareaChanges` 診斷邏輯,不是 Terax 或這個 fork 的程式碼問題,細節見 `FIX_NOTES.md`。
 
-- xterm.js with WebGL renderer, multi-tab with background streaming
-- GPU-accelerated block-based terminal with editor-like command input
-- Native PTY backend via `portable-pty` (zsh, bash, pwsh, fish, cmd)
-- Split panels (horizontal and vertical)
-- Inline search, link detection, true-color
-- Per-tab workspace environments on Windows (Local, or any installed WSL distro)
+## 建置與開發
 
-### Code editor
-
-- CodeMirror 6 (supports all popular languages - TS/JS, Rust, Python, Go, C/C++, Java, HTML/CSS, JSON, Markdown, etc.)
-- Inline AI autocomplete with local model support
-- AI edit diffs, accept or reject hunk by hunk
-- Vim mode
-- Ten built-in editor themes: Atom One, Aura, Copilot, GitHub Dark / Light, Gruvbox Dark, Nord, Tokyo Night, Xcode Dark / Light
-
-### Source control
-
-- Stage / unstage hunks, commit (Cmd+Enter / Ctrl+Enter), push with upstream awareness
-- Branch display including detached HEAD state
-- Git history pane with a real commit graph (lane rendering for merges and branches)
-- Commit search and filter, click through to the remote commit page
-
-### File explorer
-
-- Catppuccin icon theme
-- Fuzzy search, keyboard navigation, inline rename, context actions
-- Attach files and selections directly to the AI side-panel
-
-### Web preview
-
-- Auto-detects local dev servers and opens them in a preview tab
-- External URL preview via a native child webview
-
-### Themes and customization
-
-- Custom themes built in-app, switch between bundled presets and your own
-- Create your own themes, share them or import from the community
-- Background images with adjustable opacity and blur
-- Editor theme is independent from the app theme
-
-### AI
-
-- **BYOK providers:** OpenAI, Anthropic, Google (Gemini), Groq, xAI (Grok), Cerebras, OpenRouter, DeepSeek, Mistral, plus any OpenAI-compatible endpoint
-- **Local / offline:** LM Studio, MLX, Ollama
-- **Agentic workflow:** plans, sub-agents, project memory via `TERAX.md`, file read / write / edit / multi-edit / grep / glob, bash with approval gating, background processes
-- **Composer:** snippets via `#handle`, files via `@path`, slash commands, voice input, attach-to-agent from explorer or selection
-- **Custom agents** with their own system prompt and tool subset
-- **Plan mode** for multi-step work, generates and confirms before doing
-
-## Install
-
-Latest installers are on the [Releases](https://github.com/crynta/terax-ai/releases/latest) page. Terax auto-updates from there.
-
-### Windows notes
-
-- On first launch Windows shows "Windows protected your PC" because Terax isn't code-signed yet. Click **More info** then **Run anyway**.
-- Default shell detection: `pwsh.exe` (PowerShell 7+) -> `powershell.exe` (Windows PowerShell 5.1) -> `cmd.exe`.
-- WSL is a first-class workspace environment, not a wrapped subprocess.
-
-### Linux notes
-
-- **Arch / AUR:** `yay -S terax-bin` (or `paru`, etc.). Tracks the latest release.
-- **NixOS / Nix**: use the official flake - `nix profile install github:crynta/terax-ai` (non-NixOS), or import the flake and add `inputs.terax.packages.${pkgs.system}.terax` to `environment.systemPackages` (NixOS). The `nixosModules.terax` output is also available for a simpler setup.
-- **AppImage:** needs FUSE. Without it: `./Terax_*.AppImage --appimage-extract-and-run`. On Wayland with rendering glitches, try `WEBKIT_DISABLE_DMABUF_RENDERER=1`. Otherwise the `.deb` / `.rpm` packages link against the system GTK stack and tend to be smoother.
-
-## Configure AI
-
-1. Open **Settings -> AI**.
-2. Pick a provider and paste your API key. For local inference, point Terax at your LM Studio / MLX / Ollama endpoint.
-3. Keys are written to the OS keychain via `keyring`. They never touch disk or localStorage.
-
-## Build from source
-
-**Prerequisites**
-- Rust (stable), https://rustup.rs
-- Node 20+ and [pnpm](https://pnpm.io)
-- Tauri prerequisites for your platform, https://tauri.app/start/prerequisites/
-
-**Run**
 ```bash
 pnpm install
-pnpm tauri dev          # development
-pnpm tauri build        # production bundle
+pnpm tauri dev          # 開發模式(有 devtools,Vite HMR)
+pnpm tauri build        # 編出正式版 .app/.dmg
 ```
 
-**Checks**
+編譯出的 App 位於 `src-tauri/target/release/bundle/macos/Terax.app`,可直接拿去覆蓋 `/Applications/Terax.app`。
+
+檢查指令(改動後務必跑過):
+
 ```bash
 pnpm lint
 pnpm check-types
 pnpm test
-cd src-tauri && cargo clippy --all-targets --locked -- -D warnings   # Rust lint (matches CI)
-cd src-tauri && cargo nextest run --locked                           # or: cargo test --locked
+cd src-tauri && cargo clippy --all-targets --locked -- -D warnings
+cd src-tauri && cargo nextest run --locked
 ```
 
-## Tech stack
+## Remotes
 
-Tauri 2, Rust, `portable-pty`, React 19, TypeScript, Vite, xterm.js, CodeMirror 6, Vercel AI SDK v6, Tailwind v4, shadcn/ui, Zustand.
+- `origin` = 官方上游 `crynta/terax-ai`(唯讀,只 fetch 追蹤新版,不 push)
+- `fork` = 這個個人 fork `ayii0111/terax-ai`(push 客製化分支、送 PR、備份用)
 
-## Contributing
+## 官方發新版後的重現流程
 
-Issues and PRs are welcome! Feel free to open issues, suggest features, or submit pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) and the [architecture docs](docs/README.md) for more details.
+```bash
+git fetch origin
+git rebase origin/main   # 在客製化分支上執行
+```
 
-## License
-
-Terax is licensed under the Apache-2.0 License. For more information on our dependencies, see [Apache License 2.0](LICENSE).
-
-## Star history
-
-<div align="center">
-  <a href="https://www.star-history.com/#crynta/terax-ai&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=crynta/terax-ai&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=crynta/terax-ai&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=crynta/terax-ai&type=Date" />
-    </picture>
-  </a>
-</div>
+沒衝突就直接套用完;若官方剛好動到我們改過的那幾行,對照 `FIX_NOTES.md` 裡的根因分析手動重新推導修法,再重新走一次上面的檢查指令、重新 `pnpm tauri build`。
