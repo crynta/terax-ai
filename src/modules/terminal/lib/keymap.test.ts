@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   terminalDeleteSequence,
+  terminalImeKeyDecision,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
+  type TerminalImeKeyEvent,
   type TerminalKeyEvent,
 } from "./keymap";
 
@@ -76,6 +78,53 @@ describe("terminalLineNavigationSequence", () => {
         evt({ metaKey: true, altKey: true, key: "ArrowLeft", code: "ArrowLeft" }),
         { isMac: true },
       ),
+    ).toBeNull();
+  });
+});
+
+describe("terminalImeKeyDecision", () => {
+  const ime = (partial: Partial<TerminalImeKeyEvent>): TerminalImeKeyEvent => ({
+    type: "keydown",
+    isComposing: false,
+    keyCode: 0,
+    ...partial,
+  });
+
+  it("blocks keydowns fired during an active composition", () => {
+    // The Enter that commits an IME candidate arrives as a keydown with
+    // isComposing set; forwarding it would run the shell command (#158).
+    expect(
+      terminalImeKeyDecision(ime({ isComposing: true, keyCode: 13 })),
+    ).toBe("block");
+    expect(
+      terminalImeKeyDecision(ime({ isComposing: true, keyCode: 229 })),
+    ).toBe("block");
+  });
+
+  it("forwards Process (229) keydowns outside a composition to xterm", () => {
+    // IME-committed text (dead keys, ibus accents) arrives as keyCode 229
+    // with no isComposing flag. xterm's CompositionHelper must see the
+    // keydown to run its textarea-diff bookkeeping, otherwise committed
+    // accents accumulate and re-send cumulatively (#850, #927).
+    expect(terminalImeKeyDecision(ime({ keyCode: 229 }))).toBe("forward");
+  });
+
+  it("forwards IME keyups and keypresses to xterm", () => {
+    expect(
+      terminalImeKeyDecision(ime({ type: "keyup", keyCode: 229 })),
+    ).toBe("forward");
+    expect(
+      terminalImeKeyDecision(ime({ type: "keyup", isComposing: true })),
+    ).toBe("forward");
+    expect(
+      terminalImeKeyDecision(ime({ type: "keypress", isComposing: true })),
+    ).toBe("forward");
+  });
+
+  it("leaves non-IME keys to the regular shortcut handling", () => {
+    expect(terminalImeKeyDecision(ime({ keyCode: 65 }))).toBeNull();
+    expect(
+      terminalImeKeyDecision(ime({ type: "keyup", keyCode: 13 })),
     ).toBeNull();
   });
 });
