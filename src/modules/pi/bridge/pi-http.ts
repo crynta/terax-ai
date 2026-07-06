@@ -73,6 +73,30 @@ function extractHeaders(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
+const FORM_URLENCODED_CONTENT_TYPE =
+  "application/x-www-form-urlencoded;charset=UTF-8";
+
+function hasHeader(
+  headers: Record<string, string> | undefined,
+  name: string,
+): boolean {
+  return Object.keys(headers ?? {}).some(
+    (key) => key.toLowerCase() === name.toLowerCase(),
+  );
+}
+
+function headersForBody(
+  headers: Record<string, string> | undefined,
+  body: BodyInit | null | undefined,
+): Record<string, string> | undefined {
+  if (!(body instanceof URLSearchParams)) return headers;
+  if (hasHeader(headers, "content-type")) return headers;
+  return {
+    ...(headers ?? {}),
+    "content-type": FORM_URLENCODED_CONTENT_TYPE,
+  };
+}
+
 // ─── Body serialization ───
 
 /**
@@ -125,10 +149,22 @@ async function serializeBody(
  *
  * For all other requests, falls back to ai_http_request (full response at once).
  */
-function tauriProxiedFetch(
+async function bodyFromRequest(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<BodyInit | null | undefined> {
+  if (init && "body" in init) {
+    return init.body as BodyInit | null | undefined;
+  }
+  if (!(input instanceof Request) || input.body === null) return undefined;
+  return input.clone().arrayBuffer();
+}
+
+async function tauriProxiedFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
+  const request = input instanceof Request ? input : null;
   const url =
     typeof input === "string"
       ? input
@@ -142,10 +178,13 @@ function tauriProxiedFetch(
     return fetch(input, init);
   }
 
-  const method = init?.method ?? "GET";
-  const headers = extractHeaders(init?.headers);
-  const body = init?.body as BodyInit | null | undefined;
-  const signal = init?.signal;
+  const method = init?.method ?? request?.method ?? "GET";
+  const body = await bodyFromRequest(input, init);
+  const headers = headersForBody(
+    extractHeaders(init?.headers ?? request?.headers),
+    body,
+  );
+  const signal = init?.signal ?? request?.signal;
 
   // Pass through requests whose body the proxy can't represent (FormData,
   // streams). The global fetch is swapped for the duration of a Pi stream, so a
