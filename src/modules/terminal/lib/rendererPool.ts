@@ -247,7 +247,19 @@ function createSlot(): Slot {
     // composed string through its own compositionend handler instead.
     // keyCode 229 ("Process") is what Chromium reports for every key
     // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // macOS WKWebView also mistags Option+arrow with keyCode 229 (Option is
+    // the accent/dead-key modifier), which would otherwise swallow the
+    // readline word-navigation shortcuts below — arrow/backspace keys can
+    // never legitimately be IME composition input, so exempt them.
+    const isNavigationKey =
+      event.key === "ArrowLeft" ||
+      event.key === "ArrowRight" ||
+      event.key === "ArrowUp" ||
+      event.key === "ArrowDown" ||
+      event.key === "Backspace";
+    if (event.isComposing || (event.keyCode === 229 && !isNavigationKey)) {
+      return false;
+    }
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
