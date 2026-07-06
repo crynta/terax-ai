@@ -25,6 +25,16 @@ export function terminalLineNavigationSequence(
   return null;
 }
 
+/** Option+Z → readline undo (Ctrl+_). macOS reports plain Option+letter
+ * combos with event.key as "Dead" (dead-key composition), not "z" - check
+ * event.code too, same as the word-navigation sequences above. */
+export function terminalUndoSequence(event: TerminalKeyEvent): string | null {
+  if (!event.altKey || event.ctrlKey || event.metaKey) return null;
+  if (event.key === "z" || event.key === "Z" || event.code === "KeyZ")
+    return "\x1f";
+  return null;
+}
+
 /** Modifier+Backspace deletion:
  *   macOS  Cmd+Backspace    → Ctrl+U (kill-to-line-start)
  *   macOS  Option+Backspace → Ctrl+W (kill-word-backward)

@@ -16,6 +16,7 @@ import {
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
+  terminalUndoSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
 
@@ -245,19 +246,20 @@ function createSlot(): Slot {
     // Raw keydown events — including the Enter that commits a candidate —
     // must NOT be forwarded to the PTY; xterm will receive the final
     // composed string through its own compositionend handler instead.
-    // keyCode 229 ("Process") is what Chromium reports for every key
-    // pressed inside an active IME session when isComposing is not yet set.
-    // macOS WKWebView also mistags Option+arrow with keyCode 229 (Option is
-    // the accent/dead-key modifier), which would otherwise swallow the
-    // readline word-navigation shortcuts below — arrow/backspace keys can
-    // never legitimately be IME composition input, so exempt them.
-    const isNavigationKey =
-      event.key === "ArrowLeft" ||
-      event.key === "ArrowRight" ||
-      event.key === "ArrowUp" ||
-      event.key === "ArrowDown" ||
-      event.key === "Backspace";
-    if (event.isComposing || (event.keyCode === 229 && !isNavigationKey)) {
+    //
+    // We used to also swallow any keyCode 229 ("Process", what Chromium
+    // reports for every keydown in an active IME session before isComposing
+    // flips true) here. That duplicated - more crudely - what xterm's own
+    // CompositionHelper.keydown() already does with keyCode 229: it calls
+    // _handleAnyTextareaChanges(), which diffs the textarea after a
+    // setTimeout and only sends if still not composing. Swallowing it a
+    // second time up here, before that logic ever runs, broke two things
+    // that report keyCode 229 without a real composition in progress:
+    // macOS Option+arrow/Option+Z (dead-key mistagging, see keymap.ts) and
+    // CJK IMEs' direct-commit full-width punctuation (e.g. Shift+, → ，) -
+    // both got dropped instead of forwarded. Only isComposing is ours to
+    // check; keyCode 229 is xterm's call.
+    if (event.isComposing) {
       return false;
     }
 
@@ -283,6 +285,12 @@ function createSlot(): Slot {
     if (deleteSeq) {
       event.preventDefault();
       if (event.type === "keydown") bridge.writeToPty(deleteSeq);
+      return false;
+    }
+    const undoSeq = terminalUndoSequence(event);
+    if (undoSeq) {
+      event.preventDefault();
+      if (event.type === "keydown") bridge.writeToPty(undoSeq);
       return false;
     }
     if (isShiftEnter(event)) {
