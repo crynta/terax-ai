@@ -1,50 +1,73 @@
 # Pi native tool bridge
 
-Terax now runs Pi SDK sessions with a Rust-mediated native tool bridge. The Node sidecar still hosts `@earendil-works/pi-coding-agent`, but Pi tool execution is routed back to Tauri over reverse JSON-RPC (`nativeTools.execute`). Rust validates the session workspace and executes the native operation, so the LLM chooses intent while Terax keeps authority over files, shell, approvals, persistence, and audit events.
+Terax runs Pi sessions in the webview, but Pi tool execution is still a
+Rust-mediated native bridge. The model can propose intent; Rust decides whether
+that intent is allowed and performs the privileged operation.
 
 ## Current invariants
 
-- The sidecar reports `toolMode: "rust-mediated"`.
-- Enabled Pi tool names are exactly `read`, `ls`, `grep`, `find`, `bash`, `edit`, `write`, `create_artifact`, `edit_artifact`, `read_artifact`, and `list_artifacts`.
-- The sidecar overrides those tool names with Terax custom tool definitions from `native-tools.js`; Pi built-in file/shell backends are not the executor.
-- `nativeTools.execute` is a reverse JSON-RPC request from Node to Rust for actual tool execution.
-- Rust records the authorized session `cwd` returned by `sessions.create`; native tool requests from unknown sessions or mismatched cwd values are rejected.
-- Approval-required tools remain exactly `bash`, `edit`, and `write`.
-- `sessions.tool.respond` is in the sidecar allowlist and exposed through Tauri as `pi_session_tool_respond` for approval UI decisions.
-- Read/list/search/edit/write paths are constrained to the Rust-authorized workspace and reject sensitive files/directories.
-- Artifact tools operate on app-owned artifact state, derive the conversation from the verified session id, and never take `conversationId` from the model.
-- Grep/find skip sensitive files encountered during traversal.
-- Pending approvals are denied on stop, delete, sidecar error, run abort, or session disposal.
-- Unknown, stale, or already-resolved approval responses return structured `PI_APPROVAL_NOT_FOUND` metadata.
-- User/project Pi extensions are not loaded in the embedded sidecar; only reviewed Terax wiring is active.
+- The webview exposes reviewed agent tool definitions from
+  `src/modules/pi/bridge/pi-session.ts`.
+- Agent tool names are mapped to native policy names before execution:
+  `read_file -> read`, `write_file -> write`, `edit_file -> edit`,
+  `list_directory -> ls`, `bash_run -> bash`, `grep -> grep`, and
+  `glob -> find`.
+- MCP tools are exposed only when Rust reports them as model-visible and not
+  denied by manifest policy; execution uses the MCP qualified tool name.
+- Every agent-initiated tool call invokes `pi_agent_tool_execute`; there is no
+  model-accessible direct call to Terax file, shell, artifact, or MCP commands.
+- Rust validates session id, cwd, workspace env, capability policy, approval
+  grants, and sensitive-path rules before execution.
+- Ask-level tools require a single-use grant recorded by `pi_approval_grant`.
+  Denied tools do not receive a grant and therefore cannot execute.
+- Artifact tools operate on app-owned artifact state and derive ownership from
+  the verified Pi session id.
+- Approval grants are forgotten on stop/delete through `pi_agent_session_forget`.
+- Provider secrets never appear in diagnostics, event history, transcripts, or
+  tool audit output.
 
 ## Runtime flow
 
-1. Pi proposes a tool call such as `read`, `bash`, or `create_artifact`.
-2. The sidecar approval extension checks the tool name and coarse path policy.
-3. For `bash`, `edit`, and `write`, the sidecar emits `session.tool.approval.requested` and waits for the sidebar decision.
-4. After approval, or immediately for non-approval tools, the custom tool definition sends `nativeTools.execute` to Rust with `sessionId`, `toolCallId`, `toolName`, `cwd`, and input.
-5. Rust verifies that the request belongs to a known session and cwd, then executes the native operation with workspace, sensitive-path, or artifact-store policy.
-6. The sidecar returns the Rust result to Pi and emits the usual tool timeline events for transcript persistence.
+1. The webview Pi agent proposes a tool call such as `read_file`, `bash_run`,
+   `write_file`, or an MCP qualified name.
+2. For Ask-level tools, the webview emits `session.tool.approval.requested` and
+   waits for the sidebar decision.
+3. If the user approves, the webview records a Rust grant with
+   `pi_approval_grant(sessionId, toolCallId, nativeToolName)`.
+4. The tool implementation invokes `pi_agent_tool_execute` with session id, tool
+   call id, native tool name, cwd, workspace env, and sanitized input.
+5. Rust authorizes the workspace, evaluates capability/MCP policy, consumes the
+   grant if required, executes through the native dispatcher, and records an
+   audit entry.
+6. The webview converts the Rust result back into a Pi agent tool result and
+   persists the normal tool timeline events.
+
+Approval UI is not the security boundary. `pi_agent_tool_execute` is the only
+place where approved shell or mutation work can happen.
 
 ## Safety requirements
 
-1. Tool names stay allowlisted; unknown tools remain unavailable.
-2. Pi built-in file/shell/edit/write implementations must not be the final executor.
-3. Native tool requests must match a Rust-authorized session workspace.
-4. File/search/mutation tools remain scoped to the authorized workspace and reject sensitive paths.
+1. Unknown native tools remain denied unless explicitly added to the Rust
+   capability manifest or model-visible MCP registry.
+2. Pi built-in file/shell/edit/write implementations must not be the final
+   executor for Terax workspace operations.
+3. Native tool requests must match a live, Rust-authorized workspace.
+4. File/search/mutation tools remain scoped to the authorized workspace and
+   reject sensitive paths.
 5. Shell commands and mutations require explicit approval before execution.
-6. Pending approvals are denied on stop, delete, session error, run abort, or disposal.
-7. Stale approval responses return structured `PI_APPROVAL_NOT_FOUND` metadata.
-8. Sidecar source and generated `dist` files stay synchronized before release.
-9. Diagnostics and protocol responses never expose provider secrets.
+6. Approval grants are single-use and cleared on stop/delete.
+7. Denial and stale approval responses must not execute the tool.
+8. Diagnostics and persisted session data never expose provider secrets.
 
 ## Verification
 
 ```bash
 pnpm check:pi-boundary
-pnpm exec vitest run sidecars/pi-host scripts/check-pi-approval-boundary.test.mjs
-cd src-tauri && cargo test --locked modules::pi --lib
-pnpm build:sidecars
-pnpm smoke:pi-host
+pnpm exec vitest run src/modules/pi/bridge/pi-tools.test.ts src/modules/pi/lib/webview-session.test.ts
+pnpm exec vitest run src/modules/pi/bridge/pi-http.test.ts
+cd src-tauri && cargo test --locked pi_agent_tool
 ```
+
+For end-to-end coverage, `e2e/specs/pi-approval.e2e.mjs` uses the deterministic
+faux Pi provider to assert approve -> execute and deny -> no-op through
+`pi_agent_tool_execute`.

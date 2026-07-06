@@ -1,81 +1,142 @@
 # Pi runtime integration
 
-Terax keeps the app shell, editor, terminal, git, and SQLite surfaces Tauri/Rust-owned. The Pi integration is isolated to a Node sidecar that loads `@earendil-works/pi-*` runtime packages while routing Pi tool execution back through a Rust-mediated native bridge.
+Terax's Pi integration is now **webview-native by default**. There is no bundled
+Node.js Pi sidecar and no `sidecars/pi-host` runtime in the default app. Pi SDK
+agent objects live in the renderer process, while every privileged operation
+still crosses a Tauri/Rust boundary.
 
-For the focused Pi sidebar verification checklist, see [`pi-sidebar-verification.md`](./pi-sidebar-verification.md).
+For the focused Pi sidebar verification checklist, see
+[`pi-sidebar-verification.md`](./pi-sidebar-verification.md). For the session
+API shape and event contract, see
+[`pi-session-protocol.md`](./pi-session-protocol.md).
 
-## Production runtime strategy
+## Runtime ownership
 
-The chosen strategy is a stock Node process with a self-contained Pi host dependency tree:
+Terax keeps these responsibilities in Rust/Tauri:
 
-1. `sidecars/node` stages a real Node executable during sidecar builds.
-2. `sidecars/pi-host` is deployed as a production-only package during Tauri builds.
-3. Tauri bundles the generated `sidecars/node/dist` and `sidecars/pi-host/dist` directories as app resources.
-4. Rust launches `sidecars/pi-host/host.js` over newline-delimited JSON-RPC stdio.
-5. Node resolution order is:
-   - `TERAX_NODE_BINARY` override,
-   - bundled Node resource at `sidecars/node/...` when `node --version` succeeds,
-   - generated development Node at `sidecars/node/dist/...` when available,
-   - `node` on `PATH` for fallback.
+- workspace authorization and workspace-env validation;
+- keyring and provider API-key reads;
+- native file/search/shell/artifact/MCP execution;
+- tool approval grants, policy checks, and audit records;
+- Pi session metadata/event/transcript persistence;
+- HTTP proxying for provider calls that would otherwise be blocked by CORS.
 
-`pnpm build:sidecars` builds both generated resource directories. By default, `scripts/build-node-runtime.mjs` copies the current `process.execPath` into the bundled runtime path for fast deterministic local smoke tests. CI defaults to `TERAX_NODE_RUNTIME_SOURCE=download`, and release CI pins `TERAX_NODE_RUNTIME_VERSION=24.16.0`, stages the matching official Node archive from nodejs.org, verifies it against the release `SHASUMS256.txt`, and records the archive checksum in `runtime-manifest.json`. The Pi host bundle uses hoisted PNPM deployment so Tauri resource copying does not drop package-resolution symlinks. `pnpm smoke:pi-host` then runs the generated host with the generated Node executable from a temporary cwd, verifies Pi packages load from the bundled dependency tree, and creates/sends a faux Pi session.
+The webview owns only the in-memory Pi agent loop:
 
-This keeps Pi code outside the frontend bundle and avoids giving the Node sidecar ownership of Terax-native responsibilities.
+- `src/modules/pi/lib/pi-session-backend.ts` resolves the active backend to the
+  webview implementation.
+- `src/modules/pi/lib/webview-session.ts` manages session lifecycle, event
+  emission, transcript serialization, resume/rollback/fork reconstruction, and
+  persistence calls.
+- `src/modules/pi/bridge/pi-session.ts` creates `@earendil-works/pi-agent-core`
+  `Agent` instances with `@earendil-works/pi-ai` models and Terax tool
+  adapters.
+- `src/modules/pi/bridge/pi-http.ts` temporarily installs a ref-counted global
+  fetch proxy while model streams are active; requests are routed through
+  `ai_http_stream` or `ai_http_request`.
 
-## Current sidecar boundary
+This keeps the release app small while preserving the security boundary that the
+old sidecar was meant to enforce.
 
-The sidecar currently supports runtime probing, model catalog checks, real Pi SDK sessions with Rust-mediated tools, prompt delivery, and session metadata operations:
+## Provider and model setup
 
-- `ping`
-- `status`
-- `info`
-- `diagnostics`
-- `models.list`
-- `sessions.list`
-- `sessions.create`
-- `sessions.send`
-- `sessions.resume`
-- `sessions.tool.respond`
-- `sessions.rename`
-- `sessions.delete`
-- `sessions.stop`
-- `shutdown`
+Provider resolution starts in the normal Terax settings/model picker path. The
+runtime config passed to `webviewSessionCreate`/`webviewSessionResume` includes
+`authMode`, `provider`, `modelId`, optional `sourceModelId`, optional custom
+endpoint id, optional base URL, and optional thinking level. Session rows now
+persist the provider/model metadata so a restored or forked session keeps the
+same model context instead of silently falling back to defaults.
 
-See [`pi-session-protocol.md`](./pi-session-protocol.md) for the session contract and event envelope.
+Secrets are not stored in Pi session history. The webview bridge asks Rust for
+runtime key material only at the point of use:
 
-`status` is intentionally lightweight so the Start button does not block on cold Pi package imports. `info` imports the Pi packages and returns package name, version, load status, export count, and error text. It does not create sessions or touch workspace files.
+- `pi_env_api_key` resolves Terax-managed provider and custom-endpoint keys from
+  the keyring.
+- `pi_models_list` reads non-secret Pi profile model metadata when the user has
+  explicitly opted into profile auth.
+- The HTTP proxy forwards request headers/bodies to Rust for network I/O without
+  exposing keys through diagnostics.
 
-`models.list` is the safe opt-in bridge for existing terminal Pi profiles. When the user enables "Use existing Pi profile", Rust resolves the explicit Pi agent directory (`PI_CODING_AGENT_DIR` or `~/.pi/agent`) and asks the sidecar to list non-secret `ModelRegistry` metadata from that profile. The settings Pi model picker can refresh this profile catalog on demand. The result includes model/provider labels, availability, and context limits, but never returns tokens or API keys. Terax-managed local/OpenAI-compatible models still come from Terax settings and custom endpoints, so profile discovery cannot mutate Terax provider keys or enable tools.
+E2E runs set `localStorage["terax.e2e"] = "1"`, which swaps provider calls to a
+deterministic faux Pi model in `src/modules/pi/bridge/pi-mock.ts`. That path is
+not reachable in normal use.
 
-## Local CLI agents in the Pi sidebar
+## Tool execution boundary
 
-The Pi sidebar can also show installed terminal coding agents: Claude Code, Codex, Cursor Agent, OpenCode, and Pi. This is an operational dashboard, not a hidden provider bridge. Rust exposes `pi_local_agents_status`, which checks an allowlist of exact executable names on the current workspace shell `PATH` and returns only the resolved path or missing state. Local workspaces use the host login-shell `PATH`; WSL workspaces probe the selected distro's login shell so detection matches the terminal that will launch the agent. Refresh re-probes PATH instead of using a process-lifetime cache, so newly installed CLIs can appear without restarting Terax. No agent CLI process is spawned for detection.
+Agent-visible native tools are defined in the webview, but execution is always
+Rust-mediated:
 
-One-click launch is intentionally conservative:
+| Agent tool | Native policy tool |
+| --- | --- |
+| `read_file` | `read` |
+| `write_file` | `write` |
+| `edit_file` | `edit` |
+| `list_directory` | `ls` |
+| `bash_run` | `bash` |
+| `grep` | `grep` |
+| `glob` | `find` |
+| MCP qualified names | same qualified name |
 
-- Claude Code opens a visible terminal with `claude --permission-mode plan`.
-- Codex opens a visible terminal with `codex --sandbox read-only --ask-for-approval on-request`.
-- Cursor Agent opens a visible terminal with `cursor-agent --mode plan`.
-- Pi opens a visible terminal with `pi --tools read,grep,find,ls`, using Pi's documented tool allowlist to keep the launch read/search-only and exclude `bash`, `edit`, and `write`.
-- OpenCode opens a visible POSIX terminal command with `--pure`, project config disabled, a temporary HOME/XDG config/cache/state directory, the user's XDG data directory preserved for auth, and a Terax-owned deny-by-default `terax-plan` config. Windows OpenCode launch remains disabled until Terax has a native env-aware terminal launch path there.
+Every tool call invokes `pi_agent_tool_execute` with the Pi session id, tool call
+id, native tool name, cwd, workspace env, and sanitized input. Rust validates the
+session/workspace, evaluates the capability manifest policy, consumes any needed
+single-use approval grant, executes the operation, and records an audit entry.
 
-When the Pi composer has text, the card can open a selected launchable local agent with that prompt as the initial visible CLI prompt. The prompt is shell-quoted, control characters are stripped, and the agent still starts in the same safe launch posture. OpenCode prompt handoff uses `--prompt` only inside the same isolated visible-shell command. The local agent rule is: visible terminal first, plan/read-only posture by default, no hidden Terax spawns, and no automatic file edits from the sidebar. Settings remain the place for provider/model configuration; the sidebar shows detection, active status, docs/install actions, and safe launch entry points.
+Approval cards in the webview are UX only. For Ask-level tools (`bash`, `edit`,
+`write`, and Ask-level MCP tools), approval records a grant through
+`pi_approval_grant`; the subsequent `pi_agent_tool_execute` call is the only
+place where the grant is consumed and privileged work can happen. Denial returns
+a tool error result and does not execute the operation.
 
-`sessions.create` creates an actual `AgentSession` from `@earendil-works/pi-coding-agent`, passes the Rust-validated Terax workspace cwd into `createAgentSession`, disables untrusted Pi extension loading in the sidecar resource loader, installs the approval extension, and overrides `read`, `ls`, `grep`, `find`, `bash`, `edit`, `write`, `create_artifact`, `edit_artifact`, `read_artifact`, and `list_artifacts` with Terax custom tools. Rust provides an app-data `pi-sdk-sessions` directory, and the sidecar uses `SessionManager.create(cwd, sessionDir)` so the Pi SDK persists full conversation state as JSONL while Terax keeps only metadata/events in `pi-sessions.json`. Those custom tools send reverse JSON-RPC `nativeTools.execute` requests back to Rust; Pi chooses the tool intent, but Rust verifies the session id/cwd and executes the native operation. Read/list/search tools are workspace-confined and sensitive-path checked; grep/find skip sensitive files during traversal. Artifact tools write only app-owned artifact state, derive the conversation from the verified Pi session id, and follow the storage/preview/export rules in [Chat Artifacts](./artifacts.md). Shell and mutating workspace tools (`bash`, `edit`, `write`) pause the SDK run until Rust forwards an explicit `sessions.tool.respond` approval or denial from the UI, then execute in Rust rather than Pi's built-in file/shell backends. Native git, keyring, file access, shell access, process lifecycle, terminal, editor, and Terax metadata persistence ownership stays in Rust/Tauri. Terax-owned provider mode uses an in-memory `AuthStorage`/`ModelRegistry` fed by Rust keyring lookups. Profile mode instead passes the opted-in Pi `agentDir`, profile-backed `AuthStorage`/`ModelRegistry`, and `SettingsManager` to the SDK so Pi-only providers such as OpenAI Codex can use the same auth/catalog as terminal Pi without importing secrets into Terax settings.
+## Session persistence and restart behavior
 
-`sessions.send` returns after the prompt is accepted. Terax sends Rust-validated per-turn UI context (`workspace_root`, `active_terminal_cwd`, `active_file`) separately from the user prompt; the sidecar prepends it as an SDK-only `<env>` block while preserving the original prompt in session history. When present, `thinkingLevel` is validated and applied to the current SDK session before the next prompt starts. Prompt, progress, reasoning, output, status, and error events carry non-secret response-branch metadata so regenerated answers can be grouped as versions of the same turn without handing persistence to the sidecar. The sidecar streams later progress, reasoning, output, status, and error envelopes as JSON-RPC `session.event` notifications; Rust filters those out of the response stream and emits frontend `pi:session-event` events.
+Rust persists session metadata and event history in `pi-sessions.json` and stores
+the webview agent's canonical `AgentMessage[]` transcript as an opaque JSON blob
+under the app-data `pi-transcripts` directory. The transcript is separate from
+the capped UI event log so resume, fork, and rollback can reconstruct an
+agent-ready conversation even when old UI events have been trimmed.
 
+The webview calls these Rust persistence commands:
 
-`sessions.tool.respond` records an approval decision for a pending Terax custom tool request and returns the resulting `session.tool.approval.responded` event. Stale or already-resolved approvals fail with `PI_APPROVAL_NOT_FOUND` / JSON-RPC `-32008`.
+- `pi_store_record_session`
+- `pi_store_record_events`
+- `pi_store_record_transcript`
+- `pi_store_load_transcript`
+- `pi_store_delete_transcript`
 
-`sessions.rename` and `sessions.delete` are metadata operations on live sidecar sessions. Rename emits `session.renamed`; delete disposes the SDK session, denies any pending approvals, removes live state, and emits `session.deleted`. Rust applies those events to persisted history so stale session rows disappear after restart as well.
+On app restart, the sidebar loads persisted sessions/events, reconstructs an
+agent from the stored transcript on first resume/send, and marks expired approval
+requests as non-actionable. `webviewSessionStop` aborts the active agent run,
+marks the session idle when it can continue, and forgets Rust-side approval state
+for that session. Delete removes metadata, transcript, artifact ownership where
+requested, and approval grants.
 
-Session metadata and event history are persisted by Rust under the app data directory in `pi-sessions.json`; full Pi conversation state is persisted by the Pi SDK JSONL file recorded as `sdkSessionFile`. The Node sidecar still keeps only live SDK `AgentSession` objects in memory. After app or sidecar restart, the sidebar restores persisted history, shows stopped sessions with `sdkSessionFile` as resumable, and calls `sessions.resume`; Rust validates the SDK file path and the workspace before the sidecar reopens it with `SessionManager.open()`. Older history-only sessions without `sdkSessionFile` remain visible but can only be continued in a new session. Pending tool approvals are never resumed across this boundary; stopped transcripts mark restored approval requests as expired/denied for safety.
+## HTTP proxy
 
-The Pi sidebar prewarms the runtime once when it opens so package/model checks and session creation are ready before the first prompt. Rust owns the matching idle policy: after host activity, it schedules an idle shutdown and only stops the sidecar when `sessions.list` reports no running sessions. Running prompts keep the sidecar alive; manual Stop cancels the idle timer and shuts down immediately. Whenever Rust shuts down or clears a sidecar, persisted unfinished sessions (`idle` or `running`) are normalized to `stopped` with synthetic `session.status` events so restored history matches the runtime boundary.
+Provider SDKs call `fetch` from the renderer. During Pi model streams Terax
+installs a scoped fetch proxy so HTTP(S) requests go through Rust:
 
-`sessions.stop` acts as stream cancellation for running sessions: it aborts the active run, replaces the underlying SDK session, and returns the Terax Pi session to `idle` so the user can send a follow-up prompt in the same sidebar session. Stopping an already-idle session still disposes it and marks it `stopped`.
+- POST streams use `ai_http_stream` and Tauri `Channel` events.
+- Non-streaming requests use `ai_http_request`.
+- Unsupported raw bodies such as live `ReadableStream`/`FormData` are passed
+  through to the real fetch rather than corrupted.
+- `URLSearchParams` bodies are serialized as
+  `application/x-www-form-urlencoded;charset=UTF-8`, including when a `Request`
+  object already contains the generated body/header.
 
-Boundary tests enforce that the sidecar package depends only on `@earendil-works/pi-*` packages, rejects Terax-owned method families such as terminal/PTY, git, files, and editor calls with JSON-RPC `Method not found`, routes custom tool execution through `nativeTools.execute`, and keeps incidental Pi SDK stdout off the JSON-RPC stdout stream. Rust launches the sidecar with a minimal env allowlist that excludes provider API keys; Terax-owned provider credentials are resolved by Rust/keyring and sent only in the explicit `sessions.create` provider config when needed. The sidecar enforces method allowlists, Rust-mediated custom tools, approval prompts for shell/mutations, workspace/sensitive-path checks, and prompt/session resource limits. Diagnostics expose only non-secret status: rust-mediated tool mode, exact enabled/approval tool lists, allowed method names, resource limits, forwarded environment variable names, API-key presence booleans, and Rust manager policies such as idle shutdown and per-method timeouts.
+## Local CLI agents
 
-The Rust host manager applies method-specific request timeouts, captures a bounded stderr tail for diagnostics, and cleans up timed-out children. Fast health calls such as `status` use short limits while model/session setup calls get longer budgets. Requests are matched by JSON-RPC id instead of arrival order: each call registers its id in a pending-response map, the stdout reader demultiplexes response lines by id, and `session.event` notifications are routed independently. This lets future concurrent Rust callers and multiple Pi sessions share one sidecar safely even if responses complete out of order. Transport/protocol failures clear stale hosts so explicit starts can respawn a fresh sidecar; JSON-RPC method errors such as busy or missing sessions do not tear down a healthy host.
+The Pi sidebar can also show installed terminal coding agents: Claude Code,
+Codex, Cursor Agent, OpenCode, and Pi. This is separate from the webview-native
+Pi agent. Detection is an exact-name allowlist and never spawns the agent binary.
+One-click launch opens a visible terminal in a conservative read/plan posture;
+there is no hidden local-agent sidecar process.
+
+## Packaging
+
+The old Pi Node sidecar was removed to keep the default macOS app near the
+11 MB target. `pnpm build:sidecars` remains in `package.json` because the app
+still has a non-Pi speech-recognizer sidecar, but it no longer builds or bundles
+a Pi host or a Node runtime for Pi. Pi-related package size is therefore governed
+by the frontend bundle checks and the release app bundle size check, not by a
+Pi sidecar smoke test.

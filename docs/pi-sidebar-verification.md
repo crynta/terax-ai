@@ -1,193 +1,246 @@
 # Pi sidebar verification
 
-This checklist is for changes that touch Terax's Pi sidebar, Node sidecar, Pi SDK bridge, provider selection, or Pi session persistence. It is intentionally narrower than a repo-wide testing guide.
+This checklist is for changes that touch Terax's Pi sidebar, webview-native Pi
+agent bridge, provider selection, tool approval boundary, MCP exposure, or Pi
+session persistence. It is intentionally narrower than a repo-wide testing
+guide.
 
 ## Scope
 
 Use this checklist when a PR changes any of these paths:
 
-- `sidecars/pi-host/`
-- `scripts/build-node-runtime.mjs`
-- `scripts/build-pi-host-bundle.mjs`
-- `scripts/smoke-pi-host-bundle.mjs`
-- `src-tauri/src/modules/pi/`
-- `src-tauri/src/modules/pty/agent_detect.rs` when local CLI agent tracking changes
-- `src-tauri/tests/pi_state.rs`
 - `src/modules/pi/`
-- `src/settings/sections/ModelsSection.tsx`
+- `src/modules/ai/` surfaces that launch or replace Pi/chat UX
+- `src-tauri/src/modules/pi/`
+- `src-tauri/tests/*pi*` or capability/approval tests
+- `e2e/specs/*pi*.e2e.mjs`
 - `docs/pi-runtime.md`
 - `docs/pi-session-protocol.md`
+- this file
 
-Do not use this as a generic test guide for unrelated terminal, editor, git, or explorer work. Those areas follow the repo-wide rules in `CONTRIBUTING.md` and `TERAX.md`.
+The removed Node Pi sidecar (`sidecars/pi-host`, bundled Node runtime, and Pi
+host JSON-RPC smoke tests) is no longer part of the default app. Do not add it
+back for Pi verification. `pnpm build:sidecars` is still valid for the separate
+speech-recognizer sidecar only.
 
 ## Contracts to preserve
 
-A Pi sidebar change should keep these invariants true:
-
 1. **Terax owns the boundary**
-   - Rust owns workspace authorization, keyring access, process lifecycle, session history, and Tauri events.
-   - The sidecar owns Pi SDK session objects only.
-   - Direct Terax-owned method families such as terminal, PTY, git, editor, SQLite, and arbitrary file APIs stay unavailable over the sidecar JSON-RPC protocol.
+   - The Pi agent loop may run in the webview, but Rust owns workspace
+     authorization, keyring access, native tool execution, approval grants,
+     audit records, and durable session storage.
+   - The webview must not call privileged file/shell/MCP commands directly on
+     behalf of a model. Agent-initiated tools go through
+     `pi_agent_tool_execute`.
 
 2. **Pi tools stay Rust-mediated**
-   - Pi SDK sessions expose the explicit tool names `read`, `ls`, `grep`, `find`, `bash`, `edit`, and `write`.
-   - Those names are Terax custom tool overrides; Pi built-in file/shell/edit/write backends are not the executor.
-   - Custom tools route execution back to Rust with reverse JSON-RPC `nativeTools.execute`.
-   - Rust verifies the request session id and cwd against the workspace authorized at `sessions.create`.
-   - `read`, `ls`, `grep`, `find`, `edit`, and `write` stay workspace-scoped and block sensitive paths; grep/find skip sensitive files during traversal.
-   - Shell and mutating workspace tools (`bash`, `edit`, `write`) pause for `sessions.tool.respond` approval before Rust execution.
-   - Artifact tools (`create_artifact`, `edit_artifact`, `read_artifact`, `list_artifacts`) route through Rust without workspace write approval because they touch only app-owned artifact state.
-   - Direct Terax-owned file, shell, git, terminal, editor, and SQLite method families stay unavailable over sidecar JSON-RPC.
+   - Agent tools map to the native policy names `read`, `ls`, `grep`, `find`,
+     `bash`, `edit`, `write`, or an MCP qualified name.
+   - Rust verifies session id, cwd, workspace env, tool policy, and sensitive
+     path rules before execution.
+   - Shell and mutating workspace tools pause for user approval; approval must
+     create a single-use Rust grant before execution, and denial must be a
+     no-op.
+   - Artifact tools derive ownership from the verified Pi session id, not from
+     model-provided conversation ids.
 
-3. **Secrets are never diagnostic output**
+3. **Secrets stay out of diagnostics and history**
    - Diagnostics may expose presence booleans and provider labels.
-   - Diagnostics must not return API keys, auth JSON, profile secret values, request headers, or full provider configs.
-   - Rust must not pass provider API keys through the sidecar process environment.
+   - Diagnostics and persisted sessions must not include API keys, auth JSON,
+     request headers, or profile secret values.
+   - Provider/model metadata (`authMode`, provider id, model id, custom endpoint
+     id/base URL) may be persisted; runtime key material may not.
 
-4. **JSON-RPC stays clean**
-   - Sidecar stdout contains only newline-delimited JSON-RPC envelopes.
-   - Incidental Pi SDK output goes to stderr or is captured away from protocol stdout.
-   - Responses are matched by JSON-RPC id, not by arrival order.
-   - `session.event` notifications must not be mistaken for method responses.
+4. **Session lifecycle is restart-safe**
+   - Session creation persists an idle session row and provider/model metadata.
+   - Sending a prompt streams events asynchronously and persists a canonical
+     transcript blob separately from the capped UI event log.
+   - Stop aborts the active run, clears approval state, and leaves the session
+     usable for a follow-up when appropriate.
+   - App restart restores session history; first resume/send rehydrates the
+     agent from the persisted transcript.
+   - Pending approvals never resume as actionable after restart.
 
-5. **Session lifecycle is restart-safe**
-   - `sessions.create` creates an idle persisted Terax session.
-   - `sessions.send` returns quickly after accepting the prompt, then streams events asynchronously.
-   - `sessions.stop` aborts the active Pi run and leaves the session usable for a follow-up prompt when appropriate.
-   - App restart restores persisted history without giving persistence ownership to the Node sidecar.
-   - Host shutdown normalizes unfinished sessions to `stopped` with synthetic status events.
+5. **HTTP proxy is compatible with provider SDKs**
+   - Streaming provider calls go through `ai_http_stream`; non-streaming calls
+     go through `ai_http_request`.
+   - Unsupported raw bodies pass through to the real fetch instead of being
+     mangled.
+   - `URLSearchParams` bodies preserve or infer
+     `application/x-www-form-urlencoded;charset=UTF-8`.
 
-6. **Runtime packaging is deterministic**
-   - `pnpm build:sidecars` creates the bundled Node runtime and Pi host resources.
-   - `pnpm smoke:pi-host` verifies the bundled host can load Pi packages from a temporary cwd.
-   - The sidecar bundle must not depend on Terax frontend source files at runtime.
+6. **Packaging stays small**
+   - The default app must not bundle a Node Pi sidecar.
+   - The macOS release app should remain around the current 11 MB baseline.
+   - `resources/sidecars` may contain non-Pi sidecars such as the speech
+     recognizer; that does not reintroduce the Pi Node sidecar.
 
-7. **The UI reflects real runtime state**
-   - Diagnostics and runtime cards should distinguish missing package, missing auth, invalid profile, stopped host, running session, and protocol error states.
-   - A partially configured custom endpoint must not make an unusable Pi model look selectable.
-
-8. **Local CLI agents stay visible and conservative**
-   - Detection uses an exact-name allowlist of known binaries, follows the current workspace shell context, refreshes PATH on demand, and never spawns the agent binary during detection.
-   - One-click launches open a normal terminal, not a hidden sidecar process.
-   - Defaults stay plan/read-only or guarded: Claude Code `--permission-mode plan`, Codex `--sandbox read-only --ask-for-approval on-request`, Cursor Agent `--mode plan`, Pi `--tools read,grep,find,ls`, Gemini `--approval-mode plan`, Antigravity `agy --sandbox`, and OpenCode through the Terax-owned `terax-plan` isolation wrapper.
-   - Pi launch must keep `bash`, `edit`, and `write` out of the default tool allowlist unless a separate reviewed design adds stronger runtime controls.
-   - OpenCode launches only where Terax can provide POSIX shell env isolation: temporary HOME/XDG config/cache/state, preserved user XDG data for auth, project config disabled, and a Terax-owned deny-by-default permission config. Local Windows OpenCode launch stays disabled until the terminal launcher can pass native env isolation.
-   - Prompt handoff must pass the current Pi composer text as an initial CLI prompt only after shell quoting/sanitizing it for the terminal shell context: PowerShell for local Windows, POSIX quoting for macOS/Linux/WSL. It must not write hidden prompt files or spawn a hidden process.
+7. **Local CLI agents stay visible and conservative**
+   - Detection uses an exact-name allowlist and never spawns the agent binary.
+   - One-click launches open a normal terminal, not a hidden process.
+   - Defaults stay plan/read-only or guarded: Claude Code
+     `--permission-mode plan`, Codex `--sandbox read-only --ask-for-approval
+     on-request`, Cursor Agent `--mode plan`, Pi `--tools read,grep,find,ls`,
+     Gemini `--approval-mode plan`, Antigravity `agy --sandbox`, and OpenCode
+     through the Terax-owned `terax-plan` isolation wrapper.
 
 ## Checks to run
 
 Use targeted checks while iterating:
 
 ```bash
-pnpm exec vitest run sidecars/pi-host src/modules/pi
+pnpm exec vitest run src/modules/pi
+pnpm check:pi-boundary
 (cd src-tauri && cargo test --locked pi)
 ```
 
 Before review, run the CI-parity checks that match the touched area:
 
 ```bash
+pnpm format:check
 pnpm exec tsc --noEmit
+pnpm lint
 pnpm test
 pnpm build
+pnpm check:bundle-size
 (
   cd src-tauri
-  cargo check --all-targets --locked
-  cargo clippy --all-targets --locked -- -D warnings
-  cargo nextest run --locked
+  cargo check --locked
+  cargo clippy --locked --all-targets -- -D warnings
+  cargo test --locked
 )
 ```
 
-If `cargo nextest` is not installed locally, `cargo test --locked` is an acceptable local fallback, but CI still uses nextest.
-
-If the change touches sidecar packaging or runtime discovery, also run:
+If the change touches the `workflow` or `openclicky` feature gates, also run the
+matching feature checks, for example:
 
 ```bash
-pnpm build:sidecars
-pnpm smoke:pi-host
+(
+  cd src-tauri
+  cargo check --locked --features workflow
+  cargo clippy --locked --all-targets --features workflow -- -D warnings
+  cargo clippy --locked --all-targets --features openclicky -- -D warnings
+)
 ```
 
-CI uses `.github/workflows/ci.yml` as the source of truth. Prefer commands that match that workflow over invented examples.
+Run Linux/Windows e2e in CI. macOS cannot run `tauri-driver` against WKWebView;
+authoring specs on macOS should still include syntax/static checks and PR notes.
 
 ## Targeted test expectations
 
-### Sidecar protocol tests
-
-Cover these in `sidecars/pi-host/*.test.js`:
-
-- Unknown Terax-owned methods return JSON-RPC `Method not found`.
-- Invalid params fail with structured JSON-RPC errors.
-- `diagnostics` redacts secrets and reports only non-secret status.
-- `models.list` reads profile metadata without returning tokens.
-- `sessions.create`, `sessions.send`, and `sessions.stop` preserve event ordering and status transitions.
-- Diagnostics report `rust-mediated`, the exact enabled/approval-required tool lists, and enabled file/shell/tool capabilities without leaking secrets.
-- Faux host sessions can stream output for tests, read/search/artifact tools route through `nativeTools.execute` without approval, and `bash`/`edit`/`write` requests pause until `sessions.tool.respond` approves or denies them.
-- Stale or already-resolved tool approvals fail with `PI_APPROVAL_NOT_FOUND` / JSON-RPC `-32008`.
-- Protocol stdout remains valid JSON-RPC when Pi SDK imports or prompt execution produce incidental output.
-
-### Rust host tests
-
-Cover these in `src-tauri/tests/pi_state.rs` or focused Rust unit tests:
-
-- Workspace cwd is canonicalized and authorized before reaching the sidecar.
-- Provider credentials are resolved from keyring only for explicit session creation.
-- Tool response commands are registered and forward approve/deny decisions through Rust before shell or mutating tools can continue.
-- Reverse `nativeTools.execute` requests reject unknown sessions and cwd values that do not match the Rust-authorized workspace.
-- Host timeouts clear unhealthy sidecars but do not tear down healthy hosts for normal method errors.
-- Concurrent responses and `session.event` notifications are demultiplexed by id and method.
-- Idle shutdown never kills a host with running sessions.
-
-### Frontend tests
+### Webview/TypeScript tests
 
 Cover these in `src/modules/pi/**/*.test.ts(x)`:
 
-- Diagnostics mapping produces actionable UI states.
-- Session lists and transcripts restore persisted events correctly.
-- Prompt context is rendered from validated workspace, terminal cwd, active file, and private-terminal state.
-- Model picker enabled states match actually selectable provider and custom endpoint options.
-- Tool approval cards render only for running sessions with pending approval requests and wire Approve/Deny to the native bridge.
-- Stop, retry, regenerate, and send controls match session status.
+- Provider resolution and model-picker enabled states match actually selectable
+  Terax, profile, local, and custom endpoint options.
+- Session creation persists provider/model metadata and calls
+  `pi_store_record_session`.
+- Resume/send rehydrates from the canonical transcript and keeps the stored
+  provider/model unless the caller explicitly overrides it.
+- Prompt context is rendered from validated workspace, terminal cwd, active file,
+  and private-terminal state.
+- Tool approval cards render only for running sessions with pending approval
+  requests and wire Approve/Deny to the native bridge.
+- `URLSearchParams` and `Request` bodies keep correct form content-type through
+  the fetch proxy.
+- MCP tools are hidden when denied by manifest policy and route through the same
+  verified executor when visible.
+
+### Rust tests
+
+Cover these in Rust unit/integration tests:
+
+- Workspace cwd is canonicalized and authorized before native tool execution.
+- `pi_agent_tool_execute` rejects unknown sessions, mismatched cwd/workspace env,
+  missing approval grants for Ask tools, denied tools, and sensitive paths.
+- Approval grants are single-use and audited.
+- Provider credentials are resolved from keyring only for explicit runtime use.
+- Session metadata, provider metadata, events, and transcript blobs round-trip
+  through app-data storage with size/path-traversal guards.
+- Capability registration includes every frontend Tauri invoke or intentionally
+  feature-gated graceful degradation.
+
+### E2E tests
+
+Default e2e specs must not require real providers, secrets, or network. The Pi
+approval spec (`e2e/specs/pi-approval.e2e.mjs`) uses the deterministic faux Pi
+provider and must cover both branches of the security boundary:
+
+- approve -> Rust `pi_agent_tool_execute` writes the requested fixture;
+- deny -> the fixture remains absent and the denied mutation is not executed.
 
 ## Provider QA matrix
 
-Default automated tests must not call real providers or require API keys. Use this matrix to record what was covered locally and what still needs an opted-in live pass:
+Default automated tests must not call real providers or require API keys. Use
+this matrix to record what was covered locally and what still needs an opted-in
+live pass:
 
-- **Terax-managed cloud providers**: cover settings normalization in `src/modules/pi/lib/provider.test.ts`, Rust keyring resolution in `src-tauri/tests/pi_state.rs`, and sidecar runtime registration in `sidecars/pi-host/provider-config.test.js`. Live prompt QA requires a configured Terax keyring entry.
-- **Existing Pi profile auth**: cover profile `agentDir`, `AuthStorage`, `ModelRegistry`, and `SettingsManager` plumbing in `sidecars/pi-host/provider-config.test.js`. Live prompt QA requires an opted-in Pi profile with a configured model.
-- **OpenAI-compatible and local endpoints**: cover custom endpoint registration, base URL, context limit, and runtime API key handling in `sidecars/pi-host/provider-config.test.js` and frontend model state in `src/modules/pi/lib/provider.test.ts`. Live prompt QA requires the local LM Studio, MLX, Ollama, or gateway server to be running.
-- **Tool-call provider behavior**: default tests assert read-only tools run through Rust without approval and `bash`/`edit`/`write` pause for approval before Rust execution. Live provider QA should cover approve, deny, and stop-while-pending paths.
-- **Packaging path**: cover bundled sidecar provider readiness with `pnpm build:sidecars` and `pnpm smoke:pi-host`.
+- **Terax-managed cloud providers**: cover settings normalization in provider
+  tests and keyring lookup in Rust. Live prompt QA requires a configured Terax
+  keyring entry.
+- **Existing Pi profile auth**: cover non-secret profile model listing through
+  `pi_models_list`. Live prompt QA requires an opted-in Pi profile with a
+  configured model.
+- **OpenAI-compatible/custom endpoints**: cover endpoint id, base URL, context
+  limit, and runtime API-key handling. Live prompt QA requires the local or
+  gateway server to be running.
+- **Tool-call provider behavior**: default tests assert read/search tools run
+  through Rust and Ask-level tools require approval before Rust execution. Live
+  provider QA should cover approve, deny, and stop-while-pending paths.
 
-## Manual smoke pass
+## Manual macOS smoke pass
 
-Before asking for review on a behavior change, do a short manual pass:
+Before asking for review on a Pi behavior change, record a manual macOS pass in
+the PR description or a linked release-readiness note. Include the following:
 
-1. Open the Pi sidebar from a normal workspace.
-2. Start runtime diagnostics and confirm no secret values appear.
-3. Create a Pi session with Terax-managed provider auth.
-4. Send a short prompt and confirm streaming output appears in the transcript.
-5. Confirm no Pi tool approval card appears for prompts that do not request shell or mutation tools.
-6. Stop a running prompt and send a follow-up in the same session.
-7. Close and reopen the app, then confirm persisted session history restores.
-8. If local CLI agent behavior changed, refresh the Local CLI agents section and verify detection for Claude Code, Codex, Cursor Agent, OpenCode, and Pi. Launch Claude Code, Codex, Cursor Agent, and Pi from the sidebar and confirm each opens a visible terminal with the documented safe command. For Pi, confirm the command is `pi --tools read,grep,find,ls` and mutation/shell tools are unavailable. Confirm OpenCode shows Docs/detect-only copy. Also test "With prompt" on launchable agents using a short composer prompt.
-9. If profile auth changed, repeat with "Use existing Pi profile" enabled.
-10. If custom endpoint handling changed, test empty, partial, and complete endpoint configs.
+1. **Key save/load**: save a provider/custom endpoint key in settings, restart
+   the app, and confirm the model picker still sees the key without exposing the
+   value in diagnostics.
+2. **Terax-managed chat**: create a Pi session with a normal Terax-managed
+   provider, send a short prompt, and confirm streaming output appears.
+3. **Built-in/local agent cards**: refresh the local agent section and confirm
+   detected agents launch only visible terminal commands in the documented safe
+   posture.
+4. **Custom Zai/OpenAI-compatible endpoint auth**: configure a complete custom
+   endpoint for a Zai-compatible model, send a prompt, and confirm the stored
+   session keeps the custom endpoint id/base URL after restart.
+5. **Session streaming**: verify output, reasoning/progress when present, final
+   status, and transcript persistence.
+6. **Tool approval**: trigger a harmless `write`/`edit`/`bash` request; approve
+   once and confirm execution, then repeat and deny to confirm no mutation.
+7. **Stop/resume**: stop a running prompt, send a follow-up in the same session,
+   and confirm the transcript remains coherent.
+8. **App restart restore**: quit/reopen Terax and confirm sessions, events,
+   transcripts, provider/model metadata, and non-actionable expired approvals
+   restore correctly.
+9. **Window-close behavior**: close the Pi window/app during idle and during a
+   running/approval-pending session; confirm no stuck running state or reusable
+   stale approval remains after reopening.
+10. **Size spot-check**: after release build, record
+    `du -sh src-tauri/target/release/bundle/macos/*.app`.
 
-Record which automated commands and manual paths were run in the PR description.
+If a manual item cannot be run by the authoring agent (for example, real keys or
+macOS UI interaction are unavailable), mark it explicitly as pending with the
+reason. Do not silently treat automated tests as a substitute for live-provider
+manual QA.
 
 ## Documentation updates
 
 When behavior changes, update the docs in the same PR:
 
-- Update `docs/pi-runtime.md` for runtime ownership, packaging, diagnostics, and lifecycle behavior.
-- Update `docs/pi-session-protocol.md` for method params, results, event payloads, and JSON-RPC error codes.
+- Update `docs/pi-runtime.md` for runtime ownership, packaging, diagnostics, and
+  lifecycle behavior.
+- Update `docs/pi-session-protocol.md` for session params, persisted fields,
+  event payloads, and native command boundaries.
 - Update this file only when the verification contract itself changes.
 
 ## What not to add
 
 Avoid broad or brittle tests:
 
-- Do not snapshot large rendered transcripts.
-- Do not test Pi SDK internals that Terax does not own.
 - Do not require real provider network calls in default tests.
 - Do not put API keys, auth files, or profile secrets in fixtures.
-- Do not weaken protocol timeouts globally to hide a specific cold-start case. Prefer targeted longer timeouts for known expensive operations such as `sessions.create`.
+- Do not snapshot large rendered transcripts.
+- Do not weaken Rust policy checks or HTTP limits to hide a frontend issue.
+- Do not reintroduce the removed Node Pi sidecar for test convenience.
