@@ -4,6 +4,7 @@ pub mod agent;
 #[cfg(feature = "openclicky")]
 pub mod agents;
 pub mod artifacts;
+pub mod browser;
 pub mod capabilities;
 pub mod capture;
 pub mod fs;

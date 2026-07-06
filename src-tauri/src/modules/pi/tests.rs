@@ -4,6 +4,11 @@ use std::os::unix::fs::PermissionsExt;
 use super::local_agents::resolve_local_agent_binary_in_path;
 
 #[test]
+fn pi_env_api_key_rejects_unsupported_names() {
+    assert!(super::pi_env_api_key("HOME".to_string()).is_err());
+}
+
+#[test]
 fn local_agent_detection_uses_allowlisted_binaries() {
     let dir = tempfile::tempdir().unwrap();
     let claude = dir.path().join("claude");

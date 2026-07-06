@@ -9,6 +9,7 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async ({ mode }) => ({
   plugins: [react(), tailwindcss()],
   test: {
+    setupFiles: ["./src/test/setup.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text-summary"],

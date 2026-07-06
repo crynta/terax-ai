@@ -5,7 +5,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::RwLock;
-use tracing::instrument;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,7 +90,6 @@ async fn load_jobs_from_disk(app: &AppHandle) -> HashMap<String, ScheduleJob> {
 }
 
 #[tauri::command]
-#[instrument(skip(state), fields(name = %name, cron_expression = %cron_expression))]
 pub async fn schedule_add_job(
     app: AppHandle,
     state: State<'_, ScheduleState>,
@@ -123,7 +121,6 @@ pub async fn schedule_add_job(
 }
 
 #[tauri::command]
-#[instrument(skip(state), fields(job_id = %job_id))]
 pub async fn schedule_remove_job(
     app: AppHandle,
     state: State<'_, ScheduleState>,
@@ -138,7 +135,6 @@ pub async fn schedule_remove_job(
 }
 
 #[tauri::command]
-#[instrument(skip(state), fields(job_id = %job_id, enabled = %enabled))]
 pub async fn schedule_toggle_job(
     app: AppHandle,
     state: State<'_, ScheduleState>,
@@ -149,7 +145,8 @@ pub async fn schedule_toggle_job(
     if let Some(job) = jobs.get_mut(&job_id) {
         job.enabled = enabled;
         drop(jobs);
-        persist_jobs(&app, &state.jobs.read().await).await;
+        let jobs = state.jobs.read().await;
+        persist_jobs(&app, &jobs).await;
         Ok(())
     } else {
         Err(format!("Job {job_id} not found"))
@@ -157,7 +154,6 @@ pub async fn schedule_toggle_job(
 }
 
 #[tauri::command]
-#[instrument(skip(app, state))]
 pub async fn schedule_list_jobs(
     app: AppHandle,
     state: State<'_, ScheduleState>,
@@ -177,7 +173,6 @@ pub async fn schedule_list_jobs(
 }
 
 #[tauri::command]
-#[instrument(skip(app, state))]
 pub async fn schedule_start_daemon(
     app: AppHandle,
     state: State<'_, ScheduleState>,
@@ -224,7 +219,8 @@ pub async fn schedule_start_daemon(
                         jobs_guard.values().cloned().collect()
                     };
 
-                    for job in jobs_snapshot {
+                    let jobs_count = jobs_snapshot.len();
+                    for job in &jobs_snapshot {
                         if !job.enabled { continue; }
 
                         if let Some(last) = last_fired.get(&job.id) {
@@ -249,7 +245,7 @@ pub async fn schedule_start_daemon(
                                 };
                                 let _ = app_handle.emit("workflow:schedule", &trigger);
                                 last_fired.insert(job.id.clone(), minute_key.clone());
-                                if last_fired.len() > jobs_snapshot.len() + 10 {
+                                if last_fired.len() > jobs_count + 10 {
                                     let active: std::collections::HashSet<_> = jobs_snapshot.iter().map(|j| j.id.clone()).collect();
                                     last_fired.retain(|k, _| active.contains(k));
                                 }
@@ -269,7 +265,6 @@ pub async fn schedule_start_daemon(
 }
 
 #[tauri::command]
-#[instrument(skip(state))]
 pub async fn schedule_stop_daemon(state: State<'_, ScheduleState>) -> Result<(), String> {
     let mut shutdown = state.shutdown.write().await;
     if let Some(tx) = shutdown.take() {

@@ -12,6 +12,8 @@ use crate::modules::workspace::WorkspaceEnv;
 mod agent_tools;
 mod local_agents;
 mod native_tools;
+mod profile_models;
+pub mod skills;
 mod store;
 
 pub use agent_tools::*;
@@ -58,6 +60,101 @@ fn bind_history_path(app: &AppHandle, state: &PiState) {
 #[tauri::command]
 pub fn pi_local_agents_status(workspace: Option<WorkspaceEnv>) -> PiLocalAgentsStatus {
     local_agents::status(workspace)
+}
+
+const PI_ENV_API_KEY_NAMES: &[&str] = &[
+    "AI21_API_KEY",
+    "AI_GATEWAY_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AZURE_OPENAI_API_KEY",
+    "CEREBRAS_API_KEY",
+    "CLOUDFLARE_API_KEY",
+    "CO_API_KEY",
+    "COPILOT_GITHUB_TOKEN",
+    "DEEPSEEK_API_KEY",
+    "FIREWORKS_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_CLOUD_API_KEY",
+    "GROQ_API_KEY",
+    "HF_TOKEN",
+    "KIMI_API_KEY",
+    "MINIMAX_API_KEY",
+    "MINIMAX_CN_API_KEY",
+    "MISTRAL_API_KEY",
+    "MOONSHOT_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENCODE_API_KEY",
+    "OPENROUTER_API_KEY",
+    "PERPLEXITY_API_KEY",
+    "TOGETHER_API_KEY",
+    "XAI_API_KEY",
+    "XIAOMI_API_KEY",
+    "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+    "XIAOMI_TOKEN_PLAN_CN_API_KEY",
+    "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+    "ZAI_API_KEY",
+];
+
+#[tauri::command]
+pub fn pi_env_api_key(name: String) -> PiCommandResult<Option<String>> {
+    if !PI_ENV_API_KEY_NAMES.contains(&name.as_str()) {
+        return Err(PiCommandError::plain(
+            "unsupported Pi API key environment name",
+        ));
+    }
+    Ok(std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty()))
+}
+
+#[tauri::command]
+pub fn pi_models_list() -> PiCommandResult<PiProfileModelsList> {
+    Ok(profile_models::list_from_dir(
+        &profile_models::default_profile_agent_dir(),
+    ))
+}
+
+#[tauri::command]
+pub fn pi_skills_status(
+    workspace_root: Option<String>,
+    workspace: Option<WorkspaceEnv>,
+    include_profile: Option<bool>,
+) -> PiCommandResult<skills::PiSkillsStatus> {
+    let mut roots = Vec::new();
+    let workspace = WorkspaceEnv::from_option(workspace);
+
+    if let Some(workspace_root) = workspace_root
+        .as_deref()
+        .map(str::trim)
+        .filter(|root| !root.is_empty())
+    {
+        let root = crate::modules::workspace::resolve_path(workspace_root, &workspace);
+        roots.push(skills::SkillRoot {
+            path: root.join(".pi").join("skills"),
+            scope: skills::PiSkillScope::Project,
+        });
+        roots.push(skills::SkillRoot {
+            path: root.join(".agents").join("skills"),
+            scope: skills::PiSkillScope::Project,
+        });
+    }
+
+    if include_profile.unwrap_or(true) {
+        if let Some(home) = dirs::home_dir() {
+            roots.push(skills::SkillRoot {
+                path: home.join(".pi").join("agent").join("skills"),
+                scope: skills::PiSkillScope::User,
+            });
+            roots.push(skills::SkillRoot {
+                path: home.join(".agents").join("skills"),
+                scope: skills::PiSkillScope::User,
+            });
+        }
+    }
+
+    Ok(skills::status(roots))
 }
 
 #[tauri::command]

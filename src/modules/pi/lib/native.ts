@@ -4,16 +4,9 @@ import type { PiProviderRuntimeConfig } from "@/modules/pi/lib/provider";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import type {
   PiPromptContext,
-  PiSessionCreateResult,
-  PiSessionDeleteResult,
-  PiSessionDeleteWithArtifactsResult,
   PiSession as PiSessionType,
   PiSessionEvent as PiSessionEventType,
   PiUsageSummary as PiUsageSummaryType,
-  PiSessionRenameResult,
-  PiSessionResumeResult,
-  PiSessionSendResult,
-  PiSessionStopResult,
   PiSessionsList,
   PiSessionToolRespondResult,
 } from "./sessions";
@@ -205,7 +198,14 @@ export const piNative = {
   status: () => invoke<PiRuntimeState>("pi_status"),
   start: () => invoke<PiRuntimeState>("pi_start"),
   stop: () => invoke<PiRuntimeState>("pi_stop"),
-  hostInfo: () => invoke<PiHostInfo>("pi_host_info"),
+  hostInfo: async () => {
+    const diagnostics = await invoke<PiDiagnostics>("pi_diagnostics");
+    return {
+      hostVersion: diagnostics.hostVersion,
+      piSdkLoaded: diagnostics.piSdkLoaded,
+      piPackages: diagnostics.piPackages,
+    } satisfies PiHostInfo;
+  },
   diagnostics: () => invoke<PiDiagnostics>("pi_diagnostics"),
   modelsList: () => invoke<PiProfileModelsList>("pi_models_list"),
   localAgentsStatus: (workspace = currentWorkspaceEnv()) =>
@@ -268,40 +268,43 @@ export const piNative = {
   appCapabilityAudit: () =>
     invoke<CapabilityAuditEntry[]>("app_capability_audit"),
   sessionsHistory: () => invoke<PiSessionsList>("pi_sessions_history"),
-  sessionCreate: (
+  sessionCreate: async (
     title?: string,
     cwd?: string | null,
     providerConfig?: PiProviderRuntimeConfig | null,
-  ) =>
-    invoke<PiSessionCreateResult>("pi_session_create", {
-      title: title ?? null,
-      cwd: cwd ?? null,
-      providerConfig: providerConfig ?? null,
-      workspace: currentWorkspaceEnv(),
-    }),
-  workflowSessionCreate: (
+  ) => {
+    const { webviewSessionCreate } = await import("./webview-session");
+    return webviewSessionCreate(title, cwd, providerConfig ?? null);
+  },
+  workflowSessionCreate: async (
     title?: string,
     cwd?: string | null,
     policy?: WorkflowPiSessionPolicy,
     providerConfig?: PiProviderRuntimeConfig | null,
-  ) =>
-    invoke<PiSessionCreateResult>("workflow_pi_session_create", {
-      title: title ?? null,
-      cwd: cwd ?? null,
-      providerConfig: providerConfig ?? null,
-      workspace: currentWorkspaceEnv(),
-      policy,
-    }),
-  sessionResume: (
+  ) => {
+    if (!policy?.approved) {
+      throw new Error(
+        "Workflow Pi sessions require an approved workflow policy.",
+      );
+    }
+    const { webviewSessionCreate } = await import("./webview-session");
+    return webviewSessionCreate(
+      title,
+      cwd,
+      providerConfig ?? null,
+      undefined,
+      undefined,
+      true,
+    );
+  },
+  sessionResume: async (
     sessionId: string,
     providerConfig?: PiProviderRuntimeConfig | null,
-  ) =>
-    invoke<PiSessionResumeResult>("pi_session_resume", {
-      sessionId,
-      providerConfig: providerConfig ?? null,
-      workspace: currentWorkspaceEnv(),
-    }),
-  sessionSend: (
+  ) => {
+    const { webviewSessionResume } = await import("./webview-session");
+    return webviewSessionResume(sessionId, providerConfig ?? null);
+  },
+  sessionSend: async (
     sessionId: string,
     prompt: string,
     context?: PiPromptContext | null,
@@ -309,26 +312,31 @@ export const piNative = {
       regenerateBranchGroupId?: string | null;
       thinkingLevel?: PiProviderRuntimeConfig["thinkingLevel"] | null;
     } = {},
-  ) =>
-    invoke<PiSessionSendResult>("pi_session_send", {
-      sessionId,
-      prompt,
-      context: context ?? null,
-      regenerateBranchGroupId: options.regenerateBranchGroupId ?? null,
+  ) => {
+    const { webviewSessionSend } = await import("./webview-session");
+    return webviewSessionSend(sessionId, prompt, context ?? null, {
+      ...(options.regenerateBranchGroupId
+        ? { regenerateBranchGroupId: options.regenerateBranchGroupId }
+        : {}),
       ...(options.thinkingLevel === undefined || options.thinkingLevel === null
         ? {}
         : { thinkingLevel: options.thinkingLevel }),
-      workspace: currentWorkspaceEnv(),
-    }),
-  sessionRename: (sessionId: string, title: string) =>
-    invoke<PiSessionRenameResult>("pi_session_rename", { sessionId, title }),
-  sessionDelete: (sessionId: string) =>
-    invoke<PiSessionDeleteResult>("pi_session_delete", { sessionId }),
-  sessionDeleteWithArtifacts: (sessionId: string) =>
-    invoke<PiSessionDeleteWithArtifactsResult>(
-      "pi_session_delete_with_artifacts",
-      { sessionId },
-    ),
+    });
+  },
+  sessionRename: async (sessionId: string, title: string) => {
+    const { webviewSessionRename } = await import("./webview-session");
+    return webviewSessionRename(sessionId, title);
+  },
+  sessionDelete: async (sessionId: string) => {
+    const { webviewSessionDelete } = await import("./webview-session");
+    return webviewSessionDelete(sessionId);
+  },
+  sessionDeleteWithArtifacts: async (sessionId: string) => {
+    const { webviewSessionDeleteWithArtifacts } = await import(
+      "./webview-session"
+    );
+    return webviewSessionDeleteWithArtifacts(sessionId);
+  },
   sessionArchive: (sessionId: string) =>
     invoke<{ session: PiSessionType }>("pi_session_archive", {
       sessionId,
@@ -362,16 +370,20 @@ export const piNative = {
     invoke<PiUsageSummaryType>("pi_usage_summary", {
       sessionId: sessionId ?? null,
     }),
-  sessionToolRespond: (
+  sessionToolRespond: async (
     sessionId: string,
     toolCallId: string,
     approved: boolean,
-  ) =>
-    invoke<PiSessionToolRespondResult>("pi_session_tool_respond", {
+  ) => {
+    const { webviewSessionToolRespond } = await import("./webview-session");
+    return webviewSessionToolRespond(
       sessionId,
       toolCallId,
       approved,
-    }),
-  sessionStop: (sessionId: string) =>
-    invoke<PiSessionStopResult>("pi_session_stop", { sessionId }),
+    ) as Promise<PiSessionToolRespondResult>;
+  },
+  sessionStop: async (sessionId: string) => {
+    const { webviewSessionStop } = await import("./webview-session");
+    return webviewSessionStop(sessionId);
+  },
 };

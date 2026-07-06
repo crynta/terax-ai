@@ -101,6 +101,7 @@ fn app_manifest_exposes_non_model_visible_native_surfaces() {
             "app.http_request",
             "app.pty_session",
             "app.mcp_tool",
+            "app.secrets",
         ]
     );
     assert!(manifest.enabled_tool_names().is_empty());
@@ -111,6 +112,12 @@ fn app_manifest_exposes_non_model_visible_native_surfaces() {
     assert_eq!(shell.approval, ApprovalPolicy::Auto);
     assert_eq!(shell.risk, RiskLevel::High);
     assert!(!shell.model_visible);
+
+    let secrets = manifest.tool("app.secrets").unwrap();
+    assert_eq!(secrets.origin, CapabilityOrigin::TeraxCore);
+    assert_eq!(secrets.approval, ApprovalPolicy::Auto);
+    assert_eq!(secrets.risk, RiskLevel::Medium);
+    assert!(!secrets.model_visible);
 }
 
 #[test]

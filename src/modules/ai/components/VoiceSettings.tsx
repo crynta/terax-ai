@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useState } from "react";
 import { caps } from "@/lib/platformCapabilities";
 import { cn } from "@/lib/utils";
+import { KEYRING_SERVICE } from "@/modules/ai/config";
 import {
   setTtsProvider,
   setSttProvider,
@@ -46,12 +47,12 @@ export function VoiceSettings() {
     try {
       if (value.trim()) {
         await invoke("secrets_set", {
-          service: "terax",
+          service: KEYRING_SERVICE,
           account,
           password: value.trim(),
         });
       } else {
-        await invoke("secrets_delete", { service: "terax", account });
+        await invoke("secrets_delete", { service: KEYRING_SERVICE, account });
       }
     } finally {
       setSaving(null);

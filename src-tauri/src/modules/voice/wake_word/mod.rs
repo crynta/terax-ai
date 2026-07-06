@@ -81,7 +81,7 @@ pub fn wake_word_start(
                 let api_key = match crate::modules::secrets::get_secret_value(
                     &app,
                     &secrets_state,
-                    "terax",
+                    crate::modules::voice::VOICE_KEYRING_SERVICE,
                     "deepgram-api-key",
                 ) {
                     Ok(Some(k)) => k,

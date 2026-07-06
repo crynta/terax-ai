@@ -15,16 +15,16 @@
 
 pub mod modules;
 
-#[cfg(feature = "workflow")]
-use modules::schedule;
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 use modules::tray;
 use modules::{
-    agent, artifacts, capture, fs, git, mcp, model_compare, net, overlay, pi, pty, secrets, shell,
-    skills, workspace,
+    agent, artifacts, browser, capture, fs, git, mcp, model_compare, net, overlay, pi, pty,
+    secrets, shell, skills, workspace,
 };
 #[cfg(feature = "openclicky")]
 use modules::{agents, voice};
+#[cfg(feature = "workflow")]
+use modules::{schedule, webhook};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -202,7 +202,9 @@ pub fn run() {
 
     #[cfg(feature = "workflow")]
     {
-        builder = builder.manage(schedule::ScheduleState::default());
+        builder = builder
+            .manage(schedule::ScheduleState::default())
+            .manage(webhook::WebhookState::default());
     }
 
     #[cfg(feature = "openclicky")]
@@ -260,6 +262,7 @@ pub fn run() {
         .manage(pi::PiAgentToolState::default())
         .manage(Arc::new(mcp::McpState::default()))
         .manage(artifacts::ArtifactsState::default())
+        .manage(browser::BrowserState::default())
         .manage(shell::ShellState::default())
         .manage(modules::capabilities::WorkflowCapabilityState::default())
         .manage(modules::capabilities::AppCapabilityState::default())
@@ -284,7 +287,10 @@ pub fn run() {
             pty::pty_close,
             pty::pty_close_all,
             pty::pty_has_foreground_process,
+            pi::pi_env_api_key,
             pi::pi_local_agents_status,
+            pi::pi_models_list,
+            pi::pi_skills_status,
             pi::pi_status,
             pi::pi_start,
             pi::pi_stop,
@@ -418,6 +424,13 @@ pub fn run() {
             net::workflow_http_request,
             net::ai_http_request,
             net::ai_http_stream,
+            browser::browser_create,
+            browser::browser_close,
+            browser::browser_navigate,
+            browser::browser_reload,
+            browser::browser_set_bounds,
+            browser::browser_hide,
+            browser::browser_show,
             #[cfg(feature = "openclicky")]
             overlay::overlay_show,
             #[cfg(feature = "openclicky")]
@@ -492,6 +505,16 @@ pub fn run() {
             schedule::schedule_start_daemon,
             #[cfg(feature = "workflow")]
             schedule::schedule_stop_daemon,
+            #[cfg(feature = "workflow")]
+            webhook::webhook_register,
+            #[cfg(feature = "workflow")]
+            webhook::webhook_unregister,
+            #[cfg(feature = "workflow")]
+            webhook::webhook_start_server,
+            #[cfg(feature = "workflow")]
+            webhook::webhook_stop_server,
+            #[cfg(feature = "workflow")]
+            webhook::webhook_list_routes,
         ])
         .run(tauri::generate_context!())
     {

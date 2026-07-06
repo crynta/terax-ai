@@ -2,32 +2,77 @@ import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useWorkspaceEnvStore } from "@/modules/workspace";
 import { piNative } from "./native";
+import type { PiSession } from "./sessions";
+import {
+  webviewSessionCreate,
+  webviewSessionDelete,
+  webviewSessionRename,
+  webviewSessionResume,
+  webviewSessionSend,
+  webviewSessionStop,
+  webviewSessionToolRespond,
+} from "./webview-session";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock("./webview-session", () => ({
+  webviewSessionCreate: vi.fn(),
+  webviewSessionDelete: vi.fn(),
+  webviewSessionDeleteWithArtifacts: vi.fn(),
+  webviewSessionRename: vi.fn(),
+  webviewSessionResume: vi.fn(),
+  webviewSessionSend: vi.fn(),
+  webviewSessionStop: vi.fn(),
+  webviewSessionToolRespond: vi.fn(),
+}));
+
+function mockSession(): PiSession {
+  return {
+    id: "pi-1",
+    title: "Session",
+    cwd: null,
+    status: "idle",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    lastPrompt: null,
+  };
+}
+
 describe("piNative", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
+    vi.mocked(webviewSessionCreate).mockReset();
+    vi.mocked(webviewSessionDelete).mockReset();
+    vi.mocked(webviewSessionRename).mockReset();
+    vi.mocked(webviewSessionResume).mockReset();
+    vi.mocked(webviewSessionSend).mockReset();
+    vi.mocked(webviewSessionStop).mockReset();
+    vi.mocked(webviewSessionToolRespond).mockReset();
     useWorkspaceEnvStore.getState().setEnv({ kind: "local" });
   });
 
-  it("passes the explicit workspace cwd when creating Pi sessions", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ session: null, events: [] });
+  it("creates Pi sessions through the webview backend", async () => {
+    vi.mocked(webviewSessionCreate).mockResolvedValueOnce({
+      session: mockSession(),
+      events: [],
+    });
 
     await piNative.sessionCreate("Plan", "/Users/me/project");
 
-    expect(invoke).toHaveBeenCalledWith("pi_session_create", {
-      title: "Plan",
-      cwd: "/Users/me/project",
-      providerConfig: null,
-      workspace: { kind: "local" },
-    });
+    expect(webviewSessionCreate).toHaveBeenCalledWith(
+      "Plan",
+      "/Users/me/project",
+      null,
+    );
   });
 
-  it("passes workflow policy when creating workflow Pi sessions", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ session: null, events: [] });
+  it("pre-approves tools when creating approved workflow Pi sessions", async () => {
+    vi.mocked(webviewSessionCreate).mockResolvedValueOnce({
+      session: mockSession(),
+      events: [],
+    });
 
     await piNative.workflowSessionCreate("Browse", "/Users/me/project", {
       approved: true,
@@ -36,46 +81,46 @@ describe("piNative", () => {
       toolName: "workflow.browser_automation",
     });
 
-    expect(invoke).toHaveBeenCalledWith("workflow_pi_session_create", {
-      title: "Browse",
-      cwd: "/Users/me/project",
-      providerConfig: null,
-      workspace: { kind: "local" },
-      policy: {
-        approved: true,
-        documentId: "wf",
-        nodeId: "node_browser",
-        toolName: "workflow.browser_automation",
-      },
-    });
+    expect(webviewSessionCreate).toHaveBeenCalledWith(
+      "Browse",
+      "/Users/me/project",
+      null,
+      undefined,
+      undefined,
+      true,
+    );
   });
 
   it("passes validated turn context when sending Pi prompts", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ accepted: true });
+    vi.mocked(webviewSessionSend).mockResolvedValueOnce({
+      accepted: true,
+      session: mockSession(),
+      events: [],
+    });
 
-    await piNative.sessionSend("pi-1", "Where am I?", {
+    const context = {
       workspaceRoot: "/Users/me/project",
       activeTerminalCwd: "/Users/me/project/src",
       activeFile: "/Users/me/project/src/App.tsx",
       activeTerminalPrivate: true,
-    });
+    };
 
-    expect(invoke).toHaveBeenCalledWith("pi_session_send", {
-      sessionId: "pi-1",
-      prompt: "Where am I?",
-      context: {
-        workspaceRoot: "/Users/me/project",
-        activeTerminalCwd: "/Users/me/project/src",
-        activeFile: "/Users/me/project/src/App.tsx",
-        activeTerminalPrivate: true,
-      },
-      regenerateBranchGroupId: null,
-      workspace: { kind: "local" },
-    });
+    await piNative.sessionSend("pi-1", "Where am I?", context);
+
+    expect(webviewSessionSend).toHaveBeenCalledWith(
+      "pi-1",
+      "Where am I?",
+      context,
+      {},
+    );
   });
 
   it("passes branch metadata when regenerating a Pi response", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ accepted: true });
+    vi.mocked(webviewSessionSend).mockResolvedValueOnce({
+      accepted: true,
+      session: mockSession(),
+      events: [],
+    });
 
     await piNative.sessionSend(
       "pi-1",
@@ -84,87 +129,81 @@ describe("piNative", () => {
       { regenerateBranchGroupId: "turn-1" },
     );
 
-    expect(invoke).toHaveBeenCalledWith("pi_session_send", {
-      sessionId: "pi-1",
-      prompt: "Try again",
-      context: { workspaceRoot: "/Users/me/project" },
-      regenerateBranchGroupId: "turn-1",
-      workspace: { kind: "local" },
-    });
+    expect(webviewSessionSend).toHaveBeenCalledWith(
+      "pi-1",
+      "Try again",
+      { workspaceRoot: "/Users/me/project" },
+      { regenerateBranchGroupId: "turn-1" },
+    );
   });
 
   it("passes the selected thinking level when sending Pi prompts", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ accepted: true });
+    vi.mocked(webviewSessionSend).mockResolvedValueOnce({
+      accepted: true,
+      session: mockSession(),
+      events: [],
+    });
 
     await piNative.sessionSend("pi-1", "Think", null, {
       thinkingLevel: "high",
     });
 
-    expect(invoke).toHaveBeenCalledWith("pi_session_send", {
-      sessionId: "pi-1",
-      prompt: "Think",
-      context: null,
-      regenerateBranchGroupId: null,
+    expect(webviewSessionSend).toHaveBeenCalledWith("pi-1", "Think", null, {
       thinkingLevel: "high",
-      workspace: { kind: "local" },
     });
   });
 
-  it("resumes Pi sessions in the current workspace environment", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ session: null, events: [] });
+  it("resumes Pi sessions through the webview backend", async () => {
+    vi.mocked(webviewSessionResume).mockResolvedValueOnce({
+      session: mockSession(),
+      events: [],
+    });
 
-    await piNative.sessionResume("pi-1", {
-      authMode: "profile",
+    const providerConfig = {
+      authMode: "profile" as const,
       provider: "anthropic",
       modelId: "claude-sonnet-4-5",
       sourceModelId: "claude-sonnet-4-5",
-      thinkingLevel: "medium",
-    });
+      thinkingLevel: "medium" as const,
+    };
 
-    expect(invoke).toHaveBeenCalledWith("pi_session_resume", {
-      sessionId: "pi-1",
-      providerConfig: {
-        authMode: "profile",
-        provider: "anthropic",
-        modelId: "claude-sonnet-4-5",
-        sourceModelId: "claude-sonnet-4-5",
-        thinkingLevel: "medium",
-      },
-      workspace: { kind: "local" },
-    });
+    await piNative.sessionResume("pi-1", providerConfig);
+
+    expect(webviewSessionResume).toHaveBeenCalledWith("pi-1", providerConfig);
   });
 
-  it("renames Pi sessions", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ session: null, events: [] });
+  it("renames Pi sessions through the webview backend", async () => {
+    vi.mocked(webviewSessionRename).mockResolvedValueOnce({
+      session: mockSession(),
+      events: [],
+    });
 
     await piNative.sessionRename("pi-1", "Reviewed plan");
 
-    expect(invoke).toHaveBeenCalledWith("pi_session_rename", {
-      sessionId: "pi-1",
-      title: "Reviewed plan",
-    });
+    expect(webviewSessionRename).toHaveBeenCalledWith("pi-1", "Reviewed plan");
   });
 
-  it("responds to Pi tool approvals", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ session: null, events: [] });
+  it("responds to Pi tool approvals through the webview backend", async () => {
+    vi.mocked(webviewSessionToolRespond).mockResolvedValueOnce({
+      session: mockSession(),
+      events: [],
+    });
 
     await piNative.sessionToolRespond("pi-1", "tool-call-1", false);
 
-    expect(invoke).toHaveBeenCalledWith("pi_session_tool_respond", {
-      sessionId: "pi-1",
-      toolCallId: "tool-call-1",
-      approved: false,
-    });
+    expect(webviewSessionToolRespond).toHaveBeenCalledWith(
+      "pi-1",
+      "tool-call-1",
+      false,
+    );
   });
 
-  it("deletes Pi sessions", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({ session: null, events: [] });
+  it("deletes Pi sessions through the webview backend", async () => {
+    vi.mocked(webviewSessionDelete).mockResolvedValueOnce({ events: [] });
 
     await piNative.sessionDelete("pi-1");
 
-    expect(invoke).toHaveBeenCalledWith("pi_session_delete", {
-      sessionId: "pi-1",
-    });
+    expect(webviewSessionDelete).toHaveBeenCalledWith("pi-1");
   });
 
   it("requests the Pi profile model catalog", async () => {

@@ -1,8 +1,7 @@
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewBuilder, WebviewUrl};
-use tauri::{LogicalPosition, LogicalSize};
-use url::Url;
+use tauri::{LogicalPosition, LogicalSize, Url};
 
 /// State tracking active browser webview labels so we can clean up on tab
 /// close without leaking native webviews.
@@ -35,9 +34,7 @@ pub async fn browser_create(
     // reuse after navigation).
     browser_close_inner(&app, &label);
 
-    let parsed_url: Url = url
-        .parse()
-        .map_err(|e: url::ParseError| format!("invalid url: {e}"))?;
+    let parsed_url: Url = url.parse().map_err(|e| format!("invalid url: {e}"))?;
 
     let app_handle = app.clone();
     let label_clone = label.clone();
@@ -145,9 +142,7 @@ pub fn browser_navigate(app: AppHandle, label: String, url: String) -> Result<()
     let wv = app
         .get_webview(&label)
         .ok_or_else(|| format!("webview '{label}' not found"))?;
-    let parsed: Url = url
-        .parse()
-        .map_err(|e: url::ParseError| format!("invalid url: {e}"))?;
+    let parsed: Url = url.parse().map_err(|e| format!("invalid url: {e}"))?;
     wv.navigate(parsed)
         .map_err(|e| format!("navigate failed: {e}"))?;
     Ok(())

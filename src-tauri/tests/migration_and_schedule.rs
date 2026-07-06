@@ -26,7 +26,7 @@ fn openclicky_migration() {
 #[test]
 fn cron_expression_validation() {
     use std::str::FromStr;
-    let valid = cron::Schedule::from_str("0 9 * * *");
+    let valid = cron::Schedule::from_str("0 0 9 * * *");
     assert!(valid.is_ok());
 
     let invalid = cron::Schedule::from_str("not a cron");

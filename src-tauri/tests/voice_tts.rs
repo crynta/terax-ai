@@ -1,5 +1,11 @@
 #[cfg(feature = "openclicky")]
-use terax_lib::modules::voice::tts::TtsProvider;
+use terax_lib::modules::voice::{tts::TtsProvider, VOICE_KEYRING_SERVICE};
+
+#[cfg(feature = "openclicky")]
+#[test]
+fn voice_uses_shared_keyring_service() {
+    assert_eq!(VOICE_KEYRING_SERVICE, "terax-ai");
+}
 
 #[cfg(feature = "openclicky")]
 #[test]

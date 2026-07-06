@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::{CancellationToken, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
-use tracing::instrument;
+use tokio_util::sync::CancellationToken;
 
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -20,11 +20,11 @@ pub struct WebhookRoute {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct WebhookRouteMasked {
-    id: String,
-    path: String,
-    method: String,
-    has_auth_token: bool,
+pub struct WebhookRouteMasked {
+    pub id: String,
+    pub path: String,
+    pub method: String,
+    pub has_auth_token: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +40,6 @@ pub struct WebhookPayload {
 
 struct ActiveServer {
     cancel: CancellationToken,
-    semaphore: Arc<Semaphore>,
     task_handle: tokio::task::JoinHandle<()>,
 }
 
@@ -61,7 +60,6 @@ impl Default for WebhookState {
 }
 
 #[tauri::command]
-#[instrument(skip(state), fields(path = %path, method = %method))]
 pub async fn webhook_register(
     state: State<'_, WebhookState>,
     path: String,
@@ -80,7 +78,6 @@ pub async fn webhook_register(
 }
 
 #[tauri::command]
-#[instrument(skip(state), fields(route_id = %route_id))]
 pub async fn webhook_unregister(
     state: State<'_, WebhookState>,
     route_id: String,
@@ -90,7 +87,6 @@ pub async fn webhook_unregister(
 }
 
 #[tauri::command]
-#[instrument(skip(app, state), fields(port = port))]
 pub async fn webhook_start_server(
     app: AppHandle,
     state: State<'_, WebhookState>,
@@ -107,7 +103,6 @@ pub async fn webhook_start_server(
     let routes = Arc::new(state.routes.read().await.clone());
     let cancel = CancellationToken::new();
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS));
-    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
 
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let listener = tokio::net::TcpListener::bind(addr)
@@ -122,7 +117,6 @@ pub async fn webhook_start_server(
     let child_semaphore = Arc::clone(&semaphore);
 
     let task_handle = tokio::spawn(async move {
-        let _rx = rx;
         let mut tasks: JoinSet<()> = JoinSet::new();
 
         loop {
@@ -165,7 +159,6 @@ pub async fn webhook_start_server(
 
     *state.active.write().await = Some(ActiveServer {
         cancel,
-        semaphore,
         task_handle,
     });
 
@@ -175,7 +168,6 @@ pub async fn webhook_start_server(
 }
 
 #[tauri::command]
-#[instrument(skip(state))]
 pub async fn webhook_stop_server(state: State<'_, WebhookState>) -> Result<(), String> {
     let mut active_guard = state.active.write().await;
     if let Some(server) = active_guard.take() {
@@ -188,7 +180,6 @@ pub async fn webhook_stop_server(state: State<'_, WebhookState>) -> Result<(), S
 }
 
 #[tauri::command]
-#[instrument(skip(state))]
 pub async fn webhook_list_routes(
     state: State<'_, WebhookState>,
 ) -> Result<Vec<WebhookRouteMasked>, String> {

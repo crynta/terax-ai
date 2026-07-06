@@ -52,7 +52,7 @@ async fn transcribe_deepgram(
     let api_key = crate::modules::secrets::get_secret_value(
         app,
         &secrets_state,
-        "terax",
+        crate::modules::voice::VOICE_KEYRING_SERVICE,
         "deepgram-api-key",
     )?
     .ok_or("Deepgram API key not configured")?;

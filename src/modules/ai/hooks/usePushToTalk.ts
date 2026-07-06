@@ -4,6 +4,30 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type PttState = "idle" | "recording";
 
+function pttErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function isUnavailablePttCommand(error: unknown): boolean {
+  const message = pttErrorMessage(error).toLowerCase();
+  return (
+    message.includes("ptt_register") &&
+    (message.includes("not found") ||
+      message.includes("unknown command") ||
+      message.includes("not registered"))
+  );
+}
+
+function hasTauriInvokeBridge(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 export function usePushToTalk({
   onStart,
   onStop,
@@ -39,13 +63,16 @@ export function usePushToTalk({
   }, [state]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !hasTauriInvokeBridge()) return;
 
     let cancelled = false;
     (async () => {
+      let registered = false;
       try {
         await invoke("ptt_register", { shortcut });
+        registered = true;
       } catch (e) {
+        if (isUnavailablePttCommand(e)) return;
         console.warn("PTT register failed:", e);
       }
 
@@ -65,14 +92,18 @@ export function usePushToTalk({
       if (cancelled) {
         unlistenStart();
         unlistenStop();
+        if (registered) {
+          invoke("ptt_unregister", { shortcut }).catch(() => {});
+        }
         return;
       }
 
       unlistenRef.current = () => {
         unlistenStart();
         unlistenStop();
-        // Unregister the SAME shortcut that was registered for this effect run.
-        invoke("ptt_unregister", { shortcut }).catch(() => {});
+        if (registered) {
+          invoke("ptt_unregister", { shortcut }).catch(() => {});
+        }
       };
     })();
 

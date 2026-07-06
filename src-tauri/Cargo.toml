@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 default = []
-workflow = ["dep:cron", "dep:chrono", "dep:uuid"]
+workflow = ["dep:cron", "dep:chrono", "dep:uuid", "dep:tokio-util"]
 openclicky = [
     "dep:objc2",
     "dep:objc2-app-kit",
@@ -53,7 +53,7 @@ redundant_clone = "deny"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -97,6 +97,7 @@ tauri-plugin-global-shortcut = { version = "2", optional = true }
 xcap = { version = "0.9", optional = true }
 rodio = { version = "0.19", optional = true }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"], optional = true }
+tokio-util = { version = "0.7", optional = true }
 cpal = { version = "0.15", optional = true }
 
 [dev-dependencies]

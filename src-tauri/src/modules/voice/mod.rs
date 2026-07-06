@@ -5,6 +5,8 @@ pub mod wake_word;
 
 use serde::Serialize;
 
+pub const VOICE_KEYRING_SERVICE: &str = "terax-ai";
+
 #[derive(Default)]
 pub struct VoiceState {
     pub tts: tts::TtsState,
