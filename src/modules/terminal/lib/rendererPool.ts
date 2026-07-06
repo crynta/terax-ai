@@ -441,7 +441,12 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   cancelSlotReap(slot);
   unparkSlotHost(slot);
   if (!fast) {
-    slot.host.style.visibility = "hidden";
+    // opacity, not visibility: a visibility:hidden subtree refuses focus in
+    // Chromium, and the terminal must be focusable during the two-frame
+    // anti-flash window below or the first keystrokes land on the pane
+    // container and are dropped (#857). opacity:0 hides the stale frame
+    // just the same but keeps xterm's textarea focusable.
+    slot.host.style.opacity = "0";
     if (hadWebgl) disposeSlotWebgl(slot);
   }
 
@@ -524,6 +529,18 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     }
     if (adapter?.isLeafFocused(p.leafId)) slot.term.focus();
   } else {
+    // Focus before the two-frame unhide, not after it: rAF is throttled for
+    // occluded/activating windows on Windows, so the deferred focus can land
+    // hundreds of ms late and everything typed until then falls on <body>
+    // and is dropped (#857). Focusing here keeps that input flowing into
+    // xterm and the PTY queue (pendingInput). Blocks leaves are skipped like
+    // the mount-time focus does - at the prompt the shell editor owns focus.
+    if (
+      adapter?.isLeafFocused(p.leafId) &&
+      !adapter.isLeafBlocks(p.leafId)
+    ) {
+      slot.term.focus();
+    }
     scheduleUnhide(slot, stale || hadWebgl);
   }
 
@@ -534,7 +551,7 @@ function scheduleUnhide(slot: Slot, stale: boolean): void {
   slot.unhideRaf = requestAnimationFrame(() => {
     slot.unhideRaf = requestAnimationFrame(() => {
       slot.unhideRaf = null;
-      slot.host.style.visibility = "";
+      slot.host.style.opacity = "";
       if (stale) {
         if (!slot.webglAddon) attachWebgl(slot);
         try {
@@ -666,7 +683,7 @@ function detachSlotFromLeaf(slot: Slot, retain: boolean): void {
   slot.ptyTimer = null;
 
   cancelPendingUnhide(slot);
-  slot.host.style.visibility = "";
+  slot.host.style.opacity = "";
 
   slot.currentLeafId = null;
   slot.lastUsedAt = performance.now();
