@@ -1,0 +1,351 @@
+{
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "remove": "移除",
+    "edit": "编辑",
+    "delete": "删除",
+    "connected": "已连接",
+    "loading": "加载中…"
+  },
+  "tabs": {
+    "general": "常规",
+    "editor": "编辑器",
+    "themes": "主题",
+    "shortcuts": "快捷键",
+    "models": "模型",
+    "agents": "智能体",
+    "about": "关于"
+  },
+  "general": {
+    "header": {
+      "title": "常规",
+      "description": "外观模式、终端与启动。"
+    },
+    "appearance": {
+      "label": "外观",
+      "system": "跟随系统",
+      "light": "浅色",
+      "dark": "深色",
+      "seeThemes": "主题、背景与个性化设置请见 <strong>主题</strong> 标签页。"
+    },
+    "language": {
+      "label": "语言",
+      "description": "Terax 界面的显示语言。"
+    },
+    "zoom": {
+      "label": "缩放",
+      "uiZoomLevel": "界面缩放比例"
+    },
+    "explorer": {
+      "label": "资源管理器",
+      "showHidden": {
+        "title": "显示隐藏文件",
+        "description": "在文件资源管理器和搜索中包含以点开头的文件和文件夹（.env、.gitignore、.config）。"
+      },
+      "gitDecorations": {
+        "title": "Git 状态标记",
+        "description": "在文件资源管理器中为改动文件着色，并淡化被 gitignore 忽略的条目。"
+      }
+    },
+    "terminal": {
+      "label": "终端",
+      "webgl": {
+        "title": "使用 WebGL 渲染器",
+        "moreInfo": "关于 WebGL 渲染器的更多信息",
+        "tooltip": "xterm 的 WebGL 渲染器会把字形缓存在 GPU 纹理图集中。在某些 macOS 环境下（尤其是使用 Nerd Fonts 时），图集可能损坏、导致终端文字无法辨认。作为回退可关闭它——性能略有下降，但文字会通过 DOM 渲染器正确显示。",
+        "description": "硬件加速渲染。若文字出现损坏或空白方块，请关闭。"
+      },
+      "cursorBlink": {
+        "title": "光标闪烁",
+        "description": "让终端光标闪烁。默认关闭以降低空闲 CPU 占用，与 VS Code 和 macOS 终端一致。"
+      },
+      "fontFamily": {
+        "title": "字体",
+        "description": "用于图标的 Nerd Font 名称（例如 \"CaskaydiaCove Nerd Font Mono\"）。留空则自动检测。",
+        "placeholder": "自动检测"
+      },
+      "fontWeight": {
+        "title": "字重",
+        "description": "终端字符的粗细",
+        "normal": "常规",
+        "medium": "中等",
+        "semibold": "半粗",
+        "bold": "粗体"
+      },
+      "shell": {
+        "title": "集成终端 Shell",
+        "descriptionNonIntegrated": "此 Shell 不支持命令块和目录跟踪。",
+        "descriptionWsl": "集成终端使用的 Shell。WSL 空间使用发行版的登录 Shell。已有标签页保持原 Shell。",
+        "descriptionDefault": "新终端标签页使用的 Shell。已有标签页保持原 Shell。",
+        "auto": "自动"
+      },
+      "workspaceEnv": {
+        "title": "工作区环境",
+        "description": "新空间（终端与 AI 智能体）运行的位置：Windows 或某个 WSL 发行版。已有空间保持不变；可在状态栏随时切换。",
+        "windows": "Windows",
+        "unavailable": "{{name}}（不可用）"
+      },
+      "letterSpacing": {
+        "title": "字间距",
+        "description": "字符之间额外的水平间距（px）。使用负值可收紧 Nerd Fonts。"
+      },
+      "fontSize": {
+        "title": "字号",
+        "description": "终端文字大小。"
+      },
+      "scrollback": {
+        "title": "回滚缓冲",
+        "description": "每个终端保留的历史行数。行数越多占用内存越大（约 3 KB/行）。",
+        "lines": "{{count}} 行"
+      }
+    },
+    "agents": {
+      "label": "智能体",
+      "notifications": {
+        "title": "编码智能体通知",
+        "description": "当终端中运行的 Claude Code 或 Codex 需要你输入或已完成时提醒你。Terax 未聚焦时发送桌面通知，否则应用内提示。"
+      }
+    },
+    "startup": {
+      "label": "启动",
+      "launchAtLogin": {
+        "title": "登录时启动",
+        "description": "登录系统时自动打开 Terax。"
+      },
+      "restoreWindow": {
+        "title": "恢复窗口位置与大小",
+        "description": "在你上次离开的位置重新打开主窗口。下次启动时生效。"
+      }
+    }
+  },
+  "editor": {
+    "header": {
+      "title": "编辑器",
+      "description": "编辑行为、保存与语言服务器。"
+    },
+    "editing": {
+      "label": "编辑",
+      "vimMode": {
+        "title": "Vim 模式",
+        "description": "在代码编辑器中启用 Vim 键位。"
+      },
+      "wordWrap": {
+        "title": "自动换行",
+        "description": "换行显示长行，而非水平滚动。"
+      }
+    },
+    "saving": {
+      "label": "保存",
+      "autoSave": {
+        "title": "自动保存",
+        "description": "检测到改动后，延迟一段时间自动保存文件。"
+      },
+      "autoSaveDelay": {
+        "title": "自动保存延迟",
+        "description": "未保存改动被自动保存前的延迟时间。",
+        "unit": "毫秒"
+      },
+      "formatOnSave": {
+        "title": "保存时格式化",
+        "description": "在显式保存（Cmd+S / :w）时用下方的格式化工具格式化文件。"
+      },
+      "formatter": {
+        "title": "格式化工具",
+        "description": "语言服务器在写入前格式化缓冲区；Biome 和 Prettier 从你的 PATH 中对已保存文件运行。",
+        "lsp": "语言服务器"
+      }
+    },
+    "lsp": {
+      "label": "语言服务器",
+      "addCustomServer": "添加自定义服务器",
+      "statusChecking": "检测中...",
+      "statusNotFound": "未在 PATH 中找到",
+      "detectAgain": "重新检测",
+      "removeServer": "移除服务器",
+      "dialogTitle": "自定义语言服务器",
+      "fieldName": "名称",
+      "fieldCommand": "命令",
+      "fieldArguments": "参数",
+      "fieldExtensions": "文件扩展名",
+      "fieldLanguageId": "LSP language id",
+      "fieldRootMarkers": "根标记文件",
+      "addServer": "添加服务器"
+    }
+  },
+  "themes": {
+    "header": {
+      "title": "主题",
+      "description": "主题、背景图片与个性化。"
+    },
+    "theme": {
+      "label": "主题",
+      "create": "新建",
+      "import": "导入 .terax-theme",
+      "editAria": "编辑 {{name}}",
+      "removeAria": "移除 {{name}}"
+    },
+    "editorTheme": {
+      "label": "编辑器主题",
+      "description": "代码编辑器的语法配色。自动模式跟随应用主题。",
+      "auto": "自动（跟随应用主题）"
+    },
+    "background": {
+      "label": "背景",
+      "remove": "移除",
+      "replace": "更换图片",
+      "choose": "选择图片",
+      "opacity": "不透明度",
+      "blur": "模糊",
+      "dropHint": "将图片拖到此处或选择一张。仅存储在本地；未设置前不影响默认外观。"
+    }
+  },
+  "shortcuts": {
+    "header": {
+      "title": "快捷键",
+      "description": "查看并自定义键盘快捷键。"
+    },
+    "resetAll": "全部重置",
+    "searchPlaceholder": "搜索快捷键...",
+    "unassigned": "未分配",
+    "recording": "录制中...",
+    "escToCancel": "（按 Esc 取消）",
+    "resetToDefault": "重置为默认",
+    "clearShortcut": "清除快捷键",
+    "resetDialog": {
+      "title": "重置所有快捷键？",
+      "description": "这会将你所有自定义的键盘快捷键还原为出厂默认值。此操作无法撤销。",
+      "cancel": "取消"
+    }
+  },
+  "models": {
+    "header": {
+      "title": "模型",
+      "description": "连接你使用的提供商。密钥保存在操作系统的钥匙串中，仅由 Terax 使用。"
+    },
+    "defaults": {
+      "label": "默认设置",
+      "chatModel": "对话模型",
+      "autocomplete": "自动补全",
+      "notConnectedHint": "{{provider}} 尚未连接——请在下方添加。"
+    },
+    "voice": {
+      "title": "语音输入",
+      "provider": "提供商",
+      "model": "模型",
+      "baseUrl": "Base URL",
+      "descOpenai": "使用你的官方 OpenAI API key 和 Whisper 模型进行转写。",
+      "descGroq": "使用你的官方 Groq API key 和 Groq 的 Whisper 端点进行转写。",
+      "descWhispercpp": "连接本地 Whisper.cpp 服务器，完全离线转写。"
+    },
+    "providers": {
+      "label": "提供商",
+      "addProvider": "添加提供商",
+      "cloud": "云端",
+      "localCustom": "本地与自定义",
+      "openaiCompatible": "OpenAI Compatible",
+      "emptyTitle": "尚未连接任何提供商。",
+      "emptyHint": "点击\"添加提供商\"以连接云端或本地模型来源。",
+      "notConnected": "未连接"
+    },
+    "card": {
+      "docs": "文档",
+      "getKey": "获取密钥",
+      "removeProvider": "移除提供商",
+      "removeEndpoint": "移除端点",
+      "test": "测试",
+      "testing": "测试中…",
+      "reachable": "可访问——服务器已响应。",
+      "unreachable": "无法连接到服务器。",
+      "baseUrl": "Base URL",
+      "modelId": "Model ID",
+      "context": "上下文",
+      "tokens": "tokens",
+      "apiKey": "API key",
+      "name": "名称",
+      "namePlaceholder": "我的端点",
+      "removeKey": "移除密钥",
+      "replace": "替换",
+      "showKey": "显示密钥",
+      "hideKey": "隐藏密钥",
+      "pasteKey": "粘贴 API key",
+      "enterKey": "请输入你的 API key。",
+      "keyPrefixHint": "{{provider}} 的密钥以 \"{{prefix}}\" 开头。",
+      "failedSave": "保存失败：{{error}}",
+      "optionalKeyPlaceholder": "可选——无需鉴权的端点可留空"
+    }
+  },
+  "agents": {
+    "header": {
+      "title": "智能体",
+      "description": "AI 使用的角色人设与片段。可在输入栏切换智能体。"
+    },
+    "customInstructions": {
+      "label": "自定义指令",
+      "placeholder": "例如：始终用简洁的要点回复。优先使用 pnpm 而非 npm。我的机器是 M 系列 Mac。"
+    },
+    "list": {
+      "label": "智能体",
+      "newAgent": "新建智能体",
+      "newAgentName": "新智能体",
+      "builtIn": "内置",
+      "active": "使用中",
+      "useAgent": "使用此智能体"
+    },
+    "snippets": {
+      "label": "片段",
+      "description": "可复用的指令，用 <code>#handle</code> 插入任意提示词。",
+      "newSnippet": "新建片段",
+      "empty": "还没有片段。新建一个，并在 AI 输入框中用 <code>#handle</code> 插入。"
+    },
+    "agentDialog": {
+      "newTitle": "新建智能体",
+      "editTitle": "编辑智能体",
+      "icon": "图标",
+      "name": "名称",
+      "namePlaceholder": "例如：测试工程师",
+      "description": "描述",
+      "descriptionPlaceholder": "一行说明——显示在智能体选择器中",
+      "instructions": "指令",
+      "instructionsPlaceholder": "角色人设与规则。会追加到 Terax 的核心系统提示词之后。"
+    },
+    "snippetDialog": {
+      "newTitle": "新建片段",
+      "editTitle": "编辑片段",
+      "handle": "标识符",
+      "handlePlaceholder": "review",
+      "name": "名称",
+      "namePlaceholder": "例如：合并前审查清单",
+      "description": "描述",
+      "descriptionPlaceholder": "一行说明——显示在 # 选择器中",
+      "content": "内容",
+      "contentPlaceholder": "使用 #handle 时，会作为 <snippet> 块插入到提示词中。",
+      "errRequired": "必填。",
+      "errFormat": "只能包含小写字母、数字和短横线。",
+      "errInUse": "已被占用。"
+    }
+  },
+  "about": {
+    "header": {
+      "title": "关于"
+    },
+    "tagline": "开源、AI 原生的终端模拟器",
+    "build": "构建",
+    "bundleId": "Bundle ID",
+    "license": "许可证",
+    "sourceCode": "源代码",
+    "website": "网站",
+    "viewOnGitHub": "在 GitHub 上查看",
+    "reportIssue": "反馈问题",
+    "update": {
+      "upToDate": "已是最新版本",
+      "checkFailed": "检查失败——重试",
+      "checking": "检查中…",
+      "downloading": "下载中…",
+      "restartToInstall": "重启以安装",
+      "install": "安装 v{{version}}",
+      "updateTo": "更新到 v{{version}}",
+      "checkForUpdates": "检查更新"
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import "@xterm/xterm/css/xterm.css";
 import "./styles/globals.css";
+import "./i18n";
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";

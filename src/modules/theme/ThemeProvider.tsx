@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { setI18nLanguage } from "@/i18n";
 import {
   DEFAULT_THEME_ID,
   loadPreferences,
@@ -89,6 +90,7 @@ export function ThemeProvider({ children, defaultMode = "system" }: ThemeProvide
       setThemeIdState(p.themeId);
       writeFastMode(p.theme);
       writeFastThemeId(p.themeId);
+      setI18nLanguage(p.language);
     });
     const unlistenP = onPreferencesChange((key, value) => {
       if (key === "theme" && (value === "system" || value === "light" || value === "dark")) {
@@ -97,6 +99,8 @@ export function ThemeProvider({ children, defaultMode = "system" }: ThemeProvide
       } else if (key === "themeId" && typeof value === "string") {
         setThemeIdState(value);
         writeFastThemeId(value);
+      } else if (key === "language" && (value === "en" || value === "zh-CN")) {
+        setI18nLanguage(value);
       }
     });
     return () => {
