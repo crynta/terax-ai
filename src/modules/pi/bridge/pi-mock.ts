@@ -10,7 +10,10 @@
  */
 import {
   type Api,
+  type Context,
   fauxAssistantMessage,
+  fauxText,
+  fauxToolCall,
   type FauxProviderRegistration,
   type Model,
   registerFauxProvider,
@@ -20,9 +23,98 @@ export const MOCK_PI_API = "terax-mock";
 export const MOCK_PI_PROVIDER = "terax-mock";
 export const MOCK_PI_MODEL_ID = "mock-echo";
 
+const APPROVE_WRITE_PROMPT = "[terax-e2e-pi-approval-approved]";
+const DENY_WRITE_PROMPT = "[terax-e2e-pi-approval-denied]";
+const APPROVED_FIXTURE_PATH = "e2e/.tmp/pi-approval-approved.txt";
+const DENIED_FIXTURE_PATH = "e2e/.tmp/pi-approval-denied.txt";
+const APPROVED_FIXTURE_CONTENT =
+  "approved through Rust pi_agent_tool_execute\n";
+const DENIED_FIXTURE_CONTENT = "denied should not be written\n";
+
 /** Canned assistant reply; specs assert this text streamed into the transcript. */
 export const MOCK_PI_REPLY =
   "Mock pi reply: hello from the offline e2e runtime.";
+
+function textFromContent(
+  content: Context["messages"][number]["content"],
+): string {
+  if (typeof content === "string") return content;
+  return content
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .join("\n");
+}
+
+function lastUserText(context: Context): string {
+  for (let index = context.messages.length - 1; index >= 0; index -= 1) {
+    const message = context.messages[index];
+    if (message?.role === "user") return textFromContent(message.content);
+  }
+  return "";
+}
+
+function lastToolResultText(context: Context): string {
+  for (let index = context.messages.length - 1; index >= 0; index -= 1) {
+    const message = context.messages[index];
+    if (message?.role === "toolResult") {
+      const content = message.content
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join("\n");
+      const details = JSON.stringify(message.details ?? {});
+      return `${content}\n${details}`;
+    }
+  }
+  return "";
+}
+
+function firstMockPiResponse(context: Context) {
+  const prompt = lastUserText(context);
+  if (prompt.includes(APPROVE_WRITE_PROMPT)) {
+    return fauxAssistantMessage(
+      [
+        fauxText("I need approval to write the e2e fixture."),
+        fauxToolCall(
+          "write_file",
+          {
+            path: APPROVED_FIXTURE_PATH,
+            content: APPROVED_FIXTURE_CONTENT,
+          },
+          { id: "e2e-pi-write-approved" },
+        ),
+      ],
+      { stopReason: "toolUse" },
+    );
+  }
+
+  if (prompt.includes(DENY_WRITE_PROMPT)) {
+    return fauxAssistantMessage(
+      [
+        fauxText("I need approval to write the e2e fixture."),
+        fauxToolCall(
+          "write_file",
+          {
+            path: DENIED_FIXTURE_PATH,
+            content: DENIED_FIXTURE_CONTENT,
+          },
+          { id: "e2e-pi-write-denied" },
+        ),
+      ],
+      { stopReason: "toolUse" },
+    );
+  }
+
+  return fauxAssistantMessage(MOCK_PI_REPLY);
+}
+
+function followUpMockPiResponse(context: Context) {
+  const toolResult = lastToolResultText(context);
+  if (toolResult.includes("Tool execution denied by user")) {
+    return fauxAssistantMessage("Mock pi tool follow-up: write denied.");
+  }
+  if (toolResult.includes(APPROVED_FIXTURE_PATH)) {
+    return fauxAssistantMessage("Mock pi tool follow-up: write completed.");
+  }
+  return fauxAssistantMessage(MOCK_PI_REPLY);
+}
 
 let registration: FauxProviderRegistration | null = null;
 
@@ -42,7 +134,8 @@ export function ensureMockPiModel(): Model<Api> {
     });
   }
   registration.setResponses([
-    (_context, _options, _state, _model) => fauxAssistantMessage(MOCK_PI_REPLY),
+    (context) => firstMockPiResponse(context),
+    (context) => followUpMockPiResponse(context),
   ]);
   return registration.getModel() as Model<Api>;
 }
