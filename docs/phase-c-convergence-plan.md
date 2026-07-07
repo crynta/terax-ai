@@ -132,35 +132,25 @@ composer is pi-backed. 6 mapper tests in `agentRun.test.ts`.
 - Keep `AiInputBar`'s look; swap the runtime. Verify with Stage 0 specs on both
   paths, flip the flag default once green.
 
-**Seam landed (the hard, safe half).** `src/modules/ai/lib/composerRuntime.ts`
-defines a `ComposerRuntime` interface (`sessionId`, `send`, `stop`) and lifts
-the composer's send/stop/active-session path off `chatStore`. `composer.tsx`
-now calls `runtime.send(parts)` / `runtime.stop()` instead of
-`getOrCreateChat(sessionId).sendMessage(...)`; the chat-specific side effects
-(`patchAgentMeta`, `openMini`) moved into the default `useChatComposerRuntime`,
-so behavior is byte-for-byte unchanged (850 tests + the `ai-chat` e2e cover it).
-`useComposerRuntime()` is the single selection point where a pi runtime gets
-chosen by flag.
+**Pi runtime landed behind a flag 2026-07-07.**
+`src/modules/ai/lib/composerRuntime.ts` now has both composer runtimes. Chat is
+still the default. Setting `localStorage["terax.pi.composerRuntime"]` to `"pi"`
+(or `"1"` / `"true"`) selects the Pi-backed runtime.
 
-**Update 2026-07-01: the pi-runtime mock now exists** (`pi-mock.ts`), built on
-pi-ai's official faux provider (`registerFauxProvider`), returned by
-`resolveAgentModel` under the `terax.e2e` flag. A unit test drives it at the
-pi-ai event-protocol level (start -> text_delta -> done). So blocker (1) below
-is cleared; (2) and (3) remain.
+When the flag is enabled, the docked `AiInputBar` keeps its existing UI but sends
+text parts to `webviewSessionSend`. The runtime creates a lightweight "Quick
+ask" Pi session on first send, reuses either that session or the currently
+selected Pi session, publishes the created-session event so mounted Pi surfaces
+see it, opens/focuses the Pi code surface via App-level activation wiring, and
+passes the same workspace/file/terminal prompt context used by `PiPanel`. Local
+busy state now keeps stop wired to `webviewSessionStop` while the Pi turn is in
+flight.
 
-**Deliberately not forced yet (needs the running app):**
-1. ~~A pi-runtime mock.~~ DONE (`pi-mock.ts` + `pi-mock.test.ts`).
-2. *Response rendering + focus wiring.* A pi-backed quick-ask must surface its
-   transcript and status somewhere (route to the existing pi sidebar/workspace,
-   or render `PiTranscript` inside the mini window) and thread App-level focus
-   (`openSecondarySidebarView`, `setPiFocusRequest`). That is scroll/focus/UX
-   sensitive and must be verified interactively, not blind.
-3. *`isBusy` semantics.* The composer's `isBusy` excludes `awaiting-approval`
-   (you may type during an approval) while `isAgentBusy` includes it; unifying
-   these is a deliberate UX decision to make with the app open, not a blind swap.
-
-So Stage 2's architectural decoupling is done and safe; the pi implementation +
-flag flip is a contained follow-up gated on items 1-3 above.
+Verification: `src/modules/ai/lib/composerRuntime.test.ts` covers the
+localStorage gate, selection-text send path, prompt context, session reuse, and
+stop behavior. The full frontend test suite passed after landing this stage
+(172 files, 1006 tests). The flag is intentionally not default-on until the
+manual macOS smoke pass and PR CI are green.
 
 ### Stage 3 - Retire duplicate surface pieces
 

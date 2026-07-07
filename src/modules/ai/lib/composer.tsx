@@ -17,6 +17,7 @@ import { useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
 import {
   type ComposerMessagePart,
+  type PiComposerRuntimeOptions,
   useComposerRuntime,
 } from "./composerRuntime";
 import { type SlashCommandMeta, tryRunSlashCommand } from "./slashCommands";
@@ -86,13 +87,12 @@ export function useComposer(): ComposerCtx {
 
 type ProviderProps = {
   children: ReactNode;
+  piComposer?: PiComposerRuntimeOptions;
 };
 
-export function AiComposerProvider({ children }: ProviderProps) {
-  const runtime = useComposerRuntime();
-  const sessionId = runtime.sessionId;
-  const status = useChatStore((s) => s.agentMeta.status);
-  const isBusy = status === "thinking" || status === "streaming";
+export function AiComposerProvider({ children, piComposer }: ProviderProps) {
+  const runtime = useComposerRuntime({ pi: piComposer });
+  const isBusy = runtime.isBusy;
 
   const [value, setValue] = useState("");
   const [files, setFiles] = useState<FileAttachment[]>([]);
@@ -322,8 +322,8 @@ export function AiComposerProvider({ children }: ProviderProps) {
       }
     }
 
-    if (!sessionId) return;
-    runtime.send(parts);
+    if (!runtime.canSend) return;
+    void runtime.send(parts);
     setValue("");
     setFiles([]);
     setPickedSnippets([]);
@@ -333,10 +333,11 @@ export function AiComposerProvider({ children }: ProviderProps) {
   };
 
   const stop = () => {
-    runtime.stop();
+    void runtime.stop();
   };
 
   const canSend =
+    runtime.canSend &&
     !isBusy &&
     (value.trim().length > 0 ||
       files.length > 0 ||

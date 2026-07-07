@@ -8,11 +8,13 @@ import { useZoom } from "@/lib/useZoom";
 import type { AgentStatusContext } from "@/modules/agents/lib/statusSurface";
 import { useAgentStore } from "@/modules/agents/store/agentStore";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
+import { isPiComposerRuntimeEnabled } from "@/modules/ai/lib/composerRuntime";
 import type { EditorPaneHandle } from "@/modules/editor";
 import type { FileExplorerHandle } from "@/modules/explorer";
 import type { GitHistorySearchHandle } from "@/modules/git-history";
 import { Header, type SearchInlineHandle } from "@/modules/header";
 import { PiControllerProvider } from "@/modules/pi/lib/PiControllerProvider";
+import { usePiProviderConfig } from "@/modules/pi/lib/usePiProviderConfig";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { StatusBar } from "@/modules/statusbar";
@@ -311,6 +313,11 @@ export default function App() {
 
   useWindowTitle(activeTab, explorerRoot);
 
+  const { result: piComposerProvider } = usePiProviderConfig();
+  const piComposerEnabled = isPiComposerRuntimeEnabled();
+  const hasDockComposer =
+    hasComposer || (piComposerEnabled && piComposerProvider.ok);
+
   const {
     askFromSelection,
     askPopup,
@@ -324,7 +331,7 @@ export default function App() {
     activeTab,
     editorRefs,
     focusInput,
-    hasComposer,
+    hasComposer: hasDockComposer,
     openPanel,
     panelOpen,
     tabs,
@@ -796,7 +803,7 @@ export default function App() {
                   <AppComposerDock
                     keysLoaded={keysLoaded}
                     panelOpen={panelOpen}
-                    hasComposer={hasComposer}
+                    hasComposer={hasDockComposer}
                   >
                     {workspaceSurface}
                   </AppComposerDock>
@@ -887,7 +894,19 @@ export default function App() {
   );
 
   return (
-    <AiComposerProvider>
+    <AiComposerProvider
+      piComposer={{
+        enabled: piComposerEnabled,
+        context: codePanelContext,
+        providerConfig: piComposerProvider.ok
+          ? piComposerProvider.config
+          : null,
+        providerReady: piComposerProvider.ok,
+        selectedSessionId: codeSelectedSessionId,
+        onActivateSession: onActivatePiSession,
+        onSelectedSessionChange: setCodeSelectedSessionId,
+      }}
+    >
       <MotionConfig reducedMotion="user">{shell}</MotionConfig>
     </AiComposerProvider>
   );
