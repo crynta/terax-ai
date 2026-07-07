@@ -8,14 +8,14 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 - Head branch: `mehmetcanbudak:pi-sidebar`
 - Latest code/config verification head: `06ce0ddde` (subsequent commits are docs-only blocker/audit updates)
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
-- Visible checks: CodeRabbit only, passing as of the latest `gh pr checks` query. GitHub Actions CI/e2e were not visible for the fork PR, and the base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
+- Visible checks: none after the latest docs-only push (`gh pr checks` reports no checks on `pi-sidebar`). GitHub Actions CI/e2e were not visible for the fork PR, and the base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
 
 ## Completion audit checklist
 
 | Status | Objective requirement | Evidence inspected | Remaining gap |
 | --- | --- | --- | --- |
 | Done | Commit and push `pi-sidebar`; open PR. | PR #964 exists at <https://github.com/crynta/terax-ai/pull/964>; latest pushed head queried before this docs-only updater audit was `3691c7ee83a05f9a1b95fd8d8e0797aa5a32a31b`. | None for PR creation/push. |
-| Blocked | Confirm CI/e2e green. | `gh pr checks 964 --repo crynta/terax-ai` shows CodeRabbit pass; `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returns no Actions runs; `gh workflow view CI --repo crynta/terax-ai --yaml` shows no `workflow_dispatch`; fork workflow/run lists return no workflows or runs. | GitHub Actions and Linux e2e are not available for this dirty fork PR; maintainer must resolve conflicts and let base PR CI run. |
+| Blocked | Confirm CI/e2e green. | After the latest docs-only push, `gh pr checks 964 --repo crynta/terax-ai` reports no checks on `pi-sidebar`; `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returns no Actions runs; `gh workflow view CI --repo crynta/terax-ai --yaml` shows no `workflow_dispatch`; fork workflow/run lists return no workflows or runs. | GitHub Actions and Linux e2e are not available for this dirty fork PR; maintainer must resolve conflicts and let base PR CI run. |
 | Blocked | Document and complete manual macOS Pi smoke pass: key save/load, chat, built-in agents, custom Zai endpoint auth, streaming, stop/resume, app restart restore, and window-close behavior. | Checklist below records every named manual item and evidence to capture. | Maintainer must run it in a packaged app with real credentials. |
 | Done, not locally executable | Add security-critical mock-provider e2e coverage for Pi tool approval approve and deny through Rust `pi_agent_tool_execute`. | `e2e/specs/pi-approval.e2e.mjs` covers approve creates the fixture and deny leaves it absent; `src/modules/pi/bridge/pi-mock.ts` emits the deterministic tool calls; `docs/pi-native-tool-bridge.md` links the flow; `node --check e2e/specs/pi-approval.e2e.mjs` passed. | Full e2e execution requires Linux or Windows `tauri-driver`; macOS WKWebView has no driver. |
 | Partial | Complete Phase C/D convergence. | `src/modules/ai/lib/composerRuntime.ts` and tests cover Pi-backed quick ask; `src/app/App.tsx` and `src/app/AppWorkspaceSurface.tsx` route the Pi composer path to Pi surfaces; `docs/phase-c-convergence-plan.md` now records the residual import audit. | Legacy `AiChat`, `AiChatMessage`, `PlanDiffReview`, and `TodoStrip` remain for the fallback chat-runtime mini window until Pi composer can become default after CI and smoke pass. Runtime collapse/rename remains deferred. |
@@ -130,7 +130,7 @@ Conflict and CI audit after pushing the Pi sidebar tail:
 git fetch origin main
 git rev-list --left-right --count origin/main...HEAD # 171 106
 git merge-tree --write-tree HEAD origin/main # exits 1 with 99 conflicted paths; see docs/pi-sidebar-merge-conflict-audit.md
-gh pr checks 964 --repo crynta/terax-ai # CodeRabbit pass; no Actions jobs listed
+gh pr checks 964 --repo crynta/terax-ai # after latest docs-only push: no checks reported on pi-sidebar
 gh workflow view CI --repo crynta/terax-ai --yaml # no workflow_dispatch trigger; PR/push to main only
 gh workflow list --repo mehmetcanbudak/terax-ai --limit 50 # no workflows returned
 gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20 # no runs returned
