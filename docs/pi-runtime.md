@@ -86,7 +86,10 @@ Approval cards in the webview are UX only. For Ask-level tools (`bash`, `edit`,
 `write`, and Ask-level MCP tools), approval records a grant through
 `pi_approval_grant`; the subsequent `pi_agent_tool_execute` call is the only
 place where the grant is consumed and privileged work can happen. Denial returns
-a tool error result and does not execute the operation.
+a tool error result and does not execute the operation. If an approved Ask-level
+tool execution fails, Terax does not automatically retry or reuse the grant; the
+failure is visible in the transcript and any retry must be initiated by the user
+as a fresh prompt/tool attempt.
 
 ## Session persistence and restart behavior
 

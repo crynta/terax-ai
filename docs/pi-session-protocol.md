@@ -197,6 +197,12 @@ matching Rust capability with `pi_approval_grant`; execution still happens only
 when the agent tool calls `pi_agent_tool_execute`. Denial does not create a grant
 and therefore cannot execute the requested shell/mutation.
 
+Ask-level tool retry decision: failed executions are not automatically retried
+and approval grants are never reused. The failure is returned to the agent as a
+tool result and shown in the transcript. If the user wants to try again, they
+send a follow-up or use the session-level Retry action, which creates a fresh
+model/tool attempt and a fresh approval prompt if policy still requires one.
+
 ### `webviewSessionQuestionRespond(sessionId, questionId, answers)`
 
 Resolves an interactive `ask_question` tool request in the webview and persists a
