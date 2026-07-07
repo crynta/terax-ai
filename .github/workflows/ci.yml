@@ -93,13 +93,25 @@ jobs:
         working-directory: src-tauri
         run: cargo check --all-targets --locked
 
+      - name: cargo check (workflow feature)
+        working-directory: src-tauri
+        run: cargo check --all-targets --locked --features workflow
+
       - name: cargo clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets --locked -- -D warnings
 
+      - name: cargo clippy (workflow feature)
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked --features workflow -- -D warnings
+
       - name: cargo nextest
         working-directory: src-tauri
         run: cargo nextest run --locked
+
+      - name: cargo nextest (workflow feature)
+        working-directory: src-tauri
+        run: cargo nextest run --locked --features workflow
 
   rust-platforms:
     name: rust-test (${{ matrix.os }})
@@ -112,6 +124,8 @@ jobs:
       - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -125,9 +139,24 @@ jobs:
         working-directory: src-tauri
         run: cargo check --all-targets --locked
 
+      - name: cargo check (openclicky feature)
+        if: matrix.os == 'macos-latest'
+        working-directory: src-tauri
+        run: cargo check --all-targets --locked --features openclicky
+
+      - name: cargo clippy (openclicky feature)
+        if: matrix.os == 'macos-latest'
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked --features openclicky -- -D warnings
+
       - name: cargo nextest
         working-directory: src-tauri
         run: cargo nextest run --locked --retries 2
+
+      - name: cargo nextest (openclicky feature)
+        if: matrix.os == 'macos-latest'
+        working-directory: src-tauri
+        run: cargo nextest run --locked --features openclicky --retries 2
 
   e2e:
     name: e2e (linux)

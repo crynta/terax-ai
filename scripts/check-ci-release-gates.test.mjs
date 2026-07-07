@@ -58,4 +58,24 @@ describe("checkCiReleaseGates", () => {
       ]),
     );
   });
+
+  it("fails when Rust feature gates are removed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "terax-ci-gates-rust-features-"));
+    await writeWorkflow(
+      root,
+      healthyWorkflow
+        .replace("cargo clippy --all-targets --locked --features workflow -- -D warnings", "")
+        .replace("cargo nextest run --locked --features openclicky --retries 2", ""),
+    );
+
+    const result = await checkCiReleaseGates(root);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("missing required Rust workflow feature clippy gate"),
+        expect.stringContaining("missing required Rust openclicky feature nextest gate"),
+      ]),
+    );
+  });
 });

@@ -23,7 +23,22 @@ export const REQUIRED_CI_RELEASE_GATES = [
   { label: "Rust check", text: "cargo check --all-targets --locked" },
   { label: "Rust clippy", text: "cargo clippy --all-targets --locked -- -D warnings" },
   { label: "Rust nextest", text: "cargo nextest run --locked" },
+  { label: "Rust workflow feature check", text: "cargo check --all-targets --locked --features workflow" },
+  {
+    label: "Rust workflow feature clippy",
+    text: "cargo clippy --all-targets --locked --features workflow -- -D warnings",
+  },
+  { label: "Rust workflow feature nextest", text: "cargo nextest run --locked --features workflow" },
   { label: "Rust platform retry", text: "cargo nextest run --locked --retries 2" },
+  { label: "Rust openclicky feature check", text: "cargo check --all-targets --locked --features openclicky" },
+  {
+    label: "Rust openclicky feature clippy",
+    text: "cargo clippy --all-targets --locked --features openclicky -- -D warnings",
+  },
+  {
+    label: "Rust openclicky feature nextest",
+    text: "cargo nextest run --locked --features openclicky --retries 2",
+  },
   { label: "Linux WebKit driver", text: "webkit2gtk-driver" },
   { label: "Tauri driver", text: "tauri-driver" },
   { label: "Linux e2e", text: "xvfb-run -a pnpm e2e" },

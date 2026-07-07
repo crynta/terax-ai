@@ -63,7 +63,7 @@ gh pr checks 964 --repo crynta/terax-ai --watch=false # no green Actions matrix 
 gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 5 # pull_request runs are action_required until maintainer approval
 ```
 
-Latest Rust and updater checks:
+Latest Rust and updater checks. The CI release-gate checker now also requires Rust `workflow` feature check/clippy/nextest commands and macOS-only `openclicky` feature check/clippy/nextest commands in `.github/workflows/ci.yml`; CI still needs maintainer approval before those gates can execute remotely.
 
 ```bash
 pnpm check:ci-release-gates
