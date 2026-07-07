@@ -6,9 +6,9 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest frontend gate verification covers Pi boundary (including the approval e2e wiring guard), updater-key, format, typecheck, lint, full Vitest, coverage, build, and bundle-size checks; latest Rust check verification head is `a3c938a3e` for default, workflow, and openclicky cargo check; the full Rust test/clippy/release-app build matrix remains verified at `06ce0ddde`, with no `src-tauri` file changes since that matrix.
+- Latest frontend gate verification covers Pi boundary (including the approval e2e wiring guard and release-doc verifier), updater-key, format, typecheck, lint, full Vitest, coverage, build, and bundle-size checks; latest Rust check verification head is `a3c938a3e` for default, workflow, and openclicky cargo check; the full Rust test/clippy/release-app build matrix remains verified at `06ce0ddde`, with no `src-tauri` file changes since that matrix.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
-- Visible checks: after the Pi approval e2e wiring guard push, `gh pr checks` showed CodeRabbit `pass` with "Review skipped: 869 files exceed the limit of 150" and still no GitHub Actions runs. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
+- Visible checks after the release-doc verifier push: `gh pr checks` shows CodeRabbit `pending` / "Review in progress" and still no GitHub Actions runs. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
 
 ## Completion audit checklist
 
@@ -142,7 +142,7 @@ gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20 
 gh api repos/crynta/terax-ai/pulls/964 --jq '{mergeable, mergeable_state}' # false, dirty
 gh workflow run CI --repo mehmetcanbudak/terax-ai --ref pi-sidebar # could not find any workflows named CI
 gh workflow run CI --repo crynta/terax-ai --ref pi-sidebar # HTTP 403: Must have admin rights to Repository
-gh pr checks 964 --repo crynta/terax-ai # CodeRabbit pass; no GitHub Actions checks visible
+gh pr checks 964 --repo crynta/terax-ai # CodeRabbit pending after latest push; no GitHub Actions checks visible
 ```
 
 Static Pi boundary audits added after the PR check visibility refresh:
