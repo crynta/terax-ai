@@ -6,7 +6,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest code head with local checks: `0e0ac46ff` (subsequent readiness-note edits are docs-only)
+- Latest code head with local checks: `875d5b8da` (readiness-note edits may be docs-only)
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`
 - Visible checks: CodeRabbit only, currently pending on the fork PR. GitHub Actions CI/e2e were not visible for the fork PR, so Linux e2e remains pending CI or maintainer-triggered workflow.
 
@@ -82,11 +82,20 @@ cd src-tauri && cargo clippy --locked --all-targets --features openclicky -- -D 
 cd src-tauri && cargo test --locked --features openclicky --test voice_tts
 ```
 
+Stage 3 mini-window routing checks after the Pi conversation surface guard landed:
+
+```bash
+pnpm exec vitest run src/app/AppWorkspaceSurface.test.ts src/app/AppSidebars.pi-chat.test.tsx src/app/AppSidebars.preview.runtime.test.tsx src/modules/ai/lib/composerRuntime.test.ts
+pnpm test # 175 files, 1012 tests
+pnpm run build
+pnpm run check:bundle-size # total 1949.8 KB gzipped, budget 2050.8 KB
+```
+
 Conflict audit after pushing the Pi sidebar tail:
 
 ```bash
 git fetch origin main
-git rev-list --left-right --count origin/main...HEAD # 171 102
+git rev-list --left-right --count origin/main...HEAD # 171 106
 git merge-tree --write-tree HEAD origin/main # exits 1 with broad conflicts
 ```
 
