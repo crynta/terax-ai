@@ -86,7 +86,7 @@ the legacy side once pi covers the affordance.
 Each stage is shippable on its own and leaves the app working. Stop after any
 stage without leaving a half-migration.
 
-### Stage 0 - Verification scaffold (prerequisite, do first)
+### Stage 0 - Verification scaffold (prerequisite, do first) [DONE 2026-07-07]
 
 Without this, none of the surface stages can be regression-tested.
 
@@ -98,6 +98,18 @@ Without this, none of the surface stages can be regression-tested.
   completes. Mirror for pi sessions.
 - This makes the surface a tested surface, which is the precondition for
   changing it.
+
+**Landed.** `src/modules/ai/lib/mockProvider.ts` and the shared
+`terax.e2e` flag provide a deterministic AI-SDK mock for the legacy chat
+surface. `e2e/specs/ai-chat.e2e.mjs` drives composer -> transport -> store ->
+transcript with no keys and no network. The Pi mirror uses
+`src/modules/pi/bridge/pi-mock.ts`, which registers a faux pi provider and emits
+sentinel write-file tool calls. `e2e/specs/pi-approval.e2e.mjs` covers both
+approval outcomes: approve creates `e2e/.tmp/pi-approval-approved.txt` through
+Rust `pi_agent_tool_execute`, while deny leaves
+`e2e/.tmp/pi-approval-denied.txt` absent. `scripts/check-pi-approval-boundary.mjs`
+guards the spec, sentinel prompts, mock wiring, WebdriverIO glob, and Linux e2e
+CI command.
 
 ### Stage 1 - One run-status contract (Layer 2, no surface change) [DONE 2026-06-12]
 
