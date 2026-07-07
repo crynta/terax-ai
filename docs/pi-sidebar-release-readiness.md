@@ -6,7 +6,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest code head with local checks: `875d5b8da` (readiness-note edits may be docs-only)
+- Latest code/config head with local checks: `ed01a44e7` (subsequent readiness-note edits are docs-only)
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`
 - Visible checks: CodeRabbit only, currently pending on the fork PR. GitHub Actions CI/e2e were not visible for the fork PR, so Linux e2e remains pending CI or maintainer-triggered workflow.
 
