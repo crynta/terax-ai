@@ -2,6 +2,8 @@
 
 Date: 2026-06-05
 
+> Status 2026-07-07: historical comparison only. Pi sidecar references reflect the repository state observed on 2026-06-05 and are not current. Use `docs/pi-runtime.md`, `docs/pi-sidebar-release-readiness.md`, `docs/pi-sidebar-verification.md`, and `docs/sota-plan-2026-06-11.md` for the current webview-native Pi runtime.
+
 ## Purpose
 
 This report inventories T3 Code and Terax, compares the two products, and turns the comparison into an improvement backlog for Terax. The recommendation is to keep Terax as the foundation and borrow selected T3 Code product and architecture ideas without moving Terax to an Electron or Node-owned runtime model.
