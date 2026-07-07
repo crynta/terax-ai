@@ -23,7 +23,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 | Blocked | Complete updater key rotation and verify fresh plus pre-rotation update paths. | `docs/updater-key-rotation.md` documents the new public key status, release workflow secret-name wiring, secret-access 403, and transition-release recommendation. | Maintainer must verify/configure signing secret values, decide transition release feasibility, and verify signed update feeds. |
 | Done | Keep default app about 11 MB. | `pnpm tauri build --bundles app --no-sign --ci` and `du -sh src-tauri/target/release/bundle/macos/Terax.app` reported `11M`; JS gzipped bundle is `1949.8 KB` against `2050.8 KB`. | Re-run after conflict resolution and final merge. |
 | Done | Keep Node Pi sidecar deleted. | `git ls-files` and `find` show no Node `pi-host` sidecar; only the existing `speech-recognizer` sidecar resources remain. | Historical architecture docs still mention the old sidecar as past context. |
-| Done | Ensure static frontend Tauri invokes have Rust handlers or intentional graceful degradation. | `pnpm run check:pi-boundary` passed; feature-gated OpenClicky/TTS commands are documented and tested. | Re-run after conflict resolution. |
+| Done | Ensure static frontend Tauri invokes have Rust handlers or intentional graceful degradation. | `pnpm run check:tauri-invokes` passed with 172 unique commands across 248 literal invokes and 32 documented feature-gated commands; `pnpm run check:pi-boundary` now chains this static invoke audit after the Pi approval boundary check. | Re-run after conflict resolution. |
 | Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. | CI must independently run on the PR. |
 
 ## Local automated verification already run
@@ -135,6 +135,13 @@ gh workflow view CI --repo crynta/terax-ai --yaml # no workflow_dispatch trigger
 gh workflow list --repo mehmetcanbudak/terax-ai --limit 50 # no workflows returned
 gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20 # no runs returned
 gh api repos/crynta/terax-ai/pulls/964 --jq '{mergeable, mergeable_state}' # false, dirty
+```
+
+Static Tauri invoke audit added after the PR check visibility refresh:
+
+```bash
+pnpm run check:tauri-invokes # 172 commands, 248 literal invocations, 32 feature-gated commands documented
+pnpm run check:pi-boundary # chains Pi approval boundary plus static invoke audit
 ```
 
 ## Voice and 3D gating decision
