@@ -27,18 +27,32 @@ impl Default for LspState {
 }
 
 impl LspState {
+    fn read_sessions(&self) -> std::sync::RwLockReadGuard<'_, HashMap<u32, Arc<LspSession>>> {
+        match self.sessions.read() {
+            Ok(guard) => guard,
+            Err(error) => {
+                log::error!("lsp session map read lock failed: {error}");
+                error.into_inner()
+            }
+        }
+    }
+
+    fn write_sessions(&self) -> std::sync::RwLockWriteGuard<'_, HashMap<u32, Arc<LspSession>>> {
+        match self.sessions.write() {
+            Ok(guard) => guard,
+            Err(error) => {
+                log::error!("lsp session map write lock failed: {error}");
+                error.into_inner()
+            }
+        }
+    }
+
     pub(super) fn take(&self, id: u32) -> Option<Arc<LspSession>> {
-        self.sessions.write().unwrap().remove(&id)
+        self.write_sessions().remove(&id)
     }
 
     pub fn kill_all(&self) {
-        let drained: Vec<Arc<LspSession>> = self
-            .sessions
-            .write()
-            .unwrap()
-            .drain()
-            .map(|(_, s)| s)
-            .collect();
+        let drained: Vec<Arc<LspSession>> = self.write_sessions().drain().map(|(_, s)| s).collect();
         for session in drained {
             session.kill();
         }
@@ -95,13 +109,11 @@ pub async fn lsp_spawn(
     .await
     .map_err(|e| e.to_string())??;
 
-    state.sessions.write().unwrap().insert(id, session);
+    state.write_sessions().insert(id, session);
     // The server can die before this insert; the waiter's reap then ran with
     // the id absent. Re-check so a dead session isn't stranded in the map.
     let exited = state
-        .sessions
-        .read()
-        .unwrap()
+        .read_sessions()
         .get(&id)
         .map(|s| s.exited.load(Ordering::Acquire))
         .unwrap_or(false);
@@ -150,9 +162,7 @@ pub async fn lsp_send(
     message: String,
 ) -> Result<(), String> {
     let session = state
-        .sessions
-        .read()
-        .unwrap()
+        .read_sessions()
         .get(&id)
         .cloned()
         .ok_or_else(|| format!("lsp_send: unknown id={id}"))?;

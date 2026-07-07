@@ -38,7 +38,10 @@ pub struct LspSession {
 
 impl LspSession {
     pub fn write_message(&self, payload: &str) -> Result<(), String> {
-        let mut guard = self.stdin.lock().unwrap();
+        let mut guard = self
+            .stdin
+            .lock()
+            .map_err(|e| format!("lsp stdin lock failed: {e}"))?;
         let stdin = guard.as_mut().ok_or("lsp session stdin closed")?;
         stdin
             .write_all(&encode_frame(payload))
@@ -50,10 +53,20 @@ impl LspSession {
     // only the leader leaves them burning CPU. Unix: signal the process
     // group. Windows: the Job Object covers the tree.
     pub fn kill(&self) {
-        *self.stdin.lock().unwrap() = None;
+        match self.stdin.lock() {
+            Ok(mut stdin) => *stdin = None,
+            Err(error) => {
+                log::error!("lsp stdin lock failed during kill: {error}");
+                *error.into_inner() = None;
+            }
+        }
         #[cfg(unix)]
-        unsafe {
-            libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
+        {
+            // SAFETY: the LSP child is launched in its own process group with
+            // `setpgid(0, 0)`, so the negative pid targets only that group.
+            unsafe {
+                libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
+            }
         }
         let _ = self.child.kill();
     }
@@ -87,12 +100,16 @@ pub fn spawn(
         .stderr(Stdio::piped());
     crate::modules::proc::hide_console(&mut cmd);
     #[cfg(unix)]
-    unsafe {
+    {
         use std::os::unix::process::CommandExt;
-        cmd.pre_exec(|| {
-            libc::setpgid(0, 0);
-            Ok(())
-        });
+        // SAFETY: `pre_exec` runs in the child after fork and before exec. The
+        // closure only calls async-signal-safe `setpgid` with constant values.
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
     }
 
     let child = Arc::new(
@@ -181,11 +198,17 @@ pub fn spawn(
                 }
                 let text = String::from_utf8_lossy(line).into_owned();
                 log::debug!("lsp id={id} stderr: {text}");
-                let mut tail = stderr_tail_w.lock().unwrap();
-                if tail.len() >= STDERR_TAIL_LINES {
-                    tail.pop_front();
+                match stderr_tail_w.lock() {
+                    Ok(mut tail) => {
+                        if tail.len() >= STDERR_TAIL_LINES {
+                            tail.pop_front();
+                        }
+                        tail.push_back(text);
+                    }
+                    Err(error) => {
+                        log::error!("lsp id={id} stderr tail lock failed: {error}");
+                    }
                 }
-                tail.push_back(text);
                 line.clear();
             };
             while let Ok(n) = stderr.read(&mut buf) {
@@ -231,9 +254,16 @@ pub fn spawn(
                             log::warn!(
                                 "lsp id={id} rss {rss_mb} MB over budget {cap_mb} MB; killing"
                             );
-                            *reason_w.lock().unwrap() = Some(format!(
+                            let reason = format!(
                                 "Killed after exceeding the {cap_mb} MB memory budget ({rss_mb} MB resident)."
-                            ));
+                            );
+                            match reason_w.lock() {
+                                Ok(mut guard) => *guard = Some(reason),
+                                Err(error) => {
+                                    log::error!("lsp id={id} kill-reason lock failed: {error}");
+                                    *error.into_inner() = Some(reason);
+                                }
+                            }
                             session_w.kill();
                             return;
                         }
@@ -267,11 +297,24 @@ pub fn spawn(
                 state.take(id);
             }
             log::info!("lsp id={id} exited code={code:?}");
-            let tail: Vec<String> = stderr_tail.lock().unwrap().iter().cloned().collect();
+            let tail: Vec<String> = match stderr_tail.lock() {
+                Ok(tail) => tail.iter().cloned().collect(),
+                Err(error) => {
+                    log::error!("lsp id={id} stderr tail lock failed on exit: {error}");
+                    error.into_inner().iter().cloned().collect()
+                }
+            };
+            let reason = match kill_reason.lock() {
+                Ok(mut reason) => reason.take(),
+                Err(error) => {
+                    log::error!("lsp id={id} kill-reason lock failed on exit: {error}");
+                    error.into_inner().take()
+                }
+            };
             let exit = LspExit {
                 code,
                 stderr_tail: tail.join("\n"),
-                reason: kill_reason.lock().unwrap().take(),
+                reason,
             };
             if on_exit.send(exit).is_err() {
                 log::debug!("lsp id={id} exit send failed (channel closed)");

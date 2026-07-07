@@ -307,7 +307,7 @@ pub fn spawn(
     let on_data_exit = on_data;
     let pending_e = pending.clone();
     let done_e = done.clone();
-    let exited_e = exited.clone();
+    let exited_e = exited;
     thread::Builder::new()
         .name("terax-pty-waiter".into())
         .spawn(move || {

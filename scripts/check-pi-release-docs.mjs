@@ -24,6 +24,7 @@ export const REQUIRED_RELEASE_READINESS_TEXT = [
   "pnpm run check:no-pi-sidecar",
   "pnpm run check:tauri-invokes",
   "pnpm check:updater-key-rotation",
+  "cargo clippy --locked --all-targets -- -D warnings",
   "10M",
   "1430.5 KB",
 ];

@@ -115,20 +115,26 @@ fn is_executable(entry: &std::fs::DirEntry) -> bool {
     }
 }
 
-fn ensure(state: &HistoryState) -> std::sync::MutexGuard<'_, Option<Index>> {
-    let mut guard = state.inner.lock().unwrap();
+fn ensure(state: &HistoryState) -> Option<std::sync::MutexGuard<'_, Option<Index>>> {
+    let mut guard = match state.inner.lock() {
+        Ok(guard) => guard,
+        Err(error) => {
+            log::error!("history index lock failed: {error}");
+            return None;
+        }
+    };
     if guard.is_none() {
         *guard = Some(Index {
             entries: build_index(read_histories()),
             path_cmds: scan_path(),
         });
     }
-    guard
+    Some(guard)
 }
 
 #[tauri::command]
 pub fn history_suggest(state: tauri::State<'_, HistoryState>, line: String) -> Option<String> {
-    let guard = ensure(&state);
+    let guard = ensure(&state)?;
     suggest(&guard.as_ref()?.entries, &line)
 }
 
@@ -138,7 +144,9 @@ pub fn history_commands(
     prefix: String,
     limit: Option<usize>,
 ) -> Vec<String> {
-    let guard = ensure(&state);
+    let Some(guard) = ensure(&state) else {
+        return Vec::new();
+    };
     match guard.as_ref() {
         Some(idx) => complete_commands(&idx.entries, &idx.path_cmds, &prefix, limit.unwrap_or(50)),
         None => Vec::new(),
@@ -151,7 +159,9 @@ pub fn history_list(
     query: String,
     limit: Option<usize>,
 ) -> Vec<String> {
-    let guard = ensure(&state);
+    let Some(guard) = ensure(&state) else {
+        return Vec::new();
+    };
     match guard.as_ref() {
         Some(idx) => list(&idx.entries, &query, limit.unwrap_or(200)),
         None => Vec::new(),
@@ -167,7 +177,9 @@ pub fn history_record(state: tauri::State<'_, HistoryState>, command: String) {
     if cmd.is_empty() {
         return;
     }
-    let mut guard = ensure(&state);
+    let Some(mut guard) = ensure(&state) else {
+        return;
+    };
     if let Some(idx) = guard.as_mut() {
         let n = now();
         match idx.entries.iter_mut().find(|e| e.cmd == cmd) {
