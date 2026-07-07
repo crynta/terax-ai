@@ -6,23 +6,23 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest code/config verification head remains `3f3066041` for the static Tauri invoke audit and its targeted test coverage; the full release build matrix remains verified at `06ce0ddde`.
+- Latest lightweight code/config gate verification covers the static Tauri invoke audit and no-Pi-sidecar audit; the full release build matrix remains verified at `06ce0ddde`.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
-- Visible checks: after pushing `a65582c23`, `gh pr checks` shows CodeRabbit `pass` with "Review skipped: 862 files exceed the limit of 150" and no GitHub Actions runs. GitHub Actions CI/e2e were not visible for the fork PR, and the base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
+- Visible checks: GitHub Actions CI/e2e are still not visible for the fork PR; CodeRabbit is the only visible check and may be queued or skipped because the PR exceeds its file limit. The base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
 
 ## Completion audit checklist
 
 | Status | Objective requirement | Evidence inspected | Remaining gap |
 | --- | --- | --- | --- |
 | Done | Commit and push `pi-sidebar`; open PR. | PR #964 exists at <https://github.com/crynta/terax-ai/pull/964>; pushes to `mehmetcanbudak:pi-sidebar` continue to succeed and PR body updates are accepted. | None for PR creation/push. |
-| Blocked | Confirm CI/e2e green. | After pushing `a65582c23`, `gh pr checks 964 --repo crynta/terax-ai` reports CodeRabbit pass/skipped only; `gh pr view` reports `mergeStateStatus=DIRTY`; earlier `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returned no Actions runs; `gh workflow view CI --repo crynta/terax-ai --yaml` shows no `workflow_dispatch`; fork workflow/run lists return no workflows or runs. | GitHub Actions and Linux e2e are not available for this dirty fork PR; maintainer must resolve conflicts and let base PR CI run. |
+| Blocked | Confirm CI/e2e green. | `gh pr checks 964 --repo crynta/terax-ai` reports only CodeRabbit states, not GitHub Actions; `gh pr view` reports `mergeStateStatus=DIRTY`; earlier `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returned no Actions runs; `gh workflow view CI --repo crynta/terax-ai --yaml` shows no `workflow_dispatch`; fork workflow/run lists return no workflows or runs. | GitHub Actions and Linux e2e are not available for this dirty fork PR; maintainer must resolve conflicts and let base PR CI run. |
 | Blocked | Document and complete manual macOS Pi smoke pass: key save/load, chat, built-in agents, custom Zai endpoint auth, streaming, stop/resume, app restart restore, and window-close behavior. | Checklist below records every named manual item and evidence to capture; `docs/pi-sidebar-manual-smoke-report.md` is a maintainer-fillable report template. | Maintainer must run it in a packaged app with real credentials. |
 | Done, not locally executable | Add security-critical mock-provider e2e coverage for Pi tool approval approve and deny through Rust `pi_agent_tool_execute`. | `e2e/specs/pi-approval.e2e.mjs` covers approve creates the fixture and deny leaves it absent; `src/modules/pi/bridge/pi-mock.ts` emits the deterministic tool calls; `docs/pi-native-tool-bridge.md` links the flow; `node --check e2e/specs/pi-approval.e2e.mjs` passed. | Full e2e execution requires Linux or Windows `tauri-driver`; macOS WKWebView has no driver. |
 | Partial | Complete Phase C/D convergence. | `src/modules/ai/lib/composerRuntime.ts` and tests cover Pi-backed quick ask; `src/app/App.tsx` and `src/app/AppWorkspaceSurface.tsx` route the Pi composer path to Pi surfaces; `docs/phase-c-convergence-plan.md` now records the residual import audit. | Legacy `AiChat`, `AiChatMessage`, `PlanDiffReview`, and `TodoStrip` remain for the fallback chat-runtime mini window until Pi composer can become default after CI and smoke pass. Runtime collapse/rename remains deferred. |
 | Done | Handle touched cleanup and hardening items. | Evidence spans provider/model persistence tests in `src/modules/pi/lib/webview-session.test.ts`, MCP connection/error surfaces in `src/modules/pi/lib/useMcpSurface.ts` and `src-tauri/tests/mcp_manager_runtime.rs`, URLSearchParams proxy body handling in `src/modules/ai/lib/proxyFetch.ts`, retry UX in `src/modules/pi/components/PiComposer.test.tsx`, MCP `raw_data` capping in `src-tauri/src/modules/pi/native_tools/mcp_tools.rs`, historical sidecar-era docs marked superseded including the T3 comparison report, and Voice/3D gating in `src/modules/ai/lib/featureGates.ts` plus Rust capability manifests. | No known local code gap; release validation still depends on CI/manual blockers. |
 | Blocked | Complete updater key rotation and verify fresh plus pre-rotation update paths. | `docs/updater-key-rotation.md` documents the new public key status, release workflow secret-name wiring, secret-access 403, transition-release recommendation, and live `v0.8.2` feed signatures still carrying old key id `3BABFD8AB60E3469`. | Maintainer must verify/configure signing secret values, produce a new-key signed release or test feed, decide transition release feasibility, and verify signed update feeds. |
 | Done | Keep default app about 11 MB. | `pnpm tauri build --bundles app --no-sign --ci` and `du -sh src-tauri/target/release/bundle/macos/Terax.app` reported `11M`; JS gzipped bundle is `1949.8 KB` against `2050.8 KB`. | Re-run after conflict resolution and final merge. |
-| Done | Keep Node Pi sidecar deleted. | `git ls-files` and `find` show no Node `pi-host` sidecar; only the existing `speech-recognizer` sidecar resources remain. | Historical architecture docs still mention the old sidecar as past context. |
+| Done | Keep Node Pi sidecar deleted. | `pnpm run check:no-pi-sidecar` passed, scanning tracked paths and sidecar config for deleted `sidecars/pi-host`, bundled Node runtime paths, Pi-host build scripts, and Tauri resource entries. Only the existing `speech-recognizer` sidecar remains allowed. | Historical architecture docs still mention the old sidecar as past context, with historical banners where needed. |
 | Done | Ensure static frontend Tauri invokes have Rust handlers or intentional graceful degradation. | `pnpm run check:tauri-invokes` passed with 172 unique commands across 248 literal invokes and 32 documented feature-gated commands; `pnpm run check:pi-boundary` now chains this static invoke audit after the Pi approval boundary check. | Re-run after conflict resolution. |
 | Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. | CI must independently run on the PR. |
 
@@ -137,12 +137,13 @@ gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20 
 gh api repos/crynta/terax-ai/pulls/964 --jq '{mergeable, mergeable_state}' # false, dirty
 ```
 
-Static Tauri invoke audit added after the PR check visibility refresh:
+Static Pi boundary audits added after the PR check visibility refresh:
 
 ```bash
+pnpm run check:no-pi-sidecar # scans tracked files and sidecar config for deleted Pi host/runtime paths
 pnpm run check:tauri-invokes # 172 commands, 248 literal invocations, 32 feature-gated commands documented
-pnpm run check:pi-boundary # chains Pi approval boundary plus static invoke audit
-pnpm exec vitest run scripts/check-pi-approval-boundary.test.mjs scripts/check-tauri-invokes.test.mjs # 5 tests pass
+pnpm run check:pi-boundary # chains Pi approval boundary, no-Pi-sidecar, and static invoke audits
+pnpm exec vitest run scripts/check-no-pi-sidecar.test.mjs scripts/check-pi-approval-boundary.test.mjs scripts/check-tauri-invokes.test.mjs # 9 tests pass
 ```
 
 Updater feed inspection after the static invoke audit:
