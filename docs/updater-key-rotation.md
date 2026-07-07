@@ -53,7 +53,8 @@ unless handled deliberately.
 Use `pnpm run inspect:updater-feed -- [latest.json-or-url] --expect-key <KEY_ID>`
 to decode every platform signature in a Tauri `latest.json` feed and fail if any
 platform is signed by an unexpected key. Without a path or URL, the command
-inspects the public latest feed.
+inspects the public latest feed. Record maintainer-run evidence in
+`docs/updater-key-rotation-smoke-report.md`.
 
 - New installs: install this build, trigger an update check against a test feed
   signed with the new key, confirm it applies, and run
@@ -95,6 +96,7 @@ key, after the maintainer chooses the migration path.
 - [ ] New private key value verified in release CI secrets (`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). The current agent cannot verify or set repository secrets: `gh secret list --repo crynta/terax-ai --app actions` returned HTTP 403 again on 2026-07-07.
 - [ ] Transition-release feasibility confirmed by a maintainer with access to the old updater private key and release workflow secrets.
 - [x] Release-note draft prepared for both migration outcomes above.
+- [x] Maintainer-fillable updater smoke report added at `docs/updater-key-rotation-smoke-report.md` for fresh new-key install, pre-rotation rejection, transition/reinstall migration evidence, and release-note/secret hygiene.
 - [ ] Existing-install migration path noted in the actual release notes for the release that ships this change.
 - [ ] End-to-end update verified on a new install and an old install against a signed test feed.
 

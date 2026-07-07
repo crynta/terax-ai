@@ -8,6 +8,7 @@ import {
   EXPECTED_UPDATER_KEY_ID,
   OLD_UPDATER_KEY_ID,
   REQUIRED_UPDATER_DOC_TEXT,
+  REQUIRED_UPDATER_SMOKE_TEXT,
   checkUpdaterKeyRotation,
 } from "./check-updater-key-rotation.mjs";
 
@@ -43,6 +44,10 @@ function healthyUpdaterDocs() {
   return REQUIRED_UPDATER_DOC_TEXT.join("\n");
 }
 
+function healthyUpdaterSmokeReport() {
+  return REQUIRED_UPDATER_SMOKE_TEXT.join("\n");
+}
+
 function healthyPackageJson() {
   return JSON.stringify({ scripts: { "inspect:updater-feed": EXPECTED_FEED_INSPECTOR_SCRIPT } });
 }
@@ -56,6 +61,7 @@ function healthyFixture(overrides = {}) {
     "src-tauri/tauri.conf.json": healthyTauriConfig(),
     ".github/workflows/release.yml": healthyReleaseWorkflow(),
     "docs/updater-key-rotation.md": healthyUpdaterDocs(),
+    "docs/updater-key-rotation-smoke-report.md": healthyUpdaterSmokeReport(),
     "package.json": healthyPackageJson(),
     "scripts/inspect-updater-feed.mjs": healthyFeedInspectorScript(),
     ...overrides,
@@ -154,7 +160,31 @@ describe("checkUpdaterKeyRotation", () => {
     expect(result.errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "docs/updater-key-rotation.md is missing required rotation note: Fallback reinstall-announcement path",
+          "docs/updater-key-rotation.md is missing required updater key rotation text: Fallback reinstall-announcement path",
+        ),
+      ]),
+    );
+  });
+
+  it("fails when the updater smoke report loses pre-rotation verification evidence", async () => {
+    const root = await mkdtemp(join(tmpdir(), "terax-updater-key-smoke-"));
+    await writeFixture(
+      root,
+      healthyFixture({
+        "docs/updater-key-rotation-smoke-report.md": healthyUpdaterSmokeReport().replace(
+          "Pre-rotation install rejects a new-key-only feed",
+          "",
+        ),
+      }),
+    );
+
+    const result = await checkUpdaterKeyRotation(root);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "docs/updater-key-rotation-smoke-report.md is missing required updater key rotation text: Pre-rotation install rejects a new-key-only feed",
         ),
       ]),
     );

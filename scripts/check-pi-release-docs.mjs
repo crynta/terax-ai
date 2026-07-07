@@ -18,6 +18,7 @@ export const REQUIRED_RELEASE_READINESS_TEXT = [
   "pnpm run check:pi-surface-isolation",
   "TAURI_SIGNING_PRIVATE_KEY",
   "new-key signed release or test feed",
+  "docs/updater-key-rotation-smoke-report.md",
   "Maintainer must verify/configure signing secret values",
   "pnpm run inspect:updater-feed",
   "Node Pi sidecar deleted",

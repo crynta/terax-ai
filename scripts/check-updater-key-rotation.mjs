@@ -31,8 +31,25 @@ export const REQUIRED_UPDATER_DOC_TEXT = [
   "Fallback reinstall-announcement path",
   "new-key signed release or test feed",
   "pnpm run inspect:updater-feed",
+  "docs/updater-key-rotation-smoke-report.md",
   "End-to-end update verified on a new install and an old install against a signed test feed",
   "Fresh/pre-rotation acceptance still needs a signed release or test feed",
+];
+
+export const REQUIRED_UPDATER_SMOKE_TEXT = [
+  OLD_UPDATER_KEY_ID,
+  EXPECTED_UPDATER_KEY_ID,
+  "New install accepts the new-key feed",
+  "Pre-rotation install rejects a new-key-only feed",
+  "Chosen existing-install migration path works",
+  "Transition release path",
+  "Reinstall announcement path",
+  "TAURI_SIGNING_PRIVATE_KEY",
+  "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+  "pnpm run inspect:updater-feed",
+  "--expect-key 52D6B9847A3B8F15",
+  "--expect-key 3BABFD8AB60E3469",
+  "Do not paste private key values",
 ];
 
 async function readText(path) {
@@ -97,10 +114,10 @@ function checkReleaseWorkflow(text, errors) {
   return { action: actionMatch?.[0] ?? null };
 }
 
-function checkUpdaterDocs(text, errors) {
-  for (const requiredText of REQUIRED_UPDATER_DOC_TEXT) {
+function checkTextIncludes(text, path, requiredTexts, errors) {
+  for (const requiredText of requiredTexts) {
     if (!text.includes(requiredText)) {
-      errors.push(`docs/updater-key-rotation.md is missing required rotation note: ${requiredText}`);
+      errors.push(`${path} is missing required updater key rotation text: ${requiredText}`);
     }
   }
 }
@@ -123,6 +140,7 @@ export async function checkUpdaterKeyRotation(root = repoRoot) {
   const tauriConfigPath = resolve(root, "src-tauri/tauri.conf.json");
   const releaseWorkflowPath = resolve(root, ".github/workflows/release.yml");
   const updaterDocsPath = resolve(root, "docs/updater-key-rotation.md");
+  const updaterSmokePath = resolve(root, "docs/updater-key-rotation-smoke-report.md");
   const packageJsonPath = resolve(root, "package.json");
   const feedInspectorPath = resolve(root, "scripts/inspect-updater-feed.mjs");
 
@@ -142,9 +160,20 @@ export async function checkUpdaterKeyRotation(root = repoRoot) {
   }
 
   try {
-    checkUpdaterDocs(await readText(updaterDocsPath), errors);
+    checkTextIncludes(await readText(updaterDocsPath), "docs/updater-key-rotation.md", REQUIRED_UPDATER_DOC_TEXT, errors);
   } catch (error) {
     errors.push(`docs/updater-key-rotation.md could not be read: ${error.message}`);
+  }
+
+  try {
+    checkTextIncludes(
+      await readText(updaterSmokePath),
+      "docs/updater-key-rotation-smoke-report.md",
+      REQUIRED_UPDATER_SMOKE_TEXT,
+      errors,
+    );
+  } catch (error) {
+    errors.push(`docs/updater-key-rotation-smoke-report.md could not be read: ${error.message}`);
   }
 
   try {
