@@ -16,6 +16,7 @@
     "check:no-pi-sidecar": "node scripts/check-no-pi-sidecar.mjs",
     "check:pi-surface-isolation": "node scripts/check-pi-surface-isolation.mjs",
     "check:tauri-invokes": "node scripts/check-tauri-invokes.mjs",
+    "check:updater-key-rotation": "node scripts/check-updater-key-rotation.mjs",
     "check:bundle-size": "node scripts/check-bundle-size.mjs",
     "preview": "vite preview",
     "tauri": "tauri",

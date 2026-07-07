@@ -44,6 +44,9 @@ jobs:
       - name: Pi approval boundary
         run: pnpm check:pi-boundary
 
+      - name: Updater key rotation wiring
+        run: pnpm check:updater-key-rotation
+
       - name: Test
         run: pnpm test
 
