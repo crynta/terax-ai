@@ -6,9 +6,9 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest pushed head when this note was added: `35cb16a1`
+- Latest implementation head verified before this doc-only refresh: `44fdc063a`
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`
-- Visible checks: CodeRabbit only. GitHub Actions CI/e2e were not visible for the fork PR, so Linux e2e remains pending CI or maintainer-triggered workflow.
+- Visible checks: CodeRabbit only, currently pending on the fork PR. GitHub Actions CI/e2e were not visible for the fork PR, so Linux e2e remains pending CI or maintainer-triggered workflow.
 
 ## Local automated verification already run
 
@@ -47,6 +47,22 @@ pnpm lint
 cd src-tauri && cargo check --locked
 cd src-tauri && cargo test --locked provider_metadata_round_trips_through_history
 cd src-tauri && cargo test --locked mcp_native_tool
+```
+
+Targeted checks after the Pi-backed quick-ask composer flag landed:
+
+```bash
+pnpm exec vitest run src/modules/ai/lib/composerRuntime.test.ts
+pnpm exec tsc --noEmit
+pnpm test # 172 files, 1006 tests
+```
+
+Conflict audit after pushing `44fdc063a`:
+
+```bash
+git fetch origin main
+git rev-list --left-right --count origin/main...HEAD # 171 102
+git merge-tree --write-tree HEAD origin/main # exits 1 with broad conflicts
 ```
 
 ## Manual macOS Pi smoke checklist
