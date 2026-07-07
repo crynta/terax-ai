@@ -133,4 +133,4 @@ These require an interactive packaged app and/or real configured provider creden
 1. Resolve broad merge conflicts with `origin/main`; the direct local merge attempt was aborted to avoid unsafe conflict resolution.
 2. Trigger/confirm GitHub Actions CI, including Linux e2e. The mock-provider Pi approval spec cannot run on macOS because `tauri-driver` does not support WKWebView.
 3. Complete the manual macOS smoke checklist above with real credentials/endpoints.
-4. Before release, perform updater key rotation and verify both fresh and pre-rotation update paths per `docs/updater-key-rotation.md`.
+4. Before release, finish updater key rotation per `docs/updater-key-rotation.md`: maintainer must wire/verify the new signing secrets, decide whether the recommended transition release is possible with the old key, and verify fresh plus pre-rotation update paths against a signed feed.
