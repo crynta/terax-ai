@@ -25,6 +25,7 @@ export const REQUIRED_RELEASE_READINESS_TEXT = [
   "pnpm run check:tauri-invokes",
   "pnpm check:updater-key-rotation",
   "cargo clippy --locked --all-targets -- -D warnings",
+  "cargo test --locked --features openclicky",
   "10M",
   "1430.5 KB",
 ];
