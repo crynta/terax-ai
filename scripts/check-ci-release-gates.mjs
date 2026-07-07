@@ -19,6 +19,7 @@ export const REQUIRED_CI_RELEASE_GATES = [
   { label: "frontend coverage", text: "pnpm test:coverage" },
   { label: "frontend build", text: "pnpm build" },
   { label: "bundle-size budget", text: "pnpm check:bundle-size" },
+  { label: "Rust fmt", text: "cargo fmt -- --check" },
   { label: "Rust check", text: "cargo check --all-targets --locked" },
   { label: "Rust clippy", text: "cargo clippy --all-targets --locked -- -D warnings" },
   { label: "Rust nextest", text: "cargo nextest run --locked" },

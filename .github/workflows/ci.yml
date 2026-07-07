@@ -85,6 +85,10 @@ jobs:
         with:
           tool: cargo-nextest
 
+      - name: cargo fmt
+        working-directory: src-tauri
+        run: cargo fmt -- --check
+
       - name: cargo check
         working-directory: src-tauri
         run: cargo check --all-targets --locked
