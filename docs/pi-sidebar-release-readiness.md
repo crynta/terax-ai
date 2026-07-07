@@ -8,7 +8,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 - Head branch: `mehmetcanbudak:pi-sidebar`
 - Latest lightweight frontend verification head is `0237ff4d5` for the Pi boundary gates, typecheck, and full Vitest suite; the full release build matrix remains verified at `06ce0ddde`.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
-- Visible checks: across the latest tail pushes, `gh pr checks` has shown only CodeRabbit state (pass/skipped after review completion, or pending immediately after a docs push) and still no GitHub Actions runs. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
+- Visible checks: after the updater verifier push, `gh pr checks` showed CodeRabbit `pass` with "Review skipped: 869 files exceed the limit of 150" and still no GitHub Actions runs. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
 
 ## Completion audit checklist
 
