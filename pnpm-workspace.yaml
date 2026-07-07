@@ -2,6 +2,7 @@ packages: []
 
 overrides:
   fast-uri@<3.1.2: ">=3.1.2"
+  hono: 4.12.25
 
 minimumReleaseAge: 4320
 minimumReleaseAgeStrict: true

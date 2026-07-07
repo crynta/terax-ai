@@ -82,11 +82,18 @@ cd src-tauri && cargo clippy --locked --all-targets --features openclicky -- -D 
 cd src-tauri && cargo test --locked --features openclicky --test voice_tts
 ```
 
-Stage 3 mini-window routing checks after the Pi conversation surface guard landed:
+Stage 3 mini-window routing and CI audit checks after the Pi conversation surface guard landed:
 
 ```bash
+pnpm install --frozen-lockfile --offline
+pnpm audit --prod --audit-level high # exits 0; remaining advisories are low/moderate
+pnpm why hono --prod # resolves to hono@4.12.25 via pnpm-workspace override
 pnpm exec vitest run src/app/AppWorkspaceSurface.test.ts src/app/AppSidebars.pi-chat.test.tsx src/app/AppSidebars.preview.runtime.test.tsx src/modules/ai/lib/composerRuntime.test.ts
+pnpm run format:check
+pnpm exec tsc --noEmit
+pnpm run lint # exits successfully; existing warnings remain outside this change
 pnpm test # 175 files, 1012 tests
+pnpm run check:pi-boundary
 pnpm run build
 pnpm run check:bundle-size # total 1949.8 KB gzipped, budget 2050.8 KB
 ```
