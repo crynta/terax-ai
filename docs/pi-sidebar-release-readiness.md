@@ -133,7 +133,7 @@ Conflict and CI audit after pushing the Pi sidebar tail:
 
 ```bash
 git fetch origin main
-git rev-list --left-right --count origin/main...HEAD # 171 160
+git rev-list --left-right --count origin/main...HEAD # confirms the branch remains divergent from origin/main
 git merge-tree --write-tree HEAD origin/main # latest completion-audit-guard refresh still exits 1 with 99 conflicted paths; see docs/pi-sidebar-merge-conflict-audit.md
 gh pr checks 964 --repo crynta/terax-ai # after latest docs-only push: CodeRabbit-only status, no GitHub Actions visible
 gh workflow view CI --repo crynta/terax-ai --yaml # no workflow_dispatch trigger; PR/push to main only
