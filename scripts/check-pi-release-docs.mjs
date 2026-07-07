@@ -6,8 +6,10 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 export const REQUIRED_RELEASE_READINESS_TEXT = [
-  "mergeStateStatus=DIRTY",
-  "GitHub Actions and Linux e2e are not available",
+  "mergeStateStatus=BLOCKED",
+  "mergeable=MERGEABLE",
+  "conclusion=action_required",
+  "Maintainer must approve/re-run PR CI",
   "CI must independently run on the PR",
   "docs/pi-sidebar-manual-smoke-report.md",
   "Complete Phase C/D convergence",
@@ -22,8 +24,8 @@ export const REQUIRED_RELEASE_READINESS_TEXT = [
   "pnpm run check:no-pi-sidecar",
   "pnpm run check:tauri-invokes",
   "pnpm check:updater-key-rotation",
-  "11M",
-  "1949.8 KB",
+  "10M",
+  "1430.5 KB",
 ];
 
 export const REQUIRED_MANUAL_SMOKE_SECTIONS = [

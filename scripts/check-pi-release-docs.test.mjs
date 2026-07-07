@@ -41,7 +41,7 @@ describe("checkPiReleaseDocs", () => {
     const root = await mkdtemp(join(tmpdir(), "terax-pi-release-docs-blocker-"));
     await writeFixture(root, {
       "docs/pi-sidebar-release-readiness.md": REQUIRED_RELEASE_READINESS_TEXT.filter(
-        (line) => line !== "GitHub Actions and Linux e2e are not available",
+        (line) => line !== "Maintainer must approve/re-run PR CI",
       ).join("\n"),
       "docs/pi-sidebar-manual-smoke-report.md": manualSmokeDoc,
     });
@@ -52,7 +52,7 @@ describe("checkPiReleaseDocs", () => {
     expect(result.errors).toEqual(
       expect.arrayContaining([
         expect.stringContaining(
-          "docs/pi-sidebar-release-readiness.md missing required release-readiness text: GitHub Actions and Linux e2e are not available",
+          "docs/pi-sidebar-release-readiness.md missing required release-readiness text: Maintainer must approve/re-run PR CI",
         ),
       ]),
     );
