@@ -8,7 +8,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 - Head branch: `mehmetcanbudak:pi-sidebar`
 - Latest lightweight frontend verification head is `0237ff4d5` for the Pi boundary gates, typecheck, and full Vitest suite; the full release build matrix remains verified at `06ce0ddde`.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
-- Visible checks: after the branch-side `workflow_dispatch` CI update was pushed, `gh pr checks` still showed only CodeRabbit state and no GitHub Actions runs. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
+- Visible checks: after the dispatch-probe docs push, `gh pr checks` showed CodeRabbit `pass` with "Review skipped: 867 files exceed the limit of 150" and still no GitHub Actions runs. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
 
 ## Completion audit checklist
 
@@ -142,6 +142,7 @@ gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20 
 gh api repos/crynta/terax-ai/pulls/964 --jq '{mergeable, mergeable_state}' # false, dirty
 gh workflow run CI --repo mehmetcanbudak/terax-ai --ref pi-sidebar # could not find any workflows named CI
 gh workflow run CI --repo crynta/terax-ai --ref pi-sidebar # HTTP 403: Must have admin rights to Repository
+gh pr checks 964 --repo crynta/terax-ai # CodeRabbit pass; no GitHub Actions checks visible
 ```
 
 Static Pi boundary audits added after the PR check visibility refresh:
