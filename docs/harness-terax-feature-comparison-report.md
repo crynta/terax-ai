@@ -2,6 +2,8 @@
 
 Date: 2026-06-06
 
+> Status 2026-07-07: historical comparison only. Pi sidecar references reflect the repository state observed on 2026-06-06 and are not current. Use `docs/pi-runtime.md`, `docs/pi-sidebar-release-readiness.md`, and `docs/sota-plan-2026-06-11.md` for the current webview-native Pi runtime.
+
 ## Scope
 
 This report compares the current Terax repository with `/Users/mehmetcanbudak/Projects/harness`, which is the current Harness/Forma fork of T3 Code.

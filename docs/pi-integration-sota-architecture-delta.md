@@ -1,7 +1,9 @@
-# Pi Integration SOTA Architecture — Delta Report
+# Pi Integration SOTA Architecture Delta Report
 
 **Date:** 2026-06-10 (re-check)
 **Purpose:** Identify every discrepancy between the architecture doc and the actual codebase, plus new findings.
+
+> Status 2026-07-07: historical only. This delta report predates full Node Pi sidecar deletion and several webview-native follow-up fixes. Use `docs/pi-runtime.md`, `docs/pi-sidebar-release-readiness.md`, and `docs/sota-plan-2026-06-11.md` for current implementation truth.
 
 ---
 

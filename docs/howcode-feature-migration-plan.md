@@ -1,9 +1,11 @@
-# Howcode Feature Migration Plan — State of the Art for Terax-Pi
+# Howcode Feature Migration Plan, State of the Art for Terax-Pi
 
 **Target**: Integrate state-of-the-art howcode features into terax-pi.
 
 **Date**: 2026-06-10  
 **Version**: 2.0 (comprehensive)
+
+> Status 2026-07-07: historical comparison only. Some Terax architecture diagrams and sidecar references below predate the deleted Node Pi sidecar and the current webview-native runtime. Check `docs/pi-runtime.md` and `docs/pi-sidebar-release-readiness.md` before using any Pi-specific section as implementation guidance.
 
 ---
 

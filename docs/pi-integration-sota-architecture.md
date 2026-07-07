@@ -1,9 +1,11 @@
 # Pi Integration: SOTA Architecture
 
-## Status: Proposed — ready for implementation
+## Status: historical architecture draft, superseded by implementation
 
 Date: 2026-06-10
-Author: Architecture analysis — designed for handoff to another LLM for implementation
+Author: Architecture analysis for handoff to another LLM for implementation
+
+> Status 2026-07-07: use this as design history only. The Node Pi sidecar has since been deleted and the current shipping runtime is webview-native with Rust-owned tool execution. Current truth lives in `docs/pi-runtime.md`, `docs/pi-sidebar-release-readiness.md`, and `docs/sota-plan-2026-06-11.md`.
 
 ---
 

@@ -2,9 +2,11 @@
 
 Date: 2026-06-05
 
+> Status 2026-07-07: historical only. This roadmap predates the webview-native Pi convergence and still refers to the deleted Node Pi sidecar. Use `docs/pi-runtime.md`, `docs/sota-plan-2026-06-11.md`, and `docs/phase-c-convergence-plan.md` for current Pi runtime and convergence work.
+
 ## Purpose
 
-This is the short execution plan derived from the full audit in [`t3code-terax-comparison-report.md`](./t3code-terax-comparison-report.md). Use the full report for research detail. Use this file to decide what to build next.
+This is the short execution plan derived from the full audit in [`t3code-terax-comparison-report.md`](./t3code-terax-comparison-report.md). Use the full report for research detail. Do not use this file to decide current Pi runtime work without checking the newer docs above.
 
 Reviewed revisions:
 

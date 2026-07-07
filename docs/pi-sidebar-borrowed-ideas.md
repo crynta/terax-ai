@@ -1,14 +1,16 @@
-# Pi sidebar ideas to borrow while keeping the Node sidecar
+# Historical Pi sidebar ideas from the Node sidecar era
+
+> Status 2026-07-07: historical only. Do not use this file as current architecture guidance. The Node Pi sidecar and `sidecars/pi-host` were deleted. Current release truth lives in `docs/pi-runtime.md`, `docs/pi-sidebar-release-readiness.md`, `docs/pi-sidebar-verification.md`, and `docs/sota-plan-2026-06-11.md`.
 
 ## Purpose
 
-This document captures practical ideas Terax can borrow from `Dicklesworthstone/pi_agent_rust` and similar Rust native Pi efforts without replacing the current Terax Pi implementation.
+This document captured practical ideas Terax could borrow from `Dicklesworthstone/pi_agent_rust` and similar Rust native Pi efforts before the webview-native Pi runtime became the only shipping Pi path.
 
-The goal is to improve the current `pi-sidebar` branch by strengthening diagnostics, provider behavior, Rust-mediated tool security, runtime lifecycle, tests, and user experience while keeping the existing Node based Pi sidecar.
+The original goal was to improve the old `pi-sidebar` branch by strengthening diagnostics, provider behavior, Rust-mediated tool security, runtime lifecycle, tests, and user experience while keeping the existing Node based Pi sidecar. That goal is superseded by the current webview-native Pi implementation.
 
-## Current Terax Pi architecture
+## Historical Terax Pi architecture
 
-Terax currently integrates Pi through a Node sidecar, not through `pi_agent_rust`.
+At the time of this note, Terax integrated Pi through a Node sidecar, not through `pi_agent_rust`.
 
 Main files:
 
