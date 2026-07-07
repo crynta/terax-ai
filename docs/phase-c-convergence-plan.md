@@ -169,6 +169,18 @@ default after PR CI/e2e and manual smoke are green. `AppFloatingSurfaces` now
 has an explicit `usePiConversationSurface` guard, with a unit test proving the
 legacy mini window is not rendered for the Pi-backed path.
 
+**Residual surface audit 2026-07-07.** Current import search shows
+`AiChat`, `AiChatMessage`, `PlanDiffReview`, and `TodoStrip` are only reached
+through `AiMiniWindow` and their own tests. The Pi-backed path no longer mounts
+that window, so those pieces are isolated to the fallback chat-runtime path.
+Do not delete them until the Pi composer runtime becomes the default, because
+that fallback still needs `AiChatView`, plan review, and todo strips for legacy
+AI-SDK sessions. `PiTranscript` already owns the Pi-native replacement affordances
+for streaming transcript rows, tool approval, questions, regenerate, fork, and
+rollback. Legacy `planStore` and `todoStore` remain AI-SDK-only state and should
+not be migrated into the Pi session store until a Pi-native plan or todo event
+exists; otherwise Stage 3 would preserve legacy runtime state under a new name.
+
 ### Stage 4 - Runtime collapse and rename
 
 - Once no surface uses the AI-SDK loop for sessions, reduce Layer 2 to the

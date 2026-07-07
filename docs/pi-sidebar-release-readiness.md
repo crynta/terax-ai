@@ -8,7 +8,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 - Head branch: `mehmetcanbudak:pi-sidebar`
 - Latest repository head verified locally: `06ce0ddde` (subsequent readiness-note edits are docs-only)
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`
-- Visible checks: CodeRabbit only, currently pending on the fork PR. GitHub Actions CI/e2e were not visible for the fork PR, so Linux e2e remains pending CI or maintainer-triggered workflow.
+- Visible checks: CodeRabbit only, passing as of the latest `gh pr checks` query. GitHub Actions CI/e2e were not visible for the fork PR, so Linux e2e remains pending CI or maintainer-triggered workflow.
 
 ## Local automated verification already run
 
@@ -108,12 +108,15 @@ cd src-tauri && cargo clippy --locked --all-targets --features openclicky -- -D 
 cd src-tauri && cargo test --locked --features openclicky --test voice_tts # 2 tests
 ```
 
-Conflict audit after pushing the Pi sidebar tail:
+Conflict and CI audit after pushing the Pi sidebar tail:
 
 ```bash
 git fetch origin main
 git rev-list --left-right --count origin/main...HEAD # 171 106
 git merge-tree --write-tree HEAD origin/main # exits 1 with broad conflicts
+gh pr checks 964 --repo crynta/terax-ai # CodeRabbit pass; no Actions jobs listed
+gh run list --repo crynta/terax-ai --branch pi-sidebar --limit 10 # no runs returned
+gh api repos/crynta/terax-ai/pulls/964 --jq '{mergeable, mergeable_state}' # false, dirty
 ```
 
 ## Voice and 3D gating decision
