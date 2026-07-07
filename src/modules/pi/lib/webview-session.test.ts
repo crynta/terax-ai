@@ -31,7 +31,6 @@ const mockResolveAgentModel = vi.fn();
 vi.mock("@/modules/pi/bridge/pi-session", () => ({
   createTauriAgent: (...args: unknown[]) => mockCreateTauriAgent(...args),
   resolveAgentModel: (...args: unknown[]) => mockResolveAgentModel(...args),
-  USE_WEBVIEW_AGENT: true,
 }));
 
 const mockResolveSkillFiles = vi.fn();
@@ -672,8 +671,6 @@ describe("Pi session backend abstraction", () => {
     );
     const backend = getSessionBackend();
 
-    // Since USE_WEBVIEW_AGENT is true, the backend should be the webview one
-    expect(backend.useWebview).toBe(true);
     expect(backend.sessionCreate).toBeInstanceOf(Function);
     expect(backend.sessionSend).toBeInstanceOf(Function);
     expect(backend.sessionStop).toBeInstanceOf(Function);
@@ -694,8 +691,8 @@ describe("Pi session backend abstraction", () => {
     expect(backend1).toBe(backend2); // Same cached instance
 
     resetSessionBackend();
-    // After reset, a new object is created but with same shape
+    // After reset, the resolver still returns the active backend shape.
     const backend3 = getSessionBackend();
-    expect(backend3.useWebview).toBe(true);
+    expect(backend3.sessionCreate).toBeInstanceOf(Function);
   });
 });

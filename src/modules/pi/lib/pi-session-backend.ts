@@ -37,8 +37,6 @@ import {
 // ─── Session Backend Interface ───
 
 export type PiSessionBackend = {
-  readonly useWebview: boolean;
-
   sessionCreate(
     title: string | undefined,
     cwd: string | null | undefined,
@@ -106,8 +104,6 @@ export type PiSessionBackend = {
 // ─── Webview Backend ───
 
 const webviewBackend: PiSessionBackend = {
-  useWebview: true,
-
   async sessionCreate(title, cwd, providerConfig) {
     return webviewSessionCreate(title, cwd, providerConfig);
   },

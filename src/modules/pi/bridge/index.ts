@@ -10,11 +10,7 @@
  * This eliminates the 583 MB sidecar (Node.js + npm packages).
  */
 
-export {
-  createTauriAgent,
-  subscribeToAgent,
-  USE_WEBVIEW_AGENT,
-} from "./pi-session";
+export { createTauriAgent, subscribeToAgent } from "./pi-session";
 export type { TauriAgentOptions } from "./pi-session";
 export { piBridgeTools } from "./pi-tools";
 export { piFetch, installProxiedFetch, uninstallProxiedFetch } from "./pi-http";

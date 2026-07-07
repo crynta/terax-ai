@@ -598,12 +598,6 @@ export async function createTauriAgent(
   return agent;
 }
 
-/**
- * Compatibility constant for callers/tests that still check whether the
- * webview-native Pi agent is active. The Node Pi sidecar has been removed.
- */
-export const USE_WEBVIEW_AGENT = true;
-
 // ─── Event helpers ───
 
 /**

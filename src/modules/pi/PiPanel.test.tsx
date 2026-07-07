@@ -60,7 +60,6 @@ const tauriEventMock = vi.hoisted(() => ({
 vi.mock("@/modules/pi/lib/native", () => ({ piNative: piNativeMock }));
 vi.mock("@/modules/pi/lib/pi-session-backend", () => {
   const backend = {
-    useWebview: false,
     sessionCreate: (...args: unknown[]) =>
       piNativeMock.sessionCreate(...(args as [undefined, string, unknown])),
     sessionResume: (...args: unknown[]) =>

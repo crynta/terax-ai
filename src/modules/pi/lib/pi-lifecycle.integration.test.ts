@@ -24,7 +24,6 @@ vi.mock("@tauri-apps/api/event", () => ({
 const mockCreateTauriAgent = vi.fn();
 vi.mock("@/modules/pi/bridge/pi-session", () => ({
   createTauriAgent: (...args: unknown[]) => mockCreateTauriAgent(...args),
-  USE_WEBVIEW_AGENT: true,
 }));
 
 vi.mock("@/modules/pi/bridge/pi-skills", () => ({
