@@ -6,9 +6,9 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest lightweight code/config gate verification head is `b50066904` for the static Tauri invoke audit and no-Pi-sidecar audit; the full release build matrix remains verified at `06ce0ddde`.
+- Latest lightweight frontend verification head is `0237ff4d5` for the Pi boundary gates, typecheck, and full Vitest suite; the full release build matrix remains verified at `06ce0ddde`.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
-- Visible checks: at `b50066904`, `gh pr checks` showed CodeRabbit `pass` with "Review skipped: 865 files exceed the limit of 150" and no GitHub Actions runs. The base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
+- Visible checks: at `0237ff4d5`, `gh pr checks` showed CodeRabbit `pass` with "Review skipped: 867 files exceed the limit of 150" and no GitHub Actions runs. The base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
 
 ## Completion audit checklist
 
@@ -24,7 +24,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 | Done | Keep default app about 11 MB. | `pnpm tauri build --bundles app --no-sign --ci` and `du -sh src-tauri/target/release/bundle/macos/Terax.app` reported `11M`; JS gzipped bundle is `1949.8 KB` against `2050.8 KB`. | Re-run after conflict resolution and final merge. |
 | Done | Keep Node Pi sidecar deleted. | `pnpm run check:no-pi-sidecar` passed, scanning tracked paths and sidecar config for deleted `sidecars/pi-host`, bundled Node runtime paths, Pi-host build scripts, and Tauri resource entries. Only the existing `speech-recognizer` sidecar remains allowed. | Historical architecture docs still mention the old sidecar as past context, with historical banners where needed. |
 | Done | Ensure static frontend Tauri invokes have Rust handlers or intentional graceful degradation. | `pnpm run check:tauri-invokes` passed with 172 unique commands across 248 literal invokes and 32 documented feature-gated commands; `pnpm run check:pi-boundary` now chains this static invoke audit after the Pi approval boundary check. | Re-run after conflict resolution. |
-| Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. | CI must independently run on the PR. |
+| Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. Latest lightweight frontend recheck at `0237ff4d5`: `pnpm check:pi-boundary`, `pnpm exec tsc --noEmit`, and `pnpm test` passed with 178 files and 1023 tests. | CI must independently run on the PR. |
 
 ## Local automated verification already run
 
@@ -150,6 +150,14 @@ pnpm run check:pi-surface-isolation # scans 546 source files for legacy AI surfa
 pnpm run check:tauri-invokes # 172 commands, 248 literal invocations, 32 feature-gated commands documented
 pnpm run check:pi-boundary # chains Pi approval boundary, no-Pi-sidecar, surface-isolation, and static invoke audits
 pnpm exec vitest run scripts/check-pi-surface-isolation.test.mjs scripts/check-no-pi-sidecar.test.mjs scripts/check-pi-approval-boundary.test.mjs scripts/check-tauri-invokes.test.mjs # 13 tests pass
+```
+
+Latest lightweight frontend recheck after the approval e2e wiring docs update:
+
+```bash
+pnpm check:pi-boundary # approval boundary, no-Pi-sidecar, surface isolation, and invoke audits pass
+pnpm exec tsc --noEmit # exits 0
+pnpm test # 178 files, 1023 tests
 ```
 
 Updater feed inspection after the static invoke audit:
