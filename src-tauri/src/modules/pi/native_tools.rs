@@ -652,6 +652,72 @@ for await (const line of rl) {
     }
 
     #[test]
+    fn mcp_native_tool_caps_large_raw_data_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("mcp-server.js");
+        fs::write(
+            &script,
+            r#"
+const readline = require('node:readline');
+const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+function write(message) { process.stdout.write(JSON.stringify(message) + '\n'); }
+(async () => {
+for await (const line of rl) {
+  const request = JSON.parse(line);
+  if (request.method === 'initialize') {
+    write({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'large-artifact-mcp', version: '1.0.0' } } });
+  } else if (request.method === 'tools/list') {
+    write({ jsonrpc: '2.0', id: request.id, result: { tools: [{ name: 'image', description: 'Large image data', inputSchema: { type: 'object', properties: {} } }] } });
+  } else if (request.method === 'tools/call') {
+    const data = 'A'.repeat(300000) + 'RAWTAILSECRET';
+    write({ jsonrpc: '2.0', id: request.id, result: { content: [{ type: 'image', mimeType: 'image/png', data }], isError: false } });
+  }
+}
+})();
+"#,
+        )
+        .unwrap();
+        let mcp_state = Arc::new(crate::modules::mcp::McpState::default());
+        mcp_state
+            .connect_stdio(crate::modules::mcp::McpServerConfig {
+                id: "large-artifact".to_string(),
+                name: "Large artifact".to_string(),
+                transport: crate::modules::mcp::McpTransport::Stdio,
+                command: "node".to_string(),
+                args: vec![script.to_string_lossy().into_owned()],
+                cwd: Some(dir.path().to_string_lossy().into_owned()),
+                url: None,
+                oauth_token_env: None,
+                env: vec![],
+            })
+            .unwrap();
+        let store = crate::modules::artifacts::ArtifactStore::new(dir.path().join("artifacts"));
+        let context =
+            NativeToolContext::with_artifacts_and_mcp_state(store.clone(), None, Some(mcp_state));
+
+        let result = execute_with_context(
+            request(dir.path(), "mcp__large-artifact__image", json!({})),
+            &context,
+        )
+        .unwrap();
+        let details = serde_json::to_string(&result.details).unwrap();
+        let artifacts = store.list("pi-test").unwrap();
+        let artifact = store.get("pi-test", &artifacts[0].slug, None).unwrap();
+
+        assert_eq!(artifacts.len(), 1);
+        assert!(artifact.content.contains("\"dataOmitted\":true"));
+        assert!(artifact.content.contains("\"rawDataBytes\":300013"));
+        assert!(artifact.content.contains("\"maxRawDataBytes\":"));
+        assert!(
+            artifact.summary.content_bytes < 1024,
+            "{}",
+            artifact.content
+        );
+        assert!(!artifact.content.contains("RAWTAILSECRET"));
+        assert!(!details.contains("RAWTAILSECRET"));
+    }
+
+    #[test]
     fn mcp_native_tool_redacts_binary_result_metadata() {
         let dir = tempfile::tempdir().unwrap();
         let script = dir.path().join("mcp-server.js");

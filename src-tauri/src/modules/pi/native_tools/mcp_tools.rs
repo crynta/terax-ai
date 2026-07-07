@@ -6,6 +6,8 @@ use crate::modules::artifacts::{
 
 use super::{artifact_tools, NativeToolContext, NativeToolRequest, NativeToolResult};
 
+const MCP_RAW_DATA_ARTIFACT_LIMIT_BYTES: usize = 256 * 1024;
+
 pub(super) fn execute_mcp_tool(
     request: &NativeToolRequest,
     tool_name: &str,
@@ -80,17 +82,7 @@ fn create_mcp_result_artifacts(
         if part.content_type == "text" {
             continue;
         }
-        let artifact_content = json!({
-            "source": "mcp",
-            "toolName": tool_name,
-            "toolCallId": request.tool_call_id,
-            "contentIndex": index,
-            "type": part.content_type,
-            "mimeType": part.mime_type,
-            "encoding": "base64",
-            "data": data,
-        })
-        .to_string();
+        let artifact_content = mcp_artifact_content(request, tool_name, index, part, data);
         let artifact = store
             .create(
                 &request.session_id,
@@ -110,6 +102,38 @@ fn create_mcp_result_artifacts(
         artifacts.push(artifact.summary);
     }
     Ok(artifacts)
+}
+
+fn mcp_artifact_content(
+    request: &NativeToolRequest,
+    tool_name: &str,
+    index: usize,
+    part: &crate::modules::mcp::McpContent,
+    data: &str,
+) -> String {
+    let raw_data_bytes = data.len();
+    let mut payload = json!({
+        "source": "mcp",
+        "toolName": tool_name,
+        "toolCallId": request.tool_call_id,
+        "contentIndex": index,
+        "type": part.content_type,
+        "mimeType": part.mime_type,
+        "encoding": "base64",
+        "rawDataBytes": raw_data_bytes,
+    });
+
+    if raw_data_bytes <= MCP_RAW_DATA_ARTIFACT_LIMIT_BYTES {
+        payload["data"] = json!(data);
+    } else {
+        payload["dataOmitted"] = json!(true);
+        payload["maxRawDataBytes"] = json!(MCP_RAW_DATA_ARTIFACT_LIMIT_BYTES);
+        payload["omittedReason"] = json!(format!(
+            "MCP raw data exceeded {MCP_RAW_DATA_ARTIFACT_LIMIT_BYTES} bytes"
+        ));
+    }
+
+    payload.to_string()
 }
 
 fn mcp_artifact_slug(tool_call_id: &str, index: usize) -> String {
