@@ -6,7 +6,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest implementation head with local checks: `53476165b`
+- Latest code head with local checks: `0e0ac46ff` (subsequent readiness-note edits are docs-only)
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`
 - Visible checks: CodeRabbit only, currently pending on the fork PR. GitHub Actions CI/e2e were not visible for the fork PR, so Linux e2e remains pending CI or maintainer-triggered workflow.
 
@@ -68,6 +68,9 @@ pnpm exec vitest run src/modules/ai/lib/featureGates.test.ts src/modules/ai/lib/
 pnpm test # 174 files, 1010 tests
 pnpm run build
 pnpm run check:bundle-size # total 1949.5 KB gzipped, budget 2050.8 KB
+pnpm tauri build --bundles app --no-sign --ci
+# du -sh src-tauri/target/release/bundle/macos/Terax.app src-tauri/target/release/bundle/macos/Terax.app.tar.gz
+# 11M Terax.app, 7.0M Terax.app.tar.gz
 cd src-tauri && cargo fmt --check # exits successfully; rustfmt warns about ignored nightly-only config keys
 cd src-tauri && cargo test --locked
 cd src-tauri && cargo test --locked --test capability_registry
@@ -79,7 +82,7 @@ cd src-tauri && cargo clippy --locked --all-targets --features openclicky -- -D 
 cd src-tauri && cargo test --locked --features openclicky --test voice_tts
 ```
 
-Conflict audit after pushing `44fdc063a`:
+Conflict audit after pushing the Pi sidebar tail:
 
 ```bash
 git fetch origin main
