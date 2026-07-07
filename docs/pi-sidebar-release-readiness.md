@@ -33,7 +33,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 ## Latest local automated verification
 
-Post-merge/current-head checks run from `b73b79aa1501d36c888d609affd4b9be644b8c58`:
+Post-merge checks for the current code path (the later commits are release-readiness documentation/checker refreshes):
 
 ```bash
 pnpm install --frozen-lockfile --offline # refreshed node_modules to the post-merge lockfile; no downloads
