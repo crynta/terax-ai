@@ -1,6 +1,6 @@
 # Pi sidebar merge conflict audit
 
-Generated on 2026-07-07 from local `pi-sidebar` head `41e477d53fb6d3532061349042a1fae6b5f6d896` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`.
+Generated on 2026-07-07 and refreshed after the static invoke audit from local `pi-sidebar` head `8321c644bcf0a6fb10fe5a3877ca87e96c9f7174` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`.
 
 ## Commands used
 
@@ -17,7 +17,7 @@ gh run list --repo mehmetcanbudak/terax-ai --limit 10
 
 ## Result
 
-`git merge-tree --write-tree HEAD origin/main` exits `1` with 99 conflicted paths. This is not a safe local auto-merge. The conflicts span GitHub Actions, package and lock files, Rust backend modules, the app shell, legacy AI surfaces, command palette, editor, explorer, header, sidebar, status bar, tabs, terminal, theme, settings, styles, and Vite config.
+`git merge-tree --write-tree HEAD origin/main` still exits `1` with 99 conflicted paths. This is not a safe local auto-merge. The conflicts span GitHub Actions, package and lock files, Rust backend modules, the app shell, legacy AI surfaces, command palette, editor, explorer, header, sidebar, status bar, tabs, terminal, theme, settings, styles, and Vite config.
 
 CI is also externally blocked for this fork PR:
 
