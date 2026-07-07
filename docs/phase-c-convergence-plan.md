@@ -181,6 +181,13 @@ rollback. Legacy `planStore` and `todoStore` remain AI-SDK-only state and should
 not be migrated into the Pi session store until a Pi-native plan or todo event
 exists; otherwise Stage 3 would preserve legacy runtime state under a new name.
 
+**Static isolation guard 2026-07-07.** `scripts/check-pi-surface-isolation.mjs`
+now fails if production code imports `AiChat`, `AiChatMessage`,
+`PlanDiffReview`, or `TodoStrip` outside the legacy mini-window chain. It is
+chained through `pnpm run check:pi-boundary` so the deferred fallback cannot
+silently grow new production entry points while the Pi composer runtime remains
+behind its flag.
+
 ### Stage 4 - Runtime collapse and rename
 
 - Once no surface uses the AI-SDK loop for sessions, reduce Layer 2 to the
