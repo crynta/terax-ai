@@ -5,11 +5,38 @@
     "clientKind": "git",
     "useIgnoreFile": true
   },
+  "files": {
+    "includes": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "!src/components/ui/**",
+      "!src/components/ai-elements/**"
+    ]
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
     "indentWidth": 2,
     "lineWidth": 80
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": {
+          "level": "on",
+          "options": {
+            "groups": [
+              ":NODE:",
+              ["@/**"],
+              ":PACKAGE:",
+              ":ALIAS:",
+              ":PATH:"
+            ]
+          }
+        }
+      }
+    }
   },
   "javascript": {
     "formatter": {
@@ -18,45 +45,46 @@
       "trailingCommas": "all"
     }
   },
-  "css": {
-    "parser": {
-      "tailwindDirectives": true
-    }
-  },
-  "overrides": [
-    {
-      "includes": ["src/components/ui/**", "src/components/ai-elements/**"],
-      "linter": { "enabled": false }
-    }
-  ],
   "linter": {
     "enabled": true,
     "rules": {
       "recommended": true,
-      "suspicious": {
-        "noControlCharactersInRegex": "off",
-        "noArrayIndexKey": "warn"
-      },
       "a11y": {
-        "noStaticElementInteractions": "warn",
-        "noLabelWithoutControl": "warn",
-        "useAriaPropsSupportedByRole": "warn",
         "useSemanticElements": "warn",
-        "useMediaCaption": "warn",
         "useKeyWithClickEvents": "warn",
         "useFocusableInteractive": "warn",
-        "noSvgWithoutTitle": "warn"
+        "noStaticElementInteractions": "warn",
+        "useAriaPropsSupportedByRole": "warn",
+        "noSvgWithoutTitle": "warn",
+        "noNoninteractiveTabindex": "warn",
+        "noLabelWithoutControl": "warn"
       },
-      "style": {
-        "noNonNullAssertion": "off",
-        "noDescendingSpecificity": "warn"
+      "suspicious": {
+        "noControlCharactersInRegex": "off",
+        "noArrayIndexKey": "warn",
+        "noAssignInExpressions": "warn",
+        "useIterableCallbackReturn": "warn",
+        "noTsIgnore": "error"
       },
       "complexity": {
-        "useOptionalChain": "warn"
+        "useOptionalChain": "warn",
+        "useIndexOf": "warn",
+        "noBannedTypes": "warn"
+      },
+      "style": {
+        "useImportType": "error",
+        "noNonNullAssertion": "warn",
+        "useTemplate": "warn",
+        "useExportType": "error"
       },
       "correctness": {
         "useExhaustiveDependencies": "warn",
-        "useHookAtTopLevel": "warn"
+        "useHookAtTopLevel": "warn",
+        "useParseIntRadix": "warn",
+        "noUnusedVariables": "warn"
+      },
+      "performance": {
+        "noAccumulatingSpread": "warn"
       }
     }
   }

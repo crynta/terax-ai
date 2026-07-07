@@ -103,6 +103,54 @@ pub fn fs_copy_file(
     })
 }
 
+fn copy_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if src.is_dir() {
+        std::fs::create_dir(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            copy_recursive(&entry.path(), &dst.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else {
+        std::fs::copy(src, dst).map(|_| ())
+    }
+}
+
+/// Copies external files/dirs into a destination directory, recursively for
+/// dirs. Sources are absolute OS paths (from a drag-drop); only the destination
+/// is workspace-resolved. Refuses to overwrite existing entries.
+#[tauri::command]
+pub fn fs_copy(
+    app_audit: tauri::State<AppCapabilityState>,
+    sources: Vec<String>,
+    dest_dir: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<(), String> {
+    app_audit.execute_app_capability("app.file_write", || {
+        let workspace = WorkspaceEnv::from_option(workspace);
+        let dest = resolve_path(&dest_dir, &workspace);
+        for source in &sources {
+            let src = std::path::PathBuf::from(source);
+            let name = src
+                .file_name()
+                .ok_or_else(|| format!("invalid source: {source}"))?;
+            let target = dest.join(name);
+            if target.exists() {
+                return Err(format!("already exists: {}", target.display()));
+            }
+            copy_recursive(&src, &target).map_err(|e| {
+                log::warn!(
+                    "fs_copy({} -> {}) failed: {e}",
+                    src.display(),
+                    target.display()
+                );
+                e.to_string()
+            })?;
+        }
+        Ok(())
+    })
+}
+
 /// Opens a file or directory using the operating system default app.
 pub fn fs_open_file_inner(path: String, workspace: WorkspaceEnv) -> Result<(), String> {
     let p = resolve_path(&path, &workspace);

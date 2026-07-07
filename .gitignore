@@ -19,6 +19,7 @@ dist-ssr
 sidecars/node/.dist-tmp-*
 sidecars/pi-host/.dist-tmp-*
 *.local
+stats.html
 
 # Local agent/session state
 .omc/
@@ -41,6 +42,7 @@ renderSidebarPanel
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea
 .DS_Store
 *.suo

@@ -1,18 +1,20 @@
-import AppleIcon from "@hugeicons/core-free-icons/AppleIcon";
-import ChatGptIcon from "@hugeicons/core-free-icons/ChatGptIcon";
-import ClaudeIcon from "@hugeicons/core-free-icons/ClaudeIcon";
-import ComputerIcon from "@hugeicons/core-free-icons/ComputerIcon";
-import CpuIcon from "@hugeicons/core-free-icons/CpuIcon";
-import DeepseekIcon from "@hugeicons/core-free-icons/DeepseekIcon";
-import FlashIcon from "@hugeicons/core-free-icons/FlashIcon";
-import GlobeIcon from "@hugeicons/core-free-icons/GlobeIcon";
-import GoogleGeminiIcon from "@hugeicons/core-free-icons/GoogleGeminiIcon";
-import Grok02Icon from "@hugeicons/core-free-icons/Grok02Icon";
-import MistralIcon from "@hugeicons/core-free-icons/MistralIcon";
-import PlugIcon from "@hugeicons/core-free-icons/Plug01Icon";
-import ServerStack01Icon from "@hugeicons/core-free-icons/ServerStack01Icon";
-import { HugeiconsIcon } from "@hugeicons/react";
 import type { ProviderId } from "@/modules/ai/config";
+import {
+  AppleIcon,
+  ChatGptIcon,
+  ClaudeIcon,
+  ComputerIcon,
+  CpuIcon,
+  DeepseekIcon,
+  FlashIcon,
+  GlobeIcon,
+  GoogleGeminiIcon,
+  Grok02Icon,
+  MistralIcon,
+  PlugIcon,
+  ServerStack01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 const ICON_BY_PROVIDER = {
   openai: ChatGptIcon,
@@ -31,16 +33,19 @@ const ICON_BY_PROVIDER = {
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 type Props = {
-  provider: string;
+  provider: ProviderId | string;
   size?: number;
   className?: string;
 };
 
+function iconForProvider(provider: ProviderId | string) {
+  return ICON_BY_PROVIDER[provider as ProviderId] ?? PlugIcon;
+}
+
 export function ProviderIcon({ provider, size = 14, className }: Props) {
-  const icon = ICON_BY_PROVIDER[provider as ProviderId] ?? PlugIcon;
   return (
     <HugeiconsIcon
-      icon={icon}
+      icon={iconForProvider(provider)}
       size={size}
       strokeWidth={1.75}
       className={className}

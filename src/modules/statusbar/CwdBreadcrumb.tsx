@@ -1,10 +1,3 @@
-import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
-import Folder01Icon from "@hugeicons/core-free-icons/Folder01Icon";
-import Home03Icon from "@hugeicons/core-free-icons/Home03Icon";
-import MoreHorizontalIcon from "@hugeicons/core-free-icons/MoreHorizontalIcon";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import {
   Breadcrumb,
@@ -17,12 +10,20 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import {
+  ArrowDown01Icon,
+  Folder01Icon,
+  Home03Icon,
+  MoreHorizontalIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useState } from "react";
 import { segmentsFromCwd } from "./lib/pathUtils";
 
 type Props = {
@@ -228,25 +229,21 @@ function CurrentSegmentDropdown({
             {error ?? "No subfolders"}
           </div>
         ) : (
-          <DropdownMenuGroup>
-            {children.map((name) => (
-              <DropdownMenuItem
-                key={name}
-                onSelect={() =>
-                  onCd(
-                    path.endsWith("/") ? `${path}${name}` : `${path}/${name}`,
-                  )
-                }
-              >
-                <HugeiconsIcon
-                  icon={Folder01Icon}
-                  className="text-muted-foreground"
-                  strokeWidth={1.75}
-                />
-                {name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuGroup>
+          children.map((name) => (
+            <DropdownMenuItem
+              key={name}
+              onSelect={() =>
+                onCd(path.endsWith("/") ? `${path}${name}` : `${path}/${name}`)
+              }
+            >
+              <HugeiconsIcon
+                icon={Folder01Icon}
+                className="size-3.5 text-muted-foreground"
+                strokeWidth={1.75}
+              />
+              {name}
+            </DropdownMenuItem>
+          ))
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -278,23 +275,19 @@ function CollapsedSegments({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
-            <DropdownMenuGroup>
-              {segments.map((s) => (
-                <DropdownMenuItem
-                  key={s.fullPath}
-                  onSelect={() => onCd(s.fullPath)}
-                >
-                  <HugeiconsIcon
-                    icon={s.isHome ? Home03Icon : Folder01Icon}
-                    className="text-muted-foreground"
-                    strokeWidth={1.75}
-                  />
-                  <span className="truncate">
-                    {s.isHome ? "Home" : s.label}
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuGroup>
+            {segments.map((s) => (
+              <DropdownMenuItem
+                key={s.fullPath}
+                onSelect={() => onCd(s.fullPath)}
+              >
+                <HugeiconsIcon
+                  icon={s.isHome ? Home03Icon : Folder01Icon}
+                  className="size-3.5 text-muted-foreground"
+                  strokeWidth={1.75}
+                />
+                <span className="truncate">{s.isHome ? "Home" : s.label}</span>
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
       </BreadcrumbItem>

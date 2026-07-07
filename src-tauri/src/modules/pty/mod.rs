@@ -2,8 +2,6 @@
 
 mod agent_detect;
 mod da_filter;
-#[cfg(windows)]
-mod job;
 mod session;
 pub(crate) mod shell_init;
 
@@ -37,6 +35,12 @@ impl Default for PtyState {
     }
 }
 
+impl PtyState {
+    fn take(&self, id: u32) -> Result<Option<Arc<Session>>, String> {
+        Ok(sync::write(&self.sessions, "pty sessions")?.remove(&id))
+    }
+}
+
 #[tauri::command]
 #[expect(
     clippy::too_many_arguments,
@@ -51,22 +55,29 @@ pub async fn pty_open(
     rows: u16,
     cwd: Option<String>,
     workspace: Option<WorkspaceEnv>,
+    blocks: Option<bool>,
+    shell: Option<String>,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<u32, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
-    authorize_user_spawn_cwd(&registry, cwd.as_deref(), &workspace).map_err(|e| {
-        log::warn!("pty_open: cwd rejected: {e}");
-        e
-    })?;
+    let cwd = authorize_user_spawn_cwd(&registry, cwd.as_deref(), &workspace)
+        .map(|cwd| cwd.map(|path| crate::modules::fs::to_canon(&path)))
+        .map_err(|e| {
+            log::warn!("pty_open: cwd rejected: {e}");
+            e
+        })?;
+    let blocks = blocks.unwrap_or(false);
     // Opening an interactive shell is the highest-risk OS surface; record it in
     // the capability audit so the ledger accounts for every shell spawn.
     app_audit
         .execute_app_capability_async("app.pty_session", || async move {
             let id = state.next_id.fetch_add(1, Ordering::Relaxed);
             let session = tauri::async_runtime::spawn_blocking(move || {
-                session::spawn(id, app, cols, rows, cwd, workspace, on_data, on_exit)
-                    .map(|(s, _)| s)
+                session::spawn(
+                    id, app, cols, rows, cwd, workspace, blocks, shell, on_data, on_exit,
+                )
+                .map(|(s, _)| s)
             })
             .await
             .map_err(|e| {
@@ -78,6 +89,18 @@ pub async fn pty_open(
                 e
             })?;
             sync::write(&state.sessions, "pty sessions")?.insert(id, session);
+            let exited = sync::read(&state.sessions, "pty sessions")?
+                .get(&id)
+                .map(|session| session.exited.load(Ordering::Acquire))
+                .unwrap_or(false);
+            if exited {
+                if let Some(session) = state.take(id)? {
+                    thread::Builder::new()
+                        .name(format!("terax-pty-drop-{id}"))
+                        .spawn(move || session::drop_session(session))
+                        .map_err(|error| format!("spawn pty drop thread: {error}"))?;
+                }
+            }
             log::info!("pty opened id={id} cols={cols} rows={rows}");
             Ok(id)
         })
@@ -85,7 +108,19 @@ pub async fn pty_open(
 }
 
 #[tauri::command]
-pub fn pty_write(state: tauri::State<PtyState>, id: u32, data: String) -> Result<(), String> {
+pub fn pty_write(
+    state: tauri::State<PtyState>,
+    request: tauri::ipc::Request,
+) -> Result<(), String> {
+    let id: u32 = request
+        .headers()
+        .get("x-pty-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| "pty_write: missing x-pty-id header".to_string())?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("pty_write: expected raw body".to_string());
+    };
     let session = {
         let sessions = sync::read(&state.sessions, "pty sessions")?;
         sessions.get(&id).cloned().ok_or_else(|| {
@@ -95,11 +130,8 @@ pub fn pty_write(state: tauri::State<PtyState>, id: u32, data: String) -> Result
     };
     // Bind to a local so the MutexGuard temporary drops before `session` -
     // see rustc note on tail-expression temporary drop order.
-    let result = session
-        .writer
-        .lock()
-        .map_err(|error| format!("pty writer lock failed: {error}"))?
-        .write_all(data.as_bytes())
+    let result = sync::mutex(&session.writer, "pty writer")?
+        .write_all(bytes)
         .map_err(|e| {
             // EPIPE is expected if the child already exited.
             log::debug!("pty_write id={id} failed: {e}");
@@ -180,6 +212,31 @@ pub fn pty_has_foreground_process(state: tauri::State<PtyState>, id: u32) -> Res
         return Ok(false);
     }
     Ok(shell_has_children(shell_pid))
+}
+
+// Foreground-only check for the renderer hibernation path: true while a job
+// owns the tty (tcgetpgrp != shell pgid). Stricter and cheaper than
+// pty_has_foreground_process, which counts background children too.
+#[tauri::command]
+pub fn pty_has_foreground_job(state: tauri::State<PtyState>, id: u32) -> Result<bool, String> {
+    let sessions = sync::read(&state.sessions, "pty sessions")?;
+    let session = sessions.get(&id).ok_or_else(|| {
+        log::warn!("pty_has_foreground_job: unknown session id={id}");
+        "no session".to_string()
+    })?;
+    let shell_pid = session.shell_pid;
+    if shell_pid == 0 {
+        return Ok(false);
+    }
+    #[cfg(unix)]
+    {
+        let leader = sync::mutex(&session.master, "pty master")?.process_group_leader();
+        Ok(matches!(leader, Some(pid) if pid > 0 && pid as u32 != shell_pid))
+    }
+    #[cfg(windows)]
+    {
+        Ok(shell_has_children(shell_pid))
+    }
 }
 
 #[cfg(all(unix, target_os = "linux"))]
@@ -266,4 +323,14 @@ pub fn pty_close_all(state: tauri::State<PtyState>) -> Result<usize, String> {
         log::info!("pty_close_all: reaped {count} orphaned session(s)");
     }
     Ok(count)
+}
+
+#[tauri::command]
+pub fn pty_shell_name() -> String {
+    shell_init::detect_shell_name()
+}
+
+#[tauri::command]
+pub fn pty_list_shells() -> Vec<shell_init::ShellInfo> {
+    shell_init::list_shells()
 }

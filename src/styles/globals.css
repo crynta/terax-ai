@@ -9,166 +9,132 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-heading: var(--font-sans);
-  --font-sans: "Inter Variable", sans-serif;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+    --font-heading: var(--font-sans);
+    --font-sans: 'Inter Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.148 0.004 228.8);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.148 0.004 228.8);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.148 0.004 228.8);
-  --primary: oklch(0.218 0.008 223.9);
-  --primary-foreground: oklch(0.987 0.002 197.1);
-  --secondary: oklch(0.963 0.002 197.1);
-  --secondary-foreground: oklch(0.218 0.008 223.9);
-  --muted: oklch(0.963 0.002 197.1);
-  --muted-foreground: oklch(0.45 0.017 213.2);
-  --accent: oklch(0.963 0.002 197.1);
-  --accent-foreground: oklch(0.218 0.008 223.9);
-  --destructive: oklch(0.577 0.245 27.325);
-  --status-success: oklch(0.54 0.12 154);
-  --status-success-foreground: oklch(0.37 0.09 154);
-  --status-success-surface: oklch(0.54 0.12 154 / 12%);
-  --status-success-border: oklch(0.54 0.12 154 / 32%);
-  --status-warning: oklch(0.63 0.13 75);
-  --status-warning-foreground: oklch(0.45 0.1 75);
-  --status-warning-surface: oklch(0.63 0.13 75 / 13%);
-  --status-warning-border: oklch(0.63 0.13 75 / 32%);
-  --status-info: oklch(0.56 0.12 230);
-  --status-info-foreground: oklch(0.39 0.1 230);
-  --status-info-surface: oklch(0.56 0.12 230 / 12%);
-  --status-info-border: oklch(0.56 0.12 230 / 32%);
-  --border: oklch(0.925 0.005 214.3);
-  --input: oklch(0.925 0.005 214.3);
-  --ring: oklch(0.723 0.014 214.4);
-  --chart-1: oklch(0.872 0.007 219.6);
-  --chart-2: oklch(0.56 0.021 213.5);
-  --chart-3: oklch(0.45 0.017 213.2);
-  --chart-4: oklch(0.378 0.015 216);
-  --chart-5: oklch(0.275 0.011 216.9);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.987 0.002 197.1);
-  --sidebar-foreground: oklch(0.148 0.004 228.8);
-  --sidebar-primary: oklch(0.218 0.008 223.9);
-  --sidebar-primary-foreground: oklch(0.987 0.002 197.1);
-  --sidebar-accent: oklch(0.963 0.002 197.1);
-  --sidebar-accent-foreground: oklch(0.218 0.008 223.9);
-  --sidebar-border: oklch(0.925 0.005 214.3);
-  --sidebar-ring: oklch(0.723 0.014 214.4);
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.148 0.004 228.8);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.148 0.004 228.8);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.148 0.004 228.8);
+    --primary: oklch(0.218 0.008 223.9);
+    --primary-foreground: oklch(0.987 0.002 197.1);
+    --secondary: oklch(0.963 0.002 197.1);
+    --secondary-foreground: oklch(0.218 0.008 223.9);
+    --muted: oklch(0.963 0.002 197.1);
+    --muted-foreground: oklch(0.56 0.021 213.5);
+    --accent: oklch(0.963 0.002 197.1);
+    --accent-foreground: oklch(0.218 0.008 223.9);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.925 0.005 214.3);
+    --input: oklch(0.925 0.005 214.3);
+    --ring: oklch(0.723 0.014 214.4);
+    --chart-1: oklch(0.872 0.007 219.6);
+    --chart-2: oklch(0.56 0.021 213.5);
+    --chart-3: oklch(0.45 0.017 213.2);
+    --chart-4: oklch(0.378 0.015 216);
+    --chart-5: oklch(0.275 0.011 216.9);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.987 0.002 197.1);
+    --sidebar-foreground: oklch(0.148 0.004 228.8);
+    --sidebar-primary: oklch(0.218 0.008 223.9);
+    --sidebar-primary-foreground: oklch(0.987 0.002 197.1);
+    --sidebar-accent: oklch(0.963 0.002 197.1);
+    --sidebar-accent-foreground: oklch(0.218 0.008 223.9);
+    --sidebar-border: oklch(0.925 0.005 214.3);
+    --sidebar-ring: oklch(0.723 0.014 214.4);
 }
 
 .dark {
-  --background: oklch(0.148 0.004 228.8);
-  --foreground: oklch(0.987 0.002 197.1);
-  --card: oklch(0.218 0.008 223.9);
-  --card-foreground: oklch(0.987 0.002 197.1);
-  --popover: oklch(0.218 0.008 223.9);
-  --popover-foreground: oklch(0.987 0.002 197.1);
-  --primary: oklch(0.925 0.005 214.3);
-  --primary-foreground: oklch(0.218 0.008 223.9);
-  --secondary: oklch(0.275 0.011 216.9);
-  --secondary-foreground: oklch(0.987 0.002 197.1);
-  --muted: oklch(0.275 0.011 216.9);
-  --muted-foreground: oklch(0.723 0.014 214.4);
-  --accent: oklch(0.275 0.011 216.9);
-  --accent-foreground: oklch(0.987 0.002 197.1);
-  --destructive: oklch(0.704 0.191 22.216);
-  --status-success: oklch(0.72 0.13 154);
-  --status-success-foreground: oklch(0.82 0.12 154);
-  --status-success-surface: oklch(0.72 0.13 154 / 16%);
-  --status-success-border: oklch(0.72 0.13 154 / 34%);
-  --status-warning: oklch(0.78 0.14 75);
-  --status-warning-foreground: oklch(0.84 0.13 75);
-  --status-warning-surface: oklch(0.78 0.14 75 / 16%);
-  --status-warning-border: oklch(0.78 0.14 75 / 34%);
-  --status-info: oklch(0.74 0.13 230);
-  --status-info-foreground: oklch(0.82 0.12 230);
-  --status-info-surface: oklch(0.74 0.13 230 / 16%);
-  --status-info-border: oklch(0.74 0.13 230 / 34%);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.56 0.021 213.5);
-  --chart-1: oklch(0.872 0.007 219.6);
-  --chart-2: oklch(0.56 0.021 213.5);
-  --chart-3: oklch(0.45 0.017 213.2);
-  --chart-4: oklch(0.378 0.015 216);
-  --chart-5: oklch(0.275 0.011 216.9);
-  --sidebar: oklch(0.218 0.008 223.9);
-  --sidebar-foreground: oklch(0.987 0.002 197.1);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.987 0.002 197.1);
-  --sidebar-accent: oklch(0.275 0.011 216.9);
-  --sidebar-accent-foreground: oklch(0.987 0.002 197.1);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.56 0.021 213.5);
+    --background: oklch(0.148 0.004 228.8);
+    --foreground: oklch(0.987 0.002 197.1);
+    --card: oklch(0.218 0.008 223.9);
+    --card-foreground: oklch(0.987 0.002 197.1);
+    --popover: oklch(0.218 0.008 223.9);
+    --popover-foreground: oklch(0.987 0.002 197.1);
+    --primary: oklch(0.925 0.005 214.3);
+    --primary-foreground: oklch(0.218 0.008 223.9);
+    --secondary: oklch(0.275 0.011 216.9);
+    --secondary-foreground: oklch(0.987 0.002 197.1);
+    --muted: oklch(0.275 0.011 216.9);
+    --muted-foreground: oklch(0.723 0.014 214.4);
+    --accent: oklch(0.275 0.011 216.9);
+    --accent-foreground: oklch(0.987 0.002 197.1);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.56 0.021 213.5);
+    --chart-1: oklch(0.872 0.007 219.6);
+    --chart-2: oklch(0.56 0.021 213.5);
+    --chart-3: oklch(0.45 0.017 213.2);
+    --chart-4: oklch(0.378 0.015 216);
+    --chart-5: oklch(0.275 0.011 216.9);
+    --sidebar: oklch(0.218 0.008 223.9);
+    --sidebar-foreground: oklch(0.987 0.002 197.1);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.987 0.002 197.1);
+    --sidebar-accent: oklch(0.275 0.011 216.9);
+    --sidebar-accent-foreground: oklch(0.987 0.002 197.1);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.56 0.021 213.5);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
-  }
+    }
   body {
     @apply bg-background text-foreground;
     margin: 0;
     overflow: hidden;
-    background-color: var(--background);
-    color: var(--foreground);
-  }
-  html,
-  body,
-  #root {
+    }
+  html, body, #root {
     height: 100%;
-  }
+    }
   html {
     @apply font-sans;
-    color-scheme: light;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-  }
-  html.dark {
-    color-scheme: dark;
-  }
+    }
 }
 
 :root {
@@ -214,7 +180,7 @@ html[data-chrome="borderless"] .terax-bg-surface {
  * ourselves so the app doesn't look naked on GNOME/KDE/Hyprland. */
 html[data-chrome="borderless"],
 html[data-chrome="borderless"] body {
-  background: transparent;
+  background: transparent !important;
 }
 html[data-chrome="borderless"] #root,
 html[data-chrome="borderless"] #settings-root {
@@ -236,43 +202,40 @@ html[data-chrome="borderless"] #settings-root {
 .xterm .scrollbar,
 .xterm .scrollbar.vertical,
 .xterm .scrollbar.horizontal {
-  display: none;
-  visibility: hidden;
-  width: 0;
-  height: 0;
-  pointer-events: none;
+  display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
 }
 .xterm .xterm-viewport,
 .xterm-viewport {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 .xterm .xterm-viewport::-webkit-scrollbar,
 .xterm-viewport::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
 }
-.xterm-screen {
-  outline: none;
-}
+.xterm,
+.xterm-screen,
 .xterm:focus,
-.xterm.focus,
-.xterm:focus-within {
-  outline: 2px solid color-mix(in oklch, var(--ring) 72%, transparent);
-  outline-offset: -2px;
+.xterm.focus {
+  outline: none !important;
 }
 
 .cm-editor,
 .cm-scroller {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 .cm-editor::-webkit-scrollbar,
 .cm-scroller::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
 }
 
 body {
@@ -312,26 +275,54 @@ textarea,
   cursor: pointer;
 }
 
+
 .no-scrollbar {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.no-scrollbar::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+.no-scrollbar-deep,
+.no-scrollbar-deep * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.no-scrollbar-deep::-webkit-scrollbar,
+.no-scrollbar-deep *::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* Kill native scrollbars everywhere by default — Linux/Windows ship chunky
+ * Chromium bars that break the chrome, and macOS WKWebView flashes its overlay
+ * scrollbar briefly during layout transitions (AI panel open, pane split,
+ * window resize) which looks like a glitch. Visible scroll affordances are
+ * provided per-region via shadcn <ScrollArea>. */
+html,
+html *,
+html *::before,
+html *::after {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-.no-scrollbar::-webkit-scrollbar {
+html *::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
 }
 
-.no-scrollbar-deep,
-.no-scrollbar-deep * {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.no-scrollbar-deep::-webkit-scrollbar,
-.no-scrollbar-deep *::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
+/* Motion tokens. Reduced-motion zeroes the durations as a global snap. */
+:root {
+  --dur-fast: 160ms;
+  --dur-base: 240ms;
+  --dur-slow: 320ms;
+  --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes terax-collapsible-down {
@@ -360,70 +351,114 @@ textarea,
   overflow: hidden;
 }
 .terax-collapsible-content[data-state="open"] {
-  animation: terax-collapsible-down 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: terax-collapsible-down var(--dur-base) var(--ease-soft);
 }
 .terax-collapsible-content[data-state="closed"] {
-  animation: terax-collapsible-up 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: terax-collapsible-up var(--dur-base) var(--ease-soft);
 }
 
-.workflow-controls,
-.workflow-minimap {
-  z-index: 4;
-}
-
-.workflow-controls.react-flow__controls {
-  display: flex;
-  gap: 1px;
-  box-shadow: none;
-}
-
-.workflow-controls .react-flow__controls-button {
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-right: 1px solid var(--border);
-  background: color-mix(in oklch, var(--card) 94%, transparent);
-  color: var(--foreground);
-  fill: currentColor;
+/* Height auto<->0 reveal without JS measuring: animate the grid track from 0fr
+ * to 1fr. The inner child must be the sole grid row with min-height:0. Used by
+ * the docked AI input bar and the composer voice-status row. */
+.terax-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
   transition:
-    background-color 150ms ease,
-    color 150ms ease;
+    grid-template-rows var(--dur-base) var(--ease-premium),
+    opacity var(--dur-base) var(--ease-premium);
+  opacity: 0;
+}
+.terax-reveal[data-state="open"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.terax-reveal > * {
+  min-height: 0;
+  overflow: hidden;
 }
 
-.workflow-controls .react-flow__controls-button:last-child {
-  border-right: 0;
+@keyframes terax-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.terax-panel-in {
+  animation: terax-panel-in var(--dur-slow) var(--ease-premium);
 }
 
-.workflow-controls .react-flow__controls-button:hover {
-  background: var(--accent);
-  color: var(--accent-foreground);
+@keyframes terax-tab-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.terax-tab-in {
+  animation: terax-tab-in var(--dur-base) var(--ease-premium);
 }
 
-.workflow-controls .react-flow__controls-button svg {
-  fill: currentColor;
+@keyframes terax-pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.terax-pill-in {
+  animation: terax-pill-in var(--dur-base) var(--ease-premium);
 }
 
-.workflow-minimap.react-flow__minimap {
-  width: 160px;
-  height: 104px;
-  background: color-mix(in oklch, var(--card) 96%, transparent);
+/* Text shimmer loop (replaces motion background-position animation). Driven by
+ * --shimmer-duration / --shimmer-spread set inline per instance. */
+@keyframes terax-shimmer {
+  from {
+    background-position: 100% center;
+  }
+  to {
+    background-position: 0% center;
+  }
 }
-
-.workflow-minimap .react-flow__minimap-mask {
-  fill: oklch(0.148 0.004 228.8 / 58%);
-}
-
-.workflow-minimap .react-flow__minimap-node {
-  fill: var(--muted);
-  stroke: var(--border);
+.terax-shimmer {
+  background-repeat: no-repeat, padding-box;
+  background-size:
+    250% 100%,
+    auto;
+  background-image:
+    linear-gradient(
+      90deg,
+      transparent calc(50% - var(--shimmer-spread)),
+      var(--color-background),
+      transparent calc(50% + var(--shimmer-spread))
+    ),
+    linear-gradient(
+      var(--color-muted-foreground),
+      var(--color-muted-foreground)
+    );
+  animation: terax-shimmer var(--shimmer-duration, 2s) linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none;
-    scroll-behavior: auto;
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-base: 0.01ms;
+    --dur-slow: 0.01ms;
+  }
+  .terax-reveal {
     transition: none;
+  }
+  .terax-shimmer {
+    animation: none;
+    background-position: 0% center;
   }
 }

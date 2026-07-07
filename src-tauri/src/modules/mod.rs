@@ -9,6 +9,8 @@ pub mod capabilities;
 pub mod capture;
 pub mod fs;
 pub mod git;
+pub mod history;
+pub mod lsp;
 pub mod mcp;
 pub mod model_compare;
 pub mod net;

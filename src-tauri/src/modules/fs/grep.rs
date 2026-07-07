@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -15,6 +15,14 @@ use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 const FILE_SIZE_CAP: u64 = 5 * 1024 * 1024;
 const DEFAULT_MAX_RESULTS: usize = 200;
 const HARD_MAX_RESULTS: usize = 2000;
+
+/// Supersession counter for interactive content search. Each new command
+/// palette query bumps the generation; in-flight walks observe the change and
+/// quit instead of wasting work on stale keystrokes.
+#[derive(Default)]
+pub struct ContentSearchState {
+    generation: AtomicU64,
+}
 
 #[derive(Serialize)]
 pub struct GrepHit {
@@ -42,6 +50,17 @@ fn build_globset(patterns: &[String]) -> Result<Option<GlobSet>, String> {
     }
     let set = b.build().map_err(|e| format!("globset build: {e}"))?;
     Ok(Some(set))
+}
+
+fn escape_literal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 8);
+    for c in s.chars() {
+        if "\\.+*?()|[]{}^$".contains(c) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 pub fn fs_grep_inner(
@@ -208,6 +227,151 @@ pub fn fs_grep(
             max_results,
             WorkspaceEnv::from_option(workspace),
         )
+    })
+}
+
+#[tauri::command]
+pub fn fs_grep_interactive(
+    app_audit: tauri::State<AppCapabilityState>,
+    state: tauri::State<'_, ContentSearchState>,
+    pattern: String,
+    root: String,
+    max_results: Option<usize>,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<GrepResponse, String> {
+    app_audit.execute_app_capability("app.file_search", || {
+        if pattern.trim().is_empty() {
+            return Err("empty pattern".into());
+        }
+        let my_gen = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        let workspace = WorkspaceEnv::from_option(workspace);
+        let root_path = resolve_path(&root, &workspace);
+        if !root_path.is_dir() {
+            return Err(format!("not a directory: {root}"));
+        }
+        let cap = max_results
+            .unwrap_or(DEFAULT_MAX_RESULTS)
+            .clamp(1, HARD_MAX_RESULTS);
+
+        let matcher = RegexMatcherBuilder::new()
+            .case_smart(true)
+            .line_terminator(Some(b'\n'))
+            .build(&escape_literal(&pattern))
+            .map_err(|e| format!("bad pattern: {e}"))?;
+
+        let walker = WalkBuilder::new(&root_path)
+            .hidden(true)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .ignore(true)
+            .parents(true)
+            .follow_links(false)
+            .build_parallel();
+
+        let hits: Arc<Mutex<Vec<GrepHit>>> = Arc::new(Mutex::new(Vec::new()));
+        let scanned = Arc::new(AtomicUsize::new(0));
+        let truncated = Arc::new(AtomicBool::new(false));
+        let search_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
+        walker.run(|| {
+            let matcher = matcher.clone();
+            let hits = hits.clone();
+            let scanned = scanned.clone();
+            let truncated = truncated.clone();
+            let search_error = search_error.clone();
+            let root_path = root_path.clone();
+            let root_display = root.clone();
+            let workspace = workspace.clone();
+            let state = &state;
+
+            Box::new(move |dent_res| {
+                if truncated.load(Ordering::Relaxed)
+                    || state.generation.load(Ordering::SeqCst) != my_gen
+                {
+                    return WalkState::Quit;
+                }
+                if search_error.lock().map_or(true, |error| error.is_some()) {
+                    return WalkState::Quit;
+                }
+                let dent = match dent_res {
+                    Ok(d) => d,
+                    Err(_) => return WalkState::Continue,
+                };
+                if !dent.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                    return WalkState::Continue;
+                }
+                let path = dent.path();
+                let rel = match path.strip_prefix(&root_path) {
+                    Ok(r) => to_canon(r),
+                    Err(_) => return WalkState::Continue,
+                };
+                if let Ok(meta) = std::fs::metadata(path) {
+                    if meta.len() > FILE_SIZE_CAP {
+                        return WalkState::Continue;
+                    }
+                }
+
+                scanned.fetch_add(1, Ordering::Relaxed);
+
+                let abs = display_path(path, &root_path, &root_display, &workspace);
+                let rel_for_hit = rel;
+                let mut searcher = SearcherBuilder::new()
+                    .binary_detection(BinaryDetection::quit(b'\x00'))
+                    .line_number(true)
+                    .build();
+
+                let _ = searcher.search_path(
+                    &matcher,
+                    path,
+                    UTF8(|line_num, text| {
+                        let line_text = text.trim_end_matches('\n').to_string();
+                        let mut guard = match hits.lock() {
+                            Ok(guard) => guard,
+                            Err(error) => {
+                                if let Ok(mut stored) = search_error.lock() {
+                                    *stored = Some(format!("grep hits lock failed: {error}"));
+                                }
+                                truncated.store(true, Ordering::Relaxed);
+                                return Ok(false);
+                            }
+                        };
+                        if guard.len() >= cap {
+                            truncated.store(true, Ordering::Relaxed);
+                            return Ok(false);
+                        }
+                        guard.push(GrepHit {
+                            path: abs.clone(),
+                            rel: rel_for_hit.clone(),
+                            line: line_num,
+                            text: line_text,
+                        });
+                        Ok(true)
+                    }),
+                );
+
+                WalkState::Continue
+            })
+        });
+
+        if let Some(error) = search_error
+            .lock()
+            .map_err(|error| format!("grep error lock failed: {error}"))?
+            .take()
+        {
+            return Err(error);
+        }
+
+        let final_hits = Arc::try_unwrap(hits)
+            .map_err(|_| "grep workers did not release hit buffer".to_string())?
+            .into_inner()
+            .map_err(|error| format!("grep hits lock failed: {error}"))?;
+
+        Ok(GrepResponse {
+            hits: final_hits,
+            truncated: truncated.load(Ordering::Relaxed),
+            files_scanned: scanned.load(Ordering::Relaxed),
+        })
     })
 }
 

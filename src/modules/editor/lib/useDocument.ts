@@ -1,7 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { notifyDocumentSaved } from "@/modules/lsp";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type ReadResult =
   | { kind: "text"; content: string; size: number }
@@ -57,6 +58,7 @@ export function useDocument({ path, onDirtyChange }: Options) {
     });
     savedRef.current = content;
     setDirty(false);
+    notifyDocumentSaved(path);
   }, [path]);
 
   // Notify parent of dirty transitions.
@@ -134,9 +136,16 @@ export function useDocument({ path, onDirtyChange }: Options) {
 
   const save = useCallback(async () => {
     clearAutoSaveTimer();
-    if (!dirty) return;
+    if (bufferRef.current === savedRef.current) return;
     await saveNow();
-  }, [dirty, clearAutoSaveTimer, saveNow]);
+  }, [clearAutoSaveTimer, saveNow]);
+
+  // Adopt externally formatted content as the saved baseline before the
+  // matching editor dispatch lands, so the buffer never flashes dirty.
+  const markSaved = useCallback((content: string) => {
+    savedRef.current = content;
+    setDirty(bufferRef.current !== content);
+  }, []);
 
   const onChange = useCallback(
     (next: string) => {
@@ -156,7 +165,7 @@ export function useDocument({ path, onDirtyChange }: Options) {
     [clearAutoSaveTimer, saveNow],
   );
 
-  useEffect(() => clearAutoSaveTimer, [clearAutoSaveTimer]);
+  useEffect(() => clearAutoSaveTimer, [path, clearAutoSaveTimer]);
 
-  return { doc, dirty, onChange, save, reload };
+  return { doc, dirty, onChange, save, reload, markSaved };
 }

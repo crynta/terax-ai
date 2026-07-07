@@ -1,22 +1,7 @@
-import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
-import CanvasIcon from "@hugeicons/core-free-icons/CanvasIcon";
-import Clock01Icon from "@hugeicons/core-free-icons/Clock01Icon";
-import CodeIcon from "@hugeicons/core-free-icons/CodeIcon";
-import ComputerTerminal02Icon from "@hugeicons/core-free-icons/ComputerTerminal02Icon";
-import File01Icon from "@hugeicons/core-free-icons/File01Icon";
-import GitBranchIcon from "@hugeicons/core-free-icons/GitBranchIcon";
-import GitCompareIcon from "@hugeicons/core-free-icons/GitCompareIcon";
-import Globe02Icon from "@hugeicons/core-free-icons/Globe02Icon";
-import IncognitoIcon from "@hugeicons/core-free-icons/IncognitoIcon";
-import PencilEdit02Icon from "@hugeicons/core-free-icons/PencilEdit02Icon";
-import PlusSignIcon from "@hugeicons/core-free-icons/PlusSignIcon";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
-  ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
@@ -24,14 +9,40 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { fmtShortcut, MOD_KEY } from "@/lib/platform";
+import { fmtShortcut, MOD_KEY, SHIFT_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+import {
+  ALL_LANGUAGES,
+  EXPOSED_LANGUAGES,
+} from "@/modules/editor/lib/languageDefinitions";
+import { resolveDisplayName } from "@/modules/editor/lib/languageResolver";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import {
+  Cancel01Icon,
+  Clock01Icon,
+  ComputerTerminal02Icon,
+  GitBranchIcon,
+  GitCompareIcon,
+  Globe02Icon,
+  IncognitoIcon,
+  PencilEdit02Icon,
+  PlusSignIcon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { labelFor } from "./lib/tabLabel";
 import type { EditorTab, Tab } from "./lib/useTabs";
 
@@ -40,17 +51,19 @@ type Props = {
   activeId: number;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onNewBlock: () => void;
   onNewPrivate: () => void;
   onNewPreview: () => void;
   onNewEditor: () => void;
-  onNewArtifacts: () => void;
-  onNewWorkflow: () => void;
   onNewGitGraph: () => void;
   onClose: (id: number) => void;
   /** Pin (promote) a preview tab to persistent on double-click. */
   onPin: (id: number) => void;
   /** Set a terminal tab's custom label; empty string resets to default. */
   onRename: (id: number, title: string) => void;
+  /** Move a dragged tab to a new position (insertion gap index 0..tabs.length). */
+  onReorder: (fromId: number, toGapIndex: number) => void;
+  onOverrideLanguage?: (id: number, lang: string | null) => void;
   compact?: boolean;
 };
 
@@ -59,19 +72,100 @@ export function TabBar({
   activeId,
   onSelect,
   onNew,
+  onNewBlock,
   onNewPrivate,
   onNewPreview,
   onNewEditor,
-  onNewArtifacts,
-  onNewWorkflow,
   onNewGitGraph,
   onClose,
   onPin,
   onRename,
+  onReorder,
+  onOverrideLanguage,
   compact,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const [dropGap, setDropGap] = useState<number | null>(null);
+  const [showAllLanguages, setShowAllLanguages] = useState(false);
+  const drag = useRef<{
+    pointerId: number;
+    startX: number;
+    fromId: number;
+    active: boolean;
+  } | null>(null);
+
+  // Play the enter animation only for tabs opened after the first paint, never
+  // the restored set and never on switch/reorder (triggers are keyed, so they
+  // don't remount then). The ref is seeded with the initial ids on first render.
+  const seenRef = useRef<Set<number> | null>(null);
+  const firstRender = seenRef.current === null;
+  let seen = seenRef.current;
+  if (seen === null) {
+    seen = new Set(tabs.map((t) => t.id));
+    seenRef.current = seen;
+  }
+  useEffect(() => {
+    seenRef.current = new Set(tabs.map((t) => t.id));
+  }, [tabs]);
+
+  // Single shared pill slides to the active tab instead of each tab toggling
+  // its own background. Measured relative to the list (its offsetParent) so it
+  // scrolls with the strip for free; transform/width only, no layout on siblings.
+  const [pill, setPill] = useState<{ left: number; width: number } | null>(
+    null,
+  );
+  const [pillReady, setPillReady] = useState(false);
+
+  const measurePill = useCallback(() => {
+    const el = listRef.current?.querySelector<HTMLElement>(
+      '[data-tab-active="true"]',
+    );
+    setPill(el ? { left: el.offsetLeft, width: el.offsetWidth } : null);
+  }, []);
+
+  useLayoutEffect(() => {
+    measurePill();
+  }, [measurePill, activeId, tabs]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const ro = new ResizeObserver(measurePill);
+    ro.observe(list);
+    return () => ro.disconnect();
+  }, [measurePill]);
+
+  // Hold the transition off until the pill is first placed, so it never slides
+  // in from the origin on mount.
+  useEffect(() => {
+    if (pill && !pillReady) {
+      const id = requestAnimationFrame(() => setPillReady(true));
+      return () => cancelAnimationFrame(id);
+    }
+  }, [pill, pillReady]);
+
+  const gapAtX = (clientX: number) => {
+    const els = Array.from(
+      scrollRef.current?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? [],
+    );
+    for (let i = 0; i < els.length; i++) {
+      const r = els[i].getBoundingClientRect();
+      if (clientX < r.left + r.width / 2) return i;
+    }
+    return els.length;
+  };
+
+  const endDrag = (currentTarget: HTMLElement) => {
+    const st = drag.current;
+    if (st) currentTarget.releasePointerCapture?.(st.pointerId);
+    drag.current = null;
+    setDraggingId(null);
+    setDropGap(null);
+    document.body.style.userSelect = "";
+  };
 
   // Horizontal wheel scroll without holding shift.
   useEffect(() => {
@@ -93,13 +187,12 @@ export function TabBar({
     if (!el) return;
     const active = el.querySelector<HTMLElement>(`[data-tab-id="${activeId}"]`);
     active?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeId, tabs.length]);
+  }, [activeId]);
 
   return (
     <div
       ref={scrollRef}
       data-tauri-drag-region
-      data-testid="tab-bar"
       className="min-w-0 shrink overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       <div className="flex w-max items-center gap-0.5">
@@ -107,150 +200,330 @@ export function TabBar({
           value={String(activeId)}
           onValueChange={(v) => onSelect(Number(v))}
         >
-          <TabsList className="h-7 w-max gap-0.5 bg-transparent p-0">
-            {tabs.map((t) => {
+          <TabsList
+            ref={listRef}
+            className="relative h-7 w-max gap-0.5 bg-transparent p-0"
+          >
+            <span
+              aria-hidden
+              className="pointer-events-none absolute left-0 top-1/2 h-7 rounded-md bg-foreground/[0.07] shadow-sm ring-1 ring-inset ring-foreground/[0.05]"
+              style={
+                pill
+                  ? {
+                      width: pill.width,
+                      transform: `translate(${pill.left}px, -50%)`,
+                      transitionProperty: pillReady
+                        ? "transform, width"
+                        : "none",
+                      transitionDuration: "var(--dur-base)",
+                      transitionTimingFunction: "var(--ease-premium)",
+                    }
+                  : { opacity: 0 }
+              }
+            />
+            {tabs.map((t, i) => {
               const isPreview = t.kind === "editor" && (t as EditorTab).preview;
               const isActive = t.id === activeId;
+              const isNew = !firstRender && !seen.has(t.id);
+
+              const srcIndex = tabs.findIndex((x) => x.id === draggingId);
+              const showGap = (gap: number) =>
+                draggingId !== null &&
+                dropGap === gap &&
+                gap !== srcIndex &&
+                gap !== srcIndex + 1;
 
               // While renaming, render a non-button cell so the <input> is not
               // nested inside the trigger <button> (invalid HTML, and WebKit
               // blocks focus/selection on inputs inside buttons).
               if (editingId === t.id && t.kind === "terminal") {
                 return (
-                  <div
-                    key={t.id}
-                    data-tab-id={t.id}
-                    className={cn(
-                      "flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-accent text-xs text-foreground",
-                      compact ? "px-1.5" : "px-2",
+                  <Fragment key={t.id}>
+                    {showGap(i) && <DropIndicator />}
+                    <div
+                      data-tab-id={t.id}
+                      className={cn(
+                        "flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-accent text-xs text-foreground",
+                        compact ? "px-1.5" : "px-2",
+                      )}
+                    >
+                      <TabIcon tab={t} />
+                      <TabRenameInput
+                        initial={labelFor(t)}
+                        onCommit={(value) => {
+                          onRename(t.id, value);
+                          setEditingId(null);
+                        }}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    </div>
+                    {i === tabs.length - 1 && showGap(tabs.length) && (
+                      <DropIndicator />
                     )}
-                  >
-                    <TabIcon tab={t} />
-                    <TabRenameInput
-                      initial={labelFor(t)}
-                      onCommit={(value) => {
-                        onRename(t.id, value);
-                        setEditingId(null);
-                      }}
-                      onCancel={() => setEditingId(null)}
-                    />
-                  </div>
+                  </Fragment>
                 );
               }
 
               const trigger = (
-                <div
-                  key={t.id}
+                <TabsTrigger
+                  value={String(t.id)}
                   data-tab-id={t.id}
+                  data-tab-active={isActive ? "true" : undefined}
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    if ((e.target as HTMLElement).closest("[data-no-drag]"))
+                      return;
+                    drag.current = {
+                      pointerId: e.pointerId,
+                      startX: e.clientX,
+                      fromId: t.id,
+                      active: false,
+                    };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    const st = drag.current;
+                    if (!st || st.pointerId !== e.pointerId) return;
+                    if (!st.active) {
+                      if (Math.abs(e.clientX - st.startX) < 4) return;
+                      st.active = true;
+                      setDraggingId(st.fromId);
+                      document.body.style.userSelect = "none";
+                    }
+                    e.preventDefault();
+                    setDropGap(gapAtX(e.clientX));
+                  }}
+                  onPointerUp={(e) => {
+                    const st = drag.current;
+                    if (st?.active && dropGap !== null) {
+                      onReorder(st.fromId, dropGap);
+                    } else if (st && !st.active) {
+                      onSelect(t.id);
+                    }
+                    endDrag(e.currentTarget);
+                  }}
+                  onPointerCancel={(e) => endDrag(e.currentTarget)}
+                  onDoubleClick={() => isPreview && onPin(t.id)}
+                  onAuxClick={(e) => {
+                    if (e.button === 1 && tabs.length > 1) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onClose(t.id);
+                    }
+                  }}
+                  // Suppress Radix's switch-on-mousedown so a tab grabbed to
+                  // drag (or a plain click) only activates on release.
+                  onMouseDown={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (
+                      e.button === 0 &&
+                      !(e.target as HTMLElement).closest("[data-no-drag]")
+                    ) {
+                      e.preventDefault();
+                    }
+                  }}
                   className={cn(
-                    "group/tab-cell flex h-7 shrink-0 items-center rounded-md transition-colors",
-                    isActive ? "bg-accent" : "hover:bg-accent/50",
+                    "group relative z-[1] h-7 shrink-0 justify-between gap-1.5 rounded-md bg-transparent text-xs transition-colors data-active:bg-transparent dark:data-active:bg-transparent",
+                    isNew && "terax-tab-in",
+                    isActive
+                      ? "text-foreground dark:text-foreground"
+                      : "text-muted-foreground hover:text-foreground/80 dark:text-muted-foreground",
+                    draggingId === t.id && "opacity-50",
+                    compact
+                      ? "px-1.5!"
+                      : tabs.length === 1
+                        ? "px-2!"
+                        : "ps-2! pe-1!",
                   )}
                 >
-                  <TabsTrigger
-                    value={String(t.id)}
-                    onDoubleClick={() => isPreview && onPin(t.id)}
-                    onAuxClick={(e) => {
-                      if (e.button === 1 && tabs.length > 1) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onClose(t.id);
-                      }
-                    }}
-                    onMouseDown={(e) => {
-                      if (e.button === 1) e.preventDefault();
-                    }}
+                  <span
                     className={cn(
-                      "h-7 min-w-0 shrink gap-1.5 rounded-md bg-transparent text-xs transition-colors hover:bg-transparent hover:text-foreground/80 justify-start",
-                      isActive ? "text-foreground" : "text-muted-foreground",
-                      compact
-                        ? "px-1.5!"
-                        : tabs.length === 1
-                          ? "px-2!"
-                          : "ps-2! pe-1!",
+                      "flex min-w-0 items-center gap-1.5",
+                      compact ? "max-w-48" : "max-w-80",
                     )}
                   >
-                    <span
-                      className={cn(
-                        "flex items-center gap-1.5 truncate",
-                        compact ? "max-w-48" : "max-w-80",
-                      )}
-                    >
+                    {t.kind === "editor" ? (
+                      <DropdownMenu
+                        onOpenChange={(open) => {
+                          if (!open) setShowAllLanguages(false);
+                        }}
+                      >
+                        <DropdownMenuTrigger asChild>
+                          {/* span, not button: a button nested in the TabsTrigger button is invalid DOM and breaks WebKit focus. */}
+                          <span
+                            role="button"
+                            tabIndex={-1}
+                            data-no-drag
+                            className="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm p-1 -m-1 transition-all hover:bg-accent hover:text-accent-foreground hover:ring-1 hover:ring-primary/30 hover:shadow-[0_0_4px_var(--color-popover-foreground)]"
+                          >
+                            <TabIcon tab={t} />
+                          </span>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="start"
+                          side="bottom"
+                          sideOffset={6}
+                          alignOffset={-4}
+                          className="max-h-75 w-48 overflow-y-auto rounded-xl border border-border/40 bg-popover/90 p-1 backdrop-blur-md shadow-lg"
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onPointerUp={(e) => e.stopPropagation()}
+                        >
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              onOverrideLanguage?.(t.id, null);
+                            }}
+                            className="flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg cursor-default focus:bg-accent focus:text-accent-foreground"
+                          >
+                            <img
+                              src={fileIconUrl(t.title)}
+                              className="size-3.5 shrink-0 object-contain"
+                              alt=""
+                            />
+                            <div className="flex flex-1 flex-col">
+                              <span>Auto Detect</span>
+                              <span className="text-[10px] text-muted-foreground italic">
+                                Mode: {resolveDisplayName(t.title)}
+                              </span>
+                            </div>
+                            {!(t as EditorTab).overrideLanguage && (
+                              <HugeiconsIcon
+                                icon={Tick02Icon}
+                                className="size-3.5 text-primary"
+                              />
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={(e) => {
+                              e.preventDefault();
+                              setShowAllLanguages((v) => !v);
+                            }}
+                            className="w-full px-2.5 py-1.5 text-left text-xs text-primary/60 hover:text-primary rounded-lg transition-colors hover:bg-accent"
+                          >
+                            {showAllLanguages
+                              ? "↑ Fewer languages"
+                              : "↓ All languages"}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator className="my-1 border-t border-border/30" />
+                          {(showAllLanguages
+                            ? ALL_LANGUAGES
+                            : EXPOSED_LANGUAGES
+                          ).map((lang) => {
+                            const isSelected =
+                              (t as EditorTab).overrideLanguage === lang.ext;
+                            return (
+                              <DropdownMenuItem
+                                key={lang.ext}
+                                onSelect={() =>
+                                  onOverrideLanguage?.(t.id, lang.ext)
+                                }
+                                className="flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg cursor-default focus:bg-accent focus:text-accent-foreground"
+                              >
+                                <img
+                                  src={fileIconUrl(`dummy.${lang.ext}`)}
+                                  className="size-3.5 shrink-0 object-contain"
+                                  alt=""
+                                />
+                                <span className="flex-1">{lang.name}</span>
+                                {isSelected && (
+                                  <HugeiconsIcon
+                                    icon={Tick02Icon}
+                                    className="size-3.5 text-primary"
+                                  />
+                                )}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    ) : (
                       <TabIcon tab={t} />
-                      {/* Preview tabs use italic to signal the transient state,
-                          matching the visual convention from VSCode. */}
-                      <span className={cn("truncate", isPreview && "italic")}>
-                        {labelFor(t)}
-                      </span>
-                      {(t.kind === "editor" || t.kind === "workflow") &&
-                      t.dirty ? (
-                        <span
-                          aria-label="Unsaved changes"
-                          className="size-1.5 shrink-0 rounded-full bg-foreground/70"
-                        />
-                      ) : null}
+                    )}
+                    {/* Preview tabs use italic to signal the transient state,
+                        matching the visual convention from VSCode. */}
+                    <span className={cn("truncate", isPreview && "italic")}>
+                      {labelFor(t)}
                     </span>
-                  </TabsTrigger>
+                    {t.kind === "editor" && t.dirty ? (
+                      <span
+                        aria-label="Unsaved changes"
+                        className="size-1.5 shrink-0 rounded-full bg-foreground/70"
+                      />
+                    ) : null}
+                  </span>
                   {tabs.length > 1 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      aria-label={`Close ${labelFor(t)} tab`}
-                      className="mr-0.5 size-7 rounded p-0 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground hover:opacity-100 group-hover/tab-cell:opacity-60 focus-visible:opacity-100"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                      }}
+                    <span
+                      role="button"
+                      aria-label="Close tab"
+                      data-no-drag
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose(t.id);
                       }}
+                      className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
                     >
                       <HugeiconsIcon
-                        data-icon="inline-start"
                         icon={Cancel01Icon}
+                        size={11}
                         strokeWidth={2}
                       />
-                    </Button>
+                    </span>
                   )}
-                </div>
+                </TabsTrigger>
               );
 
-              if (t.kind !== "terminal") return trigger;
-
-              return (
-                <ContextMenu key={t.id}>
-                  <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
-                  <ContextMenuContent
-                    className="min-w-36"
-                    onCloseAutoFocus={(e) => e.preventDefault()}
-                  >
-                    <ContextMenuGroup>
-                      <ContextMenuItem onSelect={() => setEditingId(t.id)}>
+              const tabNode =
+                t.kind === "terminal" ? (
+                  <ContextMenu>
+                    <ContextMenuTrigger asChild>{trigger}</ContextMenuTrigger>
+                    <ContextMenuContent
+                      className="min-w-32 p-1"
+                      onCloseAutoFocus={(e) => e.preventDefault()}
+                    >
+                      <ContextMenuItem
+                        className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                        onSelect={() => setEditingId(t.id)}
+                      >
                         <HugeiconsIcon
                           icon={PencilEdit02Icon}
+                          size={13}
                           strokeWidth={1.75}
                         />
                         <span className="flex-1">Rename</span>
                       </ContextMenuItem>
-                    </ContextMenuGroup>
-                    {tabs.length > 1 && (
-                      <>
-                        <ContextMenuSeparator />
-                        <ContextMenuGroup>
-                          <ContextMenuItem onSelect={() => onClose(t.id)}>
+                      {tabs.length > 1 && (
+                        <>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            className="gap-2 rounded-xl px-2.5 py-1.5 text-[13px]"
+                            onSelect={() => onClose(t.id)}
+                          >
                             <HugeiconsIcon
                               icon={Cancel01Icon}
+                              size={13}
                               strokeWidth={1.75}
                             />
                             <span className="flex-1">Close</span>
                           </ContextMenuItem>
-                        </ContextMenuGroup>
-                      </>
-                    )}
-                  </ContextMenuContent>
-                </ContextMenu>
+                        </>
+                      )}
+                    </ContextMenuContent>
+                  </ContextMenu>
+                ) : (
+                  trigger
+                );
+
+              return (
+                <Fragment key={t.id}>
+                  {showGap(i) && <DropIndicator />}
+                  {tabNode}
+                  {i === tabs.length - 1 && showGap(tabs.length) && (
+                    <DropIndicator />
+                  )}
+                </Fragment>
               );
             })}
           </TabsList>
@@ -260,66 +533,76 @@ export function TabBar({
             <Button
               variant="ghost"
               size="icon"
-              data-testid="new-tab-button"
               className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               title="New tab"
             >
-              <HugeiconsIcon
-                data-icon="inline-start"
-                icon={PlusSignIcon}
-                strokeWidth={2}
-              />
+              <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={2} />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-44">
-            <DropdownMenuGroup>
-              <DropdownMenuItem
-                data-testid="new-tab-terminal"
-                onSelect={() => onNew()}
-              >
-                <HugeiconsIcon
-                  icon={ComputerTerminal02Icon}
-                  strokeWidth={1.75}
-                />
-                <span className="flex-1">Terminal</span>
-                <span className="text-xs text-muted-foreground">
-                  {fmtShortcut(MOD_KEY, "T")}
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onNewPrivate()}>
-                <HugeiconsIcon icon={IncognitoIcon} strokeWidth={1.75} />
-                <span className="flex-1">Privacy</span>
-                <span className="text-xs text-muted-foreground">
-                  {fmtShortcut(MOD_KEY, "R")}
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onNewEditor()}>
-                <HugeiconsIcon icon={PencilEdit02Icon} strokeWidth={1.75} />
-                <span className="flex-1">Editor</span>
-                <span className="text-xs text-muted-foreground">
-                  {fmtShortcut(MOD_KEY, "E")}
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onNewPreview()}>
-                <HugeiconsIcon icon={Globe02Icon} strokeWidth={1.75} />
-                <span className="flex-1">Preview</span>
-                <span className="text-xs text-muted-foreground">
-                  {fmtShortcut(MOD_KEY, "P")}
-                </span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onNewArtifacts()}>
-                <HugeiconsIcon icon={File01Icon} strokeWidth={1.75} />
-                <span className="flex-1">Artifacts</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onNewWorkflow()}>
-                <HugeiconsIcon icon={CanvasIcon} strokeWidth={1.75} />
-                <span className="flex-1">Canvas</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => onNewGitGraph()}>
-                <HugeiconsIcon icon={GitBranchIcon} strokeWidth={1.75} />
-                <span className="flex-1">Git Graph</span>
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
+          <DropdownMenuContent
+            align="start"
+            className="min-w-44"
+            onCloseAutoFocus={(e) => e.preventDefault()}
+          >
+            <DropdownMenuItem onSelect={() => onNew()}>
+              <HugeiconsIcon
+                icon={ComputerTerminal02Icon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Terminal</span>
+              <span className="text-xs text-muted-foreground">
+                {fmtShortcut(MOD_KEY, "T")}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onNewBlock()}>
+              <HugeiconsIcon
+                icon={ComputerTerminal02Icon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Blocks</span>
+              <span className="text-xs text-muted-foreground">
+                {fmtShortcut(MOD_KEY, SHIFT_KEY, "T")}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onNewPrivate()}>
+              <HugeiconsIcon
+                icon={IncognitoIcon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Privacy</span>
+              <span className="text-xs text-muted-foreground">
+                {fmtShortcut(MOD_KEY, "R")}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onNewEditor()}>
+              <HugeiconsIcon
+                icon={PencilEdit02Icon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Editor</span>
+              <span className="text-xs text-muted-foreground">
+                {fmtShortcut(MOD_KEY, "E")}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onNewPreview()}>
+              <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
+              <span className="flex-1">Preview</span>
+              <span className="text-xs text-muted-foreground">
+                {fmtShortcut(MOD_KEY, "P")}
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onNewGitGraph()}>
+              <HugeiconsIcon
+                icon={GitBranchIcon}
+                size={14}
+                strokeWidth={1.75}
+              />
+              <span className="flex-1">Git Graph</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -327,16 +610,32 @@ export function TabBar({
   );
 }
 
-function TabIcon({ tab }: { tab: Tab }) {
+function DropIndicator() {
+  return (
+    <span
+      aria-hidden
+      className="my-0.5 w-0.5 shrink-0 self-stretch rounded-full bg-primary"
+    />
+  );
+}
+
+export function TabIcon({ tab }: { tab: Tab }) {
   if (tab.kind === "editor" || tab.kind === "markdown") {
-    const url = fileIconUrl(tab.title);
+    const url =
+      tab.kind === "editor" && tab.overrideLanguage
+        ? fileIconUrl(`dummy.${tab.overrideLanguage}`)
+        : fileIconUrl(tab.title);
     return url ? (
       <img
         src={url}
         alt=""
-        width={14}
-        height={14}
-        className="size-3.5 shrink-0"
+        className="size-3.5 shrink-0 object-contain"
+        onError={(e) => {
+          const img = e.currentTarget;
+          if (img.dataset.fallback) return;
+          img.dataset.fallback = "1";
+          img.src = fileIconUrl("dummy.txt");
+        }}
       />
     ) : null;
   }
@@ -384,36 +683,6 @@ function TabIcon({ tab }: { tab: Tab }) {
     return (
       <HugeiconsIcon
         icon={Clock01Icon}
-        size={14}
-        strokeWidth={2}
-        className="shrink-0"
-      />
-    );
-  }
-  if (tab.kind === "pi-workspace") {
-    return (
-      <HugeiconsIcon
-        icon={CodeIcon}
-        size={14}
-        strokeWidth={2}
-        className="shrink-0"
-      />
-    );
-  }
-  if (tab.kind === "artifact" || tab.kind === "artifact-hub") {
-    return (
-      <HugeiconsIcon
-        icon={File01Icon}
-        size={14}
-        strokeWidth={2}
-        className="shrink-0"
-      />
-    );
-  }
-  if (tab.kind === "workflow") {
-    return (
-      <HugeiconsIcon
-        icon={CanvasIcon}
         size={14}
         strokeWidth={2}
         className="shrink-0"

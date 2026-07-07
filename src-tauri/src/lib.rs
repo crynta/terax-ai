@@ -18,8 +18,8 @@ pub mod modules;
 #[cfg(all(target_os = "macos", feature = "openclicky"))]
 use modules::tray;
 use modules::{
-    agent, artifacts, browser, capture, fs, git, mcp, model_compare, net, overlay, pi, pty,
-    secrets, shell, skills, workspace,
+    agent, artifacts, browser, capture, fs, git, history, lsp, mcp, model_compare, net, overlay,
+    pi, pty, secrets, shell, skills, workspace,
 };
 #[cfg(feature = "openclicky")]
 use modules::{agents, voice};
@@ -178,6 +178,11 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init());
 
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.plugin(tauri_plugin_clipboard_manager::init());
+    }
+
     #[cfg(feature = "openclicky")]
     {
         builder = builder.plugin(
@@ -268,6 +273,9 @@ pub fn run() {
         .manage(modules::capabilities::AppCapabilityState::default())
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
+        .manage(history::HistoryState::default())
+        .manage(lsp::LspState::default())
+        .manage(fs::grep::ContentSearchState::default())
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
             workspace::bootstrap_registry(&registry);
@@ -287,6 +295,9 @@ pub fn run() {
             pty::pty_close,
             pty::pty_close_all,
             pty::pty_has_foreground_process,
+            pty::pty_has_foreground_job,
+            pty::pty_shell_name,
+            pty::pty_list_shells,
             pi::pi_env_api_key,
             pi::pi_local_agents_status,
             pi::pi_models_list,
@@ -363,15 +374,23 @@ pub fn run() {
             fs::mutate::fs_create_file,
             fs::mutate::fs_create_dir,
             fs::mutate::fs_copy_file,
+            fs::mutate::fs_copy,
             fs::mutate::fs_open_file,
             fs::mutate::fs_rename,
             fs::mutate::fs_delete,
             fs::mutate::workflow_file_delete,
             fs::watch::fs_watch_add,
             fs::watch::fs_watch_remove,
+            lsp::lsp_detect,
+            lsp::lsp_host_pid,
+            lsp::lsp_resolve_root,
+            lsp::lsp_spawn,
+            lsp::lsp_send,
+            lsp::lsp_kill,
             fs::search::fs_search,
             fs::search::fs_list_files,
             fs::grep::fs_grep,
+            fs::grep::fs_grep_interactive,
             fs::grep::fs_glob,
             git::commands::git_resolve_repo,
             git::commands::git_panel_snapshot,
@@ -390,6 +409,8 @@ pub fn run() {
             git::commands::git_commit_files,
             git::commands::git_commit_file_diff,
             git::commands::git_remote_url,
+            git::commands::git_list_branches,
+            git::commands::git_checkout_branch,
             shell::shell_run_command,
             shell::shell_session_open,
             shell::shell_session_run,
@@ -408,6 +429,8 @@ pub fn run() {
             workspace::workspace_current_dir,
             get_launch_dir,
             open_settings_window,
+            agent::agent_enable_hooks,
+            agent::agent_hooks_status,
             agent::agent_enable_claude_hooks,
             agent::agent_claude_hooks_status,
             agent::agent_enable_codex_hooks,
@@ -424,6 +447,10 @@ pub fn run() {
             net::workflow_http_request,
             net::ai_http_request,
             net::ai_http_stream,
+            history::history_suggest,
+            history::history_commands,
+            history::history_record,
+            history::history_list,
             browser::browser_create,
             browser::browser_close,
             browser::browser_navigate,

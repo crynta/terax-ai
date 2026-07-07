@@ -1,10 +1,9 @@
-import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { LazyStore } from "@tauri-apps/plugin-store";
 import {
   type AutocompleteProviderId,
   type CustomEndpoint,
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
+  DEFAULT_STT_PROVIDER,
   isKnownModelId,
   LMSTUDIO_DEFAULT_BASE_URL,
   MLX_DEFAULT_BASE_URL,
@@ -12,52 +11,109 @@ import {
   migrateLegacyCompatEndpoint,
   OLLAMA_DEFAULT_BASE_URL,
   OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
+  type SttProvider,
+  WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
-import {
-  normalizeSidebarPosition,
-  type SidebarPosition,
-} from "@/modules/sidebar/position";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { LazyStore } from "@tauri-apps/plugin-store";
 
 export type ThemePref = "system" | "light" | "dark";
+export type PiAuthMode = "terax" | "profile";
+export type PiSkillsMode = "off" | "project" | "selected";
+export type TtsProviderId = "cartesia" | "avspeech";
+export type SttProviderId = SttProvider | "whisper" | "deepgram";
 
 export const DEFAULT_THEME_ID = "terax-default";
 
 export type BackgroundKind = "none" | "image";
-export type PiAuthMode = "terax" | "profile";
-
-export type PiSkillsMode = "off" | "project" | "selected";
 
 export const EDITOR_THEMES = [
+  "kanagawa",
+  "kanagawa-lotus",
+  "kanagawa-dragon",
+  "tokyo-night",
+  "catppuccin-mocha",
+  "catppuccin-latte",
+  "rose-pine",
+  "rose-pine-dawn",
+  "everforest",
+  "everforest-light",
+  "dracula",
+  "solarized-dark",
+  "solarized-light",
+  "nord",
+  "gruvbox-dark",
   "atomone",
   "aura",
   "copilot",
   "github-dark",
   "github-light",
-  "gruvbox-dark",
-  "nord",
-  "tokyo-night",
   "xcode-dark",
   "xcode-light",
 ] as const;
 
 export type EditorThemeId = (typeof EDITOR_THEMES)[number];
 
+/** "auto" follows the active app theme's editorTheme pairing (resolved live). */
+export const EDITOR_THEME_AUTO = "auto" as const;
+export type EditorThemePref = typeof EDITOR_THEME_AUTO | EditorThemeId;
+
+export function isEditorThemeId(v: unknown): v is EditorThemeId {
+  return (
+    typeof v === "string" && (EDITOR_THEMES as readonly string[]).includes(v)
+  );
+}
+
+export const EDITOR_THEME_MODE: Record<EditorThemeId, "light" | "dark"> = {
+  kanagawa: "dark",
+  "kanagawa-lotus": "light",
+  "kanagawa-dragon": "dark",
+  "tokyo-night": "dark",
+  "catppuccin-mocha": "dark",
+  "catppuccin-latte": "light",
+  "rose-pine": "dark",
+  "rose-pine-dawn": "light",
+  everforest: "dark",
+  "everforest-light": "light",
+  dracula: "dark",
+  "solarized-dark": "dark",
+  "solarized-light": "light",
+  nord: "dark",
+  "gruvbox-dark": "dark",
+  atomone: "dark",
+  aura: "dark",
+  copilot: "dark",
+  "github-dark": "dark",
+  "github-light": "light",
+  "xcode-dark": "dark",
+  "xcode-light": "light",
+};
+
 export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
+  kanagawa: "Kanagawa Wave",
+  "kanagawa-lotus": "Kanagawa Lotus",
+  "kanagawa-dragon": "Kanagawa Dragon",
+  "tokyo-night": "Tokyo Night",
+  "catppuccin-mocha": "Catppuccin Mocha",
+  "catppuccin-latte": "Catppuccin Latte",
+  "rose-pine": "Rosé Pine",
+  "rose-pine-dawn": "Rosé Pine Dawn",
+  everforest: "Everforest Dark",
+  "everforest-light": "Everforest Light",
+  dracula: "Dracula",
+  "solarized-dark": "Solarized Dark",
+  "solarized-light": "Solarized Light",
+  nord: "Nord",
+  "gruvbox-dark": "Gruvbox Dark",
   atomone: "Atom One",
   aura: "Aura",
   copilot: "Copilot",
   "github-dark": "GitHub Dark",
   "github-light": "GitHub Light",
-  "gruvbox-dark": "Gruvbox Dark",
-  nord: "Nord",
-  "tokyo-night": "Tokyo Night",
   "xcode-dark": "Xcode Dark",
   "xcode-light": "Xcode Light",
 };
-
-export type TtsProviderId = "cartesia" | "avspeech";
-export type SttProviderId = "whisper" | "deepgram";
 
 export type Preferences = {
   theme: ThemePref;
@@ -69,7 +125,7 @@ export type Preferences = {
   defaultModelId: ModelId;
   piAuthMode: PiAuthMode;
   piModelId: string;
-  editorTheme: EditorThemeId;
+  editorTheme: EditorThemePref;
   customInstructions: string;
   autostart: boolean;
   restoreWindowState: boolean;
@@ -87,27 +143,52 @@ export type Preferences = {
   openaiCompatibleContextLimit: number;
   customEndpoints: CustomEndpoint[];
   openrouterModelId: string;
+  ttsProvider: TtsProviderId;
+  sttProvider: SttProviderId;
+  groqSttModel: string;
+  whispercppBaseURL: string;
+  wakeWordEnabled: boolean;
+  pushToTalkShortcut: string;
+  overlayEnabled: boolean;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
+  editorWordWrap: boolean;
   showHidden: boolean;
+  explorerGitDecorations: boolean;
   terminalWebglEnabled: boolean;
+  terminalCursorBlink: boolean;
   terminalFontFamily: string;
+  terminalFontWeight: string;
+  terminalShell: string;
   terminalLetterSpacing: number;
   terminalFontSize: number;
   terminalScrollback: number;
   lastWslDistro: string | null;
   zoomLevel: number;
-  sidebarPosition: SidebarPosition;
   agentNotifications: boolean;
+  defaultWorkspaceEnv: string;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
-  ttsProvider: TtsProviderId;
-  sttProvider: SttProviderId;
-  wakeWordEnabled: boolean;
-  pushToTalkShortcut: string;
-  overlayEnabled: boolean;
+  editorFormatOnSave: boolean;
+  editorFormatter: EditorFormatter;
+  lspActivation: Record<string, LspActivation>;
+  lspCustomServers: LspCustomServer[];
+};
+
+export type EditorFormatter = "lsp" | "biome" | "prettier";
+
+export type LspActivation = "enabled" | "dismissed";
+
+export type LspCustomServer = {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  /** languageResolver id -> LSP languageId */
+  languages: Record<string, string>;
+  rootMarkers: string[];
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -138,28 +219,39 @@ const KEY_OPENAI_COMPAT_MODEL_ID = "openaiCompatibleModelId";
 const KEY_OPENAI_COMPAT_CONTEXT_LIMIT = "openaiCompatibleContextLimit";
 const KEY_CUSTOM_ENDPOINTS = "customEndpoints";
 const KEY_OPENROUTER_MODEL_ID = "openrouterModelId";
+const KEY_TTS_PROVIDER = "ttsProvider";
+const KEY_STT_PROVIDER = "sttProvider";
+const KEY_GROQ_STT_MODEL = "groqSttModel";
+const KEY_WHISPERCPP_BASE_URL = "whispercppBaseURL";
+const KEY_WAKE_WORD_ENABLED = "wakeWordEnabled";
+const KEY_PTT_SHORTCUT = "pushToTalkShortcut";
+const KEY_OVERLAY_ENABLED = "overlayEnabled";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
+const KEY_EDITOR_WORD_WRAP = "editorWordWrap";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
+const KEY_EXPLORER_GIT_DECORATIONS = "explorerGitDecorations";
 const KEY_TERMINAL_WEBGL_ENABLED = "terminalWebglEnabled";
+const KEY_TERMINAL_CURSOR_BLINK = "terminalCursorBlink";
 const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
+const KEY_TERMINAL_FONT_WEIGHT = "terminalFontWeight";
+const KEY_TERMINAL_SHELL = "terminalShell";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
-const KEY_SIDEBAR_POSITION = "sidebarPosition";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
+const KEY_DEFAULT_WORKSPACE_ENV = "defaultWorkspaceEnv";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
-const KEY_TTS_PROVIDER = "ttsProvider";
-const KEY_STT_PROVIDER = "sttProvider";
-const KEY_WAKE_WORD_ENABLED = "wakeWordEnabled";
-const KEY_PTT_SHORTCUT = "pushToTalkShortcut";
-const KEY_OVERLAY_ENABLED = "overlayEnabled";
+const KEY_EDITOR_FORMAT_ON_SAVE = "editorFormatOnSave";
+const KEY_EDITOR_FORMATTER = "editorFormatter";
+const KEY_LSP_ACTIVATION = "lspActivation";
+const KEY_LSP_CUSTOM_SERVERS = "lspCustomServers";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -186,7 +278,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   defaultModelId: DEFAULT_MODEL_ID,
   piAuthMode: "terax",
   piModelId: DEFAULT_MODEL_ID,
-  editorTheme: "atomone",
+  editorTheme: EDITOR_THEME_AUTO,
   customInstructions: "",
   autostart: false,
   restoreWindowState: true,
@@ -204,27 +296,38 @@ export const DEFAULT_PREFERENCES: Preferences = {
   openaiCompatibleContextLimit: 128_000,
   customEndpoints: [],
   openrouterModelId: "",
+  ttsProvider: "cartesia",
+  sttProvider: DEFAULT_STT_PROVIDER,
+  groqSttModel: "whisper-large-v3-turbo",
+  whispercppBaseURL: WHISPERCPP_DEFAULT_BASE_URL,
+  wakeWordEnabled: false,
+  pushToTalkShortcut: "Alt+Space",
+  overlayEnabled: true,
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
+  editorWordWrap: false,
   showHidden: false,
+  explorerGitDecorations: true,
   terminalWebglEnabled: true,
+  terminalCursorBlink: false,
   terminalFontFamily: "",
+  terminalFontWeight: "normal",
+  terminalShell: "",
   terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
   lastWslDistro: null,
   zoomLevel: 1.0,
-  sidebarPosition: "left",
   agentNotifications: true,
+  defaultWorkspaceEnv: "local",
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
-  ttsProvider: "cartesia" as TtsProviderId,
-  sttProvider: "whisper" as SttProviderId,
-  wakeWordEnabled: false,
-  pushToTalkShortcut: "Alt+Space",
-  overlayEnabled: true,
+  editorFormatOnSave: false,
+  editorFormatter: "lsp",
+  lspActivation: {},
+  lspCustomServers: [],
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -270,8 +373,12 @@ export async function loadPreferences(): Promise<Preferences> {
     piAuthMode:
       get<PiAuthMode>(KEY_PI_AUTH_MODE) ?? DEFAULT_PREFERENCES.piAuthMode,
     piModelId: get<string>(KEY_PI_MODEL) ?? DEFAULT_PREFERENCES.piModelId,
-    editorTheme:
-      get<EditorThemeId>(KEY_EDITOR_THEME) ?? DEFAULT_PREFERENCES.editorTheme,
+    editorTheme: ((): EditorThemePref => {
+      const stored = get<string>(KEY_EDITOR_THEME);
+      if (stored === EDITOR_THEME_AUTO || isEditorThemeId(stored))
+        return stored;
+      return DEFAULT_PREFERENCES.editorTheme;
+    })(),
     customInstructions:
       get<string>(KEY_CUSTOM_INSTRUCTIONS) ??
       DEFAULT_PREFERENCES.customInstructions,
@@ -320,6 +427,22 @@ export async function loadPreferences(): Promise<Preferences> {
     openrouterModelId:
       get<string>(KEY_OPENROUTER_MODEL_ID) ??
       DEFAULT_PREFERENCES.openrouterModelId,
+    ttsProvider:
+      get<TtsProviderId>(KEY_TTS_PROVIDER) ?? DEFAULT_PREFERENCES.ttsProvider,
+    sttProvider:
+      get<SttProviderId>(KEY_STT_PROVIDER) ?? DEFAULT_PREFERENCES.sttProvider,
+    groqSttModel:
+      get<string>(KEY_GROQ_STT_MODEL) ?? DEFAULT_PREFERENCES.groqSttModel,
+    whispercppBaseURL:
+      get<string>(KEY_WHISPERCPP_BASE_URL) ??
+      DEFAULT_PREFERENCES.whispercppBaseURL,
+    wakeWordEnabled:
+      get<boolean>(KEY_WAKE_WORD_ENABLED) ??
+      DEFAULT_PREFERENCES.wakeWordEnabled,
+    pushToTalkShortcut:
+      get<string>(KEY_PTT_SHORTCUT) ?? DEFAULT_PREFERENCES.pushToTalkShortcut,
+    overlayEnabled:
+      get<boolean>(KEY_OVERLAY_ENABLED) ?? DEFAULT_PREFERENCES.overlayEnabled,
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ?? DEFAULT_PREFERENCES.favoriteModelIds
     ).filter(isKnownModelId),
@@ -327,16 +450,30 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds
     ).filter(isKnownModelId),
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    editorWordWrap:
+      get<boolean>(KEY_EDITOR_WORD_WRAP) ?? DEFAULT_PREFERENCES.editorWordWrap,
     showHidden:
       get<boolean>(KEY_SHOW_HIDDEN) ??
       get<boolean>(LEGACY_KEY_SHOW_HIDDEN_DIRS) ??
       DEFAULT_PREFERENCES.showHidden,
+    explorerGitDecorations:
+      get<boolean>(KEY_EXPLORER_GIT_DECORATIONS) ??
+      DEFAULT_PREFERENCES.explorerGitDecorations,
     terminalWebglEnabled:
       get<boolean>(KEY_TERMINAL_WEBGL_ENABLED) ??
       DEFAULT_PREFERENCES.terminalWebglEnabled,
+    terminalCursorBlink:
+      get<boolean>(KEY_TERMINAL_CURSOR_BLINK) ??
+      DEFAULT_PREFERENCES.terminalCursorBlink,
     terminalFontFamily:
       get<string>(KEY_TERMINAL_FONT_FAMILY) ??
       DEFAULT_PREFERENCES.terminalFontFamily,
+    terminalFontWeight: coerceFontWeight(
+      get<string>(KEY_TERMINAL_FONT_WEIGHT) ??
+        DEFAULT_PREFERENCES.terminalFontWeight,
+    ),
+    terminalShell:
+      get<string>(KEY_TERMINAL_SHELL) ?? DEFAULT_PREFERENCES.terminalShell,
     terminalLetterSpacing:
       get<number>(KEY_TERMINAL_LETTER_SPACING) ??
       DEFAULT_PREFERENCES.terminalLetterSpacing,
@@ -351,10 +488,12 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string | null>(KEY_LAST_WSL_DISTRO) ??
       DEFAULT_PREFERENCES.lastWslDistro,
     zoomLevel: get<number>(KEY_ZOOM_LEVEL) ?? DEFAULT_PREFERENCES.zoomLevel,
-    sidebarPosition: normalizeSidebarPosition(get(KEY_SIDEBAR_POSITION)),
     agentNotifications:
       get<boolean>(KEY_AGENT_NOTIFICATIONS) ??
       DEFAULT_PREFERENCES.agentNotifications,
+    defaultWorkspaceEnv:
+      get<string>(KEY_DEFAULT_WORKSPACE_ENV) ??
+      DEFAULT_PREFERENCES.defaultWorkspaceEnv,
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
@@ -364,18 +503,38 @@ export async function loadPreferences(): Promise<Preferences> {
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
     ),
-    ttsProvider:
-      get<TtsProviderId>(KEY_TTS_PROVIDER) ?? DEFAULT_PREFERENCES.ttsProvider,
-    sttProvider:
-      get<SttProviderId>(KEY_STT_PROVIDER) ?? DEFAULT_PREFERENCES.sttProvider,
-    wakeWordEnabled:
-      get<boolean>(KEY_WAKE_WORD_ENABLED) ??
-      DEFAULT_PREFERENCES.wakeWordEnabled,
-    pushToTalkShortcut:
-      get<string>(KEY_PTT_SHORTCUT) ?? DEFAULT_PREFERENCES.pushToTalkShortcut,
-    overlayEnabled:
-      get<boolean>(KEY_OVERLAY_ENABLED) ?? DEFAULT_PREFERENCES.overlayEnabled,
+    editorFormatOnSave:
+      get<boolean>(KEY_EDITOR_FORMAT_ON_SAVE) ??
+      DEFAULT_PREFERENCES.editorFormatOnSave,
+    editorFormatter:
+      get<EditorFormatter>(KEY_EDITOR_FORMATTER) ??
+      DEFAULT_PREFERENCES.editorFormatter,
+    lspActivation:
+      get<Record<string, LspActivation>>(KEY_LSP_ACTIVATION) ??
+      DEFAULT_PREFERENCES.lspActivation,
+    lspCustomServers:
+      get<LspCustomServer[]>(KEY_LSP_CUSTOM_SERVERS) ??
+      DEFAULT_PREFERENCES.lspCustomServers,
   };
+}
+
+export async function setLspActivation(
+  id: string,
+  value: LspActivation | null,
+): Promise<void> {
+  const current =
+    ((await store.get(KEY_LSP_ACTIVATION)) as Record<string, LspActivation>) ??
+    {};
+  const next = { ...current };
+  if (value === null) delete next[id];
+  else next[id] = value;
+  await writePref(KEY_LSP_ACTIVATION, next);
+}
+
+export async function setLspCustomServers(
+  value: LspCustomServer[],
+): Promise<void> {
+  await writePref(KEY_LSP_CUSTOM_SERVERS, value);
 }
 
 export async function setTheme(value: ThemePref): Promise<void> {
@@ -430,7 +589,7 @@ export async function setPiModelId(value: string): Promise<void> {
   await writePref(KEY_PI_MODEL, value);
 }
 
-export async function setEditorTheme(value: EditorThemeId): Promise<void> {
+export async function setEditorTheme(value: EditorThemePref): Promise<void> {
   await writePref(KEY_EDITOR_THEME, value);
 }
 
@@ -511,6 +670,34 @@ export async function setOpenrouterModelId(value: string): Promise<void> {
   await writePref(KEY_OPENROUTER_MODEL_ID, value);
 }
 
+export async function setTtsProvider(value: TtsProviderId): Promise<void> {
+  await writePref(KEY_TTS_PROVIDER, value);
+}
+
+export async function setSttProvider(value: SttProviderId): Promise<void> {
+  await writePref(KEY_STT_PROVIDER, value);
+}
+
+export async function setGroqSttModel(value: string): Promise<void> {
+  await writePref(KEY_GROQ_STT_MODEL, value.trim());
+}
+
+export async function setWhispercppBaseURL(value: string): Promise<void> {
+  await writePref(KEY_WHISPERCPP_BASE_URL, value.trim());
+}
+
+export async function setWakeWordEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_WAKE_WORD_ENABLED, value);
+}
+
+export async function setPushToTalkShortcut(value: string): Promise<void> {
+  await writePref(KEY_PTT_SHORTCUT, value);
+}
+
+export async function setOverlayEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_OVERLAY_ENABLED, value);
+}
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -523,16 +710,43 @@ export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
 
+export async function setEditorWordWrap(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_WORD_WRAP, value);
+}
+
 export async function setShowHidden(value: boolean): Promise<void> {
   await writePref(KEY_SHOW_HIDDEN, value);
+}
+
+export async function setExplorerGitDecorations(value: boolean): Promise<void> {
+  await writePref(KEY_EXPLORER_GIT_DECORATIONS, value);
 }
 
 export async function setTerminalWebglEnabled(value: boolean): Promise<void> {
   await writePref(KEY_TERMINAL_WEBGL_ENABLED, value);
 }
 
+export async function setTerminalCursorBlink(value: boolean): Promise<void> {
+  await writePref(KEY_TERMINAL_CURSOR_BLINK, value);
+}
+
 export async function setTerminalFontFamily(value: string): Promise<void> {
   await writePref(KEY_TERMINAL_FONT_FAMILY, value.trim());
+}
+
+const TERMINAL_FONT_WEIGHT_VALUES = new Set(["normal", "500", "600", "bold"]);
+
+export function coerceFontWeight(value: string): string {
+  const v = value.trim();
+  return TERMINAL_FONT_WEIGHT_VALUES.has(v) ? v : "normal";
+}
+
+export async function setTerminalFontWeight(value: string): Promise<void> {
+  await writePref(KEY_TERMINAL_FONT_WEIGHT, coerceFontWeight(value));
+}
+
+export async function setTerminalShell(value: string): Promise<void> {
+  await writePref(KEY_TERMINAL_SHELL, value.trim());
 }
 
 export async function setTerminalLetterSpacing(value: number): Promise<void> {
@@ -572,15 +786,15 @@ export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
 }
 
-export async function setSidebarPosition(
-  value: SidebarPosition,
-): Promise<void> {
-  await writePref(KEY_SIDEBAR_POSITION, value);
-}
+export const AUTO_SAVE_DELAY_MIN = 100;
+export const AUTO_SAVE_DELAY_MAX = 60000;
 
-function clampAutoSaveDelay(v: number): number {
+export function clampAutoSaveDelay(v: number): number {
   if (!Number.isFinite(v)) return 1000;
-  return Math.min(60000, Math.max(100, Math.round(v)));
+  return Math.min(
+    AUTO_SAVE_DELAY_MAX,
+    Math.max(AUTO_SAVE_DELAY_MIN, Math.round(v)),
+  );
 }
 
 export async function setEditorAutoSave(value: boolean): Promise<void> {
@@ -591,34 +805,28 @@ export async function setEditorAutoSaveDelay(value: number): Promise<void> {
   await writePref(KEY_EDITOR_AUTO_SAVE_DELAY, clampAutoSaveDelay(value));
 }
 
+export async function setEditorFormatOnSave(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_FORMAT_ON_SAVE, value);
+}
+
+export async function setEditorFormatter(
+  value: EditorFormatter,
+): Promise<void> {
+  await writePref(KEY_EDITOR_FORMATTER, value);
+}
+
 export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
 
+export async function setDefaultWorkspaceEnv(value: string): Promise<void> {
+  await writePref(KEY_DEFAULT_WORKSPACE_ENV, value);
+}
+
 export async function setShortcuts(
-  value: Record<ShortcutId, KeyBinding[]> | Record<string, never>,
+  value: Record<ShortcutId, KeyBinding[]> | {},
 ): Promise<void> {
   await writePref(KEY_SHORTCUTS, value);
-}
-
-export async function setTtsProvider(value: TtsProviderId): Promise<void> {
-  await writePref(KEY_TTS_PROVIDER, value);
-}
-
-export async function setSttProvider(value: SttProviderId): Promise<void> {
-  await writePref(KEY_STT_PROVIDER, value);
-}
-
-export async function setWakeWordEnabled(value: boolean): Promise<void> {
-  await writePref(KEY_WAKE_WORD_ENABLED, value);
-}
-
-export async function setPushToTalkShortcut(value: string): Promise<void> {
-  await writePref(KEY_PTT_SHORTCUT, value);
-}
-
-export async function setOverlayEnabled(value: boolean): Promise<void> {
-  await writePref(KEY_OVERLAY_ENABLED, value);
 }
 
 export async function resetShortcuts(): Promise<void> {
@@ -627,77 +835,81 @@ export async function resetShortcuts(): Promise<void> {
 
 export type PrefKey = keyof Preferences;
 
-const STORE_KEY_TO_PREF_KEY = {
-  [KEY_THEME]: "theme",
-  [KEY_THEME_ID]: "themeId",
-  [KEY_BG_KIND]: "backgroundKind",
-  [KEY_BG_IMAGE_ID]: "backgroundImageId",
-  [KEY_BG_OPACITY]: "backgroundOpacity",
-  [KEY_BG_BLUR]: "backgroundBlur",
-  [KEY_DEFAULT_MODEL]: "defaultModelId",
-  [KEY_PI_AUTH_MODE]: "piAuthMode",
-  [KEY_PI_MODEL]: "piModelId",
-  [KEY_EDITOR_THEME]: "editorTheme",
-  [KEY_CUSTOM_INSTRUCTIONS]: "customInstructions",
-  [KEY_AUTOSTART]: "autostart",
-  [KEY_RESTORE_WINDOW]: "restoreWindowState",
-  [KEY_AUTOCOMPLETE_ENABLED]: "autocompleteEnabled",
-  [KEY_AUTOCOMPLETE_PROVIDER]: "autocompleteProvider",
-  [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
-  [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
-  [KEY_LMSTUDIO_MODEL_ID]: "lmstudioModelId",
-  [KEY_MLX_BASE_URL]: "mlxBaseURL",
-  [KEY_MLX_MODEL_ID]: "mlxModelId",
-  [KEY_OLLAMA_BASE_URL]: "ollamaBaseURL",
-  [KEY_OLLAMA_MODEL_ID]: "ollamaModelId",
-  [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
-  [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
-  [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
-  [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
-  [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
-  [KEY_FAVORITE_MODELS]: "favoriteModelIds",
-  [KEY_RECENT_MODELS]: "recentModelIds",
-  [KEY_VIM_MODE]: "vimMode",
-  [KEY_SHOW_HIDDEN]: "showHidden",
-  [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
-  [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
-  [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
-  [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
-  [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
-  [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
-  [KEY_ZOOM_LEVEL]: "zoomLevel",
-  [KEY_SIDEBAR_POSITION]: "sidebarPosition",
-  [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
-  [KEY_SHORTCUTS]: "shortcuts",
-  [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
-  [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
-  [KEY_TTS_PROVIDER]: "ttsProvider",
-  [KEY_STT_PROVIDER]: "sttProvider",
-  [KEY_WAKE_WORD_ENABLED]: "wakeWordEnabled",
-  [KEY_PTT_SHORTCUT]: "pushToTalkShortcut",
-  [KEY_OVERLAY_ENABLED]: "overlayEnabled",
-} satisfies Record<PrefKey, PrefKey>;
-
-function storeKeyToPrefKey(key: string): PrefKey | undefined {
-  return Object.hasOwn(STORE_KEY_TO_PREF_KEY, key)
-    ? STORE_KEY_TO_PREF_KEY[key as PrefKey]
-    : undefined;
-}
-
 /** Subscribe to changes from any window (settings → main). */
 export async function onPreferencesChange(
   cb: (key: PrefKey, value: unknown) => void,
 ): Promise<UnlistenFn> {
+  const map: Record<string, PrefKey> = {
+    [KEY_THEME]: "theme",
+    [KEY_THEME_ID]: "themeId",
+    [KEY_BG_KIND]: "backgroundKind",
+    [KEY_BG_IMAGE_ID]: "backgroundImageId",
+    [KEY_BG_OPACITY]: "backgroundOpacity",
+    [KEY_BG_BLUR]: "backgroundBlur",
+    [KEY_DEFAULT_MODEL]: "defaultModelId",
+    [KEY_PI_AUTH_MODE]: "piAuthMode",
+    [KEY_PI_MODEL]: "piModelId",
+    [KEY_EDITOR_THEME]: "editorTheme",
+    [KEY_CUSTOM_INSTRUCTIONS]: "customInstructions",
+    [KEY_AUTOSTART]: "autostart",
+    [KEY_RESTORE_WINDOW]: "restoreWindowState",
+    [KEY_AUTOCOMPLETE_ENABLED]: "autocompleteEnabled",
+    [KEY_AUTOCOMPLETE_PROVIDER]: "autocompleteProvider",
+    [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
+    [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
+    [KEY_LMSTUDIO_MODEL_ID]: "lmstudioModelId",
+    [KEY_MLX_BASE_URL]: "mlxBaseURL",
+    [KEY_MLX_MODEL_ID]: "mlxModelId",
+    [KEY_OLLAMA_BASE_URL]: "ollamaBaseURL",
+    [KEY_OLLAMA_MODEL_ID]: "ollamaModelId",
+    [KEY_OPENAI_COMPAT_BASE_URL]: "openaiCompatibleBaseURL",
+    [KEY_OPENAI_COMPAT_MODEL_ID]: "openaiCompatibleModelId",
+    [KEY_OPENAI_COMPAT_CONTEXT_LIMIT]: "openaiCompatibleContextLimit",
+    [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
+    [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
+    [KEY_TTS_PROVIDER]: "ttsProvider",
+    [KEY_STT_PROVIDER]: "sttProvider",
+    [KEY_GROQ_STT_MODEL]: "groqSttModel",
+    [KEY_WHISPERCPP_BASE_URL]: "whispercppBaseURL",
+    [KEY_WAKE_WORD_ENABLED]: "wakeWordEnabled",
+    [KEY_PTT_SHORTCUT]: "pushToTalkShortcut",
+    [KEY_OVERLAY_ENABLED]: "overlayEnabled",
+    [KEY_FAVORITE_MODELS]: "favoriteModelIds",
+    [KEY_RECENT_MODELS]: "recentModelIds",
+    [KEY_VIM_MODE]: "vimMode",
+    [KEY_EDITOR_WORD_WRAP]: "editorWordWrap",
+    [KEY_SHOW_HIDDEN]: "showHidden",
+    [KEY_EXPLORER_GIT_DECORATIONS]: "explorerGitDecorations",
+    [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
+    [KEY_TERMINAL_CURSOR_BLINK]: "terminalCursorBlink",
+    [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
+    [KEY_TERMINAL_FONT_WEIGHT]: "terminalFontWeight",
+    [KEY_TERMINAL_SHELL]: "terminalShell",
+    [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
+    [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
+    [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+    [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
+    [KEY_ZOOM_LEVEL]: "zoomLevel",
+    [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
+    [KEY_DEFAULT_WORKSPACE_ENV]: "defaultWorkspaceEnv",
+    [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
+    [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
+    [KEY_EDITOR_FORMAT_ON_SAVE]: "editorFormatOnSave",
+    [KEY_EDITOR_FORMATTER]: "editorFormatter",
+    [KEY_LSP_ACTIVATION]: "lspActivation",
+    [KEY_LSP_CUSTOM_SERVERS]: "lspCustomServers",
+  };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
   const unsubLocal = await store.onChange<unknown>((key, value) => {
-    const mapped = storeKeyToPrefKey(key);
+    const mapped = map[key];
     if (mapped) cb(mapped, value);
   });
   const unsubEvent = await listen<{ key: string; value: unknown }>(
     PREFS_CHANGED_EVENT,
     (e) => {
-      const mapped = storeKeyToPrefKey(e.payload.key);
+      const mapped = map[e.payload.key];
       if (mapped) cb(mapped, e.payload.value);
     },
   );

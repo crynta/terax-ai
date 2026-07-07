@@ -7,7 +7,8 @@ import type {
   PiSessionSendResult,
   PiSessionStopResult,
 } from "@/modules/pi/lib/sessions";
-import { getOrCreateChat, useChatStore } from "../store/chatStore";
+import { useChatStore } from "../store/chatStore";
+import { getOrCreateChat } from "../store/chatRuntime";
 
 export const PI_COMPOSER_RUNTIME_STORAGE_KEY = "terax.pi.composerRuntime";
 

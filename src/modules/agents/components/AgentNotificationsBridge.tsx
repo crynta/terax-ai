@@ -1,7 +1,8 @@
-import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef } from "react";
 import type { Tab } from "@/modules/tabs";
 import { hasLeaf, leafIdForPty } from "@/modules/terminal";
+import { listen } from "@tauri-apps/api/event";
+import { useEffect, useRef } from "react";
+import { displayAgent } from "../lib/format";
 import { maybeTriggerManagedReview } from "../lib/review";
 import { routeAgentNotification } from "../lib/route";
 import type { AgentSession, AgentSignal } from "../lib/types";
@@ -35,10 +36,9 @@ function route(
   ctx: Ctx,
 ): void {
   const info = tabInfo(ctx.tabs, session.leafId);
+  const name = displayAgent(session.agent);
   const heading =
-    kind === "attention"
-      ? `${session.agent} needs your input`
-      : `${session.agent} finished`;
+    kind === "attention" ? `${name} needs your input` : `${name} finished`;
 
   routeAgentNotification({
     source: "terminal",
@@ -78,7 +78,7 @@ function handleSignal(sig: AgentSignal, ctx: Ctx): void {
       return;
     }
     case "finished": {
-      store.setStatus(leafId, "finished");
+      store.setStatus(leafId, "waiting");
       const session = store.sessions[leafId];
       if (session) route(session, "finished", ctx);
       maybeTriggerManagedReview(leafId);

@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { isMarkdownPath } from "@/lib/utils";
+import {
+  createStarterWorkflowDocument,
+  type WorkflowDocument,
+} from "@/modules/workflow/lib/schema";
+import { workflowTerminalLeafIds } from "@/modules/workflow/lib/terminalNode";
 import {
   findLeafCwd,
   hasLeaf,
   leafIds,
   nextLeafId,
+  type PaneNode,
   removeLeaf,
   type SplitDir,
   setLeafCwd as setLeafCwdInTree,
@@ -11,63 +17,442 @@ import {
   splitLeaf,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-export type { ArtifactWorkspaceTabInput } from "./tabUtils";
-export {
-  basename,
-  createWorkflowTab,
-  createWorkflowTabFromDocument,
-  replaceWorkflowTabDocument,
-  terminalLeafIdsForTab,
-  titleFromUrl,
-  upsertArtifactHubTab,
-  upsertArtifactWorkspaceTab,
-  upsertPiWorkspaceTab,
-  upsertWorkflowDocumentTab,
-} from "./tabUtils";
-export type {
-  AiDiffStatus,
-  AiDiffTab,
-  ArtifactHubTab,
-  ArtifactWorkspaceTab,
-  EditorTab,
-  GitCommitFileDiffTab,
-  GitDiffTab,
-  GitHistoryTab,
-  MarkdownTab,
-  PiWorkspaceTab,
-  PreviewTab,
-  Tab,
-  TabPatch,
-  TerminalTab,
-  WorkflowTab,
-} from "./types";
-export { MAX_PANES_PER_TAB } from "./types";
+// Matches the renderer slot pool size — over this we'd evict an active leaf.
+export const MAX_PANES_PER_TAB = 4;
 
-import type { WorkflowDocument } from "@/modules/workflow/lib/schema";
-import {
-  type ArtifactWorkspaceTabInput,
-  basename,
-  createWorkflowTab,
-  replaceWorkflowTabDocument,
-  terminalLeafIdsForTab,
-  titleFromUrl,
-  upsertArtifactHubTab,
-  upsertArtifactWorkspaceTab,
-  upsertPiWorkspaceTab,
-  upsertWorkflowDocumentTab,
-} from "./tabUtils";
-import {
-  type AiDiffStatus,
-  type EditorTab,
-  type GitCommitFileDiffTab,
-  type GitDiffTab,
-  type GitHistoryTab,
-  MAX_PANES_PER_TAB,
-  type Tab,
-  type TabPatch,
-  type TerminalTab,
-} from "./types";
+type TabBase = {
+  spaceId?: string;
+  /** Restored from disk, not yet activated: rendered as a placeholder, not mounted. */
+  cold?: boolean;
+};
+
+export type TerminalTab = TabBase & {
+  id: number;
+  kind: "terminal";
+  title: string;
+  cwd?: string;
+  paneTree: PaneNode;
+  activeLeafId: number;
+  blocks?: boolean;
+  /** AI agent cannot read buffer / context of this terminal. */
+  private?: boolean;
+  /** User-set label that overrides the cwd-derived name. Survives cd. */
+  customTitle?: string;
+};
+
+export type EditorTab = TabBase & {
+  id: number;
+  kind: "editor";
+  title: string;
+  path: string;
+  dirty: boolean;
+  /**
+   * True while the tab is in the transient "preview" state — opened by a
+   * single-click in the explorer and not yet pinned by the user. A preview tab
+   * is replaced by the next single-click rather than accumulating.
+   */
+  preview: boolean;
+  overrideLanguage?: string | null;
+};
+
+export type PreviewTab = TabBase & {
+  id: number;
+  kind: "preview";
+  title: string;
+  url: string;
+};
+
+export type MarkdownTab = TabBase & {
+  id: number;
+  kind: "markdown";
+  title: string;
+  path: string;
+  view?: "preview" | "source" | "split";
+};
+
+export type AiDiffStatus = "pending" | "approved" | "rejected";
+
+export type AiDiffTab = TabBase & {
+  id: number;
+  kind: "ai-diff";
+  title: string;
+  path: string;
+  /** "" for newly created files. */
+  originalContent: string;
+  proposedContent: string;
+  /** Tool-call approval id used to resolve the AI SDK approval. */
+  approvalId: string;
+  status: AiDiffStatus;
+  isNewFile: boolean;
+};
+
+export type GitDiffTab = TabBase & {
+  id: number;
+  kind: "git-diff";
+  title: string;
+  path: string;
+  repoRoot: string;
+  mode: "-" | "+";
+  originalPath: string | null;
+};
+
+export type GitHistoryTab = TabBase & {
+  id: number;
+  kind: "git-history";
+  title: string;
+  repoRoot: string;
+};
+
+export type GitCommitFileDiffTab = TabBase & {
+  id: number;
+  kind: "git-commit-file";
+  title: string;
+  repoRoot: string;
+  sha: string;
+  shortSha: string;
+  subject: string;
+  path: string;
+  originalPath: string | null;
+};
+
+export type PiWorkspaceTab = TabBase & {
+  id: number;
+  kind: "pi-workspace";
+  title: "Code";
+};
+
+export type ArtifactWorkspaceTab = TabBase & {
+  id: number;
+  kind: "artifact";
+  title: string;
+  conversationId: string;
+  selectedSlug: string | null;
+};
+
+export type ArtifactHubTab = TabBase & {
+  id: number;
+  kind: "artifact-hub";
+  title: "Artifacts";
+};
+
+export type WorkflowTab = TabBase & {
+  id: number;
+  kind: "workflow";
+  title: string;
+  document: WorkflowDocument;
+  dirty: boolean;
+  path?: string;
+};
+
+export type Tab =
+  | TerminalTab
+  | EditorTab
+  | PreviewTab
+  | MarkdownTab
+  | AiDiffTab
+  | GitDiffTab
+  | GitHistoryTab
+  | GitCommitFileDiffTab
+  | PiWorkspaceTab
+  | ArtifactWorkspaceTab
+  | ArtifactHubTab
+  | WorkflowTab;
+
+export type TabPatch = Partial<{
+  title: string;
+  cwd: string;
+  path: string;
+  dirty: boolean;
+  url: string;
+  selectedSlug: string | null;
+  /** Empty string resets a terminal tab to its cwd-derived name. */
+  customTitle: string;
+  overrideLanguage: string | null;
+}>;
+
+function basename(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : path;
+}
+
+function titleFromUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.host || url;
+  } catch {
+    return url || "preview";
+  }
+}
+
+export const DEFAULT_SPACE_ID = "default";
+
+export type ArtifactWorkspaceTabInput = {
+  conversationId: string;
+  selectedSlug?: string | null;
+  title?: string;
+};
+
+function tabSpaceId(tab: Tab): string {
+  return tab.spaceId ?? DEFAULT_SPACE_ID;
+}
+
+export function createWorkflowTab(id: number, title = "Canvas"): WorkflowTab {
+  return createWorkflowTabFromDocument(
+    id,
+    createStarterWorkflowDocument({ id: `workflow-${id}`, title }),
+  );
+}
+
+export function createWorkflowTabFromDocument(
+  id: number,
+  document: WorkflowDocument,
+  path?: string,
+): WorkflowTab {
+  return {
+    id,
+    kind: "workflow",
+    spaceId: DEFAULT_SPACE_ID,
+    title: document.title,
+    document,
+    dirty: false,
+    ...(path !== undefined && { path }),
+  };
+}
+
+export function terminalLeafIdsForTab(tab: Tab): number[] {
+  if (tab.kind === "terminal") return leafIds(tab.paneTree);
+  if (tab.kind === "workflow") return workflowTerminalLeafIds(tab.document);
+  return [];
+}
+
+export function replaceWorkflowTabDocument(
+  tabs: Tab[],
+  id: number,
+  document: WorkflowDocument,
+  options: { dirty?: boolean; path?: string } = {},
+): Tab[] {
+  return tabs.map((tab) =>
+    tab.id === id && tab.kind === "workflow"
+      ? {
+          ...tab,
+          title: document.title,
+          document,
+          dirty: options.dirty ?? true,
+          ...(options.path !== undefined && { path: options.path }),
+        }
+      : tab,
+  );
+}
+
+export function upsertPiWorkspaceTab(
+  tabs: Tab[],
+  nextId: number,
+  spaceId?: string,
+): { activeId: number; tabs: Tab[] } {
+  const existing = tabs.find((tab) => tab.kind === "pi-workspace");
+  if (existing) return { activeId: existing.id, tabs };
+  return {
+    activeId: nextId,
+    tabs: [
+      ...tabs,
+      {
+        id: nextId,
+        kind: "pi-workspace",
+        ...(spaceId !== undefined && { spaceId }),
+        title: "Code",
+      },
+    ],
+  };
+}
+
+export function upsertArtifactHubTab(
+  tabs: Tab[],
+  nextId: number,
+  spaceId?: string,
+): { activeId: number; tabs: Tab[] } {
+  const existing = tabs.find((tab) => tab.kind === "artifact-hub");
+  if (existing) return { activeId: existing.id, tabs };
+  return {
+    activeId: nextId,
+    tabs: [
+      ...tabs,
+      {
+        id: nextId,
+        kind: "artifact-hub",
+        ...(spaceId !== undefined && { spaceId }),
+        title: "Artifacts",
+      },
+    ],
+  };
+}
+
+export function upsertArtifactWorkspaceTab(
+  tabs: Tab[],
+  nextId: number,
+  input: ArtifactWorkspaceTabInput,
+  spaceId?: string,
+): { activeId: number; tabs: Tab[] } {
+  const existing = tabs.find(
+    (tab) =>
+      tab.kind === "artifact" && tab.conversationId === input.conversationId,
+  );
+  if (existing) {
+    return {
+      activeId: existing.id,
+      tabs: tabs.map((tab) =>
+        tab.id === existing.id && tab.kind === "artifact"
+          ? {
+              ...tab,
+              ...(input.selectedSlug !== undefined && {
+                selectedSlug: input.selectedSlug,
+              }),
+              ...(input.title !== undefined && { title: input.title }),
+            }
+          : tab,
+      ),
+    };
+  }
+  return {
+    activeId: nextId,
+    tabs: [
+      ...tabs,
+      {
+        conversationId: input.conversationId,
+        id: nextId,
+        kind: "artifact",
+        selectedSlug: input.selectedSlug ?? null,
+        ...(spaceId !== undefined && { spaceId }),
+        title: input.title ?? "Artifacts",
+      },
+    ],
+  };
+}
+
+export function upsertWorkflowDocumentTab(
+  tabs: Tab[],
+  nextId: number,
+  document: WorkflowDocument,
+  path?: string,
+  spaceId = DEFAULT_SPACE_ID,
+): { activeId: number; tabs: Tab[] } {
+  const existing = path
+    ? tabs.find((tab) => tab.kind === "workflow" && tab.path === path)
+    : undefined;
+  if (existing) {
+    return {
+      activeId: existing.id,
+      tabs: replaceWorkflowTabDocument(tabs, existing.id, document, {
+        dirty: false,
+      }),
+    };
+  }
+
+  return {
+    activeId: nextId,
+    tabs: [
+      ...tabs,
+      { ...createWorkflowTabFromDocument(nextId, document, path), spaceId },
+    ],
+  };
+}
+
+// Returns the tab at position `idx` within the given space, or undefined when
+// idx is out of range or no matching space tab exists.
+export function pickTabBySpaceIndex(
+  tabs: Tab[],
+  idx: number,
+  spaceId: string,
+): Tab | undefined {
+  const pool = tabs.filter((t) => tabSpaceId(t) === spaceId);
+  return pool[idx];
+}
+
+// Next active after close, scoped to the closing tab's space. null = last tab of
+// its space, which callers treat as "refuse to close".
+export function nextActiveInSpace(
+  tabs: Tab[],
+  closingId: number,
+): number | null {
+  const closing = tabs.find((t) => t.id === closingId);
+  if (!closing) return null;
+  const sameSpace = tabs.filter((t) => tabSpaceId(t) === tabSpaceId(closing));
+  if (sameSpace.length <= 1) return null;
+  const idx = sameSpace.findIndex((t) => t.id === closingId);
+  return (sameSpace[idx - 1] ?? sameSpace[idx + 1]).id;
+}
+
+// Gap index is relative to the space's own strip, including the dragged tab.
+export function reorderTabsByGap(
+  tabs: Tab[],
+  fromId: number,
+  toGapIndex: number,
+): Tab[] {
+  const moved = tabs.find((t) => t.id === fromId);
+  if (!moved) return tabs;
+  const sameSpace = tabs.filter((t) => tabSpaceId(t) === tabSpaceId(moved));
+  const spaceFrom = sameSpace.findIndex((t) => t.id === fromId);
+  let spaceTarget = toGapIndex > spaceFrom ? toGapIndex - 1 : toGapIndex;
+  spaceTarget = Math.max(0, Math.min(spaceTarget, sameSpace.length - 1));
+  if (spaceTarget === spaceFrom) return tabs;
+  const anchor = sameSpace[spaceTarget];
+  const next = tabs.filter((t) => t.id !== fromId);
+  const anchorIdx = next.findIndex((t) => t.id === anchor.id);
+  const insertIdx = spaceTarget > spaceFrom ? anchorIdx + 1 : anchorIdx;
+  next.splice(insertIdx, 0, moved);
+  return next;
+}
+
+function coldTerminalTab(
+  tabId: number,
+  leafId: number,
+  spaceId: string,
+  cwd?: string,
+): TerminalTab {
+  return {
+    id: tabId,
+    kind: "terminal",
+    spaceId,
+    cold: true,
+    title: cwd ? basename(cwd) : "shell",
+    cwd,
+    paneTree: { kind: "leaf", id: leafId, cwd },
+    activeLeafId: leafId,
+  };
+}
+
+// Plans the removal of a deleted space's tabs while keeping the invariant that
+// the now-active `fallbackSpaceId` always has at least one tab (a cold one is
+// spawned when it would be left empty). Returns null when nothing to remove.
+export function planSpaceRemoval(
+  tabs: Tab[],
+  currentActiveId: number,
+  spaceId: string,
+  fallbackSpaceId: string,
+  fallbackCwd: string | undefined,
+  allocId: () => number,
+): { tabs: Tab[]; disposeLeafIds: number[]; activeId: number } | null {
+  const removed = tabs.filter((t) => tabSpaceId(t) === spaceId);
+  if (removed.length === 0) return null;
+  const disposeLeafIds = removed
+    .filter((t) => t.kind === "terminal")
+    .flatMap((t) => leafIds((t as TerminalTab).paneTree));
+  let next = tabs.filter((t) => tabSpaceId(t) !== spaceId);
+  let activeId = currentActiveId;
+  if (!next.some((t) => tabSpaceId(t) === fallbackSpaceId)) {
+    const tabId = allocId();
+    next = [
+      ...next,
+      coldTerminalTab(tabId, allocId(), fallbackSpaceId, fallbackCwd),
+    ];
+    activeId = tabId;
+  } else if (!next.some((t) => t.id === currentActiveId)) {
+    const inFallback = next.filter((t) => tabSpaceId(t) === fallbackSpaceId);
+    activeId = inFallback[inFallback.length - 1].id;
+  }
+  return { tabs: next, disposeLeafIds, activeId };
+}
 
 export function useTabs(initial?: Partial<TerminalTab>) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
@@ -77,6 +462,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       {
         id: tabId,
         kind: "terminal",
+        spaceId: DEFAULT_SPACE_ID,
+        cold: true,
         title: initial?.title ?? "shell",
         cwd: initial?.cwd,
         paneTree: { kind: "leaf", id: leafId, cwd: initial?.cwd },
@@ -85,12 +472,143 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     ];
   });
   const [activeId, setActiveId] = useState(1);
+  // Gates warming until boot resolves the restore, so no shell spawns before it.
+  const [booted, setBooted] = useState(false);
   const nextIdRef = useRef(3);
+  const activeSpaceIdRef = useRef(DEFAULT_SPACE_ID);
   const tabsRef = useRef(tabs);
+  const activeIdRef = useRef(activeId);
 
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+
+  // Activating a cold tab warms it: one choke point for every activation path.
+  useEffect(() => {
+    if (!booted) return;
+    setTabs((curr) => {
+      const t = curr.find((x) => x.id === activeId);
+      if (!t?.cold) return curr;
+      return curr.map((x) => (x.id === activeId ? { ...x, cold: false } : x));
+    });
+  }, [activeId, booted]);
+
+  const allocId = useCallback(() => nextIdRef.current++, []);
+
+  const markBooted = useCallback(() => setBooted(true), []);
+
+  const setActiveSpaceForNewTabs = useCallback((spaceId: string) => {
+    activeSpaceIdRef.current = spaceId;
+  }, []);
+
+  const replaceTabs = useCallback((next: Tab[], nextActiveId: number) => {
+    if (next.length === 0) return;
+    setTabs(next);
+    setActiveId(nextActiveId);
+  }, []);
+
+  // Appends a cold terminal tab to a space without stealing focus, so the
+  // overview can populate a space in place; it spawns when first opened.
+  const newTabInSpace = useCallback((spaceId: string, cwd?: string) => {
+    const tabId = nextIdRef.current++;
+    const leafId = nextIdRef.current++;
+    setTabs((curr) => [
+      ...curr,
+      {
+        id: tabId,
+        kind: "terminal",
+        spaceId,
+        cold: true,
+        title: cwd ? basename(cwd) : "shell",
+        cwd,
+        paneTree: { kind: "leaf", id: leafId, cwd },
+        activeLeafId: leafId,
+      },
+    ]);
+    return tabId;
+  }, []);
+
+  // Reassigns a tab to another space. Returns true when the moved tab was active
+  // and emptied its source space, so the caller should follow it into the target.
+  const moveTabToSpace = useCallback(
+    (tabId: number, targetSpaceId: string): boolean => {
+      const curr = tabsRef.current;
+      const tab = curr.find((t) => t.id === tabId);
+      if (!tab || tab.spaceId === targetSpaceId) return false;
+      setTabs((prev) =>
+        prev.map((t) =>
+          t.id === tabId ? ({ ...t, spaceId: targetSpaceId } as Tab) : t,
+        ),
+      );
+      if (activeIdRef.current !== tabId) return false;
+      const fallback = nextActiveInSpace(curr, tabId);
+      if (fallback !== null) {
+        setActiveId(fallback);
+        return false;
+      }
+      return true;
+    },
+    [],
+  );
+
+  // Positions a tab next to a target tab, inheriting the target's space. Returns
+  // true when the active tab crossed into the target space and emptied its
+  // source, so the caller should follow it.
+  const reorderTab = useCallback(
+    (tabId: number, targetTabId: number, edge: "top" | "bottom"): boolean => {
+      if (tabId === targetTabId) return false;
+      const curr = tabsRef.current;
+      const moved = curr.find((t) => t.id === tabId);
+      const target = curr.find((t) => t.id === targetTabId);
+      if (!moved || !target) return false;
+      const crossSpace = moved.spaceId !== target.spaceId;
+      setTabs((prev) => {
+        const without = prev.filter((t) => t.id !== tabId);
+        let idx = without.findIndex((t) => t.id === targetTabId);
+        if (idx < 0) return prev;
+        if (edge === "bottom") idx += 1;
+        const next: Tab = crossSpace
+          ? ({ ...moved, spaceId: target.spaceId } as Tab)
+          : moved;
+        without.splice(idx, 0, next);
+        return without;
+      });
+      if (!crossSpace || activeIdRef.current !== tabId) return false;
+      const fallback = nextActiveInSpace(curr, tabId);
+      if (fallback !== null) {
+        setActiveId(fallback);
+        return false;
+      }
+      return true;
+    },
+    [],
+  );
+
+  const removeTabsForSpace = useCallback(
+    (spaceId: string, fallbackSpaceId: string, fallbackCwd?: string) => {
+      let toDispose: number[] = [];
+      setTabs((curr) => {
+        const plan = planSpaceRemoval(
+          curr,
+          activeIdRef.current,
+          spaceId,
+          fallbackSpaceId,
+          fallbackCwd,
+          () => nextIdRef.current++,
+        );
+        if (!plan) return curr;
+        toDispose = plan.disposeLeafIds;
+        setActiveId(plan.activeId);
+        return plan.tabs;
+      });
+      for (const lid of toDispose) disposeSession(lid);
+    },
+    [],
+  );
 
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
@@ -100,6 +618,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       {
         id: tabId,
         kind: "terminal",
+        spaceId: activeSpaceIdRef.current,
         title: "shell",
         cwd,
         paneTree: { kind: "leaf", id: leafId, cwd },
@@ -110,6 +629,33 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return tabId;
   }, []);
 
+  const newBlockTab = useCallback((cwd?: string) => {
+    const tabId = nextIdRef.current++;
+    const leafId = nextIdRef.current++;
+    setTabs((t) => [
+      ...t,
+      {
+        id: tabId,
+        kind: "terminal",
+        spaceId: activeSpaceIdRef.current,
+        title: "blocks",
+        cwd,
+        paneTree: { kind: "leaf", id: leafId, cwd },
+        activeLeafId: leafId,
+        blocks: true,
+      },
+    ]);
+    setActiveId(tabId);
+    return tabId;
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env?.DEV || typeof window === "undefined") return;
+    (
+      window as unknown as { __teraxNewBlockTab?: (cwd?: string) => number }
+    ).__teraxNewBlockTab = newBlockTab;
+  }, [newBlockTab]);
+
   const newAgentTab = useCallback((cwd: string | undefined, title: string) => {
     const tabId = nextIdRef.current++;
     const leafId = nextIdRef.current++;
@@ -118,6 +664,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       {
         id: tabId,
         kind: "terminal",
+        spaceId: activeSpaceIdRef.current,
         title,
         cwd,
         paneTree: { kind: "leaf", id: leafId, cwd },
@@ -136,6 +683,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       {
         id: tabId,
         kind: "terminal",
+        spaceId: activeSpaceIdRef.current,
         title: "private",
         cwd,
         paneTree: { kind: "leaf", id: leafId, cwd },
@@ -147,48 +695,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return tabId;
   }, []);
 
-  const newWorkflowTab = useCallback(() => {
-    const tabId = nextIdRef.current++;
-    setTabs((t) => [...t, createWorkflowTab(tabId)]);
-    setActiveId(tabId);
-    return tabId;
-  }, []);
-
-  const openWorkflowDocumentTab = useCallback(
-    (document: WorkflowDocument, path?: string) => {
-      const tabId = nextIdRef.current++;
-      let activeId = tabId;
-      setTabs((t) => {
-        const result = upsertWorkflowDocumentTab(t, tabId, document, path);
-        activeId = result.activeId;
-        return result.tabs;
-      });
-      setActiveId(activeId);
-      return activeId;
-    },
-    [],
-  );
-
-  const updateWorkflowDocument = useCallback(
-    (
-      id: number,
-      document: WorkflowDocument,
-      options?: { dirty?: boolean; path?: string },
-    ) => {
-      setTabs((curr) =>
-        replaceWorkflowTabDocument(curr, id, document, options),
-      );
-    },
-    [],
-  );
-
   /**
    * Opens a file in an editor tab.
    *
-   * - `pin = true` (default) opens or activates a **persistent** tab.
+   * - `pin = true` (default) — opens or activates a **persistent** tab.
    *   If the path is currently in the preview slot it is promoted in-place.
    *   Use this for programmatic opens (AI diff, New File dialog, etc.).
-   * - `pin = false` opens a VSCode-style **preview** tab. A single shared slot is
+   * - `pin = false` — VSCode-style **preview** tab. A single shared slot is
    *   reused: if a persistent tab for the path already exists it is activated;
    *   otherwise the current preview slot is replaced with the new path.
    */
@@ -216,6 +729,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           {
             id,
             kind: "editor",
+            spaceId: activeSpaceIdRef.current,
             title: basename(path),
             path,
             dirty: false,
@@ -250,6 +764,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         const tab: EditorTab = {
           id,
           kind: "editor",
+          spaceId: activeSpaceIdRef.current,
           title: basename(path),
           path,
           dirty: false,
@@ -302,6 +817,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           {
             id,
             kind: "ai-diff",
+            spaceId: activeSpaceIdRef.current,
             title,
             path: input.path,
             originalContent: input.originalContent,
@@ -336,19 +852,17 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       const target = curr.find(
         (t) => t.kind === "ai-diff" && t.approvalId === approvalId,
       );
-      if (!target || curr.length <= 1) {
-        if (!target) return curr;
+      if (!target) return curr;
+      const fallback = nextActiveInSpace(curr, target.id);
+      if (fallback === null) {
         return curr.map((t) =>
           t.kind === "ai-diff" && t.approvalId === approvalId
             ? { ...t, status: "approved" as AiDiffStatus }
             : t,
         );
       }
-      const idx = curr.findIndex((t) => t.id === target.id);
       const next = curr.filter((t) => t.id !== target.id);
-      setActiveId((active) =>
-        target.id === active ? next[Math.max(0, idx - 1)].id : active,
-      );
+      setActiveId((active) => (target.id === active ? fallback : active));
       return next;
     });
   }, []);
@@ -357,7 +871,13 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     const id = nextIdRef.current++;
     setTabs((t) => [
       ...t,
-      { id, kind: "preview", title: titleFromUrl(url), url },
+      {
+        id,
+        kind: "preview",
+        spaceId: activeSpaceIdRef.current,
+        title: titleFromUrl(url),
+        url,
+      },
     ]);
     setActiveId(id);
     return id;
@@ -375,44 +895,68 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       }
       const id = nextIdRef.current++;
       targetId = id;
-      return [...curr, { id, kind: "markdown", title: basename(path), path }];
+      return [
+        ...curr,
+        {
+          id,
+          kind: "markdown",
+          spaceId: activeSpaceIdRef.current,
+          title: basename(path),
+          path,
+        },
+      ];
     });
     if (targetId !== null) setActiveId(targetId);
     return targetId;
   }, []);
 
-  const openPiWorkspaceTab = useCallback(() => {
-    const existing = tabsRef.current.find((tab) => tab.kind === "pi-workspace");
-    if (existing) {
-      setActiveId(existing.id);
-      return existing.id;
-    }
-
-    const id = nextIdRef.current++;
-    const result = upsertPiWorkspaceTab(tabsRef.current, id);
-    tabsRef.current = result.tabs;
-    setTabs(result.tabs);
-    setActiveId(result.activeId);
-    return result.activeId;
+  const setOverrideLanguage = useCallback((id: number, lang: string | null) => {
+    setTabs((curr) =>
+      curr.map((t) => {
+        if (t.id !== id || t.kind !== "editor") return t;
+        return {
+          ...t,
+          overrideLanguage: lang,
+        };
+      }),
+    );
   }, []);
 
-  const openArtifactHubTab = useCallback(() => {
-    const id = nextIdRef.current++;
-    const result = upsertArtifactHubTab(tabsRef.current, id);
-    tabsRef.current = result.tabs;
-    setTabs(result.tabs);
-    setActiveId(result.activeId);
-    return result.activeId;
-  }, []);
-
-  const openArtifactWorkspaceTab = useCallback(
-    (input: ArtifactWorkspaceTabInput) => {
-      const id = nextIdRef.current++;
-      const result = upsertArtifactWorkspaceTab(tabsRef.current, id, input);
-      tabsRef.current = result.tabs;
-      setTabs(result.tabs);
-      setActiveId(result.activeId);
-      return result.activeId;
+  const setMarkdownView = useCallback(
+    (id: number, mode: "rendered" | "raw") => {
+      setTabs((curr) =>
+        curr.map((t) => {
+          if (
+            t.id !== id ||
+            !isMarkdownPath((t as { path?: string }).path ?? "")
+          )
+            return t;
+          if (mode === "raw" && t.kind === "markdown") {
+            return {
+              ...t,
+              kind: "editor" as const,
+              dirty: false,
+              preview: false,
+              overrideLanguage:
+                (t as { overrideLanguage?: string | null }).overrideLanguage ??
+                null,
+            };
+          }
+          if (mode === "rendered" && t.kind === "editor") {
+            if (t.dirty) return t;
+            return {
+              id: t.id,
+              kind: "markdown" as const,
+              spaceId: t.spaceId,
+              cold: t.cold,
+              title: t.title,
+              path: t.path,
+              overrideLanguage: t.overrideLanguage ?? null,
+            };
+          }
+          return t;
+        }),
+      );
     },
     [],
   );
@@ -439,7 +983,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
       if (existing) {
         const nextTabs = curr.map((t) =>
-          t.kind === "git-diff" && t.id === existing.id
+          t.id === existing.id && t.kind === "git-diff"
             ? { ...t, title: computedTitle, originalPath }
             : t,
         );
@@ -455,6 +999,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         {
           id,
           kind: "git-diff",
+          spaceId: activeSpaceIdRef.current,
           title: computedTitle,
           path: input.path,
           repoRoot: input.repoRoot,
@@ -479,7 +1024,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       const title = input.branch ? `History · ${input.branch}` : "Git History";
       if (existing) {
         const nextTabs = curr.map((t) =>
-          t.kind === "git-history" && t.id === existing.id
+          t.id === existing.id && t.kind === "git-history"
             ? { ...t, title }
             : t,
         );
@@ -494,6 +1039,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         {
           id,
           kind: "git-history",
+          spaceId: activeSpaceIdRef.current,
           title,
           repoRoot: input.repoRoot,
         } satisfies GitHistoryTab,
@@ -526,7 +1072,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       const title = `${basename(input.path)} @ ${input.shortSha}`;
       if (existing) {
         const nextTabs = curr.map((t) =>
-          t.kind === "git-commit-file" && t.id === existing.id
+          t.id === existing.id && t.kind === "git-commit-file"
             ? {
                 ...t,
                 title,
@@ -546,6 +1092,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         {
           id,
           kind: "git-commit-file",
+          spaceId: activeSpaceIdRef.current,
           title,
           repoRoot: input.repoRoot,
           sha: input.sha,
@@ -566,14 +1113,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const closeTab = useCallback((id: number) => {
     let toDispose: number[] = [];
     setTabs((curr) => {
-      if (curr.length <= 1) return curr;
-      const idx = curr.findIndex((t) => t.id === id);
-      const target = curr[idx];
-      if (target) toDispose = terminalLeafIdsForTab(target);
+      const fallback = nextActiveInSpace(curr, id);
+      if (fallback === null) return curr;
+      const target = curr.find((t) => t.id === id);
+      if (target?.kind === "terminal") {
+        toDispose = leafIds(target.paneTree);
+      }
       const next = curr.filter((t) => t.id !== id);
-      setActiveId((active) =>
-        id === active ? next[Math.max(0, idx - 1)].id : active,
-      );
+      setActiveId((active) => (id === active ? fallback : active));
       return next;
     });
     for (const lid of toDispose) disposeSession(lid);
@@ -610,35 +1157,20 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             ...(patch.title !== undefined && { title: patch.title }),
           };
         }
-        if (x.kind === "ai-diff") {
+        if (x.kind === "editor") {
+          const autoPin =
+            patch.dirty === true && x.preview ? { preview: false } : {};
           return {
             ...x,
+            ...autoPin,
             ...(patch.title !== undefined && { title: patch.title }),
+            ...(patch.dirty !== undefined && { dirty: patch.dirty }),
             ...(patch.path !== undefined && { path: patch.path }),
+            ...(patch.overrideLanguage !== undefined && {
+              overrideLanguage: patch.overrideLanguage,
+            }),
           };
         }
-        if (x.kind === "git-diff") {
-          return {
-            ...x,
-            ...(patch.title !== undefined && { title: patch.title }),
-            ...(patch.path !== undefined && { path: patch.path }),
-          };
-        }
-        if (x.kind === "git-history") {
-          return {
-            ...x,
-            ...(patch.title !== undefined && { title: patch.title }),
-          };
-        }
-        if (x.kind === "git-commit-file") {
-          return {
-            ...x,
-            ...(patch.title !== undefined && { title: patch.title }),
-            ...(patch.path !== undefined && { path: patch.path }),
-          };
-        }
-        if (x.kind === "pi-workspace") return x;
-        if (x.kind === "artifact-hub") return x;
         if (x.kind === "artifact") {
           return {
             ...x,
@@ -651,42 +1183,29 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         if (x.kind === "workflow") {
           return {
             ...x,
-            ...(patch.path !== undefined && { path: patch.path }),
-            ...(patch.dirty !== undefined && { dirty: patch.dirty }),
-            ...(patch.title !== undefined && {
-              title: patch.title,
-              dirty: true,
-              document: { ...x.document, title: patch.title },
-            }),
-          };
-        }
-
-        if (x.kind === "editor") {
-          const autoPin =
-            patch.dirty === true && x.preview ? { preview: false } : {};
-          return {
-            ...x,
-            ...autoPin,
             ...(patch.title !== undefined && { title: patch.title }),
             ...(patch.dirty !== undefined && { dirty: patch.dirty }),
             ...(patch.path !== undefined && { path: patch.path }),
           };
         }
-        return x;
+        if (x.kind === "pi-workspace" || x.kind === "artifact-hub") {
+          return x;
+        }
+        return patch.title !== undefined ? { ...x, title: patch.title } : x;
       }),
     );
   }, []);
 
   const selectByIndex = useCallback(
-    (idx: number) => {
-      const t = tabs[idx];
+    (idx: number, spaceId?: string) => {
+      const t = spaceId ? pickTabBySpaceIndex(tabs, idx, spaceId) : tabs[idx];
       if (t) setActiveId(t.id);
     },
     [tabs],
   );
 
   /** Update a leaf's cwd; mirror to the tab's `cwd` when the leaf is active.
-   * Bails out without setTabs when nothing actually changed. Shell integration
+   * Bails out without setTabs when nothing actually changed — shell integration
    * re-emits OSC 7 on every prompt, including empty Enters, so this fires at
    * keystroke rate. Always-setTabs there cascades a paneTree re-render across
    * every open tab. */
@@ -740,7 +1259,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       let newLeafId: number | null = null;
       setTabs((curr) =>
         curr.map((t) => {
-          if (t.id !== tabId || t.kind !== "terminal") return t;
+          if (t.id !== tabId || t.kind !== "terminal" || t.blocks) return t;
           if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
           const splitId = nextIdRef.current++;
           const leafId = nextIdRef.current++;
@@ -770,12 +1289,10 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       if (tab?.kind !== "terminal") return curr;
       const newTree = removeLeaf(tab.paneTree, leafId);
       if (newTree === null) {
-        if (curr.length <= 1) return curr;
-        const idx = curr.findIndex((x) => x.id === tab.id);
+        const fallback = nextActiveInSpace(curr, tab.id);
+        if (fallback === null) return curr;
         const next = curr.filter((x) => x.id !== tab.id);
-        setActiveId((active) =>
-          active === tab.id ? next[Math.max(0, idx - 1)].id : active,
-        );
+        setActiveId((active) => (active === tab.id ? fallback : active));
         didRemove = true;
         return next;
       }
@@ -804,12 +1321,10 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       const target = t.activeLeafId;
       const newTree = removeLeaf(t.paneTree, target);
       if (newTree === null) {
-        if (curr.length <= 1) return curr;
-        const idx = curr.findIndex((x) => x.id === tabId);
+        const fallback = nextActiveInSpace(curr, tabId);
+        if (fallback === null) return curr;
         const next = curr.filter((x) => x.id !== tabId);
-        setActiveId((active) =>
-          active === tabId ? next[Math.max(0, idx - 1)].id : active,
-        );
+        setActiveId((active) => (active === tabId ? fallback : active));
         closedTab = true;
         removedLeaf = target;
         return next;
@@ -833,11 +1348,14 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     const leafId = nextIdRef.current++;
     let toDispose: number[] = [];
     setTabs((curr) => {
-      toDispose = curr.flatMap(terminalLeafIdsForTab);
+      toDispose = curr.flatMap((t) =>
+        t.kind === "terminal" ? leafIds(t.paneTree) : [],
+      );
       return [
         {
           id: tabId,
           kind: "terminal",
+          spaceId: activeSpaceIdRef.current,
           title: "shell",
           cwd,
           paneTree: { kind: "leaf", id: leafId, cwd },
@@ -849,23 +1367,33 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     for (const lid of toDispose) disposeSession(lid);
   }, []);
 
+  const reorderTabByGap = useCallback((fromId: number, toGapIndex: number) => {
+    setTabs((prev) => reorderTabsByGap(prev, fromId, toGapIndex));
+  }, []);
+
   return {
     tabs,
     activeId,
     setActiveId,
+    allocId,
+    replaceTabs,
+    moveTabToSpace,
+    reorderTab,
+    reorderTabByGap,
+    newTabInSpace,
+    removeTabsForSpace,
+    markBooted,
+    setActiveSpaceForNewTabs,
+    setOverrideLanguage,
     newTab,
+    newBlockTab,
     newAgentTab,
     newPrivateTab,
-    newWorkflowTab,
-    openWorkflowDocumentTab,
-    updateWorkflowDocument,
     openFileTab,
     pinTab,
     newPreviewTab,
     newMarkdownTab,
-    openPiWorkspaceTab,
-    openArtifactHubTab,
-    openArtifactWorkspaceTab,
+    setMarkdownView,
     openAiDiffTab,
     openGitDiffTab,
     openCommitHistoryTab,

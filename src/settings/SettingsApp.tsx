@@ -1,25 +1,27 @@
-import AiScanIcon from "@hugeicons/core-free-icons/AiScanIcon";
-import InformationCircleIcon from "@hugeicons/core-free-icons/InformationCircleIcon";
-import KeyboardIcon from "@hugeicons/core-free-icons/KeyboardIcon";
-import Speaker01Icon from "@hugeicons/core-free-icons/Speaker01Icon";
-import PaintBoardIcon from "@hugeicons/core-free-icons/PaintBoardIcon";
-import Settings01Icon from "@hugeicons/core-free-icons/Settings01Icon";
-import UserMultiple02Icon from "@hugeicons/core-free-icons/UserMultiple02Icon";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { type JSX, useEffect, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import type { SettingsTab } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  AiScanIcon,
+  InformationCircleIcon,
+  KeyboardIcon,
+  PaintBoardIcon,
+  Settings01Icon,
+  SourceCodeIcon,
+  UserMultiple02Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { type JSX, useEffect, useState } from "react";
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
+import { EditorSection } from "./sections/EditorSection";
 import { GeneralSection } from "./sections/GeneralSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { ThemesSection } from "./sections/ThemesSection";
-import { VoiceSettings } from "@/modules/ai/components/VoiceSettings";
 
 const TABS: {
   id: SettingsTab;
@@ -32,6 +34,12 @@ const TABS: {
     label: "General",
     icon: Settings01Icon,
     component: GeneralSection,
+  },
+  {
+    id: "editor",
+    label: "Editor",
+    icon: SourceCodeIcon,
+    component: EditorSection,
   },
   {
     id: "themes",
@@ -53,12 +61,6 @@ const TABS: {
     component: AgentsSection,
   },
   {
-    id: "voice",
-    label: "Voice",
-    icon: Speaker01Icon,
-    component: VoiceSettings,
-  },
-  {
     id: "about",
     label: "About",
     icon: InformationCircleIcon,
@@ -68,11 +70,11 @@ const TABS: {
 
 const VALID_TABS: SettingsTab[] = [
   "general",
+  "editor",
   "themes",
   "shortcuts",
   "models",
   "agents",
-  "voice",
   "about",
 ];
 
@@ -116,12 +118,6 @@ export function SettingsApp() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
-      <a
-        href="#settings-main-content"
-        className="sr-only z-[100] rounded-md bg-background px-3 py-2 text-sm text-foreground shadow focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:ring-2 focus:ring-ring"
-      >
-        Skip to main content
-      </a>
       <header
         data-tauri-drag-region
         className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
@@ -151,11 +147,7 @@ export function SettingsApp() {
         {USE_CUSTOM_WINDOW_CONTROLS && <WindowControls closeOnly />}
       </header>
 
-      <main
-        id="settings-main-content"
-        tabIndex={-1}
-        className="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-7 focus:outline-none"
-      >
+      <main className="min-h-0 flex-1 overflow-y-auto px-8 pt-6 pb-7 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="mx-auto w-full max-w-160">
           {ActiveSection && <ActiveSection />}
         </div>

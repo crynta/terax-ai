@@ -1,13 +1,11 @@
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Spinner } from "@/components/ui/spinner";
 import { unifiedMergeView } from "@codemirror/merge";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Spinner } from "@/components/ui/spinner";
-import { diffTextClass } from "@/lib/statusTone";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   commitDiffKey,
   fetchCommitDiff,
@@ -17,7 +15,7 @@ import {
 } from "./lib/diffCache";
 import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import { resolveLanguage, resolveLanguageSync } from "./lib/languageResolver";
-import { EDITOR_THEME_EXT } from "./lib/themes";
+import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 
 type WorkingSource = {
   kind: "working";
@@ -132,8 +130,7 @@ function loadStateFromCache(source: WorkingSource | CommitSource): LoadState {
 
 export function GitDiffPane({ source, chipLabel, active }: Props) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
-  const editorThemeId = usePreferencesStore((s) => s.editorTheme);
-  const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
+  const themeExt = useEditorThemeExt();
   const [state, setState] = useState<LoadState>(() =>
     active ? loadStateFromCache(source) : { kind: "idle" },
   );
@@ -207,7 +204,7 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
   const extensions = useMemo(
     () => [
       ...SHARED_EXT,
-      languageCompartment.of(initialLang ?? []),
+      languageCompartment.of(initialLang?.ext ?? []),
       ...READONLY_EXT,
       unifiedMergeView({
         original: originalContent,
@@ -232,12 +229,12 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
     if (useFallback || initialLang) return;
     if (state.kind !== "loaded") return;
     let cancelled = false;
-    resolveLanguage(path).then((ext) => {
+    resolveLanguage(path).then((res) => {
       if (cancelled) return;
       const view = cmRef.current?.view;
       if (!view) return;
       view.dispatch({
-        effects: languageCompartment.reconfigure(ext ?? []),
+        effects: languageCompartment.reconfigure(res?.ext ?? []),
       });
     });
     return () => {
@@ -281,8 +278,12 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
           <span className="truncate max-w-80 font-mono">{repoRoot}</span>
           {useFallback ? (
             <>
-              <span className={diffTextClass("add")}>+{stats.added}</span>
-              <span className={diffTextClass("remove")}>−{stats.removed}</span>
+              <span className="text-emerald-600 dark:text-emerald-400">
+                +{stats.added}
+              </span>
+              <span className="text-rose-600 dark:text-rose-400">
+                −{stats.removed}
+              </span>
             </>
           ) : null}
         </div>

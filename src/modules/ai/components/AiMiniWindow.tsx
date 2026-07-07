@@ -1,14 +1,3 @@
-import { type UIMessage, useChat } from "@ai-sdk/react";
-import Add01Icon from "@hugeicons/core-free-icons/Add01Icon";
-import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
-import ArrowDown01Icon from "@hugeicons/core-free-icons/ArrowDown01Icon";
-import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
-import Delete02Icon from "@hugeicons/core-free-icons/Delete02Icon";
-import FilterIcon from "@hugeicons/core-free-icons/FilterIcon";
-import TerminalIcon from "@hugeicons/core-free-icons/TerminalIcon";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { motion } from "motion/react";
-import { useEffect, useMemo } from "react";
 import {
   Context,
   ContextContent,
@@ -21,15 +10,25 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { statusDotClass } from "@/lib/statusTone";
 import { cn } from "@/lib/utils";
-import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useChat, type UIMessage } from "@ai-sdk/react";
+import {
+  Add01Icon,
+  AlertCircleIcon,
+  ArrowDown01Icon,
+  Cancel01Icon,
+  Delete02Icon,
+  FilterIcon,
+  TerminalIcon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import type { PresenceState } from "@/lib/usePresence";
+import { useEffect, useMemo } from "react";
 import {
   estimateCost,
   getModel,
@@ -40,7 +39,9 @@ import type { ResizeDir } from "../lib/miniWindowGeometry";
 import type { SessionMeta } from "../lib/sessions";
 import { useMiniWindowGeometry } from "../lib/useMiniWindowGeometry";
 import { useAgentsStore } from "../store/agentsStore";
-import { getOrCreateChat, useChatStore } from "../store/chatStore";
+import { useChatStore } from "../store/chatStore";
+import { getOrCreateChat } from "../store/chatRuntime";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { usePlanStore } from "../store/planStore";
 import { AgentSwitcher } from "./AgentSwitcher";
 import { AiChatView } from "./AiChat";
@@ -68,7 +69,7 @@ const SUGGESTIONS = [
   },
 ];
 
-export function AiMiniWindow() {
+export function AiMiniWindow({ state }: { state: PresenceState }) {
   const closeMini = useChatStore((s) => s.closeMini);
   const sessionId = useChatStore((s) => s.activeSessionId);
   const openPanel = useChatStore((s) => s.openPanel);
@@ -93,18 +94,18 @@ export function AiMiniWindow() {
   }, [closeMini]);
 
   return (
-    <motion.div
+    <div
       ref={ref}
-      initial={{ opacity: 0, y: 12, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 12, scale: 0.98 }}
-      transition={{ type: "spring", stiffness: 320, damping: 32 }}
+      data-state={state}
       data-ai-mini-window
       className={cn(
         "no-scrollbar-deep fixed z-40 flex flex-col overflow-hidden",
-        "rounded-lg border border-border/60 bg-card text-[12px]",
+        "rounded-2xl border border-border/60 bg-card text-[12px]",
         "shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_24px_48px_-12px_rgba(0,0,0,0.45),0_8px_16px_-8px_rgba(0,0,0,0.3)]",
         "ring-1 ring-black/5 dark:ring-white/5",
+        "duration-200 ease-out",
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-bottom-2",
+        "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-bottom-2",
       )}
     >
       <div
@@ -129,7 +130,7 @@ export function AiMiniWindow() {
         />
       )}
       <PlanDiffReview />
-    </motion.div>
+    </div>
   );
 }
 
@@ -226,12 +227,7 @@ function PlanModeStrip() {
   if (!active) return null;
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-border/40 bg-muted/40 px-3 py-1.5">
-      <span
-        className={cn(
-          "size-1.5 shrink-0 rounded-full",
-          statusDotClass("warning"),
-        )}
-      />
+      <span className="size-1.5 shrink-0 rounded-full bg-amber-500" />
       <span className="text-[11px] font-medium text-foreground">Plan mode</span>
       <span className="text-[11px] text-muted-foreground">
         {queueLen > 0 ? `· ${queueLen} queued` : "· no edits queued"}
@@ -318,11 +314,7 @@ function Header({
           aria-label="Close"
           title="Close (Esc)"
         >
-          <HugeiconsIcon
-            data-icon="inline-start"
-            icon={Cancel01Icon}
-            strokeWidth={1.75}
-          />
+          <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={1.75} />
         </Button>
       </div>
     </div>
@@ -379,7 +371,7 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
       : 0;
 
   return (
-    <Context usedTokens={used} maxTokens={max} modelId={modelId}>
+    <Context usedTokens={used} maxTokens={max}>
       <ContextTrigger className="h-6 gap-1 px-0 text-[10.5px]" />
       <ContextContent className="w-64 text-[11px]">
         <ContextContentHeader />
@@ -460,16 +452,10 @@ function SessionPicker() {
   const newSession = useChatStore((s) => s.newSession);
   const deleteSession = useChatStore((s) => s.deleteSession);
 
-  const active = useMemo(
-    () => sessions.find((session) => session.id === activeId) ?? null,
-    [activeId, sessions],
-  );
-  const sorted = useMemo(
-    () => [...sessions].sort((a, b) => b.updatedAt - a.updatedAt),
-    [sessions],
-  );
-
+  const active = sessions.find((s) => s.id === activeId) ?? null;
   if (!active) return null;
+
+  const sorted = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
 
   return (
     <DropdownMenu>
@@ -493,27 +479,23 @@ function SessionPicker() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-56">
-        <DropdownMenuGroup>
-          <DropdownMenuItem
-            onSelect={() => newSession()}
-            className="gap-2 text-xs"
-          >
-            <HugeiconsIcon icon={Add01Icon} strokeWidth={1.75} />
-            New session
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
+        <DropdownMenuItem
+          onSelect={() => newSession()}
+          className="gap-2 text-xs"
+        >
+          <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={1.75} />
+          New session
+        </DropdownMenuItem>
         {sorted.length > 0 ? <DropdownMenuSeparator /> : null}
-        <DropdownMenuGroup>
-          {sorted.map((s) => (
-            <SessionRow
-              key={s.id}
-              session={s}
-              active={s.id === activeId}
-              onSelect={() => switchSession(s.id)}
-              onDelete={() => deleteSession(s.id)}
-            />
-          ))}
-        </DropdownMenuGroup>
+        {sorted.map((s) => (
+          <SessionRow
+            key={s.id}
+            session={s}
+            active={s.id === activeId}
+            onSelect={() => switchSession(s.id)}
+            onDelete={() => deleteSession(s.id)}
+          />
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -556,11 +538,10 @@ function SessionRow({
           e.stopPropagation();
           onDelete();
         }}
-        aria-label={`Delete ${session.title || "New chat"}`}
         title="Delete session"
-        className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+        className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
       >
-        <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.75} />
+        <HugeiconsIcon icon={Delete02Icon} size={11} strokeWidth={1.75} />
       </button>
     </DropdownMenuItem>
   );
@@ -569,14 +550,8 @@ function SessionRow({
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8 py-10 text-center">
-      <img
-        src="/logo.png"
-        alt="Terax"
-        width={56}
-        height={56}
-        className="size-14 opacity-90"
-      />
-      <div className="flex flex-col gap-1.5">
+      <img src="/logo.png" alt="Terax" className="size-14 opacity-90" />
+      <div className="space-y-1.5">
         <p className="text-[14px] font-semibold tracking-tight">
           Ask Terax anything
         </p>

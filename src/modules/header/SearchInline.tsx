@@ -1,10 +1,14 @@
-import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
-import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { KEY_SEP } from "@/lib/platform";
+import type { EditorPaneHandle } from "@/modules/editor";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
+import { Cancel01Icon, Search01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { SearchAddon } from "@xterm/addon-search";
-import { AnimatePresence, motion } from "motion/react";
 import {
-  type Ref,
+  forwardRef,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -12,12 +16,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { KEY_SEP } from "@/lib/platform";
-import type { EditorPaneHandle } from "@/modules/editor";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
 
 const TERM_DECORATIONS = {
   matchBackground: "#515c6a",
@@ -42,113 +40,105 @@ type Props = {
   target: SearchTarget;
   /** When true, collapse to an icon-only button until the user opens it. */
   compact?: boolean;
-  ref?: Ref<SearchInlineHandle>;
 };
 
-export function SearchInline({ target, compact, ref }: Props) {
-  const [q, setQ] = useState("");
-  // In compact mode the field is hidden behind an icon until activated.
-  // In normal mode the field is always present.
-  const [openInCompact, setOpenInCompact] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const pendingFocusRef = useRef(false);
-  const setInputRef = useCallback((el: HTMLInputElement | null) => {
-    inputRef.current = el;
-    if (!el || !pendingFocusRef.current) return;
-    pendingFocusRef.current = false;
-    el.focus();
-  }, []);
+export const SearchInline = forwardRef<SearchInlineHandle, Props>(
+  function SearchInline({ target, compact }, ref) {
+    const [q, setQ] = useState("");
+    // In compact mode the field is hidden behind an icon until activated.
+    // In normal mode the field is always present.
+    const [openInCompact, setOpenInCompact] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+    const pendingFocusRef = useRef(false);
+    const setInputRef = useCallback((el: HTMLInputElement | null) => {
+      inputRef.current = el;
+      if (!el || !pendingFocusRef.current) return;
+      pendingFocusRef.current = false;
+      el.focus();
+    }, []);
 
-  const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+    const userShortcuts = usePreferencesStore((s) => s.shortcuts);
 
-  const shortcutText = useMemo(() => {
-    const s = SHORTCUTS.find((s) => s.id === "search.focus");
-    if (!s) return "";
-    const bindings = userShortcuts["search.focus"] || s.defaultBindings;
-    if (!bindings || bindings.length === 0) return "";
-    const tokens = getBindingTokens(bindings[0]);
-    return tokens.join(KEY_SEP);
-  }, [userShortcuts]);
+    const shortcutText = useMemo(() => {
+      const s = SHORTCUTS.find((s) => s.id === "search.focus");
+      if (!s) return "";
+      const bindings = userShortcuts["search.focus"] || s.defaultBindings;
+      if (!bindings || bindings.length === 0) return "";
+      const tokens = getBindingTokens(bindings[0]);
+      return tokens.join(KEY_SEP);
+    }, [userShortcuts]);
 
-  const baseLabel = target?.kind === "git-history" ? "Git search" : "Search";
+    const baseLabel = target?.kind === "git-history" ? "Git search" : "Search";
 
-  const placeholder = useMemo(() => {
-    return shortcutText ? `${baseLabel} (${shortcutText})` : baseLabel;
-  }, [baseLabel, shortcutText]);
+    const placeholder = useMemo(() => {
+      return shortcutText ? `${baseLabel} (${shortcutText})` : baseLabel;
+    }, [baseLabel, shortcutText]);
 
-  const tooltipTitle = useMemo(() => {
-    return shortcutText ? `${baseLabel} (${shortcutText})` : baseLabel;
-  }, [baseLabel, shortcutText]);
+    const tooltipTitle = useMemo(() => {
+      return shortcutText ? `${baseLabel} (${shortcutText})` : baseLabel;
+    }, [baseLabel, shortcutText]);
 
-  const expanded = !compact || openInCompact;
+    const expanded = !compact || openInCompact;
 
-  const focus = useCallback(() => {
-    pendingFocusRef.current = true;
-    if (compact) setOpenInCompact(true);
-    else inputRef.current?.focus();
-    if (inputRef.current) pendingFocusRef.current = false;
-  }, [compact]);
+    const focus = useCallback(() => {
+      pendingFocusRef.current = true;
+      if (compact) setOpenInCompact(true);
+      else inputRef.current?.focus();
+      if (inputRef.current) pendingFocusRef.current = false;
+    }, [compact]);
 
-  useImperativeHandle(ref, () => ({ focus }), [focus]);
+    useImperativeHandle(ref, () => ({ focus }), [focus]);
 
-  const clearTarget = useCallback(() => {
-    if (!target) return;
-    if (target.kind === "terminal") target.addon.clearDecorations();
-    else target.handle.clearQuery();
-  }, [target]);
+    const clearTarget = useCallback(() => {
+      if (!target) return;
+      if (target.kind === "terminal") target.addon.clearDecorations();
+      else target.handle.clearQuery();
+    }, [target]);
 
-  const restoreTargetFocus = useCallback(() => {
-    if (!target) return;
-    target.focus();
-  }, [target]);
+    const restoreTargetFocus = useCallback(() => {
+      if (!target) return;
+      target.focus();
+    }, [target]);
 
-  // Target switched (terminal ↔ editor) or removed → drop highlights.
-  useEffect(() => clearTarget, [clearTarget]);
+    // Target switched (terminal ↔ editor) or removed → drop highlights.
+    useEffect(() => clearTarget, [clearTarget]);
 
-  const applyIncremental = (next: string) => {
-    if (!target) return;
-    if (target.kind === "terminal") {
-      if (next) {
-        target.addon.findNext(next, {
-          incremental: true,
-          decorations: TERM_DECORATIONS,
-        });
+    const applyIncremental = (next: string) => {
+      if (!target) return;
+      if (target.kind === "terminal") {
+        if (next) {
+          target.addon.findNext(next, {
+            incremental: true,
+            decorations: TERM_DECORATIONS,
+          });
+        } else {
+          target.addon.clearDecorations();
+        }
       } else {
-        target.addon.clearDecorations();
+        target.handle.setQuery(next);
       }
-    } else {
-      target.handle.setQuery(next);
-    }
-  };
+    };
 
-  const findDirection = (forward: boolean) => {
-    if (!target || !q) return;
-    if (target.kind === "terminal") {
-      const opts = { decorations: TERM_DECORATIONS };
-      if (forward) target.addon.findNext(q, opts);
-      else target.addon.findPrevious(q, opts);
-    } else if (target.kind === "editor") {
-      if (forward) target.handle.findNext();
-      else target.handle.findPrevious();
-    }
-    // git-history: the list filters live; Enter has no next/prev semantics.
-  };
+    const findDirection = (forward: boolean) => {
+      if (!target || !q) return;
+      if (target.kind === "terminal") {
+        const opts = { decorations: TERM_DECORATIONS };
+        if (forward) target.addon.findNext(q, opts);
+        else target.addon.findPrevious(q, opts);
+      } else if (target.kind === "editor") {
+        if (forward) target.handle.findNext();
+        else target.handle.findPrevious();
+      }
+      // git-history: the list filters live; Enter has no next/prev semantics.
+    };
 
-  return (
-    <div
-      className="relative h-7 shrink-0"
-      style={{ width: expanded ? 192 : 28 }}
-    >
-      <AnimatePresence initial={false} mode="wait">
+    return (
+      <div
+        className="relative h-7 shrink-0 transition-[width] duration-200 ease-out"
+        style={{ width: expanded ? 192 : 28 }}
+      >
         {expanded ? (
-          <motion.div
-            key="input"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
-            className="absolute inset-0"
-          >
+          <div className="absolute inset-0 animate-in fade-in-0 duration-150">
             <HugeiconsIcon
               icon={Search01Icon}
               size={13}
@@ -159,7 +149,7 @@ export function SearchInline({ target, compact, ref }: Props) {
               ref={setInputRef}
               value={q}
               placeholder={placeholder}
-              className="h-7 w-full bg-muted/80 pr-7 pl-7 text-[13px]! placeholder:text-muted-foreground focus-visible:ring-0"
+              className="h-7 w-full bg-muted/80 pr-7 pl-7 text-[13px]! placeholder:text-muted-foreground/70 focus-visible:ring-0"
               onChange={(e) => {
                 const next = e.target.value;
                 setQ(next);
@@ -197,16 +187,9 @@ export function SearchInline({ target, compact, ref }: Props) {
                 <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />
               </button>
             )}
-          </motion.div>
+          </div>
         ) : (
-          <motion.div
-            key="icon"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.12 }}
-            className="absolute inset-0 flex items-center justify-end"
-          >
+          <div className="absolute inset-0 flex items-center justify-end animate-in fade-in-0 duration-150">
             <Button
               variant="ghost"
               size="icon"
@@ -214,15 +197,11 @@ export function SearchInline({ target, compact, ref }: Props) {
               onClick={focus}
               title={tooltipTitle}
             >
-              <HugeiconsIcon
-                data-icon="inline-start"
-                icon={Search01Icon}
-                strokeWidth={1.75}
-              />
+              <HugeiconsIcon icon={Search01Icon} size={15} strokeWidth={1.75} />
             </Button>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
-    </div>
-  );
-}
+      </div>
+    );
+  },
+);

@@ -2,8 +2,8 @@ use tauri::{AppHandle, Manager};
 
 use crate::modules::git::operations;
 use crate::modules::git::types::{
-    DiscardEntry, GitCommitFileChange, GitCommitResult, GitDiffContentResult, GitDiffResult,
-    GitLogEntry, GitPanelSnapshot, GitPushResult, GitRepoInfo, GitStatusSnapshot,
+    DiscardEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult, GitDiffContentResult,
+    GitDiffResult, GitLogEntry, GitPanelSnapshot, GitPushResult, GitRepoInfo, GitStatusSnapshot,
 };
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
@@ -278,6 +278,33 @@ pub async fn git_remote_url(
     let workspace = WorkspaceEnv::from_option(workspace);
     blocking(app, move |r| {
         operations::remote_url(r, &repo_root, &remote, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_list_branches(
+    repo_root: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<GitBranchListResult, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::list_branches(r, &repo_root, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_checkout_branch(
+    repo_root: String,
+    branch: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::checkout_branch(r, &repo_root, &branch, &workspace).map_err(Into::into)
     })
     .await
 }

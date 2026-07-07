@@ -48,3 +48,4 @@ export {
   SECONDARY_SIDEBAR_VIEW_ITEMS,
   SIDEBAR_VIEW_ITEMS,
 } from "./views";
+export { useSidebarPanel } from "./useSidebarPanel";

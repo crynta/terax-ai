@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { native } from "../lib/native";
-import { checkReadableCanonical } from "../lib/security";
+import { checkReadable, checkReadableCanonical } from "../lib/security";
 import { resolvePath, type ToolContext } from "./context";
 
 function resolveRoot(
@@ -30,6 +30,16 @@ const MAX_LINE_LEN = 160;
 function clipLine(s: string): string {
   if (s.length <= MAX_LINE_LEN) return s;
   return `${s.slice(0, MAX_LINE_LEN)}…[+${s.length - MAX_LINE_LEN}]`;
+}
+
+function pathForSafety(path: string, root: string): string {
+  if (path.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(path)) return path;
+  const sep = root.includes("\\") && !root.includes("/") ? "\\" : "/";
+  return root.endsWith(sep) ? `${root}${path}` : `${root}${sep}${path}`;
+}
+
+function isReadableSearchHit(path: string, root: string): boolean {
+  return checkReadable(pathForSafety(path, root)).ok;
 }
 
 export function buildSearchTools(ctx: ToolContext) {
@@ -82,9 +92,12 @@ export function buildSearchTools(ctx: ToolContext) {
             caseInsensitive: case_insensitive,
             maxResults: cap,
           });
+          const hits = res.hits.filter((h) =>
+            isReadableSearchHit(h.path, r.path),
+          );
           return {
             root: r.path,
-            hits: res.hits.map((h) => ({
+            hits: hits.map((h) => ({
               path: h.path,
               rel: h.rel,
               line: h.line,
@@ -124,7 +137,7 @@ export function buildSearchTools(ctx: ToolContext) {
           });
           return {
             root: r.path,
-            hits: res.hits,
+            hits: res.hits.filter((h) => isReadableSearchHit(h.path, r.path)),
             truncated: res.truncated,
           };
         } catch (e) {

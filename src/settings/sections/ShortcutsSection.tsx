@@ -1,8 +1,3 @@
-import ArrowTurnBackwardIcon from "@hugeicons/core-free-icons/ArrowTurnBackwardIcon";
-import Delete02Icon from "@hugeicons/core-free-icons/Delete02Icon";
-import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +21,13 @@ import {
   type Shortcut,
   type ShortcutId,
 } from "@/modules/shortcuts/shortcuts";
+import {
+  ArrowTurnBackwardIcon,
+  Delete02Icon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useMemo, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 
 export function ShortcutsSection() {
@@ -82,8 +84,8 @@ export function ShortcutsSection() {
           onClick={() => setResetDialogOpen(true)}
         >
           <HugeiconsIcon
-            data-icon="inline-start"
             icon={ArrowTurnBackwardIcon}
+            size={12}
             strokeWidth={2}
           />
           Reset All
@@ -194,11 +196,9 @@ function ShortcutRow({
           <Recorder onRecord={onRecord} onCancel={onStopRecording} />
         ) : (
           <>
-            <button
-              type="button"
+            <div
               onClick={onStartRecording}
-              className="flex min-w-[100px] cursor-pointer items-center justify-end gap-1 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
-              aria-label={`Record shortcut for ${shortcut.label}`}
+              className="flex min-w-[100px] cursor-pointer items-center justify-end gap-1"
             >
               {hasBindings ? (
                 <KbdGroup>
@@ -216,7 +216,7 @@ function ShortcutRow({
                   Unassigned
                 </span>
               )}
-            </button>
+            </div>
 
             <div className="flex items-center gap-1">
               {isModified && (
@@ -227,21 +227,17 @@ function ShortcutRow({
                   onClick={onReset}
                   title="Reset to default"
                 >
-                  <HugeiconsIcon
-                    data-icon="inline-start"
-                    icon={ArrowTurnBackwardIcon}
-                  />
+                  <HugeiconsIcon icon={ArrowTurnBackwardIcon} size={12} />
                 </Button>
               )}
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
+                className="size-7 text-muted-foreground hover:text-destructive opacity-0 transition-opacity group-hover:opacity-100"
                 onClick={onClear}
                 title="Clear shortcut"
-                aria-label={`Clear ${shortcut.label} shortcut`}
               >
-                <HugeiconsIcon data-icon="inline-start" icon={Delete02Icon} />
+                <HugeiconsIcon icon={Delete02Icon} size={12} />
               </Button>
             </div>
           </>

@@ -274,6 +274,18 @@ fn antigravity_settings_path() -> Result<PathBuf, String> {
         .join("settings.json"))
 }
 
+fn hook_target(agent: &str) -> Result<(PathBuf, ProviderHooks), String> {
+    match agent.trim().to_ascii_lowercase().as_str() {
+        "claude" | "claude-code" => Ok((claude_settings_path()?, ProviderHooks::claude())),
+        "codex" => Ok((codex_hooks_path()?, ProviderHooks::codex())),
+        "gemini" => Ok((gemini_settings_path()?, ProviderHooks::gemini())),
+        "antigravity" | "google-antigravity" => {
+            Ok((antigravity_settings_path()?, ProviderHooks::antigravity()))
+        }
+        other => Err(format!("unsupported agent hooks provider: {other}")),
+    }
+}
+
 fn enable_hooks_at(path: PathBuf, spec: ProviderHooks) -> Result<(), String> {
     let dir = path
         .parent()
@@ -330,6 +342,19 @@ fn hooks_status_at(path: PathBuf, spec: ProviderHooks) -> bool {
                 })
             })
     })
+}
+
+#[tauri::command]
+pub fn agent_enable_hooks(agent: String) -> Result<(), String> {
+    let (path, spec) = hook_target(&agent)?;
+    enable_hooks_at(path, spec)
+}
+
+#[tauri::command]
+pub fn agent_hooks_status(agent: String) -> bool {
+    hook_target(&agent)
+        .map(|(path, spec)| hooks_status_at(path, spec))
+        .unwrap_or(false)
 }
 
 #[tauri::command]

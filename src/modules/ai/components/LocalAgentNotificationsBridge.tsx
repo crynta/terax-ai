@@ -27,7 +27,6 @@ function liveStatus(s: RunStatus): AgentStatus | null {
 export function LocalAgentNotificationsBridge() {
   const status = useChatStore((s) => s.agentMeta.status) as RunStatus;
   const error = useChatStore((s) => s.agentMeta.error);
-  const stopReason = useChatStore((s) => s.agentMeta.stopReason);
   const visible = useChatStore((s) => s.panelOpen || s.mini.open);
   const focused = useWindowFocus();
 
@@ -75,15 +74,10 @@ export function LocalAgentNotificationsBridge() {
       );
     } else if (status === "error") {
       fire("error", "Terax run failed", error ?? undefined);
-    } else if (
-      status === "idle" &&
-      isBusy(was) &&
-      stopReason !== "cancelled" &&
-      stopReason !== "paused"
-    ) {
+    } else if (status === "idle" && isBusy(was)) {
       fire("finished", "Terax finished", "Your task is ready");
     }
-  }, [status, error, stopReason]);
+  }, [status, error]);
 
   return null;
 }

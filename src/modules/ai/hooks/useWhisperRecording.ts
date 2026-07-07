@@ -1,7 +1,9 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import { experimental_transcribe as transcribe } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useChatStore } from "../store/chatStore";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { transcribeAudio, type SttOptions } from "../lib/stt";
+import type { SttProvider } from "../config";
 
 const MIME_CANDIDATES = [
   "audio/webm;codecs=opus",
@@ -18,14 +20,22 @@ function pickMime(): string | undefined {
   return undefined;
 }
 
-async function transcribeBlob(blob: Blob, apiKey: string): Promise<string> {
-  const openai = createOpenAI({ apiKey });
-  const buf = new Uint8Array(await blob.arrayBuffer());
-  const { text } = await transcribe({
-    model: openai.transcription("whisper-1"),
-    audio: buf,
-  });
-  return text;
+function providerNeedsKey(provider: SttProvider): boolean {
+  return provider !== "whispercpp";
+}
+
+function normalizeSttProvider(provider: string): SttProvider {
+  if (provider === "groq" || provider === "whispercpp") return provider;
+  return "openai";
+}
+
+function getApiKeyForStt(
+  apiKeys: import("../lib/keyring").ProviderKeys,
+  provider: SttProvider,
+): string | null {
+  if (provider === "openai") return apiKeys.openai;
+  if (provider === "groq") return apiKeys.groq;
+  return null;
 }
 
 type State = "idle" | "recording" | "transcribing";
@@ -35,16 +45,31 @@ export function useWhisperRecording({
 }: {
   onResult: (text: string) => void;
 }) {
-  const apiKey = useChatStore((s) => s.apiKeys.openai);
+  const apiKeys = useChatStore((s) => s.apiKeys);
+  const sttProvider = usePreferencesStore((s) => s.sttProvider);
+  const groqSttModel = usePreferencesStore((s) => s.groqSttModel);
+  const whispercppBaseURL = usePreferencesStore((s) => s.whispercppBaseURL);
   const [state, setState] = useState<State>("idle");
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
+  const resolvedSttProvider = normalizeSttProvider(sttProvider);
+  const needsKey = providerNeedsKey(resolvedSttProvider);
+  const providerKey = needsKey
+    ? getApiKeyForStt(apiKeys, resolvedSttProvider)
+    : null;
+  const hasKey = needsKey ? !!providerKey : true;
+
   const supported =
     typeof navigator !== "undefined" &&
     !!navigator.mediaDevices?.getUserMedia &&
     typeof MediaRecorder !== "undefined";
+
+  const sttOptions: SttOptions = {
+    groqSttModel,
+    whispercppBaseURL,
+  };
 
   const teardownStream = () => {
     streamRef.current?.getTracks().forEach((t) => {
@@ -59,7 +84,7 @@ export function useWhisperRecording({
   }, []);
 
   const start = useCallback(async () => {
-    if (!supported || !apiKey || state !== "idle") return;
+    if (!supported || !hasKey || state !== "idle") return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -84,10 +109,16 @@ export function useWhisperRecording({
         }
         setState("transcribing");
         try {
-          const text = await transcribeBlob(blob, apiKey);
+          const text = await transcribeAudio(
+            blob,
+            resolvedSttProvider,
+            apiKeys,
+            sttOptions,
+          );
           if (text.trim()) onResult(text.trim());
         } catch (e) {
-          console.error("whisper.transcribe", e);
+          console.error("stt.transcribe", e);
+          toast.error(e instanceof Error ? e.message : "Transcription failed");
         } finally {
           setState("idle");
         }
@@ -96,11 +127,20 @@ export function useWhisperRecording({
       rec.start();
       setState("recording");
     } catch (e) {
-      console.error("whisper.getUserMedia", e);
+      console.error("stt.getUserMedia", e);
+      toast.error("Microphone access failed");
       teardownStream();
       setState("idle");
     }
-  }, [apiKey, onResult, state, supported]);
+  }, [
+    apiKeys,
+    resolvedSttProvider,
+    sttOptions,
+    onResult,
+    state,
+    supported,
+    hasKey,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -116,6 +156,7 @@ export function useWhisperRecording({
     start,
     stop,
     supported,
-    hasKey: !!apiKey,
+    hasKey,
+    sttProvider,
   };
 }

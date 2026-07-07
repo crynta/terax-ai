@@ -5,10 +5,13 @@ import { MarkdownPreviewPane } from "./MarkdownPreviewPane";
 type Props = {
   tabs: Tab[];
   activeId: number;
+  onSetMarkdownView: (id: number, mode: "rendered" | "raw") => void;
 };
 
-export function MarkdownStack({ tabs, activeId }: Props) {
-  const markdowns = tabs.filter((t): t is MarkdownTab => t.kind === "markdown");
+export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
+  const markdowns = tabs.filter(
+    (t): t is MarkdownTab => t.kind === "markdown" && !t.cold,
+  );
   if (markdowns.length === 0) return null;
   return (
     <div className="relative h-full w-full">
@@ -24,7 +27,11 @@ export function MarkdownStack({ tabs, activeId }: Props) {
             aria-hidden={!visible}
             inert={visible ? undefined : true}
           >
-            <MarkdownPreviewPane path={t.path} visible={visible} />
+            <MarkdownPreviewPane
+              path={t.path}
+              visible={visible}
+              onSetView={(mode) => onSetMarkdownView(t.id, mode)}
+            />
           </div>
         );
       })}

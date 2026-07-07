@@ -1,5 +1,5 @@
+import type { PresenceState } from "@/lib/usePresence";
 import { lazy, Suspense } from "react";
-import { PaneLoadingFallback } from "@/components/PaneLoadingFallback";
 import type { AgentRunBridgeProps } from "./AgentRunBridge";
 import type { SelectionAskAiProps } from "./SelectionAskAi";
 
@@ -11,14 +11,12 @@ const AiMiniWindowInner = lazy(() =>
   import("./AiMiniWindow").then((m) => ({ default: m.AiMiniWindow })),
 );
 
-const AiInputBarModule = () => import("./AiInputBar");
-
 const AiInputBarInner = lazy(() =>
-  AiInputBarModule().then((m) => ({ default: m.AiInputBar })),
+  import("./AiComposerInput").then((m) => ({ default: m.AiComposerInput })),
 );
 
 const AiInputBarConnectInner = lazy(() =>
-  AiInputBarModule().then((m) => ({ default: m.AiInputBarConnect })),
+  import("./AiInputBar").then((m) => ({ default: m.AiInputBarConnect })),
 );
 
 const SelectionAskAiInner = lazy(() =>
@@ -33,24 +31,17 @@ export function AgentRunBridge(props: AgentRunBridgeProps) {
   );
 }
 
-export function AiMiniWindow() {
+export function AiMiniWindow({ state }: { state: PresenceState }) {
   return (
-    <Suspense fallback={<PaneLoadingFallback label="Loading AI window…" />}>
-      <AiMiniWindowInner />
+    <Suspense fallback={null}>
+      <AiMiniWindowInner state={state} />
     </Suspense>
   );
 }
 
 export function AiInputBar() {
   return (
-    <Suspense
-      fallback={
-        <PaneLoadingFallback
-          label="Loading composer…"
-          className="min-h-14 border-t border-x-0 border-b-0"
-        />
-      }
-    >
+    <Suspense fallback={null}>
       <AiInputBarInner />
     </Suspense>
   );
@@ -58,7 +49,7 @@ export function AiInputBar() {
 
 export function AiInputBarConnect({ onAdd }: { onAdd: () => void }) {
   return (
-    <Suspense fallback={<PaneLoadingFallback label="Loading composer…" />}>
+    <Suspense fallback={null}>
       <AiInputBarConnectInner onAdd={onAdd} />
     </Suspense>
   );

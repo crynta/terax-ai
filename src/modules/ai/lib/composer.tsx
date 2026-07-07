@@ -1,26 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import {
-  createContext,
-  type Dispatch,
-  type ReactNode,
-  type RefObject,
-  type SetStateAction,
-  use,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { currentWorkspaceEnv } from "@/modules/workspace";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useWhisperRecording } from "../hooks/useWhisperRecording";
 import { expandSnippetTokens, type Snippet } from "../lib/snippets";
-import { useChatStore } from "../store/chatStore";
+import { tryRunSlashCommand, type SlashCommandMeta } from "./slashCommands";
+import { getChat, useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
-import {
-  type ComposerMessagePart,
-  type PiComposerRuntimeOptions,
-  useComposerRuntime,
-} from "./composerRuntime";
-import { type SlashCommandMeta, tryRunSlashCommand } from "./slashCommands";
+import { currentWorkspaceEnv } from "@/modules/workspace";
 
 export type FileAttachment = {
   id: string;
@@ -34,7 +19,9 @@ export type FileAttachment = {
   source?: "terminal" | "editor";
 };
 
-type MessagePart = ComposerMessagePart;
+type MessagePart =
+  | { type: "text"; text: string }
+  | { type: "file"; mediaType: string; url: string; filename?: string };
 
 export const MAX_TEXT_INLINE = 200_000;
 export const ACCEPTED_FILES =
@@ -42,57 +29,45 @@ export const ACCEPTED_FILES =
 
 type Voice = ReturnType<typeof useWhisperRecording>;
 
-export type ComposerState = {
+type ComposerCtx = {
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
+  setValue: React.Dispatch<React.SetStateAction<string>>;
   files: FileAttachment[];
-  pickedSnippets: Snippet[];
-  pickedCommands: SlashCommandMeta[];
-  isBusy: boolean;
-  canSend: boolean;
-};
-
-export type ComposerActions = {
-  setValue: Dispatch<SetStateAction<string>>;
   addFiles: (list: FileList | null) => Promise<void>;
-  /** Attach a file by absolute path (used by the file explorer's "Attach to Agent"). */
+  /** Attach a file by absolute path — used by the file explorer's "Attach to Agent". */
   attachFileByPath: (path: string) => Promise<void>;
   removeFile: (id: string) => void;
+  pickedSnippets: Snippet[];
   addSnippet: (s: Snippet) => void;
   removeSnippet: (id: string) => void;
+  pickedCommands: SlashCommandMeta[];
   addCommand: (c: SlashCommandMeta) => void;
   removeCommand: (name: string) => void;
+  isBusy: boolean;
   submit: () => void;
   stop: () => void;
-};
-
-export type ComposerMeta = {
-  textareaRef: RefObject<HTMLTextAreaElement | null>;
   voice: Voice;
-};
-
-export type ComposerCtx = {
-  actions: ComposerActions;
-  meta: ComposerMeta;
-  state: ComposerState;
+  canSend: boolean;
 };
 
 const Ctx = createContext<ComposerCtx | null>(null);
 
 export function useComposer(): ComposerCtx {
-  const ctx = use(Ctx);
+  const ctx = useContext(Ctx);
   if (!ctx)
     throw new Error("useComposer must be used inside <AiComposerProvider>");
   return ctx;
 }
 
 type ProviderProps = {
-  children: ReactNode;
-  piComposer?: PiComposerRuntimeOptions;
+  children: React.ReactNode;
 };
 
-export function AiComposerProvider({ children, piComposer }: ProviderProps) {
-  const runtime = useComposerRuntime({ pi: piComposer });
-  const isBusy = runtime.isBusy;
+export function AiComposerProvider({ children }: ProviderProps) {
+  const sessionId = useChatStore((s) => s.activeSessionId);
+  const status = useChatStore((s) => s.agentMeta.status);
+  const isBusy = status === "thinking" || status === "streaming";
 
   const [value, setValue] = useState("");
   const [files, setFiles] = useState<FileAttachment[]>([]);
@@ -322,8 +297,17 @@ export function AiComposerProvider({ children, piComposer }: ProviderProps) {
       }
     }
 
-    if (!runtime.canSend) return;
-    void runtime.send(parts);
+    if (!sessionId) return;
+    const store = useChatStore.getState();
+    store.patchAgentMeta({ hitStepCap: false, compactionNotice: null });
+    if (!store.mini.open) store.openMini();
+    void (async () => {
+      const { getOrCreateChat } = await import("../store/chatRuntime");
+      const chat = getOrCreateChat(sessionId);
+      void chat.sendMessage({ role: "user", parts } as Parameters<
+        typeof chat.sendMessage
+      >[0]);
+    })();
     setValue("");
     setFiles([]);
     setPickedSnippets([]);
@@ -333,11 +317,11 @@ export function AiComposerProvider({ children, piComposer }: ProviderProps) {
   };
 
   const stop = () => {
-    void runtime.stop();
+    if (!sessionId) return;
+    void getChat(sessionId)?.stop();
   };
 
   const canSend =
-    runtime.canSend &&
     !isBusy &&
     (value.trim().length > 0 ||
       files.length > 0 ||
@@ -345,30 +329,24 @@ export function AiComposerProvider({ children, piComposer }: ProviderProps) {
       pickedCommands.length > 0);
 
   const ctx: ComposerCtx = {
-    state: {
-      canSend,
-      files,
-      isBusy,
-      pickedCommands,
-      pickedSnippets,
-      value,
-    },
-    actions: {
-      addCommand,
-      addFiles,
-      addSnippet,
-      attachFileByPath,
-      removeCommand,
-      removeFile,
-      removeSnippet,
-      setValue,
-      stop,
-      submit,
-    },
-    meta: {
-      textareaRef,
-      voice,
-    },
+    textareaRef,
+    value,
+    setValue,
+    files,
+    addFiles,
+    attachFileByPath,
+    removeFile,
+    pickedSnippets,
+    addSnippet,
+    removeSnippet,
+    pickedCommands,
+    addCommand,
+    removeCommand,
+    isBusy,
+    submit,
+    stop,
+    voice,
+    canSend,
   };
 
   return <Ctx.Provider value={ctx}>{children}</Ctx.Provider>;

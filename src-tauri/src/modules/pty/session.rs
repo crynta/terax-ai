@@ -43,9 +43,12 @@ pub struct Session {
     //   4. `master` - last; ClosePseudoConsole on Windows. By now the child
     //      is dead and conhost has nothing left to drain.
     #[cfg(windows)]
-    _job: Option<super::job::PtyJob>,
+    _job: Option<crate::modules::proc::job::PtyJob>,
     /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
     pub shell_pid: u32,
+    // Set by the waiter once the child exits, so pty_open can reap a shell
+    // that exits before the session is inserted into the state map.
+    pub(super) exited: Arc<AtomicBool>,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
@@ -118,6 +121,8 @@ pub fn spawn(
     rows: u16,
     cwd: Option<String>,
     workspace: WorkspaceEnv,
+    blocks: bool,
+    shell: Option<String>,
     on_data: Channel<Response>,
     on_exit: Channel<i32>,
 ) -> Result<(Arc<Session>, PtySize), String> {
@@ -135,7 +140,7 @@ pub fn spawn(
     };
     let pair = pty_system.openpty(size).map_err(|e| e.to_string())?;
 
-    let cmd = shell_init::build_command(cwd, workspace)?;
+    let cmd = shell_init::build_command(cwd, workspace, blocks, shell)?;
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
 
@@ -152,7 +157,7 @@ pub fn spawn(
 
     #[cfg(windows)]
     let job = match child.process_id() {
-        Some(pid) => match super::job::PtyJob::create_for(pid) {
+        Some(pid) => match crate::modules::proc::job::PtyJob::create_for(pid) {
             Ok(j) => Some(j),
             Err(e) => {
                 log::warn!("pty job-object setup failed for pid={pid}: {e}");
@@ -162,10 +167,13 @@ pub fn spawn(
         None => None,
     };
 
+    let exited = Arc::new(AtomicBool::new(false));
+
     let session = Arc::new(Session {
         #[cfg(windows)]
         _job: job,
         shell_pid,
+        exited: exited.clone(),
         killer: Mutex::new(killer),
         writer: writer.clone(),
         master: Mutex::new(pair.master),
@@ -299,6 +307,7 @@ pub fn spawn(
     let on_data_exit = on_data;
     let pending_e = pending.clone();
     let done_e = done.clone();
+    let exited_e = exited.clone();
     thread::Builder::new()
         .name("terax-pty-waiter".into())
         .spawn(move || {
@@ -335,6 +344,7 @@ pub fn spawn(
                     log::debug!("pty final-data send failed (channel closed): {e}");
                 }
             }
+            exited_e.store(true, Ordering::Release);
             done_e.store(true, Ordering::Release);
             cv.notify_all();
             if let Err(e) = on_exit.send(code) {
@@ -379,6 +389,7 @@ mod tests {
 
         let session = Arc::new(Session {
             shell_pid: child.process_id().unwrap_or(0),
+            exited: Arc::new(AtomicBool::new(false)),
             killer: Mutex::new(killer),
             writer,
             master: Mutex::new(pair.master),
@@ -427,6 +438,7 @@ mod tests {
 
         let session = Arc::new(Session {
             shell_pid: 0,
+            exited: Arc::new(AtomicBool::new(false)),
             killer: Mutex::new(killer),
             writer,
             master: Mutex::new(pair.master),

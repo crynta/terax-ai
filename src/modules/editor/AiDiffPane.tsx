@@ -1,19 +1,16 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { AiDiffStatus } from "@/modules/tabs";
 import { presentableDiff, unifiedMergeView } from "@codemirror/merge";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
-import Tick02Icon from "@hugeicons/core-free-icons/Tick02Icon";
+import { Cancel01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { diffTextClass } from "@/lib/statusTone";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import type { AiDiffStatus } from "@/modules/tabs";
 import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import { resolveLanguage, resolveLanguageSync } from "./lib/languageResolver";
-import { EDITOR_THEME_EXT } from "./lib/themes";
+import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 
 type Props = {
   path: string;
@@ -25,7 +22,7 @@ type Props = {
   onReject: () => void;
 };
 
-const SHARED_EXT: Extension[] = buildSharedExtensions();
+const SHARED_EXT: readonly Extension[] = buildSharedExtensions();
 const READONLY_EXT: Extension[] = [
   EditorState.readOnly.of(true),
   EditorView.editable.of(false),
@@ -65,7 +62,7 @@ const DIFF_THEME = EditorView.theme({
   //   backgroundColor: "#ef4444",
   // },
   ".cm-changedText": {
-    background: "var(--status-success-surface) !important",
+    background: "#88ff881a !important",
   },
 });
 
@@ -94,14 +91,13 @@ export function AiDiffPane({
   onReject,
 }: Props) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
-  const editorThemeId = usePreferencesStore((s) => s.editorTheme);
-  const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
+  const themeExt = useEditorThemeExt();
 
   const initialLang = useMemo(() => resolveLanguageSync(path), [path]);
   const extensions = useMemo(
     () => [
       ...SHARED_EXT,
-      languageCompartment.of(initialLang ?? []),
+      languageCompartment.of(initialLang?.ext ?? []),
       ...READONLY_EXT,
       unifiedMergeView({
         original: originalContent,
@@ -119,12 +115,12 @@ export function AiDiffPane({
   useEffect(() => {
     if (initialLang) return;
     let cancelled = false;
-    resolveLanguage(path).then((ext) => {
+    resolveLanguage(path).then((res) => {
       if (cancelled) return;
       const view = cmRef.current?.view;
       if (!view) return;
       view.dispatch({
-        effects: languageCompartment.reconfigure(ext ?? []),
+        effects: languageCompartment.reconfigure(res?.ext ?? []),
       });
     });
     return () => {
@@ -159,8 +155,12 @@ export function AiDiffPane({
             {path}
           </span>
           <span className="flex shrink-0 items-center gap-1.5 text-[10.5px] tabular-nums">
-            <span className={diffTextClass("add")}>+{stats.added}</span>
-            <span className={diffTextClass("remove")}>−{stats.removed}</span>
+            <span className="text-emerald-600 dark:text-emerald-400">
+              +{stats.added}
+            </span>
+            <span className="text-rose-600 dark:text-rose-400">
+              −{stats.removed}
+            </span>
           </span>
         </div>
         {status === "pending" ? (
@@ -171,11 +171,7 @@ export function AiDiffPane({
               onClick={onAccept}
               className="h-7 gap-1.5"
             >
-              <HugeiconsIcon
-                data-icon="inline-start"
-                icon={Tick02Icon}
-                strokeWidth={2}
-              />
+              <HugeiconsIcon icon={Tick02Icon} size={13} strokeWidth={2} />
               Accept
             </Button>
             <Button
@@ -184,11 +180,7 @@ export function AiDiffPane({
               onClick={onReject}
               className="h-7 gap-1.5"
             >
-              <HugeiconsIcon
-                data-icon="inline-start"
-                icon={Cancel01Icon}
-                strokeWidth={2}
-              />
+              <HugeiconsIcon icon={Cancel01Icon} size={13} strokeWidth={2} />
               Reject
             </Button>
           </div>

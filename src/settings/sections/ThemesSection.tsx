@@ -1,27 +1,26 @@
-import Edit02Icon from "@hugeicons/core-free-icons/Edit02Icon";
-import PlusSignIcon from "@hugeicons/core-free-icons/PlusSignIcon";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useMemo, useRef, useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  EDITOR_THEME_AUTO,
+  EDITOR_THEME_LABELS,
+  EDITOR_THEME_MODE,
+  EDITOR_THEMES,
+  type EditorThemePref,
   setBackgroundBlur,
   setBackgroundImageId,
   setBackgroundKind,
   setBackgroundOpacity,
+  setEditorTheme,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
 import {
@@ -36,11 +35,11 @@ import { deleteThemeFile, emitThemeEdit } from "@/modules/theme/themeFiles";
 import { listBuiltinThemes } from "@/modules/theme/themes";
 import { DEFAULT_THEME_ID } from "@/modules/theme/types";
 import { validateTheme } from "@/modules/theme/validateTheme";
+import { Edit02Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useMemo, useRef, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
-
-type PendingThemeDestructiveAction =
-  | { kind: "theme"; id: string; name: string }
-  | { kind: "background" };
 
 export function ThemesSection() {
   const { themeId, setThemeId, resolvedMode, customThemes } = useTheme();
@@ -56,8 +55,6 @@ export function ThemesSection() {
 
   const [importError, setImportError] = useState<string | null>(null);
   const [bgError, setBgError] = useState<string | null>(null);
-  const [pendingDestructiveAction, setPendingDestructiveAction] =
-    useState<PendingThemeDestructiveAction | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const bgInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -71,6 +68,7 @@ export function ThemesSection() {
     void getCurrentWindow().hide();
   };
 
+  const editorThemePref = usePreferencesStore((s) => s.editorTheme);
   const backgroundKind = usePreferencesStore((s) => s.backgroundKind);
   const backgroundImageId = usePreferencesStore((s) => s.backgroundImageId);
   const backgroundOpacity = usePreferencesStore((s) => s.backgroundOpacity);
@@ -101,12 +99,7 @@ export function ThemesSection() {
 
   const onPickThemeFile = () => fileInputRef.current?.click();
 
-  const onRemoveCustomTheme = (id: string) => {
-    const themeName = themes.find((theme) => theme.id === id)?.name ?? id;
-    setPendingDestructiveAction({ kind: "theme", id, name: themeName });
-  };
-
-  const removeCustomThemeNow = async (id: string) => {
+  const onRemoveCustomTheme = async (id: string) => {
     if (themeId === id) setThemeId(DEFAULT_THEME_ID);
     await deleteCustomTheme(id);
     void deleteThemeFile(id);
@@ -133,27 +126,12 @@ export function ThemesSection() {
     }
   };
 
-  const onRemoveBackground = () => {
-    setPendingDestructiveAction({ kind: "background" });
-  };
-
-  const removeBackgroundNow = async () => {
+  const onRemoveBackground = async () => {
     setBgError(null);
     const prev = backgroundImageId;
     await setBackgroundKind("none");
     await setBackgroundImageId(null);
     if (prev) await deleteBgImage(prev).catch(() => undefined);
-  };
-
-  const confirmPendingDestructiveAction = () => {
-    const action = pendingDestructiveAction;
-    setPendingDestructiveAction(null);
-    if (!action) return;
-    if (action.kind === "theme") {
-      void removeCustomThemeNow(action.id);
-    } else {
-      void removeBackgroundNow();
-    }
   };
 
   return (
@@ -164,6 +142,7 @@ export function ThemesSection() {
       />
 
       <div
+        role="presentation"
         className="flex flex-col gap-2"
         onDragOver={(e) => {
           e.preventDefault();
@@ -183,11 +162,7 @@ export function ThemesSection() {
               className="h-7 gap-1.5 px-2 text-[11px]"
               onClick={onCreateTheme}
             >
-              <HugeiconsIcon
-                data-icon="inline-start"
-                icon={PlusSignIcon}
-                strokeWidth={2}
-              />
+              <HugeiconsIcon icon={PlusSignIcon} size={11} strokeWidth={2} />
               Create
             </Button>
             <Button
@@ -227,55 +202,50 @@ export function ThemesSection() {
             const selected = themeId === t.id;
             const isCustom = customIds.has(t.id);
             return (
-              <div
+              <button
                 key={t.id}
+                type="button"
+                onClick={() => setThemeId(t.id)}
                 className={cn(
-                  "group flex items-center gap-1 rounded-lg border p-2.5 transition-[border-color,box-shadow]",
+                  "group flex items-center gap-3 rounded-lg border p-2.5 text-left transition-all",
                   selected
                     ? "border-foreground/60 ring-1 ring-foreground/20"
                     : "border-border/60 hover:border-border",
                 )}
               >
-                <button
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => setThemeId(t.id)}
-                  className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/35"
+                <div
+                  className="flex h-10 w-14 shrink-0 items-center justify-center gap-1 rounded-md border border-border/40"
+                  style={{ background: swatchBg }}
                 >
-                  <div
-                    className="flex h-10 w-14 shrink-0 items-center justify-center gap-1 rounded-md border border-border/40"
-                    style={{ background: swatchBg }}
-                  >
-                    <span
-                      className="h-5 w-2 rounded-sm"
-                      style={{ background: swatchAccent }}
-                    />
-                    <span
-                      className="h-5 w-2 rounded-sm"
-                      style={{ background: swatchFg, opacity: 0.7 }}
-                    />
-                    <span
-                      className="h-5 w-2 rounded-sm"
-                      style={{ background: swatchMuted }}
-                    />
-                  </div>
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-[12.5px] font-medium">
-                      {t.name}
+                  <span
+                    className="h-5 w-2 rounded-sm"
+                    style={{ background: swatchAccent }}
+                  />
+                  <span
+                    className="h-5 w-2 rounded-sm"
+                    style={{ background: swatchFg, opacity: 0.7 }}
+                  />
+                  <span
+                    className="h-5 w-2 rounded-sm"
+                    style={{ background: swatchMuted }}
+                  />
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-[12.5px] font-medium">
+                    {t.name}
+                  </span>
+                  {t.description ? (
+                    <span className="truncate text-[11px] text-muted-foreground">
+                      {t.description}
                     </span>
-                    {t.description ? (
-                      <span className="truncate text-[11px] text-muted-foreground">
-                        {t.description}
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
+                  ) : null}
+                </div>
                 {isCustom ? (
-                  <span className="ml-1 flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
-                    <button
-                      type="button"
+                  <span className="ml-1 flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
+                    <span
+                      role="button"
                       aria-label={`Edit ${t.name}`}
-                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/35"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                       onClick={(e) => {
                         e.stopPropagation();
                         onEditTheme(t.id);
@@ -286,27 +256,69 @@ export function ThemesSection() {
                         size={12}
                         strokeWidth={1.75}
                       />
-                    </button>
-                    <button
-                      type="button"
+                    </span>
+                    <span
+                      role="button"
                       aria-label={`Remove ${t.name}`}
-                      className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/35"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
                       onClick={(e) => {
                         e.stopPropagation();
                         void onRemoveCustomTheme(t.id);
                       }}
                     >
                       ×
-                    </button>
+                    </span>
                   </span>
                 ) : null}
-              </div>
+              </button>
             );
           })}
         </div>
       </div>
 
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-col">
+            <Label>Editor theme</Label>
+            <span className="text-[11px] text-muted-foreground">
+              Syntax colors for the code editor. Auto follows the app theme.
+            </span>
+          </div>
+          <Select
+            value={editorThemePref}
+            onValueChange={(v) => void setEditorTheme(v as EditorThemePref)}
+          >
+            <SelectTrigger size="sm" className="h-8 w-44 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={EDITOR_THEME_AUTO} className="text-[12px]">
+                Auto (match app theme)
+              </SelectItem>
+              <SelectSeparator />
+              {[...EDITOR_THEMES]
+                .sort(
+                  (a, b) =>
+                    (EDITOR_THEME_MODE[a] === resolvedMode ? 0 : 1) -
+                    (EDITOR_THEME_MODE[b] === resolvedMode ? 0 : 1),
+                )
+                .map((id) => (
+                  <SelectItem
+                    key={id}
+                    value={id}
+                    disabled={EDITOR_THEME_MODE[id] !== resolvedMode}
+                    className="text-[12px]"
+                  >
+                    {EDITOR_THEME_LABELS[id]}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       <div
+        role="presentation"
         className="flex flex-col gap-2"
         onDragOver={(e) => {
           e.preventDefault();
@@ -325,7 +337,7 @@ export function ThemesSection() {
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive"
-                onClick={onRemoveBackground}
+                onClick={() => void onRemoveBackground()}
               >
                 Remove
               </Button>
@@ -366,7 +378,6 @@ export function ThemesSection() {
               </span>
             </div>
             <Slider
-              aria-label="Background opacity"
               value={[backgroundOpacity]}
               min={0}
               max={1}
@@ -380,7 +391,6 @@ export function ThemesSection() {
               </span>
             </div>
             <Slider
-              aria-label="Background blur"
               value={[backgroundBlur]}
               min={0}
               max={64}
@@ -395,36 +405,6 @@ export function ThemesSection() {
           </p>
         )}
       </div>
-      <AlertDialog
-        open={pendingDestructiveAction !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDestructiveAction(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {pendingDestructiveAction?.kind === "theme"
-                ? "Remove custom theme?"
-                : "Remove background image?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDestructiveAction?.kind === "theme"
-                ? `This removes "${pendingDestructiveAction.name}" from your custom themes.`
-                : "This clears the current background image and deletes the imported image file when possible."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={confirmPendingDestructiveAction}
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

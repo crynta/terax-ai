@@ -7,10 +7,16 @@ export const SIDEBAR_RAIL_HEIGHT = 36;
 
 type Props<T extends SidebarViewId> = {
   activeView: T;
-  items: readonly SidebarViewItem<T>[];
+  items?: readonly SidebarViewItem<T>[];
   onSelectView: (view: T) => void;
   badges?: Partial<Record<T, number>>;
+  changedCount?: number;
 };
+
+const DEFAULT_ITEMS = [
+  { id: "explorer", label: "Files" },
+  { id: "source-control", label: "Source Control" },
+] as const satisfies readonly SidebarViewItem<"explorer" | "source-control">[];
 
 function formatBadge(view: SidebarViewId, badge: number): string | number {
   if (view === "code" && badge > 9) return "9+";
@@ -21,16 +27,23 @@ export function SidebarRail<T extends SidebarViewId>({
   activeView,
   items,
   onSelectView,
-  badges = {},
+  badges,
+  changedCount,
 }: Props<T>) {
+  const railItems = (items ?? DEFAULT_ITEMS) as readonly SidebarViewItem<T>[];
+  const resolvedBadges = {
+    ...(badges ?? {}),
+    ...(changedCount ? { "source-control": changedCount } : {}),
+  } as Partial<Record<T, number>>;
+
   return (
     <div
       style={{ height: SIDEBAR_RAIL_HEIGHT }}
       className="flex shrink-0 items-stretch gap-1 border-t border-border/60 bg-card/85 px-1.5 py-1 backdrop-blur"
     >
-      {items.map((item) => {
+      {railItems.map((item) => {
         const isActive = item.id === activeView;
-        const badge = badges[item.id] ?? 0;
+        const badge = resolvedBadges[item.id] ?? 0;
         const showBadge = badge > 0;
         const icon = sidebarViewMetadataForId(item.id).icon;
         return (

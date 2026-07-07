@@ -1,7 +1,3 @@
-import File02Icon from "@hugeicons/core-free-icons/File02Icon";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +9,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { File02Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useRef, useState } from "react";
 
 type Props = {
   open: boolean;

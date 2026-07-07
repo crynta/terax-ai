@@ -1,68 +1,79 @@
-const DEFAULT_BYTE_CAP = 256 * 1024;
-const DEFAULT_CHUNK_CAP = 256;
+const DEFAULT_BYTE_CAP = 1024 * 1024;
+const DEFAULT_BLOCK_SIZE = 16 * 1024;
 
+// No \x1bc here: a full reset would erase the snapshot restored just before
+// the drain, scrollback included.
 const OVERFLOW_NOTICE = new TextEncoder().encode(
-  "\x1bc\x1b[2m[terax: dropped output during hibernation]\x1b[0m\r\n",
+  "\r\n\x1b[0m\x1b[2m[terax: some output was dropped while this tab was hidden]\x1b[0m\r\n",
 );
 
+const LF = 0x0a;
+
+/**
+ * Byte buffer for PTY output while a leaf has no renderer slot. Chunks are
+ * coalesced into fixed-size blocks (capacity bound by bytes, not chunk
+ * count); on overflow the oldest blocks are dropped and drain() resumes from
+ * the next line boundary instead of resetting the terminal.
+ */
 export class DormantRing {
-  private chunks: (Uint8Array | null)[] = [];
+  private blocks: Uint8Array[] = [];
   private head = 0;
-  private size = 0;
+  private tailLen = 0;
   private total = 0;
   private overflowed = false;
 
   constructor(
     private readonly byteCap = DEFAULT_BYTE_CAP,
-    private readonly chunkCap = DEFAULT_CHUNK_CAP,
+    private readonly blockSize = DEFAULT_BLOCK_SIZE,
   ) {}
 
   push(bytes: Uint8Array): void {
-    if (bytes.length === 0) return;
-    if (bytes.length >= this.byteCap) {
-      this.chunks = [
-        OVERFLOW_NOTICE,
-        bytes.subarray(bytes.length - this.byteCap),
-      ];
-      this.head = 0;
-      this.size = 2;
-      this.total = OVERFLOW_NOTICE.length + this.byteCap;
-      this.overflowed = true;
-      return;
+    let offset = 0;
+    while (offset < bytes.length) {
+      let tail = this.blocks[this.blocks.length - 1];
+      if (this.blocks.length === this.head || this.tailLen === tail.length) {
+        tail = new Uint8Array(this.blockSize);
+        this.blocks.push(tail);
+        this.tailLen = 0;
+      }
+      const n = Math.min(tail.length - this.tailLen, bytes.length - offset);
+      tail.set(bytes.subarray(offset, offset + n), this.tailLen);
+      this.tailLen += n;
+      this.total += n;
+      offset += n;
+
+      while (this.total > this.byteCap && this.blocks.length - this.head > 1) {
+        this.total -= this.blocks[this.head].length;
+        this.head++;
+        this.overflowed = true;
+      }
     }
-    this.chunks.push(bytes);
-    this.size++;
-    this.total += bytes.length;
-    while (
-      (this.total > this.byteCap || this.size > this.chunkCap) &&
-      this.size > 1
-    ) {
-      const dropped = this.chunks[this.head]!;
-      this.chunks[this.head] = null;
-      this.head++;
-      this.size--;
-      this.total -= dropped.length;
-      this.overflowed = true;
-    }
-    if (this.head > 1024 && this.head > this.chunks.length / 2) {
-      this.chunks = this.chunks.slice(this.head);
+    if (this.head > 16 && this.head > this.blocks.length / 2) {
+      this.blocks = this.blocks.slice(this.head);
       this.head = 0;
     }
   }
 
   drain(write: (bytes: Uint8Array) => void): void {
-    if (this.overflowed) {
-      const first = this.chunks[this.head];
-      if (first !== OVERFLOW_NOTICE) write(OVERFLOW_NOTICE);
+    const last = this.blocks.length - 1;
+    let skip = 0;
+    if (this.overflowed && this.head <= last) {
+      write(OVERFLOW_NOTICE);
+      // Cut landed mid-line, likely mid-escape-sequence; LF never occurs
+      // inside a multi-byte UTF-8 sequence so resuming there is safe.
+      const first = this.blocks[this.head];
+      const firstLen = this.head === last ? this.tailLen : first.length;
+      const lf = first.subarray(0, firstLen).indexOf(LF);
+      if (lf >= 0) skip = lf + 1;
     }
-    const end = this.head + this.size;
-    for (let i = this.head; i < end; i++) {
-      const c = this.chunks[i];
-      if (c) write(c);
+    for (let i = this.head; i <= last; i++) {
+      const len = i === last ? this.tailLen : this.blocks[i].length;
+      const start = i === this.head ? skip : 0;
+      if (start < len) write(this.blocks[i].subarray(start, len));
     }
-    this.chunks = [];
+    this.blocks = [];
     this.head = 0;
-    this.size = 0;
+    this.tailLen = 0;
     this.total = 0;
     this.overflowed = false;
   }

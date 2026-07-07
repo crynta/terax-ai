@@ -651,12 +651,16 @@ export function ArtifactPreview({
           expanded ? "max-h-[70vh]" : "max-h-32",
         )}
         controls
-      />
+      >
+        <track kind="captions" />
+      </video>
     );
   }
   if (preview.kind === "audio" && source) {
     return (
-      <audio src={source} className="nodrag nowheel mt-2 w-full" controls />
+      <audio src={source} className="nodrag nowheel mt-2 w-full" controls>
+        <track kind="captions" />
+      </audio>
     );
   }
   if (preview.kind === "file" && source) {
