@@ -1,6 +1,6 @@
 # Pi sidebar merge conflict audit
 
-Generated on 2026-07-07 and refreshed after the updater key rotation verifier from local `pi-sidebar` head `41670621e7151ff5fdcb5525c8420f06cd3604f8` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`.
+Generated on 2026-07-07 and refreshed after the Pi approval e2e wiring guard from local `pi-sidebar` head `65b6bd9ed7e1f201040c76adc162f40f3dc1a12a` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`.
 
 ## Commands used
 
@@ -8,7 +8,7 @@ Generated on 2026-07-07 and refreshed after the updater key rotation verifier fr
 git fetch origin main
 git rev-parse HEAD origin/main
 git rev-list --left-right --count origin/main...HEAD
-git merge-tree --write-tree HEAD origin/main > /tmp/merge-tree-pi-sidebar-updater-verifier.txt 2>&1
+git merge-tree --write-tree HEAD origin/main > /tmp/merge-tree-pi-sidebar-e2e-guard.txt 2>&1
 gh workflow view CI --repo crynta/terax-ai --yaml
 gh workflow list --repo crynta/terax-ai --limit 50
 gh workflow list --repo mehmetcanbudak/terax-ai --limit 50

@@ -8,7 +8,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 - Head branch: `mehmetcanbudak:pi-sidebar`
 - Latest frontend gate verification covers Pi boundary (including the approval e2e wiring guard), updater-key, format, typecheck, lint, full Vitest, coverage, build, and bundle-size checks; latest Rust check verification head is `a3c938a3e` for default, workflow, and openclicky cargo check; the full Rust test/clippy/release-app build matrix remains verified at `06ce0ddde`, with no `src-tauri` file changes since that matrix.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
-- Visible checks: after the updater verifier push, `gh pr checks` showed CodeRabbit `pass` with "Review skipped: 869 files exceed the limit of 150" and still no GitHub Actions runs. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
+- Visible checks: after the Pi approval e2e wiring guard push, `gh pr checks` showed CodeRabbit `pass` with "Review skipped: 869 files exceed the limit of 150" and still no GitHub Actions runs. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
 
 ## Completion audit checklist
 
@@ -134,7 +134,7 @@ Conflict and CI audit after pushing the Pi sidebar tail:
 ```bash
 git fetch origin main
 git rev-list --left-right --count origin/main...HEAD # 171 106
-git merge-tree --write-tree HEAD origin/main # exits 1 with 99 conflicted paths; see docs/pi-sidebar-merge-conflict-audit.md
+git merge-tree --write-tree HEAD origin/main # latest e2e-guard refresh still exits 1 with 99 conflicted paths; see docs/pi-sidebar-merge-conflict-audit.md
 gh pr checks 964 --repo crynta/terax-ai # after latest docs-only push: no checks reported on pi-sidebar
 gh workflow view CI --repo crynta/terax-ai --yaml # no workflow_dispatch trigger; PR/push to main only
 gh workflow list --repo mehmetcanbudak/terax-ai --limit 50 # no workflows returned
