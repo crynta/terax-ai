@@ -1,6 +1,6 @@
 # Terax Improvement Plan (June 2026)
 
-> Superseded on 2026-06-11 by `docs/sota-plan-2026-06-11.md`. The webview-native Pi agent shipped at sidecar parity the same day this plan was written, resolving Phase 2 by a different route (no `pi_native_tool`, no `createAgentSession`) and changing the security analysis. Use the new plan.
+> Superseded on 2026-06-11 by `docs/sota-plan-2026-06-11.md`. The webview-native Pi agent shipped at sidecar parity the same day this plan was written, and the Node Pi sidecar has since been deleted. This plan's sidecar hardening and bundle-size guidance is historical only. Use `docs/pi-runtime.md` and `docs/pi-sidebar-release-readiness.md` for current Pi runtime truth.
 
 Derived from `docs/architecture-review-2026-06.md`. Each major decision below lists the alternatives that were considered and why the chosen option wins. Phases are ordered by leverage; within a phase, items are independent unless noted.
 

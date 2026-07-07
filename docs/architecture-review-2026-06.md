@@ -1,6 +1,6 @@
 # Terax Architecture Review (June 2026)
 
-> Superseded on 2026-06-11 by `docs/sota-plan-2026-06-11.md` after the webview-native Pi agent landed (commits 8560add..3d4fcff). Kept for the point-in-time per-layer detail; the pi-runtime sections no longer reflect the codebase.
+> Superseded on 2026-06-11 by `docs/sota-plan-2026-06-11.md` after the webview-native Pi agent landed (commits 8560add..3d4fcff). Kept for point-in-time per-layer detail only; the Pi runtime sections predate the deleted Node Pi sidecar and no longer reflect the codebase. Use `docs/pi-runtime.md` and `docs/pi-sidebar-release-readiness.md` for current Pi runtime truth.
 
 Scope: full codebase on the `pi-sidebar` branch (794 files changed vs `main`, +127k lines).
 Method: four parallel deep audits (Rust backend, React frontend, pi agent runtime, engineering infrastructure), cross-checked against TERAX.md, the pi SOTA architecture docs, and the live code.
