@@ -6,16 +6,16 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest code/config verification head: `407f99703` for the static Tauri invoke audit; the full release build matrix remains verified at `06ce0ddde`.
+- Latest code/config verification head: `3f3066041` for the static Tauri invoke audit and its targeted test coverage; the full release build matrix remains verified at `06ce0ddde`.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
-- Visible checks: after pushing `407f99703`, `gh pr checks` shows CodeRabbit pending only and no GitHub Actions runs. GitHub Actions CI/e2e were not visible for the fork PR, and the base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
+- Visible checks: after pushing `407f99703`, `gh pr checks` showed CodeRabbit pending only and no GitHub Actions runs. GitHub Actions CI/e2e were not visible for the fork PR, and the base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
 
 ## Completion audit checklist
 
 | Status | Objective requirement | Evidence inspected | Remaining gap |
 | --- | --- | --- | --- |
-| Done | Commit and push `pi-sidebar`; open PR. | PR #964 exists at <https://github.com/crynta/terax-ai/pull/964>; branch push was verified through code/config head `407f99703200cd24f1d2d66cf84951c149bc54d0`. | None for PR creation/push. |
-| Blocked | Confirm CI/e2e green. | After pushing `407f99703`, `gh pr checks 964 --repo crynta/terax-ai` reports CodeRabbit pending only; `gh pr view` reports `mergeStateStatus=DIRTY`; earlier `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returned no Actions runs; `gh workflow view CI --repo crynta/terax-ai --yaml` shows no `workflow_dispatch`; fork workflow/run lists return no workflows or runs. | GitHub Actions and Linux e2e are not available for this dirty fork PR; maintainer must resolve conflicts and let base PR CI run. |
+| Done | Commit and push `pi-sidebar`; open PR. | PR #964 exists at <https://github.com/crynta/terax-ai/pull/964>; branch push was verified through code/config head `3f306604179219544dfc46c588671e457a9aee55`. | None for PR creation/push. |
+| Blocked | Confirm CI/e2e green. | After pushing the static invoke audit, `gh pr checks 964 --repo crynta/terax-ai` reports CodeRabbit pending only; `gh pr view` reports `mergeStateStatus=DIRTY`; earlier `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returned no Actions runs; `gh workflow view CI --repo crynta/terax-ai --yaml` shows no `workflow_dispatch`; fork workflow/run lists return no workflows or runs. | GitHub Actions and Linux e2e are not available for this dirty fork PR; maintainer must resolve conflicts and let base PR CI run. |
 | Blocked | Document and complete manual macOS Pi smoke pass: key save/load, chat, built-in agents, custom Zai endpoint auth, streaming, stop/resume, app restart restore, and window-close behavior. | Checklist below records every named manual item and evidence to capture. | Maintainer must run it in a packaged app with real credentials. |
 | Done, not locally executable | Add security-critical mock-provider e2e coverage for Pi tool approval approve and deny through Rust `pi_agent_tool_execute`. | `e2e/specs/pi-approval.e2e.mjs` covers approve creates the fixture and deny leaves it absent; `src/modules/pi/bridge/pi-mock.ts` emits the deterministic tool calls; `docs/pi-native-tool-bridge.md` links the flow; `node --check e2e/specs/pi-approval.e2e.mjs` passed. | Full e2e execution requires Linux or Windows `tauri-driver`; macOS WKWebView has no driver. |
 | Partial | Complete Phase C/D convergence. | `src/modules/ai/lib/composerRuntime.ts` and tests cover Pi-backed quick ask; `src/app/App.tsx` and `src/app/AppWorkspaceSurface.tsx` route the Pi composer path to Pi surfaces; `docs/phase-c-convergence-plan.md` now records the residual import audit. | Legacy `AiChat`, `AiChatMessage`, `PlanDiffReview`, and `TodoStrip` remain for the fallback chat-runtime mini window until Pi composer can become default after CI and smoke pass. Runtime collapse/rename remains deferred. |
@@ -142,6 +142,7 @@ Static Tauri invoke audit added after the PR check visibility refresh:
 ```bash
 pnpm run check:tauri-invokes # 172 commands, 248 literal invocations, 32 feature-gated commands documented
 pnpm run check:pi-boundary # chains Pi approval boundary plus static invoke audit
+pnpm exec vitest run scripts/check-pi-approval-boundary.test.mjs scripts/check-tauri-invokes.test.mjs # 5 tests pass
 ```
 
 ## Voice and 3D gating decision
