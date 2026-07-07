@@ -1,18 +1,22 @@
 # Pi sidebar merge conflict audit
 
-Generated on 2026-07-07 and refreshed after the no-Pi-sidecar gate from local `pi-sidebar` head `b50066904f2a011a0c25978151f7ad02cd0556b5` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`.
+Generated on 2026-07-07 and refreshed after the CI dispatch and updater-doc tail from local `pi-sidebar` head `be9aa937b56f412a51dbc3c40956cf7375620fe1` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`.
 
 ## Commands used
 
 ```bash
 git fetch origin main
 git rev-parse HEAD origin/main
-git merge-tree --write-tree HEAD origin/main > /tmp/merge-tree-pi-sidebar.txt 2>&1
+git rev-list --left-right --count origin/main...HEAD
+git merge-tree --write-tree HEAD origin/main > /tmp/merge-tree-pi-sidebar-latest.txt 2>&1
 gh workflow view CI --repo crynta/terax-ai --yaml
 gh workflow list --repo crynta/terax-ai --limit 50
 gh workflow list --repo mehmetcanbudak/terax-ai --limit 50
 gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20
 gh run list --repo mehmetcanbudak/terax-ai --limit 10
+gh workflow run CI --repo mehmetcanbudak/terax-ai --ref pi-sidebar
+gh workflow run CI --repo crynta/terax-ai --ref pi-sidebar
+gh pr checks 964 --repo crynta/terax-ai
 ```
 
 ## Result
@@ -21,9 +25,11 @@ gh run list --repo mehmetcanbudak/terax-ai --limit 10
 
 CI is also externally blocked for this fork PR:
 
-- Base repo CI is active, but `.github/workflows/ci.yml` has only `pull_request` and `push` triggers for `main`; it has no `workflow_dispatch` trigger.
+- Base repo CI is active, but the current base/default `.github/workflows/ci.yml` has only `pull_request` and `push` triggers for `main`; it has no `workflow_dispatch` trigger until maintainers accept or merge this branch's workflow update.
 - `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returns no runs.
 - `gh workflow list --repo mehmetcanbudak/terax-ai --limit 50` and `gh run list --repo mehmetcanbudak/terax-ai --limit 10` return no fork workflows or runs.
+- Dispatch probes remain blocked: the fork returns "could not find any workflows named CI"; the base repo returns HTTP 403 "Must have admin rights to Repository" for manual dispatch from this account.
+- `gh pr checks 964 --repo crynta/terax-ai` shows CodeRabbit pass/skipped only, with no GitHub Actions checks visible.
 - Recent `main` CI runs on `crynta/terax-ai` are green, but that is not proof for PR #964.
 
 ## Conflicted paths
