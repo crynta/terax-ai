@@ -20,7 +20,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 | Done, not locally executable | Add security-critical mock-provider e2e coverage for Pi tool approval approve and deny through Rust `pi_agent_tool_execute`. | `e2e/specs/pi-approval.e2e.mjs` covers approve creates the fixture and deny leaves it absent; `src/modules/pi/bridge/pi-mock.ts` emits the deterministic tool calls; `docs/pi-native-tool-bridge.md` links the flow; `node --check e2e/specs/pi-approval.e2e.mjs` passed. | Full e2e execution requires Linux or Windows `tauri-driver`; macOS WKWebView has no driver. |
 | Partial | Complete Phase C/D convergence. | `src/modules/ai/lib/composerRuntime.ts` and tests cover Pi-backed quick ask; `src/app/App.tsx` and `src/app/AppWorkspaceSurface.tsx` route the Pi composer path to Pi surfaces; `docs/phase-c-convergence-plan.md` now records the residual import audit. | Legacy `AiChat`, `AiChatMessage`, `PlanDiffReview`, and `TodoStrip` remain for the fallback chat-runtime mini window until Pi composer can become default after CI and smoke pass. Runtime collapse/rename remains deferred. |
 | Done | Handle touched cleanup and hardening items. | Evidence spans provider/model persistence tests in `src/modules/pi/lib/webview-session.test.ts`, MCP connection/error surfaces in `src/modules/pi/lib/useMcpSurface.ts` and `src-tauri/tests/mcp_manager_runtime.rs`, URLSearchParams proxy body handling in `src/modules/ai/lib/proxyFetch.ts`, retry UX in `src/modules/pi/components/PiComposer.test.tsx`, MCP `raw_data` capping in `src-tauri/src/modules/pi/native_tools/mcp_tools.rs`, historical sidecar-era docs marked superseded including the T3 comparison report, and Voice/3D gating in `src/modules/ai/lib/featureGates.ts` plus Rust capability manifests. | No known local code gap; release validation still depends on CI/manual blockers. |
-| Blocked | Complete updater key rotation and verify fresh plus pre-rotation update paths. | `docs/updater-key-rotation.md` documents the new public key status, release workflow secret-name wiring, secret-access 403, and transition-release recommendation. | Maintainer must verify/configure signing secret values, decide transition release feasibility, and verify signed update feeds. |
+| Blocked | Complete updater key rotation and verify fresh plus pre-rotation update paths. | `docs/updater-key-rotation.md` documents the new public key status, release workflow secret-name wiring, secret-access 403, transition-release recommendation, and live `v0.8.2` feed signatures still carrying old key id `3BABFD8AB60E3469`. | Maintainer must verify/configure signing secret values, produce a new-key signed release or test feed, decide transition release feasibility, and verify signed update feeds. |
 | Done | Keep default app about 11 MB. | `pnpm tauri build --bundles app --no-sign --ci` and `du -sh src-tauri/target/release/bundle/macos/Terax.app` reported `11M`; JS gzipped bundle is `1949.8 KB` against `2050.8 KB`. | Re-run after conflict resolution and final merge. |
 | Done | Keep Node Pi sidecar deleted. | `git ls-files` and `find` show no Node `pi-host` sidecar; only the existing `speech-recognizer` sidecar resources remain. | Historical architecture docs still mention the old sidecar as past context. |
 | Done | Ensure static frontend Tauri invokes have Rust handlers or intentional graceful degradation. | `pnpm run check:tauri-invokes` passed with 172 unique commands across 248 literal invokes and 32 documented feature-gated commands; `pnpm run check:pi-boundary` now chains this static invoke audit after the Pi approval boundary check. | Re-run after conflict resolution. |
@@ -143,6 +143,17 @@ Static Tauri invoke audit added after the PR check visibility refresh:
 pnpm run check:tauri-invokes # 172 commands, 248 literal invocations, 32 feature-gated commands documented
 pnpm run check:pi-boundary # chains Pi approval boundary plus static invoke audit
 pnpm exec vitest run scripts/check-pi-approval-boundary.test.mjs scripts/check-tauri-invokes.test.mjs # 5 tests pass
+```
+
+Updater feed inspection after the static invoke audit:
+
+```bash
+gh release view --repo crynta/terax-ai --json tagName,assets # latest release is v0.8.2 with latest.json
+curl -LfsS https://github.com/crynta/terax-ai/releases/latest/download/latest.json -o /tmp/terax-latest.json
+python3 - <<'PY'
+# Parsed each platform signature key id from latest.json.
+# unique key ids: ['3BABFD8AB60E3469']; branch embeds new pubkey 52D6B9847A3B8F15
+PY
 ```
 
 ## Voice and 3D gating decision
