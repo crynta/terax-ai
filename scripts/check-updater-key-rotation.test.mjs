@@ -6,6 +6,7 @@ import {
   EXPECTED_UPDATE_ENDPOINT,
   EXPECTED_UPDATER_KEY_ID,
   OLD_UPDATER_KEY_ID,
+  REQUIRED_UPDATER_DOC_TEXT,
   checkUpdaterKeyRotation,
 } from "./check-updater-key-rotation.mjs";
 
@@ -37,6 +38,10 @@ function healthyReleaseWorkflow() {
   ].join("\n");
 }
 
+function healthyUpdaterDocs() {
+  return REQUIRED_UPDATER_DOC_TEXT.join("\n");
+}
+
 async function writeFixture(root, files) {
   for (const [relativePath, content] of Object.entries(files)) {
     const path = join(root, relativePath);
@@ -46,11 +51,12 @@ async function writeFixture(root, files) {
 }
 
 describe("checkUpdaterKeyRotation", () => {
-  it("passes when the embedded pubkey and release workflow signing env match the rotation", async () => {
+  it("passes when the embedded pubkey, release workflow, and cutover docs match the rotation", async () => {
     const root = await mkdtemp(join(tmpdir(), "terax-updater-key-ok-"));
     await writeFixture(root, {
       "src-tauri/tauri.conf.json": healthyTauriConfig(),
       ".github/workflows/release.yml": healthyReleaseWorkflow(),
+      "docs/updater-key-rotation.md": healthyUpdaterDocs(),
     });
 
     const result = await checkUpdaterKeyRotation(root);
@@ -73,6 +79,7 @@ describe("checkUpdaterKeyRotation", () => {
         },
       }),
       ".github/workflows/release.yml": healthyReleaseWorkflow(),
+      "docs/updater-key-rotation.md": healthyUpdaterDocs(),
     });
 
     const result = await checkUpdaterKeyRotation(root);
@@ -97,6 +104,7 @@ describe("checkUpdaterKeyRotation", () => {
         "    steps:",
         "      - uses: tauri-apps/tauri-action@v0",
       ].join("\n"),
+      "docs/updater-key-rotation.md": healthyUpdaterDocs(),
     });
 
     const result = await checkUpdaterKeyRotation(root);
@@ -106,6 +114,29 @@ describe("checkUpdaterKeyRotation", () => {
       expect.arrayContaining([
         expect.stringContaining("TAURI_SIGNING_PRIVATE_KEY"),
         expect.stringContaining("TAURI_SIGNING_PRIVATE_KEY_PASSWORD"),
+      ]),
+    );
+  });
+
+  it("fails when the updater cutover docs lose the fallback release-note path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "terax-updater-key-docs-"));
+    await writeFixture(root, {
+      "src-tauri/tauri.conf.json": healthyTauriConfig(),
+      ".github/workflows/release.yml": healthyReleaseWorkflow(),
+      "docs/updater-key-rotation.md": healthyUpdaterDocs().replace(
+        "Fallback reinstall-announcement path",
+        "",
+      ),
+    });
+
+    const result = await checkUpdaterKeyRotation(root);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "docs/updater-key-rotation.md is missing required rotation note: Fallback reinstall-announcement path",
+        ),
       ]),
     );
   });

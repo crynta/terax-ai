@@ -1,6 +1,6 @@
 # Pi sidebar merge conflict audit
 
-Generated on 2026-07-07 and refreshed after the release-doc verifier guard from local `pi-sidebar` head `12f1aec0823fe51097a248ea8f94954043c25ce5` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`.
+Generated on 2026-07-07 and refreshed repeatedly from local `pi-sidebar` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`. The latest refreshes after the e2e, release-doc, and updater cutover-doc guards all kept the same 99 conflicted paths.
 
 ## Commands used
 

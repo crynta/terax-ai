@@ -14,6 +14,19 @@ const requiredSigningSecretPatterns = [
   /TAURI_SIGNING_PRIVATE_KEY_PASSWORD:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY_PASSWORD\s*\}\}/,
 ];
 
+export const REQUIRED_UPDATER_DOC_TEXT = [
+  OLD_UPDATER_KEY_ID,
+  EXPECTED_UPDATER_KEY_ID,
+  EXPECTED_UPDATE_ENDPOINT,
+  "TAURI_SIGNING_PRIVATE_KEY",
+  "TAURI_SIGNING_PRIVATE_KEY_PASSWORD",
+  "Preferred transition-release path",
+  "Fallback reinstall-announcement path",
+  "new-key signed release or test feed",
+  "End-to-end update verified on a new install and an old install against a signed test feed",
+  "Fresh/pre-rotation acceptance still needs a signed release or test feed",
+];
+
 async function readText(path) {
   return readFile(path, "utf8");
 }
@@ -76,10 +89,19 @@ function checkReleaseWorkflow(text, errors) {
   return { action: actionMatch?.[0] ?? null };
 }
 
+function checkUpdaterDocs(text, errors) {
+  for (const requiredText of REQUIRED_UPDATER_DOC_TEXT) {
+    if (!text.includes(requiredText)) {
+      errors.push(`docs/updater-key-rotation.md is missing required rotation note: ${requiredText}`);
+    }
+  }
+}
+
 export async function checkUpdaterKeyRotation(root = repoRoot) {
   const errors = [];
   const tauriConfigPath = resolve(root, "src-tauri/tauri.conf.json");
   const releaseWorkflowPath = resolve(root, ".github/workflows/release.yml");
+  const updaterDocsPath = resolve(root, "docs/updater-key-rotation.md");
 
   let tauri = { decodedPubkey: "", endpoints: [] };
   try {
@@ -94,6 +116,12 @@ export async function checkUpdaterKeyRotation(root = repoRoot) {
     workflow = checkReleaseWorkflow(await readText(releaseWorkflowPath), errors);
   } catch (error) {
     errors.push(`.github/workflows/release.yml could not be read: ${error.message}`);
+  }
+
+  try {
+    checkUpdaterDocs(await readText(updaterDocsPath), errors);
+  } catch (error) {
+    errors.push(`docs/updater-key-rotation.md could not be read: ${error.message}`);
   }
 
   return {
@@ -114,6 +142,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   console.log(
-    `Updater key rotation check passed: embedded key ${EXPECTED_UPDATER_KEY_ID}, ${result.workflowAction}, ${result.endpoints.length} endpoint(s).`,
+    `Updater key rotation check passed: embedded key ${EXPECTED_UPDATER_KEY_ID}, ${result.workflowAction}, ${result.endpoints.length} endpoint(s), cutover docs guarded.`,
   );
 }
