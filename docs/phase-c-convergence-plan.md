@@ -160,6 +160,15 @@ manual macOS smoke pass and PR CI are green.
 - Replace `AiChat`/`AiChatMessage` mounts with `PiTranscript`. Delete the
   legacy components only after their last importer is repointed.
 
+**First mini-window routing step landed 2026-07-07.** When the Pi-backed
+composer runtime is selected and provider config is ready, the status-bar agent
+surface buttons now open the Pi code panel / `PiFloatingWindow` path instead of
+opening the legacy AI mini window. The legacy mini window remains mounted only
+for the default chat-runtime path until the Pi composer flag can become the
+default after PR CI/e2e and manual smoke are green. `AppFloatingSurfaces` now
+has an explicit `usePiConversationSurface` guard, with a unit test proving the
+legacy mini window is not rendered for the Pi-backed path.
+
 ### Stage 4 - Runtime collapse and rename
 
 - Once no surface uses the AI-SDK loop for sessions, reduce Layer 2 to the

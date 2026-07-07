@@ -97,13 +97,23 @@ export function AiOpenButton({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-export function AiStatusBarControls() {
+type AiStatusBarControlsProps = {
+  conversationOpen?: boolean;
+  onOpenConversation?: () => void;
+};
+
+export function AiStatusBarControls({
+  conversationOpen,
+  onOpenConversation,
+}: AiStatusBarControlsProps = {}) {
   const c = useComposer();
   const { actions, meta, state } = c;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const openMini = useChatStore((s) => s.openMini);
   const miniOpen = useChatStore((s) => s.mini.open);
   const closePanel = useChatStore((s) => s.closePanel);
+  const openConversation = onOpenConversation ?? openMini;
+  const isConversationOpen = conversationOpen ?? miniOpen;
 
   return (
     <div className="flex items-center gap-0.5">
@@ -175,9 +185,9 @@ export function AiStatusBarControls() {
         </Kbd>
       </Button>
       <IconBtn
-        title={miniOpen ? "Mini-window open" : "Open conversation"}
-        onClick={openMini}
-        disabled={miniOpen}
+        title={isConversationOpen ? "Conversation open" : "Open conversation"}
+        onClick={openConversation}
+        disabled={isConversationOpen}
       >
         <HugeiconsIcon icon={Message01Icon} size={13} strokeWidth={1.75} />
       </IconBtn>

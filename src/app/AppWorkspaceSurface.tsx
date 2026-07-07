@@ -27,6 +27,18 @@ export type SurfaceTabKind =
   | "terminal"
   | "workflow";
 
+export function shouldRenderLegacyMiniWindow({
+  hasLegacyComposer,
+  legacyMiniOpen,
+  usePiConversationSurface,
+}: {
+  hasLegacyComposer: boolean;
+  legacyMiniOpen: boolean;
+  usePiConversationSurface: boolean;
+}): boolean {
+  return legacyMiniOpen && hasLegacyComposer && !usePiConversationSurface;
+}
+
 type AppWorkspaceSurfaceProps = {
   activeId: number;
   activeTab: Tab | undefined;
@@ -170,8 +182,9 @@ export function AppFloatingSurfaces({
   askPopup,
   codePanelContext,
   codeSurface,
-  hasComposer,
-  miniOpen,
+  hasLegacyComposer,
+  legacyMiniOpen,
+  usePiConversationSurface,
   onAskFromSelection,
   onDismissAskPopup,
   openCodeInSidebar,
@@ -181,8 +194,9 @@ export function AppFloatingSurfaces({
   askPopup: { x: number; y: number } | null;
   codePanelContext: CodePanelContext;
   codeSurface: CodeSurface;
-  hasComposer: boolean;
-  miniOpen: boolean;
+  hasLegacyComposer: boolean;
+  legacyMiniOpen: boolean;
+  usePiConversationSurface: boolean;
   onAskFromSelection: () => void;
   onDismissAskPopup: () => void;
   openCodeInSidebar: () => void;
@@ -211,7 +225,13 @@ export function AppFloatingSurfaces({
           />
         </PiFloatingWindow>
       ) : null}
-      {miniOpen && hasComposer ? <AiMiniWindow key="ai-mini" /> : null}
+      {shouldRenderLegacyMiniWindow({
+        hasLegacyComposer,
+        legacyMiniOpen,
+        usePiConversationSurface,
+      }) ? (
+        <AiMiniWindow key="ai-mini" />
+      ) : null}
       {askPopup ? (
         <SelectionAskAi
           key="ask-ai-popup"

@@ -24,7 +24,10 @@ type Props = {
   onCd: (path: string) => void;
   onWorkspaceChange: (env: WorkspaceEnv) => void;
   onOpenMini: () => void;
-  /** Only rendered when the AI panel is open and a key is loaded. */
+  onOpenAgentPanel?: () => void;
+  conversationOpen?: boolean;
+  agentPanelOpen?: boolean;
+  /** Only rendered when the agent panel is open and a runtime is available. */
   hasComposer: boolean;
   privateActive: boolean;
 };
@@ -36,11 +39,16 @@ export function StatusBar({
   onCd,
   onWorkspaceChange,
   onOpenMini,
+  onOpenAgentPanel,
+  conversationOpen,
+  agentPanelOpen,
   hasComposer,
   privateActive,
 }: Props) {
   const panelOpen = useChatStore((s) => s.panelOpen);
   const openPanel = useChatStore((s) => s.openPanel);
+  const effectivePanelOpen = agentPanelOpen ?? panelOpen;
+  const openEffectivePanel = onOpenAgentPanel ?? openPanel;
 
   return (
     <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/60 px-3 text-[11px]">
@@ -75,10 +83,13 @@ export function StatusBar({
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
         <AgentStatusPill onClick={onOpenMini} />
-        {panelOpen && hasComposer ? (
-          <AiStatusBarControls />
+        {effectivePanelOpen && hasComposer ? (
+          <AiStatusBarControls
+            conversationOpen={conversationOpen}
+            onOpenConversation={onOpenMini}
+          />
         ) : (
-          <AiOpenButton onOpen={openPanel} />
+          <AiOpenButton onOpen={openEffectivePanel} />
         )}
       </div>
     </footer>

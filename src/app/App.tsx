@@ -315,8 +315,20 @@ export default function App() {
 
   const { result: piComposerProvider } = usePiProviderConfig();
   const piComposerEnabled = isPiComposerRuntimeEnabled();
-  const hasDockComposer =
-    hasComposer || (piComposerEnabled && piComposerProvider.ok);
+  const usePiConversationSurface = piComposerEnabled && piComposerProvider.ok;
+  const hasDockComposer = hasComposer || usePiConversationSurface;
+  const openAgentPanel = usePiConversationSurface
+    ? openCodeInSidebar
+    : openPanel;
+  const openAgentConversation = usePiConversationSurface
+    ? openCodePopOut
+    : openMini;
+  const agentPanelOpen = usePiConversationSurface
+    ? codePanelVisible
+    : panelOpen;
+  const agentConversationOpen = usePiConversationSurface
+    ? codeSurface === "floating"
+    : miniOpen;
 
   const {
     askFromSelection,
@@ -332,8 +344,8 @@ export default function App() {
     editorRefs,
     focusInput,
     hasComposer: hasDockComposer,
-    openPanel,
-    panelOpen,
+    openPanel: openAgentPanel,
+    panelOpen: agentPanelOpen,
     tabs,
     terminalRefs,
   });
@@ -818,8 +830,11 @@ export default function App() {
                 home={home}
                 onCd={sendCd}
                 onWorkspaceChange={switchWorkspace}
-                onOpenMini={openMini}
-                hasComposer={hasComposer}
+                onOpenMini={openAgentConversation}
+                onOpenAgentPanel={openAgentPanel}
+                conversationOpen={agentConversationOpen}
+                agentPanelOpen={agentPanelOpen}
+                hasComposer={hasDockComposer}
                 privateActive={
                   activeTab?.kind === "terminal" && activeTab.private === true
                 }
@@ -842,8 +857,9 @@ export default function App() {
                 askPopup={askPopup}
                 codePanelContext={codePanelContext}
                 codeSurface={codeSurface}
-                hasComposer={hasComposer}
-                miniOpen={miniOpen}
+                hasLegacyComposer={hasComposer}
+                legacyMiniOpen={miniOpen}
+                usePiConversationSurface={usePiConversationSurface}
                 onAskFromSelection={onAskFromSelection}
                 onDismissAskPopup={dismissAskPopup}
                 openCodeInSidebar={openCodeInSidebar}
