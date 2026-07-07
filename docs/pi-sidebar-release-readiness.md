@@ -6,7 +6,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest pushed head: `a65582c23`; latest code/config verification head remains `3f3066041` for the static Tauri invoke audit and its targeted test coverage; the full release build matrix remains verified at `06ce0ddde`.
+- Latest code/config verification head remains `3f3066041` for the static Tauri invoke audit and its targeted test coverage; the full release build matrix remains verified at `06ce0ddde`.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
 - Visible checks: after pushing `a65582c23`, `gh pr checks` shows CodeRabbit `pass` with "Review skipped: 862 files exceed the limit of 150" and no GitHub Actions runs. GitHub Actions CI/e2e were not visible for the fork PR, and the base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
 
@@ -14,9 +14,9 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 | Status | Objective requirement | Evidence inspected | Remaining gap |
 | --- | --- | --- | --- |
-| Done | Commit and push `pi-sidebar`; open PR. | PR #964 exists at <https://github.com/crynta/terax-ai/pull/964>; branch push was verified through head `a65582c2308d098c62dcf944b0723a256cdd0432`. | None for PR creation/push. |
+| Done | Commit and push `pi-sidebar`; open PR. | PR #964 exists at <https://github.com/crynta/terax-ai/pull/964>; pushes to `mehmetcanbudak:pi-sidebar` continue to succeed and PR body updates are accepted. | None for PR creation/push. |
 | Blocked | Confirm CI/e2e green. | After pushing `a65582c23`, `gh pr checks 964 --repo crynta/terax-ai` reports CodeRabbit pass/skipped only; `gh pr view` reports `mergeStateStatus=DIRTY`; earlier `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returned no Actions runs; `gh workflow view CI --repo crynta/terax-ai --yaml` shows no `workflow_dispatch`; fork workflow/run lists return no workflows or runs. | GitHub Actions and Linux e2e are not available for this dirty fork PR; maintainer must resolve conflicts and let base PR CI run. |
-| Blocked | Document and complete manual macOS Pi smoke pass: key save/load, chat, built-in agents, custom Zai endpoint auth, streaming, stop/resume, app restart restore, and window-close behavior. | Checklist below records every named manual item and evidence to capture. | Maintainer must run it in a packaged app with real credentials. |
+| Blocked | Document and complete manual macOS Pi smoke pass: key save/load, chat, built-in agents, custom Zai endpoint auth, streaming, stop/resume, app restart restore, and window-close behavior. | Checklist below records every named manual item and evidence to capture; `docs/pi-sidebar-manual-smoke-report.md` is a maintainer-fillable report template. | Maintainer must run it in a packaged app with real credentials. |
 | Done, not locally executable | Add security-critical mock-provider e2e coverage for Pi tool approval approve and deny through Rust `pi_agent_tool_execute`. | `e2e/specs/pi-approval.e2e.mjs` covers approve creates the fixture and deny leaves it absent; `src/modules/pi/bridge/pi-mock.ts` emits the deterministic tool calls; `docs/pi-native-tool-bridge.md` links the flow; `node --check e2e/specs/pi-approval.e2e.mjs` passed. | Full e2e execution requires Linux or Windows `tauri-driver`; macOS WKWebView has no driver. |
 | Partial | Complete Phase C/D convergence. | `src/modules/ai/lib/composerRuntime.ts` and tests cover Pi-backed quick ask; `src/app/App.tsx` and `src/app/AppWorkspaceSurface.tsx` route the Pi composer path to Pi surfaces; `docs/phase-c-convergence-plan.md` now records the residual import audit. | Legacy `AiChat`, `AiChatMessage`, `PlanDiffReview`, and `TodoStrip` remain for the fallback chat-runtime mini window until Pi composer can become default after CI and smoke pass. Runtime collapse/rename remains deferred. |
 | Done | Handle touched cleanup and hardening items. | Evidence spans provider/model persistence tests in `src/modules/pi/lib/webview-session.test.ts`, MCP connection/error surfaces in `src/modules/pi/lib/useMcpSurface.ts` and `src-tauri/tests/mcp_manager_runtime.rs`, URLSearchParams proxy body handling in `src/modules/ai/lib/proxyFetch.ts`, retry UX in `src/modules/pi/components/PiComposer.test.tsx`, MCP `raw_data` capping in `src-tauri/src/modules/pi/native_tools/mcp_tools.rs`, historical sidecar-era docs marked superseded including the T3 comparison report, and Voice/3D gating in `src/modules/ai/lib/featureGates.ts` plus Rust capability manifests. | No known local code gap; release validation still depends on CI/manual blockers. |
@@ -169,7 +169,7 @@ This does not disable the existing composer voice input path, which is a user-in
 
 ## Manual macOS Pi smoke checklist
 
-These require an interactive packaged app and/or real configured provider credentials. They were not completed by the non-interactive agent session and must be run by a maintainer before release.
+These require an interactive packaged app and/or real configured provider credentials. They were not completed by the non-interactive agent session and must be run by a maintainer before release. Use `docs/pi-sidebar-manual-smoke-report.md` as the fillable evidence template.
 
 | Status | Item | Evidence to record |
 | --- | --- | --- |
