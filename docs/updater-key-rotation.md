@@ -56,6 +56,26 @@ unless handled deliberately.
   new key, confirm it **rejects** (proves the threat model) and that the chosen
   migration path (reinstall or transition release) works.
 
+## Release-notes draft
+
+Use exactly one of these notes for the release that ships the rotated updater
+key, after the maintainer chooses the migration path.
+
+### Preferred transition-release path
+
+> This release rotates Terax's updater signing key. Existing installations can
+> update normally through the in-app updater because this transition release was
+> signed with the previous trusted key and installs a build that trusts the new
+> key. Future updates will be signed with the new key.
+
+### Fallback reinstall-announcement path
+
+> This release rotates Terax's updater signing key. Existing installations built
+> before this release cannot verify the new update signature through the in-app
+> updater. If your app does not update automatically, download and install the
+> latest Terax release manually once; future updates will work normally from the
+> new signing key.
+
 ## Status
 
 - [x] Pubkey rotated in `tauri.conf.json` to `52D6B9847A3B8F15`.
@@ -65,7 +85,8 @@ unless handled deliberately.
 - [x] Migration recommendation chosen: prefer a **transition release** if the old private key is still trusted/available, because it preserves auto-update for existing installs. If the rotation was caused by suspected compromise or the old key is unavailable, fall back to the reinstall announcement path.
 - [ ] New private key value verified in release CI secrets (`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). The current agent cannot verify or set repository secrets: `gh secret list --repo crynta/terax-ai --app actions` returned HTTP 403 again on 2026-07-07.
 - [ ] Transition-release feasibility confirmed by a maintainer with access to the old updater private key and release workflow secrets.
-- [ ] Existing-install migration path noted in release notes for the release that ships this change.
+- [x] Release-note draft prepared for both migration outcomes above.
+- [ ] Existing-install migration path noted in the actual release notes for the release that ships this change.
 - [ ] End-to-end update verified on a new install and an old install against a signed test feed.
 
 ## Current blocker
