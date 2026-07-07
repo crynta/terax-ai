@@ -6,20 +6,21 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Current head: `b73b79aa1501d36c888d609affd4b9be644b8c58` (`chore(merge): resolve origin main into pi sidebar`)
-- Base included: `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`
+- Merge-resolution commit included: `b73b79aa1501d36c888d609affd4b9be644b8c58` (`chore(merge): resolve origin main into pi sidebar`)
+- Base included by the merge: `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`
+- Current pushed head: verify with `gh pr view 964 --repo crynta/terax-ai --json headRefOid`
 - Merge status from `gh pr view`: `mergeStateStatus=BLOCKED`, `mergeable=MERGEABLE`
-- Local merge audit: `git merge-tree --write-tree HEAD origin/main` exits 0 and returns tree `de0fa1c3a95688d21eb3cbeb74087e81257b435b`
-- Visible PR checks: CodeRabbit is passing/skipped because the review exceeds its file limit; no green GitHub Actions matrix is attached to the PR check rollup yet.
-- GitHub Actions evidence: base repo run `28852066285` for workflow `CI` on `pi-sidebar` / `pull_request` completed immediately with `conclusion=action_required` and no jobs/logs. Maintainer must approve/re-run PR CI before CI/e2e can be considered green.
+- Local merge audit: `git merge-tree --write-tree HEAD origin/main` exits 0.
+- Visible PR checks: CodeRabbit may be pending or passing after each push; no green GitHub Actions matrix is attached to the PR check rollup yet.
+- GitHub Actions evidence: base repo `CI` runs on `pi-sidebar` / `pull_request` complete immediately with `conclusion=action_required` and no jobs/logs until a maintainer approves/re-runs the workflow. Maintainer must approve/re-run PR CI before CI/e2e can be considered green.
 
 ## Completion audit checklist
 
 | Status | Objective requirement | Evidence inspected | Remaining gap |
 | --- | --- | --- | --- |
-| Done | Commit and push `pi-sidebar`; open PR. | PR #964 exists at <https://github.com/crynta/terax-ai/pull/964>; current branch head is pushed at `b73b79aa1501d36c888d609affd4b9be644b8c58`. | None for PR creation/push. |
-| Done | Resolve merge conflicts against current `origin/main`. | `git fetch origin main`; `git rev-list --left-right --count origin/main...HEAD` reported `0 164`; `git merge-tree --write-tree HEAD origin/main` exited 0. `gh pr view` reports `mergeable=MERGEABLE`. | None locally; GitHub still reports `mergeStateStatus=BLOCKED` because required checks/reviews are not satisfied. |
-| Blocked | Confirm CI/e2e green. | `gh pr checks 964 --repo crynta/terax-ai` reports CodeRabbit only. `gh run view 28852066285 --repo crynta/terax-ai` reports `conclusion=action_required` with no jobs/logs. `CI must independently run on the PR`; Linux e2e, including the Pi approval spec, has not executed in GitHub Actions. | Maintainer must approve/re-run PR CI so the workflow matrix and Linux e2e job run to completion. |
+| Done | Commit and push `pi-sidebar`; open PR. | PR #964 exists at <https://github.com/crynta/terax-ai/pull/964>; current branch head is pushed to `mehmetcanbudak:pi-sidebar`. | None for PR creation/push. |
+| Done | Resolve merge conflicts against current `origin/main`. | `git fetch origin main`; `git merge-tree --write-tree HEAD origin/main` exited 0 after the merge-resolution commit. `gh pr view` reports `mergeable=MERGEABLE`. | None locally; GitHub still reports `mergeStateStatus=BLOCKED` because required checks/reviews are not satisfied. |
+| Blocked | Confirm CI/e2e green. | `gh pr checks 964 --repo crynta/terax-ai` reports no green GitHub Actions matrix. `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar` shows PR runs with `conclusion=action_required` and no jobs/logs. `CI must independently run on the PR`; Linux e2e, including the Pi approval spec, has not executed in GitHub Actions. | Maintainer must approve/re-run PR CI so the workflow matrix and Linux e2e job run to completion. |
 | Blocked | Document and complete manual macOS Pi smoke pass: key save/load, chat, built-in agents, custom Zai endpoint auth, streaming, stop/resume, app restart restore, and window-close behavior. | `docs/pi-sidebar-manual-smoke-report.md` is a maintainer-fillable template covering each named flow, expected evidence, and secret-redaction guidance. | Maintainer must run it in a packaged app with real credentials/endpoints. |
 | Done, not locally executable | Add security-critical mock-provider e2e coverage for Pi tool approval approve and deny through Rust `pi_agent_tool_execute`. | `e2e/specs/pi-approval.e2e.mjs` covers approve creates the fixture and deny leaves it absent; `wdio.conf.mjs` includes `./e2e/specs/**/*.e2e.mjs`; `.github/workflows/ci.yml` runs `xvfb-run -a pnpm e2e`; `src/modules/pi/bridge/pi-mock.ts` emits deterministic tool calls; `pnpm run check:pi-boundary` statically guards the spec, sentinel prompts, WebdriverIO glob, and Linux e2e CI command. | Full e2e execution requires Linux/Windows `tauri-driver`; macOS WKWebView has no driver, and GitHub CI is still `action_required`. |
 | Partial | Complete Phase C/D convergence. | `src/modules/ai/lib/composerRuntime.ts` and tests cover the Pi-backed quick ask; `src/app/App.tsx` and `src/app/AppWorkspaceSurface.tsx` route the Pi composer path to Pi surfaces; `docs/phase-c-convergence-plan.md` records the residual import audit; `pnpm run check:pi-surface-isolation` guards that `AiChat`, `AiChatMessage`, `PlanDiffReview`, and `TodoStrip` stay isolated to the legacy mini-window fallback or tests. | Legacy fallback chat surfaces remain until Pi composer can become default after CI/e2e and manual smoke are green. Runtime collapse/rename remains deferred. |
@@ -53,12 +54,11 @@ Merge/PR/CI probes:
 
 ```bash
 git fetch origin main
-git rev-parse HEAD origin/main # b73b79aa1501d36c888d609affd4b9be644b8c58 / 78a0b3dd79554ad4af89e61d97004f3475cd9953
-git rev-list --left-right --count origin/main...HEAD # 0 164
-git merge-tree --write-tree HEAD origin/main # exits 0, tree de0fa1c3a95688d21eb3cbeb74087e81257b435b
+git rev-parse HEAD origin/main # current local PR head / fetched origin/main
+git merge-tree --write-tree HEAD origin/main # exits 0
 gh pr view 964 --repo crynta/terax-ai --json headRefOid,mergeStateStatus,mergeable,statusCheckRollup
-gh pr checks 964 --repo crynta/terax-ai --watch=false # CodeRabbit pass only
-gh run view 28852066285 --repo crynta/terax-ai --json status,conclusion,event,headBranch,headSha,name,jobs # CI / pull_request / action_required / no jobs
+gh pr checks 964 --repo crynta/terax-ai --watch=false # no green Actions matrix yet
+gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 5 # pull_request runs are action_required until maintainer approval
 ```
 
 Rust and updater checks carried forward for this head:

@@ -9,14 +9,11 @@ The PR branch is no longer textually merge-conflicted with `origin/main` in the 
 ```bash
 git fetch origin main
 git rev-parse HEAD origin/main
-# b73b79aa1501d36c888d609affd4b9be644b8c58
+# current local PR head
 # 78a0b3dd79554ad4af89e61d97004f3475cd9953
 
-git rev-list --left-right --count origin/main...HEAD
-# 0 164
-
 git merge-tree --write-tree HEAD origin/main
-# de0fa1c3a95688d21eb3cbeb74087e81257b435b
+# exits 0
 ```
 
 `git merge-tree --write-tree HEAD origin/main` exits 0. That means the current local branch already contains the fetched `origin/main` head and Git can produce a clean merge tree.
@@ -25,10 +22,10 @@ GitHub reports the PR as structurally mergeable but still blocked by review/chec
 
 ```bash
 gh pr view 964 --repo crynta/terax-ai --json headRefOid,mergeStateStatus,mergeable,statusCheckRollup
-# headRefOid: b73b79aa1501d36c888d609affd4b9be644b8c58
+# headRefOid: current pushed PR head
 # mergeStateStatus: BLOCKED
 # mergeable: MERGEABLE
-# statusCheckRollup: CodeRabbit success only
+# statusCheckRollup: CodeRabbit only; no green Actions matrix yet
 ```
 
 ## Resolution commit
@@ -54,14 +51,9 @@ CI is not green yet. It is waiting for maintainer action rather than local confl
 gh pr checks 964 --repo crynta/terax-ai --watch=false
 # CodeRabbit pass only
 
-gh run view 28852066285 --repo crynta/terax-ai --json status,conclusion,event,headBranch,headSha,name,jobs
-# name: CI
-# event: pull_request
-# headBranch: pi-sidebar
-# headSha: b73b79aa1501d36c888d609affd4b9be644b8c58
-# status: completed
-# conclusion: action_required
-# jobs: []
+gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 5
+# latest pull_request runs complete immediately with conclusion: action_required
+# jobs/logs are absent until a maintainer approves or re-runs the workflow
 ```
 
 The Linux e2e job, including `e2e/specs/pi-approval.e2e.mjs`, has not run on GitHub Actions for this head. A maintainer must approve or re-run the PR workflow before the release-readiness checklist can mark CI/e2e green.
