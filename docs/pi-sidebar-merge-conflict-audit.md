@@ -1,6 +1,6 @@
 # Pi sidebar merge conflict audit
 
-Generated on 2026-07-07 and refreshed repeatedly from local `pi-sidebar` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`. The latest refreshes after the e2e, release-doc, updater cutover-doc, historical sidecar-doc, CI release-gate, and updater feed-inspector guards all kept the same 99 conflicted paths.
+Generated on 2026-07-07 and refreshed repeatedly from local `pi-sidebar` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`. The latest refreshes after the e2e, release-doc, updater cutover-doc, historical sidecar-doc, CI release-gate, updater feed-inspector, and feed-inspector wiring guards all kept the same 99 conflicted paths.
 
 ## Commands used
 
@@ -8,7 +8,7 @@ Generated on 2026-07-07 and refreshed repeatedly from local `pi-sidebar` against
 git fetch origin main
 git rev-parse HEAD origin/main
 git rev-list --left-right --count origin/main...HEAD
-git merge-tree --write-tree HEAD origin/main > /tmp/merge-tree-pi-sidebar-updater-feed.txt 2>&1
+git merge-tree --write-tree HEAD origin/main > /tmp/merge-tree-pi-sidebar-feed-wiring.txt 2>&1
 gh workflow view CI --repo crynta/terax-ai --yaml
 gh workflow list --repo crynta/terax-ai --limit 50
 gh workflow list --repo mehmetcanbudak/terax-ai --limit 50
