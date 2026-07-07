@@ -31,6 +31,14 @@ const forbiddenConfigText = [
   "smoke:pi-host",
 ];
 
+const forbiddenSourceText = [
+  "USE_WEBVIEW_AGENT",
+  "sidecarBackend",
+  "createSidecarBackend",
+];
+
+const sourcePrefixes = ["src/", "src-tauri/src/"];
+
 const configFiles = [
   "package.json",
   "pnpm-workspace.yaml",
@@ -152,6 +160,23 @@ function checkPlainConfig(text, path, errors) {
   }
 }
 
+async function checkSourceFiles(root, files, errors) {
+  for (const path of files) {
+    if (!sourcePrefixes.some((prefix) => path.startsWith(prefix))) {
+      continue;
+    }
+
+    const text = await readIfPresent(root, path);
+    if (!text) continue;
+
+    for (const needle of forbiddenSourceText) {
+      if (text.includes(needle)) {
+        errors.push(`${path} reintroduces deleted Pi sidecar/webview routing flag: ${needle}`);
+      }
+    }
+  }
+}
+
 async function checkSidecarDocs(root, files, errors) {
   for (const path of files) {
     if (!path.startsWith("docs/") || !path.endsWith(".md") || currentSidecarDocAllowlist.has(path)) {
@@ -199,6 +224,7 @@ export async function checkNoPiSidecar(root = repoRoot) {
     }
   }
 
+  await checkSourceFiles(root, files, errors);
   await checkSidecarDocs(root, files, errors);
 
   return { ok: errors.length === 0, errors, trackedFiles: files.length };
@@ -211,5 +237,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     for (const error of result.errors) console.error(`- ${error}`);
     process.exit(1);
   }
-  console.log(`No Pi sidecar check passed: scanned ${result.trackedFiles} tracked files, sidecar config, and docs.`);
+  console.log(
+    `No Pi sidecar check passed: scanned ${result.trackedFiles} tracked files, source routing flags, sidecar config, and docs.`,
+  );
 }
