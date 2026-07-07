@@ -58,6 +58,27 @@ describe("checkPiReleaseDocs", () => {
     );
   });
 
+  it("fails when release readiness loses the Phase C/D deferred-work audit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "terax-pi-release-docs-phase-c-"));
+    await writeFixture(root, {
+      "docs/pi-sidebar-release-readiness.md": REQUIRED_RELEASE_READINESS_TEXT.filter(
+        (line) => line !== "Runtime collapse/rename remains deferred",
+      ).join("\n"),
+      "docs/pi-sidebar-manual-smoke-report.md": manualSmokeDoc,
+    });
+
+    const result = await checkPiReleaseDocs(root);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "docs/pi-sidebar-release-readiness.md missing required release-readiness text: Runtime collapse/rename remains deferred",
+        ),
+      ]),
+    );
+  });
+
   it("fails when the manual smoke template loses a required flow", async () => {
     const root = await mkdtemp(join(tmpdir(), "terax-pi-release-docs-smoke-"));
     await writeFixture(root, {

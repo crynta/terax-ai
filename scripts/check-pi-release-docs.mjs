@@ -8,12 +8,22 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const REQUIRED_RELEASE_READINESS_TEXT = [
   "mergeStateStatus=DIRTY",
   "GitHub Actions and Linux e2e are not available",
+  "CI must independently run on the PR",
   "docs/pi-sidebar-manual-smoke-report.md",
+  "Complete Phase C/D convergence",
+  "Pi-backed quick ask",
+  "Runtime collapse/rename remains deferred",
+  "pnpm run check:pi-surface-isolation",
   "TAURI_SIGNING_PRIVATE_KEY",
   "new-key signed release or test feed",
+  "Maintainer must verify/configure signing secret values",
+  "pnpm run inspect:updater-feed",
   "Node Pi sidecar deleted",
+  "pnpm run check:no-pi-sidecar",
   "pnpm run check:tauri-invokes",
   "pnpm check:updater-key-rotation",
+  "11M",
+  "1949.8 KB",
 ];
 
 export const REQUIRED_MANUAL_SMOKE_SECTIONS = [
