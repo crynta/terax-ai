@@ -172,7 +172,7 @@ export function PiMcpCard({
             <span>Editable tool approval policy</span>
           </div>
           <p className="mt-1 text-[10.5px] leading-snug text-muted-foreground">
-            MCP tools route through nativeTools.execute, Rust approval policy,
+            MCP tools route through pi_agent_tool_execute, Rust approval policy,
             and capability audit before stdio or HTTP server calls run.
           </p>
         </div>
@@ -191,9 +191,9 @@ export function PiMcpCard({
               />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[11px] font-medium text-foreground">
-                  MCP action failed
+                  MCP broker action failed
                 </div>
-                <div className="line-clamp-2 text-[10.5px] leading-snug text-muted-foreground">
+                <div className="whitespace-pre-wrap break-words text-[10.5px] leading-snug text-muted-foreground">
                   {error}
                 </div>
               </div>

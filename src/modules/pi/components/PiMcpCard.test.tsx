@@ -132,6 +132,7 @@ describe("PiMcpCard", () => {
     });
 
     expect(html).toContain("MCP servers");
+    expect(html).toContain("pi_agent_tool_execute");
     expect(html).toContain("Filesystem");
     expect(html).toContain("Connected");
     expect(html).toContain("1 tool");
@@ -155,6 +156,18 @@ describe("PiMcpCard", () => {
     expect(html).toContain("Recent policy");
     expect(html).toContain("blocked");
     expect(html).toContain("requires approval");
+  });
+
+  it("surfaces MCP broker and policy refresh errors", () => {
+    const html = renderCard({
+      error:
+        "MCP registry lock failed: poisoned while loading capability manifest\nMCP server is not connected: filesystem",
+    });
+
+    expect(html).toContain("MCP broker action failed");
+    expect(html).toContain("MCP registry lock failed");
+    expect(html).toContain("capability manifest");
+    expect(html).toContain("MCP server is not connected: filesystem");
   });
 
   it("shows denied connected MCP tools with safe policy controls", () => {
