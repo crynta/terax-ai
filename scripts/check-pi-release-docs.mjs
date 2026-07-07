@@ -23,6 +23,8 @@ export const REQUIRED_RELEASE_READINESS_TEXT = [
   "pnpm run inspect:updater-feed",
   "Node Pi sidecar deleted",
   "pnpm run check:no-pi-sidecar",
+  "USE_WEBVIEW_AGENT",
+  "sidecarBackend",
   "pnpm run check:tauri-invokes",
   "pnpm check:updater-key-rotation",
   "cargo clippy --locked --all-targets -- -D warnings",

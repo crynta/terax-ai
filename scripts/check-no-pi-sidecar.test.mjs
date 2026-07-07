@@ -114,6 +114,26 @@ describe("checkNoPiSidecar", () => {
     );
   });
 
+  it("fails when deleted sidecar routing flags return to source", async () => {
+    const root = await mkdtemp(join(tmpdir(), "terax-no-pi-sidecar-source-"));
+    await writeFixture(root, {
+      "package.json": healthyPackage,
+      "pnpm-workspace.yaml": "packages: []\n",
+      "src-tauri/tauri.conf.json": healthyTauriConfig,
+      "src/modules/pi/lib/pi-session-backend.ts": "const USE_WEBVIEW_AGENT = true; const sidecarBackend = {};",
+    });
+
+    const result = await checkNoPiSidecar(root);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("src/modules/pi/lib/pi-session-backend.ts reintroduces deleted Pi sidecar/webview routing flag: USE_WEBVIEW_AGENT"),
+        expect.stringContaining("src/modules/pi/lib/pi-session-backend.ts reintroduces deleted Pi sidecar/webview routing flag: sidecarBackend"),
+      ]),
+    );
+  });
+
   it("fails when a stale sidecar-era doc lacks a historical banner", async () => {
     const root = await mkdtemp(join(tmpdir(), "terax-no-pi-sidecar-doc-"));
     await writeFixture(root, {
