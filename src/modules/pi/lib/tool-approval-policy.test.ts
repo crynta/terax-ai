@@ -1,9 +1,9 @@
 /**
  * Tests for webview tool-approval policy resolution.
  *
- * The webview agent must decide which tools require human approval the same way
- * the sidecar did: from the Rust capability manifest (the single policy
- * authority), not a hardcoded list. This closes two gaps:
+ * The webview agent must decide which tools require human approval from the
+ * Rust capability manifest (the single policy authority), not a hardcoded list.
+ * This closes two gaps:
  *  - native policy can't silently diverge from the manifest, and
  *  - MCP tools marked "ask" are no longer auto-executed (the bypass).
  *

@@ -3,9 +3,9 @@
  *
  * The Rust capability manifest (src-tauri/.../capabilities) is the single
  * authority for whether a tool runs automatically (`auto`), requires user
- * approval (`ask`), or is blocked (`deny`). The sidecar consulted it; the
- * webview path consults it here instead of a hardcoded list, which keeps native
- * policy in sync and — crucially — applies the real policy to MCP tools so an
+ * approval (`ask`), or is blocked (`deny`). The webview path consults it here
+ * instead of a hardcoded list, which keeps native policy in sync and —
+ * crucially — applies the real policy to MCP tools so an
  * MCP tool marked `ask` is no longer auto-executed.
  *
  * Native tools are named differently on each side (the manifest uses `bash`,

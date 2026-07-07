@@ -138,7 +138,7 @@ describe("buildPiDiagnosticsView", () => {
         configuredApiKeyCount: 1,
         healthy: true,
         loadedPackageCount: 1,
-        nodeLabel: "v24.16.0 darwin/arm64",
+        runtimeLabel: "0.1.0 darwin/arm64",
         packageCount: 1,
         sessionCount: 1,
         toolMode: "rust-mediated",
@@ -230,7 +230,7 @@ describe("buildPiDiagnosticsView", () => {
     );
   });
 
-  it("does not treat generic sidecar env key counts as the selected provider key", () => {
+  it("does not treat generic runtime env key counts as the selected provider key", () => {
     const view = buildPiDiagnosticsView({
       diagnostics: diagnostics({
         config: {

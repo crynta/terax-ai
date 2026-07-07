@@ -5,7 +5,7 @@
  * `<env>` block carrying the live IDE context is prepended to the user turn,
  * and TERAX.md project memory (capped) is injected into the system prompt.
  * Without this the webview agent has no idea what file/workspace/terminal the
- * user is looking at — a parity gap with both the sidecar and Vercel paths.
+ * user is looking at — a parity gap with the Vercel AI transport.
  */
 import type { PiPromptContext } from "./sessions";
 

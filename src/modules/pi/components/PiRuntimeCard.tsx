@@ -51,7 +51,7 @@ export function PiRuntimeCard({
     actionLabel ??
     runtimeState.detail ??
     (runtimeState.phase === "error"
-      ? "The Pi sidecar stopped unexpectedly."
+      ? "The Pi runtime stopped unexpectedly."
       : "Connect the Pi runtime to show active sessions in this sidebar.");
 
   return (
@@ -94,7 +94,7 @@ export function PiRuntimeCard({
             <AlertDescription className="text-[10.5px] leading-snug">
               {detail}
               <span className="mt-1 block">
-                Restart Pi to launch a fresh sidecar. If this keeps failing,
+                Restart Pi to reset the webview runtime. If this keeps failing,
                 refresh diagnostics or check Settings &gt; Models.
               </span>
             </AlertDescription>

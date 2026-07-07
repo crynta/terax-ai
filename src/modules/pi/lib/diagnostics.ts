@@ -43,7 +43,7 @@ export type PiDiagnosticsView = {
   loadedPackageCount: number;
   methodCount: number;
   modelLabel: string;
-  nodeLabel: string;
+  runtimeLabel: string;
   packageCount: number;
   promptLimitLabel: string;
   providerKeyLabel: string;
@@ -84,7 +84,7 @@ function packageIssueDescription(diagnostics: PiDiagnostics): string {
   if (names.length === 0) {
     return "Pi package status could not be confirmed.";
   }
-  return `Unable to load ${names}. Refresh diagnostics after rebuilding sidecars.`;
+  return `Unable to load ${names}. Refresh diagnostics after rebuilding the app or reinstalling dependencies.`;
 }
 
 function capabilityLabel(diagnostics: PiDiagnostics | null): string {
@@ -169,7 +169,7 @@ function buildDiagnosticsText(input: {
     `Prompt limit: ${view.promptLimitLabel}`,
     `Storage: ${view.storageLabel}`,
     `Idle policy: ${view.idlePolicyLabel}`,
-    `Node: ${view.nodeLabel}`,
+    `Runtime: ${view.runtimeLabel}`,
   ];
 
   if (issues.length > 0) {
@@ -189,7 +189,7 @@ function runtimeIssue(state: PiRuntimeState): PiDiagnosticsIssue | null {
         id: "runtime-offline",
         title: "Pi runtime is stopped",
         description:
-          "Start the Pi sidecar to load diagnostics and create workspace sessions.",
+          "Start the Pi runtime to load diagnostics and create workspace sessions.",
         action: "start-runtime",
         actionLabel: "Start",
         tone: "muted",
@@ -199,7 +199,7 @@ function runtimeIssue(state: PiRuntimeState): PiDiagnosticsIssue | null {
         id: "runtime-connecting",
         title: "Pi runtime is connecting",
         description:
-          "Wait for the sidecar to finish starting, then refresh diagnostics if this stays here.",
+          "Wait for the Pi runtime to finish starting, then refresh diagnostics if this stays here.",
         action: "refresh",
         actionLabel: "Refresh",
         tone: "muted",
@@ -209,7 +209,7 @@ function runtimeIssue(state: PiRuntimeState): PiDiagnosticsIssue | null {
       return {
         id: "runtime-error",
         title: "Pi runtime failed",
-        description: `${detail.message} Restart Pi to launch a fresh sidecar.`,
+        description: `${detail.message} Restart Pi to reset the webview runtime.`,
         action: "restart-runtime",
         actionLabel: "Restart",
         tone: "destructive",
@@ -338,8 +338,8 @@ export function buildPiDiagnosticsView({
     loadedPackageCount,
     methodCount: diagnostics?.protocol?.allowedMethods.length ?? 0,
     modelLabel: provider?.modelLabel ?? "Default",
-    nodeLabel: diagnostics
-      ? `${diagnostics.node.version} ${diagnostics.node.platform}/${diagnostics.node.arch}`
+    runtimeLabel: diagnostics
+      ? `${diagnostics.hostVersion} ${diagnostics.node.platform}/${diagnostics.node.arch}`
       : "Unavailable",
     packageCount,
     promptLimitLabel: promptLimitLabel(diagnostics),

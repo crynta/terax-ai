@@ -21,7 +21,7 @@ function update(conversationId: string, slug: string): ArtifactUpdateEvent {
   };
 }
 
-describe("chat artifact sidecar state", () => {
+describe("chat artifact panel state", () => {
   it("opens and selects artifacts for the active chat session", () => {
     const next = reduceChatArtifactUpdate(
       { open: false, selectedSlug: null },

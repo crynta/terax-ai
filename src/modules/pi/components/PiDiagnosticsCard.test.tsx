@@ -15,7 +15,7 @@ const baseView: PiDiagnosticsView = {
     {
       id: "runtime-error",
       title: "Pi runtime failed",
-      description: "Restart Pi to launch a fresh sidecar.",
+      description: "Restart Pi to reset the webview runtime.",
       action: "restart-runtime",
       actionLabel: "Restart",
       tone: "destructive",
@@ -24,14 +24,14 @@ const baseView: PiDiagnosticsView = {
   loadedPackageCount: 1,
   methodCount: 4,
   modelLabel: "Claude",
-  nodeLabel: "v24 darwin/arm64",
+  runtimeLabel: "webview darwin/arm64",
   packageCount: 1,
   promptLimitLabel: "20,000 chars",
   providerKeyLabel: "Configured",
   providerLabel: "Anthropic",
   sessionCount: 1,
   storageLabel: "rust-app-data-json+pi-sdk-jsonl",
-  summaryDescription: "Restart Pi to launch a fresh sidecar.",
+  summaryDescription: "Restart Pi to reset the webview runtime.",
   summaryTitle: "Pi runtime failed",
   toolMode: "rust-mediated",
 };
@@ -53,12 +53,12 @@ describe("PiDiagnosticsCard", () => {
     );
 
     expect(html).toContain("Pi runtime failed");
-    expect(html).toContain("Restart Pi to launch a fresh sidecar.");
+    expect(html).toContain("Restart Pi to reset the webview runtime.");
     expect(html).toContain('aria-label="Copy Pi diagnostics"');
     expect(html).toContain("Copy");
   });
 
-  it("renders optional sidecar stderr detail in a disclosure", () => {
+  it("renders optional runtime detail in a disclosure", () => {
     const html = renderToStaticMarkup(
       <PiDiagnosticsCard
         collapsed={false}
@@ -73,7 +73,7 @@ describe("PiDiagnosticsCard", () => {
       />,
     );
 
-    expect(html).toContain("Sidecar stderr tail");
+    expect(html).toContain("Runtime detail");
     expect(html).toContain("boot failed");
   });
 });

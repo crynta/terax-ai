@@ -721,8 +721,8 @@ fn uuid_short() -> String {
 mod tests;
 
 // ─── Webview agent persistence commands ───
-// These commands allow the webview-backed Pi agent to persist sessions
-// and events through the same store used by the sidecar path.
+// These commands allow the webview-backed Pi agent to persist sessions,
+// events, and transcripts through Rust-owned app-data storage.
 
 #[tauri::command]
 pub fn pi_store_record_session(

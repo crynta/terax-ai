@@ -55,14 +55,14 @@ export function PiUsageCard({
 
   /**
    * Re-estimate cost when backend reports $0 but tokens were used.
-   * This covers sidecar sessions where costUsd is not computed server-side.
+   * This covers sessions where costUsd was not computed during streaming.
    */
   const effectiveSummary = useMemo(() => {
     if (!summary) return null;
     const hasTokens =
       summary.totalInputTokens > 0 || summary.totalOutputTokens > 0;
     // Only re-estimate when: no cost was computed AND tokens were used AND we have per-model data.
-    // This handles sidecar sessions where costUsd is null (becomes 0 after Rust unwrap_or).
+    // This handles persisted sessions where costUsd is null (becomes 0 after Rust unwrap_or).
     // For legitimately free models, estimateCost returns null → cost stays 0.
     // Note: We cannot distinguish "cost not computed" from "legitimately $0" from the summary alone,
     // so we re-estimate conservatively — estimateCost returns null for unknown/free models.

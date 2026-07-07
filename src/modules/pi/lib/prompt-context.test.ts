@@ -2,9 +2,9 @@
  * Tests for prompt context + project memory injection (webview Pi agent).
  *
  * The webview agent was blind to IDE context: the prompt context (workspace
- * root, active file, terminal cwd) and TERAX.md project memory were dropped,
- * unlike the sidecar and Vercel AI SDK paths. These helpers mirror the Vercel
- * transport's `<env>` block + capped TERAX.md injection.
+ * root, active file, terminal cwd) and TERAX.md project memory were dropped.
+ * These helpers mirror the Vercel transport's `<env>` block + capped TERAX.md
+ * injection.
  */
 import { describe, expect, it } from "vitest";
 import {

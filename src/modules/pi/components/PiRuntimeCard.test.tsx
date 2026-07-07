@@ -26,7 +26,7 @@ describe("PiRuntimeCard", () => {
 
     expect(html).toContain('data-primary-runtime-action="restart"');
     expect(html).toContain('aria-label="Restart Pi runtime"');
-    expect(html).toContain("Restart Pi to launch a fresh sidecar");
+    expect(html).toContain("Restart Pi to reset the webview runtime");
   });
 
   it("shows action-specific copy while stopping the runtime", () => {

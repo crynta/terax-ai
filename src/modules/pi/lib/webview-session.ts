@@ -2,11 +2,10 @@
  * Webview-backed Pi Session Manager
  *
  * Manages Pi SDK Agent sessions entirely in the webview,
- * producing the same PiSession/PiSessionEvent types that
- * the sidecar path produces via Tauri events.
+ * producing the PiSession/PiSessionEvent types consumed by the sidebar.
  *
- * Drop-in replacement for piNative.sessionCreate/Send/etc.
- * when USE_WEBVIEW_AGENT is true.
+ * This is the only active Pi session backend; legacy native session entry
+ * points are routed here for compatibility.
  */
 import type { Agent, AgentMessage } from "@earendil-works/pi-agent-core";
 import { invoke } from "@tauri-apps/api/core";
@@ -210,7 +209,7 @@ function providerConfigFromSession(
 
 /**
  * Emit a Pi session event in real-time via Tauri's event system.
- * This mirrors what the sidecar does — the UI listens for "pi:session-event"
+ * The UI listens for "pi:session-event"
  * via usePiSessionEventStream and updates reactively.
  */
 /**
@@ -252,7 +251,7 @@ function emitEvent(
 /**
  * Persist a session + events to disk via the existing Rust store.
  *
- * Uses the same `pi-sessions.json` format as the sidecar,
+ * Uses the established `pi-sessions.json` format,
  * so sessions survive across both paths and across restarts.
  * These commands do NOT require PiHost to be running.
  */
@@ -408,7 +407,7 @@ export async function webviewSessionCreate(
     },
   ];
 
-  // Persist to disk (same pi-sessions.json as sidecar)
+  // Persist to disk (pi-sessions.json + transcript blob).
   await persistSession(session, events);
 
   return { session, events };

@@ -1,15 +1,15 @@
 import type { ArtifactUpdateEvent } from "@/modules/artifacts/lib/types";
 
-export type ChatArtifactSidecarState = {
+export type ChatArtifactPanelState = {
   open: boolean;
   selectedSlug: string | null;
 };
 
 export function reduceChatArtifactUpdate(
-  state: ChatArtifactSidecarState,
+  state: ChatArtifactPanelState,
   selectedSessionId: string | null,
   event: ArtifactUpdateEvent,
-): ChatArtifactSidecarState {
+): ChatArtifactPanelState {
   if (!selectedSessionId || event.conversationId !== selectedSessionId) {
     return state;
   }

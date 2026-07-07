@@ -330,7 +330,7 @@ export function PiDiagnosticsCard({
         {view.debugDetail ? (
           <details className="rounded-lg border border-border/35 bg-card/50 px-2.5 py-2 text-[10px] text-muted-foreground">
             <summary className="cursor-pointer select-none text-[10.5px] font-medium text-foreground">
-              Sidecar stderr tail
+              Runtime detail
             </summary>
             <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[9.5px] leading-snug text-muted-foreground">
               {view.debugDetail}
@@ -338,7 +338,7 @@ export function PiDiagnosticsCard({
           </details>
         ) : null}
         <div className="truncate text-[9.5px] text-muted-foreground/60">
-          Node {view.nodeLabel} · Storage {view.storageLabel} ·{" "}
+          Runtime {view.runtimeLabel} · Storage {view.storageLabel} ·{" "}
           {view.idlePolicyLabel}
         </div>
       </div>
