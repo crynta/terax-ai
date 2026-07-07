@@ -6,9 +6,9 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest lightweight code/config gate verification covers the static Tauri invoke audit and no-Pi-sidecar audit; the full release build matrix remains verified at `06ce0ddde`.
+- Latest lightweight code/config gate verification head is `b50066904` for the static Tauri invoke audit and no-Pi-sidecar audit; the full release build matrix remains verified at `06ce0ddde`.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
-- Visible checks: GitHub Actions CI/e2e are still not visible for the fork PR; CodeRabbit is the only visible check and may be queued or skipped because the PR exceeds its file limit. The base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
+- Visible checks: at `b50066904`, `gh pr checks` showed CodeRabbit `pass` with "Review skipped: 865 files exceed the limit of 150" and no GitHub Actions runs. The base CI workflow has no `workflow_dispatch` trigger, so Linux e2e remains pending maintainer-triggered PR CI after conflict resolution.
 
 ## Completion audit checklist
 

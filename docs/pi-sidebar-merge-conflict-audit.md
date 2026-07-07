@@ -1,6 +1,6 @@
 # Pi sidebar merge conflict audit
 
-Generated on 2026-07-07 and refreshed after the static invoke audit from local `pi-sidebar` head `8321c644bcf0a6fb10fe5a3877ca87e96c9f7174` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`.
+Generated on 2026-07-07 and refreshed after the no-Pi-sidecar gate from local `pi-sidebar` head `b50066904f2a011a0c25978151f7ad02cd0556b5` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`.
 
 ## Commands used
 
