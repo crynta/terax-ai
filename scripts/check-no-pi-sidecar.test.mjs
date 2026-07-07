@@ -113,4 +113,40 @@ describe("checkNoPiSidecar", () => {
       ]),
     );
   });
+
+  it("fails when a stale sidecar-era doc lacks a historical banner", async () => {
+    const root = await mkdtemp(join(tmpdir(), "terax-no-pi-sidecar-doc-"));
+    await writeFixture(root, {
+      "package.json": healthyPackage,
+      "pnpm-workspace.yaml": "packages: []\n",
+      "src-tauri/tauri.conf.json": healthyTauriConfig,
+      "docs/old-plan.md": "# Old plan\n\nRebuild sidecars/pi-host before release.",
+    });
+
+    const result = await checkNoPiSidecar(root);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("docs/old-plan.md mentions the deleted Pi sidecar"),
+      ]),
+    );
+  });
+
+  it("allows historical sidecar-era docs and current release docs", async () => {
+    const root = await mkdtemp(join(tmpdir(), "terax-no-pi-sidecar-doc-ok-"));
+    await writeFixture(root, {
+      "package.json": healthyPackage,
+      "pnpm-workspace.yaml": "packages: []\n",
+      "src-tauri/tauri.conf.json": healthyTauriConfig,
+      "docs/old-plan.md":
+        "# Old plan\n\n> Status: historical only. Use docs/pi-runtime.md for current truth.\n\nThe old sidecars/pi-host path existed here.",
+      "docs/pi-runtime.md": "# Pi runtime\n\nNo Node Pi sidecar or sidecars/pi-host runtime ships now.",
+    });
+
+    const result = await checkNoPiSidecar(root);
+
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
 });

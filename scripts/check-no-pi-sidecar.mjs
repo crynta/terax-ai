@@ -39,6 +39,25 @@ const configFiles = [
   "src-tauri/tauri.windows.conf.json",
 ];
 
+const sidecarDocNeedles = [
+  "sidecars/pi-host",
+  "smoke:pi-host",
+  "build-pi-host-bundle",
+  "smoke-pi-host-bundle",
+  "Node Pi sidecar",
+];
+
+const currentSidecarDocAllowlist = new Set([
+  "docs/pi-runtime.md",
+  "docs/pi-sidebar-verification.md",
+  "docs/pi-sidebar-release-readiness.md",
+  "docs/pi-sidebar-manual-smoke-report.md",
+  "docs/pi-sidebar-merge-conflict-audit.md",
+  "docs/sota-plan-2026-06-11.md",
+]);
+
+const historicalSidecarDocBannerPattern = /historical|superseded|not current|design history/i;
+
 async function trackedFiles(root) {
   try {
     const { stdout } = await execFileAsync("git", ["ls-files"], {
@@ -133,6 +152,26 @@ function checkPlainConfig(text, path, errors) {
   }
 }
 
+async function checkSidecarDocs(root, files, errors) {
+  for (const path of files) {
+    if (!path.startsWith("docs/") || !path.endsWith(".md") || currentSidecarDocAllowlist.has(path)) {
+      continue;
+    }
+
+    const text = await readIfPresent(root, path);
+    if (!text || !sidecarDocNeedles.some((needle) => text.includes(needle))) {
+      continue;
+    }
+
+    const banner = text.slice(0, 1000);
+    if (!historicalSidecarDocBannerPattern.test(banner)) {
+      errors.push(
+        `${path} mentions the deleted Pi sidecar without a historical/superseded/not-current banner near the top`,
+      );
+    }
+  }
+}
+
 export async function checkNoPiSidecar(root = repoRoot) {
   const errors = [];
   const files = await trackedFiles(root);
@@ -160,6 +199,8 @@ export async function checkNoPiSidecar(root = repoRoot) {
     }
   }
 
+  await checkSidecarDocs(root, files, errors);
+
   return { ok: errors.length === 0, errors, trackedFiles: files.length };
 }
 
@@ -170,5 +211,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     for (const error of result.errors) console.error(`- ${error}`);
     process.exit(1);
   }
-  console.log(`No Pi sidecar check passed: scanned ${result.trackedFiles} tracked files and sidecar config.`);
+  console.log(`No Pi sidecar check passed: scanned ${result.trackedFiles} tracked files, sidecar config, and docs.`);
 }
