@@ -6,7 +6,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest frontend gate verification head is `ce9a455e4` for Pi boundary, updater-key, format, typecheck, lint, full Vitest, build, and bundle-size checks; the full Rust/release-app build matrix remains verified at `06ce0ddde`, with no `src-tauri` file changes since that matrix.
+- Latest frontend gate verification head is `ce9a455e4` for Pi boundary, updater-key, format, typecheck, lint, full Vitest, build, and bundle-size checks; latest Rust check verification head is `a3c938a3e` for default, workflow, and openclicky cargo check; the full Rust test/clippy/release-app build matrix remains verified at `06ce0ddde`, with no `src-tauri` file changes since that matrix.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
 - Visible checks: after the updater verifier push, `gh pr checks` showed CodeRabbit `pass` with "Review skipped: 869 files exceed the limit of 150" and still no GitHub Actions runs. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
 
@@ -24,11 +24,11 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 | Done | Keep default app about 11 MB. | `pnpm tauri build --bundles app --no-sign --ci` and `du -sh src-tauri/target/release/bundle/macos/Terax.app` reported `11M`; JS gzipped bundle is `1949.8 KB` against `2050.8 KB`. | Re-run after conflict resolution and final merge. |
 | Done | Keep Node Pi sidecar deleted. | `pnpm run check:no-pi-sidecar` passed, scanning tracked paths and sidecar config for deleted `sidecars/pi-host`, bundled Node runtime paths, Pi-host build scripts, and Tauri resource entries. Only the existing `speech-recognizer` sidecar remains allowed. | Historical architecture docs still mention the old sidecar as past context, with historical banners where needed. |
 | Done | Ensure static frontend Tauri invokes have Rust handlers or intentional graceful degradation. | `pnpm run check:tauri-invokes` passed with 172 unique commands across 248 literal invokes and 32 documented feature-gated commands; `pnpm run check:pi-boundary` now chains this static invoke audit after the Pi approval boundary check. | Re-run after conflict resolution. |
-| Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. Latest frontend gate recheck at `ce9a455e4`: `pnpm check:pi-boundary`, `pnpm check:updater-key-rotation`, `pnpm format:check`, `pnpm exec tsc --noEmit`, `pnpm lint` (passes with existing warnings), `pnpm test` (179 files, 1026 tests), `pnpm build`, and `pnpm check:bundle-size` (1949.8 KB / 2050.8 KB) passed. `git diff --name-only 06ce0ddde..HEAD -- src-tauri` returned empty, so the full Rust/default/workflow/openclicky matrix at `06ce0ddde` still applies. | CI must independently run on the PR. |
+| Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. Latest frontend gate recheck at `ce9a455e4`: `pnpm check:pi-boundary`, `pnpm check:updater-key-rotation`, `pnpm format:check`, `pnpm exec tsc --noEmit`, `pnpm lint` (passes with existing warnings), `pnpm test` (179 files, 1026 tests), `pnpm build`, and `pnpm check:bundle-size` (1949.8 KB / 2050.8 KB) passed. Latest Rust check recheck at `a3c938a3e`: `cargo check --all-targets --locked`, `cargo check --locked --features workflow`, and `cargo check --locked --features openclicky` passed. `git diff --name-only 06ce0ddde..HEAD -- src-tauri` returned empty, so the full Rust test/clippy/release-app build matrix at `06ce0ddde` still applies. | CI must independently run on the PR. |
 
 ## Local automated verification already run
 
-Baseline full pass before the tail commits. Later audit confirmed no `src-tauri` files changed after this matrix (`git diff --name-only 06ce0ddde..HEAD -- src-tauri` returned empty), so these Rust/default/workflow/openclicky checks remain applicable to the current tail.
+Baseline full pass before the tail commits. Later audit confirmed no `src-tauri` files changed after this matrix (`git diff --name-only 06ce0ddde..HEAD -- src-tauri` returned empty), so these Rust/default/workflow/openclicky checks remain applicable to the current tail. A current-head Rust check re-run also passed after the latest frontend/docs tail.
 
 ```bash
 pnpm format:check
@@ -166,6 +166,10 @@ pnpm lint # exits 0 with existing warnings outside this tail
 pnpm test # 179 files, 1026 tests
 pnpm build # exits 0 with existing Rollup/Vite warnings
 pnpm check:bundle-size # total 1949.8 KB gzipped, budget 2050.8 KB
+
+cd src-tauri && cargo check --all-targets --locked
+cd src-tauri && cargo check --locked --features workflow
+cd src-tauri && cargo check --locked --features openclicky
 
 pnpm exec vitest run scripts/check-updater-key-rotation.test.mjs # 3 tests
 node --check scripts/check-updater-key-rotation.mjs && node --check scripts/check-updater-key-rotation.test.mjs
