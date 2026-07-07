@@ -1,6 +1,6 @@
 # Pi sidebar merge conflict audit
 
-Generated on 2026-07-07 and refreshed repeatedly from local `pi-sidebar` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`. The latest refreshes after the e2e, release-doc, updater cutover-doc, and historical sidecar-doc guards all kept the same 99 conflicted paths.
+Generated on 2026-07-07 and refreshed repeatedly from local `pi-sidebar` against `origin/main` at `78a0b3dd79554ad4af89e61d97004f3475cd9953`. The latest refreshes after the e2e, release-doc, updater cutover-doc, historical sidecar-doc, and CI release-gate guards all kept the same 99 conflicted paths.
 
 ## Commands used
 
@@ -8,7 +8,7 @@ Generated on 2026-07-07 and refreshed repeatedly from local `pi-sidebar` against
 git fetch origin main
 git rev-parse HEAD origin/main
 git rev-list --left-right --count origin/main...HEAD
-git merge-tree --write-tree HEAD origin/main > /tmp/merge-tree-pi-sidebar-historical-docs.txt 2>&1
+git merge-tree --write-tree HEAD origin/main > /tmp/merge-tree-pi-sidebar-ci-gates.txt 2>&1
 gh workflow view CI --repo crynta/terax-ai --yaml
 gh workflow list --repo crynta/terax-ai --limit 50
 gh workflow list --repo mehmetcanbudak/terax-ai --limit 50
@@ -29,7 +29,7 @@ CI is also externally blocked for this fork PR:
 - `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returns no runs.
 - `gh workflow list --repo mehmetcanbudak/terax-ai --limit 50` and `gh run list --repo mehmetcanbudak/terax-ai --limit 10` return no fork workflows or runs.
 - Dispatch probes remain blocked: the fork returns "could not find any workflows named CI"; the base repo returns HTTP 403 "Must have admin rights to Repository" for manual dispatch from this account.
-- `gh pr checks 964 --repo crynta/terax-ai` shows CodeRabbit pending review after the latest push, with no GitHub Actions checks visible.
+- `gh pr checks 964 --repo crynta/terax-ai` shows CodeRabbit-only states after recent pushes, with no GitHub Actions checks visible.
 - Recent `main` CI runs on `crynta/terax-ai` are green, but that is not proof for PR #964.
 
 ## Conflicted paths

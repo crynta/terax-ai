@@ -6,7 +6,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest frontend gate verification covers Pi boundary (including the approval e2e wiring guard, release-doc verifier, and historical sidecar-doc banner guard), updater-key plus updater cutover-doc guard, format, typecheck, lint, full Vitest, coverage, build, and bundle-size checks; latest Rust check verification head is `a3c938a3e` for default, workflow, and openclicky cargo check; the full Rust test/clippy/release-app build matrix remains verified at `06ce0ddde`, with no `src-tauri` file changes since that matrix.
+- Latest frontend gate verification covers Pi boundary (including the approval e2e wiring guard, release-doc verifier, CI release-gate guard, and historical sidecar-doc banner guard), updater-key plus updater cutover-doc guard, format, typecheck, lint, full Vitest, coverage, build, and bundle-size checks; latest Rust check verification head is `a3c938a3e` for default, workflow, and openclicky cargo check; the full Rust test/clippy/release-app build matrix remains verified at `06ce0ddde`, with no `src-tauri` file changes since that matrix.
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`; see `docs/pi-sidebar-merge-conflict-audit.md` for the 99-path conflict list.
 - Visible checks: `gh pr checks` shows CodeRabbit-only states and still no GitHub Actions runs for this fork PR. This branch adds `workflow_dispatch` to CI, but `gh workflow view CI --repo crynta/terax-ai --yaml` confirms the current base/default workflow still lacks it; manual triggering will not be exposed until maintainers resolve conflicts and accept or merge that workflow change.
 
@@ -15,7 +15,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 | Status | Objective requirement | Evidence inspected | Remaining gap |
 | --- | --- | --- | --- |
 | Done | Commit and push `pi-sidebar`; open PR. | PR #964 exists at <https://github.com/crynta/terax-ai/pull/964>; pushes to `mehmetcanbudak:pi-sidebar` continue to succeed and PR body updates are accepted. | None for PR creation/push. |
-| Blocked | Confirm CI/e2e green. | `gh pr checks 964 --repo crynta/terax-ai` reports only CodeRabbit states, not GitHub Actions; `gh pr view` reports `mergeStateStatus=DIRTY`; earlier `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returned no Actions runs. Branch CI config now includes `workflow_dispatch`, and `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml")'` parses it. Follow-up dispatch probe: `gh workflow run CI --repo mehmetcanbudak/terax-ai --ref pi-sidebar` returned "could not find any workflows named CI"; `gh workflow run CI --repo crynta/terax-ai --ref pi-sidebar` returned HTTP 403 "Must have admin rights to Repository". | GitHub Actions and Linux e2e are not available for this dirty fork PR; maintainer must resolve conflicts and let base PR CI run or accept the workflow dispatch change before manual triggering is possible. |
+| Blocked | Confirm CI/e2e green. | `gh pr checks 964 --repo crynta/terax-ai` reports only CodeRabbit states, not GitHub Actions; `gh pr view` reports `mergeStateStatus=DIRTY`; earlier `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returned no Actions runs. Branch CI config now includes `workflow_dispatch`, and `ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml")'` parses it. `pnpm check:ci-release-gates` statically guards the PR trigger, manual dispatch, frontend, Rust, coverage, updater, bundle-size, and Linux e2e gates. Follow-up dispatch probe: `gh workflow run CI --repo mehmetcanbudak/terax-ai --ref pi-sidebar` returned "could not find any workflows named CI"; `gh workflow run CI --repo crynta/terax-ai --ref pi-sidebar` returned HTTP 403 "Must have admin rights to Repository". | GitHub Actions and Linux e2e are not available for this dirty fork PR; maintainer must resolve conflicts and let base PR CI run or accept the workflow dispatch change before manual triggering is possible. |
 | Blocked | Document and complete manual macOS Pi smoke pass: key save/load, chat, built-in agents, custom Zai endpoint auth, streaming, stop/resume, app restart restore, and window-close behavior. | Checklist below records every named manual item and evidence to capture; `docs/pi-sidebar-manual-smoke-report.md` is a maintainer-fillable report template. | Maintainer must run it in a packaged app with real credentials. |
 | Done, not locally executable | Add security-critical mock-provider e2e coverage for Pi tool approval approve and deny through Rust `pi_agent_tool_execute`. | `e2e/specs/pi-approval.e2e.mjs` covers approve creates the fixture and deny leaves it absent; `wdio.conf.mjs` includes `./e2e/specs/**/*.e2e.mjs`; `.github/workflows/ci.yml` runs `xvfb-run -a pnpm e2e`; `src/modules/pi/bridge/pi-mock.ts` emits the deterministic tool calls; `docs/pi-native-tool-bridge.md` links the flow; `node --check e2e/specs/pi-approval.e2e.mjs` passed and local glob expansion includes the spec; `pnpm check:pi-boundary` now statically guards the spec, mock sentinel prompts, WebdriverIO glob, and Linux e2e CI command. | Full e2e execution requires Linux or Windows `tauri-driver`; macOS WKWebView has no driver. |
 | Partial | Complete Phase C/D convergence. | `src/modules/ai/lib/composerRuntime.ts` and tests cover Pi-backed quick ask; `src/app/App.tsx` and `src/app/AppWorkspaceSurface.tsx` route the Pi composer path to Pi surfaces; `docs/phase-c-convergence-plan.md` records the residual import audit; `pnpm run check:pi-surface-isolation` now guards that `AiChat`, `AiChatMessage`, `PlanDiffReview`, and `TodoStrip` stay isolated to the legacy mini-window fallback or tests. | Legacy `AiChat`, `AiChatMessage`, `PlanDiffReview`, and `TodoStrip` remain for the fallback chat-runtime mini window until Pi composer can become default after CI and smoke pass. Runtime collapse/rename remains deferred. |
@@ -24,7 +24,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 | Done | Keep default app about 11 MB. | `pnpm tauri build --bundles app --no-sign --ci` and `du -sh src-tauri/target/release/bundle/macos/Terax.app` reported `11M`; JS gzipped bundle is `1949.8 KB` against `2050.8 KB`. | Re-run after conflict resolution and final merge. |
 | Done | Keep Node Pi sidecar deleted. | `pnpm run check:no-pi-sidecar` passed, scanning tracked paths, sidecar config, and sidecar-era docs for deleted `sidecars/pi-host`, bundled Node runtime paths, Pi-host build scripts, Tauri resource entries, and required historical/superseded/not-current banners. Only the existing `speech-recognizer` sidecar remains allowed. | Historical architecture docs still mention the old sidecar as past context, with banners guarded by automation. |
 | Done | Ensure static frontend Tauri invokes have Rust handlers or intentional graceful degradation. | `pnpm run check:tauri-invokes` passed with 172 unique commands across 248 literal invokes and 32 documented feature-gated commands; `pnpm run check:pi-boundary` now chains this static invoke audit after the Pi approval boundary check. | Re-run after conflict resolution. |
-| Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. Latest frontend gate recheck after adding the historical sidecar-doc guard: `pnpm check:pi-boundary`, `pnpm check:updater-key-rotation`, `pnpm format:check`, `pnpm exec tsc --noEmit`, `pnpm lint` (passes with existing warnings), `pnpm test` (180 files, 1033 tests), `pnpm test:coverage` (180 files, 1033 tests, coverage report generated), `pnpm build`, and `pnpm check:bundle-size` (1949.8 KB / 2050.8 KB) passed. Latest Rust check recheck at `a3c938a3e`: `cargo check --all-targets --locked`, `cargo check --locked --features workflow`, and `cargo check --locked --features openclicky` passed. `git diff --name-only 06ce0ddde..HEAD -- src-tauri` returned empty, so the full Rust test/clippy/release-app build matrix at `06ce0ddde` still applies. | CI must independently run on the PR. |
+| Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. Latest frontend gate recheck after adding the CI release-gate guard: `pnpm check:pi-boundary`, `pnpm check:ci-release-gates`, `pnpm check:updater-key-rotation`, `pnpm format:check`, `pnpm exec tsc --noEmit`, `pnpm lint` (passes with existing warnings), `pnpm test` (181 files, 1036 tests), `pnpm test:coverage` (181 files, 1036 tests, coverage report generated), `pnpm build`, and `pnpm check:bundle-size` (1949.8 KB / 2050.8 KB) passed. Latest Rust check recheck at `a3c938a3e`: `cargo check --all-targets --locked`, `cargo check --locked --features workflow`, and `cargo check --locked --features openclicky` passed. `git diff --name-only 06ce0ddde..HEAD -- src-tauri` returned empty, so the full Rust test/clippy/release-app build matrix at `06ce0ddde` still applies. | CI must independently run on the PR. |
 
 ## Local automated verification already run
 
@@ -152,21 +152,23 @@ pnpm run check:no-pi-sidecar # scans tracked files, sidecar config, and sidecar-
 pnpm run check:pi-surface-isolation # scans 546 source files for legacy AI surface isolation
 pnpm run check:tauri-invokes # 172 commands, 248 literal invocations, 32 feature-gated commands documented
 pnpm run check:pi-release-docs # guards release-readiness blockers plus the manual macOS Pi smoke template
-pnpm run check:pi-boundary # chains Pi approval boundary, no-Pi-sidecar, surface-isolation, static invoke, and release-doc audits
-pnpm exec vitest run scripts/check-pi-surface-isolation.test.mjs scripts/check-no-pi-sidecar.test.mjs scripts/check-pi-approval-boundary.test.mjs scripts/check-tauri-invokes.test.mjs scripts/check-pi-release-docs.test.mjs # 19 tests pass after adding Pi approval e2e, release-doc, and historical sidecar-doc coverage to the boundary verifier
+pnpm run check:ci-release-gates # guards 21 required workflow gates for frontend, Rust, updater, coverage, and Linux e2e
+pnpm run check:pi-boundary # chains Pi approval boundary, no-Pi-sidecar, surface-isolation, static invoke, release-doc, and CI release-gate audits
+pnpm exec vitest run scripts/check-pi-surface-isolation.test.mjs scripts/check-no-pi-sidecar.test.mjs scripts/check-pi-approval-boundary.test.mjs scripts/check-tauri-invokes.test.mjs scripts/check-pi-release-docs.test.mjs scripts/check-ci-release-gates.test.mjs # 22 tests pass after adding Pi approval e2e, release-doc, historical sidecar-doc, and CI release-gate coverage to the boundary verifier
 ```
 
-Latest frontend gate recheck after the approval e2e, updater-verifier, release-doc verifier, updater cutover-doc guard, and historical sidecar-doc guard updates:
+Latest frontend gate recheck after the approval e2e, updater-verifier, release-doc verifier, updater cutover-doc guard, historical sidecar-doc guard, and CI release-gate guard updates:
 
 ```bash
-pnpm check:pi-boundary # approval boundary, no-Pi-sidecar (1012 tracked files plus sidecar-doc banners), surface isolation, invoke, and release-doc audits pass
+pnpm check:pi-boundary # approval boundary, no-Pi-sidecar (1012 tracked files plus sidecar-doc banners), surface isolation, invoke, release-doc, and CI release-gate audits pass
+pnpm check:ci-release-gates # 21 required gates present
 pnpm check:pi-release-docs # release-readiness blockers and manual smoke template coverage pass
 pnpm check:updater-key-rotation # embedded key 52D6B9847A3B8F15, tauri-action@v0, 1 endpoint, cutover docs guarded
 pnpm format:check # 723 files, no fixes applied
 pnpm exec tsc --noEmit # exits 0
 pnpm lint # exits 0 with existing warnings outside this tail
-pnpm test # 180 files, 1033 tests
-pnpm test:coverage # 180 files, 1033 tests; coverage report generated
+pnpm test # 181 files, 1036 tests
+pnpm test:coverage # 181 files, 1036 tests; coverage report generated
 pnpm build # exits 0 with existing Rollup/Vite warnings
 pnpm check:bundle-size # total 1949.8 KB gzipped, budget 2050.8 KB
 
@@ -176,9 +178,11 @@ cd src-tauri && cargo check --locked --features openclicky
 
 pnpm exec vitest run scripts/check-updater-key-rotation.test.mjs # 4 tests
 pnpm exec vitest run scripts/check-pi-release-docs.test.mjs # 3 tests
+pnpm exec vitest run scripts/check-ci-release-gates.test.mjs # 3 tests
 node --check scripts/check-updater-key-rotation.mjs && node --check scripts/check-updater-key-rotation.test.mjs
 node --check scripts/check-pi-release-docs.mjs && node --check scripts/check-pi-release-docs.test.mjs
-ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml")' # workflow parses after adding dispatch and updater check
+node --check scripts/check-ci-release-gates.mjs && node --check scripts/check-ci-release-gates.test.mjs
+ruby -e 'require "yaml"; YAML.load_file(".github/workflows/ci.yml")' # workflow parses after adding dispatch and release gates
 ```
 
 Updater feed inspection after the static invoke audit:
