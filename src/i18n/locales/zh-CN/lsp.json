@@ -1,0 +1,21 @@
+{
+  "startTitle": "为此工作区启动 {{command}}",
+  "enableLsp": "启用 {{name}} LSP",
+  "serverStoppedTitle": "语言服务器已停止",
+  "pillLabel": "{{name}} LSP",
+  "serverStoppedHeading": "{{name}} 语言服务器已停止",
+  "restart": "重启",
+  "disable": "禁用",
+  "dismissTitle": "关闭（可在设置中重新启用）",
+  "installLsp": "安装 {{name}} LSP",
+  "languageServer": "{{name}} 语言服务器",
+  "notFoundOnPath": "Terax 未在你的 PATH 中找到 <code>{{command}}</code>。请安装它，然后重新检查：",
+  "copyCommandTitle": "复制命令",
+  "documentation": "文档",
+  "checking": "检查中…",
+  "checkAgain": "重新检查",
+  "serverStartingTitle": "语言服务器启动中",
+  "serverActiveTitle": "语言服务器运行中",
+  "runningStatus_starting": "<code>{{command}}</code> 正在为此工作区启动。",
+  "runningStatus_running": "<code>{{command}}</code> 正在为此工作区运行。"
+}

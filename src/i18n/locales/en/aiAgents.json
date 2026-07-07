@@ -1,0 +1,24 @@
+{
+  "name": {
+    "coder": "Coder",
+    "architect": "Architect",
+    "reviewer": "Code Reviewer",
+    "security": "Security",
+    "designer": "Designer"
+  },
+  "desc": {
+    "coder": "General-purpose coding assistant. Writes, edits, and runs.",
+    "architect": "Design and tradeoffs. Plans before code.",
+    "reviewer": "Reviews diffs for correctness, perf, security.",
+    "security": "Threat-models changes and flags vulns.",
+    "designer": "UI/UX critique and refinement."
+  },
+  "trigger": {
+    "title": "Agent: {{name}}"
+  },
+  "group": {
+    "builtIn": "Built-in",
+    "custom": "Custom"
+  },
+  "manageAgents": "Manage agents…"
+}

@@ -90,7 +90,7 @@ export function ThemeProvider({ children, defaultMode = "system" }: ThemeProvide
       setThemeIdState(p.themeId);
       writeFastMode(p.theme);
       writeFastThemeId(p.themeId);
-      setI18nLanguage(p.language);
+      void setI18nLanguage(p.language);
     });
     const unlistenP = onPreferencesChange((key, value) => {
       if (key === "theme" && (value === "system" || value === "light" || value === "dark")) {

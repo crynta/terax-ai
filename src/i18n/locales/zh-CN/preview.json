@@ -1,0 +1,24 @@
+{
+  "iframeTitle": "预览",
+  "xfoHint": "许多公共网站拒绝被嵌入（X-Frame-Options）。如果页面空白，请在外部打开。",
+  "suspended": {
+    "title": "预览已挂起",
+    "description": "在后台停留一段时间后已释放以节省内存。",
+    "reload": "重新加载"
+  },
+  "empty": {
+    "title": "暂无可预览内容",
+    "description": "在上方输入 URL，或打开 <ports>Ports</ports> 下拉菜单直接跳转到正在运行的开发服务器。公共网站通常会阻止嵌入——如果看到空白页面，请通过链接图标在浏览器中打开。"
+  },
+  "addressBar": {
+    "reloadTitle": "重新加载",
+    "portsTitle": "常用开发服务器端口",
+    "ports": "Ports",
+    "checking": "检测中…",
+    "placeholder": "http://localhost:3000",
+    "openInBrowserTitle": "在系统浏览器中打开",
+    "dismiss": "关闭",
+    "enterUrlNotice": "请输入 URL 或选择一个端口预设。",
+    "noServerNotice": "端口 :{{port}} 上没有正在监听的服务器。"
+  }
+}

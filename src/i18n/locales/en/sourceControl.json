@@ -1,0 +1,82 @@
+{
+  "noUpstream": "No upstream",
+  "sourceControl": "Source Control",
+  "detached": "detached",
+  "branch": {
+    "loading": "Loading branches…",
+    "localBranches": "Local Branches",
+    "worktrees": "Worktrees",
+    "noBranches": "No branches found."
+  },
+  "commit": {
+    "waitForAction": "Wait for the current Git action to finish.",
+    "stageToEnable": "Stage changes to enable commit.",
+    "enterMessage": "Enter a commit message to enable commit.",
+    "hint": "Commit with {{shortcut}}.",
+    "placeholder": "Commit message",
+    "charCount": "Ch: {{count}}",
+    "toCommit": "to commit",
+    "button": "Commit",
+    "committing": "Committing…"
+  },
+  "push": {
+    "unavailable": "Push is unavailable right now.",
+    "button": "Push",
+    "pushing": "Pushing…"
+  },
+  "staged": {
+    "nothing": "Nothing staged"
+  },
+  "stagedFiles_one": "{{count}} file staged",
+  "stagedFiles_other": "{{count}} files staged",
+  "fetch": {
+    "fetching": "Fetching…",
+    "label": "Fetch from remote"
+  },
+  "pull": {
+    "pulling": "Pulling…",
+    "diverged": "Branch diverged — resolve in terminal",
+    "noUpstream": "No upstream configured",
+    "upToDate": "Already up to date",
+    "commits": "Pull {{count}} commits (fast-forward)"
+  },
+  "refresh": "Refresh source control",
+  "commitGraph": "Commit Graph",
+  "panel": {
+    "loadingRepo": "Loading repository",
+    "noRepo": "No repository",
+    "noRepoBody": "The active workspace is not inside a Git repository.",
+    "error": "Source control error",
+    "unknownError": "Unknown source control error",
+    "retry": "Retry"
+  },
+  "discard": {
+    "title": "Discard changes?",
+    "descAll": "This will discard {{label}} and cannot be undone.",
+    "descOne": "Discard changes in \"{{label}}\"? This cannot be undone.",
+    "action": "Discard",
+    "one": "Discard {{path}}"
+  },
+  "cleanTree": "Working tree clean",
+  "cleanTreeOn": "on",
+  "changedFiles": "Changed files",
+  "divergedBanner": {
+    "title": "Diverged from upstream",
+    "detail": "— resolve in terminal"
+  },
+  "changes": "Changes",
+  "all": "All",
+  "stageAll": "Stage all changes",
+  "stageFile": "Stage {{path}}",
+  "menu": {
+    "openDiff": "Open Diff",
+    "openFile": "Open File",
+    "unstage": "Unstage",
+    "stage": "Stage",
+    "discardChanges": "Discard Changes",
+    "copyRelativePath": "Copy Relative Path",
+    "copyAbsolutePath": "Copy Absolute Path",
+    "revealInFinder": "Reveal in Finder",
+    "revealInFileManager": "Reveal in File Manager"
+  }
+}

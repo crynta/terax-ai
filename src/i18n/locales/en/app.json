@@ -1,0 +1,22 @@
+{
+  "close": {
+    "unsavedChanges": "Unsaved Changes",
+    "closeAnyway": "Close Anyway",
+    "fileUnsavedNamed": "\"{{title}}\" has unsaved changes. Close anyway?",
+    "fileUnsaved": "This file has unsaved changes. Close anyway?",
+    "closeTerminalTitle": "Close Terminal?",
+    "closeTerminalDescription": "A process is running. Closing this tab will terminate it.",
+    "fileDeletedUnsavedNamed": "\"{{title}}\" has unsaved changes. The file has been deleted. Close anyway?",
+    "fileDeletedUnsaved": "This file has unsaved changes. The file has been deleted. Close anyway?",
+    "filesDeletedUnsaved_one": "{{count}} file has unsaved changes. They have been deleted. Close all anyway?",
+    "filesDeletedUnsaved_other": "{{count}} files have unsaved changes. They have been deleted. Close all anyway?",
+    "quitTitle": "Quit Terax?",
+    "quitDescription": "A process is still running in a terminal. Quitting will terminate it.",
+    "quitAnyway": "Quit Anyway"
+  },
+  "windowControls": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "autoDetect": "自动检测",
+  "mode": "模式：{{name}}",
+  "fewerLanguages": "↑ 收起语言",
+  "allLanguages": "↓ 全部语言",
+  "unsavedChanges": "未保存的更改",
+  "closeTab": "关闭标签页",
+  "renameTab": "重命名标签页",
+  "newTab": "新建标签页",
+  "terminal": "Terminal",
+  "blocks": "Blocks",
+  "privacy": "隐私",
+  "editor": "编辑器",
+  "preview": "预览",
+  "gitGraph": "Git Graph"
+}

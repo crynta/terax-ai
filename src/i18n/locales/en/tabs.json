@@ -1,0 +1,16 @@
+{
+  "autoDetect": "Auto Detect",
+  "mode": "Mode: {{name}}",
+  "fewerLanguages": "↑ Fewer languages",
+  "allLanguages": "↓ All languages",
+  "unsavedChanges": "Unsaved changes",
+  "closeTab": "Close tab",
+  "renameTab": "Rename tab",
+  "newTab": "New tab",
+  "terminal": "Terminal",
+  "blocks": "Blocks",
+  "privacy": "Privacy",
+  "editor": "Editor",
+  "preview": "Preview",
+  "gitGraph": "Git Graph"
+}

@@ -1,0 +1,19 @@
+{
+  "newFile": "New file",
+  "newFileDescription": "Filename (relative to workspace root). The extension determines the language mode.",
+  "newFilePlaceholder": "example.ts",
+  "nameRequired": "Name is required",
+  "pathMustBeRelative": "Path must be relative",
+  "noWorkspaceRoot": "No workspace root",
+  "formatOnSaveSkipped": "Format on save skipped",
+  "formatOnSaveSkippedDescription": "No active language server for this file. Enable one in the statusbar, or pick Biome/Prettier in Settings.",
+  "formatFailed": "{{formatter}} format failed",
+  "binaryFile": "Binary file",
+  "fileTooLarge": "File too large",
+  "previewNotSupported": "preview not supported",
+  "statusPending": "Pending review",
+  "statusApplied": "Applied",
+  "statusRejected": "Rejected",
+  "accept": "Accept",
+  "reject": "Reject"
+}

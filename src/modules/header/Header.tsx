@@ -17,6 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
   SearchInline,
   type SearchInlineHandle,
@@ -77,6 +78,7 @@ export function Header({
   searchTarget,
   searchRef,
 }: Props) {
+  const { t } = useTranslation("header");
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
 
@@ -97,7 +99,7 @@ export function Header({
       size="icon"
       className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
       onClick={onOpenSettings}
-      title="Settings"
+      title={t("settings")}
     >
       <HugeiconsIcon icon={Settings01Icon} size={15} strokeWidth={1.75} />
     </Button>
@@ -114,7 +116,7 @@ export function Header({
       <div className="flex shrink-0 items-center gap-0.5">
         <Button
           onClick={onToggleSidebar}
-          title="Toggle sidebar"
+          title={t("toggleSidebar")}
           variant="ghost"
           size="icon-sm"
           className="shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -126,7 +128,7 @@ export function Header({
           size="icon-sm"
           variant="ghost"
           onClick={onOpenCommandPalette}
-          title="Command palette"
+          title={t("commandPalette")}
           className="shrink-0 gap-1.5 rounded-md px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <HugeiconsIcon icon={CommandIcon} size={14} strokeWidth={1.75} />

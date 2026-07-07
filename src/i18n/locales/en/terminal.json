@@ -1,0 +1,25 @@
+{
+  "block": {
+    "commandFallback": "command",
+    "exit": "exit {{code}}",
+    "runAgain": "Run again",
+    "actions": "Block actions",
+    "copyCommand": "Copy command",
+    "copyOutput": "Copy output",
+    "copyCommandAndOutput": "Copy command and output",
+    "attachToAiChat": "Attach to AI chat",
+    "findInBlock": "Find in block",
+    "toast": {
+      "commandCopied": "Command copied",
+      "outputCopied": "Output copied",
+      "blockCopied": "Block copied"
+    }
+  },
+  "watermark": {
+    "browseHistory": "Browse your command history",
+    "autocomplete": "Autocomplete paths and commands",
+    "switchShellAi": "Switch between Shell and AI",
+    "openAiAssistant": "Open the AI assistant"
+  },
+  "dropFilePathHere": "Drop file path here"
+}

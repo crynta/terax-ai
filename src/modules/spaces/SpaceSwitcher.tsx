@@ -18,6 +18,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { InlineRename } from "./components/InlineRename";
 import { accentFor } from "./lib/spaceColor";
 import type { SpaceMeta } from "./lib/store";
@@ -84,6 +85,7 @@ export function SpaceSwitcher({
   onReorderTab,
   onReorderSpaces,
 }: Props) {
+  const { t } = useTranslation("spaces");
   const spaces = useSpaces((s) => s.spaces);
   const activeId = useSpaces((s) => s.activeId);
   const setActive = useSpaces((s) => s.setActive);
@@ -240,7 +242,7 @@ export function SpaceSwitcher({
       <PopoverTrigger asChild>
         <button
           type="button"
-          title={shortcut ? `Spaces · ${shortcut}` : "Spaces"}
+          title={shortcut ? t("titleWithShortcut", { shortcut }) : t("title")}
           className="flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-muted-foreground/90 outline-none transition-colors hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground"
         >
           <span className="max-w-36 truncate text-xs font-medium">
@@ -256,7 +258,9 @@ export function SpaceSwitcher({
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={6} className="w-[20rem] p-1.5">
         <div className="flex items-center justify-between px-1.5 pb-1.5 pt-0.5">
-          <span className="text-xs font-semibold text-foreground">Spaces</span>
+          <span className="text-xs font-semibold text-foreground">
+            {t("heading")}
+          </span>
           {shortcut && (
             <Kbd className="h-5 bg-muted/70 text-[10px]">{shortcut}</Kbd>
           )}
@@ -305,7 +309,7 @@ export function SpaceSwitcher({
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
           >
             <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={1.75} />
-            <span className="flex-1">New space</span>
+            <span className="flex-1">{t("newSpace")}</span>
           </button>
         </div>
       </PopoverContent>
@@ -382,6 +386,7 @@ function SpaceRow({
   onJumpTab,
   onCloseTab,
 }: SpaceRowProps) {
+  const { t } = useTranslation("spaces");
   const isDragging = dragging?.kind === "space" && dragging.id === space.id;
   const moveTarget = drop?.kind === "into-space" && drop.spaceId === space.id;
   const reorderEdge =
@@ -419,7 +424,7 @@ function SpaceRow({
         <button
           type="button"
           data-no-drag
-          aria-label={expanded ? "Collapse" : "Expand"}
+          aria-label={expanded ? t("collapse") : t("expand")}
           onClick={(e) => {
             e.stopPropagation();
             onToggle();
@@ -456,14 +461,18 @@ function SpaceRow({
             >
               <RowAction
                 icon={PencilEdit02Icon}
-                label="Rename space"
+                label={t("renameSpace")}
                 onClick={onStartRename}
               />
-              <RowAction icon={PlusSignIcon} label="New tab" onClick={onNewTab} />
+              <RowAction
+                icon={PlusSignIcon}
+                label={t("newTab")}
+                onClick={onNewTab}
+              />
               {canDelete && (
                 <RowAction
                   icon={Delete02Icon}
-                  label="Delete space"
+                  label={t("deleteSpace")}
                   destructive
                   onClick={onDelete}
                 />
@@ -490,7 +499,7 @@ function SpaceRow({
           ))}
           {tabs.length === 0 && (
             <span className="px-2 py-1 text-[10.5px] text-muted-foreground/50">
-              {draggingTabFromOther ? "Drop to move here" : "No tabs"}
+              {draggingTabFromOther ? t("dropToMoveHere") : t("noTabs")}
             </span>
           )}
         </div>
@@ -522,6 +531,7 @@ function TabRow({
   onJump: () => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("spaces");
   const subtitle = subtitleFor(tab);
   const isDragging = dragging?.kind === "tab" && dragging.id === tab.id;
   const reorderEdge =
@@ -569,7 +579,7 @@ function TabRow({
             e.stopPropagation();
             onClose();
           }}
-          aria-label="Close tab"
+          aria-label={t("closeTab")}
           className="flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/tab:opacity-70 hover:opacity-100"
         >
           <HugeiconsIcon icon={Cancel01Icon} size={11} strokeWidth={2} />

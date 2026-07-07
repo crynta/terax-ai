@@ -1,0 +1,24 @@
+{
+  "iframeTitle": "Preview",
+  "xfoHint": "Many public sites refuse to embed (X-Frame-Options). If the page is blank, open it externally.",
+  "suspended": {
+    "title": "Preview suspended",
+    "description": "Released to free memory after sitting in the background.",
+    "reload": "Reload"
+  },
+  "empty": {
+    "title": "Nothing to preview yet",
+    "description": "Type a URL above, or open the <ports>Ports</ports> dropdown to jump straight to your running dev server. Public sites often block embedding — open them in your browser via the link icon if you see a blank page."
+  },
+  "addressBar": {
+    "reloadTitle": "Reload",
+    "portsTitle": "Common dev-server ports",
+    "ports": "Ports",
+    "checking": "checking…",
+    "placeholder": "http://localhost:3000",
+    "openInBrowserTitle": "Open in system browser",
+    "dismiss": "Dismiss",
+    "enterUrlNotice": "Enter a URL or pick a port preset.",
+    "noServerNotice": "No server listening on :{{port}}."
+  }
+}

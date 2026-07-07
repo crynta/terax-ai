@@ -1,0 +1,14 @@
+{
+  "titleWithShortcut": "Spaces · {{shortcut}}",
+  "title": "Spaces",
+  "heading": "Spaces",
+  "newSpace": "New space",
+  "collapse": "Collapse",
+  "expand": "Expand",
+  "renameSpace": "Rename space",
+  "newTab": "New tab",
+  "deleteSpace": "Delete space",
+  "dropToMoveHere": "Drop to move here",
+  "noTabs": "No tabs",
+  "closeTab": "Close tab"
+}

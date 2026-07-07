@@ -83,6 +83,32 @@ import { SectionHeader } from "../components/SectionHeader";
 
 type KeysMap = Record<ProviderId, string | null>;
 
+// Model hint/description live in the `aiModels` namespace keyed by model id.
+// Model ids contain "." and "/", so disable key/ns separators and pass the
+// original text as defaultValue (covers dynamic compat endpoints too).
+type TFn = ReturnType<typeof useTranslation>["t"];
+const modelHint = (t: TFn, m: { id: string; hint: string }): string =>
+  t(`modelHint.${m.id}`, {
+    ns: "aiModels",
+    keySeparator: false,
+    nsSeparator: false,
+    defaultValue: m.hint,
+  });
+const modelDesc = (t: TFn, m: { id: string; description: string }): string =>
+  t(`modelDesc.${m.id}`, {
+    ns: "aiModels",
+    keySeparator: false,
+    nsSeparator: false,
+    defaultValue: m.description,
+  });
+const sttLabel = (t: TFn, p: SttProvider): string =>
+  t(`sttProvider.${p}`, {
+    ns: "aiModels",
+    keySeparator: false,
+    nsSeparator: false,
+    defaultValue: STT_PROVIDER_LABELS[p],
+  });
+
 const isLocalProvider = (id: ProviderId): boolean => !providerNeedsKey(id);
 
 type LocalMeta = {
@@ -559,6 +585,7 @@ function DefaultModelPicker({
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
 }) {
+  const { t } = useTranslation();
   const m = getModel(defaultModel);
   const hasAny = configuredIds.size > 0;
 
@@ -573,7 +600,7 @@ function DefaultModelPicker({
           <span className="flex items-center gap-2 truncate">
             <ProviderIcon provider={m.provider} size={13} />
             <span className="truncate">{m.label}</span>
-            <span className="text-muted-foreground">· {m.hint}</span>
+            <span className="text-muted-foreground">· {modelHint(t, m)}</span>
           </span>
           <HugeiconsIcon
             icon={ArrowDown01Icon}
@@ -612,7 +639,7 @@ function DefaultModelPicker({
                     <span className="flex flex-1 flex-col">
                       <span>{mod.label}</span>
                       <span className="text-[10px] text-muted-foreground">
-                        {mod.description}
+                        {modelDesc(t, mod)}
                       </span>
                     </span>
                   </DropdownMenuItem>
@@ -719,7 +746,7 @@ function AutocompleteRow({
                   <ProviderIcon provider={currentModel.provider} size={12} />
                   <span className="truncate">{currentModel.label}</span>
                   <span className="text-muted-foreground">
-                    · {currentModel.hint}
+                    · {modelHint(t, currentModel)}
                   </span>
                 </span>
                 <HugeiconsIcon
@@ -764,7 +791,7 @@ function AutocompleteRow({
                         <span className="flex flex-col">
                           <span>{m.label}</span>
                           <span className="text-[10px] text-muted-foreground">
-                            {m.description}
+                            {modelDesc(t, m)}
                           </span>
                         </span>
                       </DropdownMenuItem>
@@ -1314,7 +1341,7 @@ function VoiceBlock() {
               variant="outline"
               className="h-8 flex-1 justify-between gap-2 px-2.5 text-[11.5px]"
             >
-              <span>{STT_PROVIDER_LABELS[sttProvider]}</span>
+              <span>{sttLabel(t, sttProvider)}</span>
               <HugeiconsIcon
                 icon={ArrowDown01Icon}
                 size={11}
@@ -1333,7 +1360,7 @@ function VoiceBlock() {
                   p === sttProvider && "bg-accent/50",
                 )}
               >
-                <span>{STT_PROVIDER_LABELS[p]}</span>
+                <span>{sttLabel(t, p)}</span>
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

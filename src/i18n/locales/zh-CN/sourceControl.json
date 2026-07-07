@@ -1,0 +1,81 @@
+{
+  "noUpstream": "无上游分支",
+  "sourceControl": "源代码管理",
+  "detached": "游离",
+  "branch": {
+    "loading": "正在加载分支…",
+    "localBranches": "本地分支",
+    "worktrees": "工作树",
+    "noBranches": "未找到分支。"
+  },
+  "commit": {
+    "waitForAction": "请等待当前 Git 操作完成。",
+    "stageToEnable": "暂存更改以启用提交。",
+    "enterMessage": "请输入提交信息以启用提交。",
+    "hint": "使用 {{shortcut}} 提交。",
+    "placeholder": "提交信息",
+    "charCount": "字数：{{count}}",
+    "toCommit": "提交",
+    "button": "提交",
+    "committing": "正在提交…"
+  },
+  "push": {
+    "unavailable": "当前无法推送。",
+    "button": "推送",
+    "pushing": "正在推送…"
+  },
+  "staged": {
+    "nothing": "无暂存内容"
+  },
+  "stagedFiles_other": "已暂存 {{count}} 个文件",
+  "fetch": {
+    "fetching": "正在拉取…",
+    "label": "从远程拉取"
+  },
+  "pull": {
+    "pulling": "正在拉取…",
+    "diverged": "分支已分叉 — 请在终端中解决",
+    "noUpstream": "未配置上游分支",
+    "upToDate": "已是最新",
+    "commits": "拉取 {{count}} 个提交（快进）"
+  },
+  "refresh": "刷新源代码管理",
+  "commitGraph": "提交图",
+  "panel": {
+    "loadingRepo": "正在加载仓库",
+    "noRepo": "无仓库",
+    "noRepoBody": "当前工作区不在 Git 仓库内。",
+    "error": "源代码管理错误",
+    "unknownError": "未知的源代码管理错误",
+    "retry": "重试"
+  },
+  "discard": {
+    "title": "放弃更改？",
+    "descAll": "这将放弃 {{label}}，且无法撤销。",
+    "descOne": "放弃“{{label}}”中的更改？此操作无法撤销。",
+    "action": "放弃",
+    "one": "放弃 {{path}}"
+  },
+  "cleanTree": "工作树干净",
+  "cleanTreeOn": "位于",
+  "changedFiles": "已更改文件",
+  "divergedBanner": {
+    "title": "已与上游分叉",
+    "detail": "— 请在终端中解决"
+  },
+  "changes": "更改",
+  "all": "全部",
+  "stageAll": "暂存所有更改",
+  "stageFile": "暂存 {{path}}",
+  "menu": {
+    "openDiff": "打开差异",
+    "openFile": "打开文件",
+    "unstage": "取消暂存",
+    "stage": "暂存",
+    "discardChanges": "放弃更改",
+    "copyRelativePath": "复制相对路径",
+    "copyAbsolutePath": "复制绝对路径",
+    "revealInFinder": "在访达中显示",
+    "revealInFileManager": "在文件管理器中显示"
+  }
+}

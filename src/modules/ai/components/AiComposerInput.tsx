@@ -3,6 +3,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { usePresence } from "@/lib/usePresence";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
 import { useComposer } from "../lib/composer";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
@@ -59,6 +60,7 @@ function detectFileTrigger(value: string, caret: number): FileTrigger | null {
 }
 
 export function AiComposerInput() {
+  const { t } = useTranslation("ai");
   const c = useComposer();
   const snippets = useSnippetsStore((s) => s.snippets);
   const workspaceRoot = useChatStore((s) => s.live.getWorkspaceRoot());
@@ -197,9 +199,9 @@ export function AiComposerInput() {
   };
 
   const voiceLabel = c.voice.recording
-    ? "Listening…"
+    ? t("composer.listening")
     : c.voice.transcribing
-      ? "Transcribing…"
+      ? t("composer.transcribing")
       : null;
   const voiceRow = usePresence(Boolean(voiceLabel), 180);
   const lastVoiceLabel = useRef("");
@@ -257,7 +259,7 @@ export function AiComposerInput() {
                   c.submit();
                 }
               }}
-              placeholder="Ask Terax anything   -   # for snippets and commands, @ for files"
+              placeholder={t("composer.placeholder")}
               rows={1}
               className={cn(
                 "max-h-40 flex-1 resize-none bg-transparent text-[13px] leading-relaxed outline-none",

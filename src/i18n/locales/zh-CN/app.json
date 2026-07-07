@@ -1,0 +1,22 @@
+{
+  "close": {
+    "unsavedChanges": "未保存的更改",
+    "closeAnyway": "仍然关闭",
+    "fileUnsavedNamed": "“{{title}}”有未保存的更改。仍要关闭吗？",
+    "fileUnsaved": "此文件有未保存的更改。仍要关闭吗？",
+    "closeTerminalTitle": "关闭终端？",
+    "closeTerminalDescription": "有进程正在运行。关闭此标签页将终止该进程。",
+    "fileDeletedUnsavedNamed": "“{{title}}”有未保存的更改。该文件已被删除。仍要关闭吗？",
+    "fileDeletedUnsaved": "此文件有未保存的更改。该文件已被删除。仍要关闭吗？",
+    "filesDeletedUnsaved_one": "有 {{count}} 个文件存在未保存的更改。它们已被删除。仍要全部关闭吗？",
+    "filesDeletedUnsaved_other": "有 {{count}} 个文件存在未保存的更改。它们已被删除。仍要全部关闭吗？",
+    "quitTitle": "退出 Terax？",
+    "quitDescription": "仍有进程在终端中运行。退出将终止该进程。",
+    "quitAnyway": "仍然退出"
+  },
+  "windowControls": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原"
+  }
+}

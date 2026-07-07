@@ -1,0 +1,9 @@
+{
+  "settings": "Settings",
+  "toggleSidebar": "Toggle sidebar",
+  "commandPalette": "Command palette",
+  "search": "Search",
+  "gitSearch": "Git search",
+  "searchWithShortcut": "{{label}} ({{shortcut}})",
+  "clearSearch": "Clear search"
+}

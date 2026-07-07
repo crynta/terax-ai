@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+
 import { cn } from "@/lib/utils";
 
 type Mode = "rendered" | "raw";
@@ -15,6 +17,7 @@ export function MarkdownViewToggle({
   renderedDisabled,
   renderedHint,
 }: Props) {
+  const { t } = useTranslation("markdown");
   return (
     <div className="absolute right-3 top-3 z-10 inline-flex items-center gap-0.5 rounded-md border border-border/60 bg-card/85 p-0.5 text-[11px] shadow-sm backdrop-blur">
       <button
@@ -30,7 +33,7 @@ export function MarkdownViewToggle({
           renderedDisabled && "cursor-not-allowed opacity-40 hover:text-muted-foreground",
         )}
       >
-        Rendered
+        {t("rendered")}
       </button>
       <button
         type="button"
@@ -42,7 +45,7 @@ export function MarkdownViewToggle({
             : "text-muted-foreground hover:text-foreground",
         )}
       >
-        Raw
+        {t("raw")}
       </button>
     </div>
   );

@@ -25,6 +25,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { EntryRow, PendingRow, StatusRow, type RowActions } from "./TreeRow";
@@ -104,6 +105,7 @@ function buildRows(
   rootPath: string,
   tree: ReturnType<typeof useFileTree>,
   lookup: (path: string) => GitStatusCode | null,
+  loadingLabel: string,
 ): { rows: Row[]; entryIndexByPath: Map<string, number> } {
   const rows: Row[] = [];
   const entryIndexByPath = new Map<string, number>();
@@ -159,7 +161,7 @@ function buildRows(
             key: `loading:${path}`,
             depth: depth + 1,
             tone: "muted",
-            message: "Loading…",
+            message: loadingLabel,
           });
         } else if (child?.status === "error") {
           rows.push({
@@ -194,6 +196,7 @@ export const FileExplorer = memo(
     },
     ref,
   ) {
+    const { t } = useTranslation("explorer");
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
     const gitDecorations = usePreferencesStore((s) => s.explorerGitDecorations);
     const { lookup: lookupGitStatus } = useGitStatus(
@@ -210,7 +213,7 @@ export const FileExplorer = memo(
 
     const { rows, entryIndexByPath } = useMemo(() => {
       if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
-      return buildRows(rootPath, tree, lookupGitStatus);
+      return buildRows(rootPath, tree, lookupGitStatus, t("common:loading"));
       // `tree` is intentionally omitted: its identity changes every render, but
       // the listed fields are the only inputs buildRows actually reads.
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -221,6 +224,7 @@ export const FileExplorer = memo(
       tree.renaming,
       tree.pendingCreate,
       lookupGitStatus,
+      t,
     ]);
 
     const rowActions = useMemo<RowActions>(
@@ -361,7 +365,7 @@ export const FileExplorer = memo(
             className="text-muted-foreground"
           />
           <div className="text-xs text-muted-foreground">
-            No current directory
+            {t("noCurrentDirectory")}
           </div>
         </div>
       );
@@ -510,8 +514,8 @@ export const FileExplorer = memo(
             size="icon"
             className="size-6 text-muted-foreground hover:text-foreground"
             onClick={() => setIsSearchOpen((v) => !v)}
-            title="Search files"
-            aria-label="Search files"
+            title={t("searchFiles")}
+            aria-label={t("searchFiles")}
           >
             <HugeiconsIcon icon={Search01Icon} size={13} strokeWidth={2} />
           </Button>
@@ -521,7 +525,7 @@ export const FileExplorer = memo(
             size="icon"
             className="size-6 text-muted-foreground hover:text-foreground"
             onClick={() => tree.beginCreate(rootPath, "file")}
-            title="New file"
+            title={t("newFile")}
           >
             <HugeiconsIcon icon={FileAddIcon} size={13} strokeWidth={2} />
           </Button>
@@ -530,7 +534,7 @@ export const FileExplorer = memo(
             size="icon"
             className="size-6 text-muted-foreground hover:text-foreground"
             onClick={() => tree.beginCreate(rootPath, "dir")}
-            title="New folder"
+            title={t("newFolder")}
           >
             <HugeiconsIcon icon={FolderAddIcon} size={13} strokeWidth={2} />
           </Button>
@@ -539,7 +543,7 @@ export const FileExplorer = memo(
             size="icon"
             className="size-6 text-muted-foreground hover:text-foreground"
             onClick={() => tree.refresh(rootPath)}
-            title="Refresh"
+            title={t("common:refresh")}
           >
             <HugeiconsIcon icon={Refresh01Icon} size={12} strokeWidth={2} />
           </Button>
@@ -608,7 +612,9 @@ export const FileExplorer = memo(
                     <InlineInput
                       initial=""
                       placeholder={
-                        pendingAtRoot.kind === "dir" ? "New folder" : "New file"
+                        pendingAtRoot.kind === "dir"
+                          ? t("newFolder")
+                          : t("newFile")
                       }
                       onCommit={tree.commitCreate}
                       onCancel={tree.cancelCreate}
@@ -617,7 +623,7 @@ export const FileExplorer = memo(
                 ) : null}
                 {root?.status === "loading" && (
                   <div className="px-3 py-2 text-[11px] text-muted-foreground">
-                    Loading…
+                    {t("common:loading")}
                   </div>
                 )}
                 {root?.status === "error" && (
@@ -671,7 +677,7 @@ export const FileExplorer = memo(
                       className={COMPACT_ITEM}
                       onSelect={() => onOpenFile(menuTarget.path, true)}
                     >
-                      Open
+                      {t("menu.open")}
                     </ContextMenuItem>
                   )}
                   {menuTarget.isDir && onRevealInTerminal && (
@@ -679,14 +685,14 @@ export const FileExplorer = memo(
                       className={COMPACT_ITEM}
                       onSelect={() => onRevealInTerminal(menuTarget.path)}
                     >
-                      Open in Terminal
+                      {t("menu.openInTerminal")}
                     </ContextMenuItem>
                   )}
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() => void revealInFinder(menuTarget.path)}
                   >
-                    Reveal in Finder
+                    {t("menu.revealInFinder")}
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
@@ -700,7 +706,7 @@ export const FileExplorer = memo(
                       )
                     }
                   >
-                    New File
+                    {t("menu.newFile")}
                   </ContextMenuItem>
                   <ContextMenuItem
                     className={COMPACT_ITEM}
@@ -713,14 +719,14 @@ export const FileExplorer = memo(
                       )
                     }
                   >
-                    New Folder
+                    {t("menu.newFolder")}
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() => void copyToClipboard(menuTarget.path)}
                   >
-                    Copy Path
+                    {t("menu.copyPath")}
                   </ContextMenuItem>
                   <ContextMenuItem
                     className={COMPACT_ITEM}
@@ -728,14 +734,14 @@ export const FileExplorer = memo(
                       void copyToClipboard(relativePath(rootPath, menuTarget.path))
                     }
                   >
-                    Copy Relative Path
+                    {t("menu.copyRelativePath")}
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() => onAttachToAgent?.(menuTarget.path)}
                   >
-                    Attach to Agent
+                    {t("menu.attachToAgent")}
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
@@ -752,7 +758,7 @@ export const FileExplorer = memo(
                       }
                     }}
                   >
-                    {deleteConfirm ? "Click again to confirm" : "Delete"}
+                    {deleteConfirm ? t("menu.confirmDelete") : t("common:delete")}
                   </ContextMenuItem>
                 </>
               ) : (
@@ -762,40 +768,40 @@ export const FileExplorer = memo(
                       className={COMPACT_ITEM}
                       onSelect={() => onRevealInTerminal(rootPath)}
                     >
-                      Open in Terminal
+                      {t("menu.openInTerminal")}
                     </ContextMenuItem>
                   )}
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() => void revealInFinder(rootPath)}
                   >
-                    Reveal in Finder
+                    {t("menu.revealInFinder")}
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() => tree.beginCreate(rootPath, "file")}
                   >
-                    New File
+                    {t("menu.newFile")}
                   </ContextMenuItem>
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() => tree.beginCreate(rootPath, "dir")}
                   >
-                    New Folder
+                    {t("menu.newFolder")}
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() => void copyToClipboard(rootPath)}
                   >
-                    Copy Path
+                    {t("menu.copyPath")}
                   </ContextMenuItem>
                   <ContextMenuItem
                     className={COMPACT_ITEM}
                     onSelect={() => tree.refresh(rootPath)}
                   >
-                    Refresh
+                    {t("common:refresh")}
                   </ContextMenuItem>
                 </>
               )}

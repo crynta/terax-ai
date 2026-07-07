@@ -1,4 +1,5 @@
 import { LazyStore } from "@tauri-apps/plugin-store";
+import i18n from "@/i18n";
 
 export type AgentIconId =
   | "coder"
@@ -114,6 +115,29 @@ export async function saveActiveAgentId(id: string): Promise<void> {
 
 export function newAgentId(): string {
   return `a-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** Strip the `builtin:` prefix to get the JSON key suffix (e.g. "coder"). */
+function builtInKey(id: string): string {
+  return id.startsWith("builtin:") ? id.slice("builtin:".length) : id;
+}
+
+/**
+ * Resolve an agent's display name. Built-in agents are translated at call time
+ * (so language switches update live); custom agents keep their own value.
+ * Falls back to the agent's original value if no translation key matches.
+ */
+export function agentDisplayName(agent: Agent): string {
+  if (!agent.builtIn) return agent.name;
+  const key = builtInKey(agent.id);
+  return i18n.t(`aiAgents:name.${key}`, { defaultValue: agent.name });
+}
+
+/** Same as {@link agentDisplayName} but for the description. */
+export function agentDisplayDescription(agent: Agent): string {
+  if (!agent.builtIn) return agent.description;
+  const key = builtInKey(agent.id);
+  return i18n.t(`aiAgents:desc.${key}`, { defaultValue: agent.description });
 }
 
 export function findAgent(

@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { Tab } from "@/modules/tabs";
+import { useTranslation } from "react-i18next";
 
 type Props = {
   tabs: Tab[];
@@ -42,6 +43,7 @@ export function CloseDialogs({
   onCancelAppClose,
   onConfirmAppClose,
 }: Props) {
+  const { t } = useTranslation("app");
   return (
     <>
       <AlertDialog
@@ -50,21 +52,21 @@ export function CloseDialogs({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogTitle>{t("close.unsavedChanges")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {tabs.find((t) => t.id === pendingCloseTab)?.title
-                ? `"${
-                    tabs.find((t) => t.id === pendingCloseTab)?.title
-                  }" has unsaved changes. Close anyway?`
-                : "This file has unsaved changes. Close anyway?"}
+              {tabs.find((tb) => tb.id === pendingCloseTab)?.title
+                ? t("close.fileUnsavedNamed", {
+                    title: tabs.find((tb) => tb.id === pendingCloseTab)?.title,
+                  })
+                : t("close.fileUnsaved")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={onCancelClose}>
-              Cancel
+              {t("common:cancel")}
             </AlertDialogCancel>
             <AlertDialogAction onClick={onConfirmClose}>
-              Close Anyway
+              {t("close.closeAnyway")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -76,17 +78,17 @@ export function CloseDialogs({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Close Terminal?</AlertDialogTitle>
+            <AlertDialogTitle>{t("close.closeTerminalTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              A process is running. Closing this tab will terminate it.
+              {t("close.closeTerminalDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={onCancelTerminalClose}>
-              Cancel
+              {t("common:cancel")}
             </AlertDialogCancel>
             <AlertDialogAction onClick={onConfirmTerminalClose}>
-              Close Anyway
+              {t("close.closeAnyway")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -98,26 +100,28 @@ export function CloseDialogs({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unsaved Changes</AlertDialogTitle>
+            <AlertDialogTitle>{t("close.unsavedChanges")}</AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDeleteTabs?.length === 1
                 ? (() => {
                     const title = tabs.find(
-                      (t) => t.id === pendingDeleteTabs[0],
+                      (tb) => tb.id === pendingDeleteTabs[0],
                     )?.title;
                     return title
-                      ? `"${title}" has unsaved changes. The file has been deleted. Close anyway?`
-                      : "This file has unsaved changes. The file has been deleted. Close anyway?";
+                      ? t("close.fileDeletedUnsavedNamed", { title })
+                      : t("close.fileDeletedUnsaved");
                   })()
-                : `${pendingDeleteTabs?.length ?? 0} files have unsaved changes. They have been deleted. Close all anyway?`}
+                : t("close.filesDeletedUnsaved", {
+                    count: pendingDeleteTabs?.length ?? 0,
+                  })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={onCancelDeleteClose}>
-              Cancel
+              {t("common:cancel")}
             </AlertDialogCancel>
             <AlertDialogAction onClick={onConfirmDeleteClose}>
-              Close Anyway
+              {t("close.closeAnyway")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -129,18 +133,17 @@ export function CloseDialogs({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Quit Terax?</AlertDialogTitle>
+            <AlertDialogTitle>{t("close.quitTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              A process is still running in a terminal. Quitting will terminate
-              it.
+              {t("close.quitDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={onCancelAppClose}>
-              Cancel
+              {t("common:cancel")}
             </AlertDialogCancel>
             <AlertDialogAction onClick={onConfirmAppClose}>
-              Quit Anyway
+              {t("close.quitAnyway")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
