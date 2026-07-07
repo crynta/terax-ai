@@ -29,7 +29,7 @@ CI is also externally blocked for this fork PR:
 - `gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20` returns no runs.
 - `gh workflow list --repo mehmetcanbudak/terax-ai --limit 50` and `gh run list --repo mehmetcanbudak/terax-ai --limit 10` return no fork workflows or runs.
 - Dispatch probes remain blocked: the fork returns "could not find any workflows named CI"; the base repo returns HTTP 403 "Must have admin rights to Repository" for manual dispatch from this account.
-- `gh pr checks 964 --repo crynta/terax-ai` shows CodeRabbit-only states after recent pushes, with no GitHub Actions checks visible. The latest check refresh after commit `76fbd470c` reported CodeRabbit `pass` only.
+- `gh pr checks 964 --repo crynta/terax-ai` shows CodeRabbit-only states after recent pushes, with no GitHub Actions checks visible. The latest check refresh after the docs-only release-audit push still reported only CodeRabbit status, not GitHub Actions.
 - Recent `main` CI runs on `crynta/terax-ai` are green, but that is not proof for PR #964.
 
 ## Conflicted paths

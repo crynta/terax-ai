@@ -135,14 +135,14 @@ Conflict and CI audit after pushing the Pi sidebar tail:
 git fetch origin main
 git rev-list --left-right --count origin/main...HEAD # 171 160
 git merge-tree --write-tree HEAD origin/main # latest completion-audit-guard refresh still exits 1 with 99 conflicted paths; see docs/pi-sidebar-merge-conflict-audit.md
-gh pr checks 964 --repo crynta/terax-ai # after latest docs-only push: CodeRabbit pass, no GitHub Actions visible
+gh pr checks 964 --repo crynta/terax-ai # after latest docs-only push: CodeRabbit-only status, no GitHub Actions visible
 gh workflow view CI --repo crynta/terax-ai --yaml # no workflow_dispatch trigger; PR/push to main only
 gh workflow list --repo mehmetcanbudak/terax-ai --limit 50 # no workflows returned
 gh run list --repo crynta/terax-ai --workflow CI --branch pi-sidebar --limit 20 # no runs returned
 gh api repos/crynta/terax-ai/pulls/964 --jq '{mergeable, mergeable_state}' # false, dirty
 gh workflow run CI --repo mehmetcanbudak/terax-ai --ref pi-sidebar # could not find any workflows named CI
 gh workflow run CI --repo crynta/terax-ai --ref pi-sidebar # HTTP 403: Must have admin rights to Repository
-gh pr checks 964 --repo crynta/terax-ai # CodeRabbit pass after latest push; no GitHub Actions checks visible
+gh pr checks 964 --repo crynta/terax-ai # CodeRabbit-only status after latest push; no GitHub Actions checks visible
 ```
 
 Static Pi boundary audits added after the PR check visibility refresh:
