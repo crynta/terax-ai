@@ -93,6 +93,7 @@ pnpm run format:check
 pnpm exec tsc --noEmit
 pnpm run lint # exits successfully; existing warnings remain outside this change
 pnpm test # 175 files, 1012 tests
+pnpm test:coverage # 175 files, 1012 tests; coverage report generated successfully
 pnpm run check:pi-boundary
 pnpm run build
 pnpm run check:bundle-size # total 1949.8 KB gzipped, budget 2050.8 KB
