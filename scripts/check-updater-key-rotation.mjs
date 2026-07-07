@@ -8,10 +8,17 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const EXPECTED_UPDATER_KEY_ID = "52D6B9847A3B8F15";
 export const OLD_UPDATER_KEY_ID = "3BABFD8AB60E3469";
 export const EXPECTED_UPDATE_ENDPOINT = "https://github.com/crynta/terax-ai/releases/latest/download/latest.json";
+export const EXPECTED_FEED_INSPECTOR_SCRIPT = "node scripts/inspect-updater-feed.mjs";
 
 const requiredSigningSecretPatterns = [
   /TAURI_SIGNING_PRIVATE_KEY:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY\s*\}\}/,
   /TAURI_SIGNING_PRIVATE_KEY_PASSWORD:\s*\$\{\{\s*secrets\.TAURI_SIGNING_PRIVATE_KEY_PASSWORD\s*\}\}/,
+];
+
+const requiredFeedInspectorText = [
+  EXPECTED_UPDATE_ENDPOINT,
+  "--expect-key",
+  "signatureKeyIdFromTauriSignature",
 ];
 
 export const REQUIRED_UPDATER_DOC_TEXT = [
@@ -98,11 +105,26 @@ function checkUpdaterDocs(text, errors) {
   }
 }
 
+function checkFeedInspector(packageText, inspectorText, errors) {
+  const packageJson = parseJson(packageText, "package.json", errors);
+  if (packageJson?.scripts?.["inspect:updater-feed"] !== EXPECTED_FEED_INSPECTOR_SCRIPT) {
+    errors.push(`package.json is missing inspect:updater-feed script: ${EXPECTED_FEED_INSPECTOR_SCRIPT}`);
+  }
+
+  for (const requiredText of requiredFeedInspectorText) {
+    if (!inspectorText.includes(requiredText)) {
+      errors.push(`scripts/inspect-updater-feed.mjs is missing required feed-inspector text: ${requiredText}`);
+    }
+  }
+}
+
 export async function checkUpdaterKeyRotation(root = repoRoot) {
   const errors = [];
   const tauriConfigPath = resolve(root, "src-tauri/tauri.conf.json");
   const releaseWorkflowPath = resolve(root, ".github/workflows/release.yml");
   const updaterDocsPath = resolve(root, "docs/updater-key-rotation.md");
+  const packageJsonPath = resolve(root, "package.json");
+  const feedInspectorPath = resolve(root, "scripts/inspect-updater-feed.mjs");
 
   let tauri = { decodedPubkey: "", endpoints: [] };
   try {
@@ -125,6 +147,12 @@ export async function checkUpdaterKeyRotation(root = repoRoot) {
     errors.push(`docs/updater-key-rotation.md could not be read: ${error.message}`);
   }
 
+  try {
+    checkFeedInspector(await readText(packageJsonPath), await readText(feedInspectorPath), errors);
+  } catch (error) {
+    errors.push(`updater feed inspector wiring could not be read: ${error.message}`);
+  }
+
   return {
     ok: errors.length === 0,
     errors,
@@ -143,6 +171,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
 
   console.log(
-    `Updater key rotation check passed: embedded key ${EXPECTED_UPDATER_KEY_ID}, ${result.workflowAction}, ${result.endpoints.length} endpoint(s), cutover docs guarded.`,
+    `Updater key rotation check passed: embedded key ${EXPECTED_UPDATER_KEY_ID}, ${result.workflowAction}, ${result.endpoints.length} endpoint(s), cutover docs and feed inspector guarded.`,
   );
 }

@@ -24,7 +24,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 | Done | Keep default app about 11 MB. | `pnpm tauri build --bundles app --no-sign --ci` and `du -sh src-tauri/target/release/bundle/macos/Terax.app` reported `11M`; JS gzipped bundle is `1949.8 KB` against `2050.8 KB`. | Re-run after conflict resolution and final merge. |
 | Done | Keep Node Pi sidecar deleted. | `pnpm run check:no-pi-sidecar` passed, scanning tracked paths, sidecar config, and sidecar-era docs for deleted `sidecars/pi-host`, bundled Node runtime paths, Pi-host build scripts, Tauri resource entries, and required historical/superseded/not-current banners. Only the existing `speech-recognizer` sidecar remains allowed. | Historical architecture docs still mention the old sidecar as past context, with banners guarded by automation. |
 | Done | Ensure static frontend Tauri invokes have Rust handlers or intentional graceful degradation. | `pnpm run check:tauri-invokes` passed with 172 unique commands across 248 literal invokes and 32 documented feature-gated commands; `pnpm run check:pi-boundary` now chains this static invoke audit after the Pi approval boundary check. | Re-run after conflict resolution. |
-| Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. Latest frontend gate recheck after adding the updater feed inspector: `pnpm check:pi-boundary`, `pnpm check:ci-release-gates`, `pnpm check:updater-key-rotation`, `pnpm run inspect:updater-feed -- --expect-key 3BABFD8AB60E3469`, `pnpm format:check`, `pnpm exec tsc --noEmit`, `pnpm lint` (passes with existing warnings), `pnpm test` (182 files, 1040 tests), `pnpm test:coverage` (182 files, 1040 tests, coverage report generated), `pnpm build`, and `pnpm check:bundle-size` (1949.8 KB / 2050.8 KB) passed. Latest Rust check recheck at `a3c938a3e`: `cargo check --all-targets --locked`, `cargo check --locked --features workflow`, and `cargo check --locked --features openclicky` passed. `git diff --name-only 06ce0ddde..HEAD -- src-tauri` returned empty, so the full Rust test/clippy/release-app build matrix at `06ce0ddde` still applies. | CI must independently run on the PR. |
+| Done locally | Pass pnpm and Rust verification gates. | Full command list below includes format, typecheck, lint, tests, coverage, build, bundle-size, Rust default, workflow, and openclicky checks. Latest frontend gate recheck after adding the updater feed inspector: `pnpm check:pi-boundary`, `pnpm check:ci-release-gates`, `pnpm check:updater-key-rotation`, `pnpm run inspect:updater-feed -- --expect-key 3BABFD8AB60E3469`, `pnpm format:check`, `pnpm exec tsc --noEmit`, `pnpm lint` (passes with existing warnings), `pnpm test` (182 files, 1042 tests), `pnpm test:coverage` (182 files, 1042 tests, coverage report generated), `pnpm build`, and `pnpm check:bundle-size` (1949.8 KB / 2050.8 KB) passed. Latest Rust check recheck at `a3c938a3e`: `cargo check --all-targets --locked`, `cargo check --locked --features workflow`, and `cargo check --locked --features openclicky` passed. `git diff --name-only 06ce0ddde..HEAD -- src-tauri` returned empty, so the full Rust test/clippy/release-app build matrix at `06ce0ddde` still applies. | CI must independently run on the PR. |
 
 ## Local automated verification already run
 
@@ -163,14 +163,14 @@ Latest frontend gate recheck after the approval e2e, updater-verifier, release-d
 pnpm check:pi-boundary # approval boundary, no-Pi-sidecar, sidecar-doc banners, surface isolation, invoke, release-doc, and CI release-gate audits pass
 pnpm check:ci-release-gates # 21 required gates present
 pnpm check:pi-release-docs # release-readiness blockers and manual smoke template coverage pass
-pnpm check:updater-key-rotation # embedded key 52D6B9847A3B8F15, tauri-action@v0, 1 endpoint, cutover docs guarded
+pnpm check:updater-key-rotation # embedded key 52D6B9847A3B8F15, tauri-action@v0, 1 endpoint, cutover docs and feed inspector guarded
 pnpm run inspect:updater-feed -- --expect-key 3BABFD8AB60E3469 # current public v0.8.2 feed is old-key signed
 pnpm run inspect:updater-feed -- --expect-key 52D6B9847A3B8F15 # exits 1 until a new-key signed feed exists
 pnpm format:check # 723 files, no fixes applied
 pnpm exec tsc --noEmit # exits 0
 pnpm lint # exits 0 with existing warnings outside this tail
-pnpm test # 182 files, 1040 tests
-pnpm test:coverage # 182 files, 1040 tests; coverage report generated
+pnpm test # 182 files, 1042 tests
+pnpm test:coverage # 182 files, 1042 tests; coverage report generated
 pnpm build # exits 0 with existing Rollup/Vite warnings
 pnpm check:bundle-size # total 1949.8 KB gzipped, budget 2050.8 KB
 
@@ -178,7 +178,7 @@ cd src-tauri && cargo check --all-targets --locked
 cd src-tauri && cargo check --locked --features workflow
 cd src-tauri && cargo check --locked --features openclicky
 
-pnpm exec vitest run scripts/check-updater-key-rotation.test.mjs # 4 tests
+pnpm exec vitest run scripts/check-updater-key-rotation.test.mjs # 6 tests
 pnpm exec vitest run scripts/inspect-updater-feed.test.mjs # 4 tests
 pnpm exec vitest run scripts/check-pi-release-docs.test.mjs # 3 tests
 pnpm exec vitest run scripts/check-ci-release-gates.test.mjs # 3 tests
