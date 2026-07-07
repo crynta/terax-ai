@@ -6,7 +6,7 @@ Tracking note for PR #964 (`pi-sidebar`) and the webview-native Pi size-fix tail
 
 - PR: <https://github.com/crynta/terax-ai/pull/964>
 - Head branch: `mehmetcanbudak:pi-sidebar`
-- Latest implementation head verified before this doc-only refresh: `44fdc063a`
+- Latest implementation head with local checks: `53476165b`
 - GitHub merge state: `DIRTY` / merge-conflicted against `origin/main`
 - Visible checks: CodeRabbit only, currently pending on the fork PR. GitHub Actions CI/e2e were not visible for the fork PR, so Linux e2e remains pending CI or maintainer-triggered workflow.
 
@@ -57,6 +57,28 @@ pnpm exec tsc --noEmit
 pnpm test # 172 files, 1006 tests
 ```
 
+Targeted and full checks after the Voice and 3D feature-gating decision landed:
+
+```bash
+pnpm run format:check
+pnpm run lint # exits successfully; existing warnings remain outside this change
+pnpm run check:pi-boundary
+pnpm exec tsc --noEmit
+pnpm exec vitest run src/modules/ai/lib/featureGates.test.ts src/modules/ai/lib/slashCommands.test.ts src/modules/ai/lib/composerRuntime.test.ts src/modules/pi/components/PiTranscript.test.tsx src/modules/ai/components/AiChat.test.tsx
+pnpm test # 174 files, 1010 tests
+pnpm run build
+pnpm run check:bundle-size # total 1949.5 KB gzipped, budget 2050.8 KB
+cd src-tauri && cargo fmt --check # exits successfully; rustfmt warns about ignored nightly-only config keys
+cd src-tauri && cargo test --locked
+cd src-tauri && cargo test --locked --test capability_registry
+cd src-tauri && cargo check --locked --features workflow
+cd src-tauri && cargo check --locked --features openclicky
+cd src-tauri && cargo clippy --locked --all-targets -- -D warnings
+cd src-tauri && cargo clippy --locked --all-targets --features workflow -- -D warnings
+cd src-tauri && cargo clippy --locked --all-targets --features openclicky -- -D warnings
+cd src-tauri && cargo test --locked --features openclicky --test voice_tts
+```
+
 Conflict audit after pushing `44fdc063a`:
 
 ```bash
@@ -64,6 +86,17 @@ git fetch origin main
 git rev-list --left-right --count origin/main...HEAD # 171 102
 git merge-tree --write-tree HEAD origin/main # exits 1 with broad conflicts
 ```
+
+## Voice and 3D gating decision
+
+Current decision for release: keep OpenClicky-derived AI tools and read-aloud TTS off by default. They are not part of the default size-fix path and their Rust commands are only registered with the `openclicky` feature. The frontend now treats them as explicit experimental gates instead of ambient tools:
+
+- `localStorage["terax.experimental.openclickyAiTools"] = "true"` exposes overlay, screenshot, and Tripo 3D AI tools plus the `/3d` command.
+- `localStorage["terax.experimental.ttsReadAloud"] = "true"` exposes read-aloud buttons on legacy AI and Pi transcripts.
+- Default builds do not advertise those tools to the model and do not show read-aloud actions that would invoke unregistered commands.
+- When `openclicky` is enabled, `tts_speak`, `transcribe_audio`, and `generate_3d_model` now record app capability-audit entries (`app.tts`, `app.transcription`, `app.3d_model`).
+
+This does not disable the existing composer voice input path, which is a user-initiated MediaRecorder plus provider transcription flow and remains controlled by its existing key checks.
 
 ## Manual macOS Pi smoke checklist
 

@@ -2,6 +2,7 @@ import CheckListIcon from "@hugeicons/core-free-icons/CheckListIcon";
 import ClaudeIcon from "@hugeicons/core-free-icons/ClaudeIcon";
 import SparklesIcon from "@hugeicons/core-free-icons/SparklesIcon";
 import AiMagicIcon from "@hugeicons/core-free-icons/AiMagicIcon";
+import { areOpenClickyAiToolsEnabled } from "./featureGates";
 import { usePlanStore } from "../store/planStore";
 
 /**
@@ -47,7 +48,7 @@ export type SlashCommandMeta = {
   icon: typeof SparklesIcon;
 };
 
-export const SLASH_COMMANDS: Record<string, SlashCommandMeta> = {
+const ALL_SLASH_COMMANDS: Record<string, SlashCommandMeta> = {
   init: {
     name: "init",
     invocation: "/init",
@@ -73,6 +74,14 @@ export const SLASH_COMMANDS: Record<string, SlashCommandMeta> = {
     icon: AiMagicIcon,
   },
 };
+
+export const SLASH_COMMANDS = ALL_SLASH_COMMANDS;
+
+export function availableSlashCommands(): SlashCommandMeta[] {
+  return Object.values(ALL_SLASH_COMMANDS).filter(
+    (command) => command.name !== "3d" || areOpenClickyAiToolsEnabled(),
+  );
+}
 
 export const TERAX_CMD_RE =
   /^<terax-command\s+name="([a-z0-9-]+)"(?:\s+state="([a-z]+)")?\s*\/>(?:\n+|$)/;
@@ -121,6 +130,13 @@ export function tryRunSlashCommand(input: string): SlashOutcome {
       };
     }
     case "3d": {
+      if (!areOpenClickyAiToolsEnabled()) {
+        return {
+          kind: "handled",
+          toast:
+            "3D generation is experimental and disabled for this build. Enable terax.experimental.openclickyAiTools to expose it.",
+        };
+      }
       if (!tail) {
         return { kind: "handled", toast: "Usage: /3d <description of model>" };
       }

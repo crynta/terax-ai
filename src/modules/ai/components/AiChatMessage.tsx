@@ -34,6 +34,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { isTtsReadAloudEnabled } from "../lib/featureGates";
 import { SLASH_COMMANDS, TERAX_CMD_RE } from "../lib/slashCommands";
 import { AiToolApproval } from "./AiToolApproval";
 import { lazy, Suspense } from "react";
@@ -548,6 +549,7 @@ const RenderedTool = memo(function RenderedTool({
 });
 
 function TtsActionButton({ message }: { message: UIMessage }) {
+  const ttsEnabled = isTtsReadAloudEnabled();
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const isSpeaking = speakingId === message.id;
 
@@ -575,6 +577,8 @@ function TtsActionButton({ message }: { message: UIMessage }) {
       .then(() => setSpeakingId(null))
       .catch(() => setSpeakingId(null));
   }, [message, isSpeaking]);
+
+  if (!ttsEnabled) return null;
 
   return (
     <MessageActions className="absolute -right-1 -top-1 opacity-0 transition-opacity group-hover:opacity-100">

@@ -101,6 +101,9 @@ fn app_manifest_exposes_non_model_visible_native_surfaces() {
             "app.http_request",
             "app.pty_session",
             "app.mcp_tool",
+            "app.tts",
+            "app.transcription",
+            "app.3d_model",
             "app.secrets",
         ]
     );
@@ -112,6 +115,18 @@ fn app_manifest_exposes_non_model_visible_native_surfaces() {
     assert_eq!(shell.approval, ApprovalPolicy::Auto);
     assert_eq!(shell.risk, RiskLevel::High);
     assert!(!shell.model_visible);
+
+    let tts = manifest.tool("app.tts").unwrap();
+    assert_eq!(tts.origin, CapabilityOrigin::TeraxCore);
+    assert_eq!(tts.approval, ApprovalPolicy::Auto);
+    assert_eq!(tts.risk, RiskLevel::Medium);
+    assert!(!tts.model_visible);
+
+    let model_3d = manifest.tool("app.3d_model").unwrap();
+    assert_eq!(model_3d.origin, CapabilityOrigin::TeraxCore);
+    assert_eq!(model_3d.approval, ApprovalPolicy::Auto);
+    assert_eq!(model_3d.risk, RiskLevel::Medium);
+    assert!(!model_3d.model_visible);
 
     let secrets = manifest.tool("app.secrets").unwrap();
     assert_eq!(secrets.origin, CapabilityOrigin::TeraxCore);

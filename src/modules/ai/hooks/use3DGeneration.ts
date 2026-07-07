@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useState } from "react";
+import { areOpenClickyAiToolsEnabled } from "@/modules/ai/lib/featureGates";
 
 export type Model3DResult = {
   modelUrl: string;
@@ -17,6 +18,11 @@ export function use3DGeneration() {
       setError(null);
       setResult(null);
       try {
+        if (!areOpenClickyAiToolsEnabled()) {
+          throw new Error(
+            "3D generation is experimental and disabled for this build.",
+          );
+        }
         const res = await invoke<Model3DResult>("generate_3d_model", {
           prompt,
         });

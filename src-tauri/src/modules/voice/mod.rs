@@ -30,11 +30,16 @@ pub struct TranscriptionResult {
 #[tauri::command]
 pub async fn tts_speak(
     app: tauri::AppHandle,
+    app_audit: tauri::State<'_, crate::modules::capabilities::AppCapabilityState>,
     text: String,
     provider: Option<String>,
 ) -> Result<(), String> {
-    let provider = provider.unwrap_or_else(|| "cartesia".to_string());
-    tts::speak(&app, &text, &provider).await
+    app_audit
+        .execute_app_capability_async("app.tts", || async move {
+            let provider = provider.unwrap_or_else(|| "cartesia".to_string());
+            tts::speak(&app, &text, &provider).await
+        })
+        .await
 }
 
 #[tauri::command]
@@ -50,15 +55,21 @@ pub fn tts_status(app: tauri::AppHandle) -> Result<TtsStatus, String> {
 #[tauri::command]
 pub async fn transcribe_audio(
     app: tauri::AppHandle,
+    app_audit: tauri::State<'_, crate::modules::capabilities::AppCapabilityState>,
     audio_data: Vec<u8>,
     mime_type: String,
     provider: Option<String>,
 ) -> Result<TranscriptionResult, String> {
-    let provider = provider.unwrap_or_else(|| "deepgram".to_string());
-    let result = transcription::transcribe_audio(&app, &audio_data, &mime_type, &provider).await?;
-    Ok(TranscriptionResult {
-        text: result.text,
-        provider: result.provider,
-        confidence: result.confidence,
-    })
+    app_audit
+        .execute_app_capability_async("app.transcription", || async move {
+            let provider = provider.unwrap_or_else(|| "deepgram".to_string());
+            let result =
+                transcription::transcribe_audio(&app, &audio_data, &mime_type, &provider).await?;
+            Ok(TranscriptionResult {
+                text: result.text,
+                provider: result.provider,
+                confidence: result.confidence,
+            })
+        })
+        .await
 }

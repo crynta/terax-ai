@@ -12,7 +12,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useWorkspaceFiles } from "../hooks/useWorkspaceFiles";
 import { type FileAttachment, useComposer } from "../lib/composer";
-import { SLASH_COMMANDS } from "../lib/slashCommands";
+import { availableSlashCommands } from "../lib/slashCommands";
 import type { Snippet } from "../lib/snippets";
 import { useChatStore } from "../store/chatStore";
 import { useSnippetsStore } from "../store/snippetsStore";
@@ -109,7 +109,7 @@ export function AiInputBar() {
   const filteredItems = useMemo<PickerItem[]>(() => {
     if (!trigger) return [];
     const q = trigger.query;
-    const cmdItems: PickerItem[] = Object.values(SLASH_COMMANDS)
+    const cmdItems: PickerItem[] = availableSlashCommands()
       .filter(
         (c) => !q || c.name.includes(q) || c.label.toLowerCase().includes(q),
       )

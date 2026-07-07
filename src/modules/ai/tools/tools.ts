@@ -1,3 +1,4 @@
+import { areOpenClickyAiToolsEnabled } from "@/modules/ai/lib/featureGates";
 import { build3DTools } from "./three_d";
 import { buildManagedAgentTools } from "./agent";
 import { buildEditTools } from "./edit";
@@ -20,7 +21,7 @@ export { resolvePath, type ToolContext } from "./context";
  *    auto-execute, but go through the security guard which refuses obvious
  *    secret paths (.env*, .ssh/, credentials, etc.).
  *  - Mutating tools (`write_file`, `edit`, `multi_edit`, `create_directory`,
- *    `run_command`) require explicit user approval — the AI SDK pauses on
+ *    `run_command`) require explicit user approval. The AI SDK pauses on
  *    tool-call and surfaces a `tool-approval-request` part that the UI
  *    renders as a confirmation card.
  *  - `edit` / `multi_edit` additionally enforce a read-before-edit invariant
@@ -32,6 +33,14 @@ export { resolvePath, type ToolContext } from "./context";
  * outside that.
  */
 export function buildTools(ctx: import("./context").ToolContext) {
+  const openclickyTools = areOpenClickyAiToolsEnabled()
+    ? {
+        ...buildOverlayTools(ctx),
+        ...buildScreenTools(ctx),
+        ...build3DTools(ctx),
+      }
+    : {};
+
   return {
     ...buildFsTools(ctx),
     ...buildEditTools(ctx),
@@ -41,9 +50,7 @@ export function buildTools(ctx: import("./context").ToolContext) {
     ...buildTerminalTools(ctx),
     ...buildTodoTools(ctx),
     ...buildManagedAgentTools(ctx),
-    ...buildOverlayTools(ctx),
-    ...buildScreenTools(ctx),
-    ...build3DTools(ctx),
+    ...openclickyTools,
   } as const;
 }
 

@@ -61,6 +61,19 @@ struct TripoImage {
 pub async fn generate_3d_model(
     app: tauri::AppHandle,
     state: tauri::State<'_, crate::modules::secrets::SecretsState>,
+    app_audit: tauri::State<'_, crate::modules::capabilities::AppCapabilityState>,
+    prompt: String,
+) -> Result<Model3DResult, String> {
+    app_audit
+        .execute_app_capability_async("app.3d_model", || async move {
+            generate_3d_model_inner(app, state, prompt).await
+        })
+        .await
+}
+
+async fn generate_3d_model_inner(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::modules::secrets::SecretsState>,
     prompt: String,
 ) -> Result<Model3DResult, String> {
     if prompt.trim().is_empty() {

@@ -111,6 +111,44 @@ pub fn app_capability_manifest() -> CapabilityManifest {
                 &["app", "mcp"],
             ),
             app_tool(
+                "app.tts",
+                "app text to speech",
+                "Synthesize assistant text through the optional voice feature.",
+                object_schema(
+                    serde_json::json!({
+                        "provider": string_schema("TTS provider id"),
+                        "text": string_schema("Text to synthesize"),
+                    }),
+                    &["text"],
+                ),
+                CapabilityKind::HttpRequest,
+                RiskLevel::Medium,
+                &["app", "voice", "network"],
+            ),
+            app_tool(
+                "app.transcription",
+                "app voice transcription",
+                "Transcribe recorded audio through the optional voice feature.",
+                object_schema(serde_json::json!({}), &[]),
+                CapabilityKind::HttpRequest,
+                RiskLevel::Medium,
+                &["app", "voice", "network"],
+            ),
+            app_tool(
+                "app.3d_model",
+                "app 3D model generation",
+                "Generate a 3D model through the optional Tripo integration.",
+                object_schema(
+                    serde_json::json!({
+                        "prompt": string_schema("Prompt for the 3D model"),
+                    }),
+                    &["prompt"],
+                ),
+                CapabilityKind::HttpRequest,
+                RiskLevel::Medium,
+                &["app", "3d", "network"],
+            ),
+            app_tool(
                 "app.secrets",
                 "app secret access",
                 "Read or write an API key in the OS keychain (first-party Settings), through Rust policy and audit.",

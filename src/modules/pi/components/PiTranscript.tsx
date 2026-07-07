@@ -47,6 +47,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
+import { isTtsReadAloudEnabled } from "@/modules/ai/lib/featureGates";
 import { sessionStatusDotClass } from "@/modules/pi/components/classes";
 import type {
   PiPromptContext,
@@ -405,7 +406,7 @@ function ToolApprovalPanel({
 }
 
 function formatQuestionAnswerLabels(answers: PiQuestionAnswer[]): string {
-  if (answers.length === 0) return "—";
+  if (answers.length === 0) return "No answer";
   return answers
     .map((answer) =>
       answer.customText
@@ -705,7 +706,7 @@ function AssistantMessage({
   const reasoningStreaming =
     streaming && Boolean(reasoningText) && !responseText;
 
-  const ttsDisabled = streaming || !responseText;
+  const ttsDisabled = !isTtsReadAloudEnabled() || streaming || !responseText;
   const isTtsSpeakingThis = ttsSpeaking && ttsActiveMessageId === item.id;
 
   return (
