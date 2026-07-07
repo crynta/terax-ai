@@ -50,11 +50,18 @@ unless handled deliberately.
 
 ## Verification
 
+Use `pnpm run inspect:updater-feed -- [latest.json-or-url] --expect-key <KEY_ID>`
+to decode every platform signature in a Tauri `latest.json` feed and fail if any
+platform is signed by an unexpected key. Without a path or URL, the command
+inspects the public latest feed.
+
 - New installs: install this build, trigger an update check against a test feed
-  signed with the new key, confirm it applies.
+  signed with the new key, confirm it applies, and run
+  `pnpm run inspect:updater-feed -- <test-feed-url> --expect-key 52D6B9847A3B8F15`.
 - Old installs: install a pre-rotation build, point it at a feed signed with the
-  new key, confirm it **rejects** (proves the threat model) and that the chosen
-  migration path (reinstall or transition release) works.
+  new key, confirm it **rejects** (proves the threat model), run the inspector
+  against the feed used for the chosen migration path, and confirm that path
+  (reinstall or transition release) works.
 
 ## Release-notes draft
 
@@ -82,6 +89,7 @@ key, after the maintainer chooses the migration path.
 - [x] Local config audit confirms the embedded updater pubkey decodes to `untrusted comment: minisign public key: 52D6B9847A3B8F15`.
 - [x] Release workflow wiring audit confirms the current `.github/workflows/release.yml` passes `secrets.TAURI_SIGNING_PRIVATE_KEY` and `secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD` into `tauri-apps/tauri-action@v0`. There is no separate AppImage re-sign step in the current workflow; if one is added later, re-audit that it receives the same new-key secrets.
 - [x] Static local verifier added: `pnpm check:updater-key-rotation` decodes the embedded Tauri updater pubkey, checks the expected release feed endpoint, and verifies the release workflow signing env wiring.
+- [x] Feed signature inspector added: `pnpm run inspect:updater-feed -- [latest.json-or-url] --expect-key <KEY_ID>` decodes Tauri feed platform signatures and fails if any platform uses the wrong minisign key id.
 - [x] Live feed audit confirms the current public `v0.8.2` `latest.json` exists and all embedded platform signatures carry old key id `3BABFD8AB60E3469`, while this branch embeds new pubkey `52D6B9847A3B8F15`. This means a build from this branch cannot validate the current public latest feed until a new-key signed release or test feed exists.
 - [x] Migration recommendation chosen: prefer a **transition release** if the old private key is still trusted/available, because it preserves auto-update for existing installs. If the rotation was caused by suspected compromise or the old key is unavailable, fall back to the reinstall announcement path.
 - [ ] New private key value verified in release CI secrets (`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). The current agent cannot verify or set repository secrets: `gh secret list --repo crynta/terax-ai --app actions` returned HTTP 403 again on 2026-07-07.
@@ -92,4 +100,4 @@ key, after the maintainer chooses the migration path.
 
 ## Current blocker
 
-The remaining updater-key-rotation work requires maintainer-held signing secrets and release-workflow access. The local agent can build unsigned app/updater artifacts for size checks, confirm the workflow references the expected secret names, and inspect the public feed. The current public feed is still signed with the old key, so it is useful evidence for the pre-rotation state but cannot prove fresh new-key updater acceptance. Fresh/pre-rotation acceptance still needs a signed release or test feed produced by the configured CI secrets and, for the recommended transition path, the old signing key.
+The remaining updater-key-rotation work requires maintainer-held signing secrets and release-workflow access. The local agent can build unsigned app/updater artifacts for size checks, confirm the workflow references the expected secret names, and inspect any public or local feed with `pnpm run inspect:updater-feed`. The current public feed is still signed with the old key, so it is useful evidence for the pre-rotation state but cannot prove fresh new-key updater acceptance. Fresh/pre-rotation acceptance still needs a signed release or test feed produced by the configured CI secrets and, for the recommended transition path, the old signing key.

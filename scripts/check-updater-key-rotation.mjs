@@ -23,6 +23,7 @@ export const REQUIRED_UPDATER_DOC_TEXT = [
   "Preferred transition-release path",
   "Fallback reinstall-announcement path",
   "new-key signed release or test feed",
+  "pnpm run inspect:updater-feed",
   "End-to-end update verified on a new install and an old install against a signed test feed",
   "Fresh/pre-rotation acceptance still needs a signed release or test feed",
 ];
