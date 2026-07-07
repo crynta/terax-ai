@@ -9,7 +9,7 @@ const sourceExtensions = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const frontendRoot = "src";
 const rustHandlerPath = "src-tauri/src/lib.rs";
 
-const featureGatedInvokes = new Map(
+export const DEFAULT_FEATURE_GATED_INVOKES = new Map(
   [
     [
       "openclicky",
@@ -58,7 +58,7 @@ const featureGatedInvokes = new Map(
   ),
 );
 
-const dynamicInvokeCommands = [
+export const DEFAULT_DYNAMIC_INVOKE_COMMANDS = [
   "agent_claude_hooks_status",
   "agent_codex_hooks_status",
   "agent_enable_antigravity_hooks",
@@ -161,11 +161,21 @@ async function scanFrontendInvokes(root) {
   return invokes;
 }
 
-export async function checkTauriInvokes(root = repoRoot) {
+export async function checkTauriInvokes(
+  root = repoRoot,
+  rules = {
+    dynamicInvokeCommands: DEFAULT_DYNAMIC_INVOKE_COMMANDS,
+    featureGatedInvokes: DEFAULT_FEATURE_GATED_INVOKES,
+  },
+) {
   const libText = await readFile(resolve(root, rustHandlerPath), "utf8");
   const registered = extractRegisteredCommands(libText);
   const invokes = await scanFrontendInvokes(root);
   const errors = [];
+  const allowedFeatureGatedInvokes =
+    rules.featureGatedInvokes ?? DEFAULT_FEATURE_GATED_INVOKES;
+  const declaredDynamicInvokeCommands =
+    rules.dynamicInvokeCommands ?? DEFAULT_DYNAMIC_INVOKE_COMMANDS;
 
   for (const invoke of invokes) {
     const handler = registered.get(invoke.command);
@@ -176,7 +186,7 @@ export async function checkTauriInvokes(root = repoRoot) {
       continue;
     }
     if (handler.feature) {
-      const allowedFeature = featureGatedInvokes.get(invoke.command);
+      const allowedFeature = allowedFeatureGatedInvokes.get(invoke.command);
       if (allowedFeature !== handler.feature) {
         errors.push(
           `${invoke.file}:${invoke.line} invokes feature gated command ${invoke.command} without an allowlist entry for ${handler.feature}`,
@@ -185,13 +195,13 @@ export async function checkTauriInvokes(root = repoRoot) {
     }
   }
 
-  for (const command of dynamicInvokeCommands) {
+  for (const command of declaredDynamicInvokeCommands) {
     if (!registered.has(command)) {
       errors.push(`dynamic invoke allowlist references unregistered command ${command}`);
     }
   }
 
-  for (const [command, feature] of featureGatedInvokes) {
+  for (const [command, feature] of allowedFeatureGatedInvokes) {
     const handler = registered.get(command);
     if (!handler) {
       errors.push(`feature gated invoke allowlist references unregistered command ${command}`);
@@ -206,7 +216,7 @@ export async function checkTauriInvokes(root = repoRoot) {
 
   const uniqueInvokedCommands = new Set(invokes.map((invoke) => invoke.command));
   const featureGatedInvokedCommands = [...uniqueInvokedCommands].filter((command) =>
-    featureGatedInvokes.has(command),
+    allowedFeatureGatedInvokes.has(command),
   );
 
   return {
