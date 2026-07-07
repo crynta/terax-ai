@@ -10,6 +10,7 @@ import type {
   Tab,
   TerminalTab,
 } from "@/modules/tabs/lib/useTabs";
+import { shellLabel } from "@/modules/tabs/lib/shellLabel";
 
 export type SerializedNode =
   | { kind: "leaf"; cwd?: string; active?: boolean }
@@ -21,6 +22,7 @@ export type SerializedTab =
       tree: SerializedNode;
       blocks?: boolean;
       customTitle?: string;
+      shellName?: string;
     }
   | { kind: "editor"; path: string }
   | { kind: "preview"; url: string }
@@ -76,6 +78,7 @@ function serializeTab(tab: Tab): SerializedTab | null {
         tree: serializeNode(tab.paneTree, tab.activeLeafId),
         ...(tab.blocks && { blocks: true }),
         ...(tab.customTitle !== undefined && { customTitle: tab.customTitle }),
+        ...(tab.shellName !== undefined && { shellName: tab.shellName }),
       };
     case "editor":
       return { kind: "editor", path: tab.path };
@@ -149,9 +152,10 @@ function hydrateTab(
   switch (s.kind) {
     case "terminal": {
       const { tree, activeLeafId, firstLeafCwd } = hydrateTree(s.tree, allocId);
+      const shName = s.shellName ?? shellLabel(undefined);
       const title =
         s.customTitle ??
-        (firstLeafCwd ? basename(firstLeafCwd) : s.blocks ? "blocks" : "shell");
+        (firstLeafCwd ? basename(firstLeafCwd) : s.blocks ? "blocks" : shName);
       return {
         id: allocId(),
         kind: "terminal",
@@ -159,6 +163,7 @@ function hydrateTab(
         cold: true,
         title,
         cwd: firstLeafCwd,
+        shellName: shName,
         paneTree: tree,
         activeLeafId,
         ...(s.blocks && { blocks: true }),
@@ -205,12 +210,14 @@ export function freshTerminalTab(
   allocId: () => number,
 ): TerminalTab {
   const leafId = allocId();
+  const name = shellLabel(undefined);
   return {
     id: allocId(),
     kind: "terminal",
     spaceId,
     cold: true,
-    title: cwd ? basename(cwd) : "shell",
+    title: cwd ? basename(cwd) : name,
+    shellName: name,
     cwd: cwd ?? undefined,
     paneTree: { kind: "leaf", id: leafId, ...(cwd && { cwd }) },
     activeLeafId: leafId,

@@ -13,6 +13,8 @@ import {
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { shellLabel } from "./shellLabel";
 
 // Matches the renderer slot pool size — over this we'd evict an active leaf.
 export const MAX_PANES_PER_TAB = 4;
@@ -27,6 +29,7 @@ export type TerminalTab = TabBase & {
   id: number;
   kind: "terminal";
   title: string;
+  shellName?: string;
   cwd?: string;
   paneTree: PaneNode;
   activeLeafId: number;
@@ -200,12 +203,15 @@ function coldTerminalTab(
   spaceId: string,
   cwd?: string,
 ): TerminalTab {
+  const shellPath = usePreferencesStore.getState().terminalShell;
+  const name = shellLabel(shellPath);
   return {
     id: tabId,
     kind: "terminal",
     spaceId,
     cold: true,
-    title: cwd ? basename(cwd) : "shell",
+    title: cwd ? basename(cwd) : name,
+    shellName: name,
     cwd,
     paneTree: { kind: "leaf", id: leafId, cwd },
     activeLeafId: leafId,
@@ -303,6 +309,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const newTabInSpace = useCallback((spaceId: string, cwd?: string) => {
     const tabId = nextIdRef.current++;
     const leafId = nextIdRef.current++;
+    const shellPath = usePreferencesStore.getState().terminalShell;
+    const name = shellLabel(shellPath);
     setTabs((curr) => [
       ...curr,
       {
@@ -310,7 +318,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         kind: "terminal",
         spaceId,
         cold: true,
-        title: cwd ? basename(cwd) : "shell",
+        title: cwd ? basename(cwd) : name,
+        shellName: name,
         cwd,
         paneTree: { kind: "leaf", id: leafId, cwd },
         activeLeafId: leafId,
@@ -400,6 +409,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const newTab = useCallback((cwd?: string) => {
     const tabId = nextIdRef.current++;
     const leafId = nextIdRef.current++;
+    const shellPath = usePreferencesStore.getState().terminalShell;
+    const name = shellLabel(shellPath);
     setTabs((t) => [
       ...t,
       {
@@ -407,6 +418,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
         kind: "terminal",
         spaceId: activeSpaceIdRef.current,
         title: "shell",
+        shellName: name,
         cwd,
         paneTree: { kind: "leaf", id: leafId, cwd },
         activeLeafId: leafId,

@@ -40,4 +40,12 @@ describe("labelFor (terminal tabs)", () => {
   it("handles Windows-style cwd separators", () => {
     expect(labelFor(terminalTab({ cwd: "C:\\Users\\me\\proj" }))).toBe("proj");
   });
+
+  it("shows shellName instead of generic title when there is no cwd", () => {
+    expect(labelFor(terminalTab({ title: "shell", shellName: "Bash" }))).toBe("Bash");
+  });
+
+  it("still falls back to title when shellName is not set", () => {
+    expect(labelFor(terminalTab({ title: "custom" }))).toBe("custom");
+  });
 });
