@@ -29,6 +29,13 @@ const healthyFiles = {
     "routes through pi_agent_tool_execute single-use grant",
   "src-tauri/src/lib.rs":
     "pi::pi_agent_tool_execute pi::pi_approval_grant",
+  "e2e/specs/pi-approval.e2e.mjs":
+    "executes an approved write through the Rust agent-tool path does not execute a denied write [terax-e2e-pi-approval-approved] [terax-e2e-pi-approval-denied] pi_agent_tool_execute",
+  "src/modules/pi/bridge/pi-mock.ts":
+    "[terax-e2e-pi-approval-approved] [terax-e2e-pi-approval-denied] approved through Rust pi_agent_tool_execute Mock pi tool follow-up: write completed Mock pi tool follow-up: write denied",
+  "wdio.conf.mjs": "./e2e/specs/**/*.e2e.mjs",
+  ".github/workflows/ci.yml":
+    "webkit2gtk-driver tauri-driver xvfb-run -a pnpm e2e",
   "src/modules/pi/lib/diagnostics.test.ts": "rust-mediated tools enabled",
   "src/modules/pi/components/PiDiagnosticsCard.test.tsx": "rust-mediated",
 };
@@ -65,6 +72,34 @@ describe("checkPiApprovalBoundary", () => {
         ),
         expect.stringContaining(
           "src/modules/pi/lib/diagnostics.test.ts contains stale text: approval-gated",
+        ),
+      ]),
+    );
+  });
+
+  it("fails when the mock-provider e2e wiring is removed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "terax-pi-boundary-e2e-bad-"));
+    await writeFixture(root, {
+      ...healthyFiles,
+      "wdio.conf.mjs": "./e2e/specs/smoke.e2e.mjs",
+      ".github/workflows/ci.yml": "pnpm test",
+      "e2e/specs/pi-approval.e2e.mjs":
+        "executes an approved write through the Rust agent-tool path [terax-e2e-pi-approval-approved] pi_agent_tool_execute",
+    });
+
+    const result = await checkPiApprovalBoundary(root);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "e2e/specs/pi-approval.e2e.mjs missing required text: does not execute a denied write",
+        ),
+        expect.stringContaining(
+          "wdio.conf.mjs missing required text: ./e2e/specs/**/*.e2e.mjs",
+        ),
+        expect.stringContaining(
+          ".github/workflows/ci.yml missing required text: xvfb-run -a pnpm e2e",
         ),
       ]),
     );

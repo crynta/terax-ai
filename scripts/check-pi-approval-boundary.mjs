@@ -48,6 +48,34 @@ export const DEFAULT_PI_APPROVAL_BOUNDARY_RULES = {
       "src-tauri/src/lib.rs",
       ["pi::pi_agent_tool_execute", "pi::pi_approval_grant"],
     ],
+    [
+      "e2e/specs/pi-approval.e2e.mjs",
+      [
+        "executes an approved write through the Rust agent-tool path",
+        "does not execute a denied write",
+        "[terax-e2e-pi-approval-approved]",
+        "[terax-e2e-pi-approval-denied]",
+        "pi_agent_tool_execute",
+      ],
+    ],
+    [
+      "src/modules/pi/bridge/pi-mock.ts",
+      [
+        "[terax-e2e-pi-approval-approved]",
+        "[terax-e2e-pi-approval-denied]",
+        "approved through Rust pi_agent_tool_execute",
+        "Mock pi tool follow-up: write completed",
+        "Mock pi tool follow-up: write denied",
+      ],
+    ],
+    [
+      "wdio.conf.mjs",
+      ["./e2e/specs/**/*.e2e.mjs"],
+    ],
+    [
+      ".github/workflows/ci.yml",
+      ["webkit2gtk-driver", "tauri-driver", "xvfb-run -a pnpm e2e"],
+    ],
   ],
   forbiddenText: [
     [
