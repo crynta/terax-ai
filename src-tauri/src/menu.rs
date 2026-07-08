@@ -167,7 +167,7 @@ pub fn build_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 pub fn apply_menu_language<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        return build_menu(&app).map_err(|e| e.to_string());
+        build_menu(&app).map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
