@@ -27,7 +27,9 @@ export function cliAgentKind(modelId: string): CliAgentKind | null {
   return MODEL_TO_KIND[modelId] ?? null;
 }
 
-/** `${kind}:${terax session id}` → CLI session/thread id (per app run). */
+/** `${kind}:${terax session id}:${cwd}` → CLI session/thread id (per app
+ *  run). cwd is part of the key: Claude Code sessions are per project dir,
+ *  so a workspace switch must start a fresh CLI session, not resume. */
 const cliSessions = new Map<string, string>();
 
 type RunEvent =
@@ -99,7 +101,11 @@ function handleCodexLine(evt: Record<string, unknown>, sink: LineSink): void {
     | { type?: string; text?: string; command?: string }
     | undefined;
 
-  if (type === "item.completed" && item?.type === "agent_message" && item.text) {
+  if (
+    type === "item.completed" &&
+    item?.type === "agent_message" &&
+    item.text
+  ) {
     sink.pushText(item.text);
   } else if (type === "item.started" || type === "item.updated") {
     if (item?.type === "command_execution" && item.command) {
@@ -131,24 +137,43 @@ export async function runCliAgentStream(
 
   const runId = crypto.randomUUID();
   const eventName = `terax-cc-${runId}`;
-  const sessionKey = `${args.kind}:${args.sessionKey}`;
+  const sessionKey = `${args.kind}:${args.sessionKey}:${args.cwd ?? ""}`;
+  const usedResume = cliSessions.has(sessionKey);
   let textSeq = 0;
+  let cleanupFns: Array<() => void> = [];
+  const cleanup = () => {
+    for (const fn of cleanupFns) fn();
+    cleanupFns = [];
+  };
+  const kill = () => void invoke("cli_agent_kill", { runId }).catch(() => {});
 
   return new ReadableStream<UIMessageChunk>({
     async start(controller) {
       let finished = false;
       let sawText = false;
 
+      // The consumer may cancel/teardown at any moment — every enqueue must
+      // tolerate a closed controller instead of throwing inside a Tauri
+      // event callback.
+      const push = (chunk: UIMessageChunk) => {
+        if (finished) return;
+        try {
+          controller.enqueue(chunk);
+        } catch {
+          /* stream cancelled */
+        }
+      };
+
       const sink: LineSink = {
         pushText: (text) => {
           const id = `cli-${textSeq++}`;
-          controller.enqueue({ type: "text-start", id });
-          controller.enqueue({
+          push({ type: "text-start", id });
+          push({
             type: "text-delta",
             id,
             delta: sawText ? `\n\n${text}` : text,
           });
-          controller.enqueue({ type: "text-end", id });
+          push({ type: "text-end", id });
           sawText = true;
           args.onStep?.(null);
         },
@@ -158,12 +183,19 @@ export async function runCliAgentStream(
         },
         finish: (error) => {
           if (finished) return;
+          if (error) push({ type: "error", errorText: error });
+          push({ type: "finish" });
           finished = true;
-          if (error) controller.enqueue({ type: "error", errorText: error });
-          controller.enqueue({ type: "finish" });
-          controller.close();
+          try {
+            controller.close();
+          } catch {
+            /* already closed/cancelled */
+          }
           args.onStep?.(null);
-          void unlistenPromise.then((fn) => fn());
+          // A failed resume poisons every later turn — drop the stored id
+          // so the next message starts a fresh CLI session.
+          if (error && usedResume) cliSessions.delete(sessionKey);
+          cleanup();
         },
       };
 
@@ -193,14 +225,24 @@ export async function runCliAgentStream(
           }
         }
       });
-      await unlistenPromise;
+      const unlisten = await unlistenPromise;
+      cleanupFns.push(unlisten);
 
-      args.abortSignal?.addEventListener("abort", () => {
-        void invoke("cli_agent_kill", { runId });
+      const onAbort = () => {
+        kill();
         sink.finish();
-      });
+      };
+      if (args.abortSignal?.aborted) {
+        // Aborted before we even started — never fires "abort" again.
+        sink.finish();
+        return;
+      }
+      args.abortSignal?.addEventListener("abort", onAbort);
+      cleanupFns.push(() =>
+        args.abortSignal?.removeEventListener("abort", onAbort),
+      );
 
-      controller.enqueue({ type: "start" });
+      push({ type: "start" });
       args.onStep?.(`${label}: starting…`);
 
       try {
@@ -211,9 +253,19 @@ export async function runCliAgentStream(
           sessionId: cliSessions.get(sessionKey) ?? null,
           cwd: args.cwd,
         });
+        // Abort may have raced the spawn: the kill above can run before the
+        // child was registered. Now that cli_agent_run returned, the child
+        // is registered — re-kill to close the window.
+        if (args.abortSignal?.aborted || finished) kill();
       } catch (e) {
         sink.finish(e instanceof Error ? e.message : String(e));
       }
+    },
+    cancel() {
+      // Consumer tore the stream down (not via abortSignal): stop the CLI
+      // and release the event listener.
+      kill();
+      cleanup();
     },
   });
 }

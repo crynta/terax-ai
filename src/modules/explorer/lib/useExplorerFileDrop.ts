@@ -1,8 +1,8 @@
+import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { currentWorkspaceEnv } from "@/modules/workspace";
 
 type Options = {
   rootPath: string | null;
@@ -82,7 +82,9 @@ export function useExplorerFileDrop({ rootPath, isDir, onCopied }: Options) {
         if (disposed) fn();
         else unlisten = fn;
       })
-      .catch((err) => console.error("[terax] explorer drop listen failed:", err));
+      .catch((err) =>
+        console.error("[terax] explorer drop listen failed:", err),
+      );
 
     return () => {
       disposed = true;

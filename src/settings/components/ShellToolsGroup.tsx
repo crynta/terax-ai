@@ -52,14 +52,19 @@ export function ShellToolsGroup() {
 
   const update = (next: ShellTool[]) => void setShellTools(next);
 
-  const patch = (id: string, changes: Partial<ShellTool>) =>
-    update(tools.map((t) => (t.id === id ? { ...t, ...changes } : t)));
+  // Always derive the next array from the LIVE store, not the render
+  // snapshot: a blur-commit is still round-tripping through the async store
+  // when the next click lands, and a snapshot-based write would erase it.
+  const latest = () => usePreferencesStore.getState().shellTools;
 
-  const remove = (id: string) => update(tools.filter((t) => t.id !== id));
+  const patch = (id: string, changes: Partial<ShellTool>) =>
+    update(latest().map((t) => (t.id === id ? { ...t, ...changes } : t)));
+
+  const remove = (id: string) => update(latest().filter((t) => t.id !== id));
 
   const add = () =>
     update([
-      ...tools,
+      ...latest(),
       {
         id: `tool-${Date.now().toString(36)}`,
         name: "New tool",
@@ -660,6 +665,10 @@ export function CommittedInput({
       onBlur={() => {
         const next = draft.trim();
         if (next !== value) onCommit(next);
+        // Re-sync unconditionally: a commit that clamps back to the CURRENT
+        // stored value never changes the prop, so the value-effect wouldn't
+        // run and the field would keep showing the rejected text.
+        setDraft(value);
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();

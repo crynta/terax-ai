@@ -358,6 +358,21 @@ export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
 export const TERMINAL_FONT_SIZE_MAX = 32;
 
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 2.0;
+function clampZoom(v: number): number {
+  if (!Number.isFinite(v)) return 1.0;
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v));
+}
+
+function clampFontSize(v: number): number {
+  if (!Number.isFinite(v)) return TERMINAL_FONT_SIZE_DEFAULT;
+  return Math.min(
+    TERMINAL_FONT_SIZE_MAX,
+    Math.max(TERMINAL_FONT_SIZE_MIN, Math.round(v)),
+  );
+}
+
 export const TERMINAL_FONT_SIZES = [
   10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
 ] as const;
@@ -551,7 +566,9 @@ export async function loadPreferences(): Promise<Preferences> {
         get<string>(KEY_OPENAI_COMPAT_BASE_URL) ?? "",
         get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ?? "",
         get<number>(KEY_OPENAI_COMPAT_CONTEXT_LIMIT) ?? 128_000,
-        crypto.randomUUID().slice(0, 8),
+        // Deterministic: a random id here differs per window and per launch,
+        // dangling any stored model selection that embeds it.
+        "legacy-compat",
       );
     })(),
     openrouterModelId:
@@ -640,9 +657,10 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalLetterSpacing:
       get<number>(KEY_TERMINAL_LETTER_SPACING) ??
       DEFAULT_PREFERENCES.terminalLetterSpacing,
-    terminalFontSize:
+    terminalFontSize: clampFontSize(
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
-      DEFAULT_PREFERENCES.terminalFontSize,
+        DEFAULT_PREFERENCES.terminalFontSize,
+    ),
     terminalScrollback: clampScrollback(
       get<number>(KEY_TERMINAL_SCROLLBACK) ??
         DEFAULT_PREFERENCES.terminalScrollback,
@@ -672,8 +690,7 @@ export async function loadPreferences(): Promise<Preferences> {
     smartTabTitles:
       get<boolean>(KEY_SMART_TAB_TITLES) ?? DEFAULT_PREFERENCES.smartTabTitles,
     tabProgressEnabled:
-      get<boolean>(KEY_TAB_PROGRESS) ??
-      DEFAULT_PREFERENCES.tabProgressEnabled,
+      get<boolean>(KEY_TAB_PROGRESS) ?? DEFAULT_PREFERENCES.tabProgressEnabled,
     commandDoneToasts:
       get<boolean>(KEY_COMMAND_DONE_TOASTS) ??
       DEFAULT_PREFERENCES.commandDoneToasts,
@@ -699,7 +716,9 @@ export async function loadPreferences(): Promise<Preferences> {
     lastWslDistro:
       get<string | null>(KEY_LAST_WSL_DISTRO) ??
       DEFAULT_PREFERENCES.lastWslDistro,
-    zoomLevel: get<number>(KEY_ZOOM_LEVEL) ?? DEFAULT_PREFERENCES.zoomLevel,
+    zoomLevel: clampZoom(
+      get<number>(KEY_ZOOM_LEVEL) ?? DEFAULT_PREFERENCES.zoomLevel,
+    ),
     agentNotifications:
       get<boolean>(KEY_AGENT_NOTIFICATIONS) ??
       DEFAULT_PREFERENCES.agentNotifications,
@@ -1171,7 +1190,7 @@ export async function setLastWslDistro(value: string | null): Promise<void> {
 }
 
 export async function setZoomLevel(value: number): Promise<void> {
-  await writePref(KEY_ZOOM_LEVEL, value);
+  await writePref(KEY_ZOOM_LEVEL, clampZoom(value));
 }
 
 function clampAutoSaveDelay(v: number): number {

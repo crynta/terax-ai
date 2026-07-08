@@ -8,9 +8,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
-  native,
   type GitCommitFileChange,
   type GitLogEntry,
+  native,
 } from "@/modules/ai/lib/native";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import {
@@ -23,21 +23,21 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   memo,
+  type ReactNode,
   useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import { GraphRail, MAX_VISIBLE_LANES, railWidth } from "./GraphRail";
 import {
   EMPTY_GRAPH_STATE,
-  layoutGraph,
   type GraphRow,
   type GraphState,
+  layoutGraph,
 } from "./lib/graph";
 import {
   commitWebUrl,

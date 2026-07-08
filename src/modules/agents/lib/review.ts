@@ -1,7 +1,7 @@
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import {
-  useManagedAgentsStore,
   type ManagedAgent,
+  useManagedAgentsStore,
 } from "../store/managedAgentsStore";
 
 function buildReviewDirective(m: ManagedAgent): string {

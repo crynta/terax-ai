@@ -77,7 +77,10 @@ import {
   useWindowTitle,
   useWorkspaceCwd,
 } from "@/modules/tabs";
-import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
+import {
+  DEFAULT_SPACE_ID,
+  MAX_PANES_PER_TAB,
+} from "@/modules/tabs/lib/useTabs";
 import {
   clearFocusedTerminal,
   disposeSession,
@@ -563,9 +566,17 @@ export default function App() {
       setSshHosts([]);
       return;
     }
+    // Stale-response guard: disabling the pref mid-flight must not let the
+    // resolving promise repopulate the list afterwards.
+    let cancelled = false;
     invoke<string[]>("ssh_list_hosts")
-      .then(setSshHosts)
+      .then((hosts) => {
+        if (!cancelled) setSshHosts(hosts);
+      })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [sshPaletteEnabled]);
 
   const openSsh = useCallback(
@@ -576,7 +587,7 @@ export default function App() {
       setTimeout(() => {
         const tab = tabsRef.current.find((x) => x.id === tabId);
         if (!tab || tab.kind !== "terminal") return;
-        submitToLeaf(tab.activeLeafId, `ssh ${quoteShellArg(host)}`);
+        submitToLeaf(tab.activeLeafId, `ssh -- ${quoteShellArg(host)}`);
       }, 80);
     },
     [newTab],
@@ -585,9 +596,19 @@ export default function App() {
   const connectMultiSsh = useCallback(
     (hosts: string[], broadcast: boolean) => {
       if (hosts.length === 0) return;
+      // Hard cap: splitActivePane silently no-ops past MAX_PANES_PER_TAB —
+      // never let the user believe they are broadcasting to unreached hosts.
+      const capped = hosts.slice(0, MAX_PANES_PER_TAB);
+      if (capped.length < hosts.length) {
+        toast.warning(
+          `Only ${MAX_PANES_PER_TAB} panes per tab — skipped: ${hosts
+            .slice(MAX_PANES_PER_TAB)
+            .join(", ")}`,
+        );
+      }
       const tabId = newTab();
       setTimeout(() => {
-        for (let i = 1; i < hosts.length; i++) {
+        for (let i = 1; i < capped.length; i++) {
           // Alternate split direction for a rough grid.
           splitActivePane(tabId, i % 2 === 1 ? "row" : "col");
         }
@@ -596,8 +617,8 @@ export default function App() {
           if (!tab || tab.kind !== "terminal") return;
           const leaves = leafIds(tab.paneTree);
           leaves.forEach((leafId, i) => {
-            const host = hosts[i];
-            if (host) submitToLeaf(leafId, `ssh ${quoteShellArg(host)}`);
+            const host = capped[i];
+            if (host) submitToLeaf(leafId, `ssh -- ${quoteShellArg(host)}`);
           });
           if (broadcast && leaves.length > 1) {
             setBroadcastGroup(leaves, true);

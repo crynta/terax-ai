@@ -1,5 +1,5 @@
-import { invoke, Channel } from "@tauri-apps/api/core";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { Channel, invoke } from "@tauri-apps/api/core";
 
 const textEncoder = new TextEncoder();
 

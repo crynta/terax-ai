@@ -27,7 +27,9 @@ export async function readTerminalClipboard(): Promise<string> {
 export async function writeTerminalClipboard(text: string): Promise<void> {
   if (IS_LINUX) {
     try {
-      const { writeText } = await import("@tauri-apps/plugin-clipboard-manager");
+      const { writeText } = await import(
+        "@tauri-apps/plugin-clipboard-manager"
+      );
       await writeText(text);
       return;
     } catch {}

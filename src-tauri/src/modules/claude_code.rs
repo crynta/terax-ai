@@ -17,6 +17,16 @@ pub struct ClaudeCodeState {
     resolved_bins: Mutex<HashMap<String, String>>,
 }
 
+impl ClaudeCodeState {
+    /// App exit: agents must not keep editing files after Terax is gone.
+    pub fn kill_all(&self) {
+        for (_, mut child) in self.procs.lock().unwrap().drain() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 #[derive(Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 enum RunEvent {
@@ -109,8 +119,13 @@ fn resolve_bin(state: &ClaudeCodeState, agent: &str) -> Result<String, String> {
 
 /// Spawns one non-interactive agent turn. Every stdout line is emitted as
 /// `terax-cc-<run_id>`, followed by a final Done event.
+///
+/// async: the login-shell binary lookup and pipe plumbing must never touch
+/// the main thread. Pipes are serviced by dedicated threads — stdin gets its
+/// own writer, so a >64KB prompt can't deadlock against a child that starts
+/// talking on stdout immediately (both CLIs do).
 #[tauri::command]
-pub fn cli_agent_run(
+pub async fn cli_agent_run(
     app: AppHandle,
     state: State<'_, ClaudeCodeState>,
     agent: String,
@@ -137,38 +152,62 @@ pub fn cli_agent_run(
         .spawn()
         .map_err(|e| format!("failed to start {bin}: {e}"))?;
 
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(prompt.as_bytes())
-            .map_err(|e| format!("failed to send prompt: {e}"))?;
-        // Drop closes the pipe — both CLIs read the prompt until EOF.
-    }
-
+    let stdin = child.stdin.take();
     let stdout = child.stdout.take().ok_or("no stdout pipe")?;
     let stderr = child.stderr.take();
+
+    // Register BEFORE any pipe work so cli_agent_kill can always find the
+    // child, even while the prompt is still being written.
     state.procs.lock().unwrap().insert(run_id.clone(), child);
+
+    if let Some(mut stdin) = stdin {
+        std::thread::spawn(move || {
+            // A failed write means the child died — the reader thread will
+            // surface that via Done; nothing useful to do here.
+            let _ = stdin.write_all(prompt.as_bytes());
+            // Drop closes the pipe — both CLIs read the prompt until EOF.
+        });
+    }
+
+    // stderr must be drained CONCURRENTLY with stdout: a child that fills
+    // the stderr pipe while we sit in the stdout loop deadlocks otherwise.
+    // Keep only a bounded tail while reading.
+    let stderr_handle = stderr.map(|s| {
+        std::thread::spawn(move || {
+            let mut tail = String::new();
+            for l in BufReader::new(s).lines().map_while(Result::ok) {
+                tail.push_str(&l);
+                tail.push('\n');
+                if tail.len() > 4096 {
+                    let mut cut = tail.len() - 2048;
+                    while !tail.is_char_boundary(cut) {
+                        cut += 1;
+                    }
+                    tail.drain(..cut);
+                }
+            }
+            tail
+        })
+    });
 
     std::thread::spawn(move || {
         let event = event_name(&run_id);
         for line in BufReader::new(stdout).lines() {
-            let Ok(line) = line else { break };
+            let line = match line {
+                Ok(l) => l,
+                // One bad UTF-8 line must not silently truncate the whole
+                // stream; real IO errors (broken pipe) end it.
+                Err(e) if e.kind() == std::io::ErrorKind::InvalidData => continue,
+                Err(_) => break,
+            };
             if line.trim().is_empty() {
                 continue;
             }
             let _ = app.emit(&event, RunEvent::Line { line });
         }
 
-        // Reap the child; surface stderr so CLI failures are debuggable.
-        let stderr_tail = stderr
-            .map(|s| {
-                let mut buf = String::new();
-                for l in BufReader::new(s).lines().map_while(Result::ok) {
-                    buf.push_str(&l);
-                    buf.push('\n');
-                }
-                let tail: String = buf.chars().rev().take(2000).collect();
-                tail.chars().rev().collect()
-            })
+        let stderr_tail = stderr_handle
+            .and_then(|h| h.join().ok())
             .unwrap_or_default();
 
         let code = {
@@ -192,15 +231,23 @@ pub fn cli_agent_run(
 }
 
 #[tauri::command]
-pub fn cli_agent_kill(state: State<'_, ClaudeCodeState>, run_id: String) {
+pub async fn cli_agent_kill(
+    state: State<'_, ClaudeCodeState>,
+    run_id: String,
+) -> Result<(), String> {
     if let Some(mut child) = state.procs.lock().unwrap().remove(&run_id) {
         let _ = child.kill();
         let _ = child.wait();
     }
+    Ok(())
 }
 
-/// Fast availability probe for Settings / model picker UI.
+/// Fast availability probe for Settings / model picker UI. async — the
+/// login-shell lookup can take seconds with heavy shell inits (nvm).
 #[tauri::command]
-pub fn cli_agent_available(state: State<'_, ClaudeCodeState>, agent: String) -> bool {
-    resolve_bin(&state, &agent).is_ok()
+pub async fn cli_agent_available(
+    state: State<'_, ClaudeCodeState>,
+    agent: String,
+) -> Result<bool, String> {
+    Ok(resolve_bin(&state, &agent).is_ok())
 }

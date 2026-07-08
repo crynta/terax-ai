@@ -115,6 +115,19 @@ export function setBroadcastGroup(leaves: number[], enabled: boolean): void {
   }
 }
 
+/** Leaf disposed: drop its own entry and remove it from sibling groups —
+ *  otherwise every closed multi-SSH pane leaks its group forever. */
+export function clearBroadcastForLeaf(leafId: number): void {
+  broadcastGroups.delete(leafId);
+  for (const [id, group] of broadcastGroups) {
+    if (group.includes(leafId)) {
+      const rest = group.filter((x) => x !== leafId);
+      if (rest.length > 1) broadcastGroups.set(id, rest);
+      else broadcastGroups.delete(id);
+    }
+  }
+}
+
 export function setClassicKeyHook(
   leafId: number,
   hook: ((ev: KeyboardEvent) => boolean) | null,

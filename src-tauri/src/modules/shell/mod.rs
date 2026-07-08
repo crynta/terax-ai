@@ -51,19 +51,46 @@ pub fn ssh_list_hosts() -> Vec<String> {
     let mut hosts: Vec<String> = Vec::new();
     for line in content.lines() {
         let line = line.trim();
+        // OpenSSH accepts `Host foo`, `Host\tfoo` and `Host=foo`.
         let lower = line.to_ascii_lowercase();
-        let Some(rest) = lower
-            .strip_prefix("host ")
-            .map(|_| line[5..].trim())
-        else {
+        if !lower.starts_with("host") {
             continue;
+        }
+        let rest = line[4..].trim_start();
+        let rest = match rest.strip_prefix('=') {
+            Some(r) => r.trim_start(),
+            // "hostname ..." etc. also start with "host" — require a
+            // separator right after the keyword.
+            None if line[4..].starts_with([' ', '\t', '=']) => rest,
+            None => continue,
         };
-        for h in rest.split_whitespace() {
-            if h.contains('*') || h.contains('?') || h.starts_with('!') {
+        // Patterns may be double-quoted (spaces inside); split on whitespace
+        // outside quotes and strip the quotes from the result.
+        let mut patterns: Vec<String> = Vec::new();
+        let mut cur = String::new();
+        let mut in_quotes = false;
+        for ch in rest.chars() {
+            match ch {
+                '"' => in_quotes = !in_quotes,
+                c if c.is_whitespace() && !in_quotes => {
+                    if !cur.is_empty() {
+                        patterns.push(std::mem::take(&mut cur));
+                    }
+                }
+                c => cur.push(c),
+            }
+        }
+        if !cur.is_empty() {
+            patterns.push(cur);
+        }
+        for h in patterns {
+            // Wildcards/negations aren't connectable; a leading '-' would be
+            // parsed by ssh as an option — never surface those.
+            if h.contains('*') || h.contains('?') || h.starts_with('!') || h.starts_with('-') {
                 continue;
             }
-            if !hosts.iter().any(|e| e == h) {
-                hosts.push(h.to_string());
+            if !hosts.iter().any(|e| e == &h) {
+                hosts.push(h);
             }
         }
     }

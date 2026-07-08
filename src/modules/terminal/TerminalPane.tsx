@@ -33,6 +33,7 @@ type Props = {
   initialCwd?: string;
   /** Enable command-block decorations (OSC 133) for this terminal. */
   blocks?: boolean;
+  privateTab?: boolean;
   onSearchReady?: (leafId: number, addon: SearchAddon) => void;
   onExit?: (leafId: number, code: number) => void;
   onCwd?: (leafId: number, cwd: string) => void;
@@ -46,6 +47,7 @@ export const TerminalPane = memo(
       focused = true,
       initialCwd,
       blocks = false,
+      privateTab = false,
       onSearchReady,
       onExit,
       onCwd,
@@ -63,6 +65,7 @@ export const TerminalPane = memo(
       focused,
       initialCwd,
       blocks,
+      privateTab,
       onSearchReady: (a) => onSearchReady?.(leafId, a),
       onExit: (c) => onExit?.(leafId, c),
       onCwd: (c) => onCwd?.(leafId, c),

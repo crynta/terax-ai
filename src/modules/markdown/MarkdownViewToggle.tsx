@@ -27,7 +27,8 @@ export function MarkdownViewToggle({
           mode === "rendered"
             ? "bg-accent text-foreground"
             : "text-muted-foreground hover:text-foreground",
-          renderedDisabled && "cursor-not-allowed opacity-40 hover:text-muted-foreground",
+          renderedDisabled &&
+            "cursor-not-allowed opacity-40 hover:text-muted-foreground",
         )}
       >
         Rendered

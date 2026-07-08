@@ -20,7 +20,9 @@ type Props = {
   onConnect: (hosts: string[], broadcast: boolean) => void;
 };
 
-const MAX_HOSTS = 6; // pane limit guard — a 7-way split is unreadable anyway
+import { MAX_PANES_PER_TAB } from "@/modules/tabs";
+
+const MAX_HOSTS = MAX_PANES_PER_TAB; // one pane per host — hard split cap
 
 export function MultiSshDialog({
   open,

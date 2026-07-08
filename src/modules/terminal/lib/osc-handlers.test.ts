@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import type { Terminal } from "@xterm/xterm";
+import { describe, expect, it, vi } from "vitest";
 import {
   createShellIntegrationState,
   registerCwdHandler,
@@ -26,7 +26,9 @@ function makeFakeTerm() {
         return { dispose: () => handlers.delete(code) };
       },
     },
-    registerMarker: vi.fn().mockReturnValue({ isDisposed: false, dispose: vi.fn() }),
+    registerMarker: vi
+      .fn()
+      .mockReturnValue({ isDisposed: false, dispose: vi.fn() }),
   } as unknown as Terminal;
   return { term, handlers };
 }
@@ -95,6 +97,17 @@ describe("OSC 7 cwd handler — gated by OSC 133 in-command state", () => {
 
     expect(onCwd).toHaveBeenCalledTimes(1);
     expect(onCwd).toHaveBeenCalledWith("/home/me/new-cwd");
+  });
+
+  it("reports a bare 'D;' exit code as null, not 0", () => {
+    const { term, handlers } = makeFakeTerm();
+    const state = createShellIntegrationState();
+    const onCommandState = vi.fn();
+    registerPromptTracker(term, state, onCommandState);
+
+    handlers.get(133)?.("D;");
+
+    expect(onCommandState).toHaveBeenCalledWith(false, undefined, null);
   });
 
   it("works without state for backwards compatibility (legacy callers)", () => {

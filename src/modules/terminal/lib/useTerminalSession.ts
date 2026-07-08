@@ -32,6 +32,7 @@ import {
   applyScrollback,
   applyTerminalPadding,
   applyWebglPreference,
+  clearBroadcastForLeaf,
   configureRendererPool,
   discardRetainedSlot,
   disposeLeafSlot,
@@ -76,6 +77,8 @@ type Session = {
   pendingInput: string;
   hasSlot: boolean;
   blocks: boolean;
+  /** Private tab: no AI features may see this terminal. */
+  privateTab: boolean;
   blockMode: BlockMode;
   blockListeners: Set<() => void>;
   blockDecorations: BlockDecorations | null;
@@ -484,9 +487,15 @@ function ensureSession(
   leafId: number,
   initialCwd?: string,
   blocks = false,
+  privateTab = false,
 ): Session {
   const existing = sessions.get(leafId);
-  if (existing) return existing;
+  if (existing) {
+    // A session pre-created by an imperative path (submitToLeaf on a cold
+    // leaf) must still turn private when its tab mounts as private.
+    if (privateTab) existing.privateTab = true;
+    return existing;
+  }
 
   const session: Session = {
     pty: null,
@@ -509,6 +518,7 @@ function ensureSession(
     pendingInput: "",
     hasSlot: false,
     blocks,
+    privateTab,
     blockMode: "prompt",
     blockListeners: new Set(),
     blockDecorations: null,
@@ -715,6 +725,7 @@ function bindLeafToSlot(leafId: number, s: Session): void {
           if (s.pty) void s.pty.write(data);
         },
         getCwd: () => s.lastCwd,
+        allowAi: !s.privateTab,
       });
       setClassicKeyHook(leafId, ghost.onKey);
       const prompt = registerPromptTracker(
@@ -820,6 +831,9 @@ export async function respawnSession(
 ): Promise<void> {
   const s = sessions.get(leafId);
   if (!s || s.disposed) return;
+  // A spawn is already in flight (initial open retries for 250ms): letting a
+  // second one race it would leave the loser's PTY orphaned.
+  if (s.ptyOpening) return;
   s.pty?.close();
   s.pty = null;
   s.snapshot = null;
@@ -897,7 +911,14 @@ export function disposeSession(leafId: number): void {
   sessions.delete(leafId);
   blockViewportListeners.delete(leafId);
   readyLeaves.delete(leafId);
-  useShellToolStore.getState().setActive(leafId, null);
+  commandStartedAt.delete(leafId);
+  clearBroadcastForLeaf(leafId);
+  const shellTools = useShellToolStore.getState();
+  shellTools.setActive(leafId, null);
+  // A leaf closed mid-command would otherwise pin its command string and
+  // progress in the store forever.
+  shellTools.setRunning(leafId, null);
+  shellTools.setProgress(leafId, null);
   const waiters = readyWaiters.get(leafId);
   if (waiters) {
     readyWaiters.delete(leafId);
@@ -915,6 +936,8 @@ type Options = {
   focused?: boolean;
   initialCwd?: string;
   blocks?: boolean;
+  /** Tab is private: nothing from this terminal may reach AI providers. */
+  privateTab?: boolean;
   onSearchReady?: (addon: SearchAddon) => void;
   onExit?: (code: number) => void;
   onCwd?: (cwd: string) => void;
@@ -927,6 +950,7 @@ export function useTerminalSession({
   focused = true,
   initialCwd,
   blocks = false,
+  privateTab = false,
   onSearchReady,
   onExit,
   onCwd,
@@ -942,7 +966,7 @@ export function useTerminalSession({
 
   useEffect(() => {
     let cancelled = false;
-    const s = ensureSession(leafId, initialCwdRef.current, blocks);
+    const s = ensureSession(leafId, initialCwdRef.current, blocks, privateTab);
     s.ready.then(() => {
       if (cancelled || s.disposed) return;
       const node = container.current;
@@ -963,7 +987,7 @@ export function useTerminalSession({
   const [blockMode, setBlockMode] = useState<BlockMode>("prompt");
   useEffect(() => {
     if (!blocks) return;
-    const s = ensureSession(leafId, initialCwdRef.current, blocks);
+    const s = ensureSession(leafId, initialCwdRef.current, blocks, privateTab);
     setBlockMode(s.blockMode);
     const cb = () => setBlockMode(sessions.get(leafId)?.blockMode ?? "prompt");
     s.blockListeners.add(cb);

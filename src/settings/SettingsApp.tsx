@@ -22,6 +22,7 @@ import {
   UserMultiple02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { type JSX, useEffect, useMemo, useState } from "react";
 import { AboutSection } from "./sections/AboutSection";
@@ -235,6 +236,14 @@ export function SettingsApp() {
         if (tab) setActive(tab);
       },
     );
+    // The emit fired while this webview was still booting is lost — pull
+    // the stashed tab once the listener is up.
+    void invoke<string | null>("settings_take_pending_tab")
+      .then((t) => {
+        const tab = normalizeTab(t);
+        if (tab) setActive(tab);
+      })
+      .catch(() => {});
     return () => {
       void unlistenPromise.then((un) => un());
     };

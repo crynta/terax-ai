@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { setZoomLevel } from "@/modules/settings/store";
+import { useCallback, useEffect, useRef } from "react";
 
 const ZOOM_STEP = 0.1;
 const MIN_ZOOM = 0.5;

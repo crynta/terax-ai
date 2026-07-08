@@ -5,7 +5,9 @@ export function historySuggest(line: string): Promise<string | null> {
 }
 
 export function historyCommands(prefix: string, limit = 50): Promise<string[]> {
-  return invoke<string[]>("history_commands", { prefix, limit }).catch(() => []);
+  return invoke<string[]>("history_commands", { prefix, limit }).catch(
+    () => [],
+  );
 }
 
 export function historyList(query: string, limit = 200): Promise<string[]> {

@@ -17,7 +17,9 @@ const SUPPORTED_HOSTS: Record<string, RemoteWebHost> = {
   "www.bitbucket.org": "bitbucket",
 };
 
-export function parseRemoteWebUrl(raw: string | null | undefined): RemoteWebInfo | null {
+export function parseRemoteWebUrl(
+  raw: string | null | undefined,
+): RemoteWebInfo | null {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;

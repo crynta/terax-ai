@@ -36,7 +36,10 @@ export function createAutocompleteKeyWatcher(
 
   let unlistenKeys: (() => void) | undefined;
   void onKeysChanged(() => void refresh()).then((un) => {
-    unlistenKeys = un;
+    // Disposed before the listener resolved — release it immediately, or it
+    // leaks for the app's lifetime.
+    if (cancelled) un();
+    else unlistenKeys = un;
   });
   const unsubPrefs = usePreferencesStore.subscribe((state, prev) => {
     if (

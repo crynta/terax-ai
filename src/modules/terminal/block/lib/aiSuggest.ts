@@ -6,6 +6,7 @@
 // bundle, and a static import here would drag the whole AI SDK stack into it
 // (locked by eager-budget.test.ts).
 
+import { redactSensitive } from "@/modules/ai/lib/redact";
 import type { ShellFixRequest } from "@/modules/editor/lib/autocomplete/provider";
 
 type Impl = {
@@ -31,6 +32,10 @@ export type AiShellSuggest = {
   /** Up to 3 predicted full command lines — extensions of the typed text,
    *  or corrections of obvious typos. Null when the model passes. */
   suggest: (line: string) => Promise<string[] | null>;
+  /** Supersede any pending request without a new one — called when a newer
+   *  keystroke was answered from history, so a stale AI response can't
+   *  replace the already-shown candidates. */
+  cancelPending: () => void;
   dispose: () => void;
 };
 
@@ -55,6 +60,9 @@ export function createAiShellSuggest(opts: {
 
   const suggest = async (line: string): Promise<string[] | null> => {
     const { deps, provider } = await loadImpl();
+    // First call can beat the async key watcher — resolve directly instead
+    // of silently dropping the first suggestion with a null key.
+    apiKey ??= await deps.resolveAutocompleteApiKey();
     const prefs = deps.snapshotAutocompletePrefs(apiKey);
     if (!prefs.enabled) return null;
     const minChars = (
@@ -79,7 +87,9 @@ export function createAiShellSuggest(opts: {
     inflight = ctrl;
     try {
       const cands = await provider.requestShellSuggestion(
-        { line, cwd, recent: opts.getRecent() },
+        // History routinely contains `export TOKEN=...` lines — scrub values
+        // before they leave the machine (the typed line itself is the query).
+        { line, cwd, recent: opts.getRecent().map(redactSensitive) },
         prefs,
         ctrl.signal,
       );
@@ -105,6 +115,11 @@ export function createAiShellSuggest(opts: {
 
   return {
     suggest,
+    cancelPending: () => {
+      seq++;
+      inflight?.abort();
+      inflight = null;
+    },
     dispose: () => {
       disposed = true;
       disposeWatcher?.();
@@ -127,7 +142,17 @@ export async function fixFailedCommand(
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), 20_000);
   try {
-    const fixed = await provider.requestCommandFix(req, prefs, ctrl.signal);
+    // Failed-command output is exactly where pasted secrets end up — redact
+    // both sides before shipping them to the provider.
+    const fixed = await provider.requestCommandFix(
+      {
+        ...req,
+        command: redactSensitive(req.command),
+        output: redactSensitive(req.output),
+      },
+      prefs,
+      ctrl.signal,
+    );
     return fixed && fixed !== req.command ? fixed : null;
   } finally {
     clearTimeout(timeout);

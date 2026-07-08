@@ -16,13 +16,13 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtShortcut, MOD_KEY, SHIFT_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   ALL_LANGUAGES,
   EXPOSED_LANGUAGES,
 } from "@/modules/editor/lib/languageDefinitions";
 import { resolveDisplayName } from "@/modules/editor/lib/languageResolver";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   commandBasename,
   useShellToolStore,
@@ -504,6 +504,15 @@ export function TabBar({
                       role="button"
                       aria-label="Close tab"
                       data-no-drag
+                      // data-no-drag exempts the cross from the trigger's
+                      // preventDefault branch, so without this Radix would
+                      // activate the tab on mousedown right before onClick
+                      // closes it — focus would land on ITS neighbor instead
+                      // of staying where the user was working.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose(t.id);

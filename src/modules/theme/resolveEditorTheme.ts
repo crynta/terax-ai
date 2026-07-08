@@ -1,8 +1,8 @@
 import {
   EDITOR_THEME_AUTO,
-  isEditorThemeId,
   type EditorThemeId,
   type EditorThemePref,
+  isEditorThemeId,
 } from "@/modules/settings/store";
 import { getBuiltinTheme, getDefaultTheme } from "./themes";
 import type { Theme } from "./types";

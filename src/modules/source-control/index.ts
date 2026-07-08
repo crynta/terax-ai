@@ -1,7 +1,7 @@
 export { SourceControlPanel } from "./SourceControlPanelLazy";
 export {
   getSourceControlRemoteIndicator,
-  useSourceControl,
   type SourceControlSummary,
+  useSourceControl,
 } from "./useSourceControl";
 export { useSourceControlContext } from "./useSourceControlContext";

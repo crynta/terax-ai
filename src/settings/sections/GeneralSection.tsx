@@ -360,8 +360,12 @@ const VIM_MODES: { value: VimKeymap["mode"]; label: string }[] = [
 function VimKeymapsGroup() {
   const keymaps = usePreferencesStore((s) => s.vimKeymaps);
   const update = (next: VimKeymap[]) => void setVimKeymaps(next);
+  // Live store, not the render snapshot: a blur-commit may still be round-
+  // tripping through the async store when the next click patches, and a
+  // snapshot-based write would erase it.
+  const latest = () => usePreferencesStore.getState().vimKeymaps;
   const patch = (i: number, changes: Partial<VimKeymap>) =>
-    update(keymaps.map((m, idx) => (idx === i ? { ...m, ...changes } : m)));
+    update(latest().map((m, idx) => (idx === i ? { ...m, ...changes } : m)));
 
   return (
     <div className="flex flex-col gap-2">
@@ -374,7 +378,7 @@ function VimKeymapsGroup() {
           size="xs"
           className="h-6 gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
           onClick={() =>
-            update([...keymaps, { lhs: "", rhs: "", mode: "insert" }])
+            update([...latest(), { lhs: "", rhs: "", mode: "insert" }])
           }
         >
           <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={2} />
@@ -432,7 +436,7 @@ function VimKeymapsGroup() {
             </Select>
             <button
               type="button"
-              onClick={() => update(keymaps.filter((_, idx) => idx !== i))}
+              onClick={() => update(latest().filter((_, idx) => idx !== i))}
               title="Remove binding"
               aria-label="Remove binding"
               className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"

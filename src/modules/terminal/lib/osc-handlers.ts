@@ -76,9 +76,11 @@ export function registerPromptTracker(
       if (state) state.inCommand = true;
       onCommandState?.(true, data.startsWith("C;") ? data.slice(2) : undefined);
     } else if (data.startsWith("D")) {
-      // OSC 133 D — command ends; "D;<code>" carries the exit status.
+      // OSC 133 D — command ends; "D;<code>" carries the exit status. A bare
+      // "D;" means "unknown", not success: Number("") would be 0.
       if (state) state.inCommand = false;
-      const code = data.startsWith("D;") ? Number(data.slice(2)) : NaN;
+      const raw = data.startsWith("D;") ? data.slice(2).trim() : "";
+      const code = raw === "" ? NaN : Number(raw);
       onCommandState?.(false, undefined, Number.isFinite(code) ? code : null);
     }
     return true;

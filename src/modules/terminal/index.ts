@@ -1,5 +1,13 @@
-export { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
-export { TerminalStack } from "./TerminalStack";
+export {
+  findLeafCwd,
+  hasLeaf,
+  isLeaf,
+  leafIds,
+  type PaneId,
+  type PaneNode,
+  type SplitDir,
+} from "./lib/panes";
+export { useTerminalFileDrop } from "./lib/useTerminalFileDrop";
 export {
   clearFocusedTerminal,
   disposeSession,
@@ -10,13 +18,5 @@ export {
   whenSessionReady,
   writeToSession,
 } from "./lib/useTerminalSession";
-export { useTerminalFileDrop } from "./lib/useTerminalFileDrop";
-export {
-  findLeafCwd,
-  hasLeaf,
-  isLeaf,
-  leafIds,
-  type PaneId,
-  type PaneNode,
-  type SplitDir,
-} from "./lib/panes";
+export { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
+export { TerminalStack } from "./TerminalStack";

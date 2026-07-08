@@ -67,7 +67,10 @@ export function buildSearchTools(ctx: ToolContext) {
       }) => {
         const r = resolveRoot(root, ctx);
         if (!r.ok) return { error: r.error };
-        const safety = await checkReadableCanonical(r.path, native.canonicalize);
+        const safety = await checkReadableCanonical(
+          r.path,
+          native.canonicalize,
+        );
         if (!safety.ok) return { error: safety.reason, root: r.path };
         r.path = safety.canonical;
         const cap = Math.min(max_results ?? 30, 500);
@@ -107,7 +110,10 @@ export function buildSearchTools(ctx: ToolContext) {
       execute: async ({ pattern, root, max_results }) => {
         const r = resolveRoot(root, ctx);
         if (!r.ok) return { error: r.error };
-        const safety = await checkReadableCanonical(r.path, native.canonicalize);
+        const safety = await checkReadableCanonical(
+          r.path,
+          native.canonicalize,
+        );
         if (!safety.ok) return { error: safety.reason, root: r.path };
         r.path = safety.canonical;
         try {

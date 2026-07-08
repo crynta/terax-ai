@@ -1,14 +1,16 @@
-import { Vim } from "@replit/codemirror-vim";
-import { type EditorView, ViewPlugin } from "@codemirror/view";
-import type { Extension } from "@codemirror/state";
 import type { VimKeymap } from "@/modules/settings/store";
+import type { Extension } from "@codemirror/state";
+import { type EditorView, ViewPlugin } from "@codemirror/view";
+import { Vim } from "@replit/codemirror-vim";
 
 export type VimHandlers = { save: () => void; close: () => void };
 
 const handlers = new WeakMap<EditorView, VimHandlers>();
 
 /** A CodeMirror extension that binds :w / :q handlers to this view. */
-export function vimHandlersExtension(getHandlers: () => VimHandlers): Extension {
+export function vimHandlersExtension(
+  getHandlers: () => VimHandlers,
+): Extension {
   return ViewPlugin.define((view) => {
     handlers.set(view, getHandlers());
     return {

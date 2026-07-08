@@ -7,5 +7,8 @@ const LABELS: Record<string, string> = {
 
 export function displayAgent(agent: string): string {
   if (!agent) return "Agent";
-  return LABELS[agent.toLowerCase()] ?? agent.charAt(0).toUpperCase() + agent.slice(1);
+  return (
+    LABELS[agent.toLowerCase()] ??
+    agent.charAt(0).toUpperCase() + agent.slice(1)
+  );
 }

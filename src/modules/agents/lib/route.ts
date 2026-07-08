@@ -36,7 +36,9 @@ export function routeAgentNotification({
   if (!usePreferencesStore.getState().agentNotifications) return;
   if (focused && visible) return;
 
-  useAgentStore.getState().pushNotification({ source, agent, kind, tabId, leafId });
+  useAgentStore
+    .getState()
+    .pushNotification({ source, agent, kind, tabId, leafId });
 
   if (!focused) {
     void osNotify(title, body ?? agent);

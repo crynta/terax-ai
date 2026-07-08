@@ -1,32 +1,32 @@
+export { AgentStatusPill } from "./components/AgentStatusPill";
+export { LocalAgentNotificationsBridge } from "./components/LocalAgentNotificationsBridge";
 export {
   AgentRunBridge,
   AiInputBarConnect,
   AiMiniWindow,
   SelectionAskAi,
 } from "./components/lazy";
-export { AgentStatusPill } from "./components/AgentStatusPill";
 export { useAiBootstrap } from "./hooks/useAiBootstrap";
 export { useSelectionAskAi } from "./hooks/useSelectionAskAi";
-export { useAiLiveBridge } from "./lib/useAiLiveBridge";
-export { LocalAgentNotificationsBridge } from "./components/LocalAgentNotificationsBridge";
 export {
-  EMPTY_PROVIDER_KEYS,
-  getAllKeys,
-  getAllCustomEndpointKeys,
-  getKey,
-  setKey,
+  type CustomEndpointKeys,
   clearKey,
+  EMPTY_PROVIDER_KEYS,
+  getAllCustomEndpointKeys,
+  getAllKeys,
+  getKey,
   hasAnyKey,
   type ProviderKeys,
-  type CustomEndpointKeys,
+  setKey,
 } from "./lib/keyring";
+export { useAiLiveBridge } from "./lib/useAiLiveBridge";
 export {
+  type AgentMeta,
+  type AgentRunStatus,
   getActiveProviderKey,
   hasKeyForModel,
   stop,
   useChatStore,
-  type AgentMeta,
-  type AgentRunStatus,
 } from "./store/chatStore";
 // Heavy chat runtime (@ai-sdk/react + ai SDK) is intentionally NOT re-exported
 // here: this barrel is eagerly imported by App, and a static re-export would

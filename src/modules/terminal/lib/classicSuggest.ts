@@ -18,6 +18,30 @@ const prefs = () => usePreferencesStore.getState();
 
 type Candidate = { text: string; ai: boolean; fix?: boolean };
 
+// Approximate terminal cell width: CJK and emoji occupy two cells. Close
+// enough for menu anchoring; exact width lives in xterm's internals.
+function isWideCodepoint(cp: number): boolean {
+  return (
+    (cp >= 0x1100 && cp <= 0x115f) ||
+    (cp >= 0x2e80 && cp <= 0xa4cf) ||
+    (cp >= 0xac00 && cp <= 0xd7a3) ||
+    (cp >= 0xf900 && cp <= 0xfaff) ||
+    (cp >= 0xfe30 && cp <= 0xfe4f) ||
+    (cp >= 0xff00 && cp <= 0xff60) ||
+    (cp >= 0xffe0 && cp <= 0xffe6) ||
+    (cp >= 0x1f300 && cp <= 0x1faff) ||
+    (cp >= 0x20000 && cp <= 0x3fffd)
+  );
+}
+
+function cellWidth(s: string): number {
+  let w = 0;
+  for (const ch of s) {
+    w += isWideCodepoint(ch.codePointAt(0) ?? 0) ? 2 : 1;
+  }
+  return w;
+}
+
 export type ClassicSuggestEngine = {
   /** OSC 133 B — the shell is reading input at the current cursor cell. */
   onInputStart: () => void;
@@ -36,8 +60,12 @@ export function createClassicSuggest(opts: {
   term: Terminal;
   write: (data: string) => void;
   getCwd: () => string | null;
+  /** False for private tabs: local history menu only — no line, history,
+   *  buffer or NL text may ever leave the machine. */
+  allowAi?: boolean;
 }): ClassicSuggestEngine {
   const { term } = opts;
+  const allowAi = opts.allowAi ?? true;
 
   let recent: string[] = [];
   const refreshRecent = () => {
@@ -47,10 +75,14 @@ export function createClassicSuggest(opts: {
   };
   refreshRecent();
 
-  const ai: AiShellSuggest = createAiShellSuggest({
-    getCwd: opts.getCwd,
-    getRecent: () => recent,
-  });
+  // Not even constructed for private tabs — its key watcher lazy-loads the
+  // AI stack, and no code path here may call the model.
+  const ai: AiShellSuggest | null = allowAi
+    ? createAiShellSuggest({
+        getCwd: opts.getCwd,
+        getRecent: () => recent,
+      })
+    : null;
 
   let atInput = false;
   let inputLine = -1; // absolute buffer row of the input start
@@ -69,6 +101,9 @@ export function createClassicSuggest(opts: {
     output: string;
     exitCode: number | null;
   } | null = null;
+
+  // Bumped on every new prompt: stale async fix offers check it.
+  let inputEpoch = 0;
 
   let deco: IDecoration | null = null;
   let decoMarker: IMarker | null = null;
@@ -152,7 +187,10 @@ export function createClassicSuggest(opts: {
       if (!decoMarker) return;
       const d = term.registerDecoration({
         marker: decoMarker,
-        x: Math.max(0, buf.cursorX - Math.min(lastLine.length, buf.cursorX)),
+        x: Math.max(
+          0,
+          buf.cursorX - Math.min(cellWidth(lastLine), buf.cursorX),
+        ),
         width: 1,
       });
       if (!d) return;
@@ -206,15 +244,21 @@ export function createClassicSuggest(opts: {
       return;
     }
     // Correction: backspace to the common prefix, then type the difference.
+    // Code points, not UTF-16 units: readline erases one CHARACTER per DEL,
+    // and a unit count overshoots on emoji, eating a char before the fix.
+    const lineCp = Array.from(line);
+    const textCp = Array.from(c.text);
     let common = 0;
     while (
-      common < line.length &&
-      common < c.text.length &&
-      line[common] === c.text[common]
+      common < lineCp.length &&
+      common < textCp.length &&
+      lineCp[common] === textCp[common]
     ) {
       common++;
     }
-    opts.write("\x7f".repeat(line.length - common) + c.text.slice(common));
+    opts.write(
+      "\x7f".repeat(lineCp.length - common) + textCp.slice(common).join(""),
+    );
   };
 
   const recompute = () => {
@@ -230,7 +274,16 @@ export function createClassicSuggest(opts: {
     }
     if (line === lastLine) return;
     lastLine = line;
-    if (dismissedLine !== null && dismissedLine !== line) dismissedLine = null;
+    if (
+      dismissedLine !== null &&
+      dismissedLine !== line &&
+      // Keep the guard while the accepted text's PTY echo lands chunk by
+      // chunk (the visible line grows toward dismissedLine) — clearing it
+      // here would pop the menu right back over the accepted command.
+      !dismissedLine.startsWith(line)
+    ) {
+      dismissedLine = null;
+    }
 
     // Instant local narrowing of what's already on screen.
     const narrowed = candidates.filter(
@@ -248,7 +301,7 @@ export function createClassicSuggest(opts: {
     void (async () => {
       // "# task" lines go straight to the model — history can't help.
       const nl = /^\s*#\s*\S/.test(line);
-      if (nl && !prefs().nlCommandsEnabled) return;
+      if (nl && (!ai || !prefs().nlCommandsEnabled)) return;
       const hist = nl ? [] : await historyList(line, 50);
       if (disposed || currentLine() !== line) return;
       const seen = new Set<string>();
@@ -261,11 +314,15 @@ export function createClassicSuggest(opts: {
         if (items.length >= prefs().terminalSuggestMaxItems) break;
       }
       if (items.length > 0) {
+        // History answered — a still-settling AI request for an OLDER line
+        // must not come back later and replace these.
+        ai?.cancelPending();
         showCandidates(items);
         return;
       }
       // History is silent — ask the model (debounced/cached inside). The
       // answers may extend the typed text OR correct a typo in it.
+      if (!ai) return;
       const cands = await ai.suggest(line);
       if (!cands || disposed) return;
       const now = currentLine();
@@ -286,7 +343,15 @@ export function createClassicSuggest(opts: {
     timer = setTimeout(recompute, prefs().terminalSuggestDelayMs);
   };
 
-  const subs = [term.onWriteParsed(schedule), term.onCursorMove(schedule)];
+  const subs = [
+    term.onWriteParsed(schedule),
+    term.onCursorMove(schedule),
+    // Scrolling detaches the anchor from view; an invisible menu must not
+    // keep swallowing Tab/arrows/Escape.
+    term.onScroll(() => {
+      if (candidates.length > 0) hideMenu();
+    }),
+  ];
 
   /** Last ~25 buffer rows above the cursor — command output tail for Fix. */
   const bufferTail = (): string => {
@@ -302,10 +367,13 @@ export function createClassicSuggest(opts: {
   };
 
   const offerFix = (req: NonNullable<typeof pendingFix>) => {
+    const epoch = inputEpoch;
     void fixFailedCommand({ ...req, cwd: opts.getCwd() })
       .then((fixed) => {
         if (!fixed || disposed || !atInput) return;
-        // Only while the prompt is still empty — typing supersedes the offer.
+        // Another command ran since this failure — the fix is out of
+        // context; and only while the prompt is still empty.
+        if (epoch !== inputEpoch) return;
         if ((currentLine() ?? "") !== "") return;
         showCandidates([{ text: fixed, ai: true, fix: true }]);
       })
@@ -316,6 +384,7 @@ export function createClassicSuggest(opts: {
     onInputStart: () => {
       const buf = term.buffer.active;
       atInput = true;
+      inputEpoch++;
       inputLine = buf.baseY + buf.cursorY;
       inputCol = buf.cursorX;
       lastLine = "";
@@ -336,6 +405,7 @@ export function createClassicSuggest(opts: {
       if (!running) {
         // D with a non-zero code: remember the failure for the next prompt.
         if (
+          allowAi &&
           exitCode != null &&
           exitCode !== 0 &&
           lastCommand &&
@@ -388,7 +458,7 @@ export function createClassicSuggest(opts: {
       if (timer) clearTimeout(timer);
       for (const s of subs) s.dispose();
       hideMenu();
-      ai.dispose();
+      ai?.dispose();
     },
   };
 }

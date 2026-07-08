@@ -1,4 +1,7 @@
-import type { GitChangedFile, GitStatusSnapshot } from "@/modules/ai/lib/native";
+import type {
+  GitChangedFile,
+  GitStatusSnapshot,
+} from "@/modules/ai/lib/native";
 
 export type GitStatusCode = "M" | "A" | "D" | "U" | "R";
 
