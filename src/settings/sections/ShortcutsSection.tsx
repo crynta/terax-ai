@@ -30,6 +30,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { useMemo, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { ShortcutRecorder } from "../components/ShortcutRecorder";
+import { useEffect, useMemo, useState } from "react";
+import { SectionHeader } from "../components/SectionHeader";
 
 export function ShortcutsSection() {
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);

@@ -255,6 +255,9 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle conversation window",
     group: "AI",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "m" }],
+    label: "Toggle AI chat window",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "i" }],
   },
   {
     id: "ai.askSelection",
@@ -358,7 +361,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "view.zenMode",
     label: "Toggle zen mode",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "z" }],
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "'" }],
   },
   // Editor history. App routes these to the focused editor pane's
   // undo()/redo() (see App's shortcut handlers; disabled outside editor

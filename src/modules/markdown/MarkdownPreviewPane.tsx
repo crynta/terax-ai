@@ -86,6 +86,8 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
             <Streamdown
               className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
               components={components}
+              mode="static"
+              parseIncompleteMarkdown={false}
             >
               {status.content}
             </Streamdown>
