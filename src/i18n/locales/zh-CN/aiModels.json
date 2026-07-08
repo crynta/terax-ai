@@ -42,7 +42,7 @@
   "modelDesc.gpt-5.5": "前沿的推理与编码能力。",
   "modelDesc.gpt-5.5-pro": "面向最艰难的专业与 agentic 任务的最高准确度版本。",
   "modelDesc.gpt-5.4-mini": "低成本下反应迅捷的默认选择。",
-  "modelDesc.gpt-5.4-nano": "小巧即时——非常适合自动补全。",
+  "modelDesc.gpt-5.4-nano": "小巧即时，非常适合自动补全。",
   "modelDesc.gpt-5.3-codex": "为代码与工具调用调优。",
   "modelDesc.gpt-4.1-mini": "超低价的批量任务主力。",
   "modelDesc.claude-opus-4-8": "Anthropic 最强的模型，擅长复杂推理与长程 agentic 编码。",

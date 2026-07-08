@@ -35,7 +35,7 @@
   },
   "pull": {
     "pulling": "Pulling…",
-    "diverged": "Branch diverged — resolve in terminal",
+    "diverged": "Branch diverged - resolve in terminal",
     "noUpstream": "No upstream configured",
     "upToDate": "Already up to date",
     "commits": "Pull {{count}} commits (fast-forward)"
@@ -62,7 +62,7 @@
   "changedFiles": "Changed files",
   "divergedBanner": {
     "title": "Diverged from upstream",
-    "detail": "— resolve in terminal"
+    "detail": "- resolve in terminal"
   },
   "changes": "Changes",
   "all": "All",

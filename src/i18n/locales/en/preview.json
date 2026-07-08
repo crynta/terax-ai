@@ -8,7 +8,7 @@
   },
   "empty": {
     "title": "Nothing to preview yet",
-    "description": "Type a URL above, or open the <ports>Ports</ports> dropdown to jump straight to your running dev server. Public sites often block embedding — open them in your browser via the link icon if you see a blank page."
+    "description": "Type a URL above, or open the <ports>Ports</ports> dropdown to jump straight to your running dev server. Public sites often block embedding - open them in your browser via the link icon if you see a blank page."
   },
   "addressBar": {
     "reloadTitle": "Reload",

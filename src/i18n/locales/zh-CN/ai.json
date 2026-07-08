@@ -43,7 +43,7 @@
     "deleteSession": "删除会话",
     "empty": {
       "title": "向 Terax 提问",
-      "description": "Terax 能看到当前活动的终端——cwd、最近的命令和输出。"
+      "description": "Terax 能看到当前活动的终端：cwd、最近的命令和输出。"
     }
   },
   "toolApproval": {
@@ -88,11 +88,11 @@
     "tabFavorites": "收藏",
     "tabRecent": "最近",
     "allProviders": "所有提供方",
-    "notConfigured": "{{label}} — 未配置",
+    "notConfigured": "{{label}}：未配置",
     "openaiCompatible": "OpenAI Compatible",
     "modelTitle": "模型：{{label}}",
-    "modelNoKey": "{{label}} — 未配置密钥",
-    "noFavorites": "还没有收藏——给模型加星即可固定到这里。",
+    "modelNoKey": "{{label}}：未配置密钥",
+    "noFavorites": "还没有收藏，给模型加星即可固定到这里。",
     "noRecent": "没有最近使用的模型。",
     "noMatch": "没有匹配的模型。",
     "configureCta": "配置 {{label}} 以使用这些模型。",
@@ -110,11 +110,11 @@
     "emptyTitle": "向 Terax 提问",
     "emptyDescription": "解释命令输出、修复错误、生成片段或运行任务。",
     "thinking": "思考中…",
-    "continuePrompt": "从你停下的地方继续。不要复述——直接接着做。",
+    "continuePrompt": "从你停下的地方继续。不要复述，直接接着做。",
     "somethingWentWrong": "出错了。",
     "dismiss": "忽略",
-    "contextCompacted_one": "上下文已压缩——省略了 {{count}} 条较早的工具结果以节省 token。",
-    "contextCompacted_other": "上下文已压缩——省略了 {{count}} 条较早的工具结果以节省 token。",
+    "contextCompacted_one": "上下文已压缩，省略了 {{count}} 条较早的工具结果以节省 token。",
+    "contextCompacted_other": "上下文已压缩，省略了 {{count}} 条较早的工具结果以节省 token。",
     "hitStepLimit": "已达到步数上限。继续以接着运行。",
     "continue": "继续",
     "read": "读取",

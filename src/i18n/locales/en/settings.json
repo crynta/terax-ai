@@ -53,7 +53,7 @@
       "webgl": {
         "title": "Use WebGL renderer",
         "moreInfo": "More info about WebGL renderer",
-        "tooltip": "xterm's WebGL renderer caches glyphs in a GPU texture atlas. On some macOS setups (especially with Nerd Fonts), the atlas corrupts and terminal text becomes unreadable. Turn this off as a fallback — performance dips slightly, but text renders correctly via the DOM renderer.",
+        "tooltip": "xterm's WebGL renderer caches glyphs in a GPU texture atlas. On some macOS setups (especially with Nerd Fonts), the atlas corrupts and terminal text becomes unreadable. Turn this off as a fallback - performance dips slightly, but text renders correctly via the DOM renderer.",
         "description": "Hardware-accelerated rendering. Turn off if text shows corruption or blank tiles."
       },
       "cursorBlink": {
@@ -227,7 +227,7 @@
       "label": "Defaults",
       "chatModel": "Chat model",
       "autocomplete": "Autocomplete",
-      "notConnectedHint": "{{provider}} isn't connected — add it below."
+      "notConnectedHint": "{{provider}} isn't connected - add it below."
     },
     "voice": {
       "title": "Voice input",
@@ -255,7 +255,7 @@
       "removeEndpoint": "Remove endpoint",
       "test": "Test",
       "testing": "Testing…",
-      "reachable": "Reachable — server responded.",
+      "reachable": "Reachable - server responded.",
       "unreachable": "Could not reach the server.",
       "baseUrl": "Base URL",
       "modelId": "Model ID",
@@ -272,7 +272,7 @@
       "enterKey": "Enter your API key.",
       "keyPrefixHint": "{{provider}} keys start with \"{{prefix}}\".",
       "failedSave": "Failed to save: {{error}}",
-      "optionalKeyPlaceholder": "Optional — leave empty for unauthenticated endpoints"
+      "optionalKeyPlaceholder": "Optional - leave empty for unauthenticated endpoints"
     }
   },
   "agents": {
@@ -305,7 +305,7 @@
       "name": "Name",
       "namePlaceholder": "e.g. Test Engineer",
       "description": "Description",
-      "descriptionPlaceholder": "One line — shown in the agent picker",
+      "descriptionPlaceholder": "One line - shown in the agent picker",
       "instructions": "Instructions",
       "instructionsPlaceholder": "Persona & rules. Appended to Terax's core system prompt."
     },
@@ -317,7 +317,7 @@
       "name": "Name",
       "namePlaceholder": "e.g. Pre-merge review checklist",
       "description": "Description",
-      "descriptionPlaceholder": "One line — shown in the # picker",
+      "descriptionPlaceholder": "One line - shown in the # picker",
       "content": "Content",
       "contentPlaceholder": "Inserted into the prompt as a <snippet> block when you use #handle.",
       "errRequired": "Required.",
@@ -339,7 +339,7 @@
     "reportIssue": "Report an issue",
     "update": {
       "upToDate": "You're up to date",
-      "checkFailed": "Check failed — retry",
+      "checkFailed": "Check failed - retry",
       "checking": "Checking…",
       "downloading": "Downloading…",
       "restartToInstall": "Restart to install",

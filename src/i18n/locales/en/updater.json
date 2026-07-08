@@ -3,7 +3,7 @@
   "downloading": "Downloading update…",
   "available": "Terax v{{version}} is available",
   "restartToFinish": "Restart Terax to finish installing.",
-  "progress": "{{percent}}% — {{size}}",
+  "progress": "{{percent}}% - {{size}}",
   "manualDescription": "You're on v{{currentVersion}}. Pick your distro and run the command, or grab the package from GitHub.",
   "newVersionReady": "A new version is ready to install.",
   "later": "Later",

@@ -42,7 +42,7 @@
   "modelDesc.gpt-5.5": "Frontier reasoning and code.",
   "modelDesc.gpt-5.5-pro": "Highest-accuracy version for the hardest professional and agentic tasks.",
   "modelDesc.gpt-5.4-mini": "Snappy default at low cost.",
-  "modelDesc.gpt-5.4-nano": "Tiny and instant — great for autocomplete.",
+  "modelDesc.gpt-5.4-nano": "Tiny and instant - great for autocomplete.",
   "modelDesc.gpt-5.3-codex": "Tuned for code and tool use.",
   "modelDesc.gpt-4.1-mini": "Ultra-cheap workhorse for bulk tasks.",
   "modelDesc.claude-opus-4-8": "Anthropic's most capable model for complex reasoning and long-horizon agentic coding.",

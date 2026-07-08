@@ -53,7 +53,7 @@
       "webgl": {
         "title": "使用 WebGL 渲染器",
         "moreInfo": "关于 WebGL 渲染器的更多信息",
-        "tooltip": "xterm 的 WebGL 渲染器会把字形缓存在 GPU 纹理图集中。在某些 macOS 环境下（尤其是使用 Nerd Fonts 时），图集可能损坏、导致终端文字无法辨认。作为回退可关闭它——性能略有下降，但文字会通过 DOM 渲染器正确显示。",
+        "tooltip": "xterm 的 WebGL 渲染器会把字形缓存在 GPU 纹理图集中。在某些 macOS 环境下（尤其是使用 Nerd Fonts 时），图集可能损坏、导致终端文字无法辨认。作为回退可关闭它，性能略有下降，但文字会通过 DOM 渲染器正确显示。",
         "description": "硬件加速渲染。若文字出现损坏或空白方块，请关闭。"
       },
       "cursorBlink": {
@@ -227,7 +227,7 @@
       "label": "默认设置",
       "chatModel": "对话模型",
       "autocomplete": "自动补全",
-      "notConnectedHint": "{{provider}} 尚未连接——请在下方添加。"
+      "notConnectedHint": "{{provider}} 尚未连接，请在下方添加。"
     },
     "voice": {
       "title": "语音输入",
@@ -255,7 +255,7 @@
       "removeEndpoint": "移除端点",
       "test": "测试",
       "testing": "测试中…",
-      "reachable": "可访问——服务器已响应。",
+      "reachable": "可访问，服务器已响应。",
       "unreachable": "无法连接到服务器。",
       "baseUrl": "Base URL",
       "modelId": "Model ID",
@@ -272,7 +272,7 @@
       "enterKey": "请输入你的 API key。",
       "keyPrefixHint": "{{provider}} 的密钥以 \"{{prefix}}\" 开头。",
       "failedSave": "保存失败：{{error}}",
-      "optionalKeyPlaceholder": "可选——无需鉴权的端点可留空"
+      "optionalKeyPlaceholder": "可选，无需鉴权的端点可留空"
     }
   },
   "agents": {
@@ -305,7 +305,7 @@
       "name": "名称",
       "namePlaceholder": "例如：测试工程师",
       "description": "描述",
-      "descriptionPlaceholder": "一行说明——显示在智能体选择器中",
+      "descriptionPlaceholder": "一行说明，显示在智能体选择器中",
       "instructions": "指令",
       "instructionsPlaceholder": "角色人设与规则。会追加到 Terax 的核心系统提示词之后。"
     },
@@ -317,7 +317,7 @@
       "name": "名称",
       "namePlaceholder": "例如：合并前审查清单",
       "description": "描述",
-      "descriptionPlaceholder": "一行说明——显示在 # 选择器中",
+      "descriptionPlaceholder": "一行说明，显示在 # 选择器中",
       "content": "内容",
       "contentPlaceholder": "使用 #handle 时，会作为 <snippet> 块插入到提示词中。",
       "errRequired": "必填。",
@@ -339,7 +339,7 @@
     "reportIssue": "反馈问题",
     "update": {
       "upToDate": "已是最新版本",
-      "checkFailed": "检查失败——重试",
+      "checkFailed": "检查失败，重试",
       "checking": "检查中…",
       "downloading": "下载中…",
       "restartToInstall": "重启以安装",

@@ -7,7 +7,7 @@
   "searchPlaceholder": "搜索文件…",
   "searching": "搜索中…",
   "noMatches": "无匹配结果",
-  "partialResults": "仅显示部分结果 — 请细化搜索条件。",
+  "partialResults": "仅显示部分结果，请细化搜索条件。",
   "menu": {
     "open": "打开",
     "openInTerminal": "在终端中打开",

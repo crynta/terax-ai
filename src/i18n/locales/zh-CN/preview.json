@@ -8,7 +8,7 @@
   },
   "empty": {
     "title": "暂无可预览内容",
-    "description": "在上方输入 URL，或打开 <ports>Ports</ports> 下拉菜单直接跳转到正在运行的开发服务器。公共网站通常会阻止嵌入——如果看到空白页面，请通过链接图标在浏览器中打开。"
+    "description": "在上方输入 URL，或打开 <ports>Ports</ports> 下拉菜单直接跳转到正在运行的开发服务器。公共网站通常会阻止嵌入，如果看到空白页面，请通过链接图标在浏览器中打开。"
   },
   "addressBar": {
     "reloadTitle": "重新加载",

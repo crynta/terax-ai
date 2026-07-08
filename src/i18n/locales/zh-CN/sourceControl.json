@@ -34,7 +34,7 @@
   },
   "pull": {
     "pulling": "正在拉取…",
-    "diverged": "分支已分叉 — 请在终端中解决",
+    "diverged": "分支已分叉，请在终端中解决",
     "noUpstream": "未配置上游分支",
     "upToDate": "已是最新",
     "commits": "拉取 {{count}} 个提交（快进）"
@@ -61,7 +61,7 @@
   "changedFiles": "已更改文件",
   "divergedBanner": {
     "title": "已与上游分叉",
-    "detail": "— 请在终端中解决"
+    "detail": "- 请在终端中解决"
   },
   "changes": "更改",
   "all": "全部",

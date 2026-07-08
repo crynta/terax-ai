@@ -43,7 +43,7 @@
     "deleteSession": "Delete session",
     "empty": {
       "title": "Ask Terax anything",
-      "description": "Terax sees the active terminal — cwd, recent commands, and output."
+      "description": "Terax sees the active terminal - cwd, recent commands, and output."
     }
   },
   "toolApproval": {
@@ -88,11 +88,11 @@
     "tabFavorites": "Favorites",
     "tabRecent": "Recent",
     "allProviders": "All providers",
-    "notConfigured": "{{label}} — not configured",
+    "notConfigured": "{{label}} - not configured",
     "openaiCompatible": "OpenAI Compatible",
     "modelTitle": "Model: {{label}}",
-    "modelNoKey": "{{label}} — no key configured",
-    "noFavorites": "No favorites yet — star a model to pin it here.",
+    "modelNoKey": "{{label}} - no key configured",
+    "noFavorites": "No favorites yet - star a model to pin it here.",
     "noRecent": "No recently-used models.",
     "noMatch": "No models match.",
     "configureCta": "Configure {{label}} to use these models.",
@@ -110,11 +110,11 @@
     "emptyTitle": "Ask Terax anything",
     "emptyDescription": "Explain command output, fix errors, generate snippets, or run a task.",
     "thinking": "Thinking…",
-    "continuePrompt": "Continue from where you stopped. Don't recap — just keep going.",
+    "continuePrompt": "Continue from where you stopped. Don't recap - just keep going.",
     "somethingWentWrong": "Something went wrong.",
     "dismiss": "Dismiss",
-    "contextCompacted_one": "Context compacted — {{count}} older tool result elided to save tokens.",
-    "contextCompacted_other": "Context compacted — {{count}} older tool results elided to save tokens.",
+    "contextCompacted_one": "Context compacted - {{count}} older tool result elided to save tokens.",
+    "contextCompacted_other": "Context compacted - {{count}} older tool results elided to save tokens.",
     "hitStepLimit": "Hit the step limit. Continue to keep going.",
     "continue": "Continue",
     "read": "Read",
