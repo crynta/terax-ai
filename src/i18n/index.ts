@@ -131,6 +131,11 @@ export async function setI18nLanguage(lng: Language): Promise<void> {
   if (i18next.language !== lng) {
     await i18next.changeLanguage(lng);
   }
+  // Rebuild the native macOS menu bar in the new language (no-op off macOS /
+  // outside Tauri). Fire-and-forget so a non-Tauri context (tests) can't break.
+  void import("@tauri-apps/api/core")
+    .then(({ invoke }) => invoke("apply_menu_language"))
+    .catch(() => {});
 }
 
 export default i18next;
