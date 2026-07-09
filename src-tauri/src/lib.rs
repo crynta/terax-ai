@@ -11,12 +11,30 @@ use tauri_plugin_window_state::StateFlags;
 #[derive(Default)]
 struct LaunchDir(Mutex<Option<String>>);
 
+/// A file the app was asked to open (CLI arg, or the macOS "Open With"
+/// open-files event). Drained on first read, same as LaunchDir.
+#[derive(Default)]
+struct LaunchFile(Mutex<Option<String>>);
+
 #[tauri::command]
 fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
     state.0.lock().expect("LaunchDir mutex poisoned").take()
 }
 
-fn parse_launch_dir() -> Option<String> {
+#[tauri::command]
+fn get_launch_file(state: State<'_, LaunchFile>) -> Option<String> {
+    state.0.lock().expect("LaunchFile mutex poisoned").take()
+}
+
+/// Directory + file resolved from launch args. A file arg contributes both:
+/// `file` (opened in the editor) and `dir` (its parent, opened as workspace).
+#[derive(Default)]
+struct LaunchTarget {
+    dir: Option<String>,
+    file: Option<String>,
+}
+
+fn parse_launch_target() -> LaunchTarget {
     for arg in std::env::args().skip(1) {
         if arg.starts_with('-') {
             continue;
@@ -24,12 +42,20 @@ fn parse_launch_dir() -> Option<String> {
         let Ok(canon) = std::fs::canonicalize(&arg) else {
             continue;
         };
-        if !canon.is_dir() {
-            continue;
+        if canon.is_dir() {
+            return LaunchTarget {
+                dir: Some(crate::modules::fs::to_canon(&canon)),
+                file: None,
+            };
         }
-        return Some(crate::modules::fs::to_canon(&canon));
+        if canon.is_file() {
+            return LaunchTarget {
+                dir: canon.parent().map(crate::modules::fs::to_canon),
+                file: Some(crate::modules::fs::to_canon(&canon)),
+            };
+        }
     }
-    None
+    LaunchTarget::default()
 }
 
 #[tauri::command]
@@ -127,7 +153,8 @@ pub fn run() {
         }
     }
 
-    let cli_dir = parse_launch_dir();
+    let launch = parse_launch_target();
+    let cli_dir = launch.dir.clone();
     workspace::init_launch_cwd(cli_dir.as_deref());
 
     let builder = tauri::Builder::default();
@@ -189,6 +216,7 @@ pub fn run() {
             registry
         })
         .manage(LaunchDir(Mutex::new(cli_dir)))
+        .manage(LaunchFile(Mutex::new(launch.file)))
         .invoke_handler(tauri::generate_handler![
             pty::pty_open,
             pty::pty_write,
@@ -256,6 +284,7 @@ pub fn run() {
             workspace::workspace_authorize,
             workspace::workspace_current_dir,
             get_launch_dir,
+            get_launch_file,
             open_settings_window,
             agent::agent_enable_hooks,
             agent::agent_hooks_status,
@@ -274,12 +303,43 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // Servers exit on stdin EOF, but destructors are not guaranteed
-            // on process exit; kill explicitly.
-            if let tauri::RunEvent::Exit = event {
-                if let Some(state) = app.try_state::<lsp::LspState>() {
-                    state.kill_all();
+            match event {
+                // Servers exit on stdin EOF, but destructors are not guaranteed
+                // on process exit; kill explicitly.
+                tauri::RunEvent::Exit => {
+                    if let Some(state) = app.try_state::<lsp::LspState>() {
+                        state.kill_all();
+                    }
                 }
+                // macOS delivers "Open With" files here — GUI launches don't
+                // pass them as argv. Fires on cold start (before the webview
+                // attaches its listener) and warm start (window already up), so
+                // we both seed the drain-once state and emit an event.
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Opened { urls } => {
+                    let Some(path) = urls
+                        .iter()
+                        .filter_map(|u| u.to_file_path().ok())
+                        .find(|p| p.is_file())
+                    else {
+                        return;
+                    };
+                    let file = crate::modules::fs::to_canon(&path);
+                    let dir = path.parent().map(crate::modules::fs::to_canon);
+                    if let Some(dir) = &dir {
+                        if let Some(registry) = app.try_state::<workspace::WorkspaceRegistry>() {
+                            let _ = registry.authorize(dir);
+                        }
+                        if let Some(state) = app.try_state::<LaunchDir>() {
+                            *state.0.lock().expect("LaunchDir mutex poisoned") = Some(dir.clone());
+                        }
+                    }
+                    if let Some(state) = app.try_state::<LaunchFile>() {
+                        *state.0.lock().expect("LaunchFile mutex poisoned") = Some(file.clone());
+                    }
+                    let _ = app.emit("terax:open-file", file);
+                }
+                _ => {}
             }
         });
 }

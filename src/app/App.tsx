@@ -5,7 +5,7 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getLaunchDir } from "@/lib/launchDir";
+import { consumeLaunchFile, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
@@ -87,6 +87,7 @@ import {
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -538,6 +539,28 @@ export default function App() {
     },
     [openFileTab, newMarkdownTab],
   );
+
+  // Files opened via the OS "Open With" action. macOS delivers them through
+  // the backend "terax:open-file" event (warm start) and get_launch_file
+  // (cold start, before this listener attaches). openFileTab dedupes by path,
+  // so handling both paths can't double-open a tab.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const open = async (path: string) => {
+      const i = path.lastIndexOf("/");
+      const dir = i <= 0 ? "/" : path.slice(0, i);
+      await native.workspaceAuthorize(dir).catch(() => {});
+      handleOpenFile(path, true);
+    };
+    (async () => {
+      unlisten = await listen<string>("terax:open-file", (e) => {
+        void open(e.payload);
+      });
+      const launched = await consumeLaunchFile();
+      if (launched) void open(launched);
+    })();
+    return () => unlisten?.();
+  }, [handleOpenFile]);
 
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
