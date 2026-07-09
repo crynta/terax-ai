@@ -1,5 +1,6 @@
-import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
 import { endpointIdFromCompatModel } from "@/modules/ai/config";
+import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
+import { lspFormatDocument, useLspExtension } from "@/modules/lsp";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
 import { redo, undo } from "@codemirror/commands";
@@ -9,9 +10,10 @@ import {
   SearchQuery,
   setSearchQuery,
 } from "@codemirror/search";
-import { type Extension, Prec } from "@codemirror/state";
+import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { vim } from "@replit/codemirror-vim";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
   forwardRef,
@@ -20,19 +22,28 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { toast } from "sonner";
+import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
+import { diagnosticsReporter } from "./lib/diagnosticsReporter";
+import { useDiagnosticsStore } from "./lib/diagnosticsStore";
 import {
   buildSharedExtensions,
   languageCompartment,
+  lspCompartment,
   vimCompartment,
   wrapCompartment,
 } from "./lib/extensions";
-import { resolveLanguage } from "./lib/languageResolver";
-import { useEditorThemeExt } from "./lib/useEditorThemeExt";
+import {
+  applyFormattedContent,
+  readFileText,
+  runExternalFormatter,
+} from "./lib/externalFormat";
+import { type LanguageResult, resolveLanguage } from "./lib/languageResolver";
 import { useDocument } from "./lib/useDocument";
+import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 import { initVimGlobals, vimHandlersExtension } from "./lib/vim";
-import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 
 initVimGlobals();
 
@@ -56,6 +67,7 @@ export type EditorPaneHandle = {
 
 type Props = {
   path: string;
+  overrideLanguage?: string | null;
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
@@ -68,18 +80,23 @@ function formatBytes(n: number): string {
 }
 
 export const EditorPane = forwardRef<EditorPaneHandle, Props>(
-  function EditorPane({ path, onDirtyChange, onSaved, onClose }, ref) {
-    const { doc, onChange, save, reload } = useDocument({
+  function EditorPane(props, ref) {
+    const { path, overrideLanguage, onDirtyChange, onSaved, onClose } = props;
+
+    const { doc, onChange, save, reload, markSaved } = useDocument({
       path,
       onDirtyChange,
     });
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
+    const markSavedRef = useRef(markSaved);
+    markSavedRef.current = markSaved;
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const themeExt = useEditorThemeExt();
     const vimMode = usePreferencesStore((s) => s.vimMode);
     const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
     const languageRef = useRef<string | null>(null);
+    const [langId, setLangId] = useState<string | null>(null);
     const apiKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -87,7 +104,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       const refresh = async () => {
         const s = usePreferencesStore.getState();
         const provider = s.autocompleteProvider;
-        if (provider === "lmstudio" || provider === "mlx" || provider === "ollama") {
+        if (
+          provider === "lmstudio" ||
+          provider === "mlx" ||
+          provider === "ollama"
+        ) {
           apiKeyRef.current = null;
           return;
         }
@@ -129,6 +150,41 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     onSavedRef.current = onSaved;
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+    const lspActiveRef = useRef(false);
+    const warnedNoLspRef = useRef(false);
+
+    const performSave = useCallback(async () => {
+      const view = cmRef.current?.view;
+      const prefs = usePreferencesStore.getState();
+      const formatter = prefs.editorFormatter;
+      if (prefs.editorFormatOnSave && formatter === "lsp" && view) {
+        if (lspActiveRef.current) {
+          await lspFormatDocument(view).catch(() => {});
+        } else if (!warnedNoLspRef.current) {
+          warnedNoLspRef.current = true;
+          toast.warning("Format on save skipped", {
+            description:
+              "No active language server for this file. Enable one in the statusbar, or pick Biome/Prettier in Settings.",
+          });
+        }
+      }
+      await saveRef.current();
+      if (prefs.editorFormatOnSave && formatter !== "lsp") {
+        const error = await runExternalFormatter(formatter, pathRef.current);
+        if (error) {
+          toast.error(`${formatter} format failed`, { description: error });
+        } else {
+          const text = await readFileText(pathRef.current);
+          if (text !== null && view) {
+            markSavedRef.current(text);
+            applyFormattedContent(view, text);
+          }
+        }
+      }
+      onSavedRef.current?.();
+    }, []);
+    const performSaveRef = useRef(performSave);
+    performSaveRef.current = performSave;
 
     const pathRef = useRef(path);
     pathRef.current = path;
@@ -169,15 +225,14 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
         ),
         vimHandlersExtension(() => ({
           save: () => {
-            void (async () => {
-              await saveRef.current();
-              onSavedRef.current?.();
-            })();
+            void performSaveRef.current();
           },
           close: () => onCloseRef.current?.(),
         })),
         ...buildSharedExtensions(),
         languageCompartment.of([]),
+        lspCompartment.of([]),
+        diagnosticsReporter(() => pathRef.current),
         inlineCompletion({
           getPrefs: () => {
             const s = usePreferencesStore.getState();
@@ -222,10 +277,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
             key: "Mod-s",
             preventDefault: true,
             run: () => {
-              void (async () => {
-                await saveRef.current();
-                onSavedRef.current?.();
-              })();
+              void performSaveRef.current();
               return true;
             },
           },
@@ -252,33 +304,49 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
       });
     }, [editorWordWrap]);
 
+    const lspExt = useLspExtension(path, langId, doc.status === "ready");
     useEffect(() => {
-      const ext = path.split(".").pop()?.toLowerCase() ?? null;
+      lspActiveRef.current = lspExt !== null;
+      const view = cmRef.current?.view;
+      if (!view) return;
+      view.dispatch({
+        effects: lspCompartment.reconfigure(lspExt ?? []),
+      });
+    }, [lspExt]);
+
+    useEffect(
+      () => () => useDiagnosticsStore.getState().report(pathRef.current, null),
+      [],
+    );
+
+    useEffect(() => {
+      const ext =
+        overrideLanguage || (path.split(".").pop()?.toLowerCase() ?? null);
       languageRef.current = ext;
       if (doc.status !== "ready") return;
       let cancelled = false;
-      const resolve = async (): Promise<Extension> => {
-        if (path.toLowerCase().endsWith(".terax-theme")) {
-          const [{ json }, { colorSwatches }] = await Promise.all([
-            import("@codemirror/lang-json"),
-            import("./lib/colorSwatches"),
-          ]);
-          return [json(), colorSwatches()];
-        }
-        return (await resolveLanguage(path)) ?? [];
+      const resolve = async (): Promise<LanguageResult> => {
+        const resolvePath = overrideLanguage
+          ? `dummy.${overrideLanguage}`
+          : path;
+        return (
+          (await resolveLanguage(resolvePath)) ?? { ext: [], name: "", id: "" }
+        );
       };
-      void resolve().then((extension) => {
+      void resolve().then((result) => {
         if (cancelled) return;
+        if (result.id) languageRef.current = result.id;
+        setLangId(result.id || ext);
         const view = cmRef.current?.view;
         if (!view) return;
         view.dispatch({
-          effects: languageCompartment.reconfigure(extension),
+          effects: languageCompartment.reconfigure(result.ext),
         });
       });
       return () => {
         cancelled = true;
       };
-    }, [path, doc.status]);
+    }, [path, doc.status, overrideLanguage]);
 
     useImperativeHandle(
       ref,
@@ -363,7 +431,15 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     }
     if (doc.status === "binary" || doc.status === "toolarge") {
       const ext = path.split(".").pop()?.toLowerCase() ?? "";
-      const isImage = ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"].includes(ext);
+      const isImage = [
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "webp",
+        "svg",
+        "ico",
+      ].includes(ext);
       const isVideo = ["mp4", "webm", "ogg", "mov"].includes(ext);
       const isAudio = ["mp3", "wav", "flac", "aac", "m4a"].includes(ext);
       const isPdf = ext === "pdf";
@@ -379,10 +455,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
                 decoding="async"
                 className="max-w-full max-h-full object-contain rounded-md border border-border shadow-sm"
                 style={{
-                  backgroundImage: 'conic-gradient(#e5e7eb 0.25turn, #f3f4f6 0.25turn 0.5turn, #e5e7eb 0.5turn 0.75turn, #f3f4f6 0.75turn)',
-                  backgroundSize: '20px 20px',
+                  backgroundImage:
+                    "conic-gradient(#e5e7eb 0.25turn, #f3f4f6 0.25turn 0.5turn, #e5e7eb 0.5turn 0.75turn, #f3f4f6 0.75turn)",
+                  backgroundSize: "20px 20px",
                 }}
-                alt={path.split('/').pop()}
+                alt={path.split("/").pop()}
               />
             )}
             {isVideo && (
@@ -407,7 +484,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
               <iframe
                 src={assetUrl}
                 className="w-full h-full border-none"
-                title={path.split('/').pop()}
+                title={path.split("/").pop()}
               />
             )}
           </div>

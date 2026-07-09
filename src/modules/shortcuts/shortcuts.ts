@@ -36,7 +36,9 @@ export type ShortcutId =
   | "view.zoomReset"
   | "view.zenMode"
   | "ai.toggle"
+  | "ai.toggleMini"
   | "ai.askSelection"
+  | "agent.focusAttention"
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
@@ -241,10 +243,22 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "i" }],
   },
   {
+    id: "ai.toggleMini",
+    label: "Toggle AI chat window",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "i" }],
+  },
+  {
     id: "ai.askSelection",
     label: "Ask AI about selection",
     group: "AI",
     defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
+  },
+  {
+    id: "agent.focusAttention",
+    label: "Jump to agent needing attention",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "a" }],
   },
   {
     id: "sidebar.toggle",
@@ -294,7 +308,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "view.zenMode",
     label: "Toggle zen mode",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "z" }],
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "'" }],
   },
   // Editor entries are display-only: CodeMirror's historyKeymap binds these
   // keys natively. We register them here so the shortcuts dialog can surface

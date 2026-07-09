@@ -128,7 +128,9 @@ export function useAiLiveBridge(params: Params) {
         useManagedAgentsStore
           .getState()
           .register({ leafId, tabId, sessionId, task: oneLine, cwd });
-        const hooksReady = invoke("agent_enable_claude_hooks").catch(() => {});
+        const hooksReady = invoke("agent_enable_hooks", { agent: "claude" }).catch(
+          () => {},
+        );
         void (async () => {
           await Promise.all([whenSessionReady(leafId), hooksReady]);
           if (!writeToSession(leafId, "claude\r")) {

@@ -47,6 +47,7 @@ futures-util = "0.3"
 tokio = { version = "1", default-features = false, features = ["rt"] }
 tempfile = "3"
 notify = "8.2.0"
+which = "8.0.4"
 
 [dev-dependencies]
 proptest = "1"
@@ -64,6 +65,10 @@ objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] 
 objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSResponder"] }
 block2 = "0.6"
 
+# WebKitGTK can't read external clipboard copies; mac/win webviews can.
+[target.'cfg(target_os = "linux")'.dependencies]
+tauri-plugin-clipboard-manager = "2"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3.6", default-features = false, features = [
 	"windows-native",
@@ -71,7 +76,9 @@ keyring = { version = "3.6", default-features = false, features = [
 windows-sys = { version = "0.61", features = [
 	"Win32_Foundation",
 	"Win32_Security",
+	"Win32_System_Console",
 	"Win32_System_JobObjects",
+	"Win32_System_ProcessStatus",
 	"Win32_System_Threading",
 	"Win32_System_Diagnostics_ToolHelp",
 ] }

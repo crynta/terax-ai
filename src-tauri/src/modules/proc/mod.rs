@@ -1,3 +1,6 @@
+#[cfg(windows)]
+pub mod job;
+
 use std::process::Command;
 
 #[cfg(windows)]

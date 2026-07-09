@@ -11,32 +11,32 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
-  DEFAULT_MODEL_ID,
-  MODELS,
-  PROVIDERS,
-  STT_PROVIDER_LABELS,
-  WHISPERCPP_DEFAULT_BASE_URL,
+  type CustomEndpoint,
   compatModelIdForEndpoint,
+  DEFAULT_MODEL_ID,
   getAutocompleteEligibleModels,
   getCompatModelInfo,
   getModel,
   getProvider,
   isCompatModelId,
-  providerNeedsKey,
-  type CustomEndpoint,
+  MODELS,
   type ModelId,
+  PROVIDERS,
   type ProviderId,
   type ProviderInfo,
+  providerNeedsKey,
+  STT_PROVIDER_LABELS,
   type SttProvider,
+  WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
 import {
-  clearKey,
-  clearCustomEndpointKey,
-  getAllKeys,
-  getAllCustomEndpointKeys,
-  setKey,
-  setCustomEndpointKey,
   type CustomEndpointKeys,
+  clearCustomEndpointKey,
+  clearKey,
+  getAllCustomEndpointKeys,
+  getAllKeys,
+  setCustomEndpointKey,
+  setKey,
 } from "@/modules/ai/lib/keyring";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
@@ -48,6 +48,7 @@ import {
   setCustomEndpoints,
   setDefaultModel,
   setFavoriteModelIds,
+  setGroqSttModel,
   setLmstudioBaseURL,
   setLmstudioModelId,
   setMlxBaseURL,
@@ -59,7 +60,6 @@ import {
   setOpenaiCompatibleModelId,
   setOpenrouterModelId,
   setRecentModelIds,
-  setGroqSttModel,
   setSttProvider,
   setWhispercppBaseURL,
   setVoiceHoldEnabled,
@@ -115,9 +115,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     modelPlaceholder: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
     description:
       "Apple-silicon inference via mlx_lm.server (pip install mlx-lm).",
-    modelHint: (
-      <>The Hugging Face repo path you launched mlx_lm.server with.</>
-    ),
+    modelHint: <>The Hugging Face repo path you launched mlx_lm.server with.</>,
   },
   ollama: {
     urlPlaceholder: "http://localhost:11434/v1",
@@ -137,8 +135,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     description: "Any model on OpenRouter — type its full provider/model id.",
     modelHint: (
       <>
-        Browse ids at{" "}
-        <span className="font-mono">openrouter.ai/models</span>.
+        Browse ids at <span className="font-mono">openrouter.ai/models</span>.
       </>
     ),
   },
@@ -244,7 +241,9 @@ export function ModelsSection() {
     const { selectedModelId, setSelectedModelId } = useChatStore.getState();
     if (selectedModelId === deadModelId) {
       setSelectedModelId(
-        remaining[0] ? compatModelIdForEndpoint(remaining[0].id) : DEFAULT_MODEL_ID,
+        remaining[0]
+          ? compatModelIdForEndpoint(remaining[0].id)
+          : DEFAULT_MODEL_ID,
       );
     }
 
@@ -297,8 +296,7 @@ export function ModelsSection() {
   };
 
   const isConfigured = (id: ProviderId): boolean => {
-    if (id === "openrouter")
-      return !!keys?.[id] && !!openrouterModelId.trim();
+    if (id === "openrouter") return !!keys?.[id] && !!openrouterModelId.trim();
     if (!isLocalProvider(id)) return !!keys?.[id];
     const cfg = localConfig(id);
     if (!cfg) return false;
@@ -458,7 +456,9 @@ function AddProviderMenu({
   onAddCompat: () => void;
 }) {
   const cloud = providers.filter((p) => !isLocalProvider(p.id));
-  const local = providers.filter((p) => isLocalProvider(p.id) && p.id !== "openai-compatible");
+  const local = providers.filter(
+    (p) => isLocalProvider(p.id) && p.id !== "openai-compatible",
+  );
 
   return (
     <DropdownMenu>
@@ -845,7 +845,11 @@ function LocalProviderCard({
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
             Connected
           </Badge>
         ) : null}
@@ -855,7 +859,11 @@ function LocalProviderCard({
           className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
           Docs
-          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
+          <HugeiconsIcon
+            icon={ArrowUpRight01Icon}
+            size={11}
+            strokeWidth={1.75}
+          />
         </button>
         <Button
           size="icon"
@@ -929,7 +937,9 @@ function LocalProviderCard({
                 spellCheck={false}
                 className="h-8 w-28 font-mono text-[11.5px]"
               />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
             </div>
           </FieldRow>
         ) : null}
@@ -948,7 +958,11 @@ function LocalProviderCard({
                   title="Remove key"
                   className="size-7 text-muted-foreground hover:text-destructive"
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
                 </Button>
               </div>
             ) : (
@@ -1026,8 +1040,7 @@ function CustomEndpointCard({
     [endpoint.contextLimit],
   );
 
-  const configured =
-    !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
+  const configured = !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
 
   const test = async () => {
     setTestStatus("testing");
@@ -1069,7 +1082,11 @@ function CustomEndpointCard({
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
             Connected
           </Badge>
         ) : null}
@@ -1157,7 +1174,9 @@ function CustomEndpointCard({
                 spellCheck={false}
                 className="h-8 w-28 font-mono text-[11.5px]"
               />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
             </div>
           </FieldRow>
 
@@ -1174,7 +1193,11 @@ function CustomEndpointCard({
                   title="Remove key"
                   className="size-7 text-muted-foreground hover:text-destructive"
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
                 </Button>
               </div>
             ) : (

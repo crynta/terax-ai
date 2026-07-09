@@ -1,24 +1,3 @@
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Kbd, KbdGroup } from "@/components/ui/kbd";
-import { usePreferencesStore } from "@/modules/settings/preferences";
-import { setShortcuts } from "@/modules/settings/store";
-import {
-  getBindingTokens,
-  SHORTCUTS,
-  SHORTCUT_GROUPS,
-  type KeyBinding,
-  type Shortcut,
-  type ShortcutId,
-} from "@/modules/shortcuts/shortcuts";
-import {
-  ArrowTurnBackwardIcon,
-  Search01Icon,
-  Delete02Icon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useState, useMemo } from "react";
-import { SectionHeader } from "../components/SectionHeader";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +8,27 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { setShortcuts } from "@/modules/settings/store";
+import {
+  getBindingTokens,
+  type KeyBinding,
+  SHORTCUT_GROUPS,
+  SHORTCUTS,
+  type Shortcut,
+  type ShortcutId,
+} from "@/modules/shortcuts/shortcuts";
+import {
+  ArrowTurnBackwardIcon,
+  Delete02Icon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { useEffect, useMemo, useState } from "react";
+import { SectionHeader } from "../components/SectionHeader";
 
 export function ShortcutsSection() {
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
@@ -44,7 +44,7 @@ export function ShortcutsSection() {
     return base.filter(
       (s) =>
         s.label.toLowerCase().includes(lower) ||
-        s.group.toLowerCase().includes(lower)
+        s.group.toLowerCase().includes(lower),
     );
   }, [search]);
 
