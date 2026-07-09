@@ -6,11 +6,14 @@ import {
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getLaunchDir } from "@/lib/launchDir";
-import { usePresence } from "@/lib/usePresence";
 import { quoteShellArg } from "@/lib/shellQuote";
+import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AgentNotificationsBridge, nextAttentionTarget } from "@/modules/agents";
+import { isMarkdownPath } from "@/lib/utils";
+import {
+  AgentNotificationsBridge,
+  nextAttentionTarget,
+} from "@/modules/agents";
 import { useAgentStore } from "@/modules/agents/store/agentStore";
 import { AgentsPanel } from "@/modules/agents-panel";
 import {
@@ -25,14 +28,11 @@ import {
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { native, type GitBlameLineInfo } from "@/modules/ai/lib/native";
+import { CommandPalette, createCommandItems } from "@/modules/command-palette";
 import {
-  CommandPalette,
-  createCommandItems,
-} from "@/modules/command-palette";
-import {
+  type EditorPaneHandle,
   NewEditorDialog,
   useEditorFileSync,
-  type EditorPaneHandle,
 } from "@/modules/editor";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import type { GitHistorySearchHandle } from "@/modules/git-history";
@@ -41,33 +41,40 @@ import {
   type SearchInlineHandle,
   type SearchTarget,
 } from "@/modules/header";
+import { setLspNavigator } from "@/modules/lsp";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { isMarkdownPath } from "@/lib/utils";
 import {
-  useGlobalShortcuts,
   type ShortcutHandlers,
   type ShortcutId,
+  useGlobalShortcuts,
 } from "@/modules/shortcuts";
 import {
-  SidebarRail,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
+  SidebarRail,
   useSidebarPanel,
 } from "@/modules/sidebar";
 import {
   SourceControlPanel,
   useSourceControlContext,
 } from "@/modules/source-control";
+import {
+  SpaceSwitcher,
+  useSpacePersistence,
+  useSpaces,
+  useSpacesBoot,
+} from "@/modules/spaces";
 import { StatusBar } from "@/modules/statusbar";
 import {
   TabSwitcherHud,
-  useTabs,
   useTabSwitcher,
+  useTabs,
   useWindowTitle,
   useWorkspaceCwd,
 } from "@/modules/tabs";
+import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import {
   clearFocusedTerminal,
   disposeSession,
@@ -79,16 +86,10 @@ import {
   useTerminalFileDrop,
   writeToSession,
 } from "@/modules/terminal";
-import {
-  SpaceSwitcher,
-  useSpaces,
-  useSpacePersistence,
-  useSpacesBoot,
-} from "@/modules/spaces";
-import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloseDialogs } from "./components/CloseDialogs";
@@ -238,7 +239,9 @@ export default function App() {
     const prev = prevSpaceRef.current;
     prevSpaceRef.current = activeSpaceId;
     if (prev === null || prev === activeSpaceId) return;
-    const meta = useSpaces.getState().spaces.find((s) => s.id === activeSpaceId);
+    const meta = useSpaces
+      .getState()
+      .spaces.find((s) => s.id === activeSpaceId);
     if (meta) void adoptWorkspaceEnv(meta.env);
     const inSpace = tabsRef.current.filter((t) => t.spaceId === activeSpaceId);
     if (inSpace.length === 0) return;
@@ -403,7 +406,10 @@ export default function App() {
   // the Ctrl+Tab quick switcher so it cycles by recency, not strip order.
   const mruRef = useRef<number[]>([activeId]);
   useEffect(() => {
-    mruRef.current = [activeId, ...mruRef.current.filter((id) => id !== activeId)];
+    mruRef.current = [
+      activeId,
+      ...mruRef.current.filter((id) => id !== activeId),
+    ];
   }, [activeId]);
 
   // When the user NAVIGATES to a terminal tab, reset any non-idle agent status
@@ -649,7 +655,6 @@ export default function App() {
     },
     [newPreviewTab],
   );
-
 
   const splitActivePaneInActiveTab = useCallback(
     (dir: "row" | "col") => {
@@ -1009,8 +1014,9 @@ export default function App() {
 
   const handleNewTabInSpace = useCallback(
     (spaceId: string) => {
-      const root = useSpaces.getState().spaces.find((s) => s.id === spaceId)
-        ?.root;
+      const root = useSpaces
+        .getState()
+        .spaces.find((s) => s.id === spaceId)?.root;
       newTabInSpace(spaceId, root ?? undefined);
     },
     [newTabInSpace],
@@ -1119,6 +1125,11 @@ export default function App() {
     [openFileTab],
   );
 
+  useEffect(() => {
+    setLspNavigator({ openFile: openContentHit });
+    return () => setLspNavigator(null);
+  }, [openContentHit]);
+
   const insertHistoryCommand = useMemo(
     () =>
       isTerminalTab && activeLeafId !== null
@@ -1183,7 +1194,9 @@ export default function App() {
                 id="sidebar"
                 panelRef={sidebarRef}
                 defaultSize={
-                  initialSidebarCollapsed ? "0px" : `${sidebarWidthRef.current}px`
+                  initialSidebarCollapsed
+                    ? "0px"
+                    : `${sidebarWidthRef.current}px`
                 }
                 minSize={`${SIDEBAR_MIN_WIDTH}px`}
                 maxSize={`${SIDEBAR_MAX_WIDTH}px`}
@@ -1195,7 +1208,10 @@ export default function App() {
                 }}
               >
                 <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
-                  <div key={sidebarView} className="min-h-0 flex-1 terax-panel-in">
+                  <div
+                    key={sidebarView}
+                    className="min-h-0 flex-1 terax-panel-in"
+                  >
                     {sidebarView === "explorer" ? (
                       <FileExplorer
                         ref={explorerRef}

@@ -1,3 +1,5 @@
+import type { EditorThemeId } from "@/modules/settings/store";
+import type { Extension } from "@codemirror/state";
 import { atomone } from "@uiw/codemirror-theme-atomone";
 import { aura } from "@uiw/codemirror-theme-aura";
 import { copilot } from "@uiw/codemirror-theme-copilot";
@@ -6,8 +8,6 @@ import { gruvboxDark } from "@uiw/codemirror-theme-gruvbox-dark";
 import { nord } from "@uiw/codemirror-theme-nord";
 import { tokyoNight } from "@uiw/codemirror-theme-tokyo-night";
 import { xcodeDark, xcodeLight } from "@uiw/codemirror-theme-xcode";
-import type { Extension } from "@codemirror/state";
-import type { EditorThemeId } from "@/modules/settings/store";
 import {
   catppuccinLatte,
   catppuccinMocha,

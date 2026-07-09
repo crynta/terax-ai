@@ -47,6 +47,7 @@ futures-util = "0.3"
 tokio = { version = "1", default-features = false, features = ["rt"] }
 tempfile = "3"
 notify = "8.2.0"
+which = "8.0.4"
 
 [dev-dependencies]
 proptest = "1"
@@ -75,6 +76,7 @@ windows-sys = { version = "0.61", features = [
 	"Win32_Security",
 	"Win32_System_Console",
 	"Win32_System_JobObjects",
+	"Win32_System_ProcessStatus",
 	"Win32_System_Threading",
 	"Win32_System_Diagnostics_ToolHelp",
 ] }

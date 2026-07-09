@@ -1,18 +1,18 @@
 import {
+  type AutocompleteProviderId,
+  type CustomEndpoint,
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
   DEFAULT_STT_PROVIDER,
   isKnownModelId,
   LMSTUDIO_DEFAULT_BASE_URL,
   MLX_DEFAULT_BASE_URL,
-  OLLAMA_DEFAULT_BASE_URL,
-  migrateLegacyCompatEndpoint,
-  OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
-  WHISPERCPP_DEFAULT_BASE_URL,
-  type AutocompleteProviderId,
-  type CustomEndpoint,
   type ModelId,
+  migrateLegacyCompatEndpoint,
+  OLLAMA_DEFAULT_BASE_URL,
+  OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   type SttProvider,
+  WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -56,7 +56,9 @@ export const EDITOR_THEME_AUTO = "auto" as const;
 export type EditorThemePref = typeof EDITOR_THEME_AUTO | EditorThemeId;
 
 export function isEditorThemeId(v: unknown): v is EditorThemeId {
-  return typeof v === "string" && (EDITOR_THEMES as readonly string[]).includes(v);
+  return (
+    typeof v === "string" && (EDITOR_THEMES as readonly string[]).includes(v)
+  );
 }
 
 export const EDITOR_THEME_MODE: Record<EditorThemeId, "light" | "dark"> = {
@@ -169,6 +171,24 @@ export type Preferences = {
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
+  editorFormatOnSave: boolean;
+  editorFormatter: EditorFormatter;
+  lspActivation: Record<string, LspActivation>;
+  lspCustomServers: LspCustomServer[];
+};
+
+export type EditorFormatter = "lsp" | "biome" | "prettier";
+
+export type LspActivation = "enabled" | "dismissed";
+
+export type LspCustomServer = {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  /** languageResolver id -> LSP languageId */
+  languages: Record<string, string>;
+  rootMarkers: string[];
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -224,6 +244,10 @@ const KEY_DEFAULT_WORKSPACE_ENV = "defaultWorkspaceEnv";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
+const KEY_EDITOR_FORMAT_ON_SAVE = "editorFormatOnSave";
+const KEY_EDITOR_FORMATTER = "editorFormatter";
+const KEY_LSP_ACTIVATION = "lspActivation";
+const KEY_LSP_CUSTOM_SERVERS = "lspCustomServers";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -292,6 +316,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
+  editorFormatOnSave: false,
+  editorFormatter: "lsp",
+  lspActivation: {},
+  lspCustomServers: [],
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -336,7 +364,8 @@ export async function loadPreferences(): Promise<Preferences> {
     })(),
     editorTheme: ((): EditorThemePref => {
       const stored = get<string>(KEY_EDITOR_THEME);
-      if (stored === EDITOR_THEME_AUTO || isEditorThemeId(stored)) return stored;
+      if (stored === EDITOR_THEME_AUTO || isEditorThemeId(stored))
+        return stored;
       return DEFAULT_PREFERENCES.editorTheme;
     })(),
     customInstructions:
@@ -359,10 +388,8 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string>(KEY_LMSTUDIO_BASE_URL) ?? DEFAULT_PREFERENCES.lmstudioBaseURL,
     lmstudioModelId:
       get<string>(KEY_LMSTUDIO_MODEL_ID) ?? DEFAULT_PREFERENCES.lmstudioModelId,
-    mlxBaseURL:
-      get<string>(KEY_MLX_BASE_URL) ?? DEFAULT_PREFERENCES.mlxBaseURL,
-    mlxModelId:
-      get<string>(KEY_MLX_MODEL_ID) ?? DEFAULT_PREFERENCES.mlxModelId,
+    mlxBaseURL: get<string>(KEY_MLX_BASE_URL) ?? DEFAULT_PREFERENCES.mlxBaseURL,
+    mlxModelId: get<string>(KEY_MLX_MODEL_ID) ?? DEFAULT_PREFERENCES.mlxModelId,
     ollamaBaseURL:
       get<string>(KEY_OLLAMA_BASE_URL) ?? DEFAULT_PREFERENCES.ollamaBaseURL,
     ollamaModelId:
@@ -394,10 +421,10 @@ export async function loadPreferences(): Promise<Preferences> {
     groqSttModel:
       get<string>(KEY_GROQ_STT_MODEL) ?? DEFAULT_PREFERENCES.groqSttModel,
     whispercppBaseURL:
-      get<string>(KEY_WHISPERCPP_BASE_URL) ?? DEFAULT_PREFERENCES.whispercppBaseURL,
+      get<string>(KEY_WHISPERCPP_BASE_URL) ??
+      DEFAULT_PREFERENCES.whispercppBaseURL,
     favoriteModelIds: (
-      get<string[]>(KEY_FAVORITE_MODELS) ??
-      DEFAULT_PREFERENCES.favoriteModelIds
+      get<string[]>(KEY_FAVORITE_MODELS) ?? DEFAULT_PREFERENCES.favoriteModelIds
     ).filter(isKnownModelId),
     recentModelIds: (
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds
@@ -458,13 +485,43 @@ export async function loadPreferences(): Promise<Preferences> {
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
     editorAutoSave:
-      get<boolean>(KEY_EDITOR_AUTO_SAVE) ??
-      DEFAULT_PREFERENCES.editorAutoSave,
+      get<boolean>(KEY_EDITOR_AUTO_SAVE) ?? DEFAULT_PREFERENCES.editorAutoSave,
     editorAutoSaveDelay: clampAutoSaveDelay(
       get<number>(KEY_EDITOR_AUTO_SAVE_DELAY) ??
         DEFAULT_PREFERENCES.editorAutoSaveDelay,
     ),
+    editorFormatOnSave:
+      get<boolean>(KEY_EDITOR_FORMAT_ON_SAVE) ??
+      DEFAULT_PREFERENCES.editorFormatOnSave,
+    editorFormatter:
+      get<EditorFormatter>(KEY_EDITOR_FORMATTER) ??
+      DEFAULT_PREFERENCES.editorFormatter,
+    lspActivation:
+      get<Record<string, LspActivation>>(KEY_LSP_ACTIVATION) ??
+      DEFAULT_PREFERENCES.lspActivation,
+    lspCustomServers:
+      get<LspCustomServer[]>(KEY_LSP_CUSTOM_SERVERS) ??
+      DEFAULT_PREFERENCES.lspCustomServers,
   };
+}
+
+export async function setLspActivation(
+  id: string,
+  value: LspActivation | null,
+): Promise<void> {
+  const current =
+    ((await store.get(KEY_LSP_ACTIVATION)) as Record<string, LspActivation>) ??
+    {};
+  const next = { ...current };
+  if (value === null) delete next[id];
+  else next[id] = value;
+  await writePref(KEY_LSP_ACTIVATION, next);
+}
+
+export async function setLspCustomServers(
+  value: LspCustomServer[],
+): Promise<void> {
+  await writePref(KEY_LSP_CUSTOM_SERVERS, value);
 }
 
 export async function setTheme(value: ThemePref): Promise<void> {
@@ -493,7 +550,9 @@ export async function setBackgroundKind(value: BackgroundKind): Promise<void> {
   await writePref(KEY_BG_KIND, value);
 }
 
-export async function setBackgroundImageId(value: string | null): Promise<void> {
+export async function setBackgroundImageId(
+  value: string | null,
+): Promise<void> {
   await writePref(KEY_BG_IMAGE_ID, value);
 }
 
@@ -504,7 +563,6 @@ export async function setBackgroundOpacity(value: number): Promise<void> {
 export async function setBackgroundBlur(value: number): Promise<void> {
   await writePref(KEY_BG_BLUR, clampBlur(value));
 }
-
 
 export async function setDefaultModel(value: ModelId): Promise<void> {
   await writePref(KEY_DEFAULT_MODEL, value);
@@ -659,7 +717,9 @@ export async function setTerminalShell(value: string): Promise<void> {
 }
 
 export async function setTerminalLetterSpacing(value: number): Promise<void> {
-  const clamped = Number.isFinite(value) ? Math.max(-10, Math.min(10, Math.round(value))) : 0;
+  const clamped = Number.isFinite(value)
+    ? Math.max(-10, Math.min(10, Math.round(value)))
+    : 0;
   await writePref(KEY_TERMINAL_LETTER_SPACING, clamped);
 }
 
@@ -693,9 +753,15 @@ export async function setZoomLevel(value: number): Promise<void> {
   await writePref(KEY_ZOOM_LEVEL, value);
 }
 
-function clampAutoSaveDelay(v: number): number {
+export const AUTO_SAVE_DELAY_MIN = 100;
+export const AUTO_SAVE_DELAY_MAX = 60000;
+
+export function clampAutoSaveDelay(v: number): number {
   if (!Number.isFinite(v)) return 1000;
-  return Math.min(60000, Math.max(100, Math.round(v)));
+  return Math.min(
+    AUTO_SAVE_DELAY_MAX,
+    Math.max(AUTO_SAVE_DELAY_MIN, Math.round(v)),
+  );
 }
 
 export async function setEditorAutoSave(value: boolean): Promise<void> {
@@ -704,6 +770,16 @@ export async function setEditorAutoSave(value: boolean): Promise<void> {
 
 export async function setEditorAutoSaveDelay(value: number): Promise<void> {
   await writePref(KEY_EDITOR_AUTO_SAVE_DELAY, clampAutoSaveDelay(value));
+}
+
+export async function setEditorFormatOnSave(value: boolean): Promise<void> {
+  await writePref(KEY_EDITOR_FORMAT_ON_SAVE, value);
+}
+
+export async function setEditorFormatter(
+  value: EditorFormatter,
+): Promise<void> {
+  await writePref(KEY_EDITOR_FORMATTER, value);
 }
 
 export async function setAgentNotifications(value: boolean): Promise<void> {
@@ -786,6 +862,10 @@ export async function onPreferencesChange(
     [KEY_SHORTCUTS]: "shortcuts",
     [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
+    [KEY_EDITOR_FORMAT_ON_SAVE]: "editorFormatOnSave",
+    [KEY_EDITOR_FORMATTER]: "editorFormatter",
+    [KEY_LSP_ACTIVATION]: "lspActivation",
+    [KEY_LSP_CUSTOM_SERVERS]: "lspCustomServers",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().

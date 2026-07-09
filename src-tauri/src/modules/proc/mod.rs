@@ -1,3 +1,6 @@
+#[cfg(windows)]
+pub mod job;
+
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::process::Command;
