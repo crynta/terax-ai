@@ -317,9 +317,14 @@ pub fn run() {
                 // we both seed the drain-once state and emit an event.
                 #[cfg(target_os = "macos")]
                 tauri::RunEvent::Opened { urls } => {
+                    // Canonicalize like parse_launch_target() so an "Open With"
+                    // launch and a CLI launch of the same file yield identical
+                    // paths — otherwise symlinked roots (macOS /tmp ->
+                    // /private/tmp) defeat openFileTab's exact-path dedupe.
                     let Some(path) = urls
                         .iter()
                         .filter_map(|u| u.to_file_path().ok())
+                        .filter_map(|p| std::fs::canonicalize(p).ok())
                         .find(|p| p.is_file())
                     else {
                         return;
