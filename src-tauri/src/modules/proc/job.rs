@@ -1,5 +1,5 @@
-//! Windows Job Object with KILL_ON_JOB_CLOSE for ConPTY children.
-//! Dropping the handle kills the whole tree — only reliable orphan guard
+//! Windows Job Object with KILL_ON_JOB_CLOSE for child process trees.
+//! Dropping the handle kills the whole tree, the only reliable orphan guard
 //! on Windows.
 
 #![cfg(windows)]
@@ -15,14 +15,14 @@ use windows_sys::Win32::System::JobObjects::{
 };
 use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
 
-pub struct PtyJob {
+pub struct ProcessJob {
     handle: HANDLE,
 }
 
-unsafe impl Send for PtyJob {}
-unsafe impl Sync for PtyJob {}
+unsafe impl Send for ProcessJob {}
+unsafe impl Sync for ProcessJob {}
 
-impl PtyJob {
+impl ProcessJob {
     pub fn create_for(pid: u32) -> io::Result<Self> {
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -64,7 +64,7 @@ impl PtyJob {
     }
 }
 
-impl Drop for PtyJob {
+impl Drop for ProcessJob {
     fn drop(&mut self) {
         if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
             unsafe { CloseHandle(self.handle) };
@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn create_for_invalid_pid_errors() {
-        match PtyJob::create_for(0xFFFFFFFE) {
+        match ProcessJob::create_for(0xFFFFFFFE) {
             Err(_) => {}
             Ok(_) => panic!("invalid pid must error"),
         }
@@ -93,7 +93,7 @@ mod tests {
             .spawn()
             .expect("spawn cmd.exe");
 
-        let job = PtyJob::create_for(child.id()).expect("create job");
+        let job = ProcessJob::create_for(child.id()).expect("create job");
         drop(job);
 
         let deadline = Instant::now() + Duration::from_secs(3);
@@ -102,7 +102,7 @@ mod tests {
                 Some(_) => break,
                 None if Instant::now() >= deadline => {
                     let _ = child.kill();
-                    panic!("child survived 3s after PtyJob drop");
+                    panic!("child survived 3s after ProcessJob drop");
                 }
                 None => std::thread::sleep(Duration::from_millis(50)),
             }

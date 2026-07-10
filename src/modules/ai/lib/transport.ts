@@ -2,6 +2,7 @@ import type { UIMessage } from "@ai-sdk/react";
 import type { CustomEndpoint } from "../config";
 import { runAgentStream, type AgentUsageDelta } from "./agent";
 import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
+import { formatAiError } from "./errors";
 import { native } from "./native";
 import type { ToolContext } from "../tools/tools";
 
@@ -108,6 +109,7 @@ export function createContextAwareTransport(deps: Deps) {
     });
     return result.toUIMessageStream({
       originalMessages: options.messages,
+      onError: formatAiError,
     });
   };
 

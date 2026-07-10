@@ -2,18 +2,22 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { unifiedMergeView } from "@codemirror/merge";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import {
+  commitDiffKey,
   fetchCommitDiff,
   fetchWorkingDiff,
   getCachedDiff,
   workingDiffKey,
-  commitDiffKey,
 } from "./lib/diffCache";
+import {
+  buildSharedExtensions,
+  DEFAULT_INDENT,
+  languageCompartment,
+} from "./lib/extensions";
 import { resolveLanguage, resolveLanguageSync } from "./lib/languageResolver";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 
@@ -101,7 +105,16 @@ function countDiffLines(patch: string): { added: number; removed: number } {
 type LoadState =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "loaded"; originalContent: string; modifiedContent: string; isBinary: boolean; fallbackPatch: string }
+  | {
+      kind: "loaded";
+      originalContent: string;
+      modifiedContent: string;
+      isBinary: boolean;
+      fallbackPatch: string;
+      /** Resolved before mount: a late compartment reconfigure would leave
+       * the merge view's deleted-chunk widgets unhighlighted. */
+      langExt: Extension | null;
+    }
   | { kind: "error"; message: string };
 
 function cacheKey(source: WorkingSource | CommitSource): string {
@@ -110,9 +123,7 @@ function cacheKey(source: WorkingSource | CommitSource): string {
     : commitDiffKey(source.repoRoot, source.sha, source.path);
 }
 
-function loadStateFromCache(
-  source: WorkingSource | CommitSource,
-): LoadState {
+function loadStateFromCache(source: WorkingSource | CommitSource): LoadState {
   const hit = getCachedDiff(cacheKey(source));
   if (!hit) return { kind: "idle" };
   return {
@@ -121,6 +132,7 @@ function loadStateFromCache(
     modifiedContent: hit.modifiedContent,
     isBinary: hit.isBinary,
     fallbackPatch: hit.fallbackPatch,
+    langExt: resolveLanguageSync(source.path)?.ext ?? null,
   };
 }
 
@@ -156,8 +168,8 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
             source.path,
             source.originalPath,
           );
-    promise
-      .then((res) => {
+    Promise.all([promise, resolveLanguage(source.path).catch(() => null)])
+      .then(([res, lang]) => {
         if (cancelled) return;
         setState({
           kind: "loaded",
@@ -165,6 +177,7 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
           modifiedContent: res.modifiedContent,
           isBinary: res.isBinary,
           fallbackPatch: res.fallbackPatch,
+          langExt: lang?.ext ?? null,
         });
       })
       .catch((err) => {
@@ -196,11 +209,12 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
     modifiedContent.length > LARGE_FILE_THRESHOLD;
   const useFallback = isBinary || isTooLarge;
 
-  const initialLang = useMemo(() => resolveLanguageSync(path), [path]);
+  const langExt = loaded?.langExt ?? null;
   const extensions = useMemo(
     () => [
       ...SHARED_EXT,
-      languageCompartment.of(initialLang?.ext ?? []),
+      DEFAULT_INDENT,
+      languageCompartment.of(langExt ?? []),
       ...READONLY_EXT,
       unifiedMergeView({
         original: originalContent,
@@ -212,34 +226,28 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
       }),
       DIFF_THEME,
     ],
-    [originalContent, initialLang],
+    [originalContent, langExt],
   );
 
-  // Resolve and apply syntax highlighting asynchronously when the language pack
-  // isn't cached yet. This must wait until the editor is actually mounted
-  // (state === "loaded"): the pane renders a spinner while the diff loads, so if
-  // the language import resolved first the view would be null and the reconfigure
-  // would be silently dropped — leaving the diff unhighlighted until a remount.
-  // Keying on `state.kind` re-runs this once the view exists.
+  // Cache-hit path only: the diff came from the cache before the language
+  // pack was imported. Resolve and reconfigure once the view exists.
   useEffect(() => {
-    if (useFallback || initialLang) return;
-    if (state.kind !== "loaded") return;
+    if (useFallback || state.kind !== "loaded" || state.langExt) return;
     let cancelled = false;
     resolveLanguage(path).then((res) => {
-      if (cancelled) return;
-      const view = cmRef.current?.view;
-      if (!view) return;
-      view.dispatch({
-        effects: languageCompartment.reconfigure(res?.ext ?? []),
-      });
+      if (cancelled || !res) return;
+      setState((s) =>
+        s.kind === "loaded" ? { ...s, langExt: res.ext } : s,
+      );
     });
     return () => {
       cancelled = true;
     };
-  }, [useFallback, path, initialLang, state.kind]);
+  }, [useFallback, path, state]);
 
   const stats = useMemo(
-    () => (useFallback ? countDiffLines(fallbackPatch) : { added: 0, removed: 0 }),
+    () =>
+      useFallback ? countDiffLines(fallbackPatch) : { added: 0, removed: 0 },
     [useFallback, fallbackPatch],
   );
 

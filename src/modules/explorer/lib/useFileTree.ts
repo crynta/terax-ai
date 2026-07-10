@@ -202,6 +202,12 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     const restored = recallExpansion(rootPath);
     setExpanded(new Set(restored));
     setNodes({});
+    // Sync the ref synchronously: nodesRef only updates after the next render,
+    // so without this a fast (cached) fetchChildren below would read the stale
+    // pre-clear "loaded" node, hit the sameDirListing early-return, and skip
+    // re-populating — leaving a valid root with an empty tree when rootPath
+    // changes rapidly (e.g. switching folders in quick succession).
+    nodesRef.current = {};
 
     const toWatch = [rootPath, ...restored];
     void fetchChildren(rootPath);
