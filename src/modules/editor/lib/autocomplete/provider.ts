@@ -64,7 +64,7 @@ export async function requestCompletion(
       : MAX_OUTPUT_TOKENS_DEFAULT,
     maxRetries: 0,
     abortSignal: signal,
-    temperature: 0.2,
+    temperature: 0.1,
     ...(providerOptions ? { providerOptions } : {}),
   });
 
