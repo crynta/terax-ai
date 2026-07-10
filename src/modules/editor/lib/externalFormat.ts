@@ -4,7 +4,7 @@ import { currentWorkspaceEnv } from "@/modules/workspace";
 import type { EditorView } from "@codemirror/view";
 import { invoke } from "@tauri-apps/api/core";
 
-type ReadResult = { kind: string; content?: string };
+type ReadResult = { kind: string; content?: string; mtime?: number };
 
 type CommandOutput = {
   stdout: string;
@@ -141,12 +141,15 @@ export async function runExternalFormatter(
   }
 }
 
-export async function readFileText(path: string): Promise<string | null> {
+export async function readFileText(
+  path: string,
+): Promise<{ text: string; mtime: number } | null> {
   const res = await invoke<ReadResult>("fs_read_file", {
     path,
     workspace: currentWorkspaceEnv(),
   }).catch(() => null);
-  return res?.kind === "text" ? (res.content ?? null) : null;
+  if (res?.kind !== "text" || res.content == null) return null;
+  return { text: res.content, mtime: res.mtime ?? 0 };
 }
 
 // Minimal change dispatch: trimming the common prefix/suffix keeps the

@@ -29,10 +29,11 @@ export function useAppCloseGuard(tabsRef: RefObject<Tab[]>) {
       .onCloseRequested(async (event) => {
         if (forceClose.current) return;
         event.preventDefault();
+        const busyTerminal = await anyTerminalBusy(tabsRef.current);
+        // Count after the await so edits made during the IPC check are seen.
         const dirtyEditors = tabsRef.current.filter(
           (t) => t.kind === "editor" && t.dirty,
         ).length;
-        const busyTerminal = await anyTerminalBusy(tabsRef.current);
         if (dirtyEditors > 0 || busyTerminal) {
           setPendingAppClose({ dirtyEditors, busyTerminal });
         } else {

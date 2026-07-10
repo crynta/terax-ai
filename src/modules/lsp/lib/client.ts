@@ -1,4 +1,4 @@
-import { highlightingFor, language } from "@codemirror/language";
+import { highlightingFor, indentUnit, language } from "@codemirror/language";
 import {
   type Extension,
   StateEffect,
@@ -87,7 +87,10 @@ export async function formatDocumentAndWait(
   const doc = view.state.doc;
   const edits = await client.textDocumentFormatting({
     textDocument: { uri: plugin.documentUri },
-    options: { tabSize: view.state.tabSize, insertSpaces: true },
+    options: {
+      tabSize: view.state.tabSize,
+      insertSpaces: view.state.facet(indentUnit) !== "\t",
+    },
   });
   if (!edits || edits.length === 0) return "done";
   // Edits are offsets into the requested snapshot; typing during the

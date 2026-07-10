@@ -185,9 +185,14 @@ export const EditorPane = memo(
       const formatter = resolveFormatter(languageRef.current, prefs);
       if (prefs.editorFormatOnSave && formatter === "lsp" && view) {
         if (lspActiveRef.current) {
-          const res = await lspFormatDocument(view).catch(
-            () => "done" as const,
-          );
+          let res: "done" | "unsupported" = "done";
+          try {
+            res = await lspFormatDocument(view);
+          } catch (e) {
+            toast.error("Language server format failed", {
+              description: String(e),
+            });
+          }
           if (res === "unsupported" && !warnedNoFormatRef.current) {
             warnedNoFormatRef.current = true;
             toast.warning("Format on save skipped", {
@@ -217,9 +222,12 @@ export const EditorPane = memo(
         if (error) {
           toast.error(`${formatter} format failed`, { description: error });
         } else {
-          const text = await readFileText(pathRef.current);
-          if (text !== null && view && view.state.doc === docAtSave) {
-            applyFormattedContent(view, adoptDiskTextRef.current(text));
+          const readBack = await readFileText(pathRef.current);
+          if (readBack !== null && view && view.state.doc === docAtSave) {
+            applyFormattedContent(
+              view,
+              adoptDiskTextRef.current(readBack.text, readBack.mtime),
+            );
           }
         }
       }

@@ -68,7 +68,8 @@ export function useDocument({ path, onDirtyChange }: Options) {
     });
     diskMtimeRef.current = mtime;
     savedRef.current = content;
-    setDirty(false);
+    // Edits typed while the write was in flight must stay dirty.
+    setDirty(bufferRef.current !== content);
     notifyDocumentSaved(path);
   }, [path]);
 
@@ -139,6 +140,8 @@ export function useDocument({ path, onDirtyChange }: Options) {
   // Load on path change.
   useEffect(() => {
     let cancelled = false;
+    // "Open anyway" is a per-file decision; a new path starts unforced.
+    forceRef.current = false;
     setDoc({ status: "loading" });
     setDirty(false);
 
@@ -163,11 +166,14 @@ export function useDocument({ path, onDirtyChange }: Options) {
       .catch((e) => setDoc({ status: "error", message: String(e) }));
   }, [readFromDisk, adoptRead]);
 
-  // Skipped while dirty: never clobber unsaved edits.
+  // Skipped while dirty: never clobber unsaved edits. Re-checked when the
+  // read resolves, since typing can start while it is in flight.
   const reload = useCallback((): boolean => {
     if (dirtyRef.current) return false;
     void readFromDisk(forceRef.current)
-      .then((res) => adoptRead(res, true))
+      .then((res) => {
+        if (!dirtyRef.current) adoptRead(res, true);
+      })
       // Transient failures (e.g. ENOENT mid atomic-rename) must not replace
       // a healthy buffer with an error screen.
       .catch((e) => console.warn("[editor] reload failed", path, e));
@@ -181,15 +187,21 @@ export function useDocument({ path, onDirtyChange }: Options) {
   }, [clearAutoSaveTimer, saveNow]);
 
   // Adopt externally formatted disk content as the saved baseline before the
-  // matching editor dispatch lands, so the buffer never flashes dirty.
+  // matching editor dispatch lands, so the buffer never flashes dirty. The
+  // formatter's own write must also become the known mtime, or the next save
+  // would report it as an external conflict.
   // Returns the LF-normalized text the caller should dispatch.
-  const adoptDiskText = useCallback((diskText: string): string => {
-    eolRef.current = detectEol(diskText);
-    const content = normalizeToLf(diskText);
-    savedRef.current = content;
-    setDirty(bufferRef.current !== content);
-    return content;
-  }, []);
+  const adoptDiskText = useCallback(
+    (diskText: string, mtime: number): string => {
+      eolRef.current = detectEol(diskText);
+      diskMtimeRef.current = mtime;
+      const content = normalizeToLf(diskText);
+      savedRef.current = content;
+      setDirty(bufferRef.current !== content);
+      return content;
+    },
+    [],
+  );
 
   const onChange = useCallback(
     (next: string) => {
