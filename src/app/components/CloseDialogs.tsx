@@ -8,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import type { AppCloseBlocker } from "@/app/hooks/useAppCloseGuard";
 import type { Tab } from "@/modules/tabs";
 
 type Props = {
@@ -21,10 +22,24 @@ type Props = {
   pendingDeleteTabs: number[] | null;
   onCancelDeleteClose: () => void;
   onConfirmDeleteClose: () => void;
-  pendingAppClose: boolean;
+  pendingAppClose: AppCloseBlocker | null;
   onCancelAppClose: () => void;
   onConfirmAppClose: () => void;
 };
+
+function appCloseMessage(blocker: AppCloseBlocker): string {
+  const dirty =
+    blocker.dirtyEditors === 1
+      ? "1 file has unsaved changes"
+      : `${blocker.dirtyEditors} files have unsaved changes`;
+  if (blocker.dirtyEditors > 0 && blocker.busyTerminal) {
+    return `A process is still running and ${dirty}. Quitting will terminate it and discard the changes.`;
+  }
+  if (blocker.dirtyEditors > 0) {
+    return `${dirty.charAt(0).toUpperCase()}${dirty.slice(1)}. Quitting will discard them.`;
+  }
+  return "A process is still running in a terminal. Quitting will terminate it.";
+}
 
 /** Confirmation dialogs for closing dirty editors and terminals with live processes. */
 export function CloseDialogs({
@@ -124,15 +139,14 @@ export function CloseDialogs({
       </AlertDialog>
 
       <AlertDialog
-        open={pendingAppClose}
+        open={pendingAppClose !== null}
         onOpenChange={(open) => !open && onCancelAppClose()}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Quit Terax?</AlertDialogTitle>
             <AlertDialogDescription>
-              A process is still running in a terminal. Quitting will terminate
-              it.
+              {pendingAppClose ? appCloseMessage(pendingAppClose) : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
