@@ -124,6 +124,7 @@ export type Preferences = {
   autostart: boolean;
   restoreWindowState: boolean;
   autocompleteEnabled: boolean;
+  autocompleteTrigger: AutocompleteTrigger;
   autocompleteProvider: AutocompleteProviderId;
   autocompleteModelId: string;
   lmstudioBaseURL: string;
@@ -163,11 +164,25 @@ export type Preferences = {
   editorAutoSaveDelay: number;
   editorFormatOnSave: boolean;
   editorFormatter: EditorFormatter;
+  /** languageResolver id -> formatter, overriding the global default. */
+  editorFormatterByLang: Record<string, EditorFormatter>;
+  /** Shell template for the "custom" formatter; {file} is the quoted path. */
+  editorCustomFormatCommand: string;
   lspActivation: Record<string, LspActivation>;
   lspCustomServers: LspCustomServer[];
 };
 
-export type EditorFormatter = "lsp" | "biome" | "prettier";
+export type EditorFormatter =
+  | "lsp"
+  | "biome"
+  | "prettier"
+  | "ruff"
+  | "rustfmt"
+  | "gofmt"
+  | "clang-format"
+  | "shfmt"
+  | "zigfmt"
+  | "custom";
 
 export type LspActivation = "enabled" | "dismissed";
 
@@ -193,7 +208,10 @@ const KEY_EDITOR_THEME = "editorTheme";
 const KEY_CUSTOM_INSTRUCTIONS = "customInstructions";
 const KEY_AUTOSTART = "autostart";
 const KEY_RESTORE_WINDOW = "restoreWindowState";
+export type AutocompleteTrigger = "auto" | "manual";
+
 const KEY_AUTOCOMPLETE_ENABLED = "autocompleteEnabled";
+const KEY_AUTOCOMPLETE_TRIGGER = "autocompleteTrigger";
 const KEY_AUTOCOMPLETE_PROVIDER = "autocompleteProvider";
 const KEY_AUTOCOMPLETE_MODEL = "autocompleteModelId";
 const KEY_LMSTUDIO_BASE_URL = "lmstudioBaseURL";
@@ -234,6 +252,8 @@ const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
 const KEY_EDITOR_FORMAT_ON_SAVE = "editorFormatOnSave";
 const KEY_EDITOR_FORMATTER = "editorFormatter";
+const KEY_EDITOR_FORMATTER_BY_LANG = "editorFormatterByLang";
+const KEY_EDITOR_CUSTOM_FORMAT_COMMAND = "editorCustomFormatCommand";
 const KEY_LSP_ACTIVATION = "lspActivation";
 const KEY_LSP_CUSTOM_SERVERS = "lspCustomServers";
 
@@ -265,6 +285,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   autostart: false,
   restoreWindowState: true,
   autocompleteEnabled: false,
+  autocompleteTrigger: "auto",
   autocompleteProvider: "cerebras",
   autocompleteModelId: DEFAULT_AUTOCOMPLETE_MODEL.cerebras ?? "",
   lmstudioBaseURL: LMSTUDIO_DEFAULT_BASE_URL,
@@ -304,6 +325,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   editorAutoSaveDelay: 1000,
   editorFormatOnSave: false,
   editorFormatter: "lsp",
+  editorFormatterByLang: {},
+  editorCustomFormatCommand: "",
   lspActivation: {},
   lspCustomServers: [],
 };
@@ -364,6 +387,9 @@ export async function loadPreferences(): Promise<Preferences> {
     autocompleteEnabled:
       get<boolean>(KEY_AUTOCOMPLETE_ENABLED) ??
       DEFAULT_PREFERENCES.autocompleteEnabled,
+    autocompleteTrigger:
+      get<AutocompleteTrigger>(KEY_AUTOCOMPLETE_TRIGGER) ??
+      DEFAULT_PREFERENCES.autocompleteTrigger,
     autocompleteProvider:
       get<AutocompleteProviderId>(KEY_AUTOCOMPLETE_PROVIDER) ??
       DEFAULT_PREFERENCES.autocompleteProvider,
@@ -475,6 +501,12 @@ export async function loadPreferences(): Promise<Preferences> {
     editorFormatter:
       get<EditorFormatter>(KEY_EDITOR_FORMATTER) ??
       DEFAULT_PREFERENCES.editorFormatter,
+    editorFormatterByLang:
+      get<Record<string, EditorFormatter>>(KEY_EDITOR_FORMATTER_BY_LANG) ??
+      DEFAULT_PREFERENCES.editorFormatterByLang,
+    editorCustomFormatCommand:
+      get<string>(KEY_EDITOR_CUSTOM_FORMAT_COMMAND) ??
+      DEFAULT_PREFERENCES.editorCustomFormatCommand,
     lspActivation:
       get<Record<string, LspActivation>>(KEY_LSP_ACTIVATION) ??
       DEFAULT_PREFERENCES.lspActivation,
@@ -561,6 +593,12 @@ export async function setAutostart(value: boolean): Promise<void> {
 
 export async function setRestoreWindowState(value: boolean): Promise<void> {
   await writePref(KEY_RESTORE_WINDOW, value);
+}
+
+export async function setAutocompleteTrigger(
+  value: AutocompleteTrigger,
+): Promise<void> {
+  await writePref(KEY_AUTOCOMPLETE_TRIGGER, value);
 }
 
 export async function setAutocompleteEnabled(value: boolean): Promise<void> {
@@ -757,6 +795,18 @@ export async function setEditorFormatter(
   await writePref(KEY_EDITOR_FORMATTER, value);
 }
 
+export async function setEditorFormatterByLang(
+  value: Record<string, EditorFormatter>,
+): Promise<void> {
+  await writePref(KEY_EDITOR_FORMATTER_BY_LANG, value);
+}
+
+export async function setEditorCustomFormatCommand(
+  value: string,
+): Promise<void> {
+  await writePref(KEY_EDITOR_CUSTOM_FORMAT_COMMAND, value);
+}
+
 export async function setAgentNotifications(value: boolean): Promise<void> {
   await writePref(KEY_AGENT_NOTIFICATIONS, value);
 }
@@ -794,6 +844,7 @@ export async function onPreferencesChange(
     [KEY_AUTOSTART]: "autostart",
     [KEY_RESTORE_WINDOW]: "restoreWindowState",
     [KEY_AUTOCOMPLETE_ENABLED]: "autocompleteEnabled",
+    [KEY_AUTOCOMPLETE_TRIGGER]: "autocompleteTrigger",
     [KEY_AUTOCOMPLETE_PROVIDER]: "autocompleteProvider",
     [KEY_AUTOCOMPLETE_MODEL]: "autocompleteModelId",
     [KEY_LMSTUDIO_BASE_URL]: "lmstudioBaseURL",
@@ -833,6 +884,8 @@ export async function onPreferencesChange(
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",
     [KEY_EDITOR_FORMAT_ON_SAVE]: "editorFormatOnSave",
     [KEY_EDITOR_FORMATTER]: "editorFormatter",
+    [KEY_EDITOR_FORMATTER_BY_LANG]: "editorFormatterByLang",
+    [KEY_EDITOR_CUSTOM_FORMAT_COMMAND]: "editorCustomFormatCommand",
     [KEY_LSP_ACTIVATION]: "lspActivation",
     [KEY_LSP_CUSTOM_SERVERS]: "lspCustomServers",
   };

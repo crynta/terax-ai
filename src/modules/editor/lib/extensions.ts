@@ -12,6 +12,16 @@ export const readOnlyCompartment = new Compartment();
 export const wrapCompartment = new Compartment();
 export const vimCompartment = new Compartment();
 export const lspCompartment = new Compartment();
+export const indentCompartment = new Compartment();
+
+export function indentExtension(unit: string): Extension {
+  return [
+    indentUnit.of(unit),
+    EditorState.tabSize.of(unit === "\t" ? 4 : unit.length),
+  ];
+}
+
+export const DEFAULT_INDENT: Extension = indentExtension("  ");
 
 // Only what basicSetup doesn't already cover, to avoid duplicate extensions.
 // basicSetup gives us line numbers, fold gutter, history, indentOnInput,
@@ -19,8 +29,6 @@ export const lspCompartment = new Compartment();
 // highlightSelectionMatches and the search keymap.
 // Singleton: per-pane instances would inject duplicate style modules.
 const SHARED_EXTENSIONS: readonly Extension[] = Object.freeze([
-  indentUnit.of("  "),
-  EditorState.tabSize.of(2),
   search({ top: true }),
   lintGutter(),
   chromeTheme(),
