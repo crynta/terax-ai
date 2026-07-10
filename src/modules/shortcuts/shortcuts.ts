@@ -36,12 +36,15 @@ export type ShortcutId =
   | "view.zoomReset"
   | "view.zenMode"
   | "ai.toggle"
+  | "ai.toggleMini"
   | "ai.askSelection"
   | "agent.focusAttention"
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
-  | "editor.redo";
+  | "editor.redo"
+  | "editor.aiComplete"
+  | "editor.codeComplete";
 
 export type ShortcutGroup =
   | "General"
@@ -231,7 +234,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "search.focus",
-    label: "Find in terminal",
+    label: "Find in tab",
     group: "Search",
     defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
   },
@@ -240,6 +243,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle AI agent",
     group: "AI",
     defaultBindings: [{ [MOD_PROP]: true, key: "i" }],
+  },
+  {
+    id: "ai.toggleMini",
+    label: "Toggle AI chat window",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "i" }],
   },
   {
     id: "ai.askSelection",
@@ -301,7 +310,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "view.zenMode",
     label: "Toggle zen mode",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "z" }],
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "'" }],
   },
   // Editor entries are display-only: CodeMirror's historyKeymap binds these
   // keys natively. We register them here so the shortcuts dialog can surface
@@ -320,6 +329,18 @@ export const SHORTCUTS: Shortcut[] = [
     group: "Editor",
     defaultBindings: [{ [MOD_PROP]: true, key: "y" }],
   },
+  {
+    id: "editor.aiComplete",
+    label: "Trigger AI completion",
+    group: "Editor",
+    defaultBindings: [{ alt: true, key: "\\" }],
+  },
+  {
+    id: "editor.codeComplete",
+    label: "Trigger code completion",
+    group: "Editor",
+    defaultBindings: [{ ctrl: true, key: " " }],
+  },
 ];
 
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
@@ -336,6 +357,29 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
 /**
  * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
  */
+const CODE_TO_KEY: Record<string, string> = {
+  Backslash: "\\",
+  Slash: "/",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Backquote: "`",
+  Minus: "-",
+  Equal: "=",
+  Space: " ",
+};
+
+// macOS Option combinations rewrite e.key ("«", "…", dead keys); the
+// physical key survives in e.code.
+function keyFromCode(code: string): string | null {
+  if (code.startsWith("Key")) return code.slice(3).toLowerCase();
+  if (code.startsWith("Digit")) return code.slice(5);
+  return CODE_TO_KEY[code] ?? null;
+}
+
 export function matchBinding(
   e: KeyboardEvent,
   binding: KeyBinding,
@@ -348,7 +392,7 @@ export function matchBinding(
   if (id === "tab.selectByIndex") {
     if (!/^[1-9]$/.test(e.key)) return false;
   } else if (eventKey !== bindingKey) {
-    return false;
+    if (!binding.alt || keyFromCode(e.code) !== bindingKey) return false;
   }
 
   return (

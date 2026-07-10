@@ -142,7 +142,19 @@ export const LANGUAGES: LanguageDefinition[] = [
   {
     name: "Markdown",
     extensions: ["md", "markdown"],
-    loader: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
+    // markdownLanguage = GFM (tables, task lists, strikethrough, autolinks);
+    // fenced code blocks highlight through the shared lazy language registry.
+    loader: () =>
+      Promise.all([
+        import("@codemirror/lang-markdown"),
+        import("./markdownExtras"),
+      ]).then(([m, extras]) => [
+        m.markdown({
+          base: m.markdownLanguage,
+          codeLanguages: extras.markdownCodeLanguages(),
+        }),
+        extras.markdownExtras(),
+      ]),
     userSelectable: true,
   },
   {

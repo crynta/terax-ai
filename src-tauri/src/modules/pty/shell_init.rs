@@ -16,7 +16,6 @@ const ZLOGIN_SCRIPT: &str = include_str!("scripts/zlogin.zsh");
 const ZSHRC_SCRIPT: &str = include_str!("scripts/zshrc.zsh");
 #[cfg(windows)]
 const FISH_INIT_SCRIPT: &str = include_str!("scripts/init.fish");
-#[cfg(unix)]
 const FISH_REINSTALL_PROMPT: &str =
     "functions -q __terax_install_prompt; and __terax_install_prompt";
 
@@ -71,7 +70,9 @@ pub fn build_command(
 // Honor the override only if it matches an enumerated shell, so a tampered
 // setting can't spawn an arbitrary binary across the IPC boundary.
 fn sanitize_shell_override(shell: Option<String>) -> Option<String> {
-    let candidate = shell.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())?;
+    let candidate = shell
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())?;
     let target = std::fs::canonicalize(&candidate).ok();
     let allowed = list_shells().into_iter().any(|s| {
         s.path == candidate || (target.is_some() && std::fs::canonicalize(&s.path).ok() == target)
@@ -284,7 +285,11 @@ mod unix {
         let (shell, shell_path) = Shell::resolve(shell_override);
         let mut cmd = CommandBuilder::new(&shell_path);
         super::apply_common(&mut cmd, cwd, blocks);
+        apply_shell_init(&mut cmd, &shell, &shell_path);
+        Ok(cmd)
+    }
 
+    fn apply_shell_init(cmd: &mut CommandBuilder, shell: &Shell, shell_path: &str) {
         match shell {
             Shell::Zsh => {
                 match prepare_zdotdir() {
@@ -339,7 +344,6 @@ mod unix {
                 );
             }
         }
-        Ok(cmd)
     }
 
     fn integration_root() -> Result<PathBuf, String> {
@@ -394,7 +398,7 @@ mod unix {
 
     #[cfg(test)]
     mod tests {
-        use super::Shell;
+        use super::*;
 
         #[test]
         fn classify_maps_known_shells() {
@@ -428,6 +432,26 @@ mod unix {
             let (_, fallback) = Shell::resolve(Some("   ".into()));
             let (_, detected) = Shell::detect();
             assert_eq!(fallback, detected);
+        }
+
+        #[test]
+        fn builds_unix_fish_launch_with_post_config_rewrap() {
+            let mut cmd = CommandBuilder::new("/usr/bin/fish");
+            apply_shell_init(&mut cmd, &Shell::Fish, "/usr/bin/fish");
+            let argv: Vec<_> = cmd
+                .get_argv()
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect();
+            assert_eq!(
+                argv,
+                vec![
+                    "/usr/bin/fish".to_string(),
+                    "-i".to_string(),
+                    "-C".to_string(),
+                    super::super::FISH_REINSTALL_PROMPT.to_string(),
+                ]
+            );
         }
     }
 }
@@ -468,7 +492,9 @@ mod windows {
             zdotdir: String,
             user_zdotdir: Option<String>,
         },
-        Bash { rcfile: String },
+        Bash {
+            rcfile: String,
+        },
         Fish,
         None,
     }
@@ -650,6 +676,8 @@ mod windows {
                 args.push("fish_features=no-mark-prompt".to_string());
                 args.push(shell_path.to_string());
                 args.push("-i".to_string());
+                args.push("-C".to_string());
+                args.push(super::FISH_REINSTALL_PROMPT.to_string());
             }
             (ShellKind::Zsh, WslShellIntegration::None) => {
                 args.push(shell_path.to_string());
@@ -966,6 +994,8 @@ mod windows {
                     "fish_features=no-mark-prompt".to_string(),
                     "/usr/bin/fish".to_string(),
                     "-i".to_string(),
+                    "-C".to_string(),
+                    super::super::FISH_REINSTALL_PROMPT.to_string(),
                 ]
             );
         }

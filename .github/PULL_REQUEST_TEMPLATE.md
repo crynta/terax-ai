@@ -1,5 +1,5 @@
 <!--
-PR title should follow Conventional Commits — it becomes the squash commit message.
+PR title should follow Conventional Commits - it becomes the squash commit message.
 Examples: feat(terminal): add split panes / fix(explorer): close button alignment
 -->
 
@@ -13,12 +13,15 @@ Examples: feat(terminal): add split panes / fix(explorer): close button alignmen
 <!-- Brief notes on the approach, only if non-obvious. -->
 
 ## Testing
-<!-- How did you verify this works? "Ran tsc clean" is not enough on its own —
+<!-- How did you verify this works? "Ran tsc clean" is not enough on its own -
      describe the actual flows you exercised. -->
 
-- [ ] `pnpm exec tsc --noEmit` clean
+- [ ] `pnpm lint` clean
+- [ ] `pnpm check-types` clean
+- [ ] `pnpm test` clean
 - [ ] Manual smoke-test of the affected feature
-- [ ] (If you touched `src-tauri/`) `cargo test --locked` and `cargo clippy --all-targets --locked -- -D warnings` clean
+- [ ] (If you touched `src-tauri/`) `cargo clippy --all-targets --locked -- -D warnings` clean
+- [ ] (If you touched `src-tauri/`) `cargo nextest run --locked` clean (or `cargo test --locked`)
 - [ ] (If you changed a `#[tauri::command]` signature) called out below so the FE caller can be updated in lockstep
 - [ ] (If UI) tested in `pnpm tauri dev`
 - [ ] Platforms tested: <!-- macOS / Linux / Windows -->

@@ -1,5 +1,5 @@
-import { lazy, Suspense } from "react";
 import type { ComponentProps } from "react";
+import { lazy, Suspense } from "react";
 import type { GitDiffStack as GitDiffStackType } from "./GitDiffStack";
 
 const GitDiffStackInner = lazy(() =>

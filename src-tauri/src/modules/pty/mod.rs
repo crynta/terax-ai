@@ -1,7 +1,5 @@
 mod agent_detect;
 mod da_filter;
-#[cfg(windows)]
-mod job;
 mod session;
 pub(crate) mod shell_init;
 

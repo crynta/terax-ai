@@ -1,5 +1,5 @@
-import { lazy, Suspense } from "react";
 import type { ComponentProps } from "react";
+import { lazy, Suspense } from "react";
 import type { EditorStack as EditorStackType } from "./EditorStack";
 
 const EditorStackInner = lazy(() =>

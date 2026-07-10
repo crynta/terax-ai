@@ -1,6 +1,6 @@
 pub mod modules;
 
-use modules::{agent, fs, git, history, net, pty, secrets, shell, workspace};
+use modules::{agent, fs, git, history, lsp, net, pty, secrets, shell, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -130,7 +130,10 @@ pub fn run() {
     let cli_dir = parse_launch_dir();
     workspace::init_launch_cwd(cli_dir.as_deref());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "linux")]
+    let builder = builder.plugin(tauri_plugin_clipboard_manager::init());
+    builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Skip restoring VISIBLE — frontend calls window.show() after first
@@ -175,6 +178,7 @@ pub fn run() {
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
         .manage(history::HistoryState::default())
+        .manage(lsp::LspState::default())
         .manage(fs::grep::ContentSearchState::default())
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
@@ -208,6 +212,12 @@ pub fn run() {
             fs::mutate::fs_copy,
             fs::watch::fs_watch_add,
             fs::watch::fs_watch_remove,
+            lsp::lsp_detect,
+            lsp::lsp_host_pid,
+            lsp::lsp_resolve_root,
+            lsp::lsp_spawn,
+            lsp::lsp_send,
+            lsp::lsp_kill,
             fs::search::fs_search,
             fs::search::fs_list_files,
             fs::grep::fs_grep,
@@ -261,6 +271,15 @@ pub fn run() {
             history::history_record,
             history::history_list,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Servers exit on stdin EOF, but destructors are not guaranteed
+            // on process exit; kill explicitly.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<lsp::LspState>() {
+                    state.kill_all();
+                }
+            }
+        });
 }
