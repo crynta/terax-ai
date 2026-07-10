@@ -12,10 +12,9 @@ export function useLspExtension(
 ): Extension | null {
   const [ext, setExt] = useState<Extension | null>(null);
   const customServers = usePreferencesStore((s) => s.lspCustomServers);
-  const preset = serverForLanguage(langId, customServers);
-  const activation = usePreferencesStore((s) =>
-    preset ? s.lspActivation[preset.id] : undefined,
-  );
+  const lspActivation = usePreferencesStore((s) => s.lspActivation);
+  const preset = serverForLanguage(langId, customServers, lspActivation);
+  const activation = preset ? lspActivation[preset.id] : undefined;
   const generation = useLspRuntimeStore((s) =>
     preset ? (s.generations[preset.id] ?? 0) : 0,
   );

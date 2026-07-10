@@ -18,6 +18,12 @@ import {
   languageServerPlugin,
   renameSymbol,
 } from "codemirror-languageserver";
+import {
+  type LocationItem,
+  locationsPanel,
+  openLocationsPanel,
+} from "./locationsPanel";
+import { fileUriToPath } from "./uri";
 
 export {
   languageServerWithTransport,
@@ -27,32 +33,66 @@ export {
 type LspPos = { line: number; character: number };
 type LspRange = { start: LspPos };
 
+type LspLocation = { uri: string; range: LspRange };
+type LspLocationLink = {
+  targetUri: string;
+  targetRange: LspRange;
+  targetSelectionRange?: LspRange;
+};
+type DefinitionResult =
+  | LspLocation
+  | LspLocation[]
+  | LspLocationLink[]
+  | null
+  | undefined;
+
+function normalizeLocations(result: DefinitionResult): LspLocation[] {
+  if (!result) return [];
+  const list = Array.isArray(result) ? result : [result];
+  const out: LspLocation[] = [];
+  for (const loc of list) {
+    if ("uri" in loc) {
+      out.push(loc);
+    } else if (loc.targetUri) {
+      out.push({
+        uri: loc.targetUri,
+        range: loc.targetSelectionRange ?? loc.targetRange,
+      });
+    }
+  }
+  return out;
+}
+
 function offsetOf(doc: Text, pos: LspPos): number {
   if (pos.line >= doc.lines) return doc.length;
   const line = doc.line(pos.line + 1);
   return Math.min(line.from + pos.character, line.to);
 }
 
+export type LspFormatResult = "done" | "unsupported";
+
 // The lib's formatDocument command fires and forgets; save needs to await
-// the edits before writing to disk.
+// the edits before writing to disk. "unsupported" surfaces servers that
+// simply have no formatter (pyright) so the UI can say so instead of
+// silently doing nothing.
 export async function formatDocumentAndWait(
   view: EditorView,
-): Promise<boolean> {
+): Promise<LspFormatResult> {
   const plugin = view.plugin(languageServerPlugin);
-  if (!plugin) return false;
+  if (!plugin) return "unsupported";
   const { client } = plugin;
   if (!client.ready || !client.capabilities?.documentFormattingProvider) {
-    return false;
+    return "unsupported";
   }
   const doc = view.state.doc;
   const edits = await client.textDocumentFormatting({
     textDocument: { uri: plugin.documentUri },
     options: { tabSize: view.state.tabSize, insertSpaces: true },
   });
-  if (!edits || edits.length === 0) return false;
+  if (!edits || edits.length === 0) return "done";
   // Edits are offsets into the requested snapshot; typing during the
   // round-trip would corrupt the document.
-  if (view.state.doc !== doc) return false;
+  if (view.state.doc !== doc) return "done";
   view.dispatch({
     changes: edits.map((e) => ({
       from: offsetOf(doc, e.range.start),
@@ -60,7 +100,7 @@ export async function formatDocumentAndWait(
       insert: e.newText,
     })),
   });
-  return true;
+  return "done";
 }
 
 function highlightBlock(el: HTMLElement, view: EditorView): void {
@@ -198,37 +238,19 @@ const linkHover: Extension = [
 export function lspInteractions(opts: {
   client: TeraxLspClient;
   documentUri: string;
+  rootPath: string;
   onExternal: (uri: string, line: number) => void;
 }): Extension {
-  const gotoDefinition = async (
-    view: EditorView,
-    pos: number,
-  ): Promise<void> => {
-    const line = view.state.doc.lineAt(pos);
-    let result: Awaited<
-      ReturnType<LanguageServerClient["textDocumentDefinition"]>
-    >;
-    try {
-      result = await opts.client.textDocumentDefinition({
-        textDocument: { uri: opts.documentUri },
-        position: { line: line.number - 1, character: pos - line.from },
-      });
-    } catch {
-      return;
-    }
-    const loc = Array.isArray(result) ? result[0] : result;
-    if (!loc) return;
-    const uri = "uri" in loc ? loc.uri : loc.targetUri;
-    const range: LspRange | undefined =
-      "range" in loc
-        ? loc.range
-        : (loc.targetSelectionRange ?? loc.targetRange);
-    if (!uri || !range) return;
-    if (uri === opts.documentUri) {
-      const targetLine = Math.min(range.start.line + 1, view.state.doc.lines);
+  const navigate = (view: EditorView, loc: LspLocation): void => {
+    if (loc.uri === opts.documentUri) {
+      const targetLine = Math.min(
+        loc.range.start.line + 1,
+        view.state.doc.lines,
+      );
+      const lineObj = view.state.doc.line(targetLine);
       const target = Math.min(
-        view.state.doc.line(targetLine).from + range.start.character,
-        view.state.doc.length,
+        lineObj.from + loc.range.start.character,
+        lineObj.to,
       );
       view.dispatch({
         selection: { anchor: target },
@@ -236,11 +258,89 @@ export function lspInteractions(opts: {
       });
       view.focus();
     } else {
-      opts.onExternal(uri, range.start.line + 1);
+      opts.onExternal(loc.uri, loc.range.start.line + 1);
     }
   };
 
+  const label = (loc: LspLocation): string => {
+    const path = fileUriToPath(loc.uri) ?? loc.uri;
+    const rel = path.startsWith(`${opts.rootPath}/`)
+      ? path.slice(opts.rootPath.length + 1)
+      : path;
+    return `${rel}:${loc.range.start.line + 1}`;
+  };
+
+  const showResults = (
+    view: EditorView,
+    title: string,
+    locs: LspLocation[],
+  ): void => {
+    if (locs.length === 0) return;
+    if (locs.length === 1) {
+      navigate(view, locs[0]);
+      return;
+    }
+    const byLoc = new Map<string, LspLocation>();
+    for (const loc of locs) byLoc.set(label(loc), loc);
+    const items: LocationItem[] = [...byLoc.entries()]
+      .map(([text, loc]) => ({
+        uri: loc.uri,
+        line: loc.range.start.line,
+        character: loc.range.start.character,
+        label: text,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    openLocationsPanel(view, {
+      title,
+      items,
+      onPick: (item) =>
+        navigate(view, {
+          uri: item.uri,
+          range: { start: { line: item.line, character: item.character } },
+        }),
+    });
+  };
+
+  const positionAt = (view: EditorView, pos: number) => {
+    const line = view.state.doc.lineAt(pos);
+    return { line: line.number - 1, character: pos - line.from };
+  };
+
+  const gotoDefinition = async (
+    view: EditorView,
+    pos: number,
+  ): Promise<void> => {
+    let result: DefinitionResult;
+    try {
+      result = await opts.client.textDocumentDefinition({
+        textDocument: { uri: opts.documentUri },
+        position: positionAt(view, pos),
+      });
+    } catch {
+      return;
+    }
+    showResults(view, "Definitions", normalizeLocations(result));
+  };
+
+  const findReferences = async (
+    view: EditorView,
+    pos: number,
+  ): Promise<void> => {
+    let result: LspLocation[] | null;
+    try {
+      result = await opts.client.textDocumentReferences({
+        textDocument: { uri: opts.documentUri },
+        position: positionAt(view, pos),
+        context: { includeDeclaration: true },
+      });
+    } catch {
+      return;
+    }
+    showResults(view, "References", result ?? []);
+  };
+
   return [
+    locationsPanel,
     hoverCodeHighlight,
     linkHover,
     keymap.of([
@@ -249,6 +349,14 @@ export function lspInteractions(opts: {
         preventDefault: true,
         run: (view) => {
           void gotoDefinition(view, view.state.selection.main.head);
+          return true;
+        },
+      },
+      {
+        key: "Shift-F12",
+        preventDefault: true,
+        run: (view) => {
+          void findReferences(view, view.state.selection.main.head);
           return true;
         },
       },
@@ -299,8 +407,18 @@ export class TeraxLspClient extends LanguageServerClient {
     params.capabilities.textDocument = {
       ...params.capabilities.textDocument,
       publishDiagnostics: { relatedInformation: true },
+      references: { dynamicRegistration: false },
     };
     return params;
+  }
+
+  textDocumentReferences(params: {
+    textDocument: { uri: string };
+    position: LspPos;
+    context: { includeDeclaration: boolean };
+  }): Promise<LspLocation[] | null> {
+    return this.raw.request("textDocument/references", params, 10_000) as
+      Promise<LspLocation[] | null>;
   }
 
   textDocumentDidClose(uri: string): void {
