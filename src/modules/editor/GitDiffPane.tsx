@@ -6,6 +6,7 @@ import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   commitDiffKey,
   fetchCommitDiff,
@@ -14,9 +15,11 @@ import {
   workingDiffKey,
 } from "./lib/diffCache";
 import {
+  buildMinimapExt,
   buildSharedExtensions,
   DEFAULT_INDENT,
   languageCompartment,
+  minimapCompartment,
 } from "./lib/extensions";
 import { resolveLanguage, resolveLanguageSync } from "./lib/languageResolver";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
@@ -139,6 +142,7 @@ function loadStateFromCache(source: WorkingSource | CommitSource): LoadState {
 export function GitDiffPane({ source, chipLabel, active }: Props) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const themeExt = useEditorThemeExt();
+  const editorMinimap = usePreferencesStore((s) => s.editorMinimap);
   const [state, setState] = useState<LoadState>(() =>
     active ? loadStateFromCache(source) : { kind: "idle" },
   );
@@ -215,6 +219,9 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
       ...SHARED_EXT,
       DEFAULT_INDENT,
       languageCompartment.of(langExt ?? []),
+      minimapCompartment.of(
+        buildMinimapExt(usePreferencesStore.getState().editorMinimap),
+      ),
       ...READONLY_EXT,
       unifiedMergeView({
         original: originalContent,
@@ -244,6 +251,14 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
       cancelled = true;
     };
   }, [useFallback, path, state]);
+
+  useEffect(() => {
+    const view = cmRef.current?.view;
+    if (!view) return;
+    view.dispatch({
+      effects: minimapCompartment.reconfigure(buildMinimapExt(editorMinimap)),
+    });
+  }, [editorMinimap]);
 
   const stats = useMemo(
     () =>

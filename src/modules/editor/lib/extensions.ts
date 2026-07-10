@@ -1,4 +1,5 @@
 import { detectMonoFontFamily } from "@/lib/fonts";
+import { showMinimap } from "@replit/codemirror-minimap";
 import { indentUnit } from "@codemirror/language";
 import { lintGutter } from "@codemirror/lint";
 import { search } from "@codemirror/search";
@@ -11,6 +12,7 @@ export const languageCompartment = new Compartment();
 export const readOnlyCompartment = new Compartment();
 export const wrapCompartment = new Compartment();
 export const vimCompartment = new Compartment();
+export const minimapCompartment = new Compartment();
 export const lspCompartment = new Compartment();
 export const indentCompartment = new Compartment();
 
@@ -107,4 +109,16 @@ const SHARED_EXTENSIONS: readonly Extension[] = Object.freeze([
 
 export function buildSharedExtensions(): readonly Extension[] {
   return SHARED_EXTENSIONS;
+}
+
+export function buildMinimapExt(enabled: boolean): Extension {
+  if (!enabled) return [];
+  return showMinimap.compute(["doc"], () => ({
+    create: () => {
+      const dom = document.createElement("div");
+      return { dom };
+    },
+    displayText: "characters",
+    showOverlay: "always",
+  }));
 }

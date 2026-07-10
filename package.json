@@ -61,6 +61,7 @@
     "@iconify-json/catppuccin": "^1.2.17",
     "@lezer/highlight": "^1.2.3",
     "@radix-ui/react-use-controllable-state": "^1.2.3",
+    "@replit/codemirror-minimap": "0.5.2",
     "@replit/codemirror-vim": "^6.3.0",
     "@tanstack/react-virtual": "^3.14.5",
     "@tauri-apps/api": "^2.11.1",
