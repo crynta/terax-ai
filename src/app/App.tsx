@@ -136,6 +136,7 @@ export default function App() {
     setLeafCwd,
     focusPane,
     focusNextPaneInTab,
+    swapActivePaneInDirection,
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
@@ -675,6 +676,10 @@ export default function App() {
       "pane.splitDown": () => splitActivePaneInActiveTab("col"),
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
+      "pane.swapLeft": () => swapActivePaneInDirection(activeId, "left"),
+      "pane.swapRight": () => swapActivePaneInDirection(activeId, "right"),
+      "pane.swapUp": () => swapActivePaneInDirection(activeId, "up"),
+      "pane.swapDown": () => swapActivePaneInDirection(activeId, "down"),
       "pane.source": toggleSourceControl,
       "terminal.clear": () => {
         clearFocusedTerminal();
@@ -729,6 +734,7 @@ export default function App() {
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
+      swapActivePaneInDirection,
       toggleSourceControl,
       hasComposer,
       togglePanelAndFocus,
