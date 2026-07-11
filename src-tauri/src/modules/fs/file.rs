@@ -9,6 +9,8 @@ use tempfile::NamedTempFile;
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
 
 const MAX_READ_BYTES: u64 = 10 * 1024 * 1024; // 10 MB
+/// Ceiling for explicit "open anyway"; mirrored as FORCE_READ_LIMIT in useDocument.ts.
+const FORCE_MAX_READ_BYTES: u64 = 50 * 1024 * 1024;
 const BINARY_SNIFF_BYTES: usize = 8 * 1024;
 
 #[derive(Serialize)]
@@ -17,6 +19,7 @@ pub enum ReadResult {
     Text {
         content: String,
         size: u64,
+        mtime: u64,
     },
     Binary {
         size: u64,
@@ -43,24 +46,41 @@ pub struct FileStat {
     pub kind: StatKind,
 }
 
+fn mtime_millis(meta: &fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 #[tauri::command]
-pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<ReadResult, String> {
+pub async fn fs_read_file(
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+    force: Option<bool>,
+) -> Result<ReadResult, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
-    let p = resolve_path(&path, &workspace);
-    let meta = std::fs::metadata(&p).map_err(|e| {
+    read_file_sync(&resolve_path(&path, &workspace), force.unwrap_or(false))
+}
+
+fn read_file_sync(p: &Path, force: bool) -> Result<ReadResult, String> {
+    let meta = std::fs::metadata(p).map_err(|e| {
         log::debug!("fs_read_file stat({}) failed: {e}", p.display());
         e.to_string()
     })?;
 
     let size = meta.len();
-    if size > MAX_READ_BYTES {
-        return Ok(ReadResult::TooLarge {
-            size,
-            limit: MAX_READ_BYTES,
-        });
+    let limit = if force {
+        FORCE_MAX_READ_BYTES
+    } else {
+        MAX_READ_BYTES
+    };
+    if size > limit {
+        return Ok(ReadResult::TooLarge { size, limit });
     }
 
-    let bytes = std::fs::read(&p).map_err(|e| {
+    let bytes = std::fs::read(p).map_err(|e| {
         log::debug!("fs_read_file read({}) failed: {e}", p.display());
         e.to_string()
     })?;
@@ -73,7 +93,11 @@ pub fn fs_read_file(path: String, workspace: Option<WorkspaceEnv>) -> Result<Rea
     }
 
     match String::from_utf8(bytes) {
-        Ok(content) => Ok(ReadResult::Text { content, size }),
+        Ok(content) => Ok(ReadResult::Text {
+            content,
+            size,
+            mtime: mtime_millis(&meta),
+        }),
         Err(_) => Ok(ReadResult::Binary { size }),
     }
 }
@@ -98,14 +122,16 @@ fn write_atomic(target: &Path, content: &[u8]) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Returns the new mtime so the editor can track disk state for conflict
+/// detection without a follow-up stat.
 #[tauri::command]
-pub fn fs_write_file(
+pub async fn fs_write_file(
     path: String,
     content: String,
     workspace: Option<WorkspaceEnv>,
     source: Option<String>,
     app: tauri::AppHandle,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let target = resolve_path(&path, &workspace);
     let original_permissions = fs::metadata(&target).ok().map(|m| m.permissions());
@@ -117,6 +143,9 @@ pub fn fs_write_file(
     if let Some(perms) = original_permissions {
         let _ = fs::set_permissions(&target, perms);
     }
+    let mtime = fs::metadata(&target)
+        .map(|m| mtime_millis(&m))
+        .unwrap_or(0);
     let _ = app.emit(
         "fs:file-written",
         FileWrittenEvent {
@@ -125,11 +154,14 @@ pub fn fs_write_file(
         },
     );
 
-    Ok(())
+    Ok(mtime)
 }
 
 #[tauri::command]
-pub fn fs_canonicalize(path: String, workspace: Option<WorkspaceEnv>) -> Result<String, String> {
+pub async fn fs_canonicalize(
+    path: String,
+    workspace: Option<WorkspaceEnv>,
+) -> Result<String, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let p = resolve_path(&path, &workspace);
     let canon = std::fs::canonicalize(&p).map_err(|e| e.to_string())?;
@@ -137,26 +169,24 @@ pub fn fs_canonicalize(path: String, workspace: Option<WorkspaceEnv>) -> Result<
 }
 
 #[tauri::command]
-pub fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
+pub async fn fs_stat(path: String, workspace: Option<WorkspaceEnv>) -> Result<FileStat, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
     let p = resolve_path(&path, &workspace);
     let meta = std::fs::metadata(&p).map_err(|e| e.to_string())?;
-    let kind = if meta.is_dir() {
-        StatKind::Dir
-    } else if meta.file_type().is_symlink() {
+    // fs::metadata follows symlinks, so the link check needs symlink_metadata.
+    let kind = if std::fs::symlink_metadata(&p)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+    {
         StatKind::Symlink
+    } else if meta.is_dir() {
+        StatKind::Dir
     } else {
         StatKind::File
     };
-    let mtime = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
     Ok(FileStat {
         size: meta.len(),
-        mtime,
+        mtime: mtime_millis(&meta),
         kind,
     })
 }
@@ -170,10 +200,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("a.txt");
         std::fs::write(&f, b"hello world").unwrap();
-        match fs_read_file(f.to_string_lossy().into_owned(), None).unwrap() {
-            ReadResult::Text { content, size } => {
+        match read_file_sync(&f, false).unwrap() {
+            ReadResult::Text {
+                content,
+                size,
+                mtime,
+            } => {
                 assert_eq!(content, "hello world");
                 assert_eq!(size, 11);
+                assert!(mtime > 0);
             }
             _ => panic!("expected text"),
         }
@@ -185,7 +220,7 @@ mod tests {
         let f = dir.path().join("a.bin");
         std::fs::write(&f, b"PNG\0\x89image").unwrap();
         assert!(matches!(
-            fs_read_file(f.to_string_lossy().into_owned(), None).unwrap(),
+            read_file_sync(&f, false).unwrap(),
             ReadResult::Binary { .. }
         ));
     }
@@ -197,8 +232,23 @@ mod tests {
         // Invalid UTF-8 with no null byte: must still classify as binary.
         std::fs::write(&f, [0xff, 0xfe, 0xfd, 0xfc]).unwrap();
         assert!(matches!(
-            fs_read_file(f.to_string_lossy().into_owned(), None).unwrap(),
+            read_file_sync(&f, false).unwrap(),
             ReadResult::Binary { .. }
+        ));
+    }
+
+    #[test]
+    fn force_lifts_the_default_size_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("big.txt");
+        std::fs::write(&f, vec![b'a'; (MAX_READ_BYTES + 1) as usize]).unwrap();
+        assert!(matches!(
+            read_file_sync(&f, false).unwrap(),
+            ReadResult::TooLarge { .. }
+        ));
+        assert!(matches!(
+            read_file_sync(&f, true).unwrap(),
+            ReadResult::Text { .. }
         ));
     }
 

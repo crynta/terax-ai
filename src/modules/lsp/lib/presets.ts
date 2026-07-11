@@ -74,6 +74,24 @@ export const LSP_PRESETS: LspPreset[] = [
     },
   },
   {
+    id: "ruff",
+    name: "Ruff",
+    command: "ruff",
+    args: ["server"],
+    languages: { py: "python" },
+    rootMarkers: [
+      "pyproject.toml",
+      "ruff.toml",
+      ".ruff.toml",
+      "setup.py",
+      "requirements.txt",
+    ],
+    install: {
+      command: "pip install ruff",
+      docsUrl: "https://docs.astral.sh/ruff/editors/",
+    },
+  },
+  {
     id: "gopls",
     name: "Go",
     command: "gopls",
@@ -263,12 +281,31 @@ export function allServers(custom: LspCustomServer[]): LspPreset[] {
   return [...LSP_PRESETS, ...custom.map(fromCustom)];
 }
 
+export function serversForLanguage(
+  langId: string | null,
+  custom: LspCustomServer[],
+): LspPreset[] {
+  if (!langId) return [];
+  return allServers(custom).filter((p) => langId in p.languages);
+}
+
+// Several presets can claim a language (pyright and ruff both take `py`).
+// The enabled one wins; among untouched candidates the first non-dismissed
+// is offered by the statusbar hint. Preset order breaks remaining ties.
 export function serverForLanguage(
   langId: string | null,
   custom: LspCustomServer[],
+  activation?: Record<string, string | undefined>,
 ): LspPreset | null {
-  if (!langId) return null;
-  return allServers(custom).find((p) => langId in p.languages) ?? null;
+  const candidates = serversForLanguage(langId, custom);
+  if (candidates.length === 0) return null;
+  if (activation) {
+    const enabled = candidates.find((p) => activation[p.id] === "enabled");
+    if (enabled) return enabled;
+    const fresh = candidates.find((p) => activation[p.id] !== "dismissed");
+    if (fresh) return fresh;
+  }
+  return candidates[0];
 }
 
 export function serverById(
