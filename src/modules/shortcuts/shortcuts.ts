@@ -252,9 +252,6 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "ai.toggleMini",
-    label: "Toggle conversation window",
-    group: "AI",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "m" }],
     label: "Toggle AI chat window",
     group: "AI",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "i" }],

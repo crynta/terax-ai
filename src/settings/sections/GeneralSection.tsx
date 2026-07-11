@@ -23,12 +23,18 @@ import {
   ANIMATION_CUSTOM_MIN,
   type AnimationSpeed,
   clampTerminalPadding,
+  type EditorFormatter,
   setAgentNotifications,
   setAnimationSpeed,
   setAnimationSpeedCustom,
   setAutostart,
   setCommandDoneToasts,
   setDefaultWorkspaceEnv,
+  setEditorAutoSave,
+  setEditorAutoSaveDelay,
+  setEditorFormatOnSave,
+  setEditorFormatter,
+  setEditorWordWrap,
   setExplorerGitDecorations,
   setFailedCommandAi,
   setHoverKeybindHints,
@@ -88,6 +94,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useState } from "react";
+import { LspServersGroup } from "../components/LspServersGroup";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
 import { CommittedInput, ShellToolsGroup } from "../components/ShellToolsGroup";
@@ -117,6 +124,9 @@ const SHELL_AUTO = "auto";
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const ZOOM_STEP = 0.05;
+const AUTO_SAVE_STEP = 100;
+const AUTO_SAVE_MIN = 100;
+const AUTO_SAVE_MAX = 60000;
 
 /** General: appearance mode, zoom, startup and notifications. */
 export function GeneralSection() {
@@ -126,9 +136,6 @@ export function GeneralSection() {
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const sidebarStartCollapsed = usePreferencesStore(
     (s) => s.sidebarStartCollapsed,
-  const showHidden = usePreferencesStore((s) => s.showHidden);
-  const explorerGitDecorations = usePreferencesStore(
-    (s) => s.explorerGitDecorations,
   );
   const statusBarStartCollapsed = usePreferencesStore(
     (s) => s.statusBarStartCollapsed,
@@ -166,7 +173,7 @@ export function GeneralSection() {
     <div className="flex flex-col gap-6">
       <SectionHeader
         title="General"
-        description="Mode, terminal, and startup."
+        description="Appearance mode, zoom, startup and notifications."
       />
 
       <div className="flex flex-col gap-2">
@@ -218,7 +225,290 @@ export function GeneralSection() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Explorer</Label>
+        <GroupLabel>Startup</GroupLabel>
+        <SettingRow
+          title="Launch at login"
+          description="Open Terax automatically when you sign in."
+        >
+          <Switch
+            checked={autostart}
+            onCheckedChange={(v) => void onToggleAutostart(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Restore window position & size"
+          description="Reopen the main window where you left it. Applies on next launch."
+        >
+          <Switch
+            checked={restoreWindowState}
+            onCheckedChange={(v) => void setRestoreWindowState(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Start with sidebar hidden"
+          description="Always launch with the sidebar collapsed instead of restoring its last state. Toggle it any time from the header or shortcut."
+        >
+          <Switch
+            checked={sidebarStartCollapsed}
+            onCheckedChange={(v) => void setSidebarStartCollapsed(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Start with status bar hidden"
+          description="Always launch with the status bar collapsed instead of restoring its last state. Toggle it any time with the shortcut."
+        >
+          <Switch
+            checked={statusBarStartCollapsed}
+            onCheckedChange={(v) => void setStatusBarStartCollapsed(v)}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <GroupLabel>Notifications</GroupLabel>
+        <SettingRow
+          title="Coding agent notifications"
+          description="Alert when Claude Code or Codex running in a terminal needs your input or finishes. Desktop notification when Terax is unfocused, in-app otherwise."
+        >
+          <Switch
+            checked={agentNotifications}
+            onCheckedChange={(v) => void setAgentNotifications(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Finished-command notifications"
+          description="Toast with a jump action when a command longer than 10s finishes in a hidden tab."
+        >
+          <Switch
+            checked={commandDoneToasts}
+            onCheckedChange={(v) => void setCommandDoneToasts(v)}
+          />
+        </SettingRow>
+      </div>
+    </div>
+  );
+}
+
+/** Code editor behavior. */
+export function EditorSettingsSection() {
+  const vimMode = usePreferencesStore((s) => s.vimMode);
+  const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
+  const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
+  const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
+  const editorFormatOnSave = usePreferencesStore((s) => s.editorFormatOnSave);
+  const editorFormatter = usePreferencesStore((s) => s.editorFormatter);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="Editor"
+        description="Keybindings, wrapping and saving behavior."
+      />
+      <div className="flex flex-col gap-2">
+        <SettingRow
+          title="Vim mode"
+          description="Enable Vim keybindings in the code editor."
+        >
+          <Switch
+            checked={vimMode}
+            onCheckedChange={(v) => void setVimMode(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Word wrap"
+          description="Wrap long lines instead of scrolling horizontally."
+        >
+          <Switch
+            checked={editorWordWrap}
+            onCheckedChange={(v) => void setEditorWordWrap(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Auto save"
+          description="Automatically save files after a delay when changes are detected."
+        >
+          <Switch
+            checked={editorAutoSave}
+            onCheckedChange={(v) => void setEditorAutoSave(v)}
+          />
+        </SettingRow>
+        {editorAutoSave && (
+          <AutoSaveDelayInput
+            value={editorAutoSaveDelay}
+            onChange={(v) => void setEditorAutoSaveDelay(v)}
+          />
+        )}
+        <SettingRow
+          title="Format on save"
+          description="Format the file on explicit save (Cmd+S / :w) with the formatter below."
+        >
+          <Switch
+            checked={editorFormatOnSave}
+            onCheckedChange={(v) => void setEditorFormatOnSave(v)}
+          />
+        </SettingRow>
+        {editorFormatOnSave && (
+          <SettingRow
+            title="Formatter"
+            description="Language server formats the buffer before writing; Biome and Prettier run on the saved file from your PATH."
+          >
+            <Select
+              value={editorFormatter}
+              onValueChange={(v) =>
+                void setEditorFormatter(v as EditorFormatter)
+              }
+            >
+              <SelectTrigger className="h-8 w-40 text-[12px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="lsp">Language server</SelectItem>
+                <SelectItem value="biome">Biome</SelectItem>
+                <SelectItem value="prettier">Prettier</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
+      </div>
+      {vimMode && <VimKeymapsGroup />}
+    </div>
+  );
+}
+
+const VIM_MODES: { value: VimKeymap["mode"]; label: string }[] = [
+  { value: "insert", label: "Insert" },
+  { value: "normal", label: "Normal" },
+  { value: "visual", label: "Visual" },
+];
+
+/** Custom Vim mappings (e.g. jj -> <Esc> to leave insert mode). */
+function VimKeymapsGroup() {
+  const keymaps = usePreferencesStore((s) => s.vimKeymaps);
+  const update = (next: VimKeymap[]) => void setVimKeymaps(next);
+  // Live store, not the render snapshot: a blur-commit may still be round-
+  // tripping through the async store when the next click patches, and a
+  // snapshot-based write would erase it.
+  const latest = () => usePreferencesStore.getState().vimKeymaps;
+  const patch = (i: number, changes: Partial<VimKeymap>) =>
+    update(latest().map((m, idx) => (idx === i ? { ...m, ...changes } : m)));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-medium tracking-tight text-muted-foreground">
+          Vim keybindings
+        </span>
+        <Button
+          variant="ghost"
+          size="xs"
+          className="h-6 gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+          onClick={() =>
+            update([...latest(), { lhs: "", rhs: "", mode: "insert" }])
+          }
+        >
+          <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={2} />
+          Add binding
+        </Button>
+      </div>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        Custom mappings in Vim notation, e.g. <KbdChip>jj</KbdChip> &rarr;{" "}
+        <KbdChip>&lt;Esc&gt;</KbdChip> in Insert to leave insert mode.
+      </p>
+      {keymaps.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border/60 px-3 py-3 text-[11px] text-muted-foreground">
+          No bindings configured.
+        </p>
+      ) : (
+        keymaps.map((m, i) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: rows are editable in place; index is the identity
+            key={i}
+            className="flex items-center gap-2 rounded-md border border-border/40 bg-background/40 px-2 py-1.5"
+          >
+            <CommittedInput
+              value={m.lhs}
+              placeholder="jj"
+              className="w-24"
+              title="Keys to press (vim notation)"
+              onCommit={(v) => patch(i, { lhs: v })}
+            />
+            <span className="text-[11px] text-muted-foreground">&rarr;</span>
+            <CommittedInput
+              value={m.rhs}
+              placeholder="<Esc>"
+              className="min-w-0 flex-1"
+              title="What it expands to, e.g. <Esc>, :w<CR>"
+              onCommit={(v) => patch(i, { rhs: v })}
+            />
+            <Select
+              value={m.mode}
+              onValueChange={(v) => patch(i, { mode: v as VimKeymap["mode"] })}
+            >
+              <SelectTrigger value={m.mode} className="h-7 w-24 text-[12px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {VIM_MODES.map((o) => (
+                  <SelectItem
+                    key={o.value}
+                    value={o.value}
+                    className="text-[12px]"
+                  >
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <button
+              type="button"
+              onClick={() => update(latest().filter((_, idx) => idx !== i))}
+              title="Remove binding"
+              aria-label="Remove binding"
+              className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <HugeiconsIcon icon={Delete02Icon} size={13} strokeWidth={1.75} />
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** Language servers. */
+export function LspSettingsSection() {
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="Language servers"
+        description="Code intelligence for the editor: completions, diagnostics, navigation."
+      />
+      <LspServersGroup />
+    </div>
+  );
+}
+
+/** Interface chrome: status bar and animations. */
+export function InterfaceSettingsSection() {
+  const statusBarVisible = usePreferencesStore((s) => s.statusBarVisible);
+  const statusBarDisabled = usePreferencesStore((s) => s.statusBarDisabled);
+  const hoverKeybindHints = usePreferencesStore((s) => s.hoverKeybindHints);
+  const smartTabTitles = usePreferencesStore((s) => s.smartTabTitles);
+  const tabProgressEnabled = usePreferencesStore((s) => s.tabProgressEnabled);
+  const sidebarDisabled = usePreferencesStore((s) => s.sidebarDisabled);
+  const animationSpeed = usePreferencesStore((s) => s.animationSpeed);
+  const animationSpeedCustom = usePreferencesStore(
+    (s) => s.animationSpeedCustom,
+  );
+
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="Interface"
+        description="Window chrome and interface animations."
+      />
+      <div className="flex flex-col gap-2">
+        <GroupLabel>Chrome</GroupLabel>
         <SettingRow
           title="Show status bar"
           description="The bottom bar with the workspace path, LSP status and the AI agent button. Also toggled from the command palette or its shortcut."
@@ -743,5 +1033,251 @@ function FontFamilyInput({
         className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
       />
     </SettingRow>
+  );
+}
+
+function PaddingInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const commit = () => {
+    const n = Number(draft);
+    if (!Number.isFinite(n)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = clampTerminalPadding(n);
+    setDraft(String(clamped));
+    if (clamped !== value) onChange(clamped);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <Input
+        type="number"
+        min={TERMINAL_PADDING_MIN}
+        max={TERMINAL_PADDING_MAX}
+        step={0.1}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+      />
+      <span className="text-[11px] text-muted-foreground">px</span>
+    </div>
+  );
+}
+
+function AutoSaveDelayInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+
+  useEffect(() => {
+    setDraft(String(value));
+  }, [value]);
+
+  const commit = () => {
+    const n = Number(draft);
+    if (!Number.isFinite(n)) {
+      setDraft(String(value));
+      return;
+    }
+    const clamped = Math.min(
+      AUTO_SAVE_MAX,
+      Math.max(AUTO_SAVE_MIN, Math.round(n)),
+    );
+    setDraft(String(clamped));
+    if (clamped !== value) onChange(clamped);
+  };
+
+  return (
+    <SettingRow
+      title="Auto save delay"
+      description="Delay before unsaved changes are saved automatically."
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={AUTO_SAVE_MIN}
+          max={AUTO_SAVE_MAX}
+          step={AUTO_SAVE_STEP}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.currentTarget.blur();
+            }
+          }}
+          className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+        />
+        <span className="text-[11px] text-muted-foreground">ms</span>
+      </div>
+    </SettingRow>
+  );
+}
+
+/** AI assistance at the prompt: suggestion menu, NL commands, failure fixes. */
+export function AssistSettingsSection() {
+  const suggestEnabled = usePreferencesStore((s) => s.terminalSuggestEnabled);
+  const suggestDelay = usePreferencesStore((s) => s.terminalSuggestDelayMs);
+  const suggestAiDelay = usePreferencesStore((s) => s.terminalSuggestAiDelayMs);
+  const suggestMaxItems = usePreferencesStore((s) => s.terminalSuggestMaxItems);
+  const suggestMinChars = usePreferencesStore((s) => s.terminalSuggestMinChars);
+  const failedCommandAi = usePreferencesStore((s) => s.failedCommandAi);
+  const nlCommandsEnabled = usePreferencesStore((s) => s.nlCommandsEnabled);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="AI assist"
+        description="Suggestions, natural-language commands and failure fixes in the terminal."
+      />
+      <div className="flex flex-col gap-2">
+        <GroupLabel>Command suggestions</GroupLabel>
+        <SettingRow
+          title="Command suggestions"
+          description="Completion menu at the classic-terminal prompt: shell history first, the AI autocomplete model when history is silent."
+        >
+          <Switch
+            checked={suggestEnabled}
+            onCheckedChange={(v) => void setTerminalSuggestEnabled(v)}
+          />
+        </SettingRow>
+        {suggestEnabled && (
+          <>
+            <SettingRow
+              title="Menu delay"
+              description="Pause after typing before the menu opens or updates, ms."
+            >
+              <MsInput
+                value={suggestDelay}
+                min={TERMINAL_SUGGEST_DELAY_MIN}
+                max={TERMINAL_SUGGEST_DELAY_MAX}
+                onChange={(v) => void setTerminalSuggestDelayMs(v)}
+              />
+            </SettingRow>
+            <SettingRow
+              title="AI delay"
+              description="Extra settle time before asking the model, ms. Lower is snappier but sends more requests."
+            >
+              <MsInput
+                value={suggestAiDelay}
+                min={TERMINAL_SUGGEST_AI_DELAY_MIN}
+                max={TERMINAL_SUGGEST_AI_DELAY_MAX}
+                onChange={(v) => void setTerminalSuggestAiDelayMs(v)}
+              />
+            </SettingRow>
+            <SettingRow
+              title="Minimum characters"
+              description="How many characters must be typed before suggestions appear."
+            >
+              <MsInput
+                value={suggestMinChars}
+                min={TERMINAL_SUGGEST_MIN_CHARS_MIN}
+                max={TERMINAL_SUGGEST_MIN_CHARS_MAX}
+                onChange={(v) => void setTerminalSuggestMinChars(v)}
+              />
+            </SettingRow>
+            <SettingRow
+              title="Menu size"
+              description="Maximum number of rows in the completion menu."
+            >
+              <MsInput
+                value={suggestMaxItems}
+                min={TERMINAL_SUGGEST_MAX_ITEMS_MIN}
+                max={TERMINAL_SUGGEST_MAX_ITEMS_MAX}
+                onChange={(v) => void setTerminalSuggestMaxItems(v)}
+              />
+            </SettingRow>
+          </>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <GroupLabel>Smart actions</GroupLabel>
+        <SettingRow
+          title="Natural-language commands"
+          description={
+            'Type "# task description" at the prompt and the AI proposes the command.'
+          }
+        >
+          <Switch
+            checked={nlCommandsEnabled}
+            onCheckedChange={(v) => void setNlCommandsEnabled(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="AI actions on failed commands"
+          description="Fix and Explain on failed blocks, and the corrected-command offer at the classic prompt."
+        >
+          <Switch
+            checked={failedCommandAi}
+            onCheckedChange={(v) => void setFailedCommandAi(v)}
+          />
+        </SettingRow>
+      </div>
+
+      <p className="text-[11px] text-muted-foreground">
+        The model and provider used for all of this live in{" "}
+        <strong className="font-medium text-foreground">Models</strong> under
+        Autocomplete.
+      </p>
+    </div>
+  );
+}
+
+/** Per-TUI overrides (nvim, htop, ...). */
+export function ShellToolsSection() {
+  return (
+    <div className="flex flex-col gap-6">
+      <SectionHeader
+        title="Shell tools"
+        description="Recognized terminal TUIs and their per-tool overrides."
+      />
+      <ShellToolsGroup />
+    </div>
+  );
+}
+
+/** Small committed integer input for millisecond/count settings. */
+function MsInput({
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <CommittedInput
+      value={String(value)}
+      className="w-20 text-right"
+      title={`${min}\u2013${max}`}
+      onCommit={(v) => {
+        const n = Number(v);
+        if (Number.isFinite(n)) onChange(Math.min(max, Math.max(min, n)));
+      }}
+    />
   );
 }

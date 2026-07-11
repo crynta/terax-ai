@@ -209,6 +209,8 @@ export type Preferences = {
   shellTools: ShellTool[];
 };
 
+export type EditorFormatter = "lsp" | "biome" | "prettier";
+
 export type AnimationSpeed = "off" | "fast" | "normal" | "slow" | "custom";
 
 /** A TUI recognized inside the terminal (nvim, htop, …). While its command
@@ -264,7 +266,6 @@ export function clampAnimationCustom(v: number): number {
   if (!Number.isFinite(v)) return 1;
   return Math.min(ANIMATION_CUSTOM_MAX, Math.max(ANIMATION_CUSTOM_MIN, v));
 }
-export type EditorFormatter = "lsp" | "biome" | "prettier";
 
 export type LspActivation = "enabled" | "dismissed";
 

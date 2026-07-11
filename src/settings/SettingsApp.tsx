@@ -19,7 +19,6 @@ import {
   Settings01Icon,
   SparklesIcon,
   TerminalIcon,
-  SourceCodeIcon,
   UserMultiple02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -38,8 +37,6 @@ import {
   ShellToolsSection,
   TerminalSettingsSection,
 } from "./sections/GeneralSection";
-import { EditorSection } from "./sections/EditorSection";
-import { GeneralSection } from "./sections/GeneralSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { ThemesSection } from "./sections/ThemesSection";
@@ -189,59 +186,6 @@ const NAV: NavItem[] = [
     keywords: ["version", "update", "license"],
     component: AboutSection,
   },
-const TABS: {
-  id: SettingsTab;
-  label: string;
-  icon: typeof Settings01Icon;
-  component: () => JSX.Element;
-}[] = [
-  {
-    id: "general",
-    label: "General",
-    icon: Settings01Icon,
-    component: GeneralSection,
-  },
-  {
-    id: "editor",
-    label: "Editor",
-    icon: SourceCodeIcon,
-    component: EditorSection,
-  },
-  {
-    id: "themes",
-    label: "Themes",
-    icon: PaintBoardIcon,
-    component: ThemesSection,
-  },
-  {
-    id: "shortcuts",
-    label: "Shortcuts",
-    icon: KeyboardIcon,
-    component: ShortcutsSection,
-  },
-  { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
-  {
-    id: "agents",
-    label: "Agents",
-    icon: UserMultiple02Icon,
-    component: AgentsSection,
-  },
-  {
-    id: "about",
-    label: "About",
-    icon: InformationCircleIcon,
-    component: AboutSection,
-  },
-];
-
-const VALID_TABS: SettingsTab[] = [
-  "general",
-  "editor",
-  "themes",
-  "shortcuts",
-  "models",
-  "agents",
-  "about",
 ];
 
 const VALID_TABS = NAV.map((n) => n.id);
@@ -278,7 +222,7 @@ export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const [query, setQuery] = useState("");
   const init = usePreferencesStore((s) => s.init);
-  const ActiveSection = TABS.find((t) => t.id === active)?.component;
+  const ActiveSection = NAV.find((t) => t.id === active)?.component;
 
   useEffect(() => {
     void init();
@@ -318,12 +262,13 @@ export function SettingsApp() {
   }, [query]);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
-      <header
-        data-tauri-drag-region
-        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
-          IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
-        }`}
+    <div className="flex h-screen overflow-hidden bg-background text-foreground select-none">
+      {/* Left rail: search + navigation */}
+      <aside
+        className={cn(
+          "flex w-52 shrink-0 flex-col border-r border-border/60 bg-card/50",
+          IS_MAC ? "pt-9" : "pt-2",
+        )}
       >
         {IS_MAC && (
           <div

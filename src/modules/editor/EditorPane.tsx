@@ -21,11 +21,11 @@ import {
   useRef,
   useState,
 } from "react";
+import { toast } from "sonner";
 import {
   createAutocompleteKeyWatcher,
   snapshotAutocompletePrefs,
 } from "./lib/autocomplete/deps";
-import { toast } from "sonner";
 import { inlineCompletion } from "./lib/autocomplete/inlineExtension";
 import { diagnosticsReporter } from "./lib/diagnosticsReporter";
 import { useDiagnosticsStore } from "./lib/diagnosticsStore";

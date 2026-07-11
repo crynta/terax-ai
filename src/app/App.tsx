@@ -826,7 +826,6 @@ export default function App() {
       "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => searchInlineRef.current?.focus(),
       "ai.toggle": togglePanelAndFocus,
-      "ai.toggleMini": () => useChatStore.getState().toggleMini(),
       "ai.toggleMini": () => {
         if (!hasComposer) {
           void openSettingsWindow("models");
