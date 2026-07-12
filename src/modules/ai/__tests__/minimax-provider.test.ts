@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { createAnthropic } from "@ai-sdk/anthropic";
 import {
   PROVIDERS,
   MODELS,
@@ -87,12 +88,27 @@ describe("MiniMax model registration", () => {
 });
 
 describe("MiniMax base URL handling", () => {
-  it("constructs correct Anthropic-compatible base URL", () => {
-    const baseURL = "https://api.minimax.io/anthropic";
-    const normalized = baseURL.endsWith("/v1")
-      ? baseURL
-      : `${baseURL.replace(/\/$/, "")}/v1`;
-    expect(normalized).toBe("https://api.minimax.io/anthropic/v1");
+  it("constructs the Anthropic-compatible messages URL", async () => {
+    let requestedURL = "";
+    const model = createAnthropic({
+      apiKey: "test-key",
+      baseURL: "https://api.minimax.io/anthropic/v1",
+      fetch: async (url) => {
+        requestedURL = String(url);
+        throw new Error("request intercepted");
+      },
+    })("MiniMax-M3");
+
+    await expect(
+      model.doGenerate({
+        prompt: [
+          { role: "user", content: [{ type: "text", text: "ping" }] },
+        ],
+      }),
+    ).rejects.toThrow("request intercepted");
+    expect(requestedURL).toBe(
+      "https://api.minimax.io/anthropic/v1/messages",
+    );
   });
 
   it("does not use api.minimax.chat domain", () => {
