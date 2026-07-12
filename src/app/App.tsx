@@ -81,6 +81,7 @@ import {
   hasLeaf,
   leafIds,
   navigateFocusedBlocks,
+  type PaneBounds,
   type TerminalPaneHandle,
   useTerminalFileDrop,
   writeToSession,
@@ -627,6 +628,28 @@ export default function App() {
     [activeId, splitActivePane],
   );
 
+  const livePaneBounds = useCallback((tabId: number): PaneBounds[] => {
+    const tab = document.querySelector<HTMLElement>(
+      `[data-terminal-tab="${tabId}"]`,
+    );
+    if (!tab) return [];
+    return [...tab.querySelectorAll<HTMLElement>("[data-pane-leaf]")].flatMap(
+      (element) => {
+        const id = Number(element.dataset.paneLeaf);
+        if (!Number.isFinite(id)) return [];
+        const { left, right, top, bottom } = element.getBoundingClientRect();
+        return [{ id, left, right, top, bottom }];
+      },
+    );
+  }, []);
+
+  const swapActivePane = useCallback(
+    (direction: "left" | "right" | "up" | "down") => {
+      swapActivePaneInDirection(activeId, direction, livePaneBounds(activeId));
+    },
+    [activeId, livePaneBounds, swapActivePaneInDirection],
+  );
+
   const handleCloseTabOrPane = useCallback(() => {
     const t = tabsRef.current.find((x) => x.id === activeId);
     if (t?.kind === "terminal" && leafIds(t.paneTree).length > 1) {
@@ -676,10 +699,10 @@ export default function App() {
       "pane.splitDown": () => splitActivePaneInActiveTab("col"),
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
-      "pane.swapLeft": () => swapActivePaneInDirection(activeId, "left"),
-      "pane.swapRight": () => swapActivePaneInDirection(activeId, "right"),
-      "pane.swapUp": () => swapActivePaneInDirection(activeId, "up"),
-      "pane.swapDown": () => swapActivePaneInDirection(activeId, "down"),
+      "pane.swapLeft": () => swapActivePane("left"),
+      "pane.swapRight": () => swapActivePane("right"),
+      "pane.swapUp": () => swapActivePane("up"),
+      "pane.swapDown": () => swapActivePane("down"),
       "pane.source": toggleSourceControl,
       "terminal.clear": () => {
         clearFocusedTerminal();
@@ -734,7 +757,7 @@ export default function App() {
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
-      swapActivePaneInDirection,
+      swapActivePane,
       toggleSourceControl,
       hasComposer,
       togglePanelAndFocus,

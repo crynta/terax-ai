@@ -4,6 +4,7 @@ import {
   hasLeaf,
   leafIds,
   nextLeafId,
+  type PaneBounds,
   type PaneDirection,
   type PaneNode,
   removeLeaf,
@@ -1023,7 +1024,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   }, []);
 
   const swapActivePaneInDirection = useCallback(
-    (tabId: number, direction: PaneDirection) => {
+    (tabId: number, direction: PaneDirection, bounds?: PaneBounds[]) => {
       setTabs((curr) =>
         curr.map((t) => {
           if (t.id !== tabId || t.kind !== "terminal") return t;
@@ -1031,6 +1032,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             t.paneTree,
             t.activeLeafId,
             direction,
+            bounds,
           );
           return paneTree === t.paneTree ? t : { ...t, paneTree };
         }),

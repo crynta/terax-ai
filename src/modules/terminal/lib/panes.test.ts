@@ -68,6 +68,29 @@ describe("swapLeafInDirection", () => {
     expect(leafIds(swapLeafInDirection(tree, 3, "left"))).toEqual([3, 2, 1]);
   });
 
+  it("uses live pane bounds after splitters are resized", () => {
+    const bounds = [
+      { id: 1, left: 0, right: 100, top: 0, bottom: 100 },
+      { id: 2, left: 200, right: 300, top: 100, bottom: 200 },
+      { id: 3, left: 100, right: 200, top: 0, bottom: 100 },
+    ];
+
+    expect(
+      leafIds(swapLeafInDirection(row(1, 2, 3), 1, "right", bounds)),
+    ).toEqual([3, 2, 1]);
+  });
+
+  it("falls back to tree geometry when live bounds are incomplete", () => {
+    const tree = row(1, 2, 3);
+    const incompleteBounds = [
+      { id: 1, left: 0, right: 100, top: 0, bottom: 100 },
+    ];
+
+    expect(
+      leafIds(swapLeafInDirection(tree, 1, "right", incompleteBounds)),
+    ).toEqual([2, 1, 3]);
+  });
+
   it("moves pane metadata with the terminal session", () => {
     const tree: PaneNode = {
       kind: "split",

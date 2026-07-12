@@ -2,6 +2,13 @@ export type PaneId = number;
 
 export type SplitDir = "row" | "col";
 export type PaneDirection = "left" | "right" | "up" | "down";
+export type PaneBounds = {
+  id: PaneId;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
 
 export type PaneNode =
   | { kind: "leaf"; id: PaneId; cwd?: string }
@@ -244,12 +251,28 @@ function swapLeaves(
   };
 }
 
+function rectsFromBounds(bounds: PaneBounds[]): PaneRect[] {
+  return bounds
+    .filter((rect) => rect.right > rect.left && rect.bottom > rect.top)
+    .map((rect) => ({
+      id: rect.id,
+      x: rect.left,
+      y: rect.top,
+      width: rect.right - rect.left,
+      height: rect.bottom - rect.top,
+    }));
+}
+
 export function swapLeafInDirection(
   tree: PaneNode,
   activeId: PaneId,
   direction: PaneDirection,
+  liveBounds?: PaneBounds[],
 ): PaneNode {
-  const rects = paneRects(tree);
+  const liveRects = liveBounds ? rectsFromBounds(liveBounds) : [];
+  const liveIds = new Set(liveRects.map((rect) => rect.id));
+  const hasCompleteLiveLayout = leafIds(tree).every((id) => liveIds.has(id));
+  const rects = hasCompleteLiveLayout ? liveRects : paneRects(tree);
   const active = rects.find((rect) => rect.id === activeId);
   if (!active || rects.length < 2) return tree;
   const targetId = directionalTarget(rects, active, direction);
