@@ -12,6 +12,7 @@ import {
   getModelContextLimit,
   LMSTUDIO_DEFAULT_BASE_URL,
   MAX_AGENT_STEPS,
+  MINIMAX_ANTHROPIC_BASE_URL,
   providerNeedsKey,
   selectSystemPrompt,
   type ModelId,
@@ -122,7 +123,7 @@ export async function buildLanguageModel(
       const { createAnthropic } = await import("@ai-sdk/anthropic");
       built = createAnthropic({
         apiKey: key,
-        baseURL: "https://api.minimax.io/anthropic/v1",
+        baseURL: `${MINIMAX_ANTHROPIC_BASE_URL}/v1`,
       })(resolvedModelId);
       break;
     }

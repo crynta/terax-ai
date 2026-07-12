@@ -718,6 +718,8 @@ export function getAutocompleteEligibleModels(): readonly ModelInfo[] {
 
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
 export const OPENAI_COMPATIBLE_DEFAULT_BASE_URL = "";
+export const MINIMAX_ANTHROPIC_BASE_URL =
+  "https://api.minimax.io/anthropic";
 export const MAX_AGENT_STEPS = 24;
 export const TERMINAL_BUFFER_LINES = 300;
 

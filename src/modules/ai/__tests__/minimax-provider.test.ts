@@ -8,6 +8,7 @@ import {
   getProvider,
   getModel,
   DEFAULT_AUTOCOMPLETE_MODEL,
+  MINIMAX_ANTHROPIC_BASE_URL,
   type ProviderId,
   type ModelId,
 } from "../config";
@@ -88,11 +89,17 @@ describe("MiniMax model registration", () => {
 });
 
 describe("MiniMax base URL handling", () => {
+  it("keeps the official Anthropic base URL", () => {
+    expect(MINIMAX_ANTHROPIC_BASE_URL).toBe(
+      "https://api.minimax.io/anthropic",
+    );
+  });
+
   it("constructs the Anthropic-compatible messages URL", async () => {
     let requestedURL = "";
     const model = createAnthropic({
       apiKey: "test-key",
-      baseURL: "https://api.minimax.io/anthropic/v1",
+      baseURL: `${MINIMAX_ANTHROPIC_BASE_URL}/v1`,
       fetch: async (url) => {
         requestedURL = String(url);
         throw new Error("request intercepted");
