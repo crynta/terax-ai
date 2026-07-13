@@ -88,6 +88,7 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
   onSaved?: () => void;
   onClose?: () => void;
+  onCursorChange?: (line: number, col: number) => void;
 };
 
 // Above this, syntax highlighting and LSP are disabled: a multi-MB lezer
@@ -104,7 +105,7 @@ function formatBytes(n: number): string {
 // skip re-rendering entirely when App re-renders (terminal events, tab churn).
 export const EditorPane = memo(
   forwardRef<EditorPaneHandle, Props>(function EditorPane(props, ref) {
-    const { path, overrideLanguage, onDirtyChange, onSaved, onClose } = props;
+    const { path, overrideLanguage, onDirtyChange, onSaved, onClose, onCursorChange } = props;
 
     const { doc, onChange, save, reload, adoptDiskText, openAnyway } =
       useDocument({
@@ -175,6 +176,8 @@ export const EditorPane = memo(
     onSavedRef.current = onSaved;
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+    const onCursorChangeRef = useRef(onCursorChange);
+    onCursorChangeRef.current = onCursorChange;
     const lspActiveRef = useRef(false);
     const warnedNoLspRef = useRef(false);
     const warnedNoFormatRef = useRef(false);
@@ -337,6 +340,14 @@ export const EditorPane = memo(
           },
           { key: "Ctrl-g", run: gotoLine },
         ]),
+        EditorView.updateListener.of((update) => {
+          if (!update.selectionSet) return;
+          const cb = onCursorChangeRef.current;
+          if (!cb) return;
+          const pos = update.state.selection.main.head;
+          const lineInfo = update.state.doc.lineAt(pos);
+          cb(lineInfo.number, pos - lineInfo.from + 1);
+        }),
       ],
       [],
     );

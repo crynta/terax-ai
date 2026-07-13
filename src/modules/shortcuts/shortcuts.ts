@@ -45,6 +45,7 @@ export type ShortcutId =
   | "agent.focusAttention"
   | "settings.open"
   | "sidebar.toggle"
+  | "sidebar.files"
   | "editor.undo"
   | "editor.redo"
   | "editor.aiComplete"
@@ -283,6 +284,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Ask AI about selection",
     group: "AI",
     defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
+  },
+  {
+    id: "sidebar.files",
+    label: "Show Files sidebar",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "g" }],
   },
   {
     id: "agent.focusAttention",

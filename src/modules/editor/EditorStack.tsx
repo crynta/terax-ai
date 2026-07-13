@@ -11,6 +11,7 @@ type Props = {
   registerHandle: (id: number, handle: EditorPaneHandle | null) => void;
   onCloseTab: (id: number) => void;
   onSetMarkdownView: (id: number, mode: "rendered" | "raw") => void;
+  onCursorChange?: (id: number, line: number, col: number) => void;
 };
 
 export function EditorStack({
@@ -20,6 +21,7 @@ export function EditorStack({
   registerHandle,
   onCloseTab,
   onSetMarkdownView,
+  onCursorChange,
 }: Props) {
   const editors = tabs.filter(
     (t): t is EditorTab => t.kind === "editor" && !t.cold,
@@ -32,6 +34,7 @@ export function EditorStack({
   const registerRef = useRef(registerHandle);
   const dirtyRef = useRef(onDirtyChange);
   const closeRef = useRef(onCloseTab);
+  const cursorRef = useRef(onCursorChange);
 
   useEffect(() => {
     registerRef.current = registerHandle;
@@ -42,12 +45,18 @@ export function EditorStack({
   useEffect(() => {
     closeRef.current = onCloseTab;
   }, [onCloseTab]);
+  useEffect(() => {
+    cursorRef.current = onCursorChange;
+  }, [onCursorChange]);
 
   const refCallbacks = useRef(
     new Map<number, (h: EditorPaneHandle | null) => void>(),
   );
   const dirtyCallbacks = useRef(new Map<number, (dirty: boolean) => void>());
   const closeCallbacks = useRef(new Map<number, () => void>());
+  const cursorCallbacks = useRef(
+    new Map<number, (line: number, col: number) => void>(),
+  );
 
   const getRefCallback = (id: number) => {
     let cb = refCallbacks.current.get(id);
@@ -73,6 +82,14 @@ export function EditorStack({
     }
     return cb;
   };
+  const getCursorCallback = (id: number) => {
+    let cb = cursorCallbacks.current.get(id);
+    if (!cb) {
+      cb = (line: number, col: number) => cursorRef.current?.(id, line, col);
+      cursorCallbacks.current.set(id, cb);
+    }
+    return cb;
+  };
 
   // Drop callback entries for closed tabs to avoid unbounded growth.
   useEffect(() => {
@@ -85,6 +102,9 @@ export function EditorStack({
     }
     for (const id of closeCallbacks.current.keys()) {
       if (!live.has(id)) closeCallbacks.current.delete(id);
+    }
+    for (const id of cursorCallbacks.current.keys()) {
+      if (!live.has(id)) cursorCallbacks.current.delete(id);
     }
   }, [editors]);
 
@@ -117,6 +137,7 @@ export function EditorStack({
                 overrideLanguage={t.overrideLanguage}
                 onDirtyChange={getDirtyCallback(t.id)}
                 onClose={getCloseCallback(t.id)}
+                onCursorChange={getCursorCallback(t.id)}
               />
             </div>
           </div>

@@ -136,6 +136,11 @@ export type GitBranchListResult = {
   branches: GitBranchEntry[];
 };
 
+export type GitBlameLineInfo = {
+  author: string;
+  timestamp: number;
+};
+
 export const native = {
   workspaceCurrentDir: () => invoke<string>("workspace_current_dir"),
   workspaceAuthorize: (path: string) =>
@@ -379,6 +384,13 @@ export const native = {
     invoke<void>("git_checkout_branch", {
       repoRoot,
       branch,
+      workspace: currentWorkspaceEnv(),
+    }),
+  gitBlame: (cwd: string, path: string, line: number) =>
+    invoke<GitBlameLineInfo | null>("git_blame", {
+      cwd,
+      path,
+      line,
       workspace: currentWorkspaceEnv(),
     }),
 };

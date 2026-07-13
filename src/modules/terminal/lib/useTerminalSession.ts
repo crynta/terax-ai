@@ -23,6 +23,7 @@ import {
   acquireSlot,
   applyBackgroundActive,
   applyCursorBlink,
+  applyCursorStyle,
   applyFontFamily,
   applyFontSize,
   applyFontWeight,
@@ -286,6 +287,19 @@ export function leafIdForPty(ptyId: number): number | null {
     if (s.pty?.id === ptyId) return leafId;
   }
   return null;
+}
+
+export type LivePtySession = {
+  leafId: number;
+  ptyId: number;
+};
+
+export function livePtySessions(): LivePtySession[] {
+  const live: LivePtySession[] = [];
+  for (const [leafId, s] of sessions) {
+    if (s.pty && !s.shellExited) live.push({ leafId, ptyId: s.pty.id });
+  }
+  return live;
 }
 
 function leafBusy(s: Session): boolean {
@@ -906,6 +920,11 @@ export function useTerminalSession({
   useEffect(() => {
     applyCursorBlink(cursorBlink);
   }, [cursorBlink]);
+
+  const cursorStyle = usePreferencesStore((p) => p.terminalCursorStyle);
+  useEffect(() => {
+    applyCursorStyle(cursorStyle);
+  }, [cursorStyle]);
 
   const bgActive = usePreferencesStore(
     (p) => p.backgroundKind === "image" && !!p.backgroundImageId,

@@ -18,12 +18,14 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
 import {
   setAgentNotifications,
+  setShowAgentsTab,
   setAutostart,
   setDefaultWorkspaceEnv,
   setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
   setTerminalCursorBlink,
+  setTerminalCursorStyle,
   setTerminalFontFamily,
   setTerminalFontSize,
   setTerminalFontWeight,
@@ -32,6 +34,7 @@ import {
   setTerminalShell,
   setTerminalWebglEnabled,
   setZoomLevel,
+  TERMINAL_CURSOR_STYLES,
   TERMINAL_FONT_SIZES,
   TERMINAL_SCROLLBACK_PRESETS,
 } from "@/modules/settings/store";
@@ -85,6 +88,7 @@ export function GeneralSection() {
     (s) => s.terminalWebglEnabled,
   );
   const terminalCursorBlink = usePreferencesStore((s) => s.terminalCursorBlink);
+  const terminalCursorStyle = usePreferencesStore((s) => s.terminalCursorStyle);
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
@@ -98,6 +102,7 @@ export function GeneralSection() {
   const terminalScrollback = usePreferencesStore((s) => s.terminalScrollback);
   const zoomLevel = usePreferencesStore((s) => s.zoomLevel);
   const agentNotifications = usePreferencesStore((s) => s.agentNotifications);
+  const showAgentsTab = usePreferencesStore((s) => s.showAgentsTab);
 
   useEffect(() => {
     let alive = true;
@@ -251,6 +256,26 @@ export function GeneralSection() {
             checked={terminalCursorBlink}
             onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
+        </SettingRow>
+        <SettingRow
+          title="Cursor style"
+          description="Shape of the terminal cursor. Block fills the character cell; bar is a thin vertical line; underline sits below the character."
+        >
+          <Select
+            value={terminalCursorStyle}
+            onValueChange={(v) => void setTerminalCursorStyle(v as "bar" | "block" | "underline")}
+          >
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TERMINAL_CURSOR_STYLES.map((s) => (
+                <SelectItem key={s.value} value={s.value} className="text-[12px]">
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingRow>
         <FontFamilyInput
           value={terminalFontFamily}
@@ -436,6 +461,15 @@ export function GeneralSection() {
           <Switch
             checked={agentNotifications}
             onCheckedChange={(v) => void setAgentNotifications(v)}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Show Agents sidebar tab"
+          description="Display an Agents tab in the sidebar listing all active AI coding agents running in terminals."
+        >
+          <Switch
+            checked={showAgentsTab}
+            onCheckedChange={(v) => void setShowAgentsTab(v)}
           />
         </SettingRow>
       </div>
