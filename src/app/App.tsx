@@ -5,7 +5,7 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
+import { consumeLaunchFile, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
@@ -562,6 +562,7 @@ export default function App() {
       // changes are not silently discarded.
       const activeTab = tabsRef.current.find((t) => t.id === activeId);
       if (
+        !pin &&
         activeTab?.kind === "editor" &&
         activeEditorLeafId !== null &&
         leafIds(activeTab.paneTree).length > 1 &&
@@ -575,19 +576,24 @@ export default function App() {
     [openFileTab, newMarkdownTab, activeId, activeEditorLeafId, setLeafPath],
   );
 
-  // "Open With" files arrive via the event (warm start) and get_launch_files
-  // (cold start, before this listener attaches). Backend already authorized
-  // each parent; openFileTab dedupes by path, so both paths can't double-open.
+  // Files opened via the OS "Open With" action. macOS delivers them through
+  // the backend "terax:open-file" event (warm start) and get_launch_file
+  // (cold start, before this listener attaches). openFileTab dedupes by path,
+  // so handling both paths can't double-open a tab.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    const openAll = (paths: string[]) => {
-      for (const path of paths) handleOpenFile(path, true);
+    const open = async (path: string) => {
+      const i = path.lastIndexOf("/");
+      const dir = i <= 0 ? "/" : path.slice(0, i);
+      await native.workspaceAuthorize(dir).catch(() => {});
+      handleOpenFile(path, true);
     };
     (async () => {
-      unlisten = await listen<string[]>("terax:open-file", (e) => {
-        openAll(e.payload);
+      unlisten = await listen<string>("terax:open-file", (e) => {
+        void open(e.payload);
       });
-      openAll(await consumeLaunchFiles());
+      const launched = await consumeLaunchFile();
+      if (launched) void open(launched);
     })();
     return () => unlisten?.();
   }, [handleOpenFile]);
