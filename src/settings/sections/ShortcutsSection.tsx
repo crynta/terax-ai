@@ -27,8 +27,9 @@ import {
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
+import { ShortcutRecorder } from "../components/ShortcutRecorder";
 
 export function ShortcutsSection() {
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
@@ -103,7 +104,7 @@ export function ShortcutsSection() {
           placeholder="Search shortcuts..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="h-9 pl-9 text-[12.5px]"
+          className="h-9 pl-9 text-[12.5px] focus-visible:border-ring/50 focus-visible:ring-0"
         />
       </div>
 
@@ -193,7 +194,7 @@ function ShortcutRow({
 
       <div className="flex items-center gap-2">
         {isRecording ? (
-          <Recorder onRecord={onRecord} onCancel={onStopRecording} />
+          <ShortcutRecorder onRecord={onRecord} onCancel={onStopRecording} />
         ) : (
           <>
             <div
@@ -230,99 +231,25 @@ function ShortcutRow({
                   <HugeiconsIcon icon={ArrowTurnBackwardIcon} size={12} />
                 </Button>
               )}
+              {/* Slides out on row hover instead of reserving space:
+                  width 0 + negative margin swallow the container gap. */}
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7 text-muted-foreground hover:text-destructive opacity-0 transition-opacity group-hover:opacity-100"
+                className="h-7 w-0 -ml-1 shrink-0 overflow-hidden p-0 text-muted-foreground opacity-0 transition-all duration-[calc(250ms*var(--terax-anim,1))] hover:text-destructive group-hover:ml-0 group-hover:w-7 group-hover:opacity-100"
                 onClick={onClear}
                 title="Clear shortcut"
               >
-                <HugeiconsIcon icon={Delete02Icon} size={12} />
+                <HugeiconsIcon
+                  icon={Delete02Icon}
+                  size={12}
+                  className="shrink-0"
+                />
               </Button>
             </div>
           </>
         )}
       </div>
-    </div>
-  );
-}
-
-function Recorder({
-  onRecord,
-  onCancel,
-}: {
-  onRecord: (b: KeyBinding) => void;
-  onCancel: () => void;
-}) {
-  const [_mods, setMods] = useState({
-    ctrl: false,
-    shift: false,
-    alt: false,
-    meta: false,
-  });
-
-  useEffect(() => {
-    const onDown = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (e.key === "Escape") {
-        onCancel();
-        return;
-      }
-
-      const isMod = ["Control", "Shift", "Alt", "Meta"].includes(e.key);
-      if (isMod) {
-        setMods({
-          ctrl: e.ctrlKey,
-          shift: e.shiftKey,
-          alt: e.altKey,
-          meta: e.metaKey,
-        });
-        return;
-      }
-
-      // Require at least one primary modifier (Ctrl, Alt, Meta).
-      // Reject Shift‑only shortcuts that would insert a character.
-      const hasPrimaryModifier = e.ctrlKey || e.altKey || e.metaKey;
-      const isCharacterKey = e.key.length === 1; // anything that types a glyph
-      // this blocks shortcuts such as Shift+2 which would be "@" and Shift+, which would be "<" on many layouts
-      if (!hasPrimaryModifier && (!e.shiftKey || isCharacterKey)) {
-        return;
-      }
-      onRecord({
-        key: e.key,
-        ctrl: e.ctrlKey,
-        shift: e.shiftKey,
-        alt: e.altKey,
-        meta: e.metaKey,
-      });
-    };
-
-    const onUp = (e: KeyboardEvent) => {
-      const isMod = ["Control", "Shift", "Alt", "Meta"].includes(e.key);
-      if (isMod) {
-        setMods({
-          ctrl: e.ctrlKey,
-          shift: e.shiftKey,
-          alt: e.altKey,
-          meta: e.metaKey,
-        });
-      }
-    };
-
-    window.addEventListener("keydown", onDown, { capture: true });
-    window.addEventListener("keyup", onUp, { capture: true });
-    return () => {
-      window.removeEventListener("keydown", onDown, { capture: true });
-      window.removeEventListener("keyup", onUp, { capture: true });
-    };
-  }, [onRecord, onCancel]);
-
-  return (
-    <div className="flex items-center gap-2 rounded bg-accent/50 px-2 py-1 text-[11px] ring-1 ring-accent">
-      <span className="animate-pulse font-medium">Recording...</span>
-      <span className="text-muted-foreground">(Esc to cancel)</span>
     </div>
   );
 }

@@ -1,30 +1,32 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
+  type CustomEndpoint,
   getProvider,
   KEYRING_SERVICE,
   PROVIDERS,
-  providerSupportsKey,
-  type CustomEndpoint,
   type ProviderId,
+  providerSupportsKey,
 } from "../config";
 
 export type ProviderKeys = Record<ProviderId, string | null>;
 export type CustomEndpointKeys = Record<string, string | null>;
 
 export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
-  openai: null,
-  anthropic: null,
-  google: null,
-  xai: null,
-  cerebras: null,
-  groq: null,
-  deepseek: null,
-  mistral: null,
-  openrouter: null,
+  "openai": null,
+  "anthropic": null,
+  "google": null,
+  "xai": null,
+  "cerebras": null,
+  "groq": null,
+  "deepseek": null,
+  "mistral": null,
+  "openrouter": null,
   "openai-compatible": null,
-  lmstudio: null,
-  mlx: null,
-  ollama: null,
+  "lmstudio": null,
+  "mlx": null,
+  "ollama": null,
+  "claude-code": null,
+  "codex": null,
 };
 
 export async function getKey(provider: ProviderId): Promise<string | null> {

@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod claude_code;
 pub mod fs;
 pub mod git;
 pub mod history;

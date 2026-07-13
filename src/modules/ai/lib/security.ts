@@ -237,7 +237,10 @@ export function checkWritable(path: string): SafetyResult {
   // Ensure the comparison surface has a leading separator for prefix matching.
   const cmpForPrefix = cmp.startsWith("/") ? cmp : `/${cmp}`;
   for (const prefix of WRITE_DENY_PREFIXES) {
-    if (cmpForPrefix.startsWith(prefix) || `${cmpForPrefix}/`.startsWith(prefix)) {
+    if (
+      cmpForPrefix.startsWith(prefix) ||
+      `${cmpForPrefix}/`.startsWith(prefix)
+    ) {
       return {
         ok: false,
         reason: `Refused: writes under "${prefix.replace(/\/$/, "")}" are not allowed.`,
@@ -342,7 +345,8 @@ export function checkShellCommand(cmd: string): SafetyResult {
   if (/[\u202A-\u202E\u2066-\u2069\u200E\u200F\u061C]/.test(c)) {
     return {
       ok: false,
-      reason: "Refused: command contains Unicode bidirectional override characters.",
+      reason:
+        "Refused: command contains Unicode bidirectional override characters.",
     };
   }
   // rm -rf / (and variants with quoted /, --no-preserve-root, etc.)
@@ -365,7 +369,8 @@ export function checkShellCommand(cmd: string): SafetyResult {
   ) {
     return {
       ok: false,
-      reason: "Refused: command attempts to recursively delete the home directory.",
+      reason:
+        "Refused: command attempts to recursively delete the home directory.",
     };
   }
   if (/--no-preserve-root/.test(c)) {
@@ -373,7 +378,10 @@ export function checkShellCommand(cmd: string): SafetyResult {
   }
   // dd to a raw disk device
   if (/\bdd\b[^|]*\bof=\/dev\/(disk|sd|nvme|hd)/i.test(c)) {
-    return { ok: false, reason: "Refused: dd to a block device is not allowed." };
+    return {
+      ok: false,
+      reason: "Refused: dd to a block device is not allowed.",
+    };
   }
   // mkfs / fdisk / diskutil eraseDisk / parted
   if (

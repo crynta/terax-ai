@@ -43,6 +43,24 @@ function saveGeom(g: Geom) {
   }
 }
 
+const ANCHOR_GAP = 10;
+
+/** Anchor above the docked input bar, right-aligned — the window should read
+ *  as growing out of the composer. Only the saved SIZE is reused; position
+ *  re-anchors on every open so the window never strands mid-screen. */
+function anchoredGeom(saved: Geom | null, vp: Viewport): Geom {
+  const base = defaultGeom(vp);
+  const w = saved?.w ?? base.w;
+  const h = saved?.h ?? base.h;
+  const bar = document.querySelector("[data-ai-input-bar]");
+  const rect = bar?.getBoundingClientRect();
+  if (!rect || rect.height < 8) return clampGeom({ ...base, w, h }, vp);
+  return clampGeom(
+    { x: rect.right - w - ANCHOR_GAP, y: rect.top - h - ANCHOR_GAP, w, h },
+    vp,
+  );
+}
+
 type Compute = (start: Geom, dx: number, dy: number, vp: Viewport) => Geom;
 
 /** Drives the mini window's position and size entirely through the DOM (no
@@ -75,7 +93,7 @@ export function useMiniWindowGeometry() {
   );
 
   useLayoutEffect(() => {
-    const g = clampGeom(loadGeom() ?? defaultGeom(viewport()), viewport());
+    const g = anchoredGeom(loadGeom(), viewport());
     geom.current = g;
     const el = ref.current;
     if (el) {
@@ -157,7 +175,11 @@ export function useMiniWindowGeometry() {
     (dir: ResizeDir) => (e: React.PointerEvent) => {
       if (e.button !== 0) return;
       e.stopPropagation();
-      beginGesture(e, (start, dx, dy, vp) => applyResize(start, dir, dx, dy, vp), 0);
+      beginGesture(
+        e,
+        (start, dx, dy, vp) => applyResize(start, dir, dx, dy, vp),
+        0,
+      );
     },
     [beginGesture],
   );

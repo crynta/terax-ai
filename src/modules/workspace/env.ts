@@ -1,10 +1,8 @@
+import { setLastWslDistro } from "@/modules/settings/store";
 import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
-import { setLastWslDistro } from "@/modules/settings/store";
 
-export type WorkspaceEnv =
-  | { kind: "local" }
-  | { kind: "wsl"; distro: string };
+export type WorkspaceEnv = { kind: "local" } | { kind: "wsl"; distro: string };
 
 export type WslDistro = {
   name: string;

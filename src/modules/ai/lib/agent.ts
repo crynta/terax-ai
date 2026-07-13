@@ -1,12 +1,13 @@
 import {
   convertToModelMessages,
+  type LanguageModel,
   pruneMessages,
   stepCountIs,
   streamText,
-  type LanguageModel,
   type UIMessage,
 } from "ai";
 import {
+  type CustomEndpoint,
   DEFAULT_MODEL_ID,
   endpointIdFromCompatModel,
   getModelContextLimit,
@@ -16,15 +17,14 @@ import {
   MLX_DEFAULT_BASE_URL,
   modelKeepsReasoning,
   OLLAMA_DEFAULT_BASE_URL,
+  type ProviderId,
   providerNeedsKey,
   resolveModel,
   selectSystemPrompt,
-  type CustomEndpoint,
-  type ProviderId,
 } from "../config";
 import { buildTools, type ToolContext } from "../tools/tools";
 import { compactModelMessagesDetailed } from "./compact";
-import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
+import type { CustomEndpointKeys, ProviderKeys } from "./keyring";
 import { prepareAgentPrompt } from "./prompt";
 import { createProxyFetch } from "./proxyFetch";
 
@@ -104,7 +104,12 @@ export async function buildLanguageModel(
     }
     case "anthropic": {
       const { createAnthropic } = await import("@ai-sdk/anthropic");
-      built = createAnthropic({ apiKey: key })(resolvedModelId);
+      built = createAnthropic({
+        apiKey: key,
+        // The webview is a browser origin: Anthropic rejects CORS requests
+        // unless this opt-in header is present ("Load failed" otherwise).
+        headers: { "anthropic-dangerous-direct-browser-access": "true" },
+      })(resolvedModelId);
       break;
     }
     case "google": {
@@ -123,8 +128,9 @@ export async function buildLanguageModel(
       break;
     }
     case "deepseek": {
-      const { createOpenAICompatible } =
-        await import("@ai-sdk/openai-compatible");
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
       built = createOpenAICompatible({
         name: "deepseek",
         baseURL: "https://api.deepseek.com",
@@ -133,8 +139,9 @@ export async function buildLanguageModel(
       break;
     }
     case "mistral": {
-      const { createOpenAICompatible } =
-        await import("@ai-sdk/openai-compatible");
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
       built = createOpenAICompatible({
         name: "mistral",
         baseURL: "https://api.mistral.ai/v1",
@@ -148,8 +155,9 @@ export async function buildLanguageModel(
       break;
     }
     case "openrouter": {
-      const { createOpenAICompatible } =
-        await import("@ai-sdk/openai-compatible");
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
       built = createOpenAICompatible({
         name: "openrouter",
         baseURL: "https://openrouter.ai/api/v1",
@@ -167,8 +175,9 @@ export async function buildLanguageModel(
           "OpenAI-compatible provider has no base URL. Set it in Settings → Models.",
         );
       }
-      const { createOpenAICompatible } =
-        await import("@ai-sdk/openai-compatible");
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
       built = createOpenAICompatible({
         name: "openai-compatible",
         baseURL: compatURL,
@@ -178,8 +187,9 @@ export async function buildLanguageModel(
       break;
     }
     case "lmstudio": {
-      const { createOpenAICompatible } =
-        await import("@ai-sdk/openai-compatible");
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
       built = createOpenAICompatible({
         name: "lmstudio",
         baseURL: lmstudioURL,
@@ -188,8 +198,9 @@ export async function buildLanguageModel(
       break;
     }
     case "mlx": {
-      const { createOpenAICompatible } =
-        await import("@ai-sdk/openai-compatible");
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
       built = createOpenAICompatible({
         name: "mlx",
         baseURL: mlxURL,
@@ -198,8 +209,9 @@ export async function buildLanguageModel(
       break;
     }
     case "ollama": {
-      const { createOpenAICompatible } =
-        await import("@ai-sdk/openai-compatible");
+      const { createOpenAICompatible } = await import(
+        "@ai-sdk/openai-compatible"
+      );
       built = createOpenAICompatible({
         name: "ollama",
         baseURL: ollamaURL,
@@ -207,6 +219,11 @@ export async function buildLanguageModel(
       })(resolvedModelId);
       break;
     }
+    case "claude-code":
+    case "codex":
+      // Routed through the CLI transport before model construction; reaching
+      // here means a mis-wired call site.
+      throw new Error(`${provider} runs via the local CLI, not an SDK model.`);
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unsupported provider: ${_exhaustive as ProviderId}`);
@@ -240,9 +257,7 @@ export function buildConfiguredLanguageModel(
     const ep = local.customEndpoints?.find((e) => e.id === eid);
     if (!ep) throw new Error(`Custom endpoint not found: ${eid}`);
     if (!ep.modelId.trim()) {
-      throw new Error(
-        `${ep.name}: no model id set. Open Settings → Models.`,
-      );
+      throw new Error(`${ep.name}: no model id set. Open Settings → Models.`);
     }
     return buildLanguageModel(
       "openai-compatible",

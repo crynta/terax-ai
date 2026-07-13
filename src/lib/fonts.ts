@@ -39,9 +39,7 @@ export function resolveFontFamily(userInput: string): string {
   if (!name) return detectMonoFontFamily();
   // A comma means the user gave a full stack; otherwise quote the single family.
   // Strip any quotes first so a stray quote can't produce a malformed token.
-  const head = name.includes(",")
-    ? name
-    : `"${name.replace(/['"]/g, "")}"`;
+  const head = name.includes(",") ? name : `"${name.replace(/['"]/g, "")}"`;
   return `${head}, ${FALLBACK_CHAIN}`;
 }
 

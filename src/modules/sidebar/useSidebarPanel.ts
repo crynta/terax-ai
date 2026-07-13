@@ -1,3 +1,8 @@
+import { animationScale } from "@/lib/useAnimationScale";
+import {
+  readSidebarDisabledFastPath,
+  readSidebarStartCollapsedFastPath,
+} from "@/modules/settings/preferences";
 import {
   type RefObject,
   useCallback,
@@ -45,6 +50,9 @@ function readSidebarView(): SidebarViewId {
 }
 
 function readSidebarCollapsed(): boolean {
+  // A disabled sidebar starts closed; "start hidden" wins over last state.
+  if (readSidebarDisabledFastPath()) return true;
+  if (readSidebarStartCollapsedFastPath()) return true;
   try {
     return window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === "1";
   } catch {
@@ -57,6 +65,39 @@ type FocusableExplorer = {
   isFocused: () => boolean;
 };
 
+const SIDEBAR_ANIM_MS = 250;
+let sidebarAnimTimer = 0;
+// While the open/close transition runs, ResizeObserver reports every
+// intermediate width — persisting those would clobber the restored width
+// (e.g. store 2px right before a collapse hits 0).
+let sidebarAnimating = false;
+
+/** Animate programmatic open/close only — drags must stay transition-free.
+ *  react-resizable-panels sizes panels via flex-grow once the layout store
+ *  is live (flex-basis only before first layout), so transition both. */
+function animateSidebarPanel(run: () => void): void {
+  // Both panels: flex-grow ratios change together — animating only one
+  // makes the proportions jump at the start of the transition.
+  const els = [
+    document.getElementById("sidebar"),
+    document.getElementById("workspace"),
+  ].filter((el): el is HTMLElement => el instanceof HTMLElement);
+  const ms = Math.round(SIDEBAR_ANIM_MS * animationScale());
+  if (els.length > 0 && ms > 0) {
+    if (sidebarAnimTimer) window.clearTimeout(sidebarAnimTimer);
+    sidebarAnimating = true;
+    for (const el of els) {
+      el.style.transition = `flex-grow ${ms}ms ease-out, flex-basis ${ms}ms ease-out`;
+    }
+    sidebarAnimTimer = window.setTimeout(() => {
+      sidebarAnimTimer = 0;
+      sidebarAnimating = false;
+      for (const el of els) el.style.transition = "";
+    }, ms + 50);
+  }
+  run();
+}
+
 export function useSidebarPanel(
   explorerRef: RefObject<FocusableExplorer | null>,
 ) {
@@ -67,6 +108,9 @@ export function useSidebarPanel(
   const [sidebarView, setSidebarViewState] =
     useState<SidebarViewId>(readSidebarView);
   const [initialSidebarCollapsed] = useState(readSidebarCollapsed);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    initialSidebarCollapsed,
+  );
   const collapsedRef = useRef(initialSidebarCollapsed);
 
   const persistSidebarView = useCallback((view: SidebarViewId) => {
@@ -79,6 +123,7 @@ export function useSidebarPanel(
   }, []);
 
   const persistSidebarCollapsed = useCallback((collapsed: boolean) => {
+    setSidebarCollapsed(collapsed);
     if (collapsedRef.current === collapsed) return;
     collapsedRef.current = collapsed;
     try {
@@ -94,8 +139,23 @@ export function useSidebarPanel(
   const toggleSidebar = useCallback(() => {
     const p = sidebarRef.current;
     if (!p) return;
-    if (p.getSize().asPercentage <= 0) p.resize(`${sidebarWidthRef.current}px`);
-    else p.collapse();
+    animateSidebarPanel(() => {
+      if (p.getSize().asPercentage <= 0)
+        p.resize(`${sidebarWidthRef.current}px`);
+      else p.collapse();
+    });
+  }, []);
+
+  /** Animated explicit open/close — used by shell-tool overrides. */
+  const setSidebarOpen = useCallback((open: boolean) => {
+    const p = sidebarRef.current;
+    if (!p) return;
+    const isOpen = p.getSize().asPercentage > 0;
+    if (open === isOpen) return;
+    animateSidebarPanel(() => {
+      if (open) p.resize(`${sidebarWidthRef.current}px`);
+      else p.collapse();
+    });
   }, []);
 
   const cycleSidebarView = useCallback(
@@ -103,12 +163,15 @@ export function useSidebarPanel(
       const panel = sidebarRef.current;
       const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
       if (collapsed) {
-        if (panel) panel.resize(`${sidebarWidthRef.current}px`);
+        if (panel)
+          animateSidebarPanel(() =>
+            panel.resize(`${sidebarWidthRef.current}px`),
+          );
         if (view !== sidebarView) persistSidebarView(view);
         return;
       }
       if (view === sidebarView) {
-        panel?.collapse();
+        if (panel) animateSidebarPanel(() => panel.collapse());
         return;
       }
       persistSidebarView(view);
@@ -116,7 +179,12 @@ export function useSidebarPanel(
     [persistSidebarView, sidebarView],
   );
 
-  const persistSidebarWidth = useCallback((next: number) => {
+  const persistSidebarWidth = useCallback((raw: number) => {
+    if (sidebarAnimating) return;
+    // Clamp before storing: a stray intermediate width (animation frame,
+    // HMR mid-transition) must never become the width the sidebar reopens
+    // to — programmatic resize() bypasses the panel's min size.
+    const next = clampSidebarWidth(raw);
     sidebarWidthRef.current = next;
     if (sidebarWidthWriteTimerRef.current) {
       window.clearTimeout(sidebarWidthWriteTimerRef.current);
@@ -144,7 +212,8 @@ export function useSidebarPanel(
     const panel = sidebarRef.current;
     const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
     if (sidebarView !== "explorer" || collapsed) {
-      if (panel && collapsed) panel.resize(`${sidebarWidthRef.current}px`);
+      if (panel && collapsed)
+        animateSidebarPanel(() => panel.resize(`${sidebarWidthRef.current}px`));
       if (sidebarView !== "explorer") persistSidebarView("explorer");
       const active = document.activeElement;
       explorerReturnFocusRef.current =
@@ -176,9 +245,11 @@ export function useSidebarPanel(
     sidebarWidthRef,
     sidebarView,
     initialSidebarCollapsed,
+    sidebarCollapsed,
     persistSidebarView,
     persistSidebarCollapsed,
     toggleSidebar,
+    setSidebarOpen,
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,

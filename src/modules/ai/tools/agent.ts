@@ -1,7 +1,7 @@
-import { tool } from "ai";
-import { z } from "zod";
 import { useManagedAgentsStore } from "@/modules/agents/store/managedAgentsStore";
 import { writeToSession } from "@/modules/terminal";
+import { tool } from "ai";
+import { z } from "zod";
 import type { ToolContext } from "./context";
 
 // Claude Code's TUI treats a trailing CR in the same write chunk as the text
@@ -89,7 +89,11 @@ export function buildManagedAgentTools(ctx: ToolContext) {
         }
         setTimeout(() => writeToSession(managed.leafId, "\r"), SUBMIT_DELAY_MS);
         store.bumpRound(managed.leafId);
-        return { ok: true, sent: oneLine, round: store.get(managed.leafId)?.rounds };
+        return {
+          ok: true,
+          sent: oneLine,
+          round: store.get(managed.leafId)?.rounds,
+        };
       },
     }),
 
@@ -103,7 +107,9 @@ export function buildManagedAgentTools(ctx: ToolContext) {
           .min(1)
           .max(400)
           .optional()
-          .describe("Trailing lines of the agent terminal to return. Default 120."),
+          .describe(
+            "Trailing lines of the agent terminal to return. Default 120.",
+          ),
       }),
       execute: async ({ lines }) => {
         const sessionId = ctx.getSessionId();

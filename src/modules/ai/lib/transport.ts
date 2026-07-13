@@ -1,16 +1,19 @@
 import type { UIMessage } from "@ai-sdk/react";
 import type { CustomEndpoint } from "../config";
-import { runAgentStream, type AgentUsageDelta } from "./agent";
-import type { ProviderKeys, CustomEndpointKeys } from "./keyring";
-import { formatAiError } from "./errors";
-import { native } from "./native";
 import type { ToolContext } from "../tools/tools";
+import { type AgentUsageDelta, runAgentStream } from "./agent";
+import { cliAgentKind, runCliAgentStream } from "./claudeCodeTransport";
+import { formatAiError } from "./errors";
+import type { CustomEndpointKeys, ProviderKeys } from "./keyring";
+import { native } from "./native";
 
 const TERAX_MD_MAX_BYTES = 32 * 1024;
 type MemoryCacheEntry = { content: string | null; mtime: number };
 const projectMemoryCache = new Map<string, MemoryCacheEntry>();
 
-async function readTeraxMd(workspaceRoot: string | null): Promise<string | null> {
+async function readTeraxMd(
+  workspaceRoot: string | null,
+): Promise<string | null> {
   if (!workspaceRoot) return null;
   const path = `${workspaceRoot.replace(/\/$/, "")}/TERAX.md`;
   const cached = projectMemoryCache.get(workspaceRoot);
@@ -18,7 +21,10 @@ async function readTeraxMd(workspaceRoot: string | null): Promise<string | null>
   try {
     const r = await native.readFile(path);
     if (r.kind !== "text") {
-      projectMemoryCache.set(workspaceRoot, { content: null, mtime: Date.now() });
+      projectMemoryCache.set(workspaceRoot, {
+        content: null,
+        mtime: Date.now(),
+      });
       return null;
     }
     const content =
@@ -75,6 +81,20 @@ type SendOptions = {
 export function createContextAwareTransport(deps: Deps) {
   const run = async (options: SendOptions) => {
     const live = deps.getLive();
+    // CLI-agent models (Claude Code / Codex): the turn runs through the
+    // local CLI (its own tools, permissions and auth) instead of an SDK
+    // model + our agent loop.
+    const cliKind = cliAgentKind(deps.getModelId());
+    if (cliKind) {
+      return runCliAgentStream({
+        kind: cliKind,
+        messages: options.messages,
+        sessionKey: deps.toolContext.getSessionId() ?? "default",
+        cwd: live.workspaceRoot ?? live.cwd ?? null,
+        abortSignal: options.abortSignal,
+        onStep: deps.onStep,
+      });
+    }
     const projectMemory = await readTeraxMd(live.workspaceRoot);
     const envBlock = formatEnvBlock(live);
     const messagesForRun = envBlock

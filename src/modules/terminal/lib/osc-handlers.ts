@@ -47,7 +47,16 @@ export function registerPromptTracker(
   state?: ShellIntegrationState,
   // Fires on C (process executing) and A/D (back at prompt). Distinct from
   // inCommand, which is already true from B while the user merely types.
-  onCommandState?: (running: boolean) => void,
+  // On C, `command` carries the command line when the shell integration
+  // provides it (`OSC 133;C;<cmd>`).
+  onCommandState?: (
+    running: boolean,
+    command?: string,
+    exitCode?: number | null,
+  ) => void,
+  // Fires on B — the shell starts reading user input at the current cursor
+  // cell (consumed by the classic-terminal ghost suggestions).
+  onInputStart?: () => void,
 ): PromptTracker {
   let marker: IMarker | null = null;
   const d = term.parser.registerOscHandler(133, (data) => {
@@ -61,14 +70,18 @@ export function registerPromptTracker(
       // OSC 133 B — command begins. From here on, treat all output as
       // untrusted until we see D (command exit) or the next A (new prompt).
       if (state) state.inCommand = true;
+      onInputStart?.();
     } else if (data.startsWith("C")) {
       // OSC 133 C — command pre-execution marker; still inside command.
       if (state) state.inCommand = true;
-      onCommandState?.(true);
+      onCommandState?.(true, data.startsWith("C;") ? data.slice(2) : undefined);
     } else if (data.startsWith("D")) {
-      // OSC 133 D — command ends.
+      // OSC 133 D — command ends; "D;<code>" carries the exit status. A bare
+      // "D;" means "unknown", not success: Number("") would be 0.
       if (state) state.inCommand = false;
-      onCommandState?.(false);
+      const raw = data.startsWith("D;") ? data.slice(2).trim() : "";
+      const code = raw === "" ? NaN : Number(raw);
+      onCommandState?.(false, undefined, Number.isFinite(code) ? code : null);
     }
     return true;
   });

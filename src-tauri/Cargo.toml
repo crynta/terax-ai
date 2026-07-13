@@ -22,7 +22,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 portable-pty = "0.9"
 dirs = "6"
 log = "0.4"
@@ -62,6 +62,12 @@ keyring = { version = "3.6", default-features = false, features = [
 ] }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSUserDefaults"] }
+objc2-app-kit = { version = "0.3", features = [
+	"NSWindow",
+	"NSView",
+	"NSResponder",
+	"NSToolbar",
+] }
 
 # WebKitGTK can't read external clipboard copies; mac/win webviews can.
 [target.'cfg(target_os = "linux")'.dependencies]

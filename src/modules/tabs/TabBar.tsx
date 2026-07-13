@@ -22,6 +22,11 @@ import {
 } from "@/modules/editor/lib/languageDefinitions";
 import { resolveDisplayName } from "@/modules/editor/lib/languageResolver";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  commandBasename,
+  useShellToolStore,
+} from "@/modules/terminal/lib/shellToolStore";
 import {
   Cancel01Icon,
   Clock01Icon,
@@ -84,6 +89,26 @@ export function TabBar({
   onOverrideLanguage,
   compact,
 }: Props) {
+  // Smart terminal titles: active TUI name (nvim) or the running command's
+  // basename, falling back to the cwd-based label.
+  const toolByLeaf = useShellToolStore((st) => st.activeByLeaf);
+  const runningByLeaf = useShellToolStore((st) => st.runningByLeaf);
+  const progressByLeaf = useShellToolStore((st) => st.progressByLeaf);
+  const smartTitles = usePreferencesStore((st) => st.smartTabTitles);
+  const tabProgress = usePreferencesStore((st) => st.tabProgressEnabled);
+  const smartLabel = (t: Tab): string => {
+    if (smartTitles && t.kind === "terminal" && !t.customTitle) {
+      const tool = toolByLeaf[t.activeLeafId];
+      if (tool) return tool.name;
+      const cmd = runningByLeaf[t.activeLeafId];
+      if (cmd) {
+        const base = commandBasename(cmd);
+        if (base) return base;
+      }
+    }
+    return labelFor(t);
+  };
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -330,13 +355,9 @@ export function TabBar({
                     isNew && "terax-tab-in",
                     isActive
                       ? "text-foreground dark:text-foreground"
-                      : "text-muted-foreground hover:text-foreground/80 dark:text-muted-foreground",
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground/80 dark:text-muted-foreground",
                     draggingId === t.id && "opacity-50",
-                    compact
-                      ? "px-1.5!"
-                      : tabs.length === 1
-                        ? "px-2!"
-                        : "ps-2! pe-1!",
+                    compact ? "px-1.5!" : "px-2!",
                   )}
                 >
                   <span
@@ -445,7 +466,7 @@ export function TabBar({
                     {/* Preview tabs use italic to signal the transient state,
                         matching the visual convention from VSCode. */}
                     <span className={cn("truncate", isPreview && "italic")}>
-                      {labelFor(t)}
+                      {smartLabel(t)}
                     </span>
                     {t.kind === "editor" && t.dirty ? (
                       <span
@@ -454,21 +475,60 @@ export function TabBar({
                       />
                     ) : null}
                   </span>
+                  {/* Floating close chip: slides in from the tab's right edge
+                      as an overlay, so the tab never changes width and the
+                      neighbours never shift. Solid bg masks the text below. */}
+                  {tabProgress &&
+                    t.kind === "terminal" &&
+                    progressByLeaf[t.activeLeafId] !== undefined &&
+                    progressByLeaf[t.activeLeafId] < 100 && (
+                      <span
+                        aria-hidden
+                        className="absolute inset-x-1.5 bottom-0 h-[2px] overflow-hidden rounded-full bg-border/50"
+                      >
+                        <span
+                          className="block h-full rounded-full bg-primary/70 transition-[width] duration-[calc(300ms*var(--terax-anim,1))]"
+                          style={{
+                            width: `${progressByLeaf[t.activeLeafId]}%`,
+                          }}
+                        />
+                      </span>
+                    )}
+                  {/* Active tab: cross always visible — hover changes nothing,
+                      so nothing ever jumps on the tab you interact with most.
+                      Inactive tabs: the cross slides out on hover (opacity
+                      lags the slide; closing snaps shut so rapid hover in/out
+                      can't strand a half-open cross). */}
                   {tabs.length > 1 && (
                     <span
                       role="button"
                       aria-label="Close tab"
                       data-no-drag
+                      // data-no-drag exempts the cross from the trigger's
+                      // preventDefault branch, so without this Radix would
+                      // activate the tab on mousedown right before onClick
+                      // closes it — focus would land on ITS neighbor instead
+                      // of staying where the user was working.
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose(t.id);
                       }}
-                      className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
+                      className={cn(
+                        "flex h-4 shrink-0 items-center justify-center overflow-hidden rounded hover:bg-border/70 hover:opacity-100",
+                        isActive
+                          ? "w-4 opacity-70 transition-colors"
+                          : "-ml-1.5 w-0 opacity-0 group-hover:ml-0 group-hover:w-4 group-hover:opacity-70 group-hover:[transition:width_calc(200ms*var(--terax-anim,1)),margin-left_calc(200ms*var(--terax-anim,1)),opacity_calc(120ms*var(--terax-anim,1))_calc(80ms*var(--terax-anim,1)),background-color_150ms]",
+                      )}
                     >
                       <HugeiconsIcon
                         icon={Cancel01Icon}
                         size={11}
                         strokeWidth={2}
+                        className="shrink-0"
                       />
                     </span>
                   )}

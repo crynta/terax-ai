@@ -16,7 +16,9 @@ describe("resolveEditorThemeId", () => {
   });
 
   it("auto follows the builtin app theme pairing per mode", () => {
-    expect(resolveEditorThemeId("auto", "kanagawa", [], "dark")).toBe("kanagawa");
+    expect(resolveEditorThemeId("auto", "kanagawa", [], "dark")).toBe(
+      "kanagawa",
+    );
     expect(resolveEditorThemeId("auto", "kanagawa", [], "light")).toBe(
       "kanagawa-lotus",
     );

@@ -1,15 +1,51 @@
 pub mod modules;
 
-use modules::{agent, fs, git, history, lsp, net, pty, secrets, shell, workspace};
+use modules::{
+    agent, claude_code, fs, git, history, lsp, net, pty, secrets, shell, workspace,
+};
 use std::sync::Mutex;
-use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
-#[cfg(target_os = "macos")]
-use tauri::{PhysicalPosition, WindowEvent};
+use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
 
 /// Drained on first read so HMR / re-mounts can't replay the launch dir.
 #[derive(Default)]
 struct LaunchDir(Mutex<Option<String>>);
+
+/// Tab requested while the settings webview was still booting: the emit()
+/// would be lost (listener not registered yet), so the frontend also pulls
+/// this once on mount.
+#[derive(Default)]
+struct SettingsPendingTab(Mutex<Option<String>>);
+
+#[tauri::command]
+fn settings_take_pending_tab(state: State<'_, SettingsPendingTab>) -> Option<String> {
+    state.0.lock().expect("SettingsPendingTab poisoned").take()
+}
+
+/// Vertically centers the traffic lights in the custom 44px header the way
+/// Safari/Xcode do it: attach an empty unified-compact NSToolbar, and AppKit
+/// lays the buttons out in the taller titlebar region natively — across
+/// resizes, fullscreen transitions and macOS versions (incl. Tahoe's glass
+/// titlebar). No frame fighting, unlike tao's drawRect-based inset, which is
+/// broken under a webview (tauri-apps/tauri#14072).
+#[cfg(target_os = "macos")]
+fn install_titlebar_toolbar(window: &tauri::WebviewWindow) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSToolbar, NSWindow, NSWindowToolbarStyle};
+
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    unsafe {
+        let ns_window = &*(ptr as *const NSWindow);
+        let toolbar = NSToolbar::new(mtm);
+        ns_window.setToolbar(Some(&toolbar));
+        ns_window.setToolbarStyle(NSWindowToolbarStyle::UnifiedCompact);
+    }
+}
 
 #[tauri::command]
 fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
@@ -40,18 +76,47 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     };
 
     if let Some(window) = app.get_webview_window("settings") {
-        let _ = window.set_always_on_top(true);
-        let _ = window.show();
-        let _ = window.set_focus();
-        if let Some(t) = tab.as_deref().filter(|s| !s.is_empty()) {
-            // emit() serializes via JSON — no string-escape footgun, unlike
-            // eval() with format!(). Frontend listens via Tauri event API.
-            let _ = window.emit("terax:settings-tab", t);
-        }
+        show_settings_window(&app, &window, tab.as_deref());
         return Ok(());
     }
 
-    let builder = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url_path.into()))
+    if let Err(e) = create_settings_window(&app, url_path) {
+        // Lost the create race against the prewarm thread — the window
+        // exists now; fall back to showing it instead of failing the open.
+        if let Some(window) = app.get_webview_window("settings") {
+            show_settings_window(&app, &window, tab.as_deref());
+            return Ok(());
+        }
+        return Err(e);
+    }
+    Ok(())
+}
+
+fn show_settings_window(app: &tauri::AppHandle, window: &tauri::WebviewWindow, tab: Option<&str>) {
+    // Re-center over the main window only when coming back from hidden —
+    // never yank a window the user has already placed.
+    if !window.is_visible().unwrap_or(true) {
+        position_settings_window(app, window);
+    }
+    let _ = window.set_always_on_top(true);
+    let _ = window.show();
+    let _ = window.set_focus();
+    if let Some(t) = tab.filter(|s| !s.is_empty()) {
+        if let Some(state) = app.try_state::<SettingsPendingTab>() {
+            *state.0.lock().expect("SettingsPendingTab poisoned") = Some(t.to_string());
+        }
+        // emit() serializes via JSON — no string-escape footgun, unlike
+        // eval() with format!(). Frontend listens via Tauri event API; a
+        // still-booting webview misses it and pulls the stash instead.
+        let _ = window.emit("terax:settings-tab", t);
+    }
+}
+
+fn create_settings_window(
+    app: &tauri::AppHandle,
+    url_path: String,
+) -> Result<tauri::WebviewWindow, String> {
+    let builder = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App(url_path.into()))
         .title("Settings")
         .inner_size(900.0, 700.0)
         .min_inner_size(820.0, 620.0)
@@ -90,24 +155,66 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         let _ = window.set_decorations(false);
     }
 
-    #[cfg(target_os = "macos")]
-    if let Some(main) = app.get_webview_window("main") {
-        if let (Ok(main_pos), Ok(main_size), Ok(settings_size)) = (
-            main.outer_position(),
-            main.outer_size(),
-            window.outer_size(),
-        ) {
-            let x = main_pos.x
-                + ((main_size.width as i32).saturating_sub(settings_size.width as i32)) / 2;
-            let y = main_pos.y
-                + ((main_size.height as i32).saturating_sub(settings_size.height as i32)) / 2;
-            let _ = window.set_position(PhysicalPosition::new(x, y));
-        } else {
-            let _ = window.center();
-        }
+    // Closing settings only hides it: the webview stays warm, so the next
+    // open is instant instead of paying webview + JS boot (~1s).
+    {
+        let win = window.clone();
+        let handle = app.clone();
+        window.on_window_event(move |event| {
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = win.hide();
+                }
+                // OS always-on-top is global — keep settings above Terax
+                // while the app is active, but never float it over OTHER
+                // applications when the whole app loses focus.
+                WindowEvent::Focused(focused) => {
+                    let main_focused = handle
+                        .get_webview_window("main")
+                        .and_then(|m| m.is_focused().ok())
+                        .unwrap_or(false);
+                    let _ = win.set_always_on_top(*focused || main_focused);
+                }
+                _ => {}
+            }
+        });
     }
 
-    Ok(())
+    position_settings_window(app, &window);
+
+    Ok(window)
+}
+
+/// Centers settings over the main window in LOGICAL coordinates — physical
+/// pixels from two windows can live on monitors with different DPI.
+fn position_settings_window(app: &tauri::AppHandle, window: &tauri::WebviewWindow) {
+    let Some(main) = app.get_webview_window("main") else {
+        let _ = window.center();
+        return;
+    };
+    let geometry = (
+        main.outer_position(),
+        main.outer_size(),
+        window.outer_size(),
+        main.scale_factor(),
+        window.scale_factor(),
+    );
+    if let (Ok(main_pos), Ok(main_size), Ok(settings_size), Ok(main_scale), Ok(win_scale)) =
+        geometry
+    {
+        let mx = main_pos.x as f64 / main_scale;
+        let my = main_pos.y as f64 / main_scale;
+        let mw = main_size.width as f64 / main_scale;
+        let mh = main_size.height as f64 / main_scale;
+        let sw = settings_size.width as f64 / win_scale;
+        let sh = settings_size.height as f64 / win_scale;
+        let x = mx + (mw - sw) / 2.0;
+        let y = my + (mh - sh) / 2.0;
+        let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+    } else {
+        let _ = window.center();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -142,6 +249,9 @@ pub fn run() {
         .plugin(
             tauri_plugin_window_state::Builder::new()
                 .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
+                // Settings is a fixed-size utility window — always open it at
+                // its declared 900x700, never a stale saved size/maximized state.
+                .skip_initial_state("settings")
                 .build(),
         )
         .plugin(tauri_plugin_autostart::Builder::new().build())
@@ -155,25 +265,60 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .setup(|_app| {
-            // macOS skips parent() for the settings window, so tie its lifecycle
-            // to the main window here instead. Other platforms keep parent().
             #[cfg(target_os = "macos")]
+            if let Some(main) = _app.get_webview_window("main") {
+                install_titlebar_toolbar(&main);
+            }
+
+            // Main window closes → destroy settings on EVERY platform.
+            // parent()/transient_for does not destroy the child on Linux, so
+            // the hidden prewarmed settings window would keep the process
+            // alive with zero visible windows.
             if let Some(main) = _app.get_webview_window("main") {
                 let handle = _app.handle().clone();
                 main.on_window_event(move |event| {
-                    if matches!(
-                        event,
-                        WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed
-                    ) {
-                        if let Some(settings) = handle.get_webview_window("settings") {
-                            let _ = settings.close();
+                    match event {
+                        WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
+                            if let Some(settings) = handle.get_webview_window("settings") {
+                                // destroy(), not close(): close would hit the
+                                // hide-on-close hook and keep the process
+                                // alive with zero visible windows.
+                                let _ = settings.destroy();
+                            }
                         }
+                        // App became active again → restore settings-on-top
+                        // (its own Focused handler drops it when the app
+                        // deactivates).
+                        WindowEvent::Focused(true) => {
+                            if let Some(settings) = handle.get_webview_window("settings") {
+                                if settings.is_visible().unwrap_or(false) {
+                                    let _ = settings.set_always_on_top(true);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            }
+
+            // Pre-warm the settings window hidden shortly after startup so
+            // even the first open is instant. The frontend skips its
+            // auto-show when the URL carries ?prewarm.
+            {
+                let handle = _app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(1500));
+                    if handle.get_webview_window("settings").is_none() {
+                        let _ =
+                            create_settings_window(&handle, "settings.html?prewarm".to_string());
                     }
                 });
             }
             Ok(())
         })
         .manage(pty::PtyState::default())
+        .manage(claude_code::ClaudeCodeState::default())
+        .manage(SettingsPendingTab::default())
         .manage(shell::ShellState::default())
         .manage(secrets::SecretsState::default())
         .manage(fs::watch::FsWatchState::default())
@@ -246,6 +391,7 @@ pub fn run() {
             shell::shell_session_open,
             shell::shell_session_run,
             shell::shell_session_close,
+            shell::ssh_list_hosts,
             shell::shell_bg_spawn,
             shell::shell_bg_logs,
             shell::shell_bg_kill,
@@ -257,7 +403,12 @@ pub fn run() {
             workspace::workspace_current_dir,
             get_launch_dir,
             open_settings_window,
+            settings_take_pending_tab,
             agent::agent_enable_hooks,
+            claude_code::cli_agent_run,
+            claude_code::cli_agent_kill,
+            claude_code::cli_agent_available,
+            agent::agent_disable_hooks,
             agent::agent_hooks_status,
             secrets::secrets_get,
             secrets::secrets_set,
@@ -278,6 +429,9 @@ pub fn run() {
             // on process exit; kill explicitly.
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<lsp::LspState>() {
+                    state.kill_all();
+                }
+                if let Some(state) = app.try_state::<claude_code::ClaudeCodeState>() {
                     state.kill_all();
                 }
             }

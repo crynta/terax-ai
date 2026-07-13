@@ -1,5 +1,3 @@
-import { type RefObject, useCallback, useEffect, useState } from "react";
-import { homeDir } from "@tauri-apps/api/path";
 import { native } from "@/modules/ai/lib/native";
 import type { Tab } from "@/modules/tabs";
 import {
@@ -7,6 +5,8 @@ import {
   LOCAL_WORKSPACE,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { homeDir } from "@tauri-apps/api/path";
+import { type RefObject, useCallback, useEffect, useState } from "react";
 
 async function resolveEnvHome(env: WorkspaceEnv): Promise<string> {
   return env.kind === "wsl"

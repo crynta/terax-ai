@@ -206,7 +206,7 @@ export const ReasoningContent = memo(
     <CollapsibleContent
       className={cn(
         "mt-2 ml-1 border-l border-border/50 pl-3 text-[11.5px] leading-relaxed text-muted-foreground",
-        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 outline-none data-[state=closed]:animate-out data-[state=open]:animate-in",
+        "data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 outline-none duration-[calc(200ms*var(--terax-anim,1))] data-[state=closed]:animate-out data-[state=open]:animate-in",
         className,
       )}
       {...props}

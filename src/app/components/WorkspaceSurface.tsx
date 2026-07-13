@@ -1,4 +1,3 @@
-import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 import { AiDiffStack, EditorStack, GitDiffStack } from "@/modules/editor";
 import { GitHistoryStack } from "@/modules/git-history";
@@ -6,6 +5,7 @@ import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack } from "@/modules/preview";
 import type { Tab } from "@/modules/tabs";
 import { TerminalStack } from "@/modules/terminal";
+import type { ComponentProps } from "react";
 
 type TerminalStackProps = ComponentProps<typeof TerminalStack>;
 type EditorStackProps = ComponentProps<typeof EditorStack>;
@@ -70,9 +70,11 @@ export function WorkspaceSurface({
 
   return (
     <div className="relative h-full min-h-0">
+      {/* No static inset here — the terminal padding preference is the sole
+          source of the gap, so 0 means flush and negatives crop glyphs. */}
       <div
         className={cn(
-          "absolute inset-0 px-3 pt-2 pb-2",
+          "absolute inset-0",
           !isTerminalTab && "invisible pointer-events-none",
         )}
         aria-hidden={!isTerminalTab}

@@ -1,5 +1,5 @@
-import { lazy, Suspense } from "react";
 import type { ComponentProps } from "react";
+import { lazy, Suspense } from "react";
 import type { SourceControlPanel as SourceControlPanelType } from "./SourceControlPanel";
 
 const SourceControlPanelInner = lazy(() =>

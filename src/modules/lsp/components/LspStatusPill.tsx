@@ -25,7 +25,7 @@ type Props = {
 };
 
 const PILL_CLASS =
-  "terax-pill-in ml-1.5 flex h-6 shrink-0 cursor-pointer [&_button]:cursor-pointer items-center gap-1 rounded-full border border-border/50 bg-accent/50 px-2 text-[10.5px] font-medium text-muted-foreground transition-colors duration-200 hover:bg-accent hover:text-foreground";
+  "terax-pill-in ml-1.5 flex h-6 shrink-0 cursor-pointer [&_button]:cursor-pointer items-center gap-1 rounded-full border border-border/50 bg-accent/50 px-2 text-[10.5px] font-medium text-muted-foreground transition-colors duration-[calc(200ms*var(--terax-anim,1))] hover:bg-accent hover:text-foreground";
 
 export function LspStatusPill({ filePath }: Props) {
   const hint = useLspHint(filePath);

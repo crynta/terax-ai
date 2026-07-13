@@ -5,25 +5,29 @@ import {
   endpointIdFromCompatModel,
   getModel,
   isCompatModelId,
-  providerNeedsKey,
   type ModelId,
   type ProviderId,
+  providerNeedsKey,
 } from "../config";
-import { useTodosStore } from "./todoStore";
 import type { AgentUsage } from "../lib/agent";
-import { EMPTY_PROVIDER_KEYS, type ProviderKeys, type CustomEndpointKeys } from "../lib/keyring";
+import {
+  type CustomEndpointKeys,
+  EMPTY_PROVIDER_KEYS,
+  type ProviderKeys,
+} from "../lib/keyring";
+import { pushRecentModel } from "../lib/modelPrefs";
 import {
   deleteSessionData,
   deriveTitle,
   loadAll,
   loadMessages,
   newSessionId,
+  type SessionMeta,
   saveActiveId,
   saveMessages,
   saveSessionsList,
-  type SessionMeta,
 } from "../lib/sessions";
-import { pushRecentModel } from "../lib/modelPrefs";
+import { useTodosStore } from "./todoStore";
 
 export type Live = {
   getCwd: () => string | null;
@@ -87,10 +91,7 @@ export type PendingSelection = {
   source: "terminal" | "editor";
 };
 
-export type ApprovalResponder = (
-  approvalId: string,
-  approved: boolean,
-) => void;
+export type ApprovalResponder = (approvalId: string, approved: boolean) => void;
 
 type StoreState = {
   live: Live;
@@ -266,7 +267,10 @@ export const useChatStore = create<StoreState>((set, get) => ({
     set((s) => ({
       panelOpen: true,
       focusSignal: s.focusSignal + 1,
-      pendingSelections: [...s.pendingSelections, { id, text: trimmed, source }],
+      pendingSelections: [
+        ...s.pendingSelections,
+        { id, text: trimmed, source },
+      ],
     }));
   },
   consumeSelections: () => {
@@ -428,7 +432,8 @@ export function getAgentMeta(): AgentMeta {
 }
 
 export function getActiveProviderKey(): string | null {
-  const { selectedModelId, apiKeys, customEndpointKeys } = useChatStore.getState();
+  const { selectedModelId, apiKeys, customEndpointKeys } =
+    useChatStore.getState();
   if (isCompatModelId(selectedModelId)) {
     const eid = endpointIdFromCompatModel(selectedModelId);
     return customEndpointKeys[eid] ?? null;

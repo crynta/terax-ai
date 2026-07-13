@@ -27,7 +27,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import { toast } from "sonner";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
@@ -48,6 +47,11 @@ import {
   COMPACT_ITEM,
 } from "@/modules/explorer/lib/menuItemClass";
 import { joinPath } from "@/modules/explorer/lib/useFileTree";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useGlobalShortcuts } from "@/modules/shortcuts";
+import { KbdChip } from "@/modules/shortcuts/KbdChip";
+import type { ShortcutId } from "@/modules/shortcuts/shortcuts";
+import { useShortcutText } from "@/modules/shortcuts/useShortcutText";
 import {
   AiContentGenerator02Icon,
   Alert02Icon,
@@ -67,20 +71,21 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type KeyboardEvent,
   memo,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
-  type ReactNode,
 } from "react";
+import { toast } from "sonner";
 import type { SourceControlSummary } from "./useSourceControl";
 import {
-  useSourceControlPanel,
   type CheckState,
   type SourceControlFileEntry,
+  useSourceControlPanel,
 } from "./useSourceControlPanel";
 
 type Props = {
@@ -457,6 +462,19 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     void sourceControl.runRemoteAction("pull");
   }, [sourceControl]);
 
+  // Panel-scoped: these fire only while the source-control view is mounted.
+  useGlobalShortcuts({
+    "git.fetch": () => {
+      if (canFetch) handleFetch();
+    },
+    "git.pull": () => {
+      if (canPull) handlePull();
+    },
+    "git.refresh": () => {
+      if (!isRefreshing && !scm.actionBusy) handleRefresh();
+    },
+  });
+
   const rows = useMemo<RowDescriptor[]>(() => {
     const result: RowDescriptor[] = [];
     if (isDiverged) {
@@ -660,6 +678,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               disabled={!canFetch}
               onClick={handleFetch}
               side="bottom"
+              shortcutId="git.fetch"
             >
               {fetchBusy ? (
                 <Spinner className="size-3" />
@@ -686,6 +705,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               disabled={!canPull}
               onClick={handlePull}
               side="bottom"
+              shortcutId="git.pull"
             >
               {pullBusy ? (
                 <Spinner className="size-3" />
@@ -702,6 +722,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               disabled={isRefreshing || !!scm.actionBusy}
               onClick={handleRefresh}
               side="bottom"
+              shortcutId="git.refresh"
             >
               {isRefreshing ? (
                 <Spinner className="size-3.5" />
@@ -1158,7 +1179,7 @@ const EntryRow = memo(function EntryRow({
           aria-selected={isSelected}
           onMouseDown={() => onFocusRow(row.key)}
           className={cn(
-            "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-100",
+            "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-[calc(100ms*var(--terax-anim,1))]",
             focused
               ? "bg-accent/60"
               : isSelected
@@ -1328,26 +1349,45 @@ function IconActionButton({
   side = "left",
   onClick,
   children,
+  shortcutId,
 }: {
   label: string;
   disabled?: boolean;
   side?: "left" | "top" | "right" | "bottom";
   onClick: () => void;
   children: ReactNode;
+  shortcutId?: ShortcutId;
 }) {
+  const shortcutText = useShortcutText(shortcutId);
+  const hintsOn = usePreferencesStore((s) => s.hoverKeybindHints);
+  const chip = hintsOn ? shortcutText : null;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          className="size-6 p-3 cursor-pointer rounded-md text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
-          aria-label={label}
-          disabled={disabled}
-          onClick={onClick}
+        <span
+          className={cn(
+            "group/tip flex shrink-0 items-center rounded-md transition-all duration-[calc(250ms*var(--terax-anim,1))]",
+            !disabled &&
+              "hover:bg-muted dark:hover:bg-muted/50 [&:hover_button]:text-foreground",
+            !disabled && chip && "hover:pr-1",
+          )}
         >
-          {children}
-        </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="size-6 p-3 cursor-pointer rounded-md text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
+            aria-label={label}
+            disabled={disabled}
+            onClick={onClick}
+          >
+            {children}
+          </Button>
+          {chip && !disabled && (
+            <span className="flex max-w-0 items-center overflow-hidden opacity-0 transition-all duration-[calc(250ms*var(--terax-anim,1))] ease-out group-hover/tip:ml-1 group-hover/tip:max-w-16 group-hover/tip:opacity-100">
+              <KbdChip>{chip}</KbdChip>
+            </span>
+          )}
+        </span>
       </TooltipTrigger>
       <TooltipContent
         side={side}
@@ -1394,7 +1434,7 @@ function CommitFeedback({
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-3 top-[calc(100%-0.25rem)] z-20 flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg shadow-black/15 backdrop-blur transition-all duration-200",
+        "pointer-events-none absolute inset-x-3 top-[calc(100%-0.25rem)] z-20 flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] leading-snug shadow-lg shadow-black/15 backdrop-blur transition-all duration-[calc(200ms*var(--terax-anim,1))]",
         isVisible ? "translate-y-0 opacity-100" : "-translate-y-1 opacity-0",
         isError
           ? "border-destructive/30 bg-card/95 text-destructive"

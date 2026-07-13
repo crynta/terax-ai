@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef } from "react";
 import type { Tab } from "@/modules/tabs";
+import { useCallback, useEffect, useRef } from "react";
 import { isSerializableTab, serializeTabs } from "./serialize";
 import { saveState } from "./store";
 import { useSpaces } from "./useSpaces";

@@ -163,10 +163,7 @@ export function UpdaterDialog() {
               <Button variant="ghost" size="sm" onClick={dismiss}>
                 Later
               </Button>
-              <Button
-                size="sm"
-                onClick={() => void openUrl(manual.releaseUrl)}
-              >
+              <Button size="sm" onClick={() => void openUrl(manual.releaseUrl)}>
                 Download package
               </Button>
             </>

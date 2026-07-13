@@ -145,7 +145,22 @@ export type Preferences = {
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
+  /** Custom Vim mappings for the code editor (e.g. jj → <Esc> in insert). */
+  vimKeymaps: VimKeymap[];
   editorWordWrap: boolean;
+  sidebarStartCollapsed: boolean;
+  statusBarVisible: boolean;
+  /** Launch with the status bar collapsed instead of restoring last state. */
+  statusBarStartCollapsed: boolean;
+  /** Remove the sidebar entirely: header toggle hidden, shortcut blocked. */
+  sidebarDisabled: boolean;
+  /** Remove the status bar entirely: reopen controls hidden, shortcut blocked. */
+  statusBarDisabled: boolean;
+  /** Slide-out keybinding chips on icon hover; off = plain hover only. */
+  hoverKeybindHints: boolean;
+  animationSpeed: AnimationSpeed;
+  /** Duration multiplier used when animationSpeed is "custom". */
+  animationSpeedCustom: number;
   showHidden: boolean;
   explorerGitDecorations: boolean;
   terminalWebglEnabled: boolean;
@@ -156,6 +171,32 @@ export type Preferences = {
   terminalLetterSpacing: number;
   terminalFontSize: number;
   terminalScrollback: number;
+  /** Inner padding of the terminal content area, px. */
+  terminalPadding: number;
+  /** Per-side padding; when set it replaces the uniform terminalPadding. */
+  terminalPaddingSides: TerminalPaddingSides | null;
+  /** Classic-terminal completion menu (history + AI). */
+  terminalSuggestEnabled: boolean;
+  /** Debounce before the menu opens/updates after typing, ms. */
+  terminalSuggestDelayMs: number;
+  /** Extra settle time before asking the AI model, ms. */
+  terminalSuggestAiDelayMs: number;
+  /** Max rows in the completion menu. */
+  terminalSuggestMaxItems: number;
+  /** Minimum typed characters before suggestions kick in. */
+  terminalSuggestMinChars: number;
+  /** Terminal tab titles show the running command / TUI name. */
+  smartTabTitles: boolean;
+  /** Thin progress bar on tabs parsed from command output ("NN%"). */
+  tabProgressEnabled: boolean;
+  /** Toast when a long command finishes in a hidden tab. */
+  commandDoneToasts: boolean;
+  /** AI Fix/Explain on failed commands (blocks buttons + classic offer). */
+  failedCommandAi: boolean;
+  /** "# task" natural-language → command translation at the prompt. */
+  nlCommandsEnabled: boolean;
+  /** SSH hosts from ~/.ssh/config in the command palette. */
+  sshPaletteEnabled: boolean;
   lastWslDistro: string | null;
   zoomLevel: number;
   agentNotifications: boolean;
@@ -171,6 +212,7 @@ export type Preferences = {
   editorCustomFormatCommand: string;
   lspActivation: Record<string, LspActivation>;
   lspCustomServers: LspCustomServer[];
+  shellTools: ShellTool[];
 };
 
 export type EditorFormatter =
@@ -184,6 +226,62 @@ export type EditorFormatter =
   | "shfmt"
   | "zigfmt"
   | "custom";
+
+export type AnimationSpeed = "off" | "fast" | "normal" | "slow" | "custom";
+
+/** A TUI recognized inside the terminal (nvim, htop, …). While its command
+ *  runs in the focused terminal, per-tool settings override the global ones. */
+export type ShellTool = {
+  id: string;
+  name: string;
+  /** Command basenames that activate the tool (argv[0], case-insensitive). */
+  patterns: string[];
+  /** Legacy all-or-nothing switch; superseded by shortcutMode when set. */
+  blockShortcuts: boolean;
+  /** Shortcuts while the tool runs: keep "all", pass "none" to the app
+   *  (everything goes to the TUI), or "custom" — pass only blockedShortcuts. */
+  shortcutMode?: "all" | "none" | "custom";
+  /** shortcutMode "custom": app shortcuts handed to the TUI. */
+  blockedShortcuts?: ShortcutId[];
+  /** Per-tool rebinds: while the tool runs and the terminal is focused,
+   *  these key combos replace the global ones for the given shortcut. */
+  shortcutOverrides?: Partial<Record<ShortcutId, KeyBinding[]>>;
+  /** Collapse the status bar while the tool is in the foreground; "disable"
+   *  also removes the reopen controls and blocks the toggle shortcut. */
+  hideStatusBar?: boolean | "disable";
+  /** Collapse the sidebar while the tool is in the foreground; "disable"
+   *  also removes the header toggle and blocks the toggle shortcut. */
+  hideSidebar?: boolean | "disable";
+  /** Terminal content padding (px) while the tool runs (undefined = global). */
+  padding?: number;
+  /** Per-side padding while the tool runs; wins over the uniform padding. */
+  paddingSides?: TerminalPaddingSides;
+  /** Override the global terminal cursor-blink setting (undefined = global). */
+  cursorBlink?: "on" | "off";
+  /** Terminal font overrides for this tool (undefined = global). */
+  fontSize?: number;
+  fontFamily?: string;
+  fontWeight?: string;
+  /** With blockShortcuts on, these app shortcuts stay active anyway. */
+  allowedShortcuts?: ShortcutId[];
+};
+
+export type ChromeHideMode = "off" | "hide" | "disable";
+
+/** Normalizes a ShellTool hide flag (legacy boolean or "disable"). */
+export function chromeHideMode(
+  v: boolean | "disable" | undefined,
+): ChromeHideMode {
+  return v === "disable" ? "disable" : v ? "hide" : "off";
+}
+
+export const ANIMATION_CUSTOM_MIN = 0;
+export const ANIMATION_CUSTOM_MAX = 2.5;
+
+export function clampAnimationCustom(v: number): number {
+  if (!Number.isFinite(v)) return 1;
+  return Math.min(ANIMATION_CUSTOM_MAX, Math.max(ANIMATION_CUSTOM_MIN, v));
+}
 
 export type LspActivation = "enabled" | "dismissed";
 
@@ -233,7 +331,16 @@ const KEY_WHISPERCPP_BASE_URL = "whispercppBaseURL";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
+const KEY_VIM_KEYMAPS = "vimKeymaps";
 const KEY_EDITOR_WORD_WRAP = "editorWordWrap";
+const KEY_SIDEBAR_START_COLLAPSED = "sidebarStartCollapsed";
+const KEY_STATUS_BAR_VISIBLE = "statusBarVisible";
+const KEY_STATUS_BAR_START_COLLAPSED = "statusBarStartCollapsed";
+const KEY_SIDEBAR_DISABLED = "sidebarDisabled";
+const KEY_STATUS_BAR_DISABLED = "statusBarDisabled";
+const KEY_HOVER_KEYBIND_HINTS = "hoverKeybindHints";
+const KEY_ANIMATION_SPEED = "animationSpeed";
+const KEY_ANIMATION_SPEED_CUSTOM = "animationSpeedCustom";
 const KEY_SHOW_HIDDEN = "showHidden";
 const LEGACY_KEY_SHOW_HIDDEN_DIRS = "showHiddenDirectories";
 const KEY_EXPLORER_GIT_DECORATIONS = "explorerGitDecorations";
@@ -245,6 +352,19 @@ const KEY_TERMINAL_SHELL = "terminalShell";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
+const KEY_TERMINAL_PADDING = "terminalPadding";
+const KEY_TERMINAL_PADDING_SIDES = "terminalPaddingSides";
+const KEY_TERMINAL_SUGGEST_ENABLED = "terminalSuggestEnabled";
+const KEY_TERMINAL_SUGGEST_DELAY = "terminalSuggestDelayMs";
+const KEY_TERMINAL_SUGGEST_AI_DELAY = "terminalSuggestAiDelayMs";
+const KEY_TERMINAL_SUGGEST_MAX_ITEMS = "terminalSuggestMaxItems";
+const KEY_TERMINAL_SUGGEST_MIN_CHARS = "terminalSuggestMinChars";
+const KEY_SMART_TAB_TITLES = "smartTabTitles";
+const KEY_TAB_PROGRESS = "tabProgressEnabled";
+const KEY_COMMAND_DONE_TOASTS = "commandDoneToasts";
+const KEY_FAILED_COMMAND_AI = "failedCommandAi";
+const KEY_NL_COMMANDS = "nlCommandsEnabled";
+const KEY_SSH_PALETTE = "sshPaletteEnabled";
 const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
@@ -258,13 +378,36 @@ const KEY_EDITOR_FORMATTER_BY_LANG = "editorFormatterByLang";
 const KEY_EDITOR_CUSTOM_FORMAT_COMMAND = "editorCustomFormatCommand";
 const KEY_LSP_ACTIVATION = "lspActivation";
 const KEY_LSP_CUSTOM_SERVERS = "lspCustomServers";
+const KEY_SHELL_TOOLS = "shellTools";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
 export const TERMINAL_FONT_SIZE_MAX = 32;
 
+const ZOOM_MIN = 0.5;
+const ZOOM_MAX = 2.0;
+function clampZoom(v: number): number {
+  if (!Number.isFinite(v)) return 1.0;
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v));
+}
+
+function clampFontSize(v: number): number {
+  if (!Number.isFinite(v)) return TERMINAL_FONT_SIZE_DEFAULT;
+  return Math.min(
+    TERMINAL_FONT_SIZE_MAX,
+    Math.max(TERMINAL_FONT_SIZE_MIN, Math.round(v)),
+  );
+}
+
 export const TERMINAL_FONT_SIZES = [
   10, 12, 13, 14, 15, 16, 18, 20, 22, 24,
+] as const;
+
+export const TERMINAL_FONT_WEIGHTS = [
+  { value: "normal", label: "Normal" },
+  { value: "500", label: "Medium" },
+  { value: "600", label: "Semi-Bold" },
+  { value: "bold", label: "Bold" },
 ] as const;
 
 export const EDITOR_FONT_SIZE_DEFAULT = 13;
@@ -315,7 +458,16 @@ export const DEFAULT_PREFERENCES: Preferences = {
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
+  vimKeymaps: [],
   editorWordWrap: false,
+  sidebarStartCollapsed: false,
+  statusBarVisible: true,
+  statusBarStartCollapsed: false,
+  sidebarDisabled: false,
+  statusBarDisabled: false,
+  hoverKeybindHints: true,
+  animationSpeed: "normal",
+  animationSpeedCustom: 1,
   showHidden: false,
   explorerGitDecorations: true,
   terminalWebglEnabled: true,
@@ -326,6 +478,21 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
+  // The preference is the sole source of the terminal gap (the tab surface
+  // adds no inset of its own), so the default recreates the classic look.
+  terminalPadding: 8,
+  terminalPaddingSides: null,
+  terminalSuggestEnabled: true,
+  terminalSuggestDelayMs: 90,
+  terminalSuggestAiDelayMs: 400,
+  terminalSuggestMaxItems: 6,
+  terminalSuggestMinChars: 3,
+  smartTabTitles: true,
+  tabProgressEnabled: true,
+  commandDoneToasts: true,
+  failedCommandAi: true,
+  nlCommandsEnabled: true,
+  sshPaletteEnabled: true,
   lastWslDistro: null,
   zoomLevel: 1.0,
   agentNotifications: true,
@@ -339,6 +506,14 @@ export const DEFAULT_PREFERENCES: Preferences = {
   editorCustomFormatCommand: "",
   lspActivation: {},
   lspCustomServers: [],
+  shellTools: [
+    {
+      id: "nvim",
+      name: "Neovim",
+      patterns: ["nvim", "vim", "vi"],
+      blockShortcuts: true,
+    },
+  ],
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -435,7 +610,9 @@ export async function loadPreferences(): Promise<Preferences> {
         get<string>(KEY_OPENAI_COMPAT_BASE_URL) ?? "",
         get<string>(KEY_OPENAI_COMPAT_MODEL_ID) ?? "",
         get<number>(KEY_OPENAI_COMPAT_CONTEXT_LIMIT) ?? 128_000,
-        crypto.randomUUID().slice(0, 8),
+        // Deterministic: a random id here differs per window and per launch,
+        // dangling any stored model selection that embeds it.
+        "legacy-compat",
       );
     })(),
     openrouterModelId:
@@ -455,8 +632,50 @@ export async function loadPreferences(): Promise<Preferences> {
       get<string[]>(KEY_RECENT_MODELS) ?? DEFAULT_PREFERENCES.recentModelIds
     ).filter(isKnownModelId),
     vimMode: get<boolean>(KEY_VIM_MODE) ?? DEFAULT_PREFERENCES.vimMode,
+    vimKeymaps: ((): VimKeymap[] => {
+      const stored = get<VimKeymap[]>(KEY_VIM_KEYMAPS);
+      if (!Array.isArray(stored)) return DEFAULT_PREFERENCES.vimKeymaps;
+      return stored.filter(
+        (m): m is VimKeymap =>
+          !!m &&
+          typeof m.lhs === "string" &&
+          typeof m.rhs === "string" &&
+          (m.mode === "insert" || m.mode === "normal" || m.mode === "visual"),
+      );
+    })(),
     editorWordWrap:
       get<boolean>(KEY_EDITOR_WORD_WRAP) ?? DEFAULT_PREFERENCES.editorWordWrap,
+    sidebarStartCollapsed:
+      get<boolean>(KEY_SIDEBAR_START_COLLAPSED) ??
+      DEFAULT_PREFERENCES.sidebarStartCollapsed,
+    statusBarVisible:
+      get<boolean>(KEY_STATUS_BAR_VISIBLE) ??
+      DEFAULT_PREFERENCES.statusBarVisible,
+    statusBarStartCollapsed:
+      get<boolean>(KEY_STATUS_BAR_START_COLLAPSED) ??
+      DEFAULT_PREFERENCES.statusBarStartCollapsed,
+    sidebarDisabled:
+      get<boolean>(KEY_SIDEBAR_DISABLED) ?? DEFAULT_PREFERENCES.sidebarDisabled,
+    statusBarDisabled:
+      get<boolean>(KEY_STATUS_BAR_DISABLED) ??
+      DEFAULT_PREFERENCES.statusBarDisabled,
+    hoverKeybindHints:
+      get<boolean>(KEY_HOVER_KEYBIND_HINTS) ??
+      DEFAULT_PREFERENCES.hoverKeybindHints,
+    animationSpeed: ((): AnimationSpeed => {
+      const stored = get<string>(KEY_ANIMATION_SPEED);
+      return stored === "off" ||
+        stored === "fast" ||
+        stored === "normal" ||
+        stored === "slow" ||
+        stored === "custom"
+        ? stored
+        : DEFAULT_PREFERENCES.animationSpeed;
+    })(),
+    animationSpeedCustom: clampAnimationCustom(
+      get<number>(KEY_ANIMATION_SPEED_CUSTOM) ??
+        DEFAULT_PREFERENCES.animationSpeedCustom,
+    ),
     showHidden:
       get<boolean>(KEY_SHOW_HIDDEN) ??
       get<boolean>(LEGACY_KEY_SHOW_HIDDEN_DIRS) ??
@@ -482,17 +701,68 @@ export async function loadPreferences(): Promise<Preferences> {
     terminalLetterSpacing:
       get<number>(KEY_TERMINAL_LETTER_SPACING) ??
       DEFAULT_PREFERENCES.terminalLetterSpacing,
-    terminalFontSize:
+    terminalFontSize: clampFontSize(
       get<number>(KEY_TERMINAL_FONT_SIZE) ??
-      DEFAULT_PREFERENCES.terminalFontSize,
+        DEFAULT_PREFERENCES.terminalFontSize,
+    ),
     terminalScrollback: clampScrollback(
       get<number>(KEY_TERMINAL_SCROLLBACK) ??
         DEFAULT_PREFERENCES.terminalScrollback,
     ),
+    terminalPadding: clampTerminalPadding(
+      get<number>(KEY_TERMINAL_PADDING) ?? DEFAULT_PREFERENCES.terminalPadding,
+    ),
+    terminalSuggestEnabled:
+      get<boolean>(KEY_TERMINAL_SUGGEST_ENABLED) ??
+      DEFAULT_PREFERENCES.terminalSuggestEnabled,
+    terminalSuggestDelayMs: clampTerminalSuggestDelay(
+      get<number>(KEY_TERMINAL_SUGGEST_DELAY) ??
+        DEFAULT_PREFERENCES.terminalSuggestDelayMs,
+    ),
+    terminalSuggestAiDelayMs: clampTerminalSuggestAiDelay(
+      get<number>(KEY_TERMINAL_SUGGEST_AI_DELAY) ??
+        DEFAULT_PREFERENCES.terminalSuggestAiDelayMs,
+    ),
+    terminalSuggestMaxItems: clampTerminalSuggestMaxItems(
+      get<number>(KEY_TERMINAL_SUGGEST_MAX_ITEMS) ??
+        DEFAULT_PREFERENCES.terminalSuggestMaxItems,
+    ),
+    terminalSuggestMinChars: clampTerminalSuggestMinChars(
+      get<number>(KEY_TERMINAL_SUGGEST_MIN_CHARS) ??
+        DEFAULT_PREFERENCES.terminalSuggestMinChars,
+    ),
+    smartTabTitles:
+      get<boolean>(KEY_SMART_TAB_TITLES) ?? DEFAULT_PREFERENCES.smartTabTitles,
+    tabProgressEnabled:
+      get<boolean>(KEY_TAB_PROGRESS) ?? DEFAULT_PREFERENCES.tabProgressEnabled,
+    commandDoneToasts:
+      get<boolean>(KEY_COMMAND_DONE_TOASTS) ??
+      DEFAULT_PREFERENCES.commandDoneToasts,
+    failedCommandAi:
+      get<boolean>(KEY_FAILED_COMMAND_AI) ??
+      DEFAULT_PREFERENCES.failedCommandAi,
+    nlCommandsEnabled:
+      get<boolean>(KEY_NL_COMMANDS) ?? DEFAULT_PREFERENCES.nlCommandsEnabled,
+    sshPaletteEnabled:
+      get<boolean>(KEY_SSH_PALETTE) ?? DEFAULT_PREFERENCES.sshPaletteEnabled,
+    terminalPaddingSides: ((): TerminalPaddingSides | null => {
+      const stored = get<TerminalPaddingSides | null>(
+        KEY_TERMINAL_PADDING_SIDES,
+      );
+      if (!stored || typeof stored !== "object") return null;
+      return {
+        top: clampTerminalPadding(stored.top ?? 0),
+        right: clampTerminalPadding(stored.right ?? 0),
+        bottom: clampTerminalPadding(stored.bottom ?? 0),
+        left: clampTerminalPadding(stored.left ?? 0),
+      };
+    })(),
     lastWslDistro:
       get<string | null>(KEY_LAST_WSL_DISTRO) ??
       DEFAULT_PREFERENCES.lastWslDistro,
-    zoomLevel: get<number>(KEY_ZOOM_LEVEL) ?? DEFAULT_PREFERENCES.zoomLevel,
+    zoomLevel: clampZoom(
+      get<number>(KEY_ZOOM_LEVEL) ?? DEFAULT_PREFERENCES.zoomLevel,
+    ),
     agentNotifications:
       get<boolean>(KEY_AGENT_NOTIFICATIONS) ??
       DEFAULT_PREFERENCES.agentNotifications,
@@ -526,6 +796,8 @@ export async function loadPreferences(): Promise<Preferences> {
     lspCustomServers:
       get<LspCustomServer[]>(KEY_LSP_CUSTOM_SERVERS) ??
       DEFAULT_PREFERENCES.lspCustomServers,
+    shellTools:
+      get<ShellTool[]>(KEY_SHELL_TOOLS) ?? DEFAULT_PREFERENCES.shellTools,
   };
 }
 
@@ -546,6 +818,10 @@ export async function setLspCustomServers(
   value: LspCustomServer[],
 ): Promise<void> {
   await writePref(KEY_LSP_CUSTOM_SERVERS, value);
+}
+
+export async function setShellTools(value: ShellTool[]): Promise<void> {
+  await writePref(KEY_SHELL_TOOLS, value);
 }
 
 export async function setTheme(value: ThemePref): Promise<void> {
@@ -715,8 +991,54 @@ export async function setVimMode(value: boolean): Promise<void> {
   await writePref(KEY_VIM_MODE, value);
 }
 
+export type VimKeymap = {
+  /** Keys to press, vim notation ("jj", "<C-e>"). */
+  lhs: string;
+  /** What they expand to ("<Esc>", "0", ":w<CR>"). */
+  rhs: string;
+  mode: "insert" | "normal" | "visual";
+};
+
+export async function setVimKeymaps(value: VimKeymap[]): Promise<void> {
+  await writePref(KEY_VIM_KEYMAPS, value);
+}
+
 export async function setEditorWordWrap(value: boolean): Promise<void> {
   await writePref(KEY_EDITOR_WORD_WRAP, value);
+}
+
+export async function setSidebarStartCollapsed(value: boolean): Promise<void> {
+  await writePref(KEY_SIDEBAR_START_COLLAPSED, value);
+}
+
+export async function setStatusBarVisible(value: boolean): Promise<void> {
+  await writePref(KEY_STATUS_BAR_VISIBLE, value);
+}
+
+export async function setStatusBarStartCollapsed(
+  value: boolean,
+): Promise<void> {
+  await writePref(KEY_STATUS_BAR_START_COLLAPSED, value);
+}
+
+export async function setSidebarDisabled(value: boolean): Promise<void> {
+  await writePref(KEY_SIDEBAR_DISABLED, value);
+}
+
+export async function setStatusBarDisabled(value: boolean): Promise<void> {
+  await writePref(KEY_STATUS_BAR_DISABLED, value);
+}
+
+export async function setHoverKeybindHints(value: boolean): Promise<void> {
+  await writePref(KEY_HOVER_KEYBIND_HINTS, value);
+}
+
+export async function setAnimationSpeed(value: AnimationSpeed): Promise<void> {
+  await writePref(KEY_ANIMATION_SPEED, value);
+}
+
+export async function setAnimationSpeedCustom(value: number): Promise<void> {
+  await writePref(KEY_ANIMATION_SPEED_CUSTOM, clampAnimationCustom(value));
 }
 
 export async function setShowHidden(value: boolean): Promise<void> {
@@ -783,12 +1105,163 @@ export async function setTerminalScrollback(value: number): Promise<void> {
   await writePref(KEY_TERMINAL_SCROLLBACK, clampScrollback(value));
 }
 
+// Negative padding crops the terminal's edges (e.g. to swallow a TUI's own
+// gutter); symmetric with the positive range.
+export const TERMINAL_PADDING_MIN = -32;
+export const TERMINAL_PADDING_MAX = 32;
+
+export function clampTerminalPadding(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  // Fractional px are fine (1.9 etc.); keep one decimal to avoid float noise.
+  const clamped = Math.min(
+    TERMINAL_PADDING_MAX,
+    Math.max(TERMINAL_PADDING_MIN, v),
+  );
+  return Math.round(clamped * 10) / 10;
+}
+
+export async function setTerminalPadding(value: number): Promise<void> {
+  await writePref(KEY_TERMINAL_PADDING, clampTerminalPadding(value));
+}
+
+export type TerminalPaddingSides = {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+};
+
+export function clampTerminalPaddingSides(
+  value: TerminalPaddingSides,
+): TerminalPaddingSides {
+  return {
+    top: clampTerminalPadding(value.top),
+    right: clampTerminalPadding(value.right),
+    bottom: clampTerminalPadding(value.bottom),
+    left: clampTerminalPadding(value.left),
+  };
+}
+
+export const TERMINAL_SUGGEST_DELAY_MIN = 0;
+export const TERMINAL_SUGGEST_DELAY_MAX = 1000;
+export const TERMINAL_SUGGEST_AI_DELAY_MIN = 100;
+export const TERMINAL_SUGGEST_AI_DELAY_MAX = 3000;
+export const TERMINAL_SUGGEST_MAX_ITEMS_MIN = 1;
+export const TERMINAL_SUGGEST_MAX_ITEMS_MAX = 10;
+export const TERMINAL_SUGGEST_MIN_CHARS_MIN = 1;
+export const TERMINAL_SUGGEST_MIN_CHARS_MAX = 10;
+
+function clampInt(v: number, min: number, max: number, fallback: number) {
+  if (!Number.isFinite(v)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(v)));
+}
+
+export function clampTerminalSuggestDelay(v: number): number {
+  return clampInt(
+    v,
+    TERMINAL_SUGGEST_DELAY_MIN,
+    TERMINAL_SUGGEST_DELAY_MAX,
+    90,
+  );
+}
+
+export function clampTerminalSuggestAiDelay(v: number): number {
+  return clampInt(
+    v,
+    TERMINAL_SUGGEST_AI_DELAY_MIN,
+    TERMINAL_SUGGEST_AI_DELAY_MAX,
+    400,
+  );
+}
+
+export function clampTerminalSuggestMaxItems(v: number): number {
+  return clampInt(
+    v,
+    TERMINAL_SUGGEST_MAX_ITEMS_MIN,
+    TERMINAL_SUGGEST_MAX_ITEMS_MAX,
+    6,
+  );
+}
+
+export async function setTerminalSuggestEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_TERMINAL_SUGGEST_ENABLED, value);
+}
+
+export async function setTerminalSuggestDelayMs(value: number): Promise<void> {
+  await writePref(KEY_TERMINAL_SUGGEST_DELAY, clampTerminalSuggestDelay(value));
+}
+
+export async function setTerminalSuggestAiDelayMs(
+  value: number,
+): Promise<void> {
+  await writePref(
+    KEY_TERMINAL_SUGGEST_AI_DELAY,
+    clampTerminalSuggestAiDelay(value),
+  );
+}
+
+export function clampTerminalSuggestMinChars(v: number): number {
+  return clampInt(
+    v,
+    TERMINAL_SUGGEST_MIN_CHARS_MIN,
+    TERMINAL_SUGGEST_MIN_CHARS_MAX,
+    3,
+  );
+}
+
+export async function setTerminalSuggestMinChars(value: number): Promise<void> {
+  await writePref(
+    KEY_TERMINAL_SUGGEST_MIN_CHARS,
+    clampTerminalSuggestMinChars(value),
+  );
+}
+
+export async function setSmartTabTitles(value: boolean): Promise<void> {
+  await writePref(KEY_SMART_TAB_TITLES, value);
+}
+
+export async function setTabProgressEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_TAB_PROGRESS, value);
+}
+
+export async function setCommandDoneToasts(value: boolean): Promise<void> {
+  await writePref(KEY_COMMAND_DONE_TOASTS, value);
+}
+
+export async function setFailedCommandAi(value: boolean): Promise<void> {
+  await writePref(KEY_FAILED_COMMAND_AI, value);
+}
+
+export async function setNlCommandsEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_NL_COMMANDS, value);
+}
+
+export async function setSshPaletteEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_SSH_PALETTE, value);
+}
+
+export async function setTerminalSuggestMaxItems(value: number): Promise<void> {
+  await writePref(
+    KEY_TERMINAL_SUGGEST_MAX_ITEMS,
+    clampTerminalSuggestMaxItems(value),
+  );
+}
+
+export async function setTerminalPaddingSides(
+  value: TerminalPaddingSides | null,
+): Promise<void> {
+  await writePref(
+    KEY_TERMINAL_PADDING_SIDES,
+    value ? clampTerminalPaddingSides(value) : null,
+  );
+}
+
 export async function setLastWslDistro(value: string | null): Promise<void> {
   await writePref(KEY_LAST_WSL_DISTRO, value);
 }
 
 export async function setZoomLevel(value: number): Promise<void> {
-  await writePref(KEY_ZOOM_LEVEL, value);
+  await writePref(KEY_ZOOM_LEVEL, clampZoom(value));
 }
 
 export const AUTO_SAVE_DELAY_MIN = 100;
@@ -890,7 +1363,16 @@ export async function onPreferencesChange(
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
+    [KEY_VIM_KEYMAPS]: "vimKeymaps",
     [KEY_EDITOR_WORD_WRAP]: "editorWordWrap",
+    [KEY_SIDEBAR_START_COLLAPSED]: "sidebarStartCollapsed",
+    [KEY_STATUS_BAR_VISIBLE]: "statusBarVisible",
+    [KEY_STATUS_BAR_START_COLLAPSED]: "statusBarStartCollapsed",
+    [KEY_SIDEBAR_DISABLED]: "sidebarDisabled",
+    [KEY_STATUS_BAR_DISABLED]: "statusBarDisabled",
+    [KEY_HOVER_KEYBIND_HINTS]: "hoverKeybindHints",
+    [KEY_ANIMATION_SPEED]: "animationSpeed",
+    [KEY_ANIMATION_SPEED_CUSTOM]: "animationSpeedCustom",
     [KEY_SHOW_HIDDEN]: "showHidden",
     [KEY_EXPLORER_GIT_DECORATIONS]: "explorerGitDecorations",
     [KEY_TERMINAL_WEBGL_ENABLED]: "terminalWebglEnabled",
@@ -901,6 +1383,19 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
+    [KEY_TERMINAL_PADDING]: "terminalPadding",
+    [KEY_TERMINAL_SUGGEST_ENABLED]: "terminalSuggestEnabled",
+    [KEY_TERMINAL_SUGGEST_DELAY]: "terminalSuggestDelayMs",
+    [KEY_TERMINAL_SUGGEST_AI_DELAY]: "terminalSuggestAiDelayMs",
+    [KEY_TERMINAL_SUGGEST_MAX_ITEMS]: "terminalSuggestMaxItems",
+    [KEY_TERMINAL_SUGGEST_MIN_CHARS]: "terminalSuggestMinChars",
+    [KEY_SMART_TAB_TITLES]: "smartTabTitles",
+    [KEY_TAB_PROGRESS]: "tabProgressEnabled",
+    [KEY_COMMAND_DONE_TOASTS]: "commandDoneToasts",
+    [KEY_FAILED_COMMAND_AI]: "failedCommandAi",
+    [KEY_NL_COMMANDS]: "nlCommandsEnabled",
+    [KEY_SSH_PALETTE]: "sshPaletteEnabled",
+    [KEY_TERMINAL_PADDING_SIDES]: "terminalPaddingSides",
     [KEY_LAST_WSL_DISTRO]: "lastWslDistro",
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
@@ -914,6 +1409,7 @@ export async function onPreferencesChange(
     [KEY_EDITOR_CUSTOM_FORMAT_COMMAND]: "editorCustomFormatCommand",
     [KEY_LSP_ACTIVATION]: "lspActivation",
     [KEY_LSP_CUSTOM_SERVERS]: "lspCustomServers",
+    [KEY_SHELL_TOOLS]: "shellTools",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().

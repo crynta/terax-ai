@@ -4,11 +4,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/modules/ai/store/chatStore";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   ArrowDown01Icon,
   ArrowUp01Icon,
+  BubbleChatQuestionIcon,
   Cancel01Icon,
   Clock01Icon,
   CommandLineIcon,
@@ -23,6 +26,7 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { homeDir } from "@tauri-apps/api/path";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { fixFailedCommand } from "./lib/aiSuggest";
 import type {
   BlockMatch,
   PositionedBlock,
@@ -46,6 +50,8 @@ type Props = {
   clearSearch: () => void;
   promptReady: boolean;
   onRunAgain: (command: string) => void;
+  /** Put a (fixed) command into the prompt input without running it. */
+  onInsertCommand: (command: string) => void;
   onRestoreFocus: () => void;
 };
 
@@ -192,11 +198,72 @@ function Toolbar({ block, all, onSearch }: ChromeProps) {
   const duration = block.running
     ? null
     : fmtDuration(block.finishedAt - block.startedAt);
+  const failedCommandAi = usePreferencesStore((s) => s.failedCommandAi);
   const failed = !block.running && !block.ok && block.exitCode !== null;
+  const aiActions = failed && failedCommandAi;
+  const [fixing, setFixing] = useState(false);
+  const fix = async () => {
+    if (fixing) return;
+    setFixing(true);
+    try {
+      const fixed = await fixFailedCommand({
+        command: block.command,
+        output: all.readOutput(block.id) ?? "",
+        exitCode: block.exitCode,
+        cwd: block.cwd ?? null,
+      });
+      if (fixed) all.onInsertCommand(fixed);
+      else toast.info("No better command suggested.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFixing(false);
+    }
+  };
   return (
     <div className="bt-tools">
       {failed && <span className="bt-exit">exit {block.exitCode}</span>}
       {duration && <span className="bt-dur">{duration}</span>}
+      {aiActions && !!block.command && (
+        <button
+          type="button"
+          title="Explain this error with AI"
+          className="bt-btn"
+          onClick={() => {
+            const out = capAttachOutput(all.readOutput(block.id) ?? "");
+            const text = out
+              ? `$ ${block.command}\n${out}`
+              : `$ ${block.command}`;
+            const store = useChatStore.getState();
+            store.attachSelection(text, "terminal");
+            store.openMini();
+            store.focusInput(
+              "Explain why this command failed and how to fix it.",
+            );
+          }}
+        >
+          <HugeiconsIcon
+            icon={BubbleChatQuestionIcon}
+            size={12.5}
+            strokeWidth={1.75}
+          />
+        </button>
+      )}
+      {aiActions && !!block.command && (
+        <button
+          type="button"
+          title="Fix with AI — puts the corrected command into the input"
+          className="bt-btn"
+          disabled={!all.promptReady || fixing}
+          onClick={() => void fix()}
+        >
+          {fixing ? (
+            <Spinner className="size-3" />
+          ) : (
+            <HugeiconsIcon icon={SparklesIcon} size={12.5} strokeWidth={1.75} />
+          )}
+        </button>
+      )}
       {!block.running && !!block.command && (
         <button
           type="button"

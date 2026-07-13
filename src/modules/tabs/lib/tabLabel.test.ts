@@ -27,7 +27,12 @@ describe("labelFor (terminal tabs)", () => {
 
   it("prefers a custom title over the cwd-derived name", () => {
     expect(
-      labelFor(terminalTab({ cwd: "/Users/me/projects/terax-ai", customTitle: "Server" })),
+      labelFor(
+        terminalTab({
+          cwd: "/Users/me/projects/terax-ai",
+          customTitle: "Server",
+        }),
+      ),
     ).toBe("Server");
   });
 

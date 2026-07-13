@@ -12,8 +12,8 @@ import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   getBindingTokens,
-  SHORTCUTS,
   type KeyBinding,
+  SHORTCUTS,
   type ShortcutId,
 } from "@/modules/shortcuts";
 import { listBuiltinThemes, useTheme } from "@/modules/theme";
@@ -21,8 +21,8 @@ import {
   AlertCircleIcon,
   ArrowTurnBackwardIcon,
   CommandIcon,
-  Tick02Icon,
   TerminalIcon,
+  Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -371,7 +371,7 @@ export function CommandPalette({
                     onSelect={() => setQuery(hint.sigil)}
                     className="text-[12.5px]"
                   >
-                    <kbd className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px]">
+                    <kbd className="rounded border border-border/50 bg-card px-1.5 py-0.5 font-mono text-[11px]">
                       {hint.sigil}
                     </kbd>
                     <span>{hint.label}</span>
@@ -396,7 +396,11 @@ function rankCommands(
   }
   const scored: { item: PaletteItem; s: number }[] = [];
   for (const item of items) {
-    const s = fuzzyBest(term, [item.title, item.group, ...(item.keywords ?? [])]);
+    const s = fuzzyBest(term, [
+      item.title,
+      item.group,
+      ...(item.keywords ?? []),
+    ]);
     if (s !== null) scored.push({ item, s });
   }
   scored.sort(
@@ -494,7 +498,9 @@ function StatusItem({
         />
       ) : null}
       <span
-        className={tone === "error" ? "text-destructive" : "text-muted-foreground"}
+        className={
+          tone === "error" ? "text-destructive" : "text-muted-foreground"
+        }
       >
         {label}
       </span>

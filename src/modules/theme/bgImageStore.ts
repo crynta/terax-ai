@@ -89,18 +89,30 @@ async function isAnimated(file: File): Promise<boolean> {
   );
   if (
     head.length < 30 ||
-    head[0] !== 0x52 || head[1] !== 0x49 || head[2] !== 0x46 || head[3] !== 0x46 ||
-    head[8] !== 0x57 || head[9] !== 0x45 || head[10] !== 0x42 || head[11] !== 0x50
-  ) return false;
+    head[0] !== 0x52 ||
+    head[1] !== 0x49 ||
+    head[2] !== 0x46 ||
+    head[3] !== 0x46 ||
+    head[8] !== 0x57 ||
+    head[9] !== 0x45 ||
+    head[10] !== 0x42 ||
+    head[11] !== 0x50
+  )
+    return false;
   if (
-    head[12] === 0x56 && head[13] === 0x50 && head[14] === 0x38 && head[15] === 0x58
+    head[12] === 0x56 &&
+    head[13] === 0x50 &&
+    head[14] === 0x38 &&
+    head[15] === 0x58
   ) {
     return (head[20] & 0x02) !== 0;
   }
   return false;
 }
 
-export async function importBgImageFromFile(file: File): Promise<{ id: string; blob: Blob }> {
+export async function importBgImageFromFile(
+  file: File,
+): Promise<{ id: string; blob: Blob }> {
   if (!file.type.startsWith("image/")) {
     throw new Error("This file isn't an image.");
   }
