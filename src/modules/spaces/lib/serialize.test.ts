@@ -47,6 +47,8 @@ describe("serializeTabs", () => {
         path: "/a/x.ts",
         dirty: false,
         preview: false,
+        paneTree: { kind: "leaf", id: 8, path: "/a/x.ts" },
+        activeLeafId: 8,
       },
     ];
     const out = serializeTabs(tabs);

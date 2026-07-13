@@ -13,11 +13,13 @@ export {
 export { useTerminalFileDrop } from "./lib/useTerminalFileDrop";
 export {
   findLeafCwd,
+  findLeafPath,
   hasLeaf,
   isLeaf,
   leafIds,
   type PaneBounds,
   type PaneId,
   type PaneNode,
+  setLeafPath,
   type SplitDir,
 } from "./lib/panes";

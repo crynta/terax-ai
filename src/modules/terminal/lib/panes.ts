@@ -11,7 +11,7 @@ export type PaneBounds = {
 };
 
 export type PaneNode =
-  | { kind: "leaf"; id: PaneId; slotId?: PaneId; cwd?: string }
+  | { kind: "leaf"; id: PaneId; slotId?: PaneId; cwd?: string; path?: string }
   | {
       kind: "split";
       id: PaneId;
@@ -44,6 +44,15 @@ export function findLeafCwd(n: PaneNode, id: PaneId): string | undefined {
   return undefined;
 }
 
+export function findLeafPath(n: PaneNode, id: PaneId): string | undefined {
+  if (isLeaf(n)) return n.id === id ? n.path : undefined;
+  for (const c of n.children) {
+    const found = findLeafPath(c, id);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 export function setLeafCwd(
   n: PaneNode,
   id: PaneId,
@@ -56,6 +65,24 @@ export function setLeafCwd(
   let changed = false;
   const next = n.children.map((c) => {
     const u = setLeafCwd(c, id, cwd);
+    if (u !== c) changed = true;
+    return u;
+  });
+  return changed ? { ...n, children: next } : n;
+}
+
+export function setLeafPath(
+  n: PaneNode,
+  id: PaneId,
+  path: string,
+): PaneNode {
+  if (isLeaf(n)) {
+    if (n.id !== id || n.path === path) return n;
+    return { ...n, path };
+  }
+  let changed = false;
+  const next = n.children.map((c) => {
+    const u = setLeafPath(c, id, path);
     if (u !== c) changed = true;
     return u;
   });
@@ -76,13 +103,14 @@ export function splitLeaf(
   newLeafId: PaneId,
   dir: SplitDir,
   newCwd?: string,
+  newPath?: string,
 ): PaneNode {
   if (tree.kind === "split" && tree.dir === dir) {
     const idx = tree.children.findIndex(
       (c) => c.kind === "leaf" && c.id === targetId,
     );
     if (idx >= 0) {
-      const newLeaf: PaneNode = { kind: "leaf", id: newLeafId, cwd: newCwd };
+      const newLeaf: PaneNode = { kind: "leaf", id: newLeafId, cwd: newCwd, path: newPath };
       return {
         ...tree,
         children: [
@@ -95,7 +123,7 @@ export function splitLeaf(
   }
   if (isLeaf(tree)) {
     if (tree.id !== targetId) return tree;
-    const newLeaf: PaneNode = { kind: "leaf", id: newLeafId, cwd: newCwd };
+    const newLeaf: PaneNode = { kind: "leaf", id: newLeafId, cwd: newCwd, path: newPath };
     return {
       kind: "split",
       id: newSplitId,
@@ -106,7 +134,7 @@ export function splitLeaf(
   return {
     ...tree,
     children: tree.children.map((c) =>
-      splitLeaf(c, targetId, newSplitId, newLeafId, dir, newCwd),
+      splitLeaf(c, targetId, newSplitId, newLeafId, dir, newCwd, newPath),
     ),
   };
 }

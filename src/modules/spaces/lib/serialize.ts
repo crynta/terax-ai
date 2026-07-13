@@ -165,7 +165,8 @@ function hydrateTab(
         ...(s.customTitle !== undefined && { customTitle: s.customTitle }),
       } satisfies TerminalTab;
     }
-    case "editor":
+    case "editor": {
+      const leafId = allocId();
       return {
         id: allocId(),
         kind: "editor",
@@ -175,7 +176,10 @@ function hydrateTab(
         path: s.path,
         dirty: false,
         preview: false,
+        paneTree: { kind: "leaf", id: leafId, path: s.path },
+        activeLeafId: leafId,
       } satisfies EditorTab;
+    }
     case "preview":
       return {
         id: allocId(),
