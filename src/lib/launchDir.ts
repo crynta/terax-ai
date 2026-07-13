@@ -14,11 +14,11 @@ export function getLaunchDir(): string | undefined {
 }
 
 /**
- * Drains the file passed via the OS "Open With" action (CLI arg on
+ * Drains the files passed via the OS "Open With" action (CLI args on
  * Linux/Windows, macOS open-files event). Drained once so HMR / re-mounts
- * can't replay it. Returns undefined when the app wasn't launched with a file.
+ * can't replay them. Returns [] when the app wasn't launched with a file.
  */
-export async function consumeLaunchFile(): Promise<string | undefined> {
-  const file = await invoke<string | null>("get_launch_file").catch(() => null);
-  return file ? file.replace(/\\/g, "/") : undefined;
+export async function consumeLaunchFiles(): Promise<string[]> {
+  const files = await invoke<string[]>("get_launch_files").catch(() => []);
+  return files.map((f) => f.replace(/\\/g, "/"));
 }

@@ -5,7 +5,7 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { consumeLaunchFile, getLaunchDir } from "@/lib/launchDir";
+import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
@@ -576,24 +576,19 @@ export default function App() {
     [openFileTab, newMarkdownTab, activeId, activeEditorLeafId, setLeafPath],
   );
 
-  // Files opened via the OS "Open With" action. macOS delivers them through
-  // the backend "terax:open-file" event (warm start) and get_launch_file
-  // (cold start, before this listener attaches). openFileTab dedupes by path,
-  // so handling both paths can't double-open a tab.
+  // "Open With" files arrive via the event (warm start) and get_launch_files
+  // (cold start, before this listener attaches). Backend already authorized
+  // each parent; openFileTab dedupes by path, so both paths can't double-open.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    const open = async (path: string) => {
-      const i = path.lastIndexOf("/");
-      const dir = i <= 0 ? "/" : path.slice(0, i);
-      await native.workspaceAuthorize(dir).catch(() => {});
-      handleOpenFile(path, true);
+    const openAll = (paths: string[]) => {
+      for (const path of paths) handleOpenFile(path, true);
     };
     (async () => {
-      unlisten = await listen<string>("terax:open-file", (e) => {
-        void open(e.payload);
+      unlisten = await listen<string[]>("terax:open-file", (e) => {
+        openAll(e.payload);
       });
-      const launched = await consumeLaunchFile();
-      if (launched) void open(launched);
+      openAll(await consumeLaunchFiles());
     })();
     return () => unlisten?.();
   }, [handleOpenFile]);
