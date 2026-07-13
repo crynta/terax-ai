@@ -428,7 +428,7 @@ fn model_spec(profile: SpeechProfile) -> ModelSpec {
         match profile {
             SpeechProfile::Nemotron => ModelSpec {
                 repository: "aufklarer/Nemotron-3.5-ASR-Streaming-0.6B-CoreML-INT8",
-                revision: "08cc26356a3a75db85d0837a6759ba4590da4058",
+                revision: "447095fe87b480b5e6a15367f135303d479de8ac",
                 required: &[
                     "config.json",
                     "decoder.mlmodelc/analytics/coremldata.bin",
