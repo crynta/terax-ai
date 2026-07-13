@@ -67,6 +67,7 @@ export type EditorPaneHandle = {
   /** Open CodeMirror's find/replace panel. */
   openSearch: () => void;
   focus: () => void;
+  insertText: (text: string) => void;
   getSelection: () => string | null;
   getPath: () => string;
   /** Re-read the file from disk. Skips silently if the buffer is dirty. */
@@ -461,6 +462,17 @@ export const EditorPane = memo(
         },
         focus: () => {
           cmRef.current?.view?.focus();
+        },
+        insertText: (text: string) => {
+          const view = cmRef.current?.view;
+          if (!view) return;
+          const { from, to } = view.state.selection.main;
+          view.dispatch({
+            changes: { from, to, insert: text },
+            selection: { anchor: from + text.length },
+            scrollIntoView: true,
+          });
+          view.focus();
         },
         getSelection: () => {
           const view = cmRef.current?.view;

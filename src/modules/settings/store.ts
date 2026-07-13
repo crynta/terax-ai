@@ -15,6 +15,7 @@ import {
   WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
+import { IS_MAC } from "@/lib/platform";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
 
@@ -111,6 +112,13 @@ export const EDITOR_THEME_LABELS: Record<EditorThemeId, string> = {
   "xcode-light": "Xcode Light",
 };
 
+export type VoiceHoldMods = {
+  ctrl?: boolean;
+  alt?: boolean;
+  shift?: boolean;
+  meta?: boolean;
+};
+
 export type Preferences = {
   theme: ThemePref;
   themeId: string;
@@ -142,6 +150,10 @@ export type Preferences = {
   sttProvider: SttProvider;
   groqSttModel: string;
   whispercppBaseURL: string;
+  voiceHoldEnabled: boolean;
+  voiceHoldUseFn: boolean;
+  voiceHoldMods: VoiceHoldMods;
+  voiceCleanupEnabled: boolean;
   favoriteModelIds: string[];
   recentModelIds: string[];
   vimMode: boolean;
@@ -230,6 +242,10 @@ const KEY_OPENROUTER_MODEL_ID = "openrouterModelId";
 const KEY_STT_PROVIDER = "sttProvider";
 const KEY_GROQ_STT_MODEL = "groqSttModel";
 const KEY_WHISPERCPP_BASE_URL = "whispercppBaseURL";
+const KEY_VOICE_HOLD_ENABLED = "voiceHoldEnabled";
+const KEY_VOICE_HOLD_USE_FN = "voiceHoldUseFn";
+const KEY_VOICE_HOLD_MODS = "voiceHoldMods";
+const KEY_VOICE_CLEANUP_ENABLED = "voiceCleanupEnabled";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
 const KEY_RECENT_MODELS = "recentModelIds";
 const KEY_VIM_MODE = "vimMode";
@@ -312,6 +328,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   sttProvider: DEFAULT_STT_PROVIDER,
   groqSttModel: "whisper-large-v3-turbo",
   whispercppBaseURL: WHISPERCPP_DEFAULT_BASE_URL,
+  voiceHoldEnabled: false,
+  voiceHoldUseFn: IS_MAC,
+  voiceHoldMods: { ctrl: true, alt: true },
+  voiceCleanupEnabled: false,
   favoriteModelIds: [],
   recentModelIds: [],
   vimMode: false,
@@ -353,6 +373,23 @@ async function writePref<T>(key: string, value: T): Promise<void> {
   await store.set(key, value);
   await store.save();
   await emit(PREFS_CHANGED_EVENT, { key, value });
+}
+
+function normalizeVoiceHoldMods(value: unknown): VoiceHoldMods {
+  if (!value || typeof value !== "object") {
+    return DEFAULT_PREFERENCES.voiceHoldMods;
+  }
+  const o = value as Record<string, unknown>;
+  const mods: VoiceHoldMods = {
+    ctrl: o.ctrl === true,
+    alt: o.alt === true,
+    shift: o.shift === true,
+    meta: o.meta === true,
+  };
+  if (!mods.ctrl && !mods.alt && !mods.shift && !mods.meta) {
+    return DEFAULT_PREFERENCES.voiceHoldMods;
+  }
+  return mods;
 }
 
 export async function loadPreferences(): Promise<Preferences> {
@@ -448,6 +485,15 @@ export async function loadPreferences(): Promise<Preferences> {
     whispercppBaseURL:
       get<string>(KEY_WHISPERCPP_BASE_URL) ??
       DEFAULT_PREFERENCES.whispercppBaseURL,
+    voiceHoldEnabled:
+      get<boolean>(KEY_VOICE_HOLD_ENABLED) ??
+      DEFAULT_PREFERENCES.voiceHoldEnabled,
+    voiceHoldUseFn:
+      get<boolean>(KEY_VOICE_HOLD_USE_FN) ?? DEFAULT_PREFERENCES.voiceHoldUseFn,
+    voiceHoldMods: normalizeVoiceHoldMods(get<unknown>(KEY_VOICE_HOLD_MODS)),
+    voiceCleanupEnabled:
+      get<boolean>(KEY_VOICE_CLEANUP_ENABLED) ??
+      DEFAULT_PREFERENCES.voiceCleanupEnabled,
     favoriteModelIds: (
       get<string[]>(KEY_FAVORITE_MODELS) ?? DEFAULT_PREFERENCES.favoriteModelIds
     ).filter(isKnownModelId),
@@ -703,6 +749,22 @@ export async function setWhispercppBaseURL(value: string): Promise<void> {
   await writePref(KEY_WHISPERCPP_BASE_URL, value.trim());
 }
 
+export async function setVoiceHoldEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_VOICE_HOLD_ENABLED, value);
+}
+
+export async function setVoiceHoldUseFn(value: boolean): Promise<void> {
+  await writePref(KEY_VOICE_HOLD_USE_FN, value);
+}
+
+export async function setVoiceHoldMods(value: VoiceHoldMods): Promise<void> {
+  await writePref(KEY_VOICE_HOLD_MODS, value);
+}
+
+export async function setVoiceCleanupEnabled(value: boolean): Promise<void> {
+  await writePref(KEY_VOICE_CLEANUP_ENABLED, value);
+}
+
 export async function setFavoriteModelIds(value: string[]): Promise<void> {
   await writePref(KEY_FAVORITE_MODELS, value);
 }
@@ -887,6 +949,10 @@ export async function onPreferencesChange(
     [KEY_STT_PROVIDER]: "sttProvider",
     [KEY_GROQ_STT_MODEL]: "groqSttModel",
     [KEY_WHISPERCPP_BASE_URL]: "whispercppBaseURL",
+    [KEY_VOICE_HOLD_ENABLED]: "voiceHoldEnabled",
+    [KEY_VOICE_HOLD_USE_FN]: "voiceHoldUseFn",
+    [KEY_VOICE_HOLD_MODS]: "voiceHoldMods",
+    [KEY_VOICE_CLEANUP_ENABLED]: "voiceCleanupEnabled",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",
     [KEY_RECENT_MODELS]: "recentModelIds",
     [KEY_VIM_MODE]: "vimMode",
