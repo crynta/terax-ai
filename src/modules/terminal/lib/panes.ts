@@ -1,6 +1,14 @@
 export type PaneId = number;
 
 export type SplitDir = "row" | "col";
+export type PaneDirection = "left" | "right" | "up" | "down";
+export type PaneBounds = {
+  id: PaneId;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
 
 export type PaneNode =
   | { kind: "leaf"; id: PaneId; cwd?: string }
@@ -157,4 +165,119 @@ export function siblingLeafOf(
 
 export function hasLeaf(tree: PaneNode, id: PaneId): boolean {
   return leafIds(tree).includes(id);
+}
+
+type PaneRect = { id: PaneId; x: number; y: number; width: number; height: number };
+
+function paneRects(
+  node: PaneNode,
+  x = 0,
+  y = 0,
+  width = 1,
+  height = 1,
+): PaneRect[] {
+  if (isLeaf(node)) return [{ id: node.id, x, y, width, height }];
+  const count = node.children.length;
+  return node.children.flatMap((child, index) =>
+    node.dir === "row"
+      ? paneRects(child, x + (width * index) / count, y, width / count, height)
+      : paneRects(child, x, y + (height * index) / count, width, height / count),
+  );
+}
+
+function directionalTarget(
+  rects: PaneRect[],
+  active: PaneRect,
+  direction: PaneDirection,
+): PaneId | null {
+  const horizontal = direction === "left" || direction === "right";
+  const forward = direction === "right" || direction === "down";
+  const center = (r: PaneRect) =>
+    horizontal ? r.x + r.width / 2 : r.y + r.height / 2;
+  const crossCenter = (r: PaneRect) =>
+    horizontal ? r.y + r.height / 2 : r.x + r.width / 2;
+  const crossStart = (r: PaneRect) => (horizontal ? r.y : r.x);
+  const crossEnd = (r: PaneRect) =>
+    horizontal ? r.y + r.height : r.x + r.width;
+  const overlaps = (r: PaneRect) =>
+    crossStart(r) < crossEnd(active) && crossEnd(r) > crossStart(active);
+  const others = rects.filter((r) => r.id !== active.id && overlaps(r));
+  if (others.length === 0) return null;
+
+  const ahead = others.filter((r) =>
+    forward ? center(r) > center(active) : center(r) < center(active),
+  );
+  const candidates = ahead.length > 0 ? ahead : others;
+  candidates.sort((a, b) => {
+    const axisA = ahead.length > 0
+      ? Math.abs(center(a) - center(active))
+      : forward
+        ? center(a)
+        : -center(a);
+    const axisB = ahead.length > 0
+      ? Math.abs(center(b) - center(active))
+      : forward
+        ? center(b)
+        : -center(b);
+    return axisA - axisB ||
+      Math.abs(crossCenter(a) - crossCenter(active)) -
+        Math.abs(crossCenter(b) - crossCenter(active));
+  });
+  return candidates[0]?.id ?? null;
+}
+
+function findLeaf(node: PaneNode, id: PaneId): Extract<PaneNode, { kind: "leaf" }> | null {
+  if (isLeaf(node)) return node.id === id ? node : null;
+  for (const child of node.children) {
+    const found = findLeaf(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function swapLeaves(
+  node: PaneNode,
+  first: Extract<PaneNode, { kind: "leaf" }>,
+  second: Extract<PaneNode, { kind: "leaf" }>,
+): PaneNode {
+  if (isLeaf(node)) {
+    if (node.id === first.id) return second;
+    if (node.id === second.id) return first;
+    return node;
+  }
+  return {
+    ...node,
+    children: node.children.map((child) => swapLeaves(child, first, second)),
+  };
+}
+
+function rectsFromBounds(bounds: PaneBounds[]): PaneRect[] {
+  return bounds
+    .filter((rect) => rect.right > rect.left && rect.bottom > rect.top)
+    .map((rect) => ({
+      id: rect.id,
+      x: rect.left,
+      y: rect.top,
+      width: rect.right - rect.left,
+      height: rect.bottom - rect.top,
+    }));
+}
+
+export function swapLeafInDirection(
+  tree: PaneNode,
+  activeId: PaneId,
+  direction: PaneDirection,
+  liveBounds?: PaneBounds[],
+): PaneNode {
+  const liveRects = liveBounds ? rectsFromBounds(liveBounds) : [];
+  const liveIds = new Set(liveRects.map((rect) => rect.id));
+  const hasCompleteLiveLayout = leafIds(tree).every((id) => liveIds.has(id));
+  const rects = hasCompleteLiveLayout ? liveRects : paneRects(tree);
+  const active = rects.find((rect) => rect.id === activeId);
+  if (!active || rects.length < 2) return tree;
+  const targetId = directionalTarget(rects, active, direction);
+  if (targetId === null) return tree;
+  const first = findLeaf(tree, activeId);
+  const second = findLeaf(tree, targetId);
+  return first && second ? swapLeaves(tree, first, second) : tree;
 }
