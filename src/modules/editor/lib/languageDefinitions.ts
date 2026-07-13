@@ -142,7 +142,19 @@ export const LANGUAGES: LanguageDefinition[] = [
   {
     name: "Markdown",
     extensions: ["md", "markdown"],
-    loader: () => import("@codemirror/lang-markdown").then((m) => m.markdown()),
+    // markdownLanguage = GFM (tables, task lists, strikethrough, autolinks);
+    // fenced code blocks highlight through the shared lazy language registry.
+    loader: () =>
+      Promise.all([
+        import("@codemirror/lang-markdown"),
+        import("./markdownExtras"),
+      ]).then(([m, extras]) => [
+        m.markdown({
+          base: m.markdownLanguage,
+          codeLanguages: extras.markdownCodeLanguages(),
+        }),
+        extras.markdownExtras(),
+      ]),
     userSelectable: true,
   },
   {
@@ -357,15 +369,24 @@ export const LANGUAGES: LanguageDefinition[] = [
     filenames: ["cmakelists.txt"],
   },
   {
+    name: "Dotenv",
+    extensions: ["env"],
+    loader: () =>
+      defineLanguage(
+        import("@codemirror/legacy-modes/mode/shell").then((m) => m.shell),
+      ),
+    filenames: [".env"],
+  },
+  {
     name: "Properties",
-    extensions: ["ini", "cfg", "properties", "env"],
+    extensions: ["ini", "cfg", "properties"],
     loader: () =>
       defineLanguage(
         import("@codemirror/legacy-modes/mode/properties").then(
           (m) => m.properties,
         ),
       ),
-    filenames: [".env", ".editorconfig"],
+    filenames: [".editorconfig"],
   },
   {
     name: "Lua",

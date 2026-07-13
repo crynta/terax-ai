@@ -16,6 +16,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import {
+  FORMATTER_LABELS,
+  FORMATTERS,
+} from "@/modules/editor/lib/externalFormat";
+import { EXPOSED_LANGUAGES } from "@/modules/editor/lib/languageDefinitions";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref, VimKeymap } from "@/modules/settings/store";
 import {
@@ -23,6 +28,7 @@ import {
   ANIMATION_CUSTOM_MIN,
   type AnimationSpeed,
   clampTerminalPadding,
+  EDITOR_FONT_SIZES,
   type EditorFormatter,
   setAgentNotifications,
   setAnimationSpeed,
@@ -32,8 +38,11 @@ import {
   setDefaultWorkspaceEnv,
   setEditorAutoSave,
   setEditorAutoSaveDelay,
+  setEditorCustomFormatCommand,
+  setEditorFontSize,
   setEditorFormatOnSave,
   setEditorFormatter,
+  setEditorFormatterByLang,
   setEditorWordWrap,
   setExplorerGitDecorations,
   setFailedCommandAi,
@@ -85,6 +94,7 @@ import { KbdChip } from "@/modules/shortcuts/KbdChip";
 import { useTheme } from "@/modules/theme";
 import {
   Add01Icon,
+  Cancel01Icon,
   ComputerIcon,
   Delete02Icon,
   Moon02Icon,
@@ -291,12 +301,19 @@ export function GeneralSection() {
 
 /** Code editor behavior. */
 export function EditorSettingsSection() {
+  const editorFontSize = usePreferencesStore((s) => s.editorFontSize);
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const editorFormatOnSave = usePreferencesStore((s) => s.editorFormatOnSave);
   const editorFormatter = usePreferencesStore((s) => s.editorFormatter);
+  const editorFormatterByLang = usePreferencesStore(
+    (s) => s.editorFormatterByLang,
+  );
+  const usesCustom =
+    editorFormatter === "custom" ||
+    Object.values(editorFormatterByLang).includes("custom");
 
   return (
     <div className="flex flex-col gap-6">
@@ -305,6 +322,27 @@ export function EditorSettingsSection() {
         description="Keybindings, wrapping and saving behavior."
       />
       <div className="flex flex-col gap-2">
+        <SettingRow title="Font size" description="Code editor text size.">
+          <Select
+            value={String(editorFontSize)}
+            onValueChange={(v) => void setEditorFontSize(Number(v))}
+          >
+            <SelectTrigger size="sm" className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EDITOR_FONT_SIZES.map((size) => (
+                <SelectItem
+                  key={size}
+                  value={String(size)}
+                  className="text-[12px]"
+                >
+                  {size} px
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
         <SettingRow
           title="Vim mode"
           description="Enable Vim keybindings in the code editor."
@@ -348,30 +386,157 @@ export function EditorSettingsSection() {
           />
         </SettingRow>
         {editorFormatOnSave && (
-          <SettingRow
-            title="Formatter"
-            description="Language server formats the buffer before writing; Biome and Prettier run on the saved file from your PATH."
-          >
-            <Select
-              value={editorFormatter}
-              onValueChange={(v) =>
-                void setEditorFormatter(v as EditorFormatter)
-              }
+          <>
+            <SettingRow
+              title="Formatter"
+              description="Language server formats the buffer before writing; external tools run on the saved file from your PATH."
             >
-              <SelectTrigger className="h-8 w-40 text-[12px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="lsp">Language server</SelectItem>
-                <SelectItem value="biome">Biome</SelectItem>
-                <SelectItem value="prettier">Prettier</SelectItem>
-              </SelectContent>
-            </Select>
-          </SettingRow>
+              <FormatterSelect
+                value={editorFormatter}
+                onChange={(v) => void setEditorFormatter(v)}
+              />
+            </SettingRow>
+            {usesCustom && <CustomFormatCommandInput />}
+            <FormatterOverrides />
+          </>
         )}
       </div>
       {vimMode && <VimKeymapsGroup />}
     </div>
+  );
+}
+
+const FORMATTER_OPTIONS: EditorFormatter[] = [
+  "lsp",
+  ...(Object.keys(FORMATTERS) as EditorFormatter[]),
+  "custom",
+];
+
+function FormatterSelect({
+  value,
+  onChange,
+}: {
+  value: EditorFormatter;
+  onChange: (v: EditorFormatter) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={(v) => onChange(v as EditorFormatter)}>
+      <SelectTrigger className="h-8 w-40 text-[12px]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {FORMATTER_OPTIONS.map((id) => (
+          <SelectItem key={id} value={id}>
+            {FORMATTER_LABELS[id]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function CustomFormatCommandInput() {
+  const stored = usePreferencesStore((s) => s.editorCustomFormatCommand);
+  const [draft, setDraft] = useState(stored);
+
+  useEffect(() => {
+    setDraft(stored);
+  }, [stored]);
+
+  return (
+    <SettingRow
+      title="Custom command"
+      description="Runs on the saved file; {file} is replaced with the quoted path (appended when omitted)."
+    >
+      <Input
+        value={draft}
+        placeholder="mytool --fix {file}"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft !== stored) void setEditorCustomFormatCommand(draft);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        className="h-8 w-64 font-mono text-[12px] md:text-[12px]"
+      />
+    </SettingRow>
+  );
+}
+
+function FormatterOverrides() {
+  const byLang = usePreferencesStore((s) => s.editorFormatterByLang);
+  const entries = Object.entries(byLang);
+  const unused = EXPOSED_LANGUAGES.filter((l) => !(l.ext in byLang));
+
+  const update = (next: Record<string, EditorFormatter>) =>
+    void setEditorFormatterByLang(next);
+
+  return (
+    <>
+      <SettingRow
+        title="Language overrides"
+        description="Use a different formatter for specific languages (e.g. Ruff for Python)."
+      >
+        <button
+          type="button"
+          disabled={unused.length === 0}
+          className="h-8 rounded-md border border-border px-3 text-[12px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+          onClick={() => {
+            const first = unused[0];
+            if (first) update({ ...byLang, [first.ext]: "lsp" });
+          }}
+        >
+          Add override
+        </button>
+      </SettingRow>
+      {entries.map(([lang, formatter]) => (
+        <div
+          key={lang}
+          className="flex items-center justify-end gap-2 rounded-md border border-border/50 bg-muted/20 px-3 py-1.5"
+        >
+          <Select
+            value={lang}
+            onValueChange={(nextLang) => {
+              if (nextLang === lang) return;
+              const next = { ...byLang };
+              delete next[lang];
+              next[nextLang] = formatter;
+              update(next);
+            }}
+          >
+            <SelectTrigger className="h-7 w-44 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {EXPOSED_LANGUAGES.filter(
+                (l) => l.ext === lang || !(l.ext in byLang),
+              ).map((l) => (
+                <SelectItem key={l.ext} value={l.ext}>
+                  {l.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FormatterSelect
+            value={formatter}
+            onChange={(v) => update({ ...byLang, [lang]: v })}
+          />
+          <button
+            type="button"
+            className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="Remove override"
+            onClick={() => {
+              const next = { ...byLang };
+              delete next[lang];
+              update(next);
+            }}
+          >
+            <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={2} />
+          </button>
+        </div>
+      ))}
+    </>
   );
 }
 

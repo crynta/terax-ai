@@ -3,6 +3,7 @@ import type { CustomEndpoint } from "../config";
 import type { ToolContext } from "../tools/tools";
 import { type AgentUsageDelta, runAgentStream } from "./agent";
 import { cliAgentKind, runCliAgentStream } from "./claudeCodeTransport";
+import { formatAiError } from "./errors";
 import type { CustomEndpointKeys, ProviderKeys } from "./keyring";
 import { native } from "./native";
 
@@ -128,19 +129,7 @@ export function createContextAwareTransport(deps: Deps) {
     });
     return result.toUIMessageStream({
       originalMessages: options.messages,
-      // The SDK default masks every failure as "An error occurred." — that's
-      // for servers that must not leak internals. This transport runs in the
-      // client, so surface the real provider error to the banner.
-      onError: (error) => {
-        console.error("agent stream error:", error);
-        if (error instanceof Error) return error.message;
-        if (typeof error === "string") return error;
-        try {
-          return JSON.stringify(error);
-        } catch {
-          return String(error);
-        }
-      },
+      onError: formatAiError,
     });
   };
 

@@ -176,6 +176,7 @@
 
 :root {
   --app-zoom: 1;
+  --editor-font-size: 13px;
 }
 
 html[data-chrome="borderless"] .terax-bg-surface {

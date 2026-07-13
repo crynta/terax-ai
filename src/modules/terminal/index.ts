@@ -3,6 +3,7 @@ export {
   hasLeaf,
   isLeaf,
   leafIds,
+  type PaneBounds,
   type PaneId,
   type PaneNode,
   type SplitDir,

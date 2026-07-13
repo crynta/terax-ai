@@ -201,10 +201,41 @@ export type ModelInfo = {
   description: string;
   capabilities: ModelCapabilities;
   tags?: readonly ModelTag[];
+  supportsTemperature?: boolean;
 };
 
 export const MODELS = [
   // ── OpenAI ────────────────────────────────────────────────────────────────
+  {
+    id: "gpt-5.6",
+    provider: "openai",
+    label: "GPT-5.6 Sol",
+    hint: "Flagship",
+    description: "Frontier model for complex professional and agentic work.",
+    capabilities: { intelligence: 5, speed: 4, cost: 1 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
+  },
+  {
+    id: "gpt-5.6-terra",
+    provider: "openai",
+    label: "GPT-5.6 Terra",
+    hint: "Balanced",
+    description: "Strong intelligence with lower cost and latency.",
+    capabilities: { intelligence: 5, speed: 4, cost: 2 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
+  },
+  {
+    id: "gpt-5.6-luna",
+    provider: "openai",
+    label: "GPT-5.6 Luna",
+    hint: "Fast",
+    description: "Fast, affordable reasoning for high-volume work.",
+    capabilities: { intelligence: 4, speed: 5, cost: 3 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
+  },
   {
     id: "gpt-5.5",
     provider: "openai",
@@ -213,6 +244,7 @@ export const MODELS = [
     description: "Frontier reasoning and code.",
     capabilities: { intelligence: 5, speed: 3, cost: 1 },
     tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
   },
   {
     id: "gpt-5.5-pro",
@@ -223,6 +255,7 @@ export const MODELS = [
       "Highest-accuracy version for the hardest professional and agentic tasks.",
     capabilities: { intelligence: 5, speed: 2, cost: 1 },
     tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
   },
   {
     id: "gpt-5.4-mini",
@@ -232,6 +265,7 @@ export const MODELS = [
     description: "Snappy default at low cost.",
     capabilities: { intelligence: 4, speed: 4, cost: 4 },
     tags: ["vision", "tools"],
+    supportsTemperature: false,
   },
   {
     id: "gpt-5.4-nano",
@@ -241,6 +275,7 @@ export const MODELS = [
     description: "Tiny and instant — great for autocomplete.",
     capabilities: { intelligence: 3, speed: 5, cost: 5 },
     tags: ["tools"],
+    supportsTemperature: false,
   },
   {
     id: "gpt-5.3-codex",
@@ -250,6 +285,7 @@ export const MODELS = [
     description: "Tuned for code and tool use.",
     capabilities: { intelligence: 4, speed: 4, cost: 3 },
     tags: ["tools", "coding"],
+    supportsTemperature: false,
   },
   {
     id: "gpt-4.1-mini",
@@ -263,6 +299,27 @@ export const MODELS = [
 
   // ── Anthropic ─────────────────────────────────────────────────────────────
   {
+    id: "claude-fable-5",
+    provider: "anthropic",
+    label: "Claude Fable 5",
+    hint: "Frontier",
+    description:
+      "Most capable Claude for demanding reasoning and long-horizon agentic work.",
+    capabilities: { intelligence: 5, speed: 2, cost: 1 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
+  },
+  {
+    id: "claude-sonnet-5",
+    provider: "anthropic",
+    label: "Claude Sonnet 5",
+    hint: "Balanced",
+    description: "Best combination of Claude intelligence and speed.",
+    capabilities: { intelligence: 5, speed: 4, cost: 3 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
+  },
+  {
     id: "claude-opus-4-8",
     provider: "anthropic",
     label: "Claude Opus 4.8",
@@ -271,6 +328,7 @@ export const MODELS = [
       "Anthropic's most capable model for complex reasoning and long-horizon agentic coding.",
     capabilities: { intelligence: 5, speed: 2, cost: 1 },
     tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
   },
   {
     id: "claude-opus-4-7",
@@ -280,6 +338,7 @@ export const MODELS = [
     description: "Previous-gen flagship for long reasoning.",
     capabilities: { intelligence: 5, speed: 2, cost: 1 },
     tags: ["vision", "reasoning", "tools", "coding"],
+    supportsTemperature: false,
   },
   {
     id: "claude-sonnet-4-6",
@@ -389,6 +448,15 @@ export const MODELS = [
   },
 
   // ── xAI ───────────────────────────────────────────────────────────────────
+  {
+    id: "grok-4.5",
+    provider: "xai",
+    label: "Grok 4.5",
+    hint: "Frontier",
+    description: "Frontier coding, agentic, and knowledge-work model.",
+    capabilities: { intelligence: 5, speed: 4, cost: 2 },
+    tags: ["vision", "reasoning", "tools", "coding"],
+  },
   {
     id: "grok-4.20-reasoning",
     provider: "xai",
@@ -661,29 +729,59 @@ export function modelKeepsReasoning(m: ModelInfo): boolean {
   );
 }
 
+export function modelSupportsTemperature(
+  provider: ProviderId,
+  modelId: string,
+): boolean {
+  const model: ModelInfo | undefined = MODELS.find(
+    (m) => m.provider === provider && m.id === modelId,
+  );
+  return model?.supportsTemperature !== false;
+}
+
+export function modelUsesReasoningTokens(
+  provider: ProviderId,
+  modelId: string,
+): boolean {
+  const model: ModelInfo | undefined = MODELS.find(
+    (m) => m.provider === provider && m.id === modelId,
+  );
+  return (
+    (model?.tags?.includes("reasoning") ?? false) ||
+    (provider === "openai" && /^gpt-5(?:[.-]|$)/.test(modelId)) ||
+    /\bgpt-oss\b/i.test(modelId)
+  );
+}
+
 export const DEFAULT_MODEL_ID: ModelId = "gpt-5.4-mini";
 
 /** Approximate context window (in tokens) per model. Used for the
  *  context-usage indicator in the AI mini-window header. Conservative
  *  estimates — actual provider limits may shift. */
 export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
+  "gpt-5.6": 1_050_000,
+  "gpt-5.6-terra": 1_050_000,
+  "gpt-5.6-luna": 1_050_000,
   "gpt-5.5": 1_050_000,
   "gpt-5.5-pro": 1_050_000,
   "gpt-5.4-mini": 400_000,
   "gpt-5.4-nano": 400_000,
   "gpt-5.3-codex": 400_000,
   "gpt-4.1-mini": 128_000,
-  "claude-opus-4-7": 200_000,
+  "claude-fable-5": 1_000_000,
+  "claude-sonnet-5": 1_000_000,
+  "claude-opus-4-7": 1_000_000,
   "claude-opus-4-8": 1_000_000,
-  "claude-sonnet-4-6": 200_000,
+  "claude-sonnet-4-6": 1_000_000,
   "claude-haiku-4-5": 200_000,
-  "claude-opus-4-6": 200_000,
+  "claude-opus-4-6": 1_000_000,
   "gemini-3.5-flash": 1_000_000,
   "gemini-3.1-flash-lite": 1_000_000,
   "gemini-3.1-pro-preview": 1_000_000,
   "gemini-3-flash-preview": 1_000_000,
   "gemini-2.5-pro": 1_000_000,
   "gemini-2.5-flash": 1_000_000,
+  "grok-4.5": 500_000,
   "grok-4.20-reasoning": 2_000_000,
   "grok-4.20-non-reasoning": 2_000_000,
   "grok-4-fast-reasoning": 2_000_000,
@@ -726,12 +824,17 @@ export type ModelPricing = {
 };
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  "gpt-5.5": { input: 5, output: 15, cacheRead: 0.5 },
+  "gpt-5.6": { input: 5, output: 30, cacheRead: 0.5 },
+  "gpt-5.6-terra": { input: 2.5, output: 15, cacheRead: 0.25 },
+  "gpt-5.6-luna": { input: 1, output: 6, cacheRead: 0.1 },
+  "gpt-5.5": { input: 5, output: 30, cacheRead: 0.5 },
   "gpt-5.5-pro": { input: 30, output: 180 },
-  "gpt-5.4-mini": { input: 0.4, output: 1.6, cacheRead: 0.04 },
-  "gpt-5.4-nano": { input: 0.1, output: 0.4, cacheRead: 0.01 },
+  "gpt-5.4-mini": { input: 0.75, output: 4.5, cacheRead: 0.075 },
+  "gpt-5.4-nano": { input: 0.2, output: 1.25, cacheRead: 0.02 },
   "gpt-5.3-codex": { input: 1.5, output: 6, cacheRead: 0.15 },
   "gpt-4.1-mini": { input: 0.4, output: 1.6, cacheRead: 0.1 },
+  "claude-fable-5": { input: 10, output: 50, cacheRead: 1 },
+  "claude-sonnet-5": { input: 3, output: 15, cacheRead: 0.3 },
   "claude-opus-4-7": { input: 15, output: 75, cacheRead: 1.5 },
   "claude-opus-4-8": { input: 5, output: 25, cacheRead: 0.5 },
   "claude-opus-4-6": { input: 15, output: 75, cacheRead: 1.5 },
@@ -743,6 +846,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gemini-3-flash-preview": { input: 0.3, output: 2.5, cacheRead: 0.075 },
   "gemini-2.5-pro": { input: 1.25, output: 10, cacheRead: 0.31 },
   "gemini-2.5-flash": { input: 0.3, output: 2.5, cacheRead: 0.075 },
+  "grok-4.5": { input: 2, output: 6, cacheRead: 0.5 },
   "grok-4.20-reasoning": { input: 3, output: 15 },
   "grok-4.20-non-reasoning": { input: 1, output: 5 },
   "grok-4-fast-reasoning": { input: 0.2, output: 0.5 },

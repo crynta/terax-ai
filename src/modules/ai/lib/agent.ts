@@ -1,7 +1,6 @@
 import {
   convertToModelMessages,
   type LanguageModel,
-  type ModelMessage,
   pruneMessages,
   stepCountIs,
   streamText,
@@ -26,6 +25,7 @@ import {
 import { buildTools, type ToolContext } from "../tools/tools";
 import { compactModelMessagesDetailed } from "./compact";
 import type { CustomEndpointKeys, ProviderKeys } from "./keyring";
+import { prepareAgentPrompt } from "./prompt";
 import { createProxyFetch } from "./proxyFetch";
 
 const localProxyFetch = createProxyFetch({ allowPrivateNetwork: true });
@@ -300,7 +300,7 @@ export function buildConfiguredLanguageModel(
   } else if (m.id === "openrouter-custom") {
     if (!local.openrouterModelId?.trim()) {
       throw new Error(
-        "OpenRouter: no model id set. Open Settings → Models and enter an OpenRouter model id (e.g. anthropic/claude-sonnet-4-6).",
+        "OpenRouter: no model id set. Open Settings → Models and enter an OpenRouter model id (e.g. anthropic/claude-sonnet-5).",
       );
     }
     resolvedId = local.openrouterModelId.trim();
@@ -334,28 +334,6 @@ function buildStableSystem(
       ? `\n\n## PROJECT — TERAX.md\n${projectMemory.trim()}`
       : "";
   return `${base}${memoryBlock}${personaBlock}${customBlock}`;
-}
-
-// OpenAI / Gemini / DeepSeek apply prefix caching automatically; only
-// Anthropic needs explicit breakpoints. Mark the stable system prefix and
-// the rotating conversation tail.
-function applyCacheBreakpoints(
-  messages: ModelMessage[],
-  provider: ProviderId,
-): ModelMessage[] {
-  if (provider !== "anthropic" || messages.length === 0) return messages;
-  const marker = {
-    anthropic: { cacheControl: { type: "ephemeral" as const } },
-  };
-  const withMarker = (m: ModelMessage): ModelMessage => ({
-    ...m,
-    providerOptions: { ...(m.providerOptions ?? {}), ...marker },
-  });
-  const out = messages.slice();
-  out[0] = withMarker(out[0]);
-  const lastIdx = out.length - 1;
-  if (lastIdx > 0) out[lastIdx] = withMarker(out[lastIdx]);
-  return out;
 }
 
 export type AgentUsage = {
@@ -449,18 +427,19 @@ export async function runAgentStream(opts: RunAgentOptions) {
     opts.onCompact?.({ droppedCount: compact.droppedCount });
   }
 
-  const messages: ModelMessage[] = [{ role: "system", content: stableSystem }];
-  if (opts.planMode) {
-    messages.push({ role: "system", content: PLAN_MODE_PROMPT });
-  }
-  messages.push(...compactedHistory);
-
-  const finalMessages = applyCacheBreakpoints(messages, provider);
+  const prompt = prepareAgentPrompt(
+    stableSystem,
+    opts.planMode ? PLAN_MODE_PROMPT : null,
+    compactedHistory,
+    provider,
+  );
 
   let stepsSeen = 0;
   return streamText({
     model,
-    messages: finalMessages,
+    system: prompt.system,
+    messages: prompt.messages,
+    allowSystemInMessages: false,
     tools: buildTools(opts.toolContext),
     stopWhen: stepCountIs(MAX_AGENT_STEPS),
     abortSignal: opts.abortSignal,

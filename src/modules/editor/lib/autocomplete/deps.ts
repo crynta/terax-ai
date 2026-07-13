@@ -6,7 +6,7 @@ import { endpointIdFromCompatModel } from "@/modules/ai/config";
 import { getCustomEndpointKey, getKey } from "@/modules/ai/lib/keyring";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { onKeysChanged } from "@/modules/settings/store";
-import type { CompletionDeps } from "./provider";
+import type { AutocompletePrefs } from "./inlineExtension";
 
 /** One-shot API-key lookup for the currently configured autocomplete
  *  provider (local providers need none; compat keys are per-endpoint). */
@@ -62,7 +62,7 @@ export function createAutocompleteKeyWatcher(
 /** Current autocomplete preferences flattened into request deps. */
 export function snapshotAutocompletePrefs(
   apiKey: string | null,
-): { enabled: boolean } & CompletionDeps {
+): AutocompletePrefs {
   const s = usePreferencesStore.getState();
   const p = s.autocompleteProvider;
   // autocompleteModelId holds the compat- id of the chosen endpoint.
@@ -86,6 +86,7 @@ export function snapshotAutocompletePrefs(
               : s.autocompleteModelId;
   return {
     enabled: s.autocompleteEnabled,
+    trigger: s.autocompleteTrigger,
     provider: p,
     modelId,
     apiKey,

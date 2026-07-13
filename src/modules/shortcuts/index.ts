@@ -1,4 +1,5 @@
 export { shortcutLabel } from "./lib/shortcutLabel";
+export { shouldDisablePaneSwapShortcut } from "./lib/shortcutScope";
 export {
   type ShortcutHandlers,
   useGlobalShortcuts,

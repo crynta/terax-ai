@@ -26,7 +26,7 @@ function extOf(base: string): string | null {
 }
 
 function prefixOf(base: string): string | null {
-  const dot = base.indexOf(".");
+  const dot = base.indexOf(".", base.startsWith(".") ? 1 : 0);
   return dot > 0 ? base.slice(0, dot) : null;
 }
 

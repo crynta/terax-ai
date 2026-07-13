@@ -8,8 +8,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import {
+  getBindingTokens,
+  SHORTCUTS,
+} from "@/modules/shortcuts/shortcuts";
 import {
   type CustomEndpoint,
   compatModelIdForEndpoint,
@@ -41,10 +52,12 @@ import {
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  type AutocompleteTrigger,
   emitKeysChanged,
   setAutocompleteEnabled,
   setAutocompleteModelId,
   setAutocompleteProvider,
+  setAutocompleteTrigger,
   setCustomEndpoints,
   setDefaultModel,
   setFavoriteModelIds,
@@ -125,7 +138,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
   },
   openrouter: {
     urlPlaceholder: "",
-    modelPlaceholder: "anthropic/claude-sonnet-4-6, openai/gpt-5.5, …",
+    modelPlaceholder: "anthropic/claude-sonnet-5, openai/gpt-5.6, …",
     description: "Any model on OpenRouter — type its full provider/model id.",
     modelHint: (
       <>
@@ -628,9 +641,17 @@ function AutocompleteRow({
   customEndpoints: readonly CustomEndpoint[];
 }) {
   const enabled = usePreferencesStore((s) => s.autocompleteEnabled);
+  const trigger = usePreferencesStore((s) => s.autocompleteTrigger);
   const provider = usePreferencesStore((s) => s.autocompleteProvider);
   const modelId = usePreferencesStore((s) => s.autocompleteModelId);
   const eligible = useMemo(() => getAutocompleteEligibleModels(), []);
+  const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+  const aiCompleteShortcut = useMemo(() => {
+    const s = SHORTCUTS.find((x) => x.id === "editor.aiComplete");
+    const bindings = userShortcuts["editor.aiComplete"] || s?.defaultBindings;
+    if (!bindings || bindings.length === 0) return "";
+    return getBindingTokens(bindings[0]).join("");
+  }, [userShortcuts]);
 
   // One selectable model per fully-configured OpenAI-compatible endpoint.
   const compatItems = useMemo(
@@ -767,6 +788,26 @@ function AutocompleteRow({
           </DropdownMenu>
         </div>
       </FieldRow>
+      {enabled ? (
+        <FieldRow label="Trigger">
+          <Select
+            value={trigger}
+            onValueChange={(v) =>
+              void setAutocompleteTrigger(v as AutocompleteTrigger)
+            }
+          >
+            <SelectTrigger className="h-8 w-full text-[11.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Automatic (as you type)</SelectItem>
+              <SelectItem value="manual">
+                Manual ({aiCompleteShortcut || "shortcut"})
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </FieldRow>
+      ) : null}
       {enabled && !hasKey ? (
         <p className="pl-19 text-[10.5px] text-muted-foreground">
           {getProvider(provider).label} isn't connected — add it below.
