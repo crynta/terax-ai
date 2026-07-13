@@ -1,6 +1,6 @@
 pub mod modules;
 
-use modules::{agent, fs, git, history, lsp, net, pty, secrets, shell, workspace};
+use modules::{agent, fs, git, history, lsp, net, pty, secrets, shell, speech, workspace};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "macos")]
@@ -179,6 +179,7 @@ pub fn run() {
         .manage(fs::watch::FsWatchState::default())
         .manage(history::HistoryState::default())
         .manage(lsp::LspState::default())
+        .manage(speech::NativeSpeechState::default())
         .manage(fs::grep::ContentSearchState::default())
         .manage({
             let registry = workspace::WorkspaceRegistry::default();
@@ -266,6 +267,9 @@ pub fn run() {
             net::lm_ping,
             net::ai_http_request,
             net::ai_http_stream,
+            speech::stt_native_status,
+            speech::stt_native_install,
+            speech::stt_native_transcribe,
             history::history_suggest,
             history::history_commands,
             history::history_record,
@@ -278,6 +282,9 @@ pub fn run() {
             // on process exit; kill explicitly.
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<lsp::LspState>() {
+                    state.kill_all();
+                }
+                if let Some(state) = app.try_state::<speech::NativeSpeechState>() {
                     state.kill_all();
                 }
             }

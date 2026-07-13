@@ -115,6 +115,20 @@ Latest installers are on the [Releases](https://github.com/crynta/terax-ai/relea
 2. Pick a provider and paste your API key. For local inference, point Terax at your LM Studio / MLX / Ollama endpoint.
 3. Keys are written to the OS keychain via `keyring`. They never touch disk or localStorage.
 
+## Configure voice input
+
+Choose a speech-to-text provider under **Settings -> Models -> Voice input**:
+
+- **Terax Native:** available on macOS 15+ with Apple silicon and on x86-64 Linux or Windows. Select a profile and click **Install**. Terax downloads a signed native runtime plus a revision-pinned model, then runs it as a private managed process with no local server or `PATH` setup.
+- **Nemotron:** the default native profile, with the strongest accuracy and multilingual recognition.
+- **Parakeet:** the low-memory English native profile for lighter systems. It uses the upstream greedy RNN-T decoder, not beam search.
+- **Whisper.cpp:** connects to an existing loopback server if you prefer the Whisper.cpp ecosystem.
+- **Cloud:** OpenAI Whisper and Groq Whisper remain available on every platform.
+
+Terax Native uses Speech Swift on macOS and Speech Core on Linux and Windows. Audio stays in memory as mono Float32 PCM, installed models run offline, and the native process is stopped after five idle minutes. Runtimes and models are installed on demand rather than bundled, keeping the application download small.
+
+Downloaded model files remain subject to their upstream model licenses. The pinned Nemotron conversions derive from NVIDIA's [`nvidia/nemotron-3.5-asr-streaming-0.6b`](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b), which is governed by [OpenMDW 1.1](https://openmdw.ai/license/1-1/) and marked ready for commercial use by NVIDIA.
+
 ## Build from source
 
 **Prerequisites**

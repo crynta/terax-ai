@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  type CustomEndpoint,
+  coerceSttProvider,
   compatModelIdForEndpoint,
   endpointIdFromCompatModel,
   getModelContextLimit,
   isCompatModelId,
+  isSttProvider,
+  MODEL_PRICING,
   migrateLegacyCompatEndpoint,
   modelKeepsReasoning,
   modelSupportsTemperature,
   modelUsesReasoningTokens,
-  MODEL_PRICING,
   resolveModel,
-  type CustomEndpoint,
+  sttProvidersForPlatform,
 } from "./config";
 
 const endpoint: CustomEndpoint = {
@@ -105,7 +108,9 @@ describe("current model pricing", () => {
 
 describe("modelKeepsReasoning", () => {
   it("keeps reasoning for compat endpoints (freeform provider)", () => {
-    const info = resolveModel(compatModelIdForEndpoint(endpoint.id), [endpoint]);
+    const info = resolveModel(compatModelIdForEndpoint(endpoint.id), [
+      endpoint,
+    ]);
     expect(modelKeepsReasoning(info)).toBe(true);
   });
 
@@ -170,5 +175,38 @@ describe("migrateLegacyCompatEndpoint", () => {
   it("skips migration when base URL or model id is missing", () => {
     expect(migrateLegacyCompatEndpoint("", "m", 1, "x")).toEqual([]);
     expect(migrateLegacyCompatEndpoint("u", "  ", 1, "x")).toEqual([]);
+  });
+});
+
+describe("voice provider availability", () => {
+  it("offers native speech only on supported macOS systems", () => {
+    expect(sttProvidersForPlatform("macos", "aarch64", "15.4")).toContain(
+      "native",
+    );
+    expect(sttProvidersForPlatform("macos", "x86_64", "15.4")).not.toContain(
+      "native",
+    );
+    expect(sttProvidersForPlatform("linux", "aarch64")).not.toContain("native");
+    expect(sttProvidersForPlatform("macos", "aarch64", "14.7")).not.toContain(
+      "native",
+    );
+  });
+
+  it("offers native speech on x86-64 Linux and Windows", () => {
+    expect(sttProvidersForPlatform("linux", "x86_64")).toContain("native");
+    expect(sttProvidersForPlatform("windows", "x86_64")).toContain("native");
+    expect(sttProvidersForPlatform("linux", "aarch64")).not.toContain("native");
+  });
+
+  it("validates persisted provider ids", () => {
+    expect(isSttProvider("native")).toBe(true);
+    expect(isSttProvider("speech-swift")).toBe(false);
+    expect(isSttProvider("unknown")).toBe(false);
+  });
+
+  it("migrates the two legacy local providers", () => {
+    expect(coerceSttProvider("speech-swift")).toBe("native");
+    expect(coerceSttProvider("speech-core")).toBe("native");
+    expect(coerceSttProvider("unknown")).toBe("openai");
   });
 });
