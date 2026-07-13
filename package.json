@@ -34,7 +34,7 @@
     "@ai-sdk/openai": "^3.0.81",
     "@ai-sdk/openai-compatible": "^2.0.51",
     "@ai-sdk/react": "^3.0.209",
-    "@ai-sdk/xai": "^3.0.103",
+    "@ai-sdk/xai": "^4.0.10",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-css": "^6.3.1",
