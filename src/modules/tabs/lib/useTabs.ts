@@ -4,12 +4,15 @@ import {
   hasLeaf,
   leafIds,
   nextLeafId,
+  type PaneBounds,
+  type PaneDirection,
   type PaneNode,
   removeLeaf,
   type SplitDir,
   setLeafCwd as setLeafCwdInTree,
   siblingLeafOf,
   splitLeaf,
+  swapLeafInDirection,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -1020,6 +1023,24 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     );
   }, []);
 
+  const swapActivePaneInDirection = useCallback(
+    (tabId: number, direction: PaneDirection, bounds?: PaneBounds[]) => {
+      setTabs((curr) =>
+        curr.map((t) => {
+          if (t.id !== tabId || t.kind !== "terminal") return t;
+          const paneTree = swapLeafInDirection(
+            t.paneTree,
+            t.activeLeafId,
+            direction,
+            bounds,
+          );
+          return paneTree === t.paneTree ? t : { ...t, paneTree };
+        }),
+      );
+    },
+    [],
+  );
+
   /** Split the active leaf of `tabId` along `dir`. Returns the new leaf id. */
   const splitActivePane = useCallback(
     (tabId: number, dir: SplitDir): number | null => {
@@ -1173,6 +1194,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setLeafCwd,
     focusPane,
     focusNextPaneInTab,
+    swapActivePaneInDirection,
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
