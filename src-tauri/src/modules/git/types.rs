@@ -115,6 +115,22 @@ pub struct GitPushResult {
     pub pushed: bool,
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBranchEntry {
+    pub name: String,
+    pub kind: String, // "local" | "worktree"
+    pub worktree_path: Option<String>,
+    pub is_head: bool,
+    pub is_detached: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitBranchListResult {
+    pub branches: Vec<GitBranchEntry>,
+}
+
 pub(crate) struct GitOutput {
     pub(crate) stdout: Vec<u8>,
     pub(crate) stderr: Vec<u8>,

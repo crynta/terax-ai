@@ -9,6 +9,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 const AUTO_FETCH_THROTTLE_MS = 5 * 60_000;
 const AUTO_FETCH_LRU_LIMIT = 16;
 const FOCUS_REFRESH_MIN_INTERVAL_MS = 1500;
+// Skip the context-change refetch when the data is this fresh and the new path
+// is still inside the loaded repo (cd-within-repo produces identical status).
+const SC_STATUS_TTL_MS = 2000;
 
 export type SourceControlRefreshMode = "auto" | "always" | "never";
 export type SourceControlRemoteAction = "fetch" | "pull" | "push";
@@ -426,6 +429,13 @@ export function useSourceControl(
     }
     setState((current) => ({ ...current, lastRemoteError: null }));
     const run = () => {
+      const root = stateRef.current.repo?.repoRoot;
+      const sameRepo =
+        !!root &&
+        !!contextPath &&
+        (contextPath === root || contextPath.startsWith(`${root}/`));
+      const fresh = Date.now() - lastRefreshAtRef.current < SC_STATUS_TTL_MS;
+      if (fresh && sameRepo && stateRef.current.hasRepo) return;
       void refresh({ remote: "never" });
     };
     const idle =

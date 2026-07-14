@@ -1,5 +1,8 @@
+use std::collections::HashSet;
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+use ignore::WalkBuilder;
 use serde::Serialize;
 
 use crate::modules::workspace::{resolve_path, WorkspaceEnv};
@@ -19,15 +22,51 @@ pub struct DirEntry {
     pub size: u64,
     /// Milliseconds since UNIX epoch; 0 if unavailable.
     pub mtime: u64,
+    pub gitignored: bool,
+}
+
+// Whether `dir` is inside a git repo. Walks up only; never descends into
+// siblings, so it does not touch protected macOS folders (Desktop, ...).
+fn in_git_repo(dir: &Path) -> bool {
+    let mut cur = dir;
+    loop {
+        if cur.join(".git").exists() {
+            return true;
+        }
+        match cur.parent() {
+            Some(p) => cur = p,
+            None => return false,
+        }
+    }
+}
+
+// Immediate children of `dir` that git does not ignore. Outside a repo every
+// name is returned, so nothing is dimmed.
+fn git_non_ignored_names(dir: &Path, show_hidden: bool) -> HashSet<String> {
+    WalkBuilder::new(dir)
+        .hidden(!show_hidden)
+        .git_ignore(true)
+        .git_global(true)
+        .git_exclude(true)
+        .ignore(false)
+        .parents(true)
+        .max_depth(Some(1))
+        .follow_links(false)
+        .build()
+        .flatten()
+        .filter_map(|d| d.file_name().to_str().map(str::to_string))
+        .collect()
 }
 
 /// Lists immediate children of `path`. Dirs first, then files, each sorted
 /// case-insensitively. Dot-prefixed entries (files and dirs) are hidden unless
-/// `show_hidden` is set.
+/// `show_hidden` is set. `git_decorations` opts into the per-entry `gitignored`
+/// flag; off by default so non-explorer callers pay nothing.
 #[tauri::command]
 pub fn fs_read_dir(
     path: String,
     show_hidden: bool,
+    git_decorations: Option<bool>,
     workspace: Option<WorkspaceEnv>,
 ) -> Result<Vec<DirEntry>, String> {
     let workspace = WorkspaceEnv::from_option(workspace);
@@ -36,6 +75,15 @@ pub fn fs_read_dir(
         log::debug!("fs_read_dir({}) failed: {e}", root.display());
         e.to_string()
     })?;
+
+    // Gate on a real repo: outside one the walk is pointless and would probe
+    // each child for a nested `.git`, which trips macOS folder-access prompts.
+    let git_decorations = git_decorations.unwrap_or(false) && in_git_repo(&root);
+    let git_visible = if git_decorations {
+        git_non_ignored_names(&root, show_hidden)
+    } else {
+        HashSet::new()
+    };
 
     let mut entries: Vec<DirEntry> = read
         .filter_map(Result::ok)
@@ -72,11 +120,13 @@ pub fn fs_read_dir(
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
 
+            let gitignored = git_decorations && !git_visible.contains(&name);
             Some(DirEntry {
                 name,
                 kind,
                 size,
                 mtime,
+                gitignored,
             })
         })
         .collect();

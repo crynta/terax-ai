@@ -1,4 +1,5 @@
-import { cn } from "@/lib/utils";
+import { cn, isMarkdownPath } from "@/lib/utils";
+import { MarkdownViewToggle } from "@/modules/markdown";
 import type { EditorTab, Tab } from "@/modules/tabs";
 import { useEffect, useRef } from "react";
 import { EditorPane, type EditorPaneHandle } from "./EditorPane";
@@ -14,6 +15,7 @@ type Props = {
   onDirtyChange: (id: number, dirty: boolean) => void;
   registerHandle: (id: number, handle: EditorPaneHandle | null) => void;
   onCloseTab: (id: number) => void;
+  onSetMarkdownView: (id: number, mode: "rendered" | "raw") => void;
 };
 
 export function EditorStack({
@@ -22,6 +24,7 @@ export function EditorStack({
   onDirtyChange,
   registerHandle,
   onCloseTab,
+  onSetMarkdownView,
 }: Props) {
   const editors = tabs.filter(
     (t): t is EditorTab => t.kind === "editor" && !t.cold,
@@ -34,6 +37,7 @@ export function EditorStack({
   const registerRef = useRef(registerHandle);
   const dirtyRef = useRef(onDirtyChange);
   const closeRef = useRef(onCloseTab);
+
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -103,18 +107,29 @@ export function EditorStack({
             )}
             aria-hidden={!visible}
           >
-            <div className="h-full overflow-hidden rounded-md border border-border/60 bg-background">
+            <div className="relative h-full overflow-hidden rounded-md border border-border/60 bg-background">
               {isImage(t.path) ? (
                 <MediaPane path={t.path} />
               ) : isParquet(t.path) ? (
                 <ParquetPane path={t.path} />
               ) : (
-                <EditorPane
-                  ref={getRefCallback(t.id)}
-                  path={t.path}
-                  onDirtyChange={getDirtyCallback(t.id)}
-                  onClose={getCloseCallback(t.id)}
-                />
+                <>
+                  {isMarkdownPath(t.path) && (
+                    <MarkdownViewToggle
+                      mode="raw"
+                      onChange={(mode) => onSetMarkdownView(t.id, mode)}
+                      renderedDisabled={t.dirty}
+                      renderedHint="Save to preview"
+                    />
+                  )}
+                  <EditorPane
+                    ref={getRefCallback(t.id)}
+                    path={t.path}
+                    overrideLanguage={t.overrideLanguage}
+                    onDirtyChange={getDirtyCallback(t.id)}
+                    onClose={getCloseCallback(t.id)}
+                  />
+                </>
               )}
             </div>
           </div>

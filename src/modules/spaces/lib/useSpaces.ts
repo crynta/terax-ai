@@ -1,5 +1,9 @@
 import { create } from "zustand";
-import { LOCAL_WORKSPACE, type WorkspaceEnv } from "@/modules/workspace";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  parseWorkspaceScopeKey,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
 import {
   deleteSpaceData,
   newSpaceId,
@@ -29,6 +33,7 @@ type State = {
   ) => void;
   create: (input: CreateInput) => SpaceMeta;
   rename: (id: string, name: string) => void;
+  setEnv: (id: string, env: WorkspaceEnv) => void;
   setColor: (id: string, color: number | undefined) => void;
   reorder: (orderedIds: string[]) => void;
   remove: (id: string) => string | null;
@@ -51,7 +56,11 @@ export const useSpaces = create<State>((set, get) => ({
       id: input.id ?? newSpaceId(),
       name: input.name,
       root: input.root,
-      env: input.env ?? LOCAL_WORKSPACE,
+      env:
+        input.env ??
+        parseWorkspaceScopeKey(
+          usePreferencesStore.getState().defaultWorkspaceEnv,
+        ),
       createdAt: now,
       updatedAt: now,
     };
@@ -64,6 +73,14 @@ export const useSpaces = create<State>((set, get) => ({
   rename: (id, name) => {
     const spaces = get().spaces.map((s) =>
       s.id === id ? { ...s, name, updatedAt: Date.now() } : s,
+    );
+    set({ spaces });
+    void saveSpacesList(spaces);
+  },
+
+  setEnv: (id, env) => {
+    const spaces = get().spaces.map((s) =>
+      s.id === id ? { ...s, env, updatedAt: Date.now() } : s,
     );
     set({ spaces });
     void saveSpacesList(spaces);

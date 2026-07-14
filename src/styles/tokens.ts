@@ -51,7 +51,7 @@ const KEYS = Object.keys(VAR_BY_KEY) as (keyof TerminalTokens)[];
 let probe: HTMLDivElement | null = null;
 
 function getProbe(): HTMLDivElement {
-  if (probe && probe.isConnected) return probe;
+  if (probe?.isConnected) return probe;
   const el = document.createElement("div");
   el.setAttribute("aria-hidden", "true");
   el.style.cssText =

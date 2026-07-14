@@ -1,4 +1,4 @@
-import { detectMonoFontFamily } from "@/lib/fonts";
+import { resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -7,10 +7,13 @@ import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { Terminal } from "@xterm/xterm";
-import { readClipboardText, writeClipboardText } from "./clipboard";
+import { type FontWeight, Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
 
+import {
+  readTerminalClipboard,
+  writeTerminalClipboard,
+} from "./terminalClipboard";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
@@ -173,7 +176,8 @@ function bgActive(
 function termOptions() {
   const prefs = usePreferencesStore.getState();
   return {
-    fontFamily: prefs.terminalFontFamily || detectMonoFontFamily(),
+    fontFamily: resolveFontFamily(prefs.terminalFontFamily),
+    fontWeight: prefs.terminalFontWeight as FontWeight,
     letterSpacing: prefs.terminalLetterSpacing,
     fontSize: Math.max(4, Math.round(prefs.terminalFontSize * prefs.zoomLevel)),
     theme: buildTerminalTheme(),
@@ -300,15 +304,16 @@ function createSlot(): Slot {
     if (isTerminalCopy(event)) {
       if (event.type === "keydown" && slot.term.hasSelection()) {
         const sel = slot.term.getSelection();
-        if (sel) void writeClipboardText(sel).catch(() => {});
+        if (sel) void writeTerminalClipboard(sel);
       }
       event.preventDefault();
       return false;
     }
     if (isTerminalPaste(event)) {
       if (event.type === "keydown") {
-        void readClipboardText().then((text) => {
-          if (text) slot.term.paste(text);
+        const targetLeafId = slot.currentLeafId;
+        void readTerminalClipboard().then((text) => {
+          if (text && slot.currentLeafId === targetLeafId) slot.term.paste(text);
         });
       }
       event.preventDefault();
@@ -449,6 +454,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     !slot.webglAddon ||
     slot.parked ||
     performance.now() - slot.lastUsedAt > SLOT_STALE_MS;
+  const hadWebgl = !!slot.webglAddon;
   slot.retainedLeafId = null;
   slot.currentLeafId = p.leafId;
   slot.lastUsedAt = performance.now();
@@ -457,7 +463,10 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
   cancelWebglReap(slot);
   cancelSlotReap(slot);
   unparkSlotHost(slot);
-  if (!fast) slot.host.style.visibility = "hidden";
+  if (!fast) {
+    slot.host.style.visibility = "hidden";
+    if (hadWebgl) disposeSlotWebgl(slot);
+  }
 
   if (slot.host.parentNode !== p.container) {
     p.container.appendChild(slot.host);
@@ -539,7 +548,7 @@ function bindSlot(slot: Slot, p: AcquireParams): void {
     }
     if (adapter?.isLeafFocused(p.leafId)) slot.term.focus();
   } else {
-    scheduleUnhide(slot, stale);
+    scheduleUnhide(slot, stale || hadWebgl);
   }
 
   p.onSearchReady(slot.searchAddon);
@@ -928,11 +937,18 @@ export function applyLetterSpacing(spacing: number): void {
 }
 
 export function applyFontFamily(family: string): void {
-  const resolved = family || detectMonoFontFamily();
+  const resolved = resolveFontFamily(family);
   for (const slot of slots) {
     if (slot.term.options.fontFamily === resolved) continue;
     slot.term.options.fontFamily = resolved;
     refitSlot(slot);
+  }
+}
+
+export function applyFontWeight(weight: string): void {
+  for (const slot of slots) {
+    if (slot.term.options.fontWeight === weight) continue;
+    slot.term.options.fontWeight = weight as FontWeight;
   }
 }
 

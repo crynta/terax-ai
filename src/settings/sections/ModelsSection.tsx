@@ -8,41 +8,60 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
-  DEFAULT_MODEL_ID,
-  MODELS,
-  PROVIDERS,
+  getBindingTokens,
+  SHORTCUTS,
+} from "@/modules/shortcuts/shortcuts";
+import {
+  type CustomEndpoint,
   compatModelIdForEndpoint,
+  DEFAULT_MODEL_ID,
   getAutocompleteEligibleModels,
+  getCompatModelInfo,
   getModel,
   getProvider,
-  providerNeedsKey,
-  type CustomEndpoint,
+  isCompatModelId,
+  MODELS,
   type ModelId,
+  PROVIDERS,
   type ProviderId,
   type ProviderInfo,
+  providerNeedsKey,
+  STT_PROVIDER_LABELS,
+  type SttProvider,
+  WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
 import {
-  clearKey,
-  clearCustomEndpointKey,
-  getAllKeys,
-  getAllCustomEndpointKeys,
-  setKey,
-  setCustomEndpointKey,
   type CustomEndpointKeys,
+  clearCustomEndpointKey,
+  clearKey,
+  getAllCustomEndpointKeys,
+  getAllKeys,
+  setCustomEndpointKey,
+  setKey,
 } from "@/modules/ai/lib/keyring";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  type AutocompleteTrigger,
   emitKeysChanged,
   setAutocompleteEnabled,
   setAutocompleteModelId,
   setAutocompleteProvider,
+  setAutocompleteTrigger,
   setCustomEndpoints,
   setDefaultModel,
   setFavoriteModelIds,
+  setGroqSttModel,
   setLmstudioBaseURL,
   setLmstudioModelId,
   setMlxBaseURL,
@@ -54,6 +73,8 @@ import {
   setOpenaiCompatibleModelId,
   setOpenrouterModelId,
   setRecentModelIds,
+  setSttProvider,
+  setWhispercppBaseURL,
 } from "@/modules/settings/store";
 import {
   Add01Icon,
@@ -62,6 +83,7 @@ import {
   Cancel01Icon,
   CheckmarkCircle02Icon,
   ChevronDown,
+  Mic01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
@@ -100,9 +122,7 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
     modelPlaceholder: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
     description:
       "Apple-silicon inference via mlx_lm.server (pip install mlx-lm).",
-    modelHint: (
-      <>The Hugging Face repo path you launched mlx_lm.server with.</>
-    ),
+    modelHint: <>The Hugging Face repo path you launched mlx_lm.server with.</>,
   },
   ollama: {
     urlPlaceholder: "http://localhost:11434/v1",
@@ -118,12 +138,11 @@ const LOCAL_META: Partial<Record<ProviderId, LocalMeta>> = {
   },
   openrouter: {
     urlPlaceholder: "",
-    modelPlaceholder: "anthropic/claude-sonnet-4-6, openai/gpt-5.5, …",
+    modelPlaceholder: "anthropic/claude-sonnet-5, openai/gpt-5.6, …",
     description: "Any model on OpenRouter — type its full provider/model id.",
     modelHint: (
       <>
-        Browse ids at{" "}
-        <span className="font-mono">openrouter.ai/models</span>.
+        Browse ids at <span className="font-mono">openrouter.ai/models</span>.
       </>
     ),
   },
@@ -229,7 +248,9 @@ export function ModelsSection() {
     const { selectedModelId, setSelectedModelId } = useChatStore.getState();
     if (selectedModelId === deadModelId) {
       setSelectedModelId(
-        remaining[0] ? compatModelIdForEndpoint(remaining[0].id) : DEFAULT_MODEL_ID,
+        remaining[0]
+          ? compatModelIdForEndpoint(remaining[0].id)
+          : DEFAULT_MODEL_ID,
       );
     }
 
@@ -282,8 +303,7 @@ export function ModelsSection() {
   };
 
   const isConfigured = (id: ProviderId): boolean => {
-    if (id === "openrouter")
-      return !!keys?.[id] && !!openrouterModelId.trim();
+    if (id === "openrouter") return !!keys?.[id] && !!openrouterModelId.trim();
     if (!isLocalProvider(id)) return !!keys?.[id];
     const cfg = localConfig(id);
     if (!cfg) return false;
@@ -344,7 +364,10 @@ export function ModelsSection() {
         defaultModel={defaultModel}
         configuredIds={configuredIds}
         keys={keys}
+        customEndpoints={customEndpoints}
       />
+
+      <VoiceBlock />
 
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
@@ -440,7 +463,9 @@ function AddProviderMenu({
   onAddCompat: () => void;
 }) {
   const cloud = providers.filter((p) => !isLocalProvider(p.id));
-  const local = providers.filter((p) => isLocalProvider(p.id) && p.id !== "openai-compatible");
+  const local = providers.filter(
+    (p) => isLocalProvider(p.id) && p.id !== "openai-compatible",
+  );
 
   return (
     <DropdownMenu>
@@ -505,10 +530,12 @@ function DefaultsBlock({
   defaultModel,
   configuredIds,
   keys,
+  customEndpoints,
 }: {
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
   keys: KeysMap;
+  customEndpoints: readonly CustomEndpoint[];
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -520,7 +547,11 @@ function DefaultsBlock({
             configuredIds={configuredIds}
           />
         </FieldRow>
-        <AutocompleteRow keys={keys} configuredIds={configuredIds} />
+        <AutocompleteRow
+          keys={keys}
+          configuredIds={configuredIds}
+          customEndpoints={customEndpoints}
+        />
       </div>
     </div>
   );
@@ -603,27 +634,54 @@ function DefaultModelPicker({
 function AutocompleteRow({
   keys,
   configuredIds,
+  customEndpoints,
 }: {
   keys: KeysMap;
   configuredIds: Set<ProviderId>;
+  customEndpoints: readonly CustomEndpoint[];
 }) {
   const enabled = usePreferencesStore((s) => s.autocompleteEnabled);
+  const trigger = usePreferencesStore((s) => s.autocompleteTrigger);
   const provider = usePreferencesStore((s) => s.autocompleteProvider);
   const modelId = usePreferencesStore((s) => s.autocompleteModelId);
   const eligible = useMemo(() => getAutocompleteEligibleModels(), []);
+  const userShortcuts = usePreferencesStore((s) => s.shortcuts);
+  const aiCompleteShortcut = useMemo(() => {
+    const s = SHORTCUTS.find((x) => x.id === "editor.aiComplete");
+    const bindings = userShortcuts["editor.aiComplete"] || s?.defaultBindings;
+    if (!bindings || bindings.length === 0) return "";
+    return getBindingTokens(bindings[0]).join("");
+  }, [userShortcuts]);
 
-  // Fast cloud tiers + any configured local provider (one model id each).
+  // One selectable model per fully-configured OpenAI-compatible endpoint.
+  const compatItems = useMemo(
+    () =>
+      customEndpoints
+        .filter((e) => e.baseURL.trim() && e.modelId.trim())
+        .map((e) =>
+          getCompatModelInfo(compatModelIdForEndpoint(e.id), customEndpoints),
+        ),
+    [customEndpoints],
+  );
+
+  // Fast cloud tiers + configured local providers + named compat endpoints.
   const items = useMemo(() => {
     const local = PROVIDERS.filter(
-      (p) => isLocalProvider(p.id) && configuredIds.has(p.id),
+      (p) =>
+        isLocalProvider(p.id) &&
+        p.id !== "openai-compatible" &&
+        configuredIds.has(p.id),
     ).flatMap((p) => {
       const m = MODELS.find((x) => x.provider === p.id);
       return m ? [m] : [];
     });
-    return [...eligible, ...local];
-  }, [eligible, configuredIds]);
+    return [...eligible, ...local, ...compatItems];
+  }, [eligible, configuredIds, compatItems]);
 
   const currentModel = useMemo(() => {
+    if (provider === "openai-compatible" && isCompatModelId(modelId)) {
+      return getCompatModelInfo(modelId, customEndpoints);
+    }
     if (isLocalProvider(provider)) {
       return MODELS.find((m) => m.provider === provider) ?? eligible[0];
     }
@@ -632,11 +690,14 @@ function AutocompleteRow({
       MODELS.find((m) => m.id === modelId) ??
       eligible[0]
     );
-  }, [eligible, provider, modelId]);
+  }, [eligible, provider, modelId, customEndpoints]);
 
   const setModel = (id: string, providerId: ProviderId) => {
     void setAutocompleteProvider(providerId);
-    void setAutocompleteModelId(isLocalProvider(providerId) ? "" : id);
+    // Compat endpoints store their compat- id; other locals use their own field.
+    const keep =
+      providerId === "openai-compatible" || !isLocalProvider(providerId);
+    void setAutocompleteModelId(keep ? id : "");
   };
 
   const grouped = useMemo(() => {
@@ -689,7 +750,8 @@ function AutocompleteRow({
               {PROVIDERS.map((p) => {
                 const list = grouped.get(p.id);
                 if (!list || list.length === 0) return null;
-                const pConfigured = configuredIds.has(p.id);
+                const pConfigured =
+                  p.id === "openai-compatible" || configuredIds.has(p.id);
                 return (
                   <div key={p.id} className="px-1 pt-1.5 first:pt-1">
                     <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -726,6 +788,26 @@ function AutocompleteRow({
           </DropdownMenu>
         </div>
       </FieldRow>
+      {enabled ? (
+        <FieldRow label="Trigger">
+          <Select
+            value={trigger}
+            onValueChange={(v) =>
+              void setAutocompleteTrigger(v as AutocompleteTrigger)
+            }
+          >
+            <SelectTrigger className="h-8 w-full text-[11.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Automatic (as you type)</SelectItem>
+              <SelectItem value="manual">
+                Manual ({aiCompleteShortcut || "shortcut"})
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </FieldRow>
+      ) : null}
       {enabled && !hasKey ? (
         <p className="pl-19 text-[10.5px] text-muted-foreground">
           {getProvider(provider).label} isn't connected — add it below.
@@ -798,7 +880,11 @@ function LocalProviderCard({
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
             Connected
           </Badge>
         ) : null}
@@ -808,7 +894,11 @@ function LocalProviderCard({
           className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
           Docs
-          <HugeiconsIcon icon={ArrowUpRight01Icon} size={11} strokeWidth={1.75} />
+          <HugeiconsIcon
+            icon={ArrowUpRight01Icon}
+            size={11}
+            strokeWidth={1.75}
+          />
         </button>
         <Button
           size="icon"
@@ -882,7 +972,9 @@ function LocalProviderCard({
                 spellCheck={false}
                 className="h-8 w-28 font-mono text-[11.5px]"
               />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
             </div>
           </FieldRow>
         ) : null}
@@ -901,7 +993,11 @@ function LocalProviderCard({
                   title="Remove key"
                   className="size-7 text-muted-foreground hover:text-destructive"
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
                 </Button>
               </div>
             ) : (
@@ -979,8 +1075,7 @@ function CustomEndpointCard({
     [endpoint.contextLimit],
   );
 
-  const configured =
-    !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
+  const configured = !!endpoint.baseURL.trim() && !!endpoint.modelId.trim();
 
   const test = async () => {
     setTestStatus("testing");
@@ -1022,7 +1117,11 @@ function CustomEndpointCard({
             variant="outline"
             className="ml-1 h-4 gap-1 border-border/60 bg-muted/40 px-1.5 text-[10px] font-normal text-muted-foreground"
           >
-            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={9} strokeWidth={2} />
+            <HugeiconsIcon
+              icon={CheckmarkCircle02Icon}
+              size={9}
+              strokeWidth={2}
+            />
             Connected
           </Badge>
         ) : null}
@@ -1110,7 +1209,9 @@ function CustomEndpointCard({
                 spellCheck={false}
                 className="h-8 w-28 font-mono text-[11.5px]"
               />
-              <span className="text-[10.5px] text-muted-foreground">tokens</span>
+              <span className="text-[10.5px] text-muted-foreground">
+                tokens
+              </span>
             </div>
           </FieldRow>
 
@@ -1127,7 +1228,11 @@ function CustomEndpointCard({
                   title="Remove key"
                   className="size-7 text-muted-foreground hover:text-destructive"
                 >
-                  <HugeiconsIcon icon={Cancel01Icon} size={12} strokeWidth={1.75} />
+                  <HugeiconsIcon
+                    icon={Cancel01Icon}
+                    size={12}
+                    strokeWidth={1.75}
+                  />
                 </Button>
               </div>
             ) : (
@@ -1204,6 +1309,104 @@ function StatusLine({
     <span className="text-[10.5px] text-destructive/80">
       Could not reach the server.
     </span>
+  );
+}
+
+function VoiceBlock() {
+  const sttProvider = usePreferencesStore((s) => s.sttProvider);
+  const groqSttModel = usePreferencesStore((s) => s.groqSttModel);
+  const whispercppBaseURL = usePreferencesStore((s) => s.whispercppBaseURL);
+  const [urlDraft, setUrlDraft] = useState(whispercppBaseURL);
+  const [groqModelDraft, setGroqModelDraft] = useState(groqSttModel);
+
+  useEffect(() => setUrlDraft(whispercppBaseURL), [whispercppBaseURL]);
+  useEffect(() => setGroqModelDraft(groqSttModel), [groqSttModel]);
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <HugeiconsIcon icon={Mic01Icon} size={15} strokeWidth={1.5} />
+        <span className="text-[12.5px] font-medium">Voice input</span>
+      </div>
+
+      <FieldRow label="Provider">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              className="h-8 flex-1 justify-between gap-2 px-2.5 text-[11.5px]"
+            >
+              <span>{STT_PROVIDER_LABELS[sttProvider]}</span>
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                size={11}
+                strokeWidth={2}
+                className="opacity-70"
+              />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-44 p-1">
+            {(Object.keys(STT_PROVIDER_LABELS) as SttProvider[]).map((p) => (
+              <DropdownMenuItem
+                key={p}
+                onSelect={() => void setSttProvider(p)}
+                className={cn(
+                  "flex items-center gap-2 text-[12px]",
+                  p === sttProvider && "bg-accent/50",
+                )}
+              >
+                <span>{STT_PROVIDER_LABELS[p]}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </FieldRow>
+
+      <p className="text-[10.5px] leading-relaxed text-muted-foreground">
+        {sttProvider === "openai" &&
+          "Uses your official OpenAI API key and the Whisper model for transcription."}
+        {sttProvider === "groq" &&
+          "Uses your official Groq API key and Groq's Whisper endpoint for transcription."}
+        {sttProvider === "whispercpp" &&
+          "Connects to a local Whisper.cpp server for fully offline transcription."}
+      </p>
+
+      {sttProvider === "groq" && (
+        <div className="flex flex-col gap-2.5">
+          <FieldRow label="Model">
+            <Input
+              value={groqModelDraft}
+              onChange={(e) => setGroqModelDraft(e.target.value)}
+              onBlur={() => {
+                const v = groqModelDraft.trim();
+                if (v !== groqSttModel) void setGroqSttModel(v);
+              }}
+              placeholder="whisper-large-v3-turbo"
+              spellCheck={false}
+              className="h-8 font-mono text-[11.5px]"
+            />
+          </FieldRow>
+        </div>
+      )}
+
+      {sttProvider === "whispercpp" && (
+        <div className="flex flex-col gap-2.5">
+          <FieldRow label="Base URL">
+            <Input
+              value={urlDraft}
+              onChange={(e) => setUrlDraft(e.target.value)}
+              onBlur={() => {
+                const v = urlDraft.trim();
+                if (v !== whispercppBaseURL) void setWhispercppBaseURL(v);
+              }}
+              placeholder={WHISPERCPP_DEFAULT_BASE_URL}
+              spellCheck={false}
+              className="h-8 font-mono text-[11.5px]"
+            />
+          </FieldRow>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -6,7 +6,11 @@ import {
   type GitStatusSnapshot,
 } from "@/modules/ai/lib/native";
 import { useChatStore } from "@/modules/ai/store/chatStore";
-import { providerNeedsKey, resolveModel } from "@/modules/ai/config";
+import {
+  modelSupportsTemperature,
+  providerNeedsKey,
+  resolveModel,
+} from "@/modules/ai/config";
 import {
   invalidateDiff,
   invalidateRepoDiffs,
@@ -463,6 +467,10 @@ export function useSourceControlPanel(
   const allClean = stagedEntries.length === 0 && unstagedEntries.length === 0;
   const canPush = !!status?.upstream && status.behind === 0;
   const selectedModel = resolveModel(selectedModelId);
+  const selectedModelSupportsTemperature = modelSupportsTemperature(
+    selectedModel.provider,
+    selectedModel.id,
+  );
   const aiBusy = agentStatus !== "idle" && agentStatus !== "error";
   const anyActionBusy = localActionBusy !== null || summary.busyAction !== null;
   const aiUnavailableReason = useMemo(() => {
@@ -890,7 +898,7 @@ export function useSourceControlPanel(
         system: COMMIT_MESSAGE_SYSTEM_PROMPT,
         prompt: buildCommitMessagePrompt(stagedEntries, diffText, truncated),
         maxOutputTokens: COMMIT_MESSAGE_MAX_OUTPUT_TOKENS,
-        temperature: 0.2,
+        ...(selectedModelSupportsTemperature ? { temperature: 0.2 } : {}),
       });
       let message = cleanCommitMessage(result.text);
       if (!isValidCommitMessage(message)) {
@@ -899,7 +907,7 @@ export function useSourceControlPanel(
           system: COMMIT_MESSAGE_SYSTEM_PROMPT,
           prompt: buildRepairCommitMessagePrompt(message, stagedEntries),
           maxOutputTokens: COMMIT_MESSAGE_MAX_OUTPUT_TOKENS,
-          temperature: 0,
+          ...(selectedModelSupportsTemperature ? { temperature: 0 } : {}),
         });
         message = cleanCommitMessage(repair.text);
       }
@@ -926,6 +934,7 @@ export function useSourceControlPanel(
     openrouterModelId,
     repo,
     selectedModelId,
+    selectedModelSupportsTemperature,
     stagedEntries,
   ]);
 

@@ -1,6 +1,6 @@
 mod common;
 
-use common::FsFixture;
+use common::{git_available, FsFixture, GitRepoFixture};
 use terax_lib::modules::fs::grep::{fs_glob, fs_grep};
 use terax_lib::modules::fs::search::{fs_list_files, fs_search};
 use terax_lib::modules::fs::tree::{fs_read_dir, list_subdirs, EntryKind};
@@ -246,7 +246,7 @@ fn read_dir_orders_dirs_before_files_then_alpha() {
     fx.write("zfile.txt", "");
     fx.write("afile.txt", "");
 
-    let entries = fs_read_dir(fx.root_str(), false, None).expect("read_dir");
+    let entries = fs_read_dir(fx.root_str(), false, None, None).expect("read_dir");
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     assert_eq!(names, vec!["adir", "zdir", "afile.txt", "zfile.txt"]);
     assert!(matches!(entries[0].kind, EntryKind::Dir));
@@ -259,13 +259,50 @@ fn read_dir_hides_dotfiles_by_default() {
     fx.write(".secret", "");
     fx.write("visible.txt", "");
 
-    let hidden_off = fs_read_dir(fx.root_str(), false, None).expect("read_dir");
+    let hidden_off = fs_read_dir(fx.root_str(), false, None, None).expect("read_dir");
     let names: Vec<&str> = hidden_off.iter().map(|e| e.name.as_str()).collect();
     assert_eq!(names, vec!["visible.txt"]);
 
-    let hidden_on = fs_read_dir(fx.root_str(), true, None).expect("read_dir");
+    let hidden_on = fs_read_dir(fx.root_str(), true, None, None).expect("read_dir");
     let names: Vec<&str> = hidden_on.iter().map(|e| e.name.as_str()).collect();
     assert!(names.contains(&".secret"));
+}
+
+#[test]
+fn read_dir_flags_gitignored_entries_only_when_requested() {
+    if !git_available() {
+        return;
+    }
+    let fx = GitRepoFixture::new();
+    fx.write_file(".gitignore", "ignored.txt\nbuild/\n");
+    fx.write_file("kept.txt", "");
+    fx.write_file("ignored.txt", "");
+    fx.write_file("build/out.o", "");
+
+    let entries = fs_read_dir(fx.repo_str(), false, Some(true), None).expect("read_dir");
+    let flag = |name: &str| {
+        entries
+            .iter()
+            .find(|e| e.name == name)
+            .unwrap_or_else(|| panic!("{name} missing"))
+            .gitignored
+    };
+    assert!(!flag("kept.txt"));
+    assert!(flag("ignored.txt"));
+    assert!(flag("build"));
+
+    let plain = fs_read_dir(fx.repo_str(), false, None, None).expect("read_dir");
+    assert!(plain.iter().all(|e| !e.gitignored));
+}
+
+#[test]
+fn read_dir_skips_gitignore_outside_a_repo() {
+    let fx = FsFixture::new();
+    fx.write(".gitignore", "ignored.txt\n");
+    fx.write("ignored.txt", "");
+    fx.write("kept.txt", "");
+    let entries = fs_read_dir(fx.root_str(), false, Some(true), None).expect("read_dir");
+    assert!(entries.iter().all(|e| !e.gitignored));
 }
 
 #[test]
@@ -273,7 +310,7 @@ fn read_dir_returns_size_for_files() {
     let fx = FsFixture::new();
     fx.write("known.txt", "abcdef");
 
-    let entries = fs_read_dir(fx.root_str(), false, None).expect("read_dir");
+    let entries = fs_read_dir(fx.root_str(), false, None, None).expect("read_dir");
     let entry = entries.iter().find(|e| e.name == "known.txt").unwrap();
     assert_eq!(entry.size, 6);
     assert!(matches!(entry.kind, EntryKind::File));

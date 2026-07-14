@@ -83,6 +83,7 @@ export function TerminalStack({
         return (
           <div
             key={t.id}
+            data-terminal-tab={t.id}
             className="absolute inset-0"
             style={{
               visibility: tabVisible ? "visible" : "hidden",

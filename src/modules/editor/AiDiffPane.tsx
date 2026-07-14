@@ -1,6 +1,5 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { AiDiffStatus } from "@/modules/tabs";
 import { presentableDiff, unifiedMergeView } from "@codemirror/merge";
 import { EditorState, type Extension } from "@codemirror/state";
@@ -8,10 +7,14 @@ import { EditorView } from "@codemirror/view";
 import { Cancel01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { useEffect, useMemo, useRef } from "react";
-import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  buildSharedExtensions,
+  DEFAULT_INDENT,
+  languageCompartment,
+} from "./lib/extensions";
 import { resolveLanguage, resolveLanguageSync } from "./lib/languageResolver";
-import { EDITOR_THEME_EXT } from "./lib/themes";
+import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 
 type Props = {
   path: string;
@@ -23,7 +26,7 @@ type Props = {
   onReject: () => void;
 };
 
-const SHARED_EXT: Extension[] = buildSharedExtensions();
+const SHARED_EXT: readonly Extension[] = buildSharedExtensions();
 const READONLY_EXT: Extension[] = [
   EditorState.readOnly.of(true),
   EditorView.editable.of(false),
@@ -92,14 +95,29 @@ export function AiDiffPane({
   onReject,
 }: Props) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
-  const editorThemeId = usePreferencesStore((s) => s.editorTheme);
-  const themeExt = EDITOR_THEME_EXT[editorThemeId] ?? EDITOR_THEME_EXT.atomone;
+  const themeExt = useEditorThemeExt();
 
-  const initialLang = useMemo(() => resolveLanguageSync(path), [path]);
+  // Language resolves before mount; reconfiguring after would leave the
+  // merge view's deleted-chunk widgets unhighlighted.
+  const [lang, setLang] = useState<Extension | null>(
+    () => resolveLanguageSync(path)?.ext ?? null,
+  );
+  useEffect(() => {
+    if (lang) return;
+    let cancelled = false;
+    resolveLanguage(path).then((res) => {
+      if (!cancelled && res) setLang(res.ext);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path, lang]);
+
   const extensions = useMemo(
     () => [
       ...SHARED_EXT,
-      languageCompartment.of(initialLang ?? []),
+      DEFAULT_INDENT,
+      languageCompartment.of(lang ?? []),
       ...READONLY_EXT,
       unifiedMergeView({
         original: originalContent,
@@ -111,24 +129,8 @@ export function AiDiffPane({
       }),
       DIFF_THEME,
     ],
-    [originalContent, initialLang],
+    [originalContent, lang],
   );
-
-  useEffect(() => {
-    if (initialLang) return;
-    let cancelled = false;
-    resolveLanguage(path).then((ext) => {
-      if (cancelled) return;
-      const view = cmRef.current?.view;
-      if (!view) return;
-      view.dispatch({
-        effects: languageCompartment.reconfigure(ext ?? []),
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [path, initialLang]);
 
   const stats = useMemo(
     () => computeLineStats(originalContent, proposedContent),

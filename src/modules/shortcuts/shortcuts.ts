@@ -8,6 +8,7 @@ export type ShortcutId =
   | "commandPalette.open"
   | "commandPalette.content"
   | "tab.new"
+  | "tab.newBlock"
   | "tab.newPrivate"
   | "tab.newPreview"
   | "tab.newEditor"
@@ -22,9 +23,15 @@ export type ShortcutId =
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
+  | "pane.swapLeft"
+  | "pane.swapRight"
+  | "pane.swapUp"
+  | "pane.swapDown"
   | "pane.source"
   | "terminal.clear"
   | "terminal.toggleInput"
+  | "blocks.prev"
+  | "blocks.next"
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
@@ -33,13 +40,15 @@ export type ShortcutId =
   | "view.zoomReset"
   | "view.zenMode"
   | "ai.toggle"
+  | "ai.toggleMini"
   | "ai.askSelection"
+  | "agent.focusAttention"
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
   | "editor.redo"
-  | "terminal.copy"
-  | "terminal.paste";
+  | "editor.aiComplete"
+  | "editor.codeComplete";
 
 export type ShortcutGroup =
   | "General"
@@ -50,8 +59,7 @@ export type ShortcutGroup =
   | "Search"
   | "AI"
   | "View"
-  | "Editor"
-  | "Terminal";
+  | "Editor";
 
 export type KeyBinding = {
   key: string;
@@ -93,6 +101,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "New tab",
     group: "Tabs",
     defaultBindings: [{ [MOD_PROP]: true, key: "t" }],
+  },
+  {
+    id: "tab.newBlock",
+    label: "New Blocks terminal",
+    group: "Tabs",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "t" }],
   },
   {
     id: "tab.newPrivate",
@@ -144,6 +158,30 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
   },
   {
+    id: "pane.swapLeft",
+    label: "Swap pane left",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowLeft" }],
+  },
+  {
+    id: "pane.swapRight",
+    label: "Swap pane right",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowRight" }],
+  },
+  {
+    id: "pane.swapUp",
+    label: "Swap pane up",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowUp" }],
+  },
+  {
+    id: "pane.swapDown",
+    label: "Swap pane down",
+    group: "Panes",
+    defaultBindings: [{ [MOD_PROP]: true, alt: true, key: "ArrowDown" }],
+  },
+  {
     id: "pane.source",
     label: "Toggle source panel",
     group: "Panes",
@@ -156,7 +194,7 @@ export const SHORTCUTS: Shortcut[] = [
     // macOS Terminal's ⌘K (clear scrollback, keep the prompt). Default only on
     // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
     // unbound and let users assign their own in settings.
-    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }, { ctrl: true, key: "Delete" }] : [{ ctrl: true, key: "Delete" }],
+    defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
   },
   {
     id: "terminal.toggleInput",
@@ -165,16 +203,32 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "u" }],
   },
   {
+    id: "blocks.prev",
+    label: "Previous command block",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowUp" }],
+    allowRepeat: true,
+  },
+  {
+    id: "blocks.next",
+    label: "Next command block",
+    group: "Terminal",
+    defaultBindings: [{ [MOD_PROP]: true, key: "ArrowDown" }],
+    allowRepeat: true,
+  },
+  {
     id: "tab.next",
     label: "Next tab",
     group: "Tabs",
     defaultBindings: [{ ctrl: true, key: "Tab" }],
+    allowRepeat: true,
   },
   {
     id: "tab.prev",
     label: "Previous tab",
     group: "Tabs",
     defaultBindings: [{ ctrl: true, shift: true, key: "Tab" }],
+    allowRepeat: true,
   },
   {
     id: "tab.selectByIndex",
@@ -208,7 +262,7 @@ export const SHORTCUTS: Shortcut[] = [
   },
   {
     id: "search.focus",
-    label: "Find in terminal",
+    label: "Find in tab",
     group: "Search",
     defaultBindings: [{ [MOD_PROP]: true, key: "f" }],
   },
@@ -219,10 +273,22 @@ export const SHORTCUTS: Shortcut[] = [
     defaultBindings: [{ [MOD_PROP]: true, key: "i" }],
   },
   {
+    id: "ai.toggleMini",
+    label: "Toggle AI chat window",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "i" }],
+  },
+  {
     id: "ai.askSelection",
     label: "Ask AI about selection",
     group: "AI",
     defaultBindings: [{ [MOD_PROP]: true, key: "j" }],
+  },
+  {
+    id: "agent.focusAttention",
+    label: "Jump to agent needing attention",
+    group: "AI",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "a" }],
   },
   {
     id: "sidebar.toggle",
@@ -272,7 +338,7 @@ export const SHORTCUTS: Shortcut[] = [
     id: "view.zenMode",
     label: "Toggle zen mode",
     group: "View",
-    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "z" }],
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "'" }],
   },
   // Editor entries are display-only: CodeMirror's historyKeymap binds these
   // keys natively. We register them here so the shortcuts dialog can surface
@@ -291,24 +357,17 @@ export const SHORTCUTS: Shortcut[] = [
     group: "Editor",
     defaultBindings: [{ [MOD_PROP]: true, key: "y" }],
   },
-  // Terminal Copy and Paste shortcuts
   {
-    id: "terminal.copy",
-    label: "Copy selection",
-    group: "Terminal",
-    defaultBindings: [
-      { ctrl: true, shift: true, key: "c" }, // For Linux & Windows: Ctrl+Shift+C
-      { meta: true, key: "c" }, // For macOS: Cmd+C
-    ],
+    id: "editor.aiComplete",
+    label: "Trigger AI completion",
+    group: "Editor",
+    defaultBindings: [{ alt: true, key: "\\" }],
   },
   {
-    id: "terminal.paste",
-    label: "Paste from clipboard",
-    group: "Terminal",
-    defaultBindings: [
-      { ctrl: true, shift: true, key: "v" }, // For Linux & Windows: Ctrl+Shift+V
-      { meta: true, key: "v" }, // For macOS: Cmd+V
-    ],
+    id: "editor.codeComplete",
+    label: "Trigger code completion",
+    group: "Editor",
+    defaultBindings: [{ ctrl: true, key: " " }],
   },
 ];
 
@@ -321,16 +380,38 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "Search",
   "AI",
   "Editor",
-  "Terminal",
 ];
 
 /**
  * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
  */
+const CODE_TO_KEY: Record<string, string> = {
+  Backslash: "\\",
+  Slash: "/",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Backquote: "`",
+  Minus: "-",
+  Equal: "=",
+  Space: " ",
+};
+
+// macOS Option combinations rewrite e.key ("«", "…", dead keys); the
+// physical key survives in e.code.
+function keyFromCode(code: string): string | null {
+  if (code.startsWith("Key")) return code.slice(3).toLowerCase();
+  if (code.startsWith("Digit")) return code.slice(5);
+  return CODE_TO_KEY[code] ?? null;
+}
+
 export function matchBinding(
   e: KeyboardEvent,
   binding: KeyBinding,
-  id?: ShortcutId,
+  id?: ShortcutId
 ): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();
@@ -339,7 +420,7 @@ export function matchBinding(
   if (id === "tab.selectByIndex") {
     if (!/^[1-9]$/.test(e.key)) return false;
   } else if (eventKey !== bindingKey) {
-    return false;
+    if (!binding.alt || keyFromCode(e.code) !== bindingKey) return false;
   }
 
   return (

@@ -4,7 +4,7 @@ export const rosePine: Theme = {
   id: "rose-pine",
   name: "Rosé Pine",
   description: "Soho vibes, all-natural pine and rose.",
-  editorTheme: { dark: "atomone", light: "xcode-light" },
+  editorTheme: { dark: "rose-pine", light: "rose-pine-dawn" },
   variants: {
     dark: {
       colors: {

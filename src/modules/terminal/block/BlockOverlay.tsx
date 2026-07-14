@@ -1,3 +1,9 @@
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/modules/ai/store/chatStore";
 import {
@@ -8,17 +14,21 @@ import {
   CommandLineIcon,
   ComputerTerminal02Icon,
   Copy01Icon,
+  MoreHorizontalIcon,
+  Refresh01Icon,
   Search01Icon,
   SparklesIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { homeDir } from "@tauri-apps/api/path";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import type {
   BlockMatch,
   PositionedBlock,
   VisibleBlocks,
 } from "./lib/blockDecorations";
+import { capAttachOutput } from "./lib/outputCap";
 
 let cachedHome: string | null = null;
 void homeDir()
@@ -30,13 +40,13 @@ void homeDir()
 type Props = {
   subscribe: (cb: () => void) => () => void;
   getVisible: () => VisibleBlocks;
-  hoveredId: string | null;
   readOutput: (id: string) => string | null;
   searchBlock: (id: string, query: string) => BlockMatch[];
   revealMatch: (m: BlockMatch) => void;
   clearSearch: () => void;
-  onHoverKeepAlive: () => void;
-  onHoverEnd: () => void;
+  promptReady: boolean;
+  onRunAgain: (command: string) => void;
+  onRestoreFocus: () => void;
 };
 
 const EMPTY: VisibleBlocks = { blocks: [], sticky: null };
@@ -45,9 +55,14 @@ function fmtDuration(ms: number): string | null {
   if (!Number.isFinite(ms) || ms <= 0) return null;
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`;
-  const m = Math.floor(ms / 60000);
-  const s = Math.round((ms % 60000) / 1000);
-  return s ? `${m}m ${s}s` : `${m}m`;
+  if (ms < 3_600_000) {
+    const m = Math.floor(ms / 60000);
+    const s = Math.round((ms % 60000) / 1000);
+    return s ? `${m}m ${s}s` : `${m}m`;
+  }
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.round((ms % 3_600_000) / 60000);
+  return m ? `${h}h ${m}m` : `${h}h`;
 }
 
 function fmtTime(ms: number): string {
@@ -64,17 +79,11 @@ function relPath(p: string): string {
   return p;
 }
 
-function copy(text: string) {
-  void navigator.clipboard.writeText(text).catch(() => {});
-}
-
-function attachBlock(
-  block: PositionedBlock,
-  readOutput: (id: string) => string | null,
-) {
-  const out = readOutput(block.id);
-  const text = out ? `$ ${block.command}\n${out}` : `$ ${block.command}`;
-  useChatStore.getState().attachSelection(text, "terminal");
+function copy(text: string, message: string) {
+  void navigator.clipboard
+    .writeText(text)
+    .then(() => toast.success(message))
+    .catch(() => {});
 }
 
 function signature(v: VisibleBlocks): string {
@@ -111,24 +120,10 @@ export function BlockOverlay(props: Props) {
   return (
     <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden">
       {vis.blocks.map((b) => (
-        <BlockChrome
-          key={b.id}
-          block={b}
-          hovered={b.id === props.hoveredId}
-          readOutput={props.readOutput}
-          onSearch={setSearchId}
-          onHoverKeepAlive={props.onHoverKeepAlive}
-          onHoverEnd={props.onHoverEnd}
-        />
+        <BlockChrome key={b.id} block={b} all={props} onSearch={setSearchId} />
       ))}
       {vis.sticky && (
-        <StickyHeader
-          block={vis.sticky}
-          readOutput={props.readOutput}
-          onSearch={setSearchId}
-          onHoverKeepAlive={props.onHoverKeepAlive}
-          onHoverEnd={props.onHoverEnd}
-        />
+        <StickyHeader block={vis.sticky} all={props} onSearch={setSearchId} />
       )}
       {searchId && (
         <SearchBar
@@ -144,40 +139,23 @@ export function BlockOverlay(props: Props) {
 
 type ChromeProps = {
   block: PositionedBlock;
-  readOutput: (id: string) => string | null;
+  all: Props;
   onSearch: (id: string) => void;
-  onHoverKeepAlive: () => void;
-  onHoverEnd: () => void;
 };
 
-function BlockChrome({
-  block,
-  hovered,
-  readOutput,
-  onSearch,
-  onHoverKeepAlive,
-  onHoverEnd,
-}: ChromeProps & { hovered: boolean }) {
+// No chrome while the command runs; the bar lands together with the divider
+// once the block is finished.
+function BlockChrome({ block, all, onSearch }: ChromeProps) {
+  if (block.running) return null;
   return (
     <>
-      {!block.running && (
-        <div
-          className={cn("bt-divider", !block.ok && "bt-divider-fail")}
-          style={{ top: block.bottom }}
-        />
-      )}
       <div
-        className={cn("bt-bar", hovered && "bt-bar-active")}
-        style={{ top: block.headerTop }}
-      >
+        className={cn("bt-divider", !block.ok && "bt-divider-fail")}
+        style={{ top: block.bottom }}
+      />
+      <div className="bt-bar" style={{ top: block.headerTop }}>
         <Meta block={block} />
-        <Toolbar
-          block={block}
-          readOutput={readOutput}
-          onSearch={() => onSearch(block.id)}
-          onHoverKeepAlive={onHoverKeepAlive}
-          onHoverEnd={onHoverEnd}
-        />
+        <Toolbar block={block} all={all} onSearch={onSearch} />
       </div>
     </>
   );
@@ -195,13 +173,7 @@ function Meta({ block }: { block: PositionedBlock }) {
   );
 }
 
-function StickyHeader({
-  block,
-  readOutput,
-  onSearch,
-  onHoverKeepAlive,
-  onHoverEnd,
-}: ChromeProps) {
+function StickyHeader({ block, all, onSearch }: ChromeProps) {
   return (
     <div className="bt-sticky">
       <HugeiconsIcon
@@ -211,64 +183,125 @@ function StickyHeader({
         strokeWidth={1.75}
       />
       <span className="bt-sticky-cmd">{block.command || "command"}</span>
-      <Toolbar
-        block={block}
-        readOutput={readOutput}
-        onSearch={() => onSearch(block.id)}
-        onHoverKeepAlive={onHoverKeepAlive}
-        onHoverEnd={onHoverEnd}
-      />
+      <Toolbar block={block} all={all} onSearch={onSearch} />
     </div>
   );
 }
 
-function Toolbar({
-  block,
-  readOutput,
-  onSearch,
-  onHoverKeepAlive,
-  onHoverEnd,
+function Toolbar({ block, all, onSearch }: ChromeProps) {
+  const duration = block.running
+    ? null
+    : fmtDuration(block.finishedAt - block.startedAt);
+  const failed = !block.running && !block.ok && block.exitCode !== null;
+  return (
+    <div className="bt-tools">
+      {failed && <span className="bt-exit">exit {block.exitCode}</span>}
+      {duration && <span className="bt-dur">{duration}</span>}
+      {!block.running && !!block.command && (
+        <button
+          type="button"
+          title="Run again"
+          className="bt-btn"
+          disabled={!all.promptReady}
+          onClick={() => all.onRunAgain(block.command)}
+        >
+          <HugeiconsIcon icon={Refresh01Icon} size={12.5} strokeWidth={1.75} />
+        </button>
+      )}
+      <BlockMenu block={block} all={all} onSearch={onSearch} />
+    </div>
+  );
+}
+
+function BlockMenu({ block, all, onSearch }: ChromeProps) {
+  const output = () => all.readOutput(block.id) ?? "";
+  const attach = () => {
+    const out = capAttachOutput(output());
+    const text = out ? `$ ${block.command}\n${out}` : `$ ${block.command}`;
+    useChatStore.getState().attachSelection(text, "terminal");
+  };
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" title="Block actions" className="bt-btn">
+          <HugeiconsIcon
+            icon={MoreHorizontalIcon}
+            size={14}
+            strokeWidth={1.75}
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-44"
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          all.onRestoreFocus();
+        }}
+      >
+        <MenuItem
+          icon={Refresh01Icon}
+          label="Run again"
+          disabled={block.running || !all.promptReady || !block.command}
+          onClick={() => all.onRunAgain(block.command)}
+        />
+        <MenuItem
+          icon={Copy01Icon}
+          label="Copy command"
+          disabled={!block.command}
+          onClick={() => copy(block.command, "Command copied")}
+        />
+        <MenuItem
+          icon={ComputerTerminal02Icon}
+          label="Copy output"
+          onClick={() => {
+            const o = output();
+            if (o) copy(o, "Output copied");
+          }}
+        />
+        <MenuItem
+          icon={Copy01Icon}
+          label="Copy command and output"
+          onClick={() => {
+            const text = `$ ${block.command}\n${output()}`;
+            copy(text, "Block copied");
+          }}
+        />
+        <MenuItem
+          icon={SparklesIcon}
+          label="Attach to AI chat"
+          onClick={attach}
+        />
+        <MenuItem
+          icon={Search01Icon}
+          label="Find in block"
+          onClick={() => onSearch(block.id)}
+        />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function MenuItem({
+  icon,
+  label,
+  disabled,
+  onClick,
 }: {
-  block: PositionedBlock;
-  readOutput: (id: string) => string | null;
-  onSearch: () => void;
-  onHoverKeepAlive: () => void;
-  onHoverEnd: () => void;
+  icon: typeof Copy01Icon;
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
 }) {
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: hover keep-alive
-    <div
-      className="bt-tools"
-      onMouseEnter={onHoverKeepAlive}
-      onMouseLeave={onHoverEnd}
+    <DropdownMenuItem
+      disabled={disabled}
+      onSelect={onClick}
+      className="gap-2 text-xs"
     >
-      <span className="bt-dur">
-        {block.running ? (
-          <LiveTimer startedAt={block.startedAt} />
-        ) : (
-          <Duration block={block} />
-        )}
-      </span>
-      <IconButton
-        title="Copy command"
-        icon={Copy01Icon}
-        onClick={() => copy(block.command)}
-      />
-      <IconButton
-        title="Copy output"
-        icon={ComputerTerminal02Icon}
-        onClick={() => {
-          const o = readOutput(block.id);
-          if (o) copy(o);
-        }}
-      />
-      <IconButton title="Search in block" icon={Search01Icon} onClick={onSearch} />
-      <IconButton
-        title="Add to AI chat"
-        icon={SparklesIcon}
-        onClick={() => attachBlock(block, readOutput)}
-      />
-    </div>
+      <HugeiconsIcon icon={icon} size={13} strokeWidth={1.75} />
+      {label}
+    </DropdownMenuItem>
   );
 }
 
@@ -327,28 +360,18 @@ function SearchBar({
       <span className="bt-search-count">
         {matches.length ? `${idx + 1}/${matches.length}` : "0"}
       </span>
-      <IconButton title="Previous" icon={ArrowUp01Icon} onClick={() => nav(-1)} />
-      <IconButton title="Next" icon={ArrowDown01Icon} onClick={() => nav(1)} />
-      <IconButton title="Close" icon={Cancel01Icon} onClick={onClose} />
+      <SearchBtn
+        title="Previous"
+        icon={ArrowUp01Icon}
+        onClick={() => nav(-1)}
+      />
+      <SearchBtn title="Next" icon={ArrowDown01Icon} onClick={() => nav(1)} />
+      <SearchBtn title="Close" icon={Cancel01Icon} onClick={onClose} />
     </div>
   );
 }
 
-function Duration({ block }: { block: PositionedBlock }) {
-  const d = fmtDuration(block.finishedAt - block.startedAt);
-  return d ? <span>{d}</span> : null;
-}
-
-function LiveTimer({ startedAt }: { startedAt: number }) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return <span>{Math.floor((now - startedAt) / 1000)}s</span>;
-}
-
-function IconButton({
+function SearchBtn({
   title,
   icon,
   onClick,

@@ -1,5 +1,3 @@
-import { type RefObject, useEffect, useRef } from "react";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   listenFsChanged,
   parentDir,
@@ -7,6 +5,8 @@ import {
   watchRemove,
 } from "@/modules/explorer/lib/watch";
 import type { Tab } from "@/modules/tabs";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { type RefObject, useEffect, useRef } from "react";
 import type { EditorPaneHandle } from "./EditorPane";
 
 type Params = {
