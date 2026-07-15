@@ -84,8 +84,9 @@ impl DaFilter {
                             let middle = &self.hold[2..self.hold.len() - 1];
                             let is_response =
                                 middle.contains(&b'?') || middle.contains(&b';');
+                            let is_startup_query = !self.saw_output && out.is_empty();
                             let prefix = middle.first().copied().unwrap_or(0);
-                            if is_response {
+                            if is_response || !is_startup_query {
                                 out.extend_from_slice(&self.hold);
                             } else {
                                 match prefix {
@@ -175,11 +176,34 @@ mod tests {
     }
 
     #[test]
-    fn embedded_da_preserves_surrounding() {
+    fn da_after_output_in_same_chunk_passes_through() {
         let mut f = DaFilter::new();
-        let (out, replies) = run(&mut f, b"pre\x1b[0cpost");
-        assert_eq!(out, b"prepost");
-        assert_eq!(replies, vec![DA1_REPLY.to_vec()]);
+        let input = b"pre\x1b[0cpost";
+        let (out, replies) = run(&mut f, input);
+        assert_eq!(out, input);
+        assert!(replies.is_empty());
+    }
+
+    #[test]
+    fn da_after_osc_queries_passes_through() {
+        let mut f = DaFilter::new();
+        let input = b"\x1b]10;?\x07\x1b]11;?\x07\x1b[c";
+        let (out, replies) = run(&mut f, input);
+        assert_eq!(out, input);
+        assert!(replies.is_empty());
+    }
+
+    #[test]
+    fn da_after_output_in_prior_chunk_passes_through() {
+        let mut f = DaFilter::new();
+        let (initial, initial_replies) = run(&mut f, b"prompt");
+        assert_eq!(initial, b"prompt");
+        assert!(initial_replies.is_empty());
+
+        let input = b"\x1b[c";
+        let (out, replies) = run(&mut f, input);
+        assert_eq!(out, input);
+        assert!(replies.is_empty());
     }
 
     #[test]
@@ -210,11 +234,12 @@ mod tests {
     }
 
     #[test]
-    fn double_esc() {
+    fn da_after_escape_passes_through() {
         let mut f = DaFilter::new();
-        let (out, replies) = run(&mut f, b"\x1b\x1b[c");
-        assert_eq!(out, b"\x1b");
-        assert_eq!(replies, vec![DA1_REPLY.to_vec()]);
+        let input = b"\x1b\x1b[c";
+        let (out, replies) = run(&mut f, input);
+        assert_eq!(out, input);
+        assert!(replies.is_empty());
     }
 
     #[test]
