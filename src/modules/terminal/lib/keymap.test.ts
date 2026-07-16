@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
+  terminalUndoSequence,
   terminalWordNavigationSequence,
   type TerminalKeyEvent,
 } from "./keymap";
@@ -131,6 +132,34 @@ describe("terminalDeleteSequence", () => {
       terminalDeleteSequence(
         evt({ key: "Backspace", code: "Backspace" }),
         { isMac: true },
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("terminalUndoSequence", () => {
+  it("maps Option+Z to readline undo", () => {
+    expect(
+      terminalUndoSequence(evt({ altKey: true, key: "z", code: "KeyZ" })),
+    ).toBe("\x1f");
+  });
+
+  it("maps Option+Z via code even when macOS reports a dead key", () => {
+    expect(
+      terminalUndoSequence(evt({ altKey: true, key: "Dead", code: "KeyZ" })),
+    ).toBe("\x1f");
+  });
+
+  it("does not remap plain Z", () => {
+    expect(
+      terminalUndoSequence(evt({ key: "z", code: "KeyZ" })),
+    ).toBeNull();
+  });
+
+  it("does not remap Cmd+Option+Z", () => {
+    expect(
+      terminalUndoSequence(
+        evt({ altKey: true, metaKey: true, key: "z", code: "KeyZ" }),
       ),
     ).toBeNull();
   });
