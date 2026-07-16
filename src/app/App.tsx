@@ -44,6 +44,7 @@ import { setLspNavigator } from "@/modules/lsp";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { setTerminalTuiFocus } from "@/modules/settings/store";
 import {
   shouldDisablePaneSwapShortcut,
   type ShortcutHandlers,
@@ -728,6 +729,11 @@ export default function App() {
       },
       "terminal.toggleInput": () =>
         window.dispatchEvent(new CustomEvent(TOGGLE_BLOCK_INPUT_EVENT)),
+      "terminal.toggleTuiFocus": () => {
+        void setTerminalTuiFocus(
+          !usePreferencesStore.getState().terminalTuiFocus,
+        );
+      },
       "blocks.prev": () => navigateFocusedBlocks(-1),
       "blocks.next": () => navigateFocusedBlocks(1),
       "search.focus": () => {
@@ -788,6 +794,7 @@ export default function App() {
       zoomOut,
       zoomReset,
       activateAgentTarget,
+      setTerminalTuiFocus,
     ],
   );
 
@@ -830,19 +837,7 @@ export default function App() {
       ) {
         return !(activeTab?.kind === "terminal" && activeTab.blocks === true);
       }
-      if (id === "sidebar.toggle") {
-        // Ctrl+B is also Claude Code's "run in background" key. While a terminal
-        // is focused, let Ctrl+B reach the shell/Claude instead of toggling the
-        // sidebar. Ctrl+Shift+B (second binding) still toggles it from anywhere.
-        const target =
-          (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
-          ".xterm",
-        );
-        // Only defer the plain (no-shift) Ctrl/⌘+B binding; the Shift variant
-        // is the always-on toggle and is never claimed by the terminal.
-        return inTerminal && !e.shiftKey;
-      }
+      // sidebar.toggle deferral is handled in shouldDeferForTerminalFocus.
       return false;
     },
     [activeTab],

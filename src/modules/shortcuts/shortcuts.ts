@@ -30,6 +30,7 @@ export type ShortcutId =
   | "pane.source"
   | "terminal.clear"
   | "terminal.toggleInput"
+  | "terminal.toggleTuiFocus"
   | "blocks.prev"
   | "blocks.next"
   | "search.focus"
@@ -75,6 +76,8 @@ export type Shortcut = {
   group: ShortcutGroup;
   defaultBindings: KeyBinding[];
   allowRepeat?: boolean;
+  // Fires even when a terminal pane is focused (not deferred by TUI passthrough).
+  terminalAlwaysOn?: boolean;
 };
 
 export const SHORTCUTS: Shortcut[] = [
@@ -89,6 +92,7 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Find in files",
     group: "General",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "p" }],
+    terminalAlwaysOn: true,
   },
   {
     id: "settings.open",
@@ -195,12 +199,22 @@ export const SHORTCUTS: Shortcut[] = [
     // macOS — on other platforms Ctrl+K is readline's kill-line, so we leave it
     // unbound and let users assign their own in settings.
     defaultBindings: IS_MAC ? [{ meta: true, key: "k" }] : [],
+    terminalAlwaysOn: true,
   },
   {
     id: "terminal.toggleInput",
     label: "Toggle Shell / AI input",
     group: "Terminal",
     defaultBindings: [{ [MOD_PROP]: true, key: "u" }],
+    terminalAlwaysOn: true,
+  },
+  {
+    id: "terminal.toggleTuiFocus",
+    label: "Toggle TUI focus passthrough",
+    group: "Terminal",
+    // Always-on so the user can't get stuck in passthrough with no way out.
+    defaultBindings: [{ key: "F6" }],
+    terminalAlwaysOn: true,
   },
   {
     id: "blocks.prev",
@@ -208,6 +222,7 @@ export const SHORTCUTS: Shortcut[] = [
     group: "Terminal",
     defaultBindings: [{ [MOD_PROP]: true, key: "ArrowUp" }],
     allowRepeat: true,
+    terminalAlwaysOn: true,
   },
   {
     id: "blocks.next",
@@ -215,6 +230,7 @@ export const SHORTCUTS: Shortcut[] = [
     group: "Terminal",
     defaultBindings: [{ [MOD_PROP]: true, key: "ArrowDown" }],
     allowRepeat: true,
+    terminalAlwaysOn: true,
   },
   {
     id: "tab.next",
@@ -381,6 +397,25 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "AI",
   "Editor",
 ];
+
+export type DeferOpts = {
+  enabled: boolean;
+  inTerminal: boolean;
+};
+
+// Skip a global shortcut when a terminal pane is focused and passthrough is on,
+// so the key reaches the TUI. sidebar.toggle keeps its Shift binding always-on.
+// Pure so it can be unit-tested without React.
+export function shouldDeferForTerminalFocus(
+  shortcut: Shortcut,
+  e: KeyboardEvent,
+  opts: DeferOpts,
+): boolean {
+  if (!opts.enabled) return false;
+  if (shortcut.terminalAlwaysOn) return false;
+  if (shortcut.id === "sidebar.toggle" && e.shiftKey) return false;
+  return opts.inTerminal;
+}
 
 /**
  * Matching logic: checks if a KeyboardEvent matches a KeyBinding.
