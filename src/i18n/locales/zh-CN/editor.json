@@ -11,6 +11,7 @@
   "binaryFile": "二进制文件",
   "fileTooLarge": "文件过大",
   "previewNotSupported": "不支持预览",
+  "syntaxFeaturesDisabled": "语法功能已禁用",
   "statusPending": "待审阅",
   "statusApplied": "已应用",
   "statusRejected": "已拒绝",

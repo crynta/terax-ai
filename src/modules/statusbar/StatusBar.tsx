@@ -25,6 +25,8 @@ type Props = {
   onCd: (path: string) => void;
   onWorkspaceChange: (env: WorkspaceEnv) => void;
   onOpenMini: () => void;
+  /** Opens the panel, or Settings > Models when no API key is loaded. */
+  onOpenAi: () => void;
   /** Only rendered when the AI panel is open and a key is loaded. */
   hasComposer: boolean;
   privateActive: boolean;
@@ -37,12 +39,12 @@ export function StatusBar({
   onCd,
   onWorkspaceChange,
   onOpenMini,
+  onOpenAi,
   hasComposer,
   privateActive,
 }: Props) {
   const { t } = useTranslation("statusbar");
   const panelOpen = useChatStore((s) => s.panelOpen);
-  const openPanel = useChatStore((s) => s.openPanel);
 
   return (
     <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border/60 bg-card/60 pl-3 pr-4 text-[11px]">
@@ -73,7 +75,7 @@ export function StatusBar({
         {panelOpen && hasComposer ? (
           <AiStatusBarControls />
         ) : (
-          <AiOpenButton onOpen={openPanel} />
+          <AiOpenButton onOpen={onOpenAi} />
         )}
       </div>
     </footer>

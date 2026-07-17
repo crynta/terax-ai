@@ -255,7 +255,7 @@ export function AiChatView({
         )}
         {error && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-            <div className="font-medium">Something went wrong.</div>
+            <div className="font-medium">Request failed.</div>
             <div className="mt-0.5 leading-relaxed opacity-90">
               {error.message}
             </div>

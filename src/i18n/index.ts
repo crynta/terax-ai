@@ -113,7 +113,7 @@ async function ensureZhCN(): Promise<void> {
   await Promise.all(
     [...zhCNLoaders].map(async ([ns, loader]) => {
       const bundle = await loader();
-      resources["zh-CN"]![ns] = bundle;
+      resources["zh-CN"][ns] = bundle;
       i18next.addResourceBundle("zh-CN", ns, bundle, true, true);
     }),
   );

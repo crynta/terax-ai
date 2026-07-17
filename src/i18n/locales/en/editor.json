@@ -11,6 +11,7 @@
   "binaryFile": "Binary file",
   "fileTooLarge": "File too large",
   "previewNotSupported": "preview not supported",
+  "syntaxFeaturesDisabled": "syntax features disabled",
   "statusPending": "Pending review",
   "statusApplied": "Applied",
   "statusRejected": "Rejected",

@@ -124,6 +124,13 @@
       "title": "Editor",
       "description": "Editing behavior, saving, and language servers."
     },
+    "appearance": {
+      "label": "Appearance",
+      "fontSize": {
+        "title": "Font size",
+        "description": "Code editor text size."
+      }
+    },
     "editing": {
       "label": "Editing",
       "vimMode": {

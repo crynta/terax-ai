@@ -124,6 +124,13 @@
       "title": "编辑器",
       "description": "编辑行为、保存与语言服务器。"
     },
+    "appearance": {
+      "label": "外观",
+      "fontSize": {
+        "title": "字体大小",
+        "description": "代码编辑器文字大小。"
+      }
+    },
     "editing": {
       "label": "编辑",
       "vimMode": {

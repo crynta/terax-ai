@@ -7,7 +7,7 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 import { useTerminalDropStore } from "./lib/dropStore";
-import { leafIds, type PaneNode } from "./lib/panes";
+import { firstLeafSlotId, type PaneNode } from "./lib/panes";
 import { TerminalPane, type TerminalPaneHandle } from "./TerminalPane";
 
 type LeafBundle = {
@@ -65,17 +65,17 @@ export function PaneTreeView(props: Props) {
     <ResizablePanelGroup
       orientation={node.dir === "row" ? "horizontal" : "vertical"}
     >
-      {node.children.map((child, i) => (
-        // Keyed by the subtree's first leaf, not the node id: when a leaf is
-        // split in place, the replacing split node gets a fresh id and would
-        // otherwise remount the surviving pane.
-        <Fragment key={leafIds(child)[0]}>
-          {i > 0 && <ResizableHandle />}
-          <ResizablePanel id={`pane-${child.id}`} minSize="10%">
-            <PaneTreeView {...props} node={child} />
-          </ResizablePanel>
-        </Fragment>
-      ))}
+      {node.children.map((child, i) => {
+        const slotId = firstLeafSlotId(child);
+        return (
+          <Fragment key={slotId}>
+            {i > 0 && <ResizableHandle />}
+            <ResizablePanel id={`pane-slot-${slotId}`} minSize="10%">
+              <PaneTreeView {...props} node={child} />
+            </ResizablePanel>
+          </Fragment>
+        );
+      })}
     </ResizablePanelGroup>
   );
 }

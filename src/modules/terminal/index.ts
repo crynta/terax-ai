@@ -6,16 +6,23 @@ export {
   leafHasForegroundProcess,
   leafIdForPty,
   navigateFocusedBlocks,
+  ptyIdForLeaf,
   respawnSession,
   whenSessionReady,
   writeToSession,
 } from "./lib/useTerminalSession";
+export {
+  aggregateAgentPhases,
+  type AgentTabStatus,
+  useAgentActivityStore,
+} from "./lib/agentActivity";
 export { useTerminalFileDrop } from "./lib/useTerminalFileDrop";
 export {
   findLeafCwd,
   hasLeaf,
   isLeaf,
   leafIds,
+  type PaneBounds,
   type PaneId,
   type PaneNode,
   type SplitDir,

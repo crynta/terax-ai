@@ -2,6 +2,8 @@ import {
   type AutocompleteProviderId,
   DEFAULT_AUTOCOMPLETE_MODEL,
   LMSTUDIO_DEFAULT_BASE_URL,
+  modelSupportsTemperature,
+  modelUsesReasoningTokens,
 } from "@/modules/ai/config";
 import { buildLanguageModel } from "@/modules/ai/lib/agent";
 import { EMPTY_PROVIDER_KEYS } from "@/modules/ai/lib/keyring";
@@ -46,12 +48,14 @@ export async function requestCompletion(
     openaiCompatibleBaseURL: deps.openaiCompatibleBaseURL,
   });
 
-  const isReasoning = /\bgpt-oss\b/i.test(modelId);
+  const isReasoning = modelUsesReasoningTokens(deps.provider, modelId);
   const providerOptions = isReasoning
     ? {
+        anthropic: { effort: "low" },
         cerebras: { reasoningEffort: "low" },
         groq: { reasoningEffort: "low" },
         openai: { reasoningEffort: "low" },
+        xai: { reasoningEffort: "low" },
       }
     : undefined;
 
@@ -64,7 +68,9 @@ export async function requestCompletion(
       : MAX_OUTPUT_TOKENS_DEFAULT,
     maxRetries: 0,
     abortSignal: signal,
-    temperature: 0.2,
+    ...(modelSupportsTemperature(deps.provider, modelId)
+      ? { temperature: 0.1 }
+      : {}),
     ...(providerOptions ? { providerOptions } : {}),
   });
 
