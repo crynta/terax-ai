@@ -1,0 +1,25 @@
+{
+  "block": {
+    "commandFallback": "命令",
+    "exit": "退出码 {{code}}",
+    "runAgain": "重新运行",
+    "actions": "块操作",
+    "copyCommand": "复制命令",
+    "copyOutput": "复制输出",
+    "copyCommandAndOutput": "复制命令和输出",
+    "attachToAiChat": "附加到 AI 对话",
+    "findInBlock": "在块中查找",
+    "toast": {
+      "commandCopied": "命令已复制",
+      "outputCopied": "输出已复制",
+      "blockCopied": "块已复制"
+    }
+  },
+  "watermark": {
+    "browseHistory": "浏览命令历史",
+    "autocomplete": "自动补全路径和命令",
+    "switchShellAi": "在 Shell 和 AI 之间切换",
+    "openAiAssistant": "打开 AI 助手"
+  },
+  "dropFilePathHere": "将文件路径拖放到这里"
+}

@@ -1,0 +1,20 @@
+{
+  "private": {
+    "label": "Private: hidden from AI",
+    "tooltip": "AI can't see this terminal's output. Use it for secrets, SSH, or anything you don't want sent to the model."
+  },
+  "cwd": {
+    "noDirectory": "no directory",
+    "noSubfolders": "No subfolders",
+    "showHiddenFolders": "Show hidden folders"
+  },
+  "workspace": {
+    "environment": "Workspace environment",
+    "windows": "Windows",
+    "windowsLocal": "Windows Local",
+    "loadingWslDistros": "Loading WSL distros...",
+    "wslUnavailable": "WSL unavailable",
+    "noWslDistros": "No WSL distros found",
+    "wslDistro": "WSL: {{distro}}"
+  }
+}

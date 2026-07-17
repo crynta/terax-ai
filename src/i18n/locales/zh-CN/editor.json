@@ -1,0 +1,20 @@
+{
+  "newFile": "新建文件",
+  "newFileDescription": "文件名（相对于工作区根目录）。扩展名决定语言模式。",
+  "newFilePlaceholder": "example.ts",
+  "nameRequired": "名称不能为空",
+  "pathMustBeRelative": "路径必须为相对路径",
+  "noWorkspaceRoot": "没有工作区根目录",
+  "formatOnSaveSkipped": "已跳过保存时格式化",
+  "formatOnSaveSkippedDescription": "该文件没有活动的语言服务器。请在状态栏中启用一个，或在设置中选择 Biome/Prettier。",
+  "formatFailed": "{{formatter}} 格式化失败",
+  "binaryFile": "二进制文件",
+  "fileTooLarge": "文件过大",
+  "previewNotSupported": "不支持预览",
+  "syntaxFeaturesDisabled": "语法功能已禁用",
+  "statusPending": "待审阅",
+  "statusApplied": "已应用",
+  "statusRejected": "已拒绝",
+  "accept": "接受",
+  "reject": "拒绝"
+}

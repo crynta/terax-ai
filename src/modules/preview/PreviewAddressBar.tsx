@@ -20,6 +20,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 type PortPreset = {
   port: number;
@@ -59,6 +60,7 @@ type Props = {
 
 export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
   function PreviewAddressBar({ url, onSubmit, onReload }, ref) {
+    const { t } = useTranslation("preview");
     const [draft, setDraft] = useState(url);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -87,7 +89,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
     const submit = () => {
       const next = normalizeUrl(draft);
       if (!next) {
-        setNotice("Enter a URL or pick a port preset.");
+        setNotice(t("addressBar.enterUrlNotice"));
         return;
       }
       setNotice(null);
@@ -102,7 +104,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
       const ok = await probeUrl(url);
       setCheckingPort(null);
       if (!ok) {
-        setNotice(`No server listening on :${port}.`);
+        setNotice(t("addressBar.noServerNotice", { port }));
         return;
       }
       setDraft(url);
@@ -117,7 +119,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
           variant="ghost"
           size="icon"
           onClick={onReload}
-          title="Reload"
+          title={t("addressBar.reloadTitle")}
           className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <HugeiconsIcon
@@ -132,7 +134,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
               type="button"
               variant="ghost"
               size="sm"
-              title="Common dev-server ports"
+              title={t("addressBar.portsTitle")}
               className="h-7 shrink-0 gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <HugeiconsIcon
@@ -140,7 +142,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
                 size={13}
                 strokeWidth={1.75}
               />
-              <span className="hidden sm:inline">Ports</span>
+              <span className="hidden sm:inline">{t("addressBar.ports")}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -157,7 +159,9 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
               >
                 <span className="flex-1">{p.label}</span>
                 <span className="text-xs text-muted-foreground">
-                  {checkingPort === p.port ? "checking…" : `:${p.port}`}
+                  {checkingPort === p.port
+                    ? t("addressBar.checking")
+                    : `:${p.port}`}
                 </span>
               </DropdownMenuItem>
             ))}
@@ -167,7 +171,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
           <Input
             ref={inputRef}
             value={draft}
-            placeholder="http://localhost:3000"
+            placeholder={t("addressBar.placeholder")}
             spellCheck={false}
             autoComplete="off"
             className="h-7 w-full bg-muted/60 px-2 text-xs placeholder:text-muted-foreground/70 focus-visible:ring-0"
@@ -191,7 +195,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
           onClick={() => {
             if (url) void openUrl(url).catch(console.error);
           }}
-          title="Open in system browser"
+          title={t("addressBar.openInBrowserTitle")}
           className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
           disabled={!url}
         >
@@ -210,7 +214,7 @@ export const PreviewAddressBar = forwardRef<PreviewAddressBarHandle, Props>(
             onClick={() => setNotice(null)}
             className="ml-auto rounded px-1 text-[10px] opacity-80 hover:bg-accent hover:opacity-100"
           >
-            Dismiss
+            {t("addressBar.dismiss")}
           </button>
         </div>
       ) : null}

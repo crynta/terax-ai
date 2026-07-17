@@ -28,9 +28,11 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { SectionHeader } from "../components/SectionHeader";
 
 export function ShortcutsSection() {
+  const { t } = useTranslation();
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
   const [search, setSearch] = useState("");
   const [recordingId, setRecordingId] = useState<ShortcutId | null>(null);
@@ -43,10 +45,12 @@ export function ShortcutsSection() {
     const lower = search.toLowerCase();
     return base.filter(
       (s) =>
+        t(`shortcuts:label.${s.id}`).toLowerCase().includes(lower) ||
         s.label.toLowerCase().includes(lower) ||
+        t(`shortcuts:group.${s.group}`).toLowerCase().includes(lower) ||
         s.group.toLowerCase().includes(lower),
     );
-  }, [search]);
+  }, [search, t]);
 
   const onRecord = (id: ShortcutId, binding: KeyBinding) => {
     const next = { ...userShortcuts, [id]: [binding] };
@@ -74,8 +78,8 @@ export function ShortcutsSection() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <SectionHeader
-          title="Shortcuts"
-          description="View and customize keyboard shortcuts."
+          title={t("shortcuts.header.title")}
+          description={t("shortcuts.header.description")}
         />
         <Button
           variant="outline"
@@ -88,7 +92,7 @@ export function ShortcutsSection() {
             size={12}
             strokeWidth={2}
           />
-          Reset All
+          {t("shortcuts.resetAll")}
         </Button>
       </div>
 
@@ -100,7 +104,7 @@ export function ShortcutsSection() {
           className="absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
         />
         <Input
-          placeholder="Search shortcuts..."
+          placeholder={t("shortcuts.searchPlaceholder")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="h-9 pl-9 text-[12.5px]"
@@ -115,7 +119,7 @@ export function ShortcutsSection() {
           return (
             <div key={group} className="flex flex-col gap-3">
               <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-                {group}
+                {t(`shortcuts:group.${group}`)}
               </h3>
               <div className="flex flex-col divide-y divide-border/40 rounded-lg border border-border/60 bg-card/40 overflow-hidden">
                 {items.map((s) => (
@@ -140,19 +144,22 @@ export function ShortcutsSection() {
       <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reset all shortcuts?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("shortcuts.resetDialog.title")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will revert all your custom keyboard shortcuts to their
-              factory defaults. This action cannot be undone.
+              {t("shortcuts.resetDialog.description")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              {t("shortcuts.resetDialog.cancel")}
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={onResetAll}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Reset All
+              {t("shortcuts.resetAll")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -180,6 +187,7 @@ function ShortcutRow({
   onReset: () => void;
   userBindings?: KeyBinding[];
 }) {
+  const { t } = useTranslation();
   const bindings =
     userBindings !== undefined ? userBindings : shortcut.defaultBindings;
   const isModified = userBindings !== undefined;
@@ -188,7 +196,9 @@ function ShortcutRow({
   return (
     <div className="group flex items-center justify-between px-3 py-2.5 transition-colors hover:bg-muted/30">
       <div className="flex flex-col gap-0.5">
-        <span className="text-[12.5px] font-medium">{shortcut.label}</span>
+        <span className="text-[12.5px] font-medium">
+          {t(`shortcuts:label.${shortcut.id}`)}
+        </span>
       </div>
 
       <div className="flex items-center gap-2">
@@ -213,7 +223,7 @@ function ShortcutRow({
                 </KbdGroup>
               ) : (
                 <span className="text-[11px] text-muted-foreground italic">
-                  Unassigned
+                  {t("shortcuts.unassigned")}
                 </span>
               )}
             </div>
@@ -225,7 +235,7 @@ function ShortcutRow({
                   size="icon"
                   className="size-7 text-muted-foreground hover:text-foreground"
                   onClick={onReset}
-                  title="Reset to default"
+                  title={t("shortcuts.resetToDefault")}
                 >
                   <HugeiconsIcon icon={ArrowTurnBackwardIcon} size={12} />
                 </Button>
@@ -235,7 +245,7 @@ function ShortcutRow({
                 size="icon"
                 className="size-7 text-muted-foreground hover:text-destructive opacity-0 transition-opacity group-hover:opacity-100"
                 onClick={onClear}
-                title="Clear shortcut"
+                title={t("shortcuts.clearShortcut")}
               >
                 <HugeiconsIcon icon={Delete02Icon} size={12} />
               </Button>
@@ -254,6 +264,7 @@ function Recorder({
   onRecord: (b: KeyBinding) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [_mods, setMods] = useState({
     ctrl: false,
     shift: false,
@@ -321,8 +332,12 @@ function Recorder({
 
   return (
     <div className="flex items-center gap-2 rounded bg-accent/50 px-2 py-1 text-[11px] ring-1 ring-accent">
-      <span className="animate-pulse font-medium">Recording...</span>
-      <span className="text-muted-foreground">(Esc to cancel)</span>
+      <span className="animate-pulse font-medium">
+        {t("shortcuts.recording")}
+      </span>
+      <span className="text-muted-foreground">
+        {t("shortcuts.escToCancel")}
+      </span>
     </div>
   );
 }

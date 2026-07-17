@@ -32,6 +32,7 @@ import {
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { LspServersGroup } from "../components/LspServersGroup";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
@@ -39,6 +40,7 @@ import { SettingRow } from "../components/SettingRow";
 const AUTO_SAVE_STEP = 100;
 
 export function EditorSection() {
+  const { t } = useTranslation();
   const editorFontSize = usePreferencesStore((s) => s.editorFontSize);
   const vimMode = usePreferencesStore((s) => s.vimMode);
   const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
@@ -56,13 +58,13 @@ export function EditorSection() {
   return (
     <div className="flex flex-col gap-6">
       <SectionHeader
-        title="Editor"
-        description="Editing behavior, saving, and language servers."
+        title={t("editor.header.title")}
+        description={t("editor.header.description")}
       />
 
       <div className="flex flex-col gap-2">
-        <Label>Appearance</Label>
-        <SettingRow title="Font size" description="Code editor text size.">
+        <Label>{t("editor.appearance.label")}</Label>
+        <SettingRow title={t("editor.appearance.fontSize.title")} description={t("editor.appearance.fontSize.description")}>
           <Select
             value={String(editorFontSize)}
             onValueChange={(v) => void setEditorFontSize(Number(v))}
@@ -86,10 +88,10 @@ export function EditorSection() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Editing</Label>
+        <Label>{t("editor.editing.label")}</Label>
         <SettingRow
-          title="Vim mode"
-          description="Enable Vim keybindings in the code editor."
+          title={t("editor.editing.vimMode.title")}
+          description={t("editor.editing.vimMode.description")}
         >
           <Switch
             checked={vimMode}
@@ -97,8 +99,8 @@ export function EditorSection() {
           />
         </SettingRow>
         <SettingRow
-          title="Word wrap"
-          description="Wrap long lines instead of scrolling horizontally."
+          title={t("editor.editing.wordWrap.title")}
+          description={t("editor.editing.wordWrap.description")}
         >
           <Switch
             checked={editorWordWrap}
@@ -108,10 +110,10 @@ export function EditorSection() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <Label>Saving</Label>
+        <Label>{t("editor.saving.label")}</Label>
         <SettingRow
-          title="Auto save"
-          description="Automatically save files after a delay when changes are detected."
+          title={t("editor.saving.autoSave.title")}
+          description={t("editor.saving.autoSave.description")}
         >
           <Switch
             checked={editorAutoSave}
@@ -125,8 +127,8 @@ export function EditorSection() {
           />
         )}
         <SettingRow
-          title="Format on save"
-          description="Format the file on explicit save (Cmd+S / :w) with the formatter below."
+          title={t("editor.saving.formatOnSave.title")}
+          description={t("editor.saving.formatOnSave.description")}
         >
           <Switch
             checked={editorFormatOnSave}
@@ -136,8 +138,8 @@ export function EditorSection() {
         {editorFormatOnSave && (
           <>
             <SettingRow
-              title="Formatter"
-              description="Language server formats the buffer before writing; external tools run on the saved file from your PATH."
+              title={t("editor.saving.formatter.title")}
+              description={t("editor.saving.formatter.description")}
             >
               <FormatterSelect
                 value={editorFormatter}
@@ -304,6 +306,7 @@ function AutoSaveDelayInput({
   value: number;
   onChange: (v: number) => void;
 }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState(String(value));
 
   useEffect(() => {
@@ -323,8 +326,8 @@ function AutoSaveDelayInput({
 
   return (
     <SettingRow
-      title="Auto save delay"
-      description="Delay before unsaved changes are saved automatically."
+      title={t("editor.saving.autoSaveDelay.title")}
+      description={t("editor.saving.autoSaveDelay.description")}
     >
       <div className="flex items-center gap-2">
         <Input
@@ -342,7 +345,9 @@ function AutoSaveDelayInput({
           }}
           className="h-8 w-20 rounded-md border border-border bg-background px-2.5 text-right text-[12px] md:text-[12px] tabular-nums outline-none focus:border-foreground/40 focus-visible:ring-0 focus-visible:border-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
         />
-        <span className="text-[11px] text-muted-foreground">ms</span>
+        <span className="text-[11px] text-muted-foreground">
+          {t("editor.saving.autoSaveDelay.unit")}
+        </span>
       </div>
     </SettingRow>
   );

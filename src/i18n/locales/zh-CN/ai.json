@@ -1,0 +1,141 @@
+{
+  "miniWindow": {
+    "suggestions": {
+      "explainError": {
+        "label": "解释上一个错误",
+        "hint": "读取终端缓冲区",
+        "text": "解释终端里的上一个错误。"
+      },
+      "generateCommand": {
+        "label": "生成命令",
+        "hint": "告诉我你想做什么",
+        "text": "给我一个命令，用来"
+      },
+      "summarizeBuffer": {
+        "label": "总结缓冲区",
+        "hint": "回顾最近的活动",
+        "text": "总结一下终端里刚刚发生了什么。"
+      }
+    },
+    "planMode": "计划模式",
+    "queued": "· 已排队 {{count}} 项",
+    "noEditsQueued": "· 无待处理编辑",
+    "exit": "退出",
+    "loadingSessions": "正在加载会话…",
+    "thinking": "思考中…",
+    "closeTitle": "关闭 (Esc)",
+    "context": {
+      "model": "模型",
+      "lastRequest": "上次请求",
+      "estimatedContext": "预估上下文",
+      "ofWhichCached": "其中已缓存",
+      "sessionInput": "会话输入",
+      "sessionOutput": "会话输出",
+      "cacheHit": "缓存命中",
+      "sessionCost": "会话费用",
+      "window": "窗口",
+      "footerLastRequest": "上次请求反映当前上下文大小；会话合计为累计值。",
+      "footerApprox": "Token 数量为近似值（字符数 / 4）。"
+    },
+    "switchSession": "切换会话",
+    "newChat": "新对话",
+    "newSession": "新建会话",
+    "deleteSession": "删除会话",
+    "empty": {
+      "title": "向 Terax 提问",
+      "description": "Terax 能看到当前活动的终端：cwd、最近的命令和输出。"
+    }
+  },
+  "toolApproval": {
+    "writeFile": "写入文件",
+    "editFile": "编辑文件",
+    "editFileBatch": "编辑文件（批量）",
+    "createDirectory": "创建目录",
+    "runShellCommand": "运行 shell 命令",
+    "spawnBackgroundProcess": "启动后台进程",
+    "needsApproval": "需要批准",
+    "deny": "拒绝",
+    "approve": "批准",
+    "lines_one": "{{count}} 行",
+    "lines_other": "{{count}} 行",
+    "reviewInDiffTab": " · 在 diff 标签页中查看",
+    "replaceAll": " · 全部替换",
+    "diffLines_one": "−{{removed}} / +{{added}} 行",
+    "diffLines_other": "−{{removed}} / +{{added}} 行",
+    "edits_one": "{{count}} 处编辑 · 在 diff 标签页中查看",
+    "edits_other": "{{count}} 处编辑 · 在 diff 标签页中查看"
+  },
+  "composer": {
+    "placeholder": "向 Terax 提问   -   输入 # 使用片段和命令，输入 @ 引用文件",
+    "listening": "正在聆听…",
+    "transcribing": "正在转写…"
+  },
+  "statusBar": {
+    "openAiAgent": "打开 AI agent",
+    "openAiAgentTitle": "打开 AI agent",
+    "attachFileOrImage": "附加文件或图片",
+    "voiceNeedsKey": "语音功能需要 {{provider}} 密钥",
+    "stopAndTranscribe": "停止并转写",
+    "transcribing": "正在转写…",
+    "voiceInput": "语音输入",
+    "closeAiPanel": "关闭 AI 面板",
+    "miniWindowOpen": "迷你窗口已打开",
+    "openConversation": "打开对话",
+    "stop": "停止",
+    "send": "发送 (Enter)",
+    "searchPlaceholder": "搜索模型、提供方、能力…",
+    "tabAll": "全部",
+    "tabFavorites": "收藏",
+    "tabRecent": "最近",
+    "allProviders": "所有提供方",
+    "notConfigured": "{{label}}：未配置",
+    "openaiCompatible": "OpenAI Compatible",
+    "modelTitle": "模型：{{label}}",
+    "modelNoKey": "{{label}}：未配置密钥",
+    "noFavorites": "还没有收藏，给模型加星即可固定到这里。",
+    "noRecent": "没有最近使用的模型。",
+    "noMatch": "没有匹配的模型。",
+    "configureCta": "配置 {{label}} 以使用这些模型。",
+    "open": "打开",
+    "unfavorite": "取消收藏",
+    "favorite": "收藏",
+    "intelligence": "智能",
+    "speed": "速度",
+    "affordability": "性价比",
+    "capBarTitle": "{{label}}：{{value}}/5"
+  },
+  "chat": {
+    "editorSelection": "编辑器选区",
+    "terminalSelection": "终端选区",
+    "emptyTitle": "向 Terax 提问",
+    "emptyDescription": "解释命令输出、修复错误、生成片段或运行任务。",
+    "thinking": "思考中…",
+    "continuePrompt": "从你停下的地方继续。不要复述，直接接着做。",
+    "somethingWentWrong": "出错了。",
+    "dismiss": "忽略",
+    "contextCompacted_one": "上下文已压缩，省略了 {{count}} 条较早的工具结果以节省 token。",
+    "contextCompacted_other": "上下文已压缩，省略了 {{count}} 条较早的工具结果以节省 token。",
+    "hitStepLimit": "已达到步数上限。继续以接着运行。",
+    "continue": "继续",
+    "read": "读取",
+    "readFiles_one": "{{count}} 个文件",
+    "readFiles_other": "{{count}} 个文件"
+  },
+  "statusPill": {
+    "openAiLog": "打开 AI 日志",
+    "error": "错误",
+    "thinking": "思考中…"
+  },
+  "slashCommands": {
+    "planModeOff": "计划模式已关闭",
+    "planModeOn": "计划模式已开启",
+    "claudeCodeUsage": "用法：/claude-code <request>",
+    "initLabel": "初始化工作区",
+    "planLabel": "计划模式",
+    "claudeCodeLabel": "委派给 Claude Code"
+  },
+  "whisper": {
+    "transcriptionFailed": "转写失败",
+    "microphoneAccessFailed": "麦克风访问失败"
+  }
+}

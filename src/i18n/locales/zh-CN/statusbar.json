@@ -1,0 +1,20 @@
+{
+  "private": {
+    "label": "私密：对 AI 隐藏",
+    "tooltip": "AI 无法看到此终端的输出。可用于密钥、SSH，或任何你不想发送给模型的内容。"
+  },
+  "cwd": {
+    "noDirectory": "无目录",
+    "noSubfolders": "没有子文件夹",
+    "showHiddenFolders": "显示隐藏文件夹"
+  },
+  "workspace": {
+    "environment": "工作区环境",
+    "windows": "Windows",
+    "windowsLocal": "Windows 本地",
+    "loadingWslDistros": "正在加载 WSL 发行版...",
+    "wslUnavailable": "WSL 不可用",
+    "noWslDistros": "未找到 WSL 发行版",
+    "wslDistro": "WSL: {{distro}}"
+  }
+}

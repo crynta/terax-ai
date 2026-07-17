@@ -1,0 +1,24 @@
+{
+  "name": {
+    "coder": "编码助手",
+    "architect": "架构师",
+    "reviewer": "代码审查",
+    "security": "安全",
+    "designer": "设计师"
+  },
+  "desc": {
+    "coder": "通用编码助手。编写、编辑并运行代码。",
+    "architect": "设计与权衡取舍。先规划再写代码。",
+    "reviewer": "审查代码变更的正确性、性能与安全性。",
+    "security": "对变更进行威胁建模并标记漏洞。",
+    "designer": "UI/UX 评审与优化。"
+  },
+  "trigger": {
+    "title": "Agent：{{name}}"
+  },
+  "group": {
+    "builtIn": "内置",
+    "custom": "自定义"
+  },
+  "manageAgents": "管理 Agent…"
+}

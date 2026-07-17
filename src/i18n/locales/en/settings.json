@@ -1,0 +1,358 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "remove": "Remove",
+    "edit": "Edit",
+    "delete": "Delete",
+    "connected": "Connected",
+    "loading": "Loading…"
+  },
+  "tabs": {
+    "general": "General",
+    "editor": "Editor",
+    "themes": "Themes",
+    "shortcuts": "Shortcuts",
+    "models": "Models",
+    "agents": "Agents",
+    "about": "About"
+  },
+  "general": {
+    "header": {
+      "title": "General",
+      "description": "Mode, terminal, and startup."
+    },
+    "appearance": {
+      "label": "Appearance",
+      "system": "System",
+      "light": "Light",
+      "dark": "Dark",
+      "seeThemes": "For theme, background and customization, see the <strong>Themes</strong> tab."
+    },
+    "language": {
+      "label": "Language",
+      "description": "Display language for the Terax interface."
+    },
+    "zoom": {
+      "label": "Zoom",
+      "uiZoomLevel": "UI zoom level"
+    },
+    "explorer": {
+      "label": "Explorer",
+      "showHidden": {
+        "title": "Show hidden files",
+        "description": "Include dot-prefixed files and folders (.env, .gitignore, .config) in the file explorer and search."
+      },
+      "gitDecorations": {
+        "title": "Git decorations",
+        "description": "Tint changed files and dim gitignored entries in the file explorer."
+      }
+    },
+    "terminal": {
+      "label": "Terminal",
+      "webgl": {
+        "title": "Use WebGL renderer",
+        "moreInfo": "More info about WebGL renderer",
+        "tooltip": "xterm's WebGL renderer caches glyphs in a GPU texture atlas. On some macOS setups (especially with Nerd Fonts), the atlas corrupts and terminal text becomes unreadable. Turn this off as a fallback - performance dips slightly, but text renders correctly via the DOM renderer.",
+        "description": "Hardware-accelerated rendering. Turn off if text shows corruption or blank tiles."
+      },
+      "cursorBlink": {
+        "title": "Cursor blinking",
+        "description": "Blink the terminal cursor. Off by default for lower idle CPU, matching VS Code and the macOS terminal."
+      },
+      "fontFamily": {
+        "title": "Font family",
+        "description": "Nerd Font name for icons (e.g. \"CaskaydiaCove Nerd Font Mono\"). Leave blank to auto-detect.",
+        "placeholder": "Auto-detect"
+      },
+      "fontWeight": {
+        "title": "Font weight",
+        "description": "Thickness of terminal characters",
+        "normal": "Normal",
+        "medium": "Medium",
+        "semibold": "Semi-Bold",
+        "bold": "Bold"
+      },
+      "shell": {
+        "title": "Integrated terminal shell",
+        "descriptionNonIntegrated": "Command blocks and directory tracking are unavailable for this shell.",
+        "descriptionWsl": "Shell for the integrated terminal. WSL spaces use the distro login shell. Existing tabs keep their shell.",
+        "descriptionDefault": "Shell for new terminal tabs. Existing tabs keep their shell.",
+        "auto": "Auto"
+      },
+      "workspaceEnv": {
+        "title": "Workspace environment",
+        "description": "Where new spaces run, terminal and AI agent alike: Windows or a WSL distro. Existing spaces keep theirs; switch any from the status bar.",
+        "windows": "Windows",
+        "unavailable": "{{name}} (unavailable)"
+      },
+      "letterSpacing": {
+        "title": "Letter spacing",
+        "description": "Extra horizontal space between characters (px). Use negative values to tighten Nerd Fonts."
+      },
+      "fontSize": {
+        "title": "Font size",
+        "description": "Terminal text size."
+      },
+      "scrollback": {
+        "title": "Scrollback",
+        "description": "Lines of history kept per terminal. Higher uses more RAM (~3 KB / line).",
+        "lines": "{{count}} lines"
+      }
+    },
+    "agents": {
+      "label": "Agents",
+      "notifications": {
+        "title": "Coding agent notifications",
+        "description": "Alert when Claude Code or Codex running in a terminal needs your input or finishes. Desktop notification when Terax is unfocused, in-app otherwise."
+      }
+    },
+    "startup": {
+      "label": "Startup",
+      "launchAtLogin": {
+        "title": "Launch at login",
+        "description": "Open Terax automatically when you sign in."
+      },
+      "restoreWindow": {
+        "title": "Restore window position & size",
+        "description": "Reopen the main window where you left it. Applies on next launch."
+      }
+    }
+  },
+  "editor": {
+    "header": {
+      "title": "Editor",
+      "description": "Editing behavior, saving, and language servers."
+    },
+    "appearance": {
+      "label": "Appearance",
+      "fontSize": {
+        "title": "Font size",
+        "description": "Code editor text size."
+      }
+    },
+    "editing": {
+      "label": "Editing",
+      "vimMode": {
+        "title": "Vim mode",
+        "description": "Enable Vim keybindings in the code editor."
+      },
+      "wordWrap": {
+        "title": "Word wrap",
+        "description": "Wrap long lines instead of scrolling horizontally."
+      }
+    },
+    "saving": {
+      "label": "Saving",
+      "autoSave": {
+        "title": "Auto save",
+        "description": "Automatically save files after a delay when changes are detected."
+      },
+      "autoSaveDelay": {
+        "title": "Auto save delay",
+        "description": "Delay before unsaved changes are saved automatically.",
+        "unit": "ms"
+      },
+      "formatOnSave": {
+        "title": "Format on save",
+        "description": "Format the file on explicit save (Cmd+S / :w) with the formatter below."
+      },
+      "formatter": {
+        "title": "Formatter",
+        "description": "Language server formats the buffer before writing; Biome and Prettier run on the saved file from your PATH.",
+        "lsp": "Language server"
+      }
+    },
+    "lsp": {
+      "label": "Language servers",
+      "addCustomServer": "Add custom server",
+      "statusChecking": "checking...",
+      "statusNotFound": "not found on PATH",
+      "detectAgain": "Detect again",
+      "removeServer": "Remove server",
+      "dialogTitle": "Custom language server",
+      "fieldName": "Name",
+      "fieldCommand": "Command",
+      "fieldArguments": "Arguments",
+      "fieldExtensions": "File extensions",
+      "fieldLanguageId": "LSP language id",
+      "fieldRootMarkers": "Root markers",
+      "addServer": "Add server"
+    }
+  },
+  "themes": {
+    "header": {
+      "title": "Themes",
+      "description": "Theme, background image, and customization."
+    },
+    "theme": {
+      "label": "Theme",
+      "create": "Create",
+      "import": "Import .terax-theme",
+      "editAria": "Edit {{name}}",
+      "removeAria": "Remove {{name}}"
+    },
+    "editorTheme": {
+      "label": "Editor theme",
+      "description": "Syntax colors for the code editor. Auto follows the app theme.",
+      "auto": "Auto (match app theme)"
+    },
+    "background": {
+      "label": "Background",
+      "remove": "Remove",
+      "replace": "Replace image",
+      "choose": "Choose image",
+      "opacity": "Opacity",
+      "blur": "Blur",
+      "dropHint": "Drop an image here or pick one. Stored locally; doesn't affect the default look until set."
+    }
+  },
+  "shortcuts": {
+    "header": {
+      "title": "Shortcuts",
+      "description": "View and customize keyboard shortcuts."
+    },
+    "resetAll": "Reset All",
+    "searchPlaceholder": "Search shortcuts...",
+    "unassigned": "Unassigned",
+    "recording": "Recording...",
+    "escToCancel": "(Esc to cancel)",
+    "resetToDefault": "Reset to default",
+    "clearShortcut": "Clear shortcut",
+    "resetDialog": {
+      "title": "Reset all shortcuts?",
+      "description": "This will revert all your custom keyboard shortcuts to their factory defaults. This action cannot be undone.",
+      "cancel": "Cancel"
+    }
+  },
+  "models": {
+    "header": {
+      "title": "Models",
+      "description": "Connect the providers you use. Keys live in your OS keychain and are used only by Terax."
+    },
+    "defaults": {
+      "label": "Defaults",
+      "chatModel": "Chat model",
+      "autocomplete": "Autocomplete",
+      "notConnectedHint": "{{provider}} isn't connected - add it below."
+    },
+    "voice": {
+      "title": "Voice input",
+      "provider": "Provider",
+      "model": "Model",
+      "baseUrl": "Base URL",
+      "descOpenai": "Uses your official OpenAI API key and the Whisper model for transcription.",
+      "descGroq": "Uses your official Groq API key and Groq's Whisper endpoint for transcription.",
+      "descWhispercpp": "Connects to a local Whisper.cpp server for fully offline transcription."
+    },
+    "providers": {
+      "label": "Providers",
+      "addProvider": "Add provider",
+      "cloud": "Cloud",
+      "localCustom": "Local & custom",
+      "openaiCompatible": "OpenAI Compatible",
+      "emptyTitle": "No providers connected yet.",
+      "emptyHint": "Click \"Add provider\" to connect a cloud or local model source.",
+      "notConnected": "not connected"
+    },
+    "card": {
+      "docs": "Docs",
+      "getKey": "Get key",
+      "removeProvider": "Remove provider",
+      "removeEndpoint": "Remove endpoint",
+      "test": "Test",
+      "testing": "Testing…",
+      "reachable": "Reachable - server responded.",
+      "unreachable": "Could not reach the server.",
+      "baseUrl": "Base URL",
+      "modelId": "Model ID",
+      "context": "Context",
+      "tokens": "tokens",
+      "apiKey": "API key",
+      "name": "Name",
+      "namePlaceholder": "My endpoint",
+      "removeKey": "Remove key",
+      "replace": "Replace",
+      "showKey": "Show key",
+      "hideKey": "Hide key",
+      "pasteKey": "Paste API key",
+      "enterKey": "Enter your API key.",
+      "keyPrefixHint": "{{provider}} keys start with \"{{prefix}}\".",
+      "failedSave": "Failed to save: {{error}}",
+      "optionalKeyPlaceholder": "Optional - leave empty for unauthenticated endpoints"
+    }
+  },
+  "agents": {
+    "header": {
+      "title": "Agents",
+      "description": "Personas and snippets the AI uses. Switch agents from the input bar."
+    },
+    "customInstructions": {
+      "label": "Custom instructions",
+      "placeholder": "e.g. Always reply in concise bullet points. Prefer pnpm over npm. My machine is an M-series Mac."
+    },
+    "list": {
+      "label": "Agents",
+      "newAgent": "New agent",
+      "newAgentName": "New agent",
+      "builtIn": "Built-in",
+      "active": "Active",
+      "useAgent": "Use agent"
+    },
+    "snippets": {
+      "label": "Snippets",
+      "description": "Reusable instructions you can drop into any prompt with <code>#handle</code>.",
+      "newSnippet": "New snippet",
+      "empty": "No snippets yet. Create one and insert it with <code>#handle</code> in the AI input."
+    },
+    "agentDialog": {
+      "newTitle": "New agent",
+      "editTitle": "Edit agent",
+      "icon": "Icon",
+      "name": "Name",
+      "namePlaceholder": "e.g. Test Engineer",
+      "description": "Description",
+      "descriptionPlaceholder": "One line - shown in the agent picker",
+      "instructions": "Instructions",
+      "instructionsPlaceholder": "Persona & rules. Appended to Terax's core system prompt."
+    },
+    "snippetDialog": {
+      "newTitle": "New snippet",
+      "editTitle": "Edit snippet",
+      "handle": "Handle",
+      "handlePlaceholder": "review",
+      "name": "Name",
+      "namePlaceholder": "e.g. Pre-merge review checklist",
+      "description": "Description",
+      "descriptionPlaceholder": "One line - shown in the # picker",
+      "content": "Content",
+      "contentPlaceholder": "Inserted into the prompt as a <snippet> block when you use #handle.",
+      "errRequired": "Required.",
+      "errFormat": "Lowercase letters, digits, and dashes only.",
+      "errInUse": "Already in use."
+    }
+  },
+  "about": {
+    "header": {
+      "title": "About"
+    },
+    "tagline": "Open-source AI-native terminal emulator",
+    "build": "Build",
+    "bundleId": "Bundle ID",
+    "license": "License",
+    "sourceCode": "Source code",
+    "website": "Website",
+    "viewOnGitHub": "View on GitHub",
+    "reportIssue": "Report an issue",
+    "update": {
+      "upToDate": "You're up to date",
+      "checkFailed": "Check failed - retry",
+      "checking": "Checking…",
+      "downloading": "Downloading…",
+      "restartToInstall": "Restart to install",
+      "install": "Install v{{version}}",
+      "updateTo": "Update to v{{version}}",
+      "checkForUpdates": "Check for updates"
+    }
+  }
+}

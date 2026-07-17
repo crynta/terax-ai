@@ -12,8 +12,10 @@ import {
   Notification03Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import i18n from "@/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AgentIcon } from "../lib/agentIcon";
 import { displayAgent } from "../lib/format";
 import type { AgentNotification, AgentStatus } from "../lib/types";
@@ -26,12 +28,12 @@ type Props = {
 
 function relativeTime(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return "just now";
+  if (s < 60) return i18n.t("agents:time.justNow");
   const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ago`;
+  if (m < 60) return i18n.t("agents:time.minutesAgo", { count: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  if (h < 24) return i18n.t("agents:time.hoursAgo", { count: h });
+  return i18n.t("agents:time.daysAgo", { count: Math.floor(h / 24) });
 }
 
 function StatusRow({
@@ -43,6 +45,7 @@ function StatusRow({
   status: AgentStatus;
   onClick: () => void;
 }) {
+  const { t } = useTranslation("agents");
   const waiting = status === "waiting";
   return (
     <button
@@ -65,17 +68,11 @@ function StatusRow({
         )}
       >
         {waiting ? <span className="size-1.5 rounded-full bg-primary" /> : null}
-        {waiting ? "waiting" : "working"}
+        {waiting ? t("status.waiting") : t("status.working")}
       </span>
     </button>
   );
 }
-
-const NOTIF_LABEL: Record<AgentNotification["kind"], string> = {
-  attention: "needs input",
-  finished: "finished",
-  error: "failed",
-};
 
 const HOOK_AGENTS = ["claude", "codex", "gemini"] as const;
 
@@ -92,6 +89,7 @@ function HookAgentRow({
   installing: boolean;
   onEnable: () => void;
 }) {
+  const { t } = useTranslation("agents");
   return (
     <div className="flex items-center gap-2 px-2 py-1">
       <AgentIcon agent={id} size={14} className="shrink-0 text-muted-foreground" />
@@ -105,7 +103,7 @@ function HookAgentRow({
             size={13}
             strokeWidth={1.75}
           />
-          enabled
+          {t("hook.enabled")}
         </span>
       ) : (
         <button
@@ -122,7 +120,7 @@ function HookAgentRow({
               className="animate-spin"
             />
           ) : null}
-          {installing ? "Enabling" : "Enable"}
+          {installing ? t("hook.enabling") : t("hook.enable")}
         </button>
       )}
     </div>
@@ -136,6 +134,7 @@ function NotificationRow({
   n: AgentNotification;
   onClick: () => void;
 }) {
+  const { t } = useTranslation("agents");
   return (
     <button
       type="button"
@@ -161,7 +160,7 @@ function NotificationRow({
       </span>
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">
         {displayAgent(n.agent)}{" "}
-        <span className="text-muted-foreground">{NOTIF_LABEL[n.kind]}</span>
+        <span className="text-muted-foreground">{t(`notif.${n.kind}`)}</span>
       </span>
       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
         {relativeTime(n.at)}
@@ -171,6 +170,7 @@ function NotificationRow({
 }
 
 export function NotificationBell({ onActivate, onActivateLocal }: Props) {
+  const { t } = useTranslation("agents");
   const [open, setOpen] = useState(false);
   const [hooks, setHooks] = useState<Record<string, boolean>>({});
   const [installing, setInstalling] = useState<string | null>(null);
@@ -244,7 +244,7 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
           variant="ghost"
           size="icon"
           className="relative size-7 shrink-0 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          title="Agent notifications"
+          title={t("bell.title")}
         >
           <HugeiconsIcon
             icon={Notification01Icon}
@@ -265,12 +265,12 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
       >
         <div className="flex h-10 items-center gap-2 px-3 pt-0.5">
           <span className="flex gap-1 text-[13px] text-foreground">
-            Notifications
+            {t("bell.heading")}
           </span>
           <div className="ml-auto flex items-center gap-2">
             {activeCount > 0 ? (
               <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-                {activeCount} active
+                {t("bell.active", { count: activeCount })}
               </span>
             ) : null}
             {notifications.length > 0 ? (
@@ -279,7 +279,7 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
                 onClick={clearNotifications}
                 className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
-                Clear
+                {t("bell.clear")}
               </button>
             ) : null}
           </div>
@@ -287,9 +287,9 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
 
         {empty ? (
           <div className="border-t border-border/60 px-3 py-5 text-center text-xs leading-relaxed text-muted-foreground">
-            No agent activity yet.
+            {t("bell.emptyLine1")}
             <br />
-            Run the Terax agent or a coding agent to track it here.
+            {t("bell.emptyLine2")}
           </div>
         ) : (
           <div className="max-h-80 overflow-y-auto border-t border-border/60 p-1">
@@ -324,7 +324,7 @@ export function NotificationBell({ onActivate, onActivateLocal }: Props) {
         <div className="border-t border-border/60 p-1">
           <div className="flex items-center gap-1.5 px-2 pt-1 pb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70">
             <HugeiconsIcon icon={Notification03Icon} size={11} strokeWidth={2} />
-            Agent alerts
+            {t("bell.alerts")}
           </div>
           {HOOK_AGENTS.map((id) => (
             <HookAgentRow

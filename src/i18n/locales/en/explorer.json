@@ -1,0 +1,22 @@
+{
+  "noCurrentDirectory": "No current directory",
+  "searchFiles": "Search files",
+  "newFile": "New file",
+  "newFolder": "New folder",
+  "clearSearch": "Clear search",
+  "searchPlaceholder": "Search files…",
+  "searching": "Searching…",
+  "noMatches": "No matches",
+  "partialResults": "Showing partial results - refine your query.",
+  "menu": {
+    "open": "Open",
+    "openInTerminal": "Open in Terminal",
+    "revealInFinder": "Reveal in Finder",
+    "newFile": "New File",
+    "newFolder": "New Folder",
+    "copyPath": "Copy Path",
+    "copyRelativePath": "Copy Relative Path",
+    "attachToAgent": "Attach to Agent",
+    "confirmDelete": "Click again to confirm"
+  }
+}

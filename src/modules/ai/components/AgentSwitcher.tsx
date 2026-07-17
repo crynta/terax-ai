@@ -20,7 +20,12 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { AgentIconId } from "../lib/agents";
+import { useTranslation } from "react-i18next";
+import {
+  type AgentIconId,
+  agentDisplayDescription,
+  agentDisplayName,
+} from "../lib/agents";
 import { useAgentsStore } from "../store/agentsStore";
 
 const ICONS: Record<AgentIconId, typeof CodeIcon> = {
@@ -33,6 +38,7 @@ const ICONS: Record<AgentIconId, typeof CodeIcon> = {
 };
 
 export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
+  const { t } = useTranslation("aiAgents");
   // Subscribe to customAgents + activeId so the trigger updates live.
   const customAgents = useAgentsStore((s) => s.customAgents);
   const activeId = useAgentsStore((s) => s.activeId);
@@ -57,10 +63,12 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
               ? "flex h-6 items-center gap-1 rounded-md border border-border/60 bg-card px-1.5 text-[10.5px] text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-foreground"
               : "text-xs mr-1",
           )}
-          title={`Agent: ${active.name}`}
+          title={t("trigger.title", { name: agentDisplayName(active) })}
         >
           <HugeiconsIcon icon={ActiveIcon} size={11} strokeWidth={1.75} />
-          <span className="max-w-[7rem] truncate">{active.name}</span>
+          <span className="max-w-[7rem] truncate">
+            {agentDisplayName(active)}
+          </span>
           <HugeiconsIcon
             icon={ArrowDown01Icon}
             size={10}
@@ -71,7 +79,7 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-60">
         <div className="px-2 pt-1.5 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-          Built-in
+          {t("group.builtIn")}
         </div>
         {builtIn.map((a) => {
           const Icon = ICONS[a.icon] ?? SparklesIcon;
@@ -96,9 +104,9 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
                 )}
               />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span>{a.name}</span>
+                <span>{agentDisplayName(a)}</span>
                 <span className="line-clamp-1 text-[10.5px] text-muted-foreground">
-                  {a.description}
+                  {agentDisplayDescription(a)}
                 </span>
               </span>
               {a.id === activeId ? (
@@ -116,7 +124,7 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
           <>
             <DropdownMenuSeparator />
             <div className="px-2 pt-1 pb-1 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-              Custom
+              {t("group.custom")}
             </div>
             {custom.map((a) => {
               const Icon = ICONS[a.icon] ?? SparklesIcon;
@@ -136,10 +144,10 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
                     className="mt-0.5 text-muted-foreground"
                   />
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate">{a.name}</span>
+                    <span className="truncate">{agentDisplayName(a)}</span>
                     {a.description ? (
                       <span className="line-clamp-1 text-[10.5px] text-muted-foreground">
-                        {a.description}
+                        {agentDisplayDescription(a)}
                       </span>
                     ) : null}
                   </span>
@@ -162,7 +170,7 @@ export function AgentSwitcher({ isMiniWindow }: { isMiniWindow?: boolean }) {
           className="gap-2 text-[12px] text-muted-foreground"
         >
           <HugeiconsIcon icon={Settings01Icon} size={12} strokeWidth={1.75} />
-          Manage agents…
+          {t("manageAgents")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

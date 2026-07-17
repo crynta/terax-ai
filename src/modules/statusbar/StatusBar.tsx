@@ -13,6 +13,7 @@ import { LspStatusPill } from "@/modules/lsp";
 import type { WorkspaceEnv } from "@/modules/workspace";
 import { IncognitoIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { useTranslation } from "react-i18next";
 import { CwdBreadcrumb } from "./CwdBreadcrumb";
 import { DiagnosticsBadge } from "./DiagnosticsBadge";
 import { WorkspaceEnvSelector } from "./WorkspaceEnvSelector";
@@ -42,6 +43,7 @@ export function StatusBar({
   hasComposer,
   privateActive,
 }: Props) {
+  const { t } = useTranslation("statusbar");
   const panelOpen = useChatStore((s) => s.panelOpen);
 
   return (
@@ -56,15 +58,14 @@ export function StatusBar({
             <TooltipTrigger asChild>
               <span className="flex shrink-0 cursor-default items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10.5px] font-medium text-amber-700 dark:text-amber-400">
                 <HugeiconsIcon icon={IncognitoIcon} size={11} strokeWidth={2} />
-                <span>Private: hidden from AI</span>
+                <span>{t("private.label")}</span>
               </span>
             </TooltipTrigger>
             <TooltipContent
               side="top"
               className="max-w-64 text-[11px] leading-relaxed"
             >
-              AI can't see this terminal's output. Use it for secrets, SSH, or
-              anything you don't want sent to the model.
+              {t("private.tooltip")}
             </TooltipContent>
           </Tooltip>
         ) : null}

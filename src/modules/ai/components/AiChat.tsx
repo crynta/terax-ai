@@ -41,6 +41,7 @@ import type {
   UIMessagePart,
 } from "ai";
 import { memo, useCallback, useMemo } from "react";
+import i18n from "@/i18n";
 import { AiToolApproval } from "./AiToolApproval";
 
 function CommandSnippet({ name }: { name: string }) {
@@ -156,7 +157,9 @@ function chipIcon(c: ContextChip) {
 
 function chipLabel(c: ContextChip): string {
   if (c.kind === "selection") {
-    return c.source === "editor" ? "Editor selection" : "Terminal selection";
+    return c.source === "editor"
+      ? i18n.t("ai:chat.editorSelection")
+      : i18n.t("ai:chat.terminalSelection");
   }
   if (c.kind === "file") return c.name;
   return `#${c.name}`;

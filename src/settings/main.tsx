@@ -1,4 +1,6 @@
 import "../styles/globals.css";
+import "@/i18n";
+import { preloadEn } from "@/i18n";
 
 import { USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { ThemeProvider } from "@/modules/theme";
@@ -9,6 +11,9 @@ import { SettingsApp } from "./SettingsApp";
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";
 }
+
+// Preload panel en locale bundles in the background (non-blocking).
+void preloadEn();
 
 ReactDOM.createRoot(
   document.getElementById("settings-root") as HTMLElement,

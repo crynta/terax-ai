@@ -1,0 +1,22 @@
+{
+  "noCurrentDirectory": "当前无目录",
+  "searchFiles": "搜索文件",
+  "newFile": "新建文件",
+  "newFolder": "新建文件夹",
+  "clearSearch": "清除搜索",
+  "searchPlaceholder": "搜索文件…",
+  "searching": "搜索中…",
+  "noMatches": "无匹配结果",
+  "partialResults": "仅显示部分结果，请细化搜索条件。",
+  "menu": {
+    "open": "打开",
+    "openInTerminal": "在终端中打开",
+    "revealInFinder": "在访达中显示",
+    "newFile": "新建文件",
+    "newFolder": "新建文件夹",
+    "copyPath": "复制路径",
+    "copyRelativePath": "复制相对路径",
+    "attachToAgent": "附加到 Agent",
+    "confirmDelete": "再次点击以确认"
+  }
+}

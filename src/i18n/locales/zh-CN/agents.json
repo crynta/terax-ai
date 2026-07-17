@@ -1,0 +1,38 @@
+{
+  "time": {
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前",
+    "daysAgo": "{{count}} 天前"
+  },
+  "status": {
+    "waiting": "等待中",
+    "working": "运行中"
+  },
+  "notif": {
+    "attention": "需要输入",
+    "finished": "已完成",
+    "error": "失败"
+  },
+  "hook": {
+    "enabled": "已启用",
+    "enabling": "启用中",
+    "enable": "启用"
+  },
+  "bell": {
+    "title": "Agent 通知",
+    "heading": "通知",
+    "active": "{{count}} 个进行中",
+    "clear": "清除",
+    "emptyLine1": "暂无 Agent 活动。",
+    "emptyLine2": "运行 Terax agent 或编码 agent 即可在此追踪。",
+    "alerts": "Agent 提醒"
+  },
+  "toast": {
+    "open": "打开"
+  },
+  "signal": {
+    "needsInput": "{{name}} 需要你的输入",
+    "finished": "{{name}} 已完成"
+  }
+}

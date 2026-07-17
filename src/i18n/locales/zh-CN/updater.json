@@ -1,0 +1,12 @@
+{
+  "updateReady": "更新已就绪",
+  "downloading": "正在下载更新…",
+  "available": "Terax v{{version}} 可用",
+  "restartToFinish": "重启 Terax 以完成安装。",
+  "progress": "{{percent}}% - {{size}}",
+  "manualDescription": "你当前使用的是 v{{currentVersion}}。请选择你的发行版并运行相应命令，或从 GitHub 获取安装包。",
+  "newVersionReady": "新版本已可安装。",
+  "later": "稍后",
+  "installRestart": "安装并重启",
+  "downloadPackage": "下载安装包"
+}

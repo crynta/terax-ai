@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import { shortcutLabel } from "@/modules/shortcuts";
 import { toast } from "sonner";
 import { AgentIcon } from "../lib/agentIcon";
@@ -23,7 +24,7 @@ export function showAgentToast({ agent, title, body, onActivate }: AgentToastArg
       body
     ),
     icon: <AgentIcon agent={agent} size={18} />,
-    action: { label: "Open", onClick: onActivate },
+    action: { label: i18n.t("agents:toast.open"), onClick: onActivate },
     duration: 6000,
   });
 }

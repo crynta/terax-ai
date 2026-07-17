@@ -1,0 +1,14 @@
+{
+  "titleWithShortcut": "Spaces · {{shortcut}}",
+  "title": "Spaces",
+  "heading": "Spaces",
+  "newSpace": "新建 space",
+  "collapse": "折叠",
+  "expand": "展开",
+  "renameSpace": "重命名 space",
+  "newTab": "新建标签页",
+  "deleteSpace": "删除 space",
+  "dropToMoveHere": "拖放到此处以移动",
+  "noTabs": "暂无标签页",
+  "closeTab": "关闭标签页"
+}

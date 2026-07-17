@@ -1,3 +1,4 @@
+pub mod menu;
 pub mod modules;
 
 use modules::{agent, fs, git, history, lsp, net, pty, secrets, shell, workspace};
@@ -201,6 +202,12 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .setup(|_app| {
+            // Localized native menu bar, built from the persisted `language`
+            // preference. No-op off macOS.
+            #[cfg(target_os = "macos")]
+            {
+                let _ = menu::build_menu(_app.handle());
+            }
             // macOS skips parent() for the settings window, so tie its lifecycle
             // to the main window here instead. Other platforms keep parent().
             #[cfg(target_os = "macos")]
@@ -318,6 +325,7 @@ pub fn run() {
             history::history_commands,
             history::history_record,
             history::history_list,
+            menu::apply_menu_language,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

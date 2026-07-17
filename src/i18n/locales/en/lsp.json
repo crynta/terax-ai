@@ -1,0 +1,21 @@
+{
+  "startTitle": "Start {{command}} for this workspace",
+  "enableLsp": "Enable {{name}} LSP",
+  "serverStoppedTitle": "Language server stopped",
+  "pillLabel": "{{name}} LSP",
+  "serverStoppedHeading": "{{name}} language server stopped",
+  "restart": "Restart",
+  "disable": "Disable",
+  "dismissTitle": "Dismiss (you can re-enable from Settings)",
+  "installLsp": "Install {{name}} LSP",
+  "languageServer": "{{name}} language server",
+  "notFoundOnPath": "Terax found no <code>{{command}}</code> on your PATH. Install it, then check again:",
+  "copyCommandTitle": "Copy command",
+  "documentation": "Documentation",
+  "checking": "Checking…",
+  "checkAgain": "Check again",
+  "serverStartingTitle": "Language server starting",
+  "serverActiveTitle": "Language server active",
+  "runningStatus_starting": "<code>{{command}}</code> is starting for this workspace.",
+  "runningStatus_running": "<code>{{command}}</code> is running for this workspace."
+}

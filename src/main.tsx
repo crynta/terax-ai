@@ -1,5 +1,7 @@
 import "@xterm/xterm/css/xterm.css";
 import "./styles/globals.css";
+import "./i18n";
+import { preloadEn } from "./i18n";
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -24,6 +26,9 @@ await invoke("pty_close_all").catch(() => {});
 
 // Seed before first paint so default tab mounts at target cwd (no flicker).
 await initLaunchDir();
+
+// Preload panel en locale bundles in the background (non-blocking).
+void preloadEn();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <App />,

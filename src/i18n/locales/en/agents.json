@@ -1,0 +1,38 @@
+{
+  "time": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
+  "status": {
+    "waiting": "waiting",
+    "working": "working"
+  },
+  "notif": {
+    "attention": "needs input",
+    "finished": "finished",
+    "error": "failed"
+  },
+  "hook": {
+    "enabled": "enabled",
+    "enabling": "Enabling",
+    "enable": "Enable"
+  },
+  "bell": {
+    "title": "Agent notifications",
+    "heading": "Notifications",
+    "active": "{{count}} active",
+    "clear": "Clear",
+    "emptyLine1": "No agent activity yet.",
+    "emptyLine2": "Run the Terax agent or a coding agent to track it here.",
+    "alerts": "Agent alerts"
+  },
+  "toast": {
+    "open": "Open"
+  },
+  "signal": {
+    "needsInput": "{{name}} needs your input",
+    "finished": "{{name}} finished"
+  }
+}

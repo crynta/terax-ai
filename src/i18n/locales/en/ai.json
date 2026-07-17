@@ -1,0 +1,141 @@
+{
+  "miniWindow": {
+    "suggestions": {
+      "explainError": {
+        "label": "Explain the last error",
+        "hint": "Read the terminal buffer",
+        "text": "Explain the last error in the terminal."
+      },
+      "generateCommand": {
+        "label": "Generate a command",
+        "hint": "Tell me what you want to do",
+        "text": "Give me a command to "
+      },
+      "summarizeBuffer": {
+        "label": "Summarize buffer",
+        "hint": "Recap recent activity",
+        "text": "Summarize what just happened in the terminal."
+      }
+    },
+    "planMode": "Plan mode",
+    "queued": "· {{count}} queued",
+    "noEditsQueued": "· no edits queued",
+    "exit": "Exit",
+    "loadingSessions": "Loading sessions…",
+    "thinking": "Thinking…",
+    "closeTitle": "Close (Esc)",
+    "context": {
+      "model": "Model",
+      "lastRequest": "Last request",
+      "estimatedContext": "Estimated context",
+      "ofWhichCached": "Of which cached",
+      "sessionInput": "Session input",
+      "sessionOutput": "Session output",
+      "cacheHit": "Cache hit",
+      "sessionCost": "Session cost",
+      "window": "Window",
+      "footerLastRequest": "Last request reflects current context size; session totals are cumulative.",
+      "footerApprox": "Token count is approximate (chars / 4)."
+    },
+    "switchSession": "Switch session",
+    "newChat": "New chat",
+    "newSession": "New session",
+    "deleteSession": "Delete session",
+    "empty": {
+      "title": "Ask Terax anything",
+      "description": "Terax sees the active terminal - cwd, recent commands, and output."
+    }
+  },
+  "toolApproval": {
+    "writeFile": "Write file",
+    "editFile": "Edit file",
+    "editFileBatch": "Edit file (batch)",
+    "createDirectory": "Create directory",
+    "runShellCommand": "Run shell command",
+    "spawnBackgroundProcess": "Spawn background process",
+    "needsApproval": "needs approval",
+    "deny": "Deny",
+    "approve": "Approve",
+    "lines_one": "{{count}} line",
+    "lines_other": "{{count}} lines",
+    "reviewInDiffTab": " · review in the diff tab",
+    "replaceAll": " · replace all",
+    "diffLines_one": "−{{removed}} / +{{added}} line",
+    "diffLines_other": "−{{removed}} / +{{added}} lines",
+    "edits_one": "{{count}} edit · review in the diff tab",
+    "edits_other": "{{count}} edits · review in the diff tab"
+  },
+  "composer": {
+    "placeholder": "Ask Terax anything   -   # for snippets and commands, @ for files",
+    "listening": "Listening…",
+    "transcribing": "Transcribing…"
+  },
+  "statusBar": {
+    "openAiAgent": "Open AI agent",
+    "openAiAgentTitle": "Open AI agent",
+    "attachFileOrImage": "Attach file or image",
+    "voiceNeedsKey": "Voice needs a {{provider}} key",
+    "stopAndTranscribe": "Stop & transcribe",
+    "transcribing": "Transcribing…",
+    "voiceInput": "Voice input",
+    "closeAiPanel": "Close AI panel",
+    "miniWindowOpen": "Mini-window open",
+    "openConversation": "Open conversation",
+    "stop": "Stop",
+    "send": "Send (Enter)",
+    "searchPlaceholder": "Search models, providers, capabilities…",
+    "tabAll": "All",
+    "tabFavorites": "Favorites",
+    "tabRecent": "Recent",
+    "allProviders": "All providers",
+    "notConfigured": "{{label}} - not configured",
+    "openaiCompatible": "OpenAI Compatible",
+    "modelTitle": "Model: {{label}}",
+    "modelNoKey": "{{label}} - no key configured",
+    "noFavorites": "No favorites yet - star a model to pin it here.",
+    "noRecent": "No recently-used models.",
+    "noMatch": "No models match.",
+    "configureCta": "Configure {{label}} to use these models.",
+    "open": "Open",
+    "unfavorite": "Unfavorite",
+    "favorite": "Favorite",
+    "intelligence": "Intelligence",
+    "speed": "Speed",
+    "affordability": "Affordability",
+    "capBarTitle": "{{label}}: {{value}}/5"
+  },
+  "chat": {
+    "editorSelection": "Editor selection",
+    "terminalSelection": "Terminal selection",
+    "emptyTitle": "Ask Terax anything",
+    "emptyDescription": "Explain command output, fix errors, generate snippets, or run a task.",
+    "thinking": "Thinking…",
+    "continuePrompt": "Continue from where you stopped. Don't recap - just keep going.",
+    "somethingWentWrong": "Something went wrong.",
+    "dismiss": "Dismiss",
+    "contextCompacted_one": "Context compacted - {{count}} older tool result elided to save tokens.",
+    "contextCompacted_other": "Context compacted - {{count}} older tool results elided to save tokens.",
+    "hitStepLimit": "Hit the step limit. Continue to keep going.",
+    "continue": "Continue",
+    "read": "Read",
+    "readFiles_one": "{{count}} file",
+    "readFiles_other": "{{count}} files"
+  },
+  "statusPill": {
+    "openAiLog": "Open AI log",
+    "error": "Error",
+    "thinking": "Thinking…"
+  },
+  "slashCommands": {
+    "planModeOff": "Plan mode off",
+    "planModeOn": "Plan mode on",
+    "claudeCodeUsage": "Usage: /claude-code <request>",
+    "initLabel": "Initialize workspace",
+    "planLabel": "Plan mode",
+    "claudeCodeLabel": "Delegate to Claude Code"
+  },
+  "whisper": {
+    "transcriptionFailed": "Transcription failed",
+    "microphoneAccessFailed": "Microphone access failed"
+  }
+}
