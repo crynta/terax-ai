@@ -5,10 +5,10 @@ const ST_FINAL: u8 = b'\\';
 
 const OSC_MAX: usize = 2048;
 
-const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini"];
+const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini", "pi"];
 
 // OSC 777 marker our agent hooks emit. Legacy 3-field `notify;Terax;<event>`
-// (Claude) or 4-field `notify;Terax;<agent>;<event>` (Codex/Gemini).
+// (Claude) or 4-field `notify;Terax;<agent>;<event>` (Codex/Gemini/Pi).
 const TERAX_MARKER: &[u8] = b"notify;Terax;";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -287,6 +287,12 @@ mod tests {
     }
 
     #[test]
+    fn arms_on_pi_command() {
+        let mut d = AgentDetector::new();
+        assert_eq!(run(&mut d, &osc("133;C;pi")), vec![started("pi")]);
+    }
+
+    #[test]
     fn arms_on_pathed_and_wrapped_command() {
         let mut d = AgentDetector::new();
         assert_eq!(
@@ -347,6 +353,19 @@ mod tests {
         assert_eq!(
             run(&mut g, &osc("777;notify;Terax;gemini;finished")),
             vec![started("gemini"), Transition::Finished]
+        );
+    }
+
+    #[test]
+    fn pi_marker_self_arms_and_drives_status() {
+        let mut d = AgentDetector::new();
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;pi;working")),
+            vec![started("pi")]
+        );
+        assert_eq!(
+            run(&mut d, &osc("777;notify;Terax;pi;finished")),
+            vec![Transition::Finished]
         );
     }
 

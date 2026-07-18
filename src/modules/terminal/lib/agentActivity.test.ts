@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  aggregateAgentPhases,
   phaseForSignal,
+  tabAgentStatus,
   useAgentActivityStore,
 } from "./agentActivity";
 
@@ -20,44 +20,50 @@ describe("phaseForSignal", () => {
   });
 });
 
-describe("aggregateAgentPhases", () => {
-  it("returns null top for no matching ptys", () => {
-    expect(aggregateAgentPhases({}, [])).toEqual({ top: null, count: 0 });
-    expect(aggregateAgentPhases({ 1: "idle" }, [1])).toEqual({
-      top: null,
-      count: 0,
-    });
-  });
-
-  it("counts only agents in the winning phase", () => {
-    const phases = { 1: "working", 2: "working", 3: "attention" } as const;
-    // attention outranks working; count reflects the single attention agent.
-    expect(aggregateAgentPhases(phases, [1, 2, 3])).toEqual({
-      top: "attention",
-      count: 1,
+describe("tabAgentStatus", () => {
+  it("returns null state for no matching ptys", () => {
+    expect(tabAgentStatus({}, {}, [])).toEqual({ state: null, agent: null });
+    expect(tabAgentStatus({ 1: "idle" }, {}, [1])).toEqual({
+      state: null,
+      agent: null,
     });
   });
 
   it("orders attention > working > finished", () => {
-    expect(
-      aggregateAgentPhases({ 1: "working", 2: "finished" }, [1, 2]),
-    ).toEqual({ top: "working", count: 1 });
-    expect(aggregateAgentPhases({ 1: "finished", 2: "finished" }, [1, 2])).toEqual(
-      { top: "finished", count: 2 },
-    );
+    const phases = { 1: "working", 2: "finished", 3: "attention" } as const;
+    expect(tabAgentStatus(phases, {}, [1, 2, 3])).toEqual({
+      state: "attention",
+      agent: null,
+    });
+    expect(tabAgentStatus({ 1: "working", 2: "finished" }, {}, [1, 2])).toEqual({
+      state: "working",
+      agent: null,
+    });
+    expect(tabAgentStatus({ 1: "finished" }, {}, [1])).toEqual({
+      state: "finished",
+      agent: null,
+    });
+  });
+
+  it("surfaces the working agent name for its icon", () => {
+    const phases = { 7: "working" } as const;
+    expect(tabAgentStatus(phases, { 7: "claude" }, [7])).toEqual({
+      state: "working",
+      agent: "claude",
+    });
   });
 
   it("only considers the given ptyIds", () => {
     const phases = { 1: "attention", 2: "working" } as const;
-    expect(aggregateAgentPhases(phases, [2])).toEqual({
-      top: "working",
-      count: 1,
+    expect(tabAgentStatus(phases, { 2: "codex" }, [2])).toEqual({
+      state: "working",
+      agent: "codex",
     });
   });
 });
 
 describe("useAgentActivityStore", () => {
-  beforeEach(() => useAgentActivityStore.setState({ phases: {} }));
+  beforeEach(() => useAgentActivityStore.setState({ phases: {}, agents: {} }));
 
   it("keeps a stable reference when the phase is unchanged", () => {
     const { setPhase } = useAgentActivityStore.getState();
@@ -68,10 +74,13 @@ describe("useAgentActivityStore", () => {
     expect(useAgentActivityStore.getState().phases).toBe(first);
   });
 
-  it("drops a pty on clear", () => {
-    const { setPhase, clear } = useAgentActivityStore.getState();
+  it("drops a pty's phase and agent on clear", () => {
+    const { setPhase, setAgent, clear } = useAgentActivityStore.getState();
     setPhase(1, "attention");
+    setAgent(1, "gemini");
     clear(1);
-    expect(1 in useAgentActivityStore.getState().phases).toBe(false);
+    const state = useAgentActivityStore.getState();
+    expect(1 in state.phases).toBe(false);
+    expect(1 in state.agents).toBe(false);
   });
 });
