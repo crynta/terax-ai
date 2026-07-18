@@ -5,7 +5,7 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getLaunchDir } from "@/lib/launchDir";
+import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
@@ -90,6 +90,7 @@ import {
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -543,6 +544,23 @@ export default function App() {
     },
     [openFileTab, newMarkdownTab],
   );
+
+  // "Open With" files arrive via the event (warm start) and get_launch_files
+  // (cold start, before this listener attaches). Backend already authorized
+  // each parent; openFileTab dedupes by path, so both paths can't double-open.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const openAll = (paths: string[]) => {
+      for (const path of paths) handleOpenFile(path, true);
+    };
+    (async () => {
+      unlisten = await listen<string[]>("terax:open-file", (e) => {
+        openAll(e.payload);
+      });
+      openAll(await consumeLaunchFiles());
+    })();
+    return () => unlisten?.();
+  }, [handleOpenFile]);
 
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
@@ -1272,6 +1290,7 @@ export default function App() {
               onCd={sendCd}
               onWorkspaceChange={handleWorkspaceChange}
               onOpenMini={openMini}
+              onOpenAi={togglePanelAndFocus}
               hasComposer={hasComposer}
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true

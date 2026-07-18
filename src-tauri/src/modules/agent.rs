@@ -59,6 +59,32 @@ const AGENTS: &[AgentSpec] = &[
     },
 ];
 
+const PI_EXTENSION_DIR: &str = ".pi/agent/extensions";
+const PI_EXTENSION_FILE: &str = "terax-notifications.ts";
+const PI_EXTENSION_MARKER: &str = "terax-pi-notifications-v1";
+const PI_STATUS_NEEDLES: [&str; 6] = [
+    PI_EXTENSION_MARKER,
+    "agent_start",
+    "agent_settled",
+    "notify;Terax;pi;${event}",
+    "emit(\"working\")",
+    "emit(\"finished\")",
+];
+const PI_EXTENSION: &str = r#"// terax-pi-notifications-v1
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+export default function (pi: ExtensionAPI) {
+  const emit = (event: "working" | "finished") => {
+    if (process.env.TERAX_TERMINAL) {
+      process.stdout.write(`\u001b]777;notify;Terax;pi;${event}\u0007`);
+    }
+  };
+
+  pi.on("agent_start", () => emit("working"));
+  pi.on("agent_settled", () => emit("finished"));
+}
+"#;
+
 // Substrings identifying a hook command as ours, across every form we've ever
 // emitted (legacy /dev/tty Claude, current TerminalSequence, Osc, Windows
 // helper). Used to prune our own groups before reinserting so installs are
@@ -175,15 +201,76 @@ fn existing_config(contents: Option<&str>, path: &std::path::Path) -> Result<Val
     }
 }
 
-fn settings_path(spec: &AgentSpec) -> Result<std::path::PathBuf, String> {
+fn home_path(dir: &str, file: &str) -> Result<std::path::PathBuf, String> {
     Ok(dirs::home_dir()
         .ok_or_else(|| "could not resolve home dir".to_string())?
-        .join(spec.dir)
-        .join(spec.file))
+        .join(dir)
+        .join(file))
+}
+
+fn settings_path(spec: &AgentSpec) -> Result<std::path::PathBuf, String> {
+    home_path(spec.dir, spec.file)
+}
+
+fn pi_extension_path() -> Result<std::path::PathBuf, String> {
+    home_path(PI_EXTENSION_DIR, PI_EXTENSION_FILE)
+}
+
+fn pi_extension_contents(
+    existing: Option<&str>,
+    path: &std::path::Path,
+) -> Result<&'static str, String> {
+    if existing.is_some_and(|s| !s.trim().is_empty() && !s.contains(PI_EXTENSION_MARKER)) {
+        return Err(format!(
+            "{} is not managed by Terax; refusing to overwrite",
+            path.display()
+        ));
+    }
+    Ok(PI_EXTENSION)
+}
+
+fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    let tmp = path.with_extension("terax-tmp");
+    std::fs::write(&tmp, contents).map_err(|e| format!("write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("rename into {}: {e}", path.display())
+    })
+}
+
+fn pi_extension_write_path(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            std::fs::canonicalize(path).map_err(|e| format!("resolve {}: {e}", path.display()))
+        }
+        Ok(_) => Ok(path.to_path_buf()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(e) => Err(format!("inspect {}: {e}", path.display())),
+    }
+}
+
+fn enable_pi_extension_at(path: &std::path::Path) -> Result<(), String> {
+    let dir = path.parent().unwrap();
+    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    let existing = match std::fs::read_to_string(path) {
+        Ok(s) if s == PI_EXTENSION => return Ok(()),
+        Ok(s) => Some(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(format!("read {}: {e}", path.display())),
+    };
+    let contents = pi_extension_contents(existing.as_deref(), path)?;
+    write_atomic(&pi_extension_write_path(path)?, contents)
+}
+
+fn enable_pi_extension() -> Result<(), String> {
+    enable_pi_extension_at(&pi_extension_path()?)
 }
 
 #[tauri::command]
 pub fn agent_enable_hooks(agent: String) -> Result<(), String> {
+    if agent == "pi" {
+        return enable_pi_extension();
+    }
     let spec = find(&agent)?;
     let path = settings_path(spec)?;
     let dir = path.parent().unwrap();
@@ -197,16 +284,7 @@ pub fn agent_enable_hooks(agent: String) -> Result<(), String> {
 
     let merged = merge_hooks(existing, spec);
     let out = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())?;
-
-    // Write to a sibling temp file then rename so a crash mid-write can't leave
-    // a truncated config.
-    let tmp = path.with_extension("terax-tmp");
-    std::fs::write(&tmp, out).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("rename into {}: {e}", path.display())
-    })?;
-    Ok(())
+    write_atomic(&path, &out)
 }
 
 // The raw OSC 777 bytes the detector parses. Kept in one place so the Windows
@@ -241,6 +319,16 @@ pub fn emit_conout_marker(agent: &str, event: &str) {
 
 #[tauri::command]
 pub fn agent_hooks_status(agent: String) -> bool {
+    if agent == "pi" {
+        return pi_extension_path()
+            .ok()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .is_some_and(|content| {
+                PI_STATUS_NEEDLES
+                    .iter()
+                    .all(|needle| content.contains(needle))
+            });
+    }
     let Ok(spec) = find(&agent) else {
         return false;
     };
@@ -328,6 +416,68 @@ mod tests {
         assert_eq!(out["hooks"]["BeforeAgent"][0]["matcher"], "*");
         assert!(command(&out, "AfterAgent", 0).contains("notify;Terax;gemini;finished"));
         assert!(command(&out, "Notification", 0).contains("notify;Terax;gemini;attention"));
+    }
+
+    #[test]
+    fn pi_extension_emits_named_working_and_finished_markers() {
+        let path = std::path::Path::new("/x/terax-notifications.ts");
+        let extension = pi_extension_contents(None, path).unwrap();
+        for needle in PI_STATUS_NEEDLES {
+            assert!(extension.contains(needle), "missing {needle}");
+        }
+        assert!(extension.contains("process.env.TERAX_TERMINAL"));
+        assert!(extension.contains("process.stdout.write"));
+    }
+
+    #[test]
+    fn pi_extension_only_replaces_terax_owned_file() {
+        let path = std::path::Path::new("/x/terax-notifications.ts");
+        assert!(pi_extension_contents(Some("export const mine = true;"), path).is_err());
+        assert!(pi_extension_contents(Some(PI_EXTENSION), path).is_ok());
+        assert!(pi_extension_contents(Some("  \n"), path).is_ok());
+    }
+
+    #[test]
+    fn pi_extension_install_is_atomic_idempotent_and_preserves_foreign_files() {
+        let dir = std::env::temp_dir().join(format!("terax-pi-extension-{}", std::process::id()));
+        let path = dir.join(PI_EXTENSION_FILE);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        enable_pi_extension_at(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), PI_EXTENSION);
+        enable_pi_extension_at(&path).unwrap();
+
+        std::fs::write(&path, "export const mine = true;").unwrap();
+        assert!(enable_pi_extension_at(&path).is_err());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "export const mine = true;"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pi_extension_install_preserves_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let dir =
+            std::env::temp_dir().join(format!("terax-pi-extension-symlink-{}", std::process::id()));
+        let target = dir.join("managed.ts");
+        let path = dir.join(PI_EXTENSION_FILE);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&target, format!("// {PI_EXTENSION_MARKER}\n")).unwrap();
+        symlink(&target, &path).unwrap();
+
+        enable_pi_extension_at(&path).unwrap();
+
+        assert!(std::fs::symlink_metadata(&path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(std::fs::read_to_string(target).unwrap(), PI_EXTENSION);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
