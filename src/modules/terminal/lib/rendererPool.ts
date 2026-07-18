@@ -253,25 +253,27 @@ function createSlot(): Slot {
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
-    const lineNavigation = terminalLineNavigationSequence(event, {
-      isMac: IS_MAC,
-    });
-    if (lineNavigation) {
-      event.preventDefault();
-      if (event.type === "keydown") bridge.writeToPty(lineNavigation);
-      return false;
-    }
-    const wordNavigation = terminalWordNavigationSequence(event);
-    if (wordNavigation) {
-      event.preventDefault();
-      if (event.type === "keydown") bridge.writeToPty(wordNavigation);
-      return false;
-    }
-    const deleteSeq = terminalDeleteSequence(event, { isMac: IS_MAC });
-    if (deleteSeq) {
-      event.preventDefault();
-      if (event.type === "keydown") bridge.writeToPty(deleteSeq);
-      return false;
+    if (!isAltScreen(slot)) {
+      const lineNavigation = terminalLineNavigationSequence(event, {
+        isMac: IS_MAC,
+      });
+      if (lineNavigation) {
+        event.preventDefault();
+        if (event.type === "keydown") bridge.writeToPty(lineNavigation);
+        return false;
+      }
+      const wordNavigation = terminalWordNavigationSequence(event);
+      if (wordNavigation) {
+        event.preventDefault();
+        if (event.type === "keydown") bridge.writeToPty(wordNavigation);
+        return false;
+      }
+      const deleteSeq = terminalDeleteSequence(event, { isMac: IS_MAC });
+      if (deleteSeq) {
+        event.preventDefault();
+        if (event.type === "keydown") bridge.writeToPty(deleteSeq);
+        return false;
+      }
     }
     if (isShiftEnter(event)) {
       event.preventDefault();
