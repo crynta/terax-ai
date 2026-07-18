@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: write
     env:
-      SPEECH_CORE_REVISION: 787af90c2bd9be400de4c949f28472de73fa013d
+      SPEECH_CORE_REVISION: 2601cc3c42b983bd841273d2af8d3aa7860b1cf5
       ONNX_RUNTIME_VERSION: 1.19.0
     strategy:
       fail-fast: false
@@ -249,6 +249,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
           $build = "native/speech-bridge-core/build-release"
           $stage = Join-Path $env:GITHUB_WORKSPACE "native/dist/speech-runtime-windows"
           $archive = Join-Path $env:GITHUB_WORKSPACE "terax-speech-bridge-windows-amd64.zip"

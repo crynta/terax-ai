@@ -119,7 +119,7 @@ struct BridgeProcess {
     stdout_reader: Option<JoinHandle<()>>,
     stderr_reader: Option<JoinHandle<()>>,
     #[cfg(windows)]
-    _job: Option<crate::modules::proc::job::ProcessJob>,
+    _job: crate::modules::proc::job::ProcessJob,
 }
 
 impl BridgeProcess {
@@ -154,14 +154,17 @@ impl BridgeProcess {
             SharedChild::spawn(&mut command)
                 .map_err(|error| format!("could not start native speech runtime: {error}"))?,
         );
-        active.register(child.clone());
         #[cfg(windows)]
-        let job = crate::modules::proc::job::ProcessJob::create_for(child.id())
-            .map(Some)
-            .unwrap_or_else(|error| {
-                log::warn!("native speech job-object setup failed: {error}");
-                None
-            });
+        let job = match crate::modules::proc::job::ProcessJob::create_for(child.id()) {
+            Ok(job) => job,
+            Err(error) => {
+                terminate_child(&child);
+                return Err(format!(
+                    "could not secure native speech runtime process tree: {error}"
+                ));
+            }
+        };
+        active.register(child.clone());
         let Some(stdin) = child.take_stdin() else {
             terminate_child(&child);
             active.clear(child.id());

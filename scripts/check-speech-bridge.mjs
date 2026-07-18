@@ -6,16 +6,16 @@ if (!binary) {
   throw new Error("usage: node scripts/check-speech-bridge.mjs <binary>");
 }
 
-function request(operation) {
+function request(operation, profile) {
   const frame = Buffer.alloc(20);
   frame.write("TRXQ", 0, "ascii");
   frame.writeUInt16LE(1, 4);
   frame.writeUInt8(operation, 6);
-  frame.writeUInt8(1, 7);
+  frame.writeUInt8(profile, 7);
   return frame;
 }
 
-function response(data, offset) {
+function response(data, offset, profile) {
   if (data.length < offset + 12) throw new Error("bridge response is truncated");
   if (data.toString("ascii", offset, offset + 4) !== "TRXP") {
     throw new Error("bridge response magic is invalid");
@@ -23,7 +23,7 @@ function response(data, offset) {
   if (data.readUInt16LE(offset + 4) !== 1) {
     throw new Error("bridge protocol version does not match");
   }
-  if (data.readUInt8(offset + 6) !== 0 || data.readUInt8(offset + 7) !== 1) {
+  if (data.readUInt8(offset + 6) !== 0 || data.readUInt8(offset + 7) !== profile) {
     throw new Error("bridge returned an error response");
   }
   const length = data.readUInt32LE(offset + 8);
@@ -55,7 +55,7 @@ child.stderr.on("data", (chunk) => {
   stderr.push(kept);
   stderrBytes += kept.length;
 });
-child.stdin.end(Buffer.concat([request(2), request(3)]));
+child.stdin.end(Buffer.concat([request(2, 1), request(2, 2), request(3, 2)]));
 
 const timeout = setTimeout(() => child.kill(), 10_000);
 const exitCode = await new Promise((resolve, reject) => {
@@ -70,8 +70,14 @@ if (exitCode !== 0) {
   );
 }
 const output = Buffer.concat(stdout);
-const ready = response(output, 0);
-const bye = response(output, ready.end);
-if (ready.body !== "ready" || bye.body !== "bye" || bye.end !== output.length) {
+const nemotronReady = response(output, 0, 1);
+const parakeetReady = response(output, nemotronReady.end, 2);
+const bye = response(output, parakeetReady.end, 2);
+if (
+  nemotronReady.body !== "ready" ||
+  parakeetReady.body !== "ready" ||
+  bye.body !== "bye" ||
+  bye.end !== output.length
+) {
   throw new Error("bridge handshake response is invalid");
 }
