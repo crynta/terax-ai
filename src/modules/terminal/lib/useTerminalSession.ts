@@ -288,6 +288,10 @@ export function leafIdForPty(ptyId: number): number | null {
   return null;
 }
 
+export function ptyIdForLeaf(leafId: number): number | null {
+  return sessions.get(leafId)?.pty?.id ?? null;
+}
+
 function leafBusy(s: Session): boolean {
   return s.commandRunning || (s.pty !== null && isAgentActivePty(s.pty.id));
 }
