@@ -94,6 +94,8 @@ type Session = {
   commandRunning: boolean;
   hiddenReleaseTimer: ReturnType<typeof setTimeout> | null;
   spawnFailed: boolean;
+  // The default launch command has been written to this leaf (once, on spawn).
+  launchCommandRun: boolean;
 };
 
 const sessions = new Map<number, Session>();
@@ -467,6 +469,7 @@ function ensureSession(
     commandRunning: false,
     hiddenReleaseTimer: null,
     spawnFailed: false,
+    launchCommandRun: false,
   };
   sessions.set(leafId, session);
 
@@ -856,6 +859,16 @@ export function useTerminalSession({
         onCwd: (c) => cbRef.current.onCwd?.(c),
       });
       if (s.visibleNow && s.focusedNow && !s.blocks) focusSlot(leafId);
+      // Run the user's default launch command once, after the shell is up.
+      // writeToSession queues it if the PTY hasn't attached yet, so it lands
+      // on the fresh prompt. Skipped for blocks terminals and on re-attach.
+      if (!s.blocks && !s.launchCommandRun) {
+        const cmd = usePreferencesStore.getState().defaultLaunchCommand.trim();
+        if (cmd) {
+          s.launchCommandRun = true;
+          writeToSession(leafId, `${cmd}\r`);
+        }
+      }
     });
     return () => {
       cancelled = true;

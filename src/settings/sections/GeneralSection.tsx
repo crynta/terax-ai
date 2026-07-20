@@ -30,6 +30,7 @@ import {
   setTerminalLetterSpacing,
   setTerminalScrollback,
   setTerminalShell,
+  setDefaultLaunchCommand,
   setTerminalWebglEnabled,
   setZoomLevel,
   TERMINAL_FONT_SIZES,
@@ -88,6 +89,9 @@ export function GeneralSection() {
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
+  const defaultLaunchCommand = usePreferencesStore(
+    (s) => s.defaultLaunchCommand,
+  );
   const [shells, setShells] = useState<ShellInfo[]>([]);
   const [wslDistros, setWslDistros] = useState<{ name: string }[]>([]);
   const defaultWorkspaceEnv = usePreferencesStore((s) => s.defaultWorkspaceEnv);
@@ -317,6 +321,15 @@ export function GeneralSection() {
             </SelectContent>
           </Select>
         </SettingRow>
+        <SettingRow
+          title="Default launch command"
+          description="Run a command automatically in every new terminal tab. Leave blank for a plain shell — handy for dropping straight into OpenCode or Claude Code."
+        >
+          <LaunchCommandInput
+            value={defaultLaunchCommand}
+            onCommit={(v) => void setDefaultLaunchCommand(v)}
+          />
+        </SettingRow>
         {(wslDistros.length > 0 || defaultWorkspaceEnv !== "local") && (
           <SettingRow
             title="Workspace environment"
@@ -513,5 +526,70 @@ function FontFamilyInput({
         className="h-8 w-48 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
       />
     </SettingRow>
+  );
+}
+
+const LAUNCH_COMMAND_PRESETS = [
+  { value: "", label: "None (plain shell)" },
+  { value: "opencode", label: "OpenCode" },
+  { value: "opencode --continue", label: "OpenCode (resume)" },
+  { value: "claude", label: "Claude Code" },
+  { value: "codex", label: "Codex" },
+] as const;
+
+function LaunchCommandInput({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const commit = () => {
+    const next = draft.trim();
+    if (next !== draft) setDraft(next);
+    if (next !== value) onCommit(next);
+  };
+
+  const isPreset = LAUNCH_COMMAND_PRESETS.some((p) => p.value === draft);
+
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="text"
+        value={draft}
+        placeholder="e.g. opencode"
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        className="h-8 w-44 rounded-md border border-border bg-background px-2.5 text-[12px] outline-none focus:border-foreground/40"
+      />
+      <select
+        value={isPreset ? draft : "__custom"}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v !== "__custom") {
+            setDraft(v);
+            onCommit(v);
+          }
+        }}
+        className="h-8 rounded-md border border-border bg-background px-2 text-[12px] outline-none focus:border-foreground/40"
+        aria-label="Launch command preset"
+      >
+        {LAUNCH_COMMAND_PRESETS.map((p) => (
+          <option key={p.value} value={p.value}>
+            {p.label}
+          </option>
+        ))}
+        {!isPreset && <option value="__custom">Custom</option>}
+      </select>
+    </div>
   );
 }

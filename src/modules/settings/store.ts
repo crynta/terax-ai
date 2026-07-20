@@ -153,6 +153,8 @@ export type Preferences = {
   terminalFontFamily: string;
   terminalFontWeight: string;
   terminalShell: string;
+  /** Command run automatically in every new terminal tab. Empty = plain shell. */
+  defaultLaunchCommand: string;
   terminalLetterSpacing: number;
   terminalFontSize: number;
   terminalScrollback: number;
@@ -242,6 +244,7 @@ const KEY_TERMINAL_CURSOR_BLINK = "terminalCursorBlink";
 const KEY_TERMINAL_FONT_FAMILY = "terminalFontFamily";
 const KEY_TERMINAL_FONT_WEIGHT = "terminalFontWeight";
 const KEY_TERMINAL_SHELL = "terminalShell";
+const KEY_DEFAULT_LAUNCH_COMMAND = "defaultLaunchCommand";
 const KEY_TERMINAL_LETTER_SPACING = "terminalLetterSpacing";
 const KEY_TERMINAL_FONT_SIZE = "terminalFontSize";
 const KEY_TERMINAL_SCROLLBACK = "terminalScrollback";
@@ -323,6 +326,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   terminalFontFamily: "",
   terminalFontWeight: "normal",
   terminalShell: "",
+  defaultLaunchCommand: "",
   terminalLetterSpacing: 0,
   terminalFontSize: TERMINAL_FONT_SIZE_DEFAULT,
   terminalScrollback: TERMINAL_SCROLLBACK_DEFAULT,
@@ -479,6 +483,9 @@ export async function loadPreferences(): Promise<Preferences> {
     ),
     terminalShell:
       get<string>(KEY_TERMINAL_SHELL) ?? DEFAULT_PREFERENCES.terminalShell,
+    defaultLaunchCommand:
+      get<string>(KEY_DEFAULT_LAUNCH_COMMAND) ??
+      DEFAULT_PREFERENCES.defaultLaunchCommand,
     terminalLetterSpacing:
       get<number>(KEY_TERMINAL_LETTER_SPACING) ??
       DEFAULT_PREFERENCES.terminalLetterSpacing,
@@ -754,6 +761,10 @@ export async function setTerminalShell(value: string): Promise<void> {
   await writePref(KEY_TERMINAL_SHELL, value.trim());
 }
 
+export async function setDefaultLaunchCommand(value: string): Promise<void> {
+  await writePref(KEY_DEFAULT_LAUNCH_COMMAND, value.trim());
+}
+
 export async function setTerminalLetterSpacing(value: number): Promise<void> {
   const clamped = Number.isFinite(value)
     ? Math.max(-10, Math.min(10, Math.round(value)))
@@ -898,6 +909,7 @@ export async function onPreferencesChange(
     [KEY_TERMINAL_FONT_FAMILY]: "terminalFontFamily",
     [KEY_TERMINAL_FONT_WEIGHT]: "terminalFontWeight",
     [KEY_TERMINAL_SHELL]: "terminalShell",
+    [KEY_DEFAULT_LAUNCH_COMMAND]: "defaultLaunchCommand",
     [KEY_TERMINAL_LETTER_SPACING]: "terminalLetterSpacing",
     [KEY_TERMINAL_FONT_SIZE]: "terminalFontSize",
     [KEY_TERMINAL_SCROLLBACK]: "terminalScrollback",
