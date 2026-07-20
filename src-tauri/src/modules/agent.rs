@@ -85,6 +85,38 @@ export default function (pi: ExtensionAPI) {
 }
 "#;
 
+const OPENCODE_PLUGIN_DIR: &str = ".config/opencode/plugins";
+const OPENCODE_PLUGIN_FILE: &str = "terax-notify.ts";
+const OPENCODE_PLUGIN_MARKER: &str = "terax-opencode-notifications-v1";
+const OPENCODE_STATUS_NEEDLES: [&str; 4] = [
+    OPENCODE_PLUGIN_MARKER,
+    "session.created",
+    "session.idle",
+    "notify;Terax;opencode;${event}",
+];
+const OPENCODE_PLUGIN: &str = r#"// terax-opencode-notifications-v1
+import { definePlugin } from "opencode";
+
+export default definePlugin({
+  name: "terax-notify",
+  setup() {
+    const emit = (event: "working" | "finished") => {
+      if (process.env.TERAX_TERMINAL) {
+        process.stdout.write(`\u001b]777;notify;Terax;opencode;${event}\u0007`);
+      }
+    };
+
+    return {
+      hooks: {
+        "session.created": () => emit("working"),
+        "session.idle": () => emit("finished"),
+        "session.deleted": () => emit("finished"),
+      },
+    };
+  },
+});
+"#;
+
 // Substrings identifying a hook command as ours, across every form we've ever
 // emitted (legacy /dev/tty Claude, current TerminalSequence, Osc, Windows
 // helper). Used to prune our own groups before reinserting so installs are
@@ -266,10 +298,47 @@ fn enable_pi_extension() -> Result<(), String> {
     enable_pi_extension_at(&pi_extension_path()?)
 }
 
+fn opencode_plugin_path() -> Result<std::path::PathBuf, String> {
+    home_path(OPENCODE_PLUGIN_DIR, OPENCODE_PLUGIN_FILE)
+}
+
+fn opencode_plugin_contents(
+    existing: Option<&str>,
+    path: &std::path::Path,
+) -> Result<&'static str, String> {
+    if existing.is_some_and(|s| !s.trim().is_empty() && !s.contains(OPENCODE_PLUGIN_MARKER)) {
+        return Err(format!(
+            "{} is not managed by Terax; refusing to overwrite",
+            path.display()
+        ));
+    }
+    Ok(OPENCODE_PLUGIN)
+}
+
+fn enable_opencode_plugin_at(path: &std::path::Path) -> Result<(), String> {
+    let dir = path.parent().unwrap();
+    std::fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    let existing = match std::fs::read_to_string(path) {
+        Ok(s) if s == OPENCODE_PLUGIN => return Ok(()),
+        Ok(s) => Some(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(format!("read {}: {e}", path.display())),
+    };
+    let contents = opencode_plugin_contents(existing.as_deref(), path)?;
+    write_atomic(path, contents)
+}
+
+fn enable_opencode_plugin() -> Result<(), String> {
+    enable_opencode_plugin_at(&opencode_plugin_path()?)
+}
+
 #[tauri::command]
 pub fn agent_enable_hooks(agent: String) -> Result<(), String> {
     if agent == "pi" {
         return enable_pi_extension();
+    }
+    if agent == "opencode" {
+        return enable_opencode_plugin();
     }
     let spec = find(&agent)?;
     let path = settings_path(spec)?;
@@ -325,6 +394,16 @@ pub fn agent_hooks_status(agent: String) -> bool {
             .and_then(|p| std::fs::read_to_string(p).ok())
             .is_some_and(|content| {
                 PI_STATUS_NEEDLES
+                    .iter()
+                    .all(|needle| content.contains(needle))
+            });
+    }
+    if agent == "opencode" {
+        return opencode_plugin_path()
+            .ok()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .is_some_and(|content| {
+                OPENCODE_STATUS_NEEDLES
                     .iter()
                     .all(|needle| content.contains(needle))
             });
@@ -477,6 +556,44 @@ mod tests {
             .file_type()
             .is_symlink());
         assert_eq!(std::fs::read_to_string(target).unwrap(), PI_EXTENSION);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn opencode_plugin_emits_named_working_and_finished_markers() {
+        let path = std::path::Path::new("/x/terax-notify.ts");
+        let plugin = opencode_plugin_contents(None, path).unwrap();
+        for needle in OPENCODE_STATUS_NEEDLES {
+            assert!(plugin.contains(needle), "missing {needle}");
+        }
+        assert!(plugin.contains("process.env.TERAX_TERMINAL"));
+        assert!(plugin.contains("process.stdout.write"));
+    }
+
+    #[test]
+    fn opencode_plugin_only_replaces_terax_owned_file() {
+        let path = std::path::Path::new("/x/terax-notify.ts");
+        assert!(opencode_plugin_contents(Some("export const mine = true;"), path).is_err());
+        assert!(opencode_plugin_contents(Some(OPENCODE_PLUGIN), path).is_ok());
+        assert!(opencode_plugin_contents(Some("  \n"), path).is_ok());
+    }
+
+    #[test]
+    fn opencode_plugin_install_is_atomic_idempotent_and_preserves_foreign_files() {
+        let dir = std::env::temp_dir().join(format!("terax-opencode-{}", std::process::id()));
+        let path = dir.join(OPENCODE_PLUGIN_FILE);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        enable_opencode_plugin_at(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), OPENCODE_PLUGIN);
+        enable_opencode_plugin_at(&path).unwrap();
+
+        std::fs::write(&path, "export const mine = true;").unwrap();
+        assert!(enable_opencode_plugin_at(&path).is_err());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "export const mine = true;"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 
