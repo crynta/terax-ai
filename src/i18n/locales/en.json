@@ -1,13 +1,18 @@
 {
   "settings": {
+    "language": "Language",
     "tabs": {
       "general": "General",
+      "editor": "Editor",
       "themes": "Themes",
       "shortcuts": "Shortcuts",
       "models": "Models",
       "agents": "Agents",
       "about": "About"
     }
+  },
+  "common": {
+    "save": "Save"
   },
   "general": {
     "title": "General",
@@ -124,7 +129,6 @@
     "docs": "Docs",
     "removeProvider": "Remove provider",
     "baseURL": "Base URL",
-    "test": "Test",
     "modelId": "Model ID",
     "context": "Context",
     "apiKey": "API key",
@@ -196,12 +200,16 @@
     "sourceCode": "Source code",
     "website": "Website",
     "checkForUpdates": "Check for updates",
+    "installVersion": "Install v",
+    "updateToVersion": "Update to v",
     "viewOnGithub": "View on GitHub",
     "reportIssue": "Report an issue",
     "upToDate": "You're up to date",
     "checkFailed": "Check failed — retry",
     "checking": "Checking…",
     "downloading": "Downloading…",
-    "restartToInstall": "Restart to install"
+    "restartToInstall": "Restart to install",
+    "installVersion": "Install v",
+    "updateToVersion": "Update to v"
   }
 }

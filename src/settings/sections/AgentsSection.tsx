@@ -540,12 +540,9 @@ function CustomInstructionsBlock({ value }: { value: string }) {
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <Label>{t("agents.customInstructions")}</Label>
-        {/* {savedTick > 0 ? (
-          <span className="text-[10px] text-muted-foreground">Saved</span>
-        ) : null} */}
         {draft && (
           <Button size="xs" onClick={() => void setCustomInstructions(draft)}>
-            {t("models.save")}
+            {t("common.save")}
           </Button>
         )}
       </div>

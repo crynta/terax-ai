@@ -27,6 +27,7 @@ import {
   useTranslation,
   AVAILABLE_LOCALES,
   type Locale,
+  type TranslationKey,
 } from "@/i18n";
 import {
   DropdownMenu,
@@ -37,7 +38,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Globe02Icon } from "@hugeicons/core-free-icons";
 
-const TABS: { id: SettingsTab; labelKey: string; icon: typeof Settings01Icon; component: () => JSX.Element }[] = [
+const TABS: { id: SettingsTab; labelKey: TranslationKey; icon: typeof Settings01Icon; component: () => JSX.Element }[] = [
   { id: "general", labelKey: "settings.tabs.general", icon: Settings01Icon, component: GeneralSection },
   { id: "editor", labelKey: "settings.tabs.editor", icon: SourceCodeIcon, component: EditorSection },
   { id: "themes", labelKey: "settings.tabs.themes", icon: PaintBoardIcon, component: ThemesSection },
@@ -134,7 +135,7 @@ export function SettingsApp() {
               variant="ghost"
               size="icon"
               className="mr-2 size-7 text-muted-foreground hover:text-foreground"
-              title="Language"
+              title={t("settings.language")}
             >
               <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
             </Button>

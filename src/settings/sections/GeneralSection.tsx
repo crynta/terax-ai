@@ -48,11 +48,11 @@ import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { useEffect, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
 import { SettingRow } from "../components/SettingRow";
-import { useTranslation } from "@/i18n";
+import { useTranslation, type TranslationKey } from "@/i18n";
 
 const APPEARANCE: {
   id: ThemePref;
-  labelKey: string;
+  labelKey: TranslationKey;
   icon: typeof ComputerIcon;
 }[] = [
   { id: "system", labelKey: "general.appearanceSystem", icon: ComputerIcon },

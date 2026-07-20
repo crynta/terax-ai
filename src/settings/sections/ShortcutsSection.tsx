@@ -30,9 +30,9 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useMemo, useState } from "react";
 import { SectionHeader } from "../components/SectionHeader";
-import { useTranslation } from "@/i18n";
+import { useTranslation, type TranslationKey } from "@/i18n";
 
-const GROUP_KEY_MAP: Record<string, string> = {
+const GROUP_KEY_MAP: Record<string, TranslationKey> = {
   General: "shortcuts.groupGeneral",
   Tabs: "shortcuts.groupTabs",
   Panes: "shortcuts.groupPanes",
@@ -129,7 +129,7 @@ export function ShortcutsSection() {
           return (
             <div key={group} className="flex flex-col gap-3">
               <h3 className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-                {t(GROUP_KEY_MAP[group] ?? group)}
+                {t((GROUP_KEY_MAP[group] ?? group) as TranslationKey)}
               </h3>
               <div className="flex flex-col divide-y divide-border/40 rounded-lg border border-border/60 bg-card/40 overflow-hidden">
                 {items.map((s) => (

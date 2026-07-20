@@ -1,13 +1,18 @@
 {
   "settings": {
+    "language": "语言",
     "tabs": {
       "general": "通用",
+      "editor": "编辑器",
       "themes": "主题",
       "shortcuts": "快捷键",
       "models": "模型",
       "agents": "智能体",
       "about": "关于"
     }
+  },
+  "common": {
+    "save": "保存"
   },
   "general": {
     "title": "通用",
@@ -124,7 +129,6 @@
     "docs": "文档",
     "removeProvider": "移除提供商",
     "baseURL": "基础 URL",
-    "test": "测试",
     "modelId": "模型 ID",
     "context": "上下文",
     "apiKey": "API 密钥",
@@ -196,12 +200,16 @@
     "sourceCode": "源代码",
     "website": "网站",
     "checkForUpdates": "检查更新",
+    "installVersion": "安装 v",
+    "updateToVersion": "更新到 v",
     "viewOnGithub": "在 GitHub 上查看",
     "reportIssue": "报告问题",
     "upToDate": "已是最新版本",
     "checkFailed": "检查失败 — 重试",
     "checking": "检查中…",
     "downloading": "下载中…",
-    "restartToInstall": "重启后安装"
+    "restartToInstall": "重启后安装",
+    "installVersion": "安装 v",
+    "updateToVersion": "更新到 v"
   }
 }

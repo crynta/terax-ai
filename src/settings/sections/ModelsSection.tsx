@@ -890,7 +890,7 @@ function LocalProviderCard({
               size={9}
               strokeWidth={2}
             />
-            Connected
+            {t("models.connected")}
           </Badge>
         ) : null}
         <button
@@ -898,7 +898,7 @@ function LocalProviderCard({
           onClick={() => void openUrl(provider.consoleUrl)}
           className="ml-auto inline-flex items-center gap-0.5 text-[10.5px] text-muted-foreground transition-colors hover:text-foreground"
         >
-          Docs
+          {t("models.docs")}
           <HugeiconsIcon
             icon={ArrowUpRight01Icon}
             size={11}
@@ -942,7 +942,7 @@ function LocalProviderCard({
                 disabled={!urlDraft.trim()}
                 className="h-8 px-3 text-[11px]"
               >
-                Test
+                {t("models.test")}
               </Button>
             </div>
           </FieldRow>
@@ -1024,7 +1024,7 @@ function LocalProviderCard({
                   disabled={!keyDraft.trim()}
                   className="h-8 px-3 text-[11px]"
                 >
-                  Save
+                  {t("common.save")}
                 </Button>
               </div>
             )}
@@ -1126,7 +1126,7 @@ function CustomEndpointCard({
               size={9}
               strokeWidth={2}
             />
-            Connected
+            {t("models.connected")}
           </Badge>
         ) : null}
         <Button
@@ -1179,7 +1179,7 @@ function CustomEndpointCard({
                 disabled={!urlDraft.trim()}
                 className="h-8 px-3 text-[11px]"
               >
-                Test
+                {t("models.test")}
               </Button>
             </div>
           </FieldRow>
@@ -1258,7 +1258,7 @@ function CustomEndpointCard({
                   disabled={!keyDraft.trim()}
                   className="h-8 px-3 text-[11px]"
                 >
-                  Save
+                  {t("common.save")}
                 </Button>
               </div>
             )}

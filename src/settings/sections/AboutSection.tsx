@@ -44,9 +44,9 @@ export function AboutSection() {
             : ready
               ? t("about.restartToInstall")
               : available
-                ? `Install v${status.update.version}`
+                ? `${t("about.installVersion")}${status.update.version}`
                 : manualAvailable
-                  ? `Update to v${status.info.version}`
+                  ? `${t("about.updateToVersion")}${status.info.version}`
                   : t("about.checkForUpdates");
   const onUpdateClick = () => {
     if (available) void install();

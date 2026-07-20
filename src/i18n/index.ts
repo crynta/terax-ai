@@ -40,7 +40,7 @@ export const useI18nStore = create<I18nState>()(
   ),
 );
 
-function getNestedValue(obj: unknown, path: string): string | undefined {
+function getNestedValue(obj: unknown, path: TranslationKey): string | undefined {
   const keys = path.split(".");
   let current: unknown = obj;
   for (const key of keys) {
@@ -50,9 +50,16 @@ function getNestedValue(obj: unknown, path: string): string | undefined {
   return typeof current === "string" ? current : undefined;
 }
 
+function resolve(messages: typeof en, key: TranslationKey): string {
+  const value = getNestedValue(messages, key);
+  if (value !== undefined) return value;
+  const enValue = getNestedValue(locales.en, key);
+  return enValue ?? key;
+}
+
 /**
  * Returns a translation function for the current locale.
- * 
+ *
  * Usage:
  *   const t = useTranslation();
  *   t("general.title")           // → "通用"
@@ -61,26 +68,16 @@ function getNestedValue(obj: unknown, path: string): string | undefined {
 export function useTranslation() {
   const locale = useI18nStore((s) => s.locale);
   const messages = locales[locale] ?? locales.en;
-
-  return (key: string): string => {
-    const value = getNestedValue(messages, key);
-    if (value !== undefined) return value;
-    // Fallback to English
-    const enValue = getNestedValue(locales.en, key);
-    return enValue ?? key;
-  };
+  return (key: TranslationKey): string => resolve(messages, key);
 }
 
 /**
  * Direct translation function that doesn't require React hooks.
  * Useful for non-component files or one-time lookups.
  */
-export function translate(key: string, locale?: Locale): string {
+export function translate(key: TranslationKey, locale?: Locale): string {
   const messages = locales[locale ?? useI18nStore.getState().locale] ?? locales.en;
-  const value = getNestedValue(messages, key);
-  if (value !== undefined) return value;
-  const enValue = getNestedValue(locales.en, key);
-  return enValue ?? key;
+  return resolve(messages, key);
 }
 
 /**
