@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveDisplayName } from "./languageResolver";
+import { resolveDisplayName, resolveLanguage } from "./languageResolver";
 
 describe("resolveDisplayName", () => {
   it("resolves real extensions", () => {
@@ -16,7 +16,7 @@ describe("resolveDisplayName", () => {
 
   it("matches fixed filenames", () => {
     expect(resolveDisplayName("Dockerfile")).toBe("Dockerfile");
-    expect(resolveDisplayName(".env")).toBe("Properties");
+    expect(resolveDisplayName(".env")).toBe("Dotenv");
     expect(resolveDisplayName(".eslintrc")).toBe("JSON");
   });
 
@@ -26,6 +26,16 @@ describe("resolveDisplayName", () => {
     expect(resolveDisplayName("Dockerfile.web")).toBe("Dockerfile");
     expect(resolveDisplayName("Dockerfile.dev")).toBe("Dockerfile");
     expect(resolveDisplayName("web.dockerfile")).toBe("Dockerfile");
+    expect(resolveDisplayName(".env.local")).toBe("Dotenv");
+    expect(resolveDisplayName(".env.production.local")).toBe("Dotenv");
+    expect(resolveDisplayName("example.env")).toBe("Dotenv");
+  });
+
+  it("loads dotenv files with their language mode", async () => {
+    const result = await resolveLanguage("/project/.env.local");
+    expect(result?.name).toBe("Dotenv");
+    expect(result?.id).toBe("env");
+    expect(result?.ext).toBeTruthy();
   });
 
   // The prefix fallback must not let extension languages capture lookalike

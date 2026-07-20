@@ -5,12 +5,15 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getLaunchDir } from "@/lib/launchDir";
-import { usePresence } from "@/lib/usePresence";
+import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
+import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AgentNotificationsBridge, nextAttentionTarget } from "@/modules/agents";
+import { isMarkdownPath } from "@/lib/utils";
+import {
+  AgentNotificationsBridge,
+  nextAttentionTarget,
+} from "@/modules/agents";
 import {
   AgentRunBridge,
   AiMiniWindow,
@@ -23,14 +26,12 @@ import {
 } from "@/modules/ai";
 import { AiComposerProvider } from "@/modules/ai/lib/composer";
 import { native } from "@/modules/ai/lib/native";
+import { CommandPalette, createCommandItems } from "@/modules/command-palette";
 import {
-  CommandPalette,
-  createCommandItems,
-} from "@/modules/command-palette";
-import {
-  NewEditorDialog,
-  useEditorFileSync,
   type EditorPaneHandle,
+  NewEditorDialog,
+  useApplyEditorFontSize,
+  useEditorFileSync,
 } from "@/modules/editor";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
 import type { GitHistorySearchHandle } from "@/modules/git-history";
@@ -39,33 +40,41 @@ import {
   type SearchInlineHandle,
   type SearchTarget,
 } from "@/modules/header";
+import { setLspNavigator } from "@/modules/lsp";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { isMarkdownPath } from "@/lib/utils";
 import {
-  useGlobalShortcuts,
+  shouldDisablePaneSwapShortcut,
   type ShortcutHandlers,
   type ShortcutId,
+  useGlobalShortcuts,
 } from "@/modules/shortcuts";
 import {
-  SidebarRail,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
+  SidebarRail,
   useSidebarPanel,
 } from "@/modules/sidebar";
 import {
   SourceControlPanel,
   useSourceControlContext,
 } from "@/modules/source-control";
+import {
+  SpaceSwitcher,
+  useSpacePersistence,
+  useSpaces,
+  useSpacesBoot,
+} from "@/modules/spaces";
 import { StatusBar } from "@/modules/statusbar";
 import {
   TabSwitcherHud,
-  useTabs,
   useTabSwitcher,
+  useTabs,
   useWindowTitle,
   useWorkspaceCwd,
 } from "@/modules/tabs";
+import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import {
   clearFocusedTerminal,
   disposeSession,
@@ -73,20 +82,16 @@ import {
   hasLeaf,
   leafIds,
   navigateFocusedBlocks,
+  type PaneBounds,
   type TerminalPaneHandle,
   useTerminalFileDrop,
   writeToSession,
 } from "@/modules/terminal";
-import {
-  SpaceSwitcher,
-  useSpaces,
-  useSpacePersistence,
-  useSpacesBoot,
-} from "@/modules/spaces";
-import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloseDialogs } from "./components/CloseDialogs";
@@ -134,6 +139,7 @@ export default function App() {
     setLeafCwd,
     focusPane,
     focusNextPaneInTab,
+    swapActivePaneInDirection,
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
@@ -163,6 +169,7 @@ export default function App() {
   const [gitHistoryHandle, setGitHistoryHandle] =
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
+  useApplyEditorFontSize();
   useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
 
@@ -234,7 +241,9 @@ export default function App() {
     const prev = prevSpaceRef.current;
     prevSpaceRef.current = activeSpaceId;
     if (prev === null || prev === activeSpaceId) return;
-    const meta = useSpaces.getState().spaces.find((s) => s.id === activeSpaceId);
+    const meta = useSpaces
+      .getState()
+      .spaces.find((s) => s.id === activeSpaceId);
     if (meta) void adoptWorkspaceEnv(meta.env);
     const inSpace = tabsRef.current.filter((t) => t.spaceId === activeSpaceId);
     if (inSpace.length === 0) return;
@@ -262,7 +271,9 @@ export default function App() {
     sidebarRef,
     sidebarWidthRef,
     sidebarView,
+    initialSidebarCollapsed,
     persistSidebarView,
+    persistSidebarCollapsed,
     toggleSidebar,
     cycleSidebarView,
     persistSidebarWidth,
@@ -284,6 +295,7 @@ export default function App() {
   const miniOpen = useChatStore((s) => s.mini.open);
   const miniPresence = usePresence(miniOpen, 200);
   const openMini = useChatStore((s) => s.openMini);
+  const toggleMini = useChatStore((s) => s.toggleMini);
   const focusInput = useChatStore((s) => s.focusInput);
   const openPanel = useChatStore((s) => s.openPanel);
   const panelOpen = useChatStore((s) => s.panelOpen);
@@ -376,7 +388,10 @@ export default function App() {
   // the Ctrl+Tab quick switcher so it cycles by recency, not strip order.
   const mruRef = useRef<number[]>([activeId]);
   useEffect(() => {
-    mruRef.current = [activeId, ...mruRef.current.filter((id) => id !== activeId)];
+    mruRef.current = [
+      activeId,
+      ...mruRef.current.filter((id) => id !== activeId),
+    ];
   }, [activeId]);
   useEffect(() => {
     const live = new Set(tabs.map((t) => t.id));
@@ -530,6 +545,23 @@ export default function App() {
     [openFileTab, newMarkdownTab],
   );
 
+  // "Open With" files arrive via the event (warm start) and get_launch_files
+  // (cold start, before this listener attaches). Backend already authorized
+  // each parent; openFileTab dedupes by path, so both paths can't double-open.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const openAll = (paths: string[]) => {
+      for (const path of paths) handleOpenFile(path, true);
+    };
+    (async () => {
+      unlisten = await listen<string[]>("terax:open-file", (e) => {
+        openAll(e.payload);
+      });
+      openAll(await consumeLaunchFiles());
+    })();
+    return () => unlisten?.();
+  }, [handleOpenFile]);
+
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
       for (const t of tabs) {
@@ -606,7 +638,6 @@ export default function App() {
     [newPreviewTab],
   );
 
-
   const splitActivePaneInActiveTab = useCallback(
     (dir: "row" | "col") => {
       const t = tabsRef.current.find((x) => x.id === activeId);
@@ -614,6 +645,28 @@ export default function App() {
       splitActivePane(activeId, dir);
     },
     [activeId, splitActivePane],
+  );
+
+  const livePaneBounds = useCallback((tabId: number): PaneBounds[] => {
+    const tab = document.querySelector<HTMLElement>(
+      `[data-terminal-tab="${tabId}"]`,
+    );
+    if (!tab) return [];
+    return [...tab.querySelectorAll<HTMLElement>("[data-pane-leaf]")].flatMap(
+      (element) => {
+        const id = Number(element.dataset.paneLeaf);
+        if (!Number.isFinite(id)) return [];
+        const { left, right, top, bottom } = element.getBoundingClientRect();
+        return [{ id, left, right, top, bottom }];
+      },
+    );
+  }, []);
+
+  const swapActivePane = useCallback(
+    (direction: "left" | "right" | "up" | "down") => {
+      swapActivePaneInDirection(activeId, direction, livePaneBounds(activeId));
+    },
+    [activeId, livePaneBounds, swapActivePaneInDirection],
   );
 
   const handleCloseTabOrPane = useCallback(() => {
@@ -653,7 +706,11 @@ export default function App() {
       "tab.close": handleCloseTabOrPane,
       "tab.next": () => stepSwitcher(1),
       "tab.prev": () => stepSwitcher(-1),
-      "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
+      "tab.selectByIndex": (e) =>
+        selectByIndex(
+          parseInt(e.key, 10) - 1,
+          activeSpaceId ?? DEFAULT_SPACE_ID,
+        ),
       "space.next": () => cycleSpace(1),
       "space.prev": () => cycleSpace(-1),
       "space.overview": () => setSwitcherOpen(true),
@@ -661,6 +718,10 @@ export default function App() {
       "pane.splitDown": () => splitActivePaneInActiveTab("col"),
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
+      "pane.swapLeft": () => swapActivePane("left"),
+      "pane.swapRight": () => swapActivePane("right"),
+      "pane.swapUp": () => swapActivePane("up"),
+      "pane.swapDown": () => swapActivePane("down"),
       "pane.source": toggleSourceControl,
       "terminal.clear": () => {
         clearFocusedTerminal();
@@ -669,8 +730,19 @@ export default function App() {
         window.dispatchEvent(new CustomEvent(TOGGLE_BLOCK_INPUT_EVENT)),
       "blocks.prev": () => navigateFocusedBlocks(-1),
       "blocks.next": () => navigateFocusedBlocks(1),
-      "search.focus": () => searchInlineRef.current?.focus(),
+      "search.focus": () => {
+        const editor = editorRefs.current.get(activeId);
+        if (editor) editor.openSearch();
+        else searchInlineRef.current?.focus();
+      },
       "ai.toggle": togglePanelAndFocus,
+      "ai.toggleMini": () => {
+        if (!hasComposer) {
+          void openSettingsWindow("models");
+          return;
+        }
+        toggleMini();
+      },
       "ai.askSelection": askFromSelection,
       "agent.focusAttention": () => {
         const t = nextAttentionTarget();
@@ -685,6 +757,10 @@ export default function App() {
       "view.zenMode": () => setZenMode((v) => !v),
       "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
       "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
+      "editor.aiComplete": () =>
+        editorRefs.current.get(activeId)?.triggerAiComplete(),
+      "editor.codeComplete": () =>
+        editorRefs.current.get(activeId)?.triggerCodeComplete(),
     }),
     [
       activeId,
@@ -696,11 +772,15 @@ export default function App() {
       openNewBlockTab,
       openNewPrivateTab,
       openPreviewTab,
+      activeSpaceId,
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
+      swapActivePane,
       toggleSourceControl,
+      hasComposer,
       togglePanelAndFocus,
+      toggleMini,
       askFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
@@ -713,7 +793,17 @@ export default function App() {
 
   const shortcutsDisabled = useCallback(
     (id: ShortcutId, e: KeyboardEvent) => {
-      if (id === "editor.undo" || id === "editor.redo") {
+      const terminalPaneCount =
+        activeTab?.kind === "terminal"
+          ? leafIds(activeTab.paneTree).length
+          : null;
+      if (shouldDisablePaneSwapShortcut(id, terminalPaneCount)) return true;
+      if (
+        id === "editor.undo" ||
+        id === "editor.redo" ||
+        id === "editor.aiComplete" ||
+        id === "editor.codeComplete"
+      ) {
         return activeTab?.kind !== "editor";
       }
       if (id === "ai.askSelection") {
@@ -929,8 +1019,9 @@ export default function App() {
 
   const handleNewTabInSpace = useCallback(
     (spaceId: string) => {
-      const root = useSpaces.getState().spaces.find((s) => s.id === spaceId)
-        ?.root;
+      const root = useSpaces
+        .getState()
+        .spaces.find((s) => s.id === spaceId)?.root;
       newTabInSpace(spaceId, root ?? undefined);
     },
     [newTabInSpace],
@@ -1031,6 +1122,11 @@ export default function App() {
     [openFileTab],
   );
 
+  useEffect(() => {
+    setLspNavigator({ openFile: openContentHit });
+    return () => setLspNavigator(null);
+  }, [openContentHit]);
+
   const insertHistoryCommand = useMemo(
     () =>
       isTerminalTab && activeLeafId !== null
@@ -1093,17 +1189,25 @@ export default function App() {
               <ResizablePanel
                 id="sidebar"
                 panelRef={sidebarRef}
-                defaultSize={`${sidebarWidthRef.current}px`}
+                defaultSize={
+                  initialSidebarCollapsed
+                    ? "0px"
+                    : `${sidebarWidthRef.current}px`
+                }
                 minSize={`${SIDEBAR_MIN_WIDTH}px`}
                 maxSize={`${SIDEBAR_MAX_WIDTH}px`}
                 collapsible
                 collapsedSize={0}
                 onResize={(size) => {
                   if (size.inPixels > 0) persistSidebarWidth(size.inPixels);
+                  persistSidebarCollapsed(size.inPixels <= 0);
                 }}
               >
                 <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
-                  <div key={sidebarView} className="min-h-0 flex-1 terax-panel-in">
+                  <div
+                    key={sidebarView}
+                    className="min-h-0 flex-1 terax-panel-in"
+                  >
                     {sidebarView === "explorer" ? (
                       <FileExplorer
                         ref={explorerRef}
@@ -1186,6 +1290,7 @@ export default function App() {
               onCd={sendCd}
               onWorkspaceChange={handleWorkspaceChange}
               onOpenMini={openMini}
+              onOpenAi={togglePanelAndFocus}
               hasComposer={hasComposer}
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true

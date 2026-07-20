@@ -163,6 +163,7 @@
 
 :root {
   --app-zoom: 1;
+  --editor-font-size: 13px;
 }
 
 html[data-chrome="borderless"] .terax-bg-surface {
@@ -403,6 +404,20 @@ html *::-webkit-scrollbar {
 }
 .terax-tab-in {
   animation: terax-tab-in var(--dur-base) var(--ease-premium);
+}
+
+@keyframes terax-pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.terax-pill-in {
+  animation: terax-pill-in var(--dur-base) var(--ease-premium);
 }
 
 /* Text shimmer loop (replaces motion background-position animation). Driven by

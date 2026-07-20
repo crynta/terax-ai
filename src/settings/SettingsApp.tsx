@@ -6,16 +6,18 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   AiScanIcon,
   InformationCircleIcon,
+  KeyboardIcon,
   PaintBoardIcon,
   Settings01Icon,
+  SourceCodeIcon,
   UserMultiple02Icon,
-  KeyboardIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { type JSX, useEffect, useState } from "react";
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
+import { EditorSection } from "./sections/EditorSection";
 import { GeneralSection } from "./sections/GeneralSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
@@ -35,18 +37,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { Globe02Icon } from "@hugeicons/core-free-icons";
 
-const TABS: { id: SettingsTab; labelKey: string; icon: typeof Settings01Icon, component: () => JSX.Element }[] =
-  [
-    { id: "general", labelKey: "settings.tabs.general", icon: Settings01Icon, component: GeneralSection },
-    { id: "themes", labelKey: "settings.tabs.themes", icon: PaintBoardIcon, component: ThemesSection },
-    { id: "shortcuts", labelKey: "settings.tabs.shortcuts", icon: KeyboardIcon, component: ShortcutsSection },
-    { id: "models", labelKey: "settings.tabs.models", icon: AiScanIcon, component: ModelsSection },
-    { id: "agents", labelKey: "settings.tabs.agents", icon: UserMultiple02Icon, component: AgentsSection },
-    { id: "about", labelKey: "settings.tabs.about", icon: InformationCircleIcon, component: AboutSection },
-  ];
+const TABS: { id: SettingsTab; labelKey: string; icon: typeof Settings01Icon; component: () => JSX.Element }[] = [
+  { id: "general", labelKey: "settings.tabs.general", icon: Settings01Icon, component: GeneralSection },
+  { id: "editor", labelKey: "settings.tabs.editor", icon: SourceCodeIcon, component: EditorSection },
+  { id: "themes", labelKey: "settings.tabs.themes", icon: PaintBoardIcon, component: ThemesSection },
+  { id: "shortcuts", labelKey: "settings.tabs.shortcuts", icon: KeyboardIcon, component: ShortcutsSection },
+  { id: "models", labelKey: "settings.tabs.models", icon: AiScanIcon, component: ModelsSection },
+  { id: "agents", labelKey: "settings.tabs.agents", icon: UserMultiple02Icon, component: AgentsSection },
+  { id: "about", labelKey: "settings.tabs.about", icon: InformationCircleIcon, component: AboutSection },
+];
 
 const VALID_TABS: SettingsTab[] = [
   "general",
+  "editor",
   "themes",
   "shortcuts",
   "models",
@@ -67,7 +70,7 @@ function readInitialTab(): SettingsTab {
 export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const init = usePreferencesStore((s) => s.init);
-  const ActiveSection = TABS.find(t => t.id === active)?.component;
+  const ActiveSection = TABS.find((tab) => tab.id === active)?.component;
   const t = useTranslation();
   const currentLocale = useI18nStore((s) => s.locale);
   const setLocale = useI18nStore((s) => s.setLocale);
@@ -99,8 +102,9 @@ export function SettingsApp() {
     <div className="flex h-screen flex-col overflow-hidden bg-background text-foreground select-none">
       <header
         data-tauri-drag-region
-        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
-          }`}
+        className={`flex h-11 shrink-0 items-center border-b border-border/60 bg-card/60 ${
+          IS_MAC ? "pr-3 pl-22" : "pr-0 pl-3"
+        }`}
       >
         <Tabs
           value={active}

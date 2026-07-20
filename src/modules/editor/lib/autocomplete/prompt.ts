@@ -3,10 +3,12 @@ export type CompletionRequest = {
   suffix: string;
   language: string | null;
   filename: string | null;
+  /** CodeMirror indent unit: "\t" or a run of spaces. */
+  indentUnit: string | null;
 };
 
-const MAX_PREFIX = 2000;
-const MAX_SUFFIX = 1000;
+const MAX_PREFIX = 4000;
+const MAX_SUFFIX = 2000;
 
 export function trimContext(prefix: string, suffix: string) {
   const p =
@@ -29,9 +31,10 @@ Output the next chunk of code you can predict with high confidence. Stop when th
 Hard rules:
 1. NEVER repeat any text already present in PREFIX or SUFFIX.
 2. NEVER write code that belongs after SUFFIX.
-3. Match surrounding indentation, quoting, and naming conventions exactly.
-4. Output empty string when no confident completion exists — never guess.
-5. Output format: raw insertion text only. No markdown fences. No commentary. No "Here is".
+3. Indentation is critical: use EXACTLY the file's indent unit (given as "Indent:" metadata) for every new line. Never substitute tabs for spaces or a different space width. Continuation lines must align with the surrounding PREFIX lines.
+4. Match quoting and naming conventions exactly.
+5. Output empty string when no confident completion exists — never guess.
+6. Output format: raw insertion text only. No markdown fences. No commentary. No "Here is".
 
 Examples:
 
@@ -60,6 +63,13 @@ export function buildUserPrompt(req: CompletionRequest): string {
   const meta: string[] = [];
   if (req.filename) meta.push(`File: ${req.filename}`);
   if (req.language) meta.push(`Language: ${req.language}`);
+  if (req.indentUnit) {
+    meta.push(
+      req.indentUnit === "\t"
+        ? "Indent: tabs"
+        : `Indent: ${req.indentUnit.length} spaces`,
+    );
+  }
   const metaBlock = meta.length ? meta.join("\n") + "\n\n" : "";
 
   return `${metaBlock}PREFIX:

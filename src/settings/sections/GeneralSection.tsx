@@ -18,26 +18,23 @@ import { cn } from "@/lib/utils";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { ThemePref } from "@/modules/settings/store";
 import {
-  TERMINAL_FONT_SIZES,
-  TERMINAL_SCROLLBACK_PRESETS,
   setAgentNotifications,
   setAutostart,
-  setEditorWordWrap,
-  setEditorAutoSave,
-  setEditorAutoSaveDelay,
+  setDefaultWorkspaceEnv,
   setExplorerGitDecorations,
   setRestoreWindowState,
   setShowHidden,
-  setTerminalFontFamily,
-  setTerminalFontWeight,
-  setTerminalShell,
-  setTerminalLetterSpacing,
-  setTerminalFontSize,
   setTerminalCursorBlink,
+  setTerminalFontFamily,
+  setTerminalFontSize,
+  setTerminalFontWeight,
+  setTerminalLetterSpacing,
   setTerminalScrollback,
+  setTerminalShell,
   setTerminalWebglEnabled,
-  setVimMode,
   setZoomLevel,
+  TERMINAL_FONT_SIZES,
+  TERMINAL_SCROLLBACK_PRESETS,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
 import {
@@ -70,15 +67,15 @@ const TERMINAL_FONT_WEIGHTS = [
   { value: "bold", labelKey: "general.fontWeightBold" },
 ] as const;
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
+const AUTO_SAVE_MIN = 100;
+const AUTO_SAVE_MAX = 60000;
+const AUTO_SAVE_STEP = 100;
 
 type ShellInfo = { name: string; path: string; integrated: boolean };
 const SHELL_AUTO = "auto";
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
 const ZOOM_STEP = 0.05;
-const AUTO_SAVE_STEP = 100;
-const AUTO_SAVE_MIN = 100;
-const AUTO_SAVE_MAX = 60000;
 
 export function GeneralSection() {
   const { mode, setMode } = useTheme();
@@ -86,10 +83,6 @@ export function GeneralSection() {
 
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
-  const vimMode = usePreferencesStore((s) => s.vimMode);
-  const editorWordWrap = usePreferencesStore((s) => s.editorWordWrap);
-  const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
-  const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
   const explorerGitDecorations = usePreferencesStore(
     (s) => s.explorerGitDecorations,
@@ -97,13 +90,13 @@ export function GeneralSection() {
   const terminalWebglEnabled = usePreferencesStore(
     (s) => s.terminalWebglEnabled,
   );
-  const terminalCursorBlink = usePreferencesStore(
-    (s) => s.terminalCursorBlink,
-  );
+  const terminalCursorBlink = usePreferencesStore((s) => s.terminalCursorBlink);
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
   const [shells, setShells] = useState<ShellInfo[]>([]);
+  const [wslDistros, setWslDistros] = useState<{ name: string }[]>([]);
+  const defaultWorkspaceEnv = usePreferencesStore((s) => s.defaultWorkspaceEnv);
   const terminalLetterSpacing = usePreferencesStore(
     (s) => s.terminalLetterSpacing,
   );
@@ -130,6 +123,9 @@ export function GeneralSection() {
   useEffect(() => {
     void invoke<ShellInfo[]>("pty_list_shells")
       .then(setShells)
+      .catch(() => {});
+    void invoke<{ name: string }[]>("wsl_list_distros")
+      .then(setWslDistros)
       .catch(() => {});
   }, []);
 
@@ -191,43 +187,6 @@ export function GeneralSection() {
             onValueChange={(v) => void setZoomLevel(v[0] ?? 1)}
           />
         </div>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label>{t("general.editor")}</Label>
-        <SettingRow
-          title={t("general.vimMode")}
-          description={t("general.vimModeDesc")}
-        >
-          <Switch
-            checked={vimMode}
-            onCheckedChange={(v) => void setVimMode(v)}
-          />
-        </SettingRow>
-        <SettingRow
-          title={t("general.wordWrap")}
-          description={t("general.wordWrapDesc")}
-        >
-          <Switch
-            checked={editorWordWrap}
-            onCheckedChange={(v) => void setEditorWordWrap(v)}
-          />
-        </SettingRow>
-        <SettingRow
-          title={t("general.autoSave")}
-          description={t("general.autoSaveDesc")}
-        >
-          <Switch
-            checked={editorAutoSave}
-            onCheckedChange={(v) => void setEditorAutoSave(v)}
-          />
-        </SettingRow>
-        {editorAutoSave && (
-          <AutoSaveDelayInput
-            value={editorAutoSaveDelay}
-            onChange={(v) => void setEditorAutoSaveDelay(v)}
-          />
-        )}
       </div>
 
       <div className="flex flex-col gap-2">
@@ -330,7 +289,9 @@ export function GeneralSection() {
           description={
             shells.find((s) => s.path === terminalShell)?.integrated === false
               ? t("general.defaultShellIntegrated")
-              : t("general.defaultShellDesc")
+              : wslDistros.length > 0
+                ? "Shell for the integrated terminal. WSL spaces use the distro login shell. Existing tabs keep their shell."
+                : t("general.defaultShellDesc")
           }
         >
           <Select
@@ -350,17 +311,56 @@ export function GeneralSection() {
                 {t("general.shellAuto")}
               </SelectItem>
               {shells.map((s) => (
-                <SelectItem
-                  key={s.path}
-                  value={s.path}
-                  className="text-[12px]"
-                >
+                <SelectItem key={s.path} value={s.path} className="text-[12px]">
                   {s.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </SettingRow>
+        {(wslDistros.length > 0 || defaultWorkspaceEnv !== "local") && (
+          <SettingRow
+            title="Workspace environment"
+            description="Where new spaces run, terminal and AI agent alike: Windows or a WSL distro. Existing spaces keep theirs; switch any from the status bar."
+          >
+            <Select
+              value={defaultWorkspaceEnv}
+              onValueChange={(v) => void setDefaultWorkspaceEnv(v)}
+            >
+              <SelectTrigger
+                value={defaultWorkspaceEnv}
+                className="h-8 w-40 text-[12px]"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local" className="text-[12px]">
+                  Windows
+                </SelectItem>
+                {wslDistros.map((d) => (
+                  <SelectItem
+                    key={d.name}
+                    value={`wsl:${d.name}`}
+                    className="text-[12px]"
+                  >
+                    WSL: {d.name}
+                  </SelectItem>
+                ))}
+                {defaultWorkspaceEnv.startsWith("wsl:") &&
+                  !wslDistros.some(
+                    (d) => `wsl:${d.name}` === defaultWorkspaceEnv,
+                  ) && (
+                    <SelectItem
+                      value={defaultWorkspaceEnv}
+                      className="text-[12px]"
+                    >
+                      {defaultWorkspaceEnv.slice("wsl:".length)} (unavailable)
+                    </SelectItem>
+                  )}
+              </SelectContent>
+            </Select>
+          </SettingRow>
+        )}
         <SettingRow
           title={t("general.letterSpacing")}
           description={t("general.letterSpacingDesc")}
@@ -391,7 +391,11 @@ export function GeneralSection() {
             </SelectTrigger>
             <SelectContent>
               {TERMINAL_FONT_SIZES.map((size) => (
-                <SelectItem key={size} value={String(size)} className="text-[12px]">
+                <SelectItem
+                  key={size}
+                  value={String(size)}
+                  className="text-[12px]"
+                >
                   {size} px
                 </SelectItem>
               ))}
@@ -513,8 +517,7 @@ function FontFamilyInput({
     </SettingRow>
   );
 }
-
-function AutoSaveDelayInput({
+export function AutoSaveDelayInput({
   value,
   onChange,
 }: {

@@ -4,12 +4,15 @@ import {
   hasLeaf,
   leafIds,
   nextLeafId,
+  type PaneBounds,
+  type PaneDirection,
   type PaneNode,
   removeLeaf,
   type SplitDir,
   setLeafCwd as setLeafCwdInTree,
   siblingLeafOf,
   splitLeaf,
+  swapLeafInDirection,
 } from "@/modules/terminal/lib/panes";
 import { disposeSession } from "@/modules/terminal/lib/useTerminalSession";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -147,6 +150,17 @@ function titleFromUrl(url: string): string {
 }
 
 export const DEFAULT_SPACE_ID = "default";
+
+// Returns the tab at position `idx` within the given space, or undefined when
+// idx is out of range or no matching space tab exists.
+export function pickTabBySpaceIndex(
+  tabs: Tab[],
+  idx: number,
+  spaceId: string,
+): Tab | undefined {
+  const pool = tabs.filter((t) => t.spaceId === spaceId);
+  return pool[idx];
+}
 
 // Next active after close, scoped to the closing tab's space. null = last tab of
 // its space, which callers treat as "refuse to close".
@@ -951,8 +965,10 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   }, []);
 
   const selectByIndex = useCallback(
-    (idx: number) => {
-      const t = tabs[idx];
+    (idx: number, spaceId?: string) => {
+      const t = spaceId
+        ? pickTabBySpaceIndex(tabs, idx, spaceId)
+        : tabs[idx];
       if (t) setActiveId(t.id);
     },
     [tabs],
@@ -1006,6 +1022,24 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       }),
     );
   }, []);
+
+  const swapActivePaneInDirection = useCallback(
+    (tabId: number, direction: PaneDirection, bounds?: PaneBounds[]) => {
+      setTabs((curr) =>
+        curr.map((t) => {
+          if (t.id !== tabId || t.kind !== "terminal") return t;
+          const paneTree = swapLeafInDirection(
+            t.paneTree,
+            t.activeLeafId,
+            direction,
+            bounds,
+          );
+          return paneTree === t.paneTree ? t : { ...t, paneTree };
+        }),
+      );
+    },
+    [],
+  );
 
   /** Split the active leaf of `tabId` along `dir`. Returns the new leaf id. */
   const splitActivePane = useCallback(
@@ -1160,6 +1194,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setLeafCwd,
     focusPane,
     focusNextPaneInTab,
+    swapActivePaneInDirection,
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,

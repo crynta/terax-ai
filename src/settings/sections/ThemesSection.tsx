@@ -15,23 +15,26 @@ import {
   EDITOR_THEME_LABELS,
   EDITOR_THEME_MODE,
   EDITOR_THEMES,
+  type EditorThemePref,
   setBackgroundBlur,
   setBackgroundImageId,
   setBackgroundKind,
   setBackgroundOpacity,
   setEditorTheme,
-  type EditorThemePref,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
 import {
   deleteBgImage,
   importBgImageFromFile,
 } from "@/modules/theme/bgImageStore";
-import { deleteCustomTheme, saveCustomTheme } from "@/modules/theme/customThemes";
-import { listBuiltinThemes } from "@/modules/theme/themes";
-import { validateTheme } from "@/modules/theme/validateTheme";
+import {
+  deleteCustomTheme,
+  saveCustomTheme,
+} from "@/modules/theme/customThemes";
 import { deleteThemeFile, emitThemeEdit } from "@/modules/theme/themeFiles";
+import { listBuiltinThemes } from "@/modules/theme/themes";
 import { DEFAULT_THEME_ID } from "@/modules/theme/types";
+import { validateTheme } from "@/modules/theme/validateTheme";
 import { Edit02Icon, PlusSignIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -250,7 +253,11 @@ export function ThemesSection() {
                         onEditTheme(t.id);
                       }}
                     >
-                      <HugeiconsIcon icon={Edit02Icon} size={12} strokeWidth={1.75} />
+                      <HugeiconsIcon
+                        icon={Edit02Icon}
+                        size={12}
+                        strokeWidth={1.75}
+                      />
                     </span>
                     <span
                       role="button"

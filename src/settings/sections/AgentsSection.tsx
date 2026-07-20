@@ -11,9 +11,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { AGENT_ICONS } from "@/modules/ai/components/AgentSwitcher";
 import {
-  BUILTIN_AGENTS,
   type Agent,
   type AgentIconId,
+  BUILTIN_AGENTS,
 } from "@/modules/ai/lib/agents";
 import {
   isValidHandle,
