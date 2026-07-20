@@ -1,6 +1,6 @@
 pub mod modules;
 
-use modules::{agent, fs, git, history, lsp, net, pty, secrets, shell, workspace};
+use modules::{agent, fs, git, history, lsp, net, pty, secrets, shell, sys, workspace};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
@@ -318,6 +318,7 @@ pub fn run() {
             history::history_commands,
             history::history_record,
             history::history_list,
+            sys::sys_resources,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
