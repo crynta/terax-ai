@@ -10,6 +10,7 @@ import {
   AiStatusBarControls,
 } from "@/modules/ai/components/AiStatusBarControls";
 import { LspStatusPill } from "@/modules/lsp";
+import { SysStatusPill } from "@/modules/sys/components/SysStatusPill";
 import type { WorkspaceEnv } from "@/modules/workspace";
 import { IncognitoIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -70,6 +71,7 @@ export function StatusBar({
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        <SysStatusPill />
         <AgentStatusPill onClick={onOpenMini} />
         {panelOpen && hasComposer ? (
           <AiStatusBarControls />
