@@ -175,3 +175,41 @@ pub fn apply_menu_language<R: Runtime>(app: AppHandle<R>) -> Result<(), String> 
         Ok(())
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::labels;
+
+    #[test]
+    fn zh_cn_localizes_menu_titles_and_items() {
+        let l = labels("zh-CN");
+        assert_eq!(l.file, "文件");
+        assert_eq!(l.edit, "编辑");
+        assert_eq!(l.view, "视图");
+        assert_eq!(l.window, "窗口");
+        assert_eq!(l.help, "帮助");
+        assert_eq!(l.about, Some("关于 Terax"));
+        assert_eq!(l.quit, Some("退出 Terax"));
+        assert_eq!(l.copy, Some("复制"));
+        assert_eq!(l.select_all, Some("全选"));
+    }
+
+    #[test]
+    fn en_uses_os_default_predefined_labels() {
+        let l = labels("en");
+        assert_eq!(l.file, "File");
+        assert_eq!(l.edit, "Edit");
+        // English relies on the OS-default predefined item labels → None.
+        assert_eq!(l.about, None);
+        assert_eq!(l.copy, None);
+        assert_eq!(l.quit, None);
+    }
+
+    #[test]
+    fn unknown_language_falls_back_to_english() {
+        let l = labels("fr-FR");
+        assert_eq!(l.file, "File");
+        assert_eq!(l.about, None);
+        assert_eq!(l.copy, None);
+    }
+}
