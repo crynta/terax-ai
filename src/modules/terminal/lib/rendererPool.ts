@@ -15,6 +15,7 @@ import {
 } from "./terminalClipboard";
 import {
   terminalDeleteSequence,
+  terminalImeKeyDecision,
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
@@ -241,13 +242,14 @@ function createSlot(): Slot {
 
   term.attachCustomKeyEventHandler((event) => {
     // During IME composition the browser is assembling a multi-keystroke
-    // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
-    // Raw keydown events — including the Enter that commits a candidate —
-    // must NOT be forwarded to the PTY; xterm will receive the final
-    // composed string through its own compositionend handler instead.
-    // keyCode 229 ("Process") is what Chromium reports for every key
-    // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // character (Chinese pinyin → hanzi, Korean jamo → syllable, dead-key
+    // accents). Raw keydowns fired mid-composition — including the Enter
+    // that commits a candidate — must NOT be forwarded to the PTY. All
+    // other IME events (keyCode 229 "Process") must still reach xterm's
+    // own pipeline: its CompositionHelper is what turns committed text
+    // into exactly one data event (#850, #927).
+    const imeDecision = terminalImeKeyDecision(event);
+    if (imeDecision) return imeDecision === "forward";
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
@@ -298,6 +300,27 @@ function createSlot(): Slot {
     }
     return true;
   });
+
+  // WebKitGTK can commit IME text (dead keys, ibus accents like ñ/ö)
+  // without a compositionstart, so xterm's composition offset stays at 0
+  // and every commit re-sends the hidden textarea's accumulated value —
+  // one ñ, then ññ, then ñññ (#850, #927). xterm only clears that textarea
+  // on blur or Enter. Clear it once the commit has been consumed: xterm
+  // reads the value in a 0ms timer scheduled by its own compositionend
+  // listener, which registered first and therefore runs before this one.
+  const textarea = term.textarea;
+  if (textarea) {
+    let composing = false;
+    textarea.addEventListener("compositionstart", () => {
+      composing = true;
+    });
+    textarea.addEventListener("compositionend", () => {
+      composing = false;
+      window.setTimeout(() => {
+        if (!composing) textarea.value = "";
+      }, 0);
+    });
+  }
 
   term.onData((data) => {
     const leafId = slot.currentLeafId;

@@ -5,6 +5,36 @@ export type TerminalKeyEvent = Pick<
 
 export type PlatformOpts = { isMac: boolean };
 
+export type TerminalImeKeyEvent = Pick<
+  KeyboardEvent,
+  "type" | "isComposing" | "keyCode"
+>;
+
+export type ImeKeyDecision = "block" | "forward" | null;
+
+/** How the custom key handler should treat IME-related events.
+ *
+ * "block"   — drop the event entirely. Only raw keydowns fired during an
+ *             active composition: the Enter that commits an IME candidate
+ *             must not reach the PTY as a real Enter, and xterm's own
+ *             pipeline would finalize-then-forward it.
+ * "forward" — hand the event straight to xterm and skip Terax shortcuts.
+ *             keyCode 229 ("Process") keydowns must reach xterm's
+ *             CompositionHelper: it never forwards them raw, and its
+ *             textarea-diff bookkeeping is what emits IME-committed text
+ *             (dead keys, ibus accents like ñ/ö) exactly once. Blocking
+ *             them starves that bookkeeping, so each committed accent
+ *             re-sends the whole accumulated textarea value.
+ * null      — not IME-related; continue with Terax's shortcut handling.
+ */
+export function terminalImeKeyDecision(
+  event: TerminalImeKeyEvent,
+): ImeKeyDecision {
+  if (event.type === "keydown" && event.isComposing) return "block";
+  if (event.isComposing || event.keyCode === 229) return "forward";
+  return null;
+}
+
 export function terminalWordNavigationSequence(event: TerminalKeyEvent): string | null {
   if (!event.altKey || event.ctrlKey || event.metaKey) return null;
   if (event.key === "ArrowLeft" || event.code === "ArrowLeft") return "\x1bb";
