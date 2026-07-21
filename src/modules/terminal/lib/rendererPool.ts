@@ -18,6 +18,7 @@ import {
   terminalLineNavigationSequence,
   terminalWordNavigationSequence,
 } from "./keymap";
+import { pendingPtyResize } from "./rendererResize";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -574,6 +575,21 @@ function rewireSlot(slot: Slot, p: AcquireParams): void {
   p.onSearchReady(slot.searchAddon);
 }
 
+// Push any grid/PTY size delta to the PTY now, keeping slot.lastCols/lastRows
+// as the source of truth for "what the PTY was last told". Called both when the
+// debounce timer fires and on every teardown path, so an interrupted debounce
+// can never leave the PTY winsize behind the rendered grid (tmux pane-bleed).
+function commitPendingResize(slot: Slot, leafId: number): void {
+  const pending = pendingPtyResize(
+    { cols: slot.term.cols, rows: slot.term.rows },
+    { cols: slot.lastCols, rows: slot.lastRows },
+  );
+  if (!pending) return;
+  slot.lastCols = pending.cols;
+  slot.lastRows = pending.rows;
+  adapter?.resolveLeaf(leafId)?.resizePty(pending.cols, pending.rows);
+}
+
 function setupResizeObserver(slot: Slot, p: AcquireParams): void {
   slot.observer?.disconnect();
   if (slot.fitTimer) clearTimeout(slot.fitTimer);
@@ -585,11 +601,7 @@ function setupResizeObserver(slot: Slot, p: AcquireParams): void {
   const flushPty = () => {
     slot.ptyTimer = null;
     if (slot.currentLeafId !== p.leafId) return;
-    if (slot.term.cols === slot.lastCols && slot.term.rows === slot.lastRows)
-      return;
-    slot.lastCols = slot.term.cols;
-    slot.lastRows = slot.term.rows;
-    adapter?.resolveLeaf(p.leafId)?.resizePty(slot.lastCols, slot.lastRows);
+    commitPendingResize(slot, p.leafId);
   };
 
   slot.observer = new ResizeObserver(() => {
@@ -647,6 +659,15 @@ function serializeSlot(slot: Slot): SerializeOutput {
 }
 
 function detachSlotFromLeaf(slot: Slot, retain: boolean): void {
+  // Commit any debounced-but-unsent resize before tearing down the timers.
+  // Dropping it here (the old behavior) left the PTY winsize behind the
+  // rendered grid, so tmux drew pane content into cells that no longer lined up
+  // with the grid and it bled across the pane dividers. releaseSlot reports
+  // slot.term.cols/rows as the session's size, so the PTY must already match.
+  if (slot.currentLeafId !== null) {
+    commitPendingResize(slot, slot.currentLeafId);
+  }
+
   if (retain && slot.currentLeafId !== null) {
     slot.retainedLeafId = slot.currentLeafId;
     parkSlotHost(slot);
