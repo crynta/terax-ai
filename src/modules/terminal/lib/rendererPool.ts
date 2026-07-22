@@ -760,7 +760,9 @@ function attachWebgl(slot: Slot): void {
     elem.querySelectorAll<HTMLCanvasElement>("canvas"),
   );
   try {
-    const webgl = new WebglAddon();
+    // preserveDrawingBuffer: true forces single-buffering so draw calls
+    // are visible in the same frame, eliminating WebGL's default 1-frame lag.
+    const webgl = new WebglAddon(true);
     webgl.onContextLoss(() => {
       const cur = slot.webglAddon;
       if (cur === webgl) {
