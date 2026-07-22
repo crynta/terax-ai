@@ -20,6 +20,19 @@ const FIT_DEBOUNCE_MS = 8;
 const PTY_RESIZE_DEBOUNCE_MS = 256;
 const SNAPSHOT_SCROLLBACK_CAP = 5_000;
 
+// Dedup window for self-sent keyCode-229 chars vs xterm's own onData. macOS
+// WKWebView fires both our self-send and a textarea-input onData for the same
+// keystroke; without coordination each keystroke doubles.
+const KEY_229_DEDUP_MS = 200;
+// Backstop cap on a pending queue. The 200ms window already bounds real
+// growth; this just guards a runaway (e.g. a misbehaving IME flood).
+const DEDUP_QUEUE_MAX = 64;
+type PendingKey = { char: string; at: number };
+
+function prunePending(q: PendingKey[], now: number): void {
+  while (q.length > 0 && now - q[0].at >= KEY_229_DEDUP_MS) q.shift();
+}
+
 export type SlotAdapter = {
   resolveLeaf(leafId: number): LeafBridge | null;
   evictLeaf(leafId: number): void;
@@ -66,6 +79,14 @@ export type Slot = {
   lastW: number;
   lastH: number;
   lastUsedAt: number;
+  // FIFOs of pending keyCode-229 keystrokes awaiting their counterpart, in
+  // both orderings: selfSentQueue holds chars we forwarded directly that xterm
+  // may still echo via onData; onDataQueue holds chars xterm already forwarded
+  // that a trailing keydown(kc=229) must not re-send. A single slot gets
+  // overwritten under fast typing (cd -> ccd), so we keep an ordered queue per
+  // direction and consume the oldest matching entry.
+  selfSentQueue: PendingKey[];
+  onDataQueue: PendingKey[];
 };
 
 const slots: Slot[] = [];
@@ -233,17 +254,55 @@ function createSlot(): Slot {
     lastW: 0,
     lastH: 0,
     lastUsedAt: 0,
+    selfSentQueue: [],
+    onDataQueue: [],
   };
 
   term.attachCustomKeyEventHandler((event) => {
     // During IME composition the browser is assembling a multi-keystroke
-    // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
-    // Raw keydown events — including the Enter that commits a candidate —
-    // must NOT be forwarded to the PTY; xterm will receive the final
-    // composed string through its own compositionend handler instead.
-    // keyCode 229 ("Process") is what Chromium reports for every key
-    // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // character (Chinese pinyin -> hanzi, Korean jamo -> syllable, etc.).
+    // Raw keydown events -- including the Enter that commits a candidate --
+    // must NOT be forwarded to the PTY; xterm receives the final composed
+    // string through its own compositionend handler instead.
+    if (event.isComposing) return false;
+
+    // macOS WKWebView tags ordinary fast typing as keyCode 229; xterm then
+    // reads chars from textarea input events, which coalesce under fast typing
+    // and drop keys. Forward kc=229 chars ourselves and dedup with onData.
+    if (
+      event.type === "keydown" &&
+      event.keyCode === 229 &&
+      event.key.length === 1
+    ) {
+      const leafId229 = slot.currentLeafId;
+      if (leafId229 !== null) {
+        const bridge229 = adapter?.resolveLeaf(leafId229);
+        if (bridge229) {
+          const now = Date.now();
+          // xterm's textarea-input onData may have already fired for this
+          // keystroke just before keydown; if so, the char is already on its
+          // way and self-sending would double it. Consume the oldest matching
+          // pending onData entry instead of self-sending.
+          prunePending(slot.onDataQueue, now);
+          const odIdx = slot.onDataQueue.findIndex(
+            (e) => e.char === event.key,
+          );
+          if (odIdx >= 0) {
+            slot.onDataQueue.splice(odIdx, 1);
+            event.preventDefault();
+            return false;
+          }
+          // Otherwise self-send and enqueue so a trailing onData is dropped.
+          slot.selfSentQueue.push({ char: event.key, at: now });
+          if (slot.selfSentQueue.length > DEDUP_QUEUE_MAX) {
+            slot.selfSentQueue.shift();
+          }
+          bridge229.writeToPty(event.key);
+          event.preventDefault();
+          return false;
+        }
+      }
+    }
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
@@ -286,6 +345,25 @@ function createSlot(): Slot {
 
   term.onData((data) => {
     const leafId = slot.currentLeafId;
+    const now = Date.now();
+    if (data.length === 1) {
+      // Drop xterm's own onData when it duplicates a char we already self-sent
+      // for a keyCode-229 keystroke within the dedup window. Consume the oldest
+      // matching pending entry so a fast burst (cd) dedups each char, not just
+      // the most recent one.
+      prunePending(slot.selfSentQueue, now);
+      const ssIdx = slot.selfSentQueue.findIndex((e) => e.char === data);
+      if (ssIdx >= 0) {
+        slot.selfSentQueue.splice(ssIdx, 1);
+        return;
+      }
+      // Record this onData so a trailing keydown(kc=229) for the same char
+      // knows not to self-send (onData-arrived-first ordering).
+      slot.onDataQueue.push({ char: data, at: now });
+      if (slot.onDataQueue.length > DEDUP_QUEUE_MAX) {
+        slot.onDataQueue.shift();
+      }
+    }
     if (leafId === null) return;
     adapter?.resolveLeaf(leafId)?.writeToPty(data);
   });

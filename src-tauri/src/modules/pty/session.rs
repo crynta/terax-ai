@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -29,25 +30,40 @@ const MAX_PENDING: usize = 4 * 1024 * 1024;
 // we're forced to discard backlog.
 const OVERFLOW_NOTICE: &[u8] =
     b"\x1bc\x1b[2m[terax: dropped output due to backpressure]\x1b[0m\r\n";
+// Cap on bytes queued for the PTY input writer. A stuck PTY (child hung, pipe
+// full) would otherwise let pty_write accumulate unbounded Vec<u8>s in memory;
+// once exceeded, pty_write returns a backpressure error instead of queuing.
+// 16 MiB is far above any realistic keystroke burst or paste.
+pub(super) const WRITE_QUEUE_CAP: usize = 16 * 1024 * 1024;
 
 pub struct Session {
     // Field drop order is intentional. Rust drops fields top-to-bottom:
-    //   1. `_job` — on Windows, closing the Job HANDLE fires
+    //   1. `_job`: on Windows, closing the Job HANDLE fires
     //      KILL_ON_JOB_CLOSE, terminating the pwsh tree before the master
     //      pipe drops. Without this, ClosePseudoConsole in `master`'s Drop
     //      can block waiting for conhost to drain pending output, freezing
     //      the Tauri worker thread that triggered the close.
-    //   2. `killer` — best-effort kill (redundant on Windows once Job
+    //   2. `killer`: best-effort kill (redundant on Windows once Job
     //      closed, but harmless and required on Unix where there is no Job).
-    //   3. `writer` — closes the input side of the master pipe.
-    //   4. `master` — last; ClosePseudoConsole on Windows. By now the child
+    //   3. `write_tx`: drops the last channel sender, so the dedicated
+    //      writer thread drains and exits, releasing the input-side writer
+    //      clone it holds. (The reader thread's writer clone, used for DA
+    //      replies, is released when the killed child's EOF unwinds it.)
+    //   4. `master`: last; ClosePseudoConsole on Windows. By now the child
     //      is dead and conhost has nothing left to drain.
     #[cfg(windows)]
     _job: Option<crate::modules::proc::job::ProcessJob>,
     /// PID of the shell process. 0 means unknown; callers must skip checks when 0.
     pub shell_pid: u32,
     pub killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
-    pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    // Input bytes are queued here and drained by a single dedicated writer
+    // thread, so a burst of pty_write calls stays in arrival order rather than
+    // racing for the writer lock from independent spawn_blocking jobs.
+    pub write_tx: Sender<Vec<u8>>,
+    // Bytes currently queued in write_tx but not yet written. Bounded by
+    // WRITE_QUEUE_CAP: pty_write refuses to enqueue past the cap so a stuck
+    // PTY can't grow memory unbounded.
+    pub queued_bytes: Arc<AtomicUsize>,
     pub master: Mutex<Box<dyn MasterPty + Send>>,
     // Set by the waiter once the child exits, so pty_open can reap a shell
     // that died before it was registered.
@@ -137,6 +153,36 @@ pub fn spawn(
     ));
     guard.disarm();
 
+    // Dedicated writer thread: serializes all input writes in arrival order so
+    // concurrent pty_write calls can't reach the writer lock out of order and
+    // scramble a fast burst of keystrokes. The channel is byte-bounded (see
+    // queued_bytes / WRITE_QUEUE_CAP); pty_write applies backpressure instead
+    // of letting a stuck PTY accumulate unbounded input. The thread exits when
+    // the last sender drops (session close) or a write/lock fails: breaking
+    // drops the receiver so later sends return a channel-closed error rather
+    // than silently discarding input.
+    let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>();
+    let writer_for_writer = writer.clone();
+    let queued_bytes = Arc::new(AtomicUsize::new(0));
+    let queued_bytes_writer = queued_bytes.clone();
+    thread::Builder::new()
+        .name("terax-pty-writer".into())
+        .spawn(move || {
+            for bytes in write_rx {
+                let len = bytes.len();
+                let ok = match writer_for_writer.lock() {
+                    Ok(mut w) => w.write_all(&bytes).is_ok(),
+                    Err(_) => false,
+                };
+                queued_bytes_writer.fetch_sub(len, Ordering::Relaxed);
+                if !ok {
+                    log::debug!("pty writer thread stopping after write/lock failure");
+                    break;
+                }
+            }
+        })
+        .expect("spawn pty writer thread");
+
     let shell_pid = child.process_id().unwrap_or(0);
 
     #[cfg(windows)]
@@ -158,7 +204,8 @@ pub fn spawn(
         _job: job,
         shell_pid,
         killer: Mutex::new(killer),
-        writer: writer.clone(),
+        write_tx,
+        queued_bytes,
         master: Mutex::new(pair.master),
         exited: exited.clone(),
     });
@@ -337,13 +384,15 @@ mod tests {
         drop(pair.slave);
 
         let killer = child.clone_killer();
-        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
-            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
+        // take_writer so the writer side is owned and dropped with the test,
+        // but the Session no longer stores it directly.
+        drop(pair.master.take_writer().expect("writer"));
 
         let session = Arc::new(Session {
             shell_pid: child.process_id().unwrap_or(0),
             killer: Mutex::new(killer),
-            writer,
+            write_tx: mpsc::channel().0,
+            queued_bytes: Arc::new(AtomicUsize::new(0)),
             master: Mutex::new(pair.master),
             exited: Arc::new(AtomicBool::new(false)),
         });
@@ -386,13 +435,13 @@ mod tests {
         let _ = child.wait();
 
         let killer = child.clone_killer();
-        let writer: Arc<Mutex<Box<dyn Write + Send>>> =
-            Arc::new(Mutex::new(pair.master.take_writer().expect("writer")));
+        drop(pair.master.take_writer().expect("writer"));
 
         let session = Arc::new(Session {
             shell_pid: 0,
             killer: Mutex::new(killer),
-            writer,
+            write_tx: mpsc::channel().0,
+            queued_bytes: Arc::new(AtomicUsize::new(0)),
             master: Mutex::new(pair.master),
             exited: Arc::new(AtomicBool::new(false)),
         });
