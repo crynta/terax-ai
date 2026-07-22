@@ -16,7 +16,10 @@ export {
   tabAgentStatus,
   useAgentActivityStore,
 } from "./lib/agentActivity";
-export { useTerminalFileDrop } from "./lib/useTerminalFileDrop";
+export {
+  type TerminalPathDropTarget,
+  useTerminalFileDrop,
+} from "./lib/useTerminalFileDrop";
 export {
   findLeafCwd,
   findLeafPath,

@@ -44,6 +44,7 @@ import type { GitStatusCode } from "./lib/gitStatusUtils";
 import { useGlobalShortcuts } from "@/modules/shortcuts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
+import type { TerminalPathDropTarget } from "@/modules/terminal";
 
 export type FileExplorerHandle = {
   focus: () => void;
@@ -59,6 +60,7 @@ type Props = {
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
+  pathDropTarget?: TerminalPathDropTarget;
   gitStatus?: GitStatusSnapshot | null;
 };
 
@@ -190,6 +192,7 @@ export const FileExplorer = memo(
       onPathDeleted,
       onRevealInTerminal,
       onAttachToAgent,
+      pathDropTarget,
       gitStatus,
     },
     ref,
@@ -264,6 +267,7 @@ export const FileExplorer = memo(
       rootPath: rootPath ?? "",
       isDir: isDirAt,
       onMove: tree.movePath,
+      pathDropTarget,
     });
 
     const fileDrop = useExplorerFileDrop({
