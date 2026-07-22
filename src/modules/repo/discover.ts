@@ -111,15 +111,15 @@ export async function discoverRepositories(
         // Check for .git directory
         if (entry.name === ".git" && entry.kind === "dir") {
           try {
-            const realPath = await native.canonicalize(entryPath);
+            const realDir = await native.canonicalize(dir);
             if (
-              realPath.startsWith(realWorkspaceRoot) &&
-              !seenRealPaths.has(realPath)
+              realDir.startsWith(realWorkspaceRoot) &&
+              !seenRealPaths.has(realDir)
             ) {
-              seenRealPaths.add(realPath);
+              seenRealPaths.add(realDir);
               repos.push({
-                repoRoot: realPath,
-                name: getRepoName(realPath),
+                repoRoot: realDir,
+                name: getRepoName(realDir),
                 type: depth === 0 ? "root" : "submodule",
               });
             }
@@ -142,21 +142,23 @@ export async function discoverRepositories(
                 if (!gitdirPath.startsWith("/")) {
                   gitdirPath = await join(dirname(entryPath), gitdirPath);
                 }
-                try {
-                  const realPath = await native.canonicalize(gitdirPath);
-                  if (
-                    realPath.startsWith(realWorkspaceRoot) &&
-                    !seenRealPaths.has(realPath)
-                  ) {
-                    seenRealPaths.add(realPath);
-                    repos.push({
-                      repoRoot: realPath,
-                  name: getRepoName(realPath),
-                  type: "submodule",
-                    });
-                  }
-                } catch {
-                  // Skip if we can't canonicalize
+                // Validate the gitdir storage path is within the workspace
+                const realGitdir = await native.canonicalize(gitdirPath);
+                if (!realGitdir.startsWith(realWorkspaceRoot)) continue;
+
+                // Use the working-tree directory (dir) as repoRoot,
+                // not the gitdir storage path
+                const realDir = await native.canonicalize(dir);
+                if (
+                  realDir.startsWith(realWorkspaceRoot) &&
+                  !seenRealPaths.has(realDir)
+                ) {
+                  seenRealPaths.add(realDir);
+                  repos.push({
+                    repoRoot: realDir,
+                    name: getRepoName(realDir),
+                    type: "submodule",
+                  });
                 }
               }
             }

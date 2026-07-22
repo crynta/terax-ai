@@ -93,7 +93,23 @@ describe("discoverRepositories", () => {
     });
 
     const repos = await discoverRepositories("/workspace", { maxResults: 3 });
-    expect(repos.length).toBeLessThanOrEqual(3);
+    expect(repos).toHaveLength(3);
+    // Root is always included first, then subdirs up to the limit
+    expect(repos[0]).toEqual({
+      repoRoot: "/workspace",
+      name: "workspace",
+      type: "root",
+    });
+    expect(repos[1]).toEqual({
+      repoRoot: "/workspace/repo0",
+      name: "repo0",
+      type: "submodule",
+    });
+    expect(repos[2]).toEqual({
+      repoRoot: "/workspace/repo1",
+      name: "repo1",
+      type: "submodule",
+    });
   });
 
   it("respects maxDepth option", async () => {
@@ -165,10 +181,22 @@ describe("discoverRepositories", () => {
     });
 
     const repos = await discoverRepositories("/workspace");
-    expect(repos[0].type).toBe("root");
-    const names = repos.map((r) => r.name);
-    const nonRoot = names.slice(1);
-    expect(nonRoot).toEqual([...nonRoot].sort());
+    expect(repos).toHaveLength(3);
+    expect(repos[0]).toEqual({
+      repoRoot: "/workspace",
+      name: "workspace",
+      type: "root",
+    });
+    expect(repos[1]).toEqual({
+      repoRoot: "/workspace/alpha",
+      name: "alpha",
+      type: "submodule",
+    });
+    expect(repos[2]).toEqual({
+      repoRoot: "/workspace/zebra",
+      name: "zebra",
+      type: "submodule",
+    });
   });
 
   it("handles canonicalize failure with fallback normalization", async () => {

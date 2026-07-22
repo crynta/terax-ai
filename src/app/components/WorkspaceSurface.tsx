@@ -6,6 +6,7 @@ import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack } from "@/modules/preview";
 import type { Tab } from "@/modules/tabs";
 import { TerminalStack } from "@/modules/terminal";
+import type { GitRepo } from "@/modules/repo";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,7 +42,7 @@ type Props = {
   onGitHistorySearchHandle: GitHistoryStackProps["onSearchHandle"];
   onSetMarkdownView: EditorStackProps["onSetMarkdownView"];
   // New props for repo selection
-  detectedRepos?: Array<{ repoRoot: string; name: string; type: "root" | "submodule" | "nested" }>;
+  detectedRepos?: GitRepo[];
   currentRepoRoot?: string;
   onRepoChange?: (repoRoot: string) => void;
 };
