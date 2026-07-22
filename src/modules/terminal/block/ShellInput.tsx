@@ -14,7 +14,6 @@ import {
 import {
   historyCommands,
   historyList,
-  historyRecord,
   historySuggest,
 } from "./lib/history";
 import type { BlockMode } from "./lib/modeMachine";
@@ -83,7 +82,6 @@ export default function ShellInput({
       suggest: historySuggest,
       historyList,
       onSubmit: (text) => {
-        historyRecord(text);
         const first = text.trim().split(/\s+/)[0];
         if (first && !commandsRef.current.includes(first)) {
           commandsRef.current = [first, ...commandsRef.current];

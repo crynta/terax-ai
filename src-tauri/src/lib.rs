@@ -318,6 +318,9 @@ pub fn run() {
             history::history_commands,
             history::history_record,
             history::history_list,
+            history::history_list_full,
+            history::history_clear,
+            history::history_delete,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

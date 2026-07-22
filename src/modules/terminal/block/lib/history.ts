@@ -12,6 +12,41 @@ export function historyList(query: string, limit = 200): Promise<string[]> {
   return invoke<string[]>("history_list", { query, limit }).catch(() => []);
 }
 
-export function historyRecord(command: string): void {
-  void invoke("history_record", { command }).catch(() => {});
+export interface HistoryEntry {
+  id: number;
+  command: string;
+  timestamp: number;
+  exit_code: number | null;
+  session_id: string;
 }
+
+export function historyClear(): Promise<void> {
+  return invoke<void>("history_clear").catch(() => {});
+}
+
+export function historyDelete(id: number): Promise<void> {
+  return invoke<void>("history_delete", { id }).catch(() => {});
+}
+
+export function historyListFull(
+  query: string,
+  limit?: number,
+  offset?: number,
+): Promise<HistoryEntry[]> {
+  return invoke<HistoryEntry[]>("history_list_full", { query, limit, offset }).catch(() => []);
+}
+
+export function historyRecord(
+  command: string,
+  exitCode?: number | null,
+  sessionId?: string,
+  maxEntries?: number,
+): void {
+  void invoke("history_record", {
+    command,
+    exitCode: exitCode ?? null,
+    sessionId: sessionId ?? null,
+    maxEntries: maxEntries ?? null,
+  }).catch(() => {});
+}
+
