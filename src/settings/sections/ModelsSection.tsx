@@ -27,10 +27,10 @@ import {
   DEFAULT_MODEL_ID,
   getAutocompleteEligibleModels,
   getCompatModelInfo,
-  getModel,
   getProvider,
   isCompatModelId,
   MODELS,
+  resolveModel,
   type ModelId,
   PROVIDERS,
   type ProviderId,
@@ -231,7 +231,8 @@ export function ModelsSection() {
     // Drop the now-dead model id from favorites/recents before touching the
     // selection, so the recents push from a selection reset can't race it.
     const deadModelId = compatModelIdForEndpoint(id);
-    const { favoriteModelIds, recentModelIds } = usePreferencesStore.getState();
+    const { favoriteModelIds, recentModelIds, defaultModelId } =
+      usePreferencesStore.getState();
     if (favoriteModelIds.includes(deadModelId)) {
       await setFavoriteModelIds(
         favoriteModelIds.filter((m) => m !== deadModelId),
@@ -251,6 +252,16 @@ export function ModelsSection() {
         remaining[0]
           ? compatModelIdForEndpoint(remaining[0].id)
           : DEFAULT_MODEL_ID,
+      );
+    }
+
+    // Same dangling-id risk for the persisted chat default, which useAiBootstrap
+    // mirrors back into the selection on startup.
+    if (defaultModelId === deadModelId) {
+      await setDefaultModel(
+        (remaining[0]
+          ? compatModelIdForEndpoint(remaining[0].id)
+          : DEFAULT_MODEL_ID) as ModelId,
       );
     }
 
@@ -545,6 +556,7 @@ function DefaultsBlock({
           <DefaultModelPicker
             defaultModel={defaultModel}
             configuredIds={configuredIds}
+            customEndpoints={customEndpoints}
           />
         </FieldRow>
         <AutocompleteRow
@@ -560,12 +572,21 @@ function DefaultsBlock({
 function DefaultModelPicker({
   defaultModel,
   configuredIds,
+  customEndpoints,
 }: {
   defaultModel: ModelId;
   configuredIds: Set<ProviderId>;
+  customEndpoints: readonly CustomEndpoint[];
 }) {
-  const m = getModel(defaultModel);
-  const hasAny = configuredIds.size > 0;
+  // One chat model per configured custom endpoint, like the autocomplete row.
+  const compatItems = customEndpoints
+    .filter((e) => e.baseURL.trim() && e.modelId.trim())
+    .map((e) =>
+      getCompatModelInfo(compatModelIdForEndpoint(e.id), customEndpoints),
+    );
+  // resolveModel, not getModel: a compat-* default would make getModel throw.
+  const m = resolveModel(defaultModel, customEndpoints);
+  const hasAny = configuredIds.size > 0 || compatItems.length > 0;
 
   return (
     <DropdownMenu>
@@ -625,6 +646,31 @@ function DefaultModelPicker({
               </div>
             );
           })}
+          {compatItems.length > 0 && (
+            <div className="px-1 pt-1.5 first:pt-1">
+              <div className="mb-0.5 flex items-center gap-1.5 px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                <ProviderIcon provider="openai-compatible" size={11} />
+                <span>Custom endpoints</span>
+              </div>
+              {compatItems.map((mod) => (
+                <DropdownMenuItem
+                  key={mod.id}
+                  onSelect={() => void setDefaultModel(mod.id as ModelId)}
+                  className={cn(
+                    "flex items-start gap-2 text-[12px]",
+                    mod.id === defaultModel && "bg-accent/50",
+                  )}
+                >
+                  <span className="flex flex-1 flex-col">
+                    <span>{mod.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {mod.description}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </div>
+          )}
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
