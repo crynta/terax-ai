@@ -143,6 +143,7 @@ export function pasteIntoLeaf(leafId: number, text: string): boolean {
   const slot = slots.find((s) => s.currentLeafId === leafId);
   if (!slot) return false;
   slot.term.paste(text);
+  slot.term.focus();
   return true;
 }
 

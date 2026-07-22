@@ -4,6 +4,12 @@ import { useTerminalDropStore } from "./dropStore";
 import { formatDroppedPaths } from "./quoteShellPath";
 import { pasteIntoLeaf } from "./rendererPool";
 
+export type TerminalPathDropTarget = {
+  updateTarget: (clientX: number, clientY: number) => boolean;
+  dropPath: (path: string, clientX: number, clientY: number) => boolean;
+  clearTarget: () => void;
+};
+
 // Tauri reports the drop point in physical pixels on some platforms and logical
 // on others; only scale down when it overflows the logical viewport.
 function leafIdAt(x: number, y: number): number | null {
@@ -21,10 +27,28 @@ function leafIdAt(x: number, y: number): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
+const terminalPathDropTarget: TerminalPathDropTarget = {
+  updateTarget(clientX, clientY) {
+    const leafId = leafIdAt(clientX, clientY);
+    useTerminalDropStore.getState().setTarget(leafId);
+    return leafId !== null;
+  },
+  dropPath(path, clientX, clientY) {
+    useTerminalDropStore.getState().setTarget(null);
+    const leafId = leafIdAt(clientX, clientY);
+    if (leafId === null) return false;
+    pasteIntoLeaf(leafId, formatDroppedPaths([path]));
+    return true;
+  },
+  clearTarget() {
+    useTerminalDropStore.getState().setTarget(null);
+  },
+};
+
 /** Wires native OS file drops into the terminal pane under the cursor: shows a
  * drop overlay on that pane while dragging, and bracketed-pastes the
  * shell-quoted path(s) on drop. Drops outside any terminal leaf are ignored. */
-export function useTerminalFileDrop(): void {
+export function useTerminalFileDrop(): TerminalPathDropTarget {
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
@@ -62,4 +86,6 @@ export function useTerminalFileDrop(): void {
       unlisten?.();
     };
   }, []);
+
+  return terminalPathDropTarget;
 }

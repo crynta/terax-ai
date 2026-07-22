@@ -170,7 +170,7 @@ export default function App() {
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   useApplyEditorFontSize();
-  useTerminalFileDrop();
+  const terminalPathDropTarget = useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
 
   // Drives session disposal off the pane tree, not React lifecycles —
@@ -1221,6 +1221,7 @@ export default function App() {
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
+                        pathDropTarget={terminalPathDropTarget}
                       />
                     ) : (
                       <SourceControlPanel
