@@ -89,6 +89,7 @@ import {
 } from "@/modules/terminal";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import { useRepoDiscovery } from "@/modules/repo";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -971,6 +972,8 @@ export default function App() {
     gitHistoryHandle,
   ]);
 
+  const { detectedRepos, currentRepoRoot, onRepoChange } = useRepoDiscovery(explorerRoot ?? null);
+
   const activeCwd = activeTerminalLeafCwd;
 
   const handleNewSpace = useCallback(() => {
@@ -1263,6 +1266,9 @@ export default function App() {
                       onOpenCommitFile={openCommitFileDiffTab}
                       onGitHistorySearchHandle={setGitHistoryHandle}
                       onSetMarkdownView={setMarkdownView}
+                      detectedRepos={detectedRepos}
+                      currentRepoRoot={currentRepoRoot}
+                      onRepoChange={onRepoChange}
                     />
                   </div>
 

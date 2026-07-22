@@ -6,6 +6,14 @@ import { MarkdownStack } from "@/modules/markdown";
 import { PreviewStack } from "@/modules/preview";
 import type { Tab } from "@/modules/tabs";
 import { TerminalStack } from "@/modules/terminal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDown } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 
 type TerminalStackProps = ComponentProps<typeof TerminalStack>;
 type EditorStackProps = ComponentProps<typeof EditorStack>;
@@ -32,6 +40,10 @@ type Props = {
   onOpenCommitFile: GitHistoryStackProps["onOpenCommitFile"];
   onGitHistorySearchHandle: GitHistoryStackProps["onSearchHandle"];
   onSetMarkdownView: EditorStackProps["onSetMarkdownView"];
+  // New props for repo selection
+  detectedRepos?: Array<{ repoRoot: string; name: string; type: "root" | "submodule" | "nested" }>;
+  currentRepoRoot?: string;
+  onRepoChange?: (repoRoot: string) => void;
 };
 
 /**
@@ -58,6 +70,9 @@ export function WorkspaceSurface({
   onOpenCommitFile,
   onGitHistorySearchHandle,
   onSetMarkdownView,
+  detectedRepos,
+  currentRepoRoot,
+  onRepoChange,
 }: Props) {
   const kind = activeTab?.kind;
   const isTerminalTab = kind === "terminal";
@@ -70,6 +85,56 @@ export function WorkspaceSurface({
 
   return (
     <div className="relative h-full min-h-0">
+      {/* Repo Picker - only shown when there are multiple repos */}
+      {detectedRepos && detectedRepos.length > 1 && onRepoChange && (
+        <div className="absolute top-3 right-3 z-10">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg bg-popover px-3 py-1.5 text-sm font-medium",
+                  "hover:bg-accent transition-colors",
+                  "border border-border/40 shadow-sm"
+                )}
+              >
+                <span className="truncate max-w-[140px] inline-block">
+                  {currentRepoRoot
+                    ? detectedRepos.find(r => r.repoRoot === currentRepoRoot)?.name
+                    : "Select repo"}
+                </span>
+                <HugeiconsIcon
+                  icon={ChevronDown}
+                  size={14}
+                  strokeWidth={1.8}
+                  className="text-muted-foreground/70"
+                />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {detectedRepos.map((repo) => (
+                <DropdownMenuItem
+                  key={repo.repoRoot}
+                  onClick={() => onRepoChange(repo.repoRoot)}
+                >
+                  <div className="flex items-center justify-between w-full">
+                    <span className="truncate">{repo.name}</span>
+                    {currentRepoRoot === repo.repoRoot && (
+                      <span className="text-muted-foreground/60">✓</span>
+                    )}
+                  </div>
+                  {repo.type !== "root" && (
+                    <span className="text-xs text-muted-foreground/60 ml-2">
+                      ({repo.type})
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
+
       <div
         className={cn(
           "absolute inset-0 px-3 pt-2 pb-2",
