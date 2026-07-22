@@ -1,10 +1,10 @@
 import { lazy, Suspense } from "react";
 import type { ComponentProps } from "react";
-import type { SourceControlPanel as SourceControlPanelType } from "./SourceControlPanel";
+import type { SourceControlMultiPanel as SourceControlPanelType } from "./SourceControlMultiPanel";
 
 const SourceControlPanelInner = lazy(() =>
-  import("./SourceControlPanel").then((m) => ({
-    default: m.SourceControlPanel,
+  import("./SourceControlMultiPanel").then((m) => ({
+    default: m.SourceControlMultiPanel,
   })),
 );
 

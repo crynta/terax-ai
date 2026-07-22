@@ -609,8 +609,12 @@ export default function App() {
     activeTab?.kind === "editor" || activeTab?.kind === "markdown"
       ? activeTab.path
       : null;
-  const { sourceControl, toggleSourceControl, openGitGraphFromContext } =
-    useSourceControlContext({
+  const {
+    sourceControl,
+    sourceControlPath,
+    toggleSourceControl,
+    openGitGraphFromContext,
+  } = useSourceControlContext({
       activeTab,
       tabs,
       activeTerminalLeafCwd,
@@ -1225,6 +1229,7 @@ export default function App() {
                     ) : (
                       <SourceControlPanel
                         open
+                        scanPath={sourceControlPath}
                         sourceControl={sourceControl}
                         onOpenDiff={openGitDiffTab}
                         onOpenGitGraph={openGitGraphFromContext}
