@@ -22,14 +22,23 @@ import {
 } from "@/modules/editor/lib/languageDefinitions";
 import { resolveDisplayName } from "@/modules/editor/lib/languageResolver";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { AgentIcon } from "@/modules/agents/lib/agentIcon";
+import {
+  leafIds,
+  ptyIdForLeaf,
+  tabAgentStatus,
+  useAgentActivityStore,
+} from "@/modules/terminal";
 import {
   Cancel01Icon,
+  CheckmarkCircle01Icon,
   Clock01Icon,
   ComputerTerminal02Icon,
   GitBranchIcon,
   GitCompareIcon,
   Globe02Icon,
   IncognitoIcon,
+  Message02Icon,
   PencilEdit02Icon,
   PlusSignIcon,
   Tick02Icon,
@@ -43,7 +52,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { AgentTabBadge } from "./AgentTabBadge";
 import { labelFor } from "./lib/tabLabel";
 import type { EditorTab, Tab } from "./lib/useTabs";
 
@@ -455,7 +463,6 @@ export function TabBar({
                       />
                     ) : null}
                   </span>
-                  <AgentTabBadge tab={t} />
                   {tabs.length > 1 && (
                     <span
                       role="button"
@@ -621,7 +628,22 @@ function DropIndicator() {
   );
 }
 
+function useTabAgentStatus(tab: Tab) {
+  const phases = useAgentActivityStore((s) => s.phases);
+  const agents = useAgentActivityStore((s) => s.agents);
+  if (tab.kind !== "terminal" || tab.private) {
+    return { state: null, agent: null } as const;
+  }
+  const ptyIds: number[] = [];
+  for (const leaf of leafIds(tab.paneTree)) {
+    const id = ptyIdForLeaf(leaf);
+    if (id !== null) ptyIds.push(id);
+  }
+  return tabAgentStatus(phases, agents, ptyIds);
+}
+
 export function TabIcon({ tab }: { tab: Tab }) {
+  const agentStatus = useTabAgentStatus(tab);
   if (tab.kind === "editor" || tab.kind === "markdown") {
     const url =
       tab.kind === "editor" && tab.overrideLanguage
@@ -690,6 +712,29 @@ export function TabIcon({ tab }: { tab: Tab }) {
         className="shrink-0"
       />
     );
+  }
+  if (agentStatus.state === "attention") {
+    return (
+      <HugeiconsIcon
+        icon={Message02Icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0"
+      />
+    );
+  }
+  if (agentStatus.state === "finished") {
+    return (
+      <HugeiconsIcon
+        icon={CheckmarkCircle01Icon}
+        size={14}
+        strokeWidth={2}
+        className="shrink-0"
+      />
+    );
+  }
+  if (agentStatus.state === "working" && agentStatus.agent) {
+    return <AgentIcon agent={agentStatus.agent} size={14} className="shrink-0" />;
   }
   return (
     <HugeiconsIcon

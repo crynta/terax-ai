@@ -13,11 +13,7 @@ import {
   readTerminalClipboard,
   writeTerminalClipboard,
 } from "./terminalClipboard";
-import {
-  terminalDeleteSequence,
-  terminalLineNavigationSequence,
-  terminalWordNavigationSequence,
-} from "./keymap";
+import { terminalReadlineSequence } from "./keymap";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -253,24 +249,13 @@ function createSlot(): Slot {
     if (leafId === null) return false;
     const bridge = adapter?.resolveLeaf(leafId);
     if (!bridge) return true;
-    const lineNavigation = terminalLineNavigationSequence(event, {
+    const readlineSequence = terminalReadlineSequence(event, {
       isMac: IS_MAC,
+      isAlternateScreen: isAltScreen(slot),
     });
-    if (lineNavigation) {
+    if (readlineSequence) {
       event.preventDefault();
-      if (event.type === "keydown") bridge.writeToPty(lineNavigation);
-      return false;
-    }
-    const wordNavigation = terminalWordNavigationSequence(event);
-    if (wordNavigation) {
-      event.preventDefault();
-      if (event.type === "keydown") bridge.writeToPty(wordNavigation);
-      return false;
-    }
-    const deleteSeq = terminalDeleteSequence(event, { isMac: IS_MAC });
-    if (deleteSeq) {
-      event.preventDefault();
-      if (event.type === "keydown") bridge.writeToPty(deleteSeq);
+      if (event.type === "keydown") bridge.writeToPty(readlineSequence);
       return false;
     }
     if (isShiftEnter(event)) {

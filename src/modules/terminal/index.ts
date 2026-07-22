@@ -12,8 +12,8 @@ export {
   writeToSession,
 } from "./lib/useTerminalSession";
 export {
-  aggregateAgentPhases,
   type AgentTabStatus,
+  tabAgentStatus,
   useAgentActivityStore,
 } from "./lib/agentActivity";
 export { useTerminalFileDrop } from "./lib/useTerminalFileDrop";
