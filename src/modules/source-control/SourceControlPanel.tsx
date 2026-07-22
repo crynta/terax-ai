@@ -56,6 +56,7 @@ import {
   ArrowUp01Icon,
   CheckmarkCircle01Icon,
   Download01Icon,
+  File01Icon,
   Folder01Icon,
   FolderCloudIcon,
   FolderGitTwoIcon,
@@ -1208,6 +1209,18 @@ const EntryRow = memo(function EntryRow({
               ) : null}
             </div>
           </button>
+
+          {!isDeleted && onOpenFile && absolutePath ? (
+            <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 data-[focused=true]:opacity-100 data-[selected=true]:opacity-100">
+              <IconActionButton
+                label="Open file for editing"
+                side="top"
+                onClick={() => onOpenFile(absolutePath)}
+              >
+                <HugeiconsIcon icon={File01Icon} size={11} strokeWidth={1.9} />
+              </IconActionButton>
+            </div>
+          ) : null}
 
           {showDiscard ? (
             <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 data-[focused=true]:opacity-100 data-[selected=true]:opacity-100">
