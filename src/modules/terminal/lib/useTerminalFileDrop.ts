@@ -10,6 +10,12 @@ export type TerminalPathDropTarget = {
   clearTarget: () => void;
 };
 
+type TerminalPathDropDeps = {
+  leafIdAtPoint: (clientX: number, clientY: number) => number | null;
+  paste: (leafId: number, text: string) => boolean;
+  setTarget: (leafId: number | null) => void;
+};
+
 // Tauri reports the drop point in physical pixels on some platforms and logical
 // on others; only scale down when it overflows the logical viewport.
 function leafIdAt(x: number, y: number): number | null {
@@ -27,23 +33,35 @@ function leafIdAt(x: number, y: number): number | null {
   return Number.isFinite(id) ? id : null;
 }
 
-const terminalPathDropTarget: TerminalPathDropTarget = {
-  updateTarget(clientX, clientY) {
-    const leafId = leafIdAt(clientX, clientY);
-    useTerminalDropStore.getState().setTarget(leafId);
-    return leafId !== null;
-  },
-  dropPath(path, clientX, clientY) {
-    useTerminalDropStore.getState().setTarget(null);
-    const leafId = leafIdAt(clientX, clientY);
-    if (leafId === null) return false;
-    pasteIntoLeaf(leafId, formatDroppedPaths([path]));
-    return true;
-  },
-  clearTarget() {
-    useTerminalDropStore.getState().setTarget(null);
-  },
-};
+export function createTerminalPathDropTarget({
+  leafIdAtPoint,
+  paste,
+  setTarget,
+}: TerminalPathDropDeps): TerminalPathDropTarget {
+  return {
+    updateTarget(clientX, clientY) {
+      const leafId = leafIdAtPoint(clientX, clientY);
+      setTarget(leafId);
+      return leafId !== null;
+    },
+    dropPath(path, clientX, clientY) {
+      setTarget(null);
+      const leafId = leafIdAtPoint(clientX, clientY);
+      if (leafId === null) return false;
+      paste(leafId, formatDroppedPaths([path]));
+      return true;
+    },
+    clearTarget() {
+      setTarget(null);
+    },
+  };
+}
+
+const terminalPathDropTarget = createTerminalPathDropTarget({
+  leafIdAtPoint: leafIdAt,
+  paste: pasteIntoLeaf,
+  setTarget: (leafId) => useTerminalDropStore.getState().setTarget(leafId),
+});
 
 /** Wires native OS file drops into the terminal pane under the cursor: shows a
  * drop overlay on that pane while dragging, and bracketed-pastes the

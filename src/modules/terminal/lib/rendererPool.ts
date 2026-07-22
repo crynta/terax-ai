@@ -13,6 +13,7 @@ import {
   readTerminalClipboard,
   writeTerminalClipboard,
 } from "./terminalClipboard";
+import { pasteIntoTerminal } from "./terminalPaste";
 import { terminalReadlineSequence } from "./keymap";
 
 export const POOL_MAX_SIZE = 5;
@@ -141,10 +142,7 @@ export function poolSlotStats(): PoolSlotStat[] {
 // dropped path as a real paste while a plain shell gets the literal text.
 export function pasteIntoLeaf(leafId: number, text: string): boolean {
   const slot = slots.find((s) => s.currentLeafId === leafId);
-  if (!slot) return false;
-  slot.term.paste(text);
-  slot.term.focus();
-  return true;
+  return pasteIntoTerminal(slot?.term ?? null, text);
 }
 
 function getRecycler(): HTMLDivElement {

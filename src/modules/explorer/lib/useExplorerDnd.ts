@@ -1,15 +1,17 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+export type ExplorerPathDropTarget = {
+  updateTarget: (clientX: number, clientY: number) => boolean;
+  dropPath: (path: string, clientX: number, clientY: number) => boolean;
+  clearTarget: () => void;
+};
+
 type Options = {
   rootPath: string;
   isDir: (path: string) => boolean | undefined;
   onMove: (from: string, toDir: string) => void;
-  pathDropTarget?: {
-    updateTarget: (clientX: number, clientY: number) => boolean;
-    dropPath: (path: string, clientX: number, clientY: number) => boolean;
-    clearTarget: () => void;
-  };
+  pathDropTarget?: ExplorerPathDropTarget;
 };
 
 const THRESHOLD = 5;
@@ -40,6 +42,24 @@ export function resolveExplorerMoveTarget(
     return null;
   }
   return target;
+}
+
+export function finishExplorerDrag(
+  commit: boolean,
+  source: string,
+  clientX: number,
+  clientY: number,
+  moveTarget: string | null,
+  pathDropTarget: ExplorerPathDropTarget | undefined,
+  onMove: (from: string, toDir: string) => void,
+): void {
+  const handledByPathTarget =
+    commit &&
+    (pathDropTarget?.dropPath(source, clientX, clientY) ?? false);
+  if (commit && !handledByPathTarget && moveTarget) {
+    onMove(source, moveTarget);
+  }
+  pathDropTarget?.clearTarget();
 }
 
 // Pointer-based, delegated on the container (no per-row handlers); sidesteps
@@ -125,13 +145,15 @@ export function useExplorerDnd({
       detach();
       if (!active) return;
       const { x, y } = lastPosRef.current;
-      const droppedInTerminal =
-        commit &&
-        (optsRef.current.pathDropTarget?.dropPath(source, x, y) ?? false);
-      if (commit && !droppedInTerminal && dropTargetRef.current) {
-        optsRef.current.onMove(source, dropTargetRef.current);
-      }
-      optsRef.current.pathDropTarget?.clearTarget();
+      finishExplorerDrag(
+        commit,
+        source,
+        x,
+        y,
+        dropTargetRef.current,
+        optsRef.current.pathDropTarget,
+        optsRef.current.onMove,
+      );
       suppressClickRef.current = true;
       setTimeout(() => {
         suppressClickRef.current = false;

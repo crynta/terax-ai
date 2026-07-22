@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { resolveExplorerMoveTarget } from "./useExplorerDnd";
+import { describe, expect, it, vi } from "vitest";
+import {
+  finishExplorerDrag,
+  resolveExplorerMoveTarget,
+} from "./useExplorerDnd";
 
 const directories = new Set(["/repo/src", "/repo/src/components"]);
 const isDir = (path: string) => directories.has(path);
@@ -72,5 +75,34 @@ describe("resolveExplorerMoveTarget", () => {
         isDir,
       ),
     ).toBeNull();
+  });
+});
+
+describe("finishExplorerDrag", () => {
+  it("uses a terminal-targeted drop without moving the explorer item", () => {
+    const pathDropTarget = {
+      updateTarget: vi.fn(() => true),
+      dropPath: vi.fn(() => true),
+      clearTarget: vi.fn(),
+    };
+    const onMove = vi.fn();
+
+    finishExplorerDrag(
+      true,
+      "/repo/file.ts",
+      100,
+      200,
+      null,
+      pathDropTarget,
+      onMove,
+    );
+
+    expect(pathDropTarget.dropPath).toHaveBeenCalledWith(
+      "/repo/file.ts",
+      100,
+      200,
+    );
+    expect(pathDropTarget.clearTarget).toHaveBeenCalledOnce();
+    expect(onMove).not.toHaveBeenCalled();
   });
 });
