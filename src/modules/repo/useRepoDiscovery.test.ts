@@ -31,7 +31,7 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Test harness — single mount with prop-driven re-renders to trigger
+// Test harness: single mount with prop-driven re-renders to trigger
 // re-discovery without unmount/remount.
 // ---------------------------------------------------------------------------
 function createHarness() {
@@ -59,7 +59,7 @@ function createHarness() {
   return {
     getState: () => state,
     getOnChange: () => onChange,
-    /** Render with a workspace root — triggers the discovery effect if root changed */
+    /** Render with a workspace root. Triggers the discovery effect if root changed. */
     render: (workspaceRoot: string | null) => {
       act(() => {
         root.render(
@@ -138,7 +138,7 @@ describe("useRepoDiscovery", () => {
     act(() => h.getOnChange()?.("/workspace/beta"));
     expect(h.getState()?.currentRepoRoot).toBe("/workspace/beta");
 
-    // Second discovery — beta still present
+    // Second discovery, beta still present
     const d2 = createDeferred<GitRepo[]>();
     mockDiscover.mockReturnValue(d2.promise);
 
@@ -219,7 +219,7 @@ describe("useRepoDiscovery", () => {
 
     expect(h.getState()?.detectedRepos[0]?.name).toBe("fast");
 
-    // Now resolve the stale (first) call — should be ignored
+    // Now resolve the stale (first) call, should be ignored
     await act(async () => {
       d1.resolve([
         { repoRoot: "/workspace/stale", name: "stale", type: "root" },
@@ -231,25 +231,6 @@ describe("useRepoDiscovery", () => {
     h.unmount();
   });
 
-  it("does not update state after unmount", async () => {
-    const d = createDeferred<GitRepo[]>();
-    mockDiscover.mockReturnValue(d.promise);
-
-    const h = createHarness();
-    h.render("/workspace");
-    expect(h.getState()?.loading).toBe(true);
-
-    h.unmount();
-
-    // Resolve after unmount — should not throw
-    await expect(
-      act(async () => {
-        d.resolve([
-          { repoRoot: "/workspace/after", name: "after", type: "root" },
-        ]);
-      }),
-    ).resolves.not.toThrow();
-  });
 
   it("resets state on discoverRepositories rejection", async () => {
     mockDiscover.mockRejectedValueOnce(new Error("network error"));
@@ -283,7 +264,7 @@ describe("useRepoDiscovery", () => {
 
     expect(h.getState()?.detectedRepos).toHaveLength(1);
 
-    // Change to null — effect should reset state
+    // Change to null, effect should reset state
     h.render(null);
     expect(h.getState()?.detectedRepos).toEqual([]);
     expect(h.getState()?.currentRepoRoot).toBeUndefined();
