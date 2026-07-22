@@ -95,7 +95,7 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     label: "Eden AI",
     keyringAccount: "edenai-api-key",
     keyPrefix: null,
-    consoleUrl: "https://app.edenai.run/v2/settings/api",
+    consoleUrl: "https://app.edenai.run/admin/api-settings/features-preferences",
   },
   {
     id: "openai-compatible",
