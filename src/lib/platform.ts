@@ -1,4 +1,4 @@
-import { platform } from "@tauri-apps/plugin-os";
+import { arch, platform, version } from "@tauri-apps/plugin-os";
 
 const PLATFORM = (() => {
   try {
@@ -8,9 +8,28 @@ const PLATFORM = (() => {
   }
 })();
 
+const ARCH = (() => {
+  try {
+    return arch();
+  } catch {
+    return "";
+  }
+})();
+
+const OS_VERSION = (() => {
+  try {
+    return version();
+  } catch {
+    return "";
+  }
+})();
+
 export const IS_MAC = PLATFORM === "macos";
 export const IS_LINUX = PLATFORM === "linux";
 export const IS_WINDOWS = PLATFORM === "windows";
+export const PLATFORM_ID = PLATFORM;
+export const ARCH_ID = ARCH;
+export const OS_VERSION_ID = OS_VERSION;
 
 /** Custom window controls (min/max/close) are rendered by us only on
  * non-macOS platforms — macOS keeps the native traffic lights via the

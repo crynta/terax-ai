@@ -10,6 +10,9 @@ jobs:
   publish-tauri:
     permissions:
       contents: write
+    env:
+      SPEECH_CORE_REVISION: 2601cc3c42b983bd841273d2af8d3aa7860b1cf5
+      ONNX_RUNTIME_VERSION: 1.19.0
     strategy:
       fail-fast: false
       matrix:
@@ -72,6 +75,35 @@ jobs:
           printf '%s' "$KEY_CONTENT" > "$HOME/private_keys/AuthKey.p8"
           echo "APPLE_API_KEY_PATH=$HOME/private_keys/AuthKey.p8" >> "$GITHUB_ENV"
 
+      - name: Import Apple signing certificate
+        if: startsWith(matrix.platform, 'macos')
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/apple-certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/terax-signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          echo "APPLE_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
       - id: tauri
         uses: tauri-apps/tauri-action@v1
         env:
@@ -80,8 +112,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -93,6 +123,203 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Check out pinned speech-core
+        if: startsWith(github.ref, 'refs/tags/') && (matrix.platform == 'ubuntu-22.04' || matrix.platform == 'windows-latest')
+        uses: actions/checkout@v7
+        with:
+          repository: soniqo/speech-core
+          ref: ${{ env.SPEECH_CORE_REVISION }}
+          path: native/.deps/speech-core
+          persist-credentials: false
+
+      - name: Build and package Speech Swift runtime
+        if: startsWith(github.ref, 'refs/tags/') && matrix.rust-target == 'aarch64-apple-darwin'
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE=native/speech-bridge-macos
+          ./scripts/prepare-speech-swift.sh
+          swift test --package-path "$PACKAGE/BridgeProtocol" \
+            --configuration release
+          swift build --package-path "$PACKAGE" --configuration release \
+            --arch arm64 --disable-sandbox --disable-automatic-resolution
+          BIN_DIR=$(swift build --package-path "$PACKAGE" --configuration release \
+            --arch arm64 --show-bin-path --disable-automatic-resolution)
+          STAGE="$GITHUB_WORKSPACE/native/dist/speech-runtime-macos"
+          ARCHIVE="$GITHUB_WORKSPACE/terax-speech-bridge-macos-arm64.zip"
+          rm -rf "$STAGE" "$ARCHIVE" "$ARCHIVE.sig"
+          mkdir -p "$STAGE/licenses"
+          cp "$BIN_DIR/terax-speech-bridge" "$STAGE/"
+          find "$BIN_DIR" -maxdepth 1 -type d -name '*.bundle' \
+            -exec cp -R {} "$STAGE/" \;
+          cp LICENSE "$STAGE/licenses/terax.txt"
+          while IFS= read -r license; do
+            dependency=$(basename "$(dirname "$license")")
+            filename=$(basename "$license")
+            cp "$license" "$STAGE/licenses/${dependency}-${filename}"
+          done < <(find "$PACKAGE/.build/checkouts" -maxdepth 2 -type f \
+            \( -iname 'LICENSE*' -o -iname 'COPYING*' -o -iname 'NOTICE*' \))
+
+          codesign --force --options runtime --timestamp \
+            --sign "$APPLE_SIGNING_IDENTITY" "$STAGE/terax-speech-bridge"
+          codesign --verify --strict "$STAGE/terax-speech-bridge"
+          node scripts/check-speech-bridge.mjs "$STAGE/terax-speech-bridge"
+          cmake -E chdir "$STAGE" cmake -E tar cf "$ARCHIVE" --format=zip .
+          xcrun notarytool submit "$ARCHIVE" \
+            --key "$APPLE_API_KEY_PATH" \
+            --key-id "$APPLE_API_KEY" \
+            --issuer "$APPLE_API_ISSUER" \
+            --wait
+          echo "SPEECH_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Download pinned ONNX Runtime for Linux
+        if: startsWith(github.ref, 'refs/tags/') && matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ARCHIVE="native/.deps/onnxruntime-linux-x64-${ONNX_RUNTIME_VERSION}.tgz"
+          ORT_DIR="$GITHUB_WORKSPACE/native/.deps/onnxruntime-linux-x64-${ONNX_RUNTIME_VERSION}"
+          curl -fL --retry 3 -o "$ARCHIVE" \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_RUNTIME_VERSION}/onnxruntime-linux-x64-${ONNX_RUNTIME_VERSION}.tgz"
+          echo "8627cae49b51544ed15bb70c8ecf25b187f22a301c99c1ced5f4f3af5c36b44c  $ARCHIVE" \
+            | sha256sum -c -
+          mkdir -p "$ORT_DIR"
+          tar -xzf "$ARCHIVE" -C "$ORT_DIR" --strip-components=1
+          echo "ORT_DIR=$ORT_DIR" >> "$GITHUB_ENV"
+
+      - name: Build and package Speech Core runtime for Linux
+        if: startsWith(github.ref, 'refs/tags/') && matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD=native/speech-bridge-core/build-release
+          STAGE="$GITHUB_WORKSPACE/native/dist/speech-runtime-linux"
+          ARCHIVE="$GITHUB_WORKSPACE/terax-speech-bridge-linux-amd64.zip"
+          cmake -S native/speech-bridge-core -B "$BUILD" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSPEECH_CORE_SOURCE_DIR="$GITHUB_WORKSPACE/native/.deps/speech-core" \
+            -DORT_DIR="$ORT_DIR"
+          cmake --build "$BUILD" --target terax_speech_bridge_protocol_tests --parallel 2
+          ctest --test-dir "$BUILD" --build-config Release --output-on-failure
+          cmake --build "$BUILD" --target terax-speech-bridge --parallel 2
+          rm -rf "$STAGE" "$ARCHIVE" "$ARCHIVE.sig"
+          mkdir -p "$STAGE/licenses"
+          cp "$BUILD/terax-speech-bridge" "$STAGE/"
+          cp -L "$ORT_DIR/lib/libonnxruntime.so.1.19.0" \
+            "$STAGE/libonnxruntime.so.1"
+          cp -L "$ORT_DIR/lib/libonnxruntime_providers_shared.so" "$STAGE/"
+          cp LICENSE "$STAGE/licenses/terax.txt"
+          cp native/.deps/speech-core/LICENSE "$STAGE/licenses/speech-core.txt"
+          cp native/.deps/speech-core/THIRD-PARTY-NOTICES.md \
+            "$STAGE/licenses/speech-core-third-party.md"
+          cp "$ORT_DIR/LICENSE" "$STAGE/licenses/onnxruntime.txt"
+          cp "$ORT_DIR/ThirdPartyNotices.txt" \
+            "$STAGE/licenses/onnxruntime-third-party.txt"
+          LD_LIBRARY_PATH="$STAGE" \
+            node scripts/check-speech-bridge.mjs "$STAGE/terax-speech-bridge"
+          cmake -E chdir "$STAGE" cmake -E tar cf "$ARCHIVE" --format=zip .
+          echo "SPEECH_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Download pinned ONNX Runtime for Windows
+        if: startsWith(github.ref, 'refs/tags/') && matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archive = "native/.deps/onnxruntime-win-x64-$env:ONNX_RUNTIME_VERSION.zip"
+          $ortDir = Join-Path $env:GITHUB_WORKSPACE "native/.deps/onnxruntime-win-x64-$env:ONNX_RUNTIME_VERSION"
+          Invoke-WebRequest `
+            -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ONNX_RUNTIME_VERSION/onnxruntime-win-x64-$env:ONNX_RUNTIME_VERSION.zip" `
+            -OutFile $archive
+          $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if ($actual -ne "1d796da7001e4843858d0587aa8232976abf9e0ae7fba8deb7fa8156e440efb7") {
+            throw "ONNX Runtime archive checksum mismatch"
+          }
+          Expand-Archive -Path $archive -DestinationPath "native/.deps" -Force
+          "ORT_DIR=$ortDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Build and package Speech Core runtime for Windows
+        if: startsWith(github.ref, 'refs/tags/') && matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $true
+          $build = "native/speech-bridge-core/build-release"
+          $stage = Join-Path $env:GITHUB_WORKSPACE "native/dist/speech-runtime-windows"
+          $archive = Join-Path $env:GITHUB_WORKSPACE "terax-speech-bridge-windows-amd64.zip"
+          cmake -S native/speech-bridge-core -B $build -A x64 `
+            -DSPEECH_CORE_SOURCE_DIR="$env:GITHUB_WORKSPACE/native/.deps/speech-core" `
+            -DORT_DIR="$env:ORT_DIR" `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build $build --config Release --target terax_speech_bridge_protocol_tests --parallel 2
+          ctest --test-dir $build --build-config Release --output-on-failure
+          cmake --build $build --config Release --target terax-speech-bridge --parallel 2
+          Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
+          Remove-Item -Force $archive, "$archive.sig" -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force "$stage/licenses" | Out-Null
+          Copy-Item "$build/Release/terax-speech-bridge.exe" $stage
+          Copy-Item "$env:ORT_DIR/lib/onnxruntime.dll" $stage
+          Copy-Item "$env:ORT_DIR/lib/onnxruntime_providers_shared.dll" $stage
+          if ($env:VCToolsRedistDir) {
+            $redistVersion = Get-Item $env:VCToolsRedistDir
+          } else {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio/Installer/vswhere.exe"
+            $visualStudio = & $vswhere -latest -products * `
+              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+              -property installationPath
+            $redistRoot = Join-Path $visualStudio "VC/Redist/MSVC"
+            $redistVersion = Get-ChildItem $redistRoot -Directory `
+              | Sort-Object Name -Descending `
+              | Select-Object -First 1
+          }
+          $crt = Get-ChildItem (Join-Path $redistVersion.FullName "x64") -Directory `
+            | Where-Object Name -Match '^Microsoft\.VC\d+\.CRT$' `
+            | Sort-Object Name -Descending `
+            | Select-Object -First 1
+          if ($null -eq $crt) {
+            throw "Visual C++ runtime directory was not found"
+          }
+          $crtDlls = @(Get-ChildItem $crt.FullName -File -Filter '*.dll')
+          if ($crtDlls.Count -eq 0) {
+            throw "Visual C++ runtime DLLs were not found"
+          }
+          Copy-Item $crtDlls.FullName $stage
+          Copy-Item LICENSE "$stage/licenses/terax.txt"
+          Copy-Item native/.deps/speech-core/LICENSE "$stage/licenses/speech-core.txt"
+          Copy-Item native/.deps/speech-core/THIRD-PARTY-NOTICES.md "$stage/licenses/speech-core-third-party.md"
+          Copy-Item "$env:ORT_DIR/LICENSE" "$stage/licenses/onnxruntime.txt"
+          Copy-Item "$env:ORT_DIR/ThirdPartyNotices.txt" "$stage/licenses/onnxruntime-third-party.txt"
+          $env:PATH = "$stage;$env:PATH"
+          node scripts/check-speech-bridge.mjs "$stage/terax-speech-bridge.exe"
+          Push-Location $stage
+          cmake -E tar cf $archive --format=zip .
+          Pop-Location
+          "SPEECH_ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Sign native speech runtime archive
+        if: startsWith(github.ref, 'refs/tags/') && (matrix.platform != 'macos-latest' || matrix.rust-target == 'aarch64-apple-darwin')
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri signer sign "$SPEECH_ARCHIVE"
+
+      - name: Upload native speech runtime archive
+        if: startsWith(github.ref, 'refs/tags/') && (matrix.platform != 'macos-latest' || matrix.rust-target == 'aarch64-apple-darwin')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "$SPEECH_ARCHIVE" "$SPEECH_ARCHIVE.sig" \
+            --clobber --repo "$GITHUB_REPOSITORY"
 
       # Strip the bundled libwayland-* libs from the AppImage so it loads the
       # host copies at runtime. The Ubuntu 22.04 build host ships libwayland
@@ -161,6 +388,13 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           gh release upload "$TAG" "$APPIMAGE" "$APPIMAGE.sig" \
             --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Remove Apple signing keychain
+        if: always() && startsWith(matrix.platform, 'macos') && env.APPLE_KEYCHAIN_PATH != ''
+        shell: bash
+        run: |
+          security delete-keychain "$APPLE_KEYCHAIN_PATH"
+          rm -f "$RUNNER_TEMP/apple-certificate.p12"
 
   # Patch the AppImage signature into the combined updater manifest. Runs once,
   # after every matrix leg has finished merging its platform into latest.json,

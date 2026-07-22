@@ -13,6 +13,7 @@ The main trust boundaries are:
 3. **Network boundary** - AI HTTP proxy in `src-tauri/src/modules/net.rs` with SSRF and DNS-rebinding defenses.
 4. **Secret-storage boundary** - keys live in the OS keychain, never on disk or in `localStorage`.
 5. **Terminal escape-sequence boundary** - OSC sequences are parsed and acted on, but never blindly trusted to mutate state.
+6. **Native speech artifact boundary** - downloaded code is signed, fixed by platform, and unpacked only after bounded archive validation.
 
 ## Secret-path deny-list
 
@@ -60,6 +61,14 @@ Auto-send after approval uses `lastAssistantMessageIsCompleteWithApprovalRespons
 
 Local LLM endpoints are explicitly allowed because the user opted in by pointing Terax at them, but they are still classified and logged.
 
+## Native speech artifacts
+
+Terax Native downloads its platform sidecar from the matching Terax release. The archive is capped at 128 MiB, verified with the updater minisign public key, and extracted into a staging directory. Extraction rejects traversal, symbolic links, more than 512 entries, mismatched entry sizes, and more than 256 MiB of expanded data. The executable path is derived from the current app version and platform; the webview cannot supply one.
+
+Models use immutable Hugging Face commit revisions. Registry metadata is capped at 2 MiB, total model size at 1 GiB, and every path is validated and URL-encoded by segment. LFS files must match both their declared size and SHA-256 digest. A revision marker is written only after all files finish, then the staged directory replaces the previous installation with rollback on failure.
+
+Transcription uses a private versioned stdin/stdout protocol, not HTTP. Rust limits audio to 32 MiB of finite Float32 samples and limits responses to 1 MiB. The sidecar has bounded stderr capture, an inference timeout, an out-of-band kill handle, and process-tree cleanup on exit.
+
 ## Secret storage
 
 API keys are stored via `secrets_*` commands (`src-tauri/src/modules/secrets.rs`):
@@ -87,6 +96,7 @@ The agent detector (`src-tauri/src/modules/pty/agent_detect.rs`) is armed by `OS
 - New network-facing commands must go through the `net.rs` proxy or reimplement the same classification and DNS pinning.
 - New plugin APIs must be added to `src-tauri/capabilities/default.json`.
 - Keys, tokens, and credentials stay in the keychain / Linux secrets file.
+- Downloaded native code must verify against a key rooted in the shipped app before extraction or execution.
 
 ## See also
 

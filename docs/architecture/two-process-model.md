@@ -104,6 +104,14 @@ Three distinct surfaces:
 - `ai_http_request` / `ai_http_stream` - AI HTTP proxy with SSRF guard
 - `lm_ping` - local-model ping
 
+### Speech (`src-tauri/src/modules/speech.rs`)
+
+- `stt_native_status` - report platform support and installed runtime/model profiles
+- `stt_native_install` - download and verify the signed platform runtime plus the selected revision-pinned model, streaming progress over a channel
+- `stt_native_transcribe` - accept raw little-endian Float32 PCM, validate it, and transcribe through the persistent native sidecar
+
+The sidecar protocol has fixed magic, version, operation, profile, sample-rate, language-length, and sample-count fields. Requests are capped at 32 MiB and responses at 1 MiB. The executable path is derived only from the signed managed runtime or a debug build path. macOS uses Speech Swift directly; Linux and Windows link Speech Core with ONNX Runtime. No HTTP server, shell, `PATH` lookup, or temporary audio file is involved.
+
 ### Secrets (`src-tauri/src/modules/secrets.rs`)
 
 - `secrets_get` / `secrets_set` / `secrets_delete` / `secrets_get_all` - OS keychain access, service `terax-ai`

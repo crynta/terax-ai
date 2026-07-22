@@ -63,6 +63,21 @@ Conversations are organized into sessions. Persistence lives in `terax-ai-sessio
 
 The composer derives `isBusy` from `agentMeta.status` so it can mount safely before sessions hydrate.
 
+### Voice input
+
+`useWhisperRecording` captures a browser `MediaRecorder` blob and `stt.ts` routes it to the selected transcription provider:
+
+- OpenAI and Groq are cloud providers and require their corresponding key.
+- Whisper.cpp is keyless and posts mono PCM WAV to a loopback `/inference` endpoint.
+- Terax Native is offered on Apple silicon with macOS 15 or newer and on x86-64 Linux or Windows. It uses Speech Swift on macOS and Speech Core on Linux/Windows through a Terax-owned sidecar.
+- Nemotron is the default multilingual native profile. Parakeet EOU 120M is the low-memory English profile and uses the upstream greedy RNN-T decoder on both native backends, not beam search. Switching profiles unloads the previous model before loading the next one.
+
+The pinned Nemotron conversions derive from NVIDIA's [`nvidia/nemotron-3.5-asr-streaming-0.6b`](https://huggingface.co/nvidia/nemotron-3.5-asr-streaming-0.6b), which is governed by [OpenMDW 1.1](https://openmdw.ai/license/1-1/) and marked ready for commercial use by NVIDIA. Other profiles remain subject to the upstream license terms for their pinned model snapshot.
+
+Whisper.cpp endpoints must be loopback HTTP(S) URLs and redirects are disabled, so a local server cannot redirect recorded audio off-device. Native audio is decoded, downmixed, and resampled to 16 kHz in the webview, then sent through raw Tauri IPC as little-endian Float32 PCM. Rust enforces a 32 MiB limit, finite samples, bounded language tags, and a valid sample rate before writing the versioned sidecar protocol. Sidecar responses and stderr capture are bounded, and transcription has a 15-minute timeout.
+
+The native runtime is a signed per-platform release asset and is installed under app-local data. Model snapshots are fetched by immutable Hugging Face revision; LFS files are verified with registry-provided SHA-256 digests before a staged directory replacement with rollback. Runtime archives reject traversal, symbolic links, oversized entries, and signature failures. No executable path crosses IPC. The persistent sidecar runs in its own Unix process group or Windows Job Object, is killed on app exit, and stops after five idle minutes. No runtime or model is bundled with the base app.
+
 ## Tools and approval
 
 Tool definitions live under `src/modules/ai/tools/`:
@@ -87,6 +102,7 @@ AI-proposed file edits open in an `ai-diff` tab. The user accepts or rejects per
 - Keep the Vercel AI SDK v6 chat shape (`streamText`, tools, step limits); the rest of the UI depends on it.
 - Keys only via `secrets_*` commands; never disk, settings store, or `localStorage`.
 - New providers must justify their bundle cost and unique value.
+- Local STT must stay on-device: loopback-only HTTP without redirects, or the fixed signed native sidecar protocol.
 - Mutating tools require approval; read-only tools still pass the deny-list.
 
 ## See also

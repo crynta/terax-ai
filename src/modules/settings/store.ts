@@ -1,14 +1,18 @@
 import {
   type AutocompleteProviderId,
   type CustomEndpoint,
+  coerceSttProvider,
   DEFAULT_AUTOCOMPLETE_MODEL,
   DEFAULT_MODEL_ID,
+  DEFAULT_NATIVE_SPEECH_PROFILE,
   DEFAULT_STT_PROVIDER,
   isKnownModelId,
+  isNativeSpeechProfile,
   LMSTUDIO_DEFAULT_BASE_URL,
   MLX_DEFAULT_BASE_URL,
   type ModelId,
   migrateLegacyCompatEndpoint,
+  type NativeSpeechProfile,
   OLLAMA_DEFAULT_BASE_URL,
   OPENAI_COMPATIBLE_DEFAULT_BASE_URL,
   type SttProvider,
@@ -140,6 +144,7 @@ export type Preferences = {
   customEndpoints: CustomEndpoint[];
   openrouterModelId: string;
   sttProvider: SttProvider;
+  nativeSpeechProfile: NativeSpeechProfile;
   groqSttModel: string;
   whispercppBaseURL: string;
   favoriteModelIds: string[];
@@ -228,6 +233,7 @@ const KEY_OPENAI_COMPAT_CONTEXT_LIMIT = "openaiCompatibleContextLimit";
 const KEY_CUSTOM_ENDPOINTS = "customEndpoints";
 const KEY_OPENROUTER_MODEL_ID = "openrouterModelId";
 const KEY_STT_PROVIDER = "sttProvider";
+const KEY_NATIVE_SPEECH_PROFILE = "nativeSpeechProfile";
 const KEY_GROQ_STT_MODEL = "groqSttModel";
 const KEY_WHISPERCPP_BASE_URL = "whispercppBaseURL";
 const KEY_FAVORITE_MODELS = "favoriteModelIds";
@@ -310,6 +316,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   customEndpoints: [],
   openrouterModelId: "",
   sttProvider: DEFAULT_STT_PROVIDER,
+  nativeSpeechProfile: DEFAULT_NATIVE_SPEECH_PROFILE,
   groqSttModel: "whisper-large-v3-turbo",
   whispercppBaseURL: WHISPERCPP_DEFAULT_BASE_URL,
   favoriteModelIds: [],
@@ -441,8 +448,16 @@ export async function loadPreferences(): Promise<Preferences> {
     openrouterModelId:
       get<string>(KEY_OPENROUTER_MODEL_ID) ??
       DEFAULT_PREFERENCES.openrouterModelId,
-    sttProvider:
-      get<SttProvider>(KEY_STT_PROVIDER) ?? DEFAULT_PREFERENCES.sttProvider,
+    sttProvider: (() => {
+      const stored = get<unknown>(KEY_STT_PROVIDER);
+      return coerceSttProvider(stored);
+    })(),
+    nativeSpeechProfile: (() => {
+      const stored = get<unknown>(KEY_NATIVE_SPEECH_PROFILE);
+      return isNativeSpeechProfile(stored)
+        ? stored
+        : DEFAULT_PREFERENCES.nativeSpeechProfile;
+    })(),
     groqSttModel:
       get<string>(KEY_GROQ_STT_MODEL) ?? DEFAULT_PREFERENCES.groqSttModel,
     whispercppBaseURL:
@@ -695,6 +710,12 @@ export async function setSttProvider(value: SttProvider): Promise<void> {
   await writePref(KEY_STT_PROVIDER, value);
 }
 
+export async function setNativeSpeechProfile(
+  value: NativeSpeechProfile,
+): Promise<void> {
+  await writePref(KEY_NATIVE_SPEECH_PROFILE, value);
+}
+
 export async function setGroqSttModel(value: string): Promise<void> {
   await writePref(KEY_GROQ_STT_MODEL, value.trim());
 }
@@ -841,7 +862,7 @@ export async function setDefaultWorkspaceEnv(value: string): Promise<void> {
 }
 
 export async function setShortcuts(
-  value: Record<ShortcutId, KeyBinding[]> | {},
+  value: Partial<Record<ShortcutId, KeyBinding[]>>,
 ): Promise<void> {
   await writePref(KEY_SHORTCUTS, value);
 }
@@ -885,6 +906,7 @@ export async function onPreferencesChange(
     [KEY_CUSTOM_ENDPOINTS]: "customEndpoints",
     [KEY_OPENROUTER_MODEL_ID]: "openrouterModelId",
     [KEY_STT_PROVIDER]: "sttProvider",
+    [KEY_NATIVE_SPEECH_PROFILE]: "nativeSpeechProfile",
     [KEY_GROQ_STT_MODEL]: "groqSttModel",
     [KEY_WHISPERCPP_BASE_URL]: "whispercppBaseURL",
     [KEY_FAVORITE_MODELS]: "favoriteModelIds",

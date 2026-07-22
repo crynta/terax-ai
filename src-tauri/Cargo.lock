@@ -5321,6 +5321,7 @@ dependencies = [
 name = "terax"
 version = "0.8.5"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
  "dirs 6.0.0",
  "futures-util",
@@ -5332,6 +5333,7 @@ dependencies = [
  "keyring",
  "libc",
  "log",
+ "minisign-verify",
  "notify",
  "nucleo-matcher",
  "objc2",
@@ -5341,6 +5343,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2",
  "shared_child",
  "tauri",
  "tauri-build",
@@ -5358,6 +5361,7 @@ dependencies = [
  "tokio",
  "which",
  "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]
@@ -7166,6 +7170,7 @@ checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
 dependencies = [
  "arbitrary",
  "crc32fast",
+ "flate2",
  "indexmap 2.14.0",
  "memchr",
 ]

@@ -52,6 +52,46 @@ jobs:
         run: pnpm knip
         continue-on-error: true
 
+  native-core-protocol:
+    name: native-core-protocol (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure protocol tests
+        run: >-
+          cmake -S native/speech-bridge-core
+          -B native/speech-bridge-core/build-ci
+          -DCMAKE_BUILD_TYPE=Release
+          -DTERAX_SPEECH_BRIDGE_RUNTIME=OFF
+
+      - name: Build protocol tests
+        run: >-
+          cmake --build native/speech-bridge-core/build-ci
+          --config Release
+          --target terax_speech_bridge_protocol_tests
+
+      - name: Test protocol
+        run: >-
+          ctest --test-dir native/speech-bridge-core/build-ci
+          --build-config Release
+          --output-on-failure
+
+  native-swift-protocol:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Test protocol
+        run: >-
+          swift test
+          --package-path native/speech-bridge-macos/BridgeProtocol
+          --configuration release
+
   rust:
     runs-on: ubuntu-22.04
     steps:
