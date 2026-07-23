@@ -19,6 +19,7 @@ type Params = {
   markBooted: () => void;
   setActiveSpaceForNewTabs: (id: string) => void;
   adoptWorkspaceEnv: (env: WorkspaceEnv) => Promise<string | null>;
+  restoredSession?: boolean;
 };
 
 function uniqueCwds(tabs: Tab[]): string[] {
@@ -43,6 +44,7 @@ export function useSpacesBoot({
   markBooted,
   setActiveSpaceForNewTabs,
   adoptWorkspaceEnv,
+  restoredSession,
 }: Params) {
   const done = useRef(false);
 
@@ -114,7 +116,9 @@ export function useSpacesBoot({
         const inActive = restored.filter((t) => t.spaceId === active);
         const idx = states.get(active)?.activeTabIndex ?? 0;
         const activeTab = inActive[idx] ?? inActive[0] ?? restored[0];
-        replaceTabs(restored, activeTab.id);
+        if (!restoredSession) {
+          replaceTabs(restored, activeTab.id);
+        }
       } catch (e) {
         console.error("[terax] spaces boot failed:", e);
       } finally {
@@ -130,5 +134,6 @@ export function useSpacesBoot({
     markBooted,
     setActiveSpaceForNewTabs,
     adoptWorkspaceEnv,
+    restoredSession,
   ]);
 }
