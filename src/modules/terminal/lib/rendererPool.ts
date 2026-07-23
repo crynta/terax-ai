@@ -235,14 +235,28 @@ function createSlot(): Slot {
   };
 
   term.attachCustomKeyEventHandler((event) => {
-    // During IME composition the browser is assembling a multi-keystroke
-    // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
-    // Raw keydown events — including the Enter that commits a candidate —
-    // must NOT be forwarded to the PTY; xterm will receive the final
-    // composed string through its own compositionend handler instead.
-    // keyCode 229 ("Process") is what Chromium reports for every key
-    // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // During IME composition (isComposing=true), skip our custom logic and
+    // let xterm handle it internally via CompositionHelper.
+    if (event.isComposing) {
+      return false;
+    }
+
+    // keyCode 229 with isComposing=false: the IME is active but this is NOT
+    // a composition sequence. On macOS with Chinese IME, Shift+digit produces
+    // punctuation (@ # ¥ etc.) but the first press is consumed by the IME as
+    // a mode-switch signal — xterm's textarea-diff path misses it. If the key
+    // is a printable character, write it directly to the PTY to avoid the
+    // double-press issue.
+    if (event.keyCode === 229 && event.type === "keydown") {
+      const leafId = slot.currentLeafId;
+      const bridge = leafId !== null ? adapter?.resolveLeaf(leafId) : null;
+      if (bridge && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        bridge.writeToPty(event.key);
+        event.preventDefault();
+        return false;
+      }
+      return false;
+    }
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
