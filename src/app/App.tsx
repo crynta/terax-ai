@@ -322,6 +322,8 @@ export default function App() {
 
   useWindowTitle(activeTab, explorerRoot);
 
+  const { detectedRepos, currentRepoRoot, onRepoChange } = useRepoDiscovery(explorerRoot ?? null);
+
   useEffect(() => {
     setActiveSearchAddon(
       activeLeafId !== null
@@ -616,6 +618,7 @@ export default function App() {
       tabs,
       activeTerminalLeafCwd,
       explorerRoot,
+      selectedRepoRoot: currentRepoRoot,
       launchCwd,
       launchCwdResolved,
       home,
@@ -971,8 +974,6 @@ export default function App() {
     activeEditorHandle,
     gitHistoryHandle,
   ]);
-
-  const { detectedRepos, currentRepoRoot, onRepoChange } = useRepoDiscovery(explorerRoot ?? null);
 
   const activeCwd = activeTerminalLeafCwd;
 

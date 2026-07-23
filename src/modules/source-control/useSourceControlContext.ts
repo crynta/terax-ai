@@ -17,6 +17,10 @@ type Params = {
   tabs: Tab[];
   activeTerminalLeafCwd: string | null;
   explorerRoot: string | null;
+  /** Explicitly-selected repo root from the workspace repo picker. When set,
+   * this overrides the explorer root for the source-control context path so
+   * the picker actually changes which repo the Git panel tracks. */
+  selectedRepoRoot?: string | null;
   launchCwd: string | null;
   launchCwdResolved: boolean;
   home: string | null;
@@ -38,6 +42,7 @@ export function useSourceControlContext({
   tabs,
   activeTerminalLeafCwd,
   explorerRoot,
+  selectedRepoRoot,
   launchCwd,
   launchCwdResolved,
   home,
@@ -50,13 +55,13 @@ export function useSourceControlContext({
     : null;
   const sourceControlContextPath = (() => {
     if (activeTab?.kind === "terminal") {
-      return activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath;
+      return activeTerminalLeafCwd ?? selectedRepoRoot ?? explorerRoot ?? workspaceFallbackPath;
     }
     if (activeTab?.kind === "editor") return dirname(activeTab.path);
     if (activeTab?.kind === "git-diff") return activeTab.repoRoot;
     if (activeTab?.kind === "git-commit-file") return activeTab.repoRoot;
     if (activeTab?.kind === "git-history") return activeTab.repoRoot;
-    return explorerRoot ?? workspaceFallbackPath;
+    return selectedRepoRoot ?? explorerRoot ?? workspaceFallbackPath;
   })();
   const hasOpenGitTab = useMemo(
     () =>
@@ -72,7 +77,10 @@ export function useSourceControlContext({
   // Ambient path tracks the explorer root so the rail badge and explorer git
   // decorations reflect the repo you are actually looking at. cd-within-repo
   // churn is absorbed by the status TTL + reusable-root path in useSourceControl.
-  const badgeContextPath = explorerRoot ?? workspaceFallbackPath;
+  // When the user has explicitly selected a repo via the workspace picker,
+  // prefer that root for the ambient Git badge so it reflects the chosen repo.
+  const badgeContextPath =
+    selectedRepoRoot ?? explorerRoot ?? workspaceFallbackPath;
   const sourceControlPath = sourceControlActive
     ? sourceControlContextPath
     : badgeContextPath;
