@@ -185,7 +185,10 @@ const targetIn = (
       querySelector: (sel: string) => {
         const id = JSON.parse(sel.slice("[id=".length, -1)) as string;
         return id in ids
-          ? { getBoundingClientRect: () => ({ top: ids[id] }) }
+          ? {
+              getBoundingClientRect: () => ({ top: ids[id] }),
+              closest: () => null,
+            }
           : null;
       },
     }),
@@ -199,7 +202,7 @@ describe("handleLinkClick", () => {
   it("scrolls only the pane's scroll container for fragments, never openUrl", () => {
     const scroller = scrollerFake();
     handleLinkClick("#setup", targetIn({ "user-content-setup": 250 }, scroller));
-    expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 250 - 10 + 40 });
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 250 - 10 + 40 - 8 });
     expect(opener.openUrl).not.toHaveBeenCalled();
   });
 

@@ -75,9 +75,22 @@ export function resolveFragment(
   );
 }
 
+// Fragment targets can be inline elements, like a footnote reference's
+// raised sup anchor (line-height 0 and a -0.5em relative shift in the
+// GitHub stylesheet). Aligning that rect to the exact container top clips
+// the line that contains it, so the view appears to land below the
+// reference. Scrolling the enclosing block instead keeps the whole line
+// visible; a heading is its own closest() match, so block targets are
+// unaffected.
+const BLOCK_ANCHOR = "p, li, h1, h2, h3, h4, h5, h6, td, th, blockquote, pre";
+
+// Breathing room above the landing block, so text never sits flush against
+// the clipped edge of the scroll container.
+const SCROLL_CUSHION = 8;
+
 /**
  * Scrolls the pane's own scroll container (the markdown-body article's
- * parent, the overflow-auto div) so the fragment's heading lands at the
+ * parent, the overflow-auto div) so the fragment's target lands at the
  * top. Element.scrollIntoView would scroll EVERY scrollable ancestor,
  * including the pane's overflow-hidden wrapper and the tab stack above it;
  * hidden-overflow boxes ignore the wheel, so the user could never scroll
@@ -88,9 +101,11 @@ export function scrollToFragment(link: Element, fragment: string): void {
   if (!target) return;
   const scroller = link.closest(".markdown-body")?.parentElement;
   if (!scroller) return;
+  const anchor = target.closest(BLOCK_ANCHOR) ?? target;
   const top =
-    target.getBoundingClientRect().top -
+    anchor.getBoundingClientRect().top -
     scroller.getBoundingClientRect().top +
-    scroller.scrollTop;
-  scroller.scrollTo({ top });
+    scroller.scrollTop -
+    SCROLL_CUSHION;
+  scroller.scrollTo({ top: Math.max(0, top) });
 }

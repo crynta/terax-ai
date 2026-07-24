@@ -151,24 +151,55 @@ describe("scrollToFragment", () => {
     scrollTo: vi.fn(),
   });
 
-  const paneOver = (ids: Record<string, number>, parent: unknown) =>
+  // A block target (heading) is its own closest() match; an inline target
+  // (footnote sup anchor) resolves to its enclosing block's rect instead,
+  // so the line containing it is never clipped at the container edge.
+  const blockTarget = (top: number) => {
+    const el = {
+      getBoundingClientRect: () => ({ top }),
+      closest: () => el,
+    };
+    return el;
+  };
+  const inlineTarget = (top: number, blockTop: number) => ({
+    getBoundingClientRect: () => ({ top }),
+    closest: () => ({ getBoundingClientRect: () => ({ top: blockTop }) }),
+  });
+
+  const paneOver = (ids: Record<string, unknown>, parent: unknown) =>
     ({
       parentElement: parent,
       querySelector: (sel: string) => {
         const id = JSON.parse(sel.slice("[id=".length, -1)) as string;
-        return id in ids
-          ? { getBoundingClientRect: () => ({ top: ids[id] }) }
-          : null;
+        return (ids[id] as Element | undefined) ?? null;
       },
     }) as unknown as Element;
 
   it("scrolls the pane's own scroll container, not the target", () => {
     const s = scroller();
     scrollToFragment(
-      linkIn(paneOver({ "user-content-live-refresh": 250 }, s)),
+      linkIn(paneOver({ "user-content-live-refresh": blockTarget(250) }, s)),
       "live-refresh",
     );
-    expect(s.scrollTo).toHaveBeenCalledWith({ top: 250 - 10 + 40 });
+    expect(s.scrollTo).toHaveBeenCalledWith({ top: 250 - 10 + 40 - 8 });
+  });
+
+  it("scrolls an inline target's enclosing block, not the raised sup rect", () => {
+    const s = scroller();
+    scrollToFragment(
+      linkIn(paneOver({ "user-content-fnref-1": inlineTarget(244, 230) }, s)),
+      "fnref-1",
+    );
+    expect(s.scrollTo).toHaveBeenCalledWith({ top: 230 - 10 + 40 - 8 });
+  });
+
+  it("clamps at zero for targets near the document top", () => {
+    const s = { ...scroller(), scrollTop: 0 };
+    scrollToFragment(
+      linkIn(paneOver({ "user-content-intro": blockTarget(12) }, s)),
+      "intro",
+    );
+    expect(s.scrollTo).toHaveBeenCalledWith({ top: 0 });
   });
 
   it("does nothing when the fragment does not resolve", () => {
@@ -178,6 +209,9 @@ describe("scrollToFragment", () => {
   });
 
   it("does nothing when the pane has no scroll container", () => {
-    scrollToFragment(linkIn(paneOver({ "user-content-x": 5 }, null)), "x");
+    scrollToFragment(
+      linkIn(paneOver({ "user-content-x": blockTarget(5) }, null)),
+      "x",
+    );
   });
 });
