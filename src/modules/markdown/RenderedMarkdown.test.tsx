@@ -225,10 +225,30 @@ describe("PreviewErrorBoundary", () => {
     expect(PreviewErrorBoundary.getDerivedStateFromError()).toEqual({
       failed: true,
     });
-    const boundary = new PreviewErrorBoundary({ children: "content" });
-    boundary.state = { failed: true };
+    const boundary = new PreviewErrorBoundary({
+      content: "# bad",
+      children: "content",
+    });
+    boundary.state = { failed: true, content: "# bad" };
     const html = renderToStaticMarkup(boundary.render());
     expect(html).toContain("Use the Raw view");
     expect(html).not.toContain("content");
+  });
+
+  // The pane re-reads through the fs watcher without remounting, so a
+  // failed render must not pin the fallback for the pane's whole life.
+  it("retries when the content changes and holds the fallback otherwise", () => {
+    expect(
+      PreviewErrorBoundary.getDerivedStateFromProps(
+        { content: "# fixed" },
+        { failed: true, content: "# bad" },
+      ),
+    ).toEqual({ failed: false, content: "# fixed" });
+    expect(
+      PreviewErrorBoundary.getDerivedStateFromProps(
+        { content: "# bad" },
+        { failed: true, content: "# bad" },
+      ),
+    ).toBeNull();
   });
 });

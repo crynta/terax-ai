@@ -157,12 +157,22 @@ const LINK_SAFETY_OFF = { enabled: false };
 // Pathological nesting can overflow the pipeline's call stack and the app
 // mounts no error boundary of its own; contain failures so Raw view survives.
 export class PreviewErrorBoundary extends Component<
-  { children: ReactNode },
-  { failed: boolean }
+  { content: string; children: ReactNode },
+  { failed: boolean; content: string }
 > {
-  state = { failed: false };
+  state = { failed: false, content: this.props.content };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  // Edits arrive through the fs watcher without a remount, so new content
+  // gets a fresh attempt; otherwise one bad render pins the fallback for
+  // the rest of the pane's life.
+  static getDerivedStateFromProps(
+    props: { content: string },
+    state: { failed: boolean; content: string },
+  ) {
+    if (props.content === state.content) return null;
+    return { failed: false, content: props.content };
   }
   componentDidCatch(error: unknown) {
     console.error("[markdown-preview] render failed", error);
@@ -186,7 +196,7 @@ type RenderedMarkdownProps = { content: string; baseDir?: string };
 
 export function RenderedMarkdown({ content, baseDir }: RenderedMarkdownProps) {
   return (
-    <PreviewErrorBoundary>
+    <PreviewErrorBoundary content={content}>
       <CodeRunActionProvider value={false}>
         <RenderedMarkdownInner content={content} baseDir={baseDir} />
       </CodeRunActionProvider>
