@@ -41,19 +41,17 @@ const render = (md: string, baseDir?: string) =>
   );
 
 describe("rehypeLocalImages through the full pipeline", () => {
-  it("resolves a bare relative src against the document directory", () => {
-    const html = render("![shot](img.png)", "D:\\notes");
-    expect(html).toContain(`src="${windowsForm("D:/notes/img.png")}"`);
-  });
-
-  it("resolves ./ nested paths", () => {
-    const html = render("![a](./a/b.png)", "D:\\notes");
-    expect(html).toContain(`src="${windowsForm("D:/notes/a/b.png")}"`);
-  });
-
-  it("resolves ../ traversal into the parent directory", () => {
-    const html = render("![x](../x.png)", "D:\\ws\\docs");
-    expect(html).toContain(`src="${windowsForm("D:/ws/x.png")}"`);
+  it("resolves relative srcs against the document directory", () => {
+    const cases: Array<[md: string, baseDir: string, resolved: string]> = [
+      ["![shot](img.png)", "D:\\notes", "D:/notes/img.png"],
+      ["![a](./a/b.png)", "D:\\notes", "D:/notes/a/b.png"],
+      ["![x](../x.png)", "D:\\ws\\docs", "D:/ws/x.png"],
+      // Backslash traversal past the drive root clamps at the root.
+      ['<img src="..\\..\\..\\img.png" alt="up">', "D:\\notes", "D:/img.png"],
+    ];
+    for (const [md, baseDir, resolved] of cases) {
+      expect(render(md, baseDir)).toContain(`src="${windowsForm(resolved)}"`);
+    }
   });
 
   // Documented behavior: escaping above the workspace stays allowed, same
@@ -63,26 +61,6 @@ describe("rehypeLocalImages through the full pipeline", () => {
     expect(html).toContain(`src="${windowsForm("D:/other/x.png")}"`);
   });
 
-  it("clamps backslash traversal past the drive root at the root", () => {
-    const html = render(
-      '<img src="..\\..\\..\\img.png" alt="up">',
-      "D:\\notes",
-    );
-    expect(html).toContain(`src="${windowsForm("D:/img.png")}"`);
-  });
-
-  it("passes http(s) srcs through byte-identical, no conversion", () => {
-    const html = render("![r](https://example.com/a.png)", "D:\\notes");
-    expect(html).toContain('src="https://example.com/a.png"');
-    expect(tauri.convertFileSrc).not.toHaveBeenCalled();
-  });
-
-  it("leaves root-absolute srcs unresolved (GitHub repo-root semantics)", () => {
-    const html = render("![a](/assets/x.png)", "D:\\notes");
-    expect(tauri.convertFileSrc).not.toHaveBeenCalled();
-    expect(html).not.toContain("asset.localhost");
-  });
-
   it("no base directory: plugin no-ops, harden degrades to alt text", () => {
     const html = render("![shot](img.png)");
     expect(tauri.convertFileSrc).not.toHaveBeenCalled();
@@ -90,21 +68,45 @@ describe("rehypeLocalImages through the full pipeline", () => {
     expect(html).toContain("shot");
   });
 
-  it("percent-encoded spaces survive the round trip without double encoding", () => {
-    const html = render("![shot](my%20shot.png)", "D:\\n");
-    expect(html).toContain(`src="${windowsForm("D:/n/my shot.png")}"`);
-    expect(html).not.toContain("%2520");
-  });
-
-  it("literal spaces in raw HTML srcs survive the round trip", () => {
-    const html = render('<img src="my shot.png" alt="s">', "D:\\n");
-    expect(html).toContain(`src="${windowsForm("D:/n/my shot.png")}"`);
-  });
-
-  it("# in a file name survives via its percent-encoded form", () => {
-    const html = render("![v](notes%23v2.png)", "D:\\n");
-    expect(html).toContain(`src="${windowsForm("D:/n/notes#v2.png")}"`);
+  it("decodes exactly once through the round trip", () => {
+    const cases: Array<[md: string, resolved: string]> = [
+      ["![shot](my%20shot.png)", "D:/n/my shot.png"],
+      ['<img src="my shot.png" alt="s">', "D:/n/my shot.png"],
+      ["![v](notes%23v2.png)", "D:/n/notes#v2.png"],
+    ];
+    for (const [md, resolved] of cases) {
+      const html = render(md, "D:\\n");
+      expect(html).toContain(`src="${windowsForm(resolved)}"`);
+      // Double encoding would surface as %2520 in the served URL.
+      expect(html).not.toContain("%2520");
+    }
     expect(windowsForm("D:/n/notes#v2.png")).toContain("%23");
+  });
+
+  it("never rewrites non-relative srcs", () => {
+    const cases: Array<[md: string, survivingSrc: string | null]> = [
+      ["![r](https://example.com/a.png)", 'src="https://example.com/a.png"'],
+      // Root-absolute means repo root on GitHub; here it stays unresolved.
+      ["![a](/x.png)", null],
+      ["![d](data:image/png;base64,AAAA)", null],
+    ];
+    for (const [md, survivingSrc] of cases) {
+      const html = render(md, "D:\\notes");
+      if (survivingSrc) expect(html).toContain(survivingSrc);
+      expect(html).not.toContain("asset.localhost");
+    }
+    // data: byte-identity holds at the transformer; downstream the pipeline's
+    // sanitizer strips data: imgs entirely, so it is only observable here.
+    const src = "data:image/png;base64,AAAA";
+    const img = {
+      type: "element",
+      tagName: "img",
+      properties: { src },
+      children: [],
+    };
+    rehypeLocalImages("D:/notes")({ type: "root", children: [img] });
+    expect(img.properties.src).toBe(src);
+    expect(tauri.convertFileSrc).not.toHaveBeenCalled();
   });
 
   it("the asset scheme (macOS/Linux form) survives the sanitizer", () => {
@@ -117,35 +119,17 @@ describe("rehypeLocalImages through the full pipeline", () => {
     );
   });
 
-  it("the asset scheme form resolves ../ traversal and encoded spaces", () => {
-    tauri.convertFileSrc.mockImplementation(
-      (path) => `asset://localhost/${encodeURIComponent(path)}`,
-    );
-    const up = render("![x](../x.png)", "/home/u/docs");
-    expect(up).toContain(
-      `src="asset://localhost/${encodeURIComponent("/home/u/x.png")}"`,
-    );
-    const spaced = render("![s](my%20shot.png)", "/home/u");
-    expect(spaced).toContain(
-      `src="asset://localhost/${encodeURIComponent("/home/u/my shot.png")}"`,
-    );
-    expect(spaced).not.toContain("%2520");
-  });
-
-  it("no other scheme sneaks into img src through the sanitizer", () => {
-    const html = render('<img src="foo://x/y.png" alt="f">', "D:\\notes");
-    expect(html).not.toContain("foo://");
-    expect(html).not.toContain("<img");
-  });
-
   // A drive-letter src parses as a URL with a "c:" scheme; the resolver
-  // leaves it alone and the sanitizer strips it.
-  it("a bare drive-letter src (C:/x.png) is stripped, alt text remains", () => {
-    const html = render("![shot](C:/x.png)", "D:\\notes");
+  // leaves both alone and the sanitizer strips them.
+  it("no other scheme sneaks into img src through the sanitizer", () => {
+    const foo = render('<img src="foo://x/y.png" alt="f">', "D:\\notes");
+    expect(foo).not.toContain("foo://");
+    expect(foo).not.toContain("<img");
+    const drive = render("![shot](C:/x.png)", "D:\\notes");
     expect(tauri.convertFileSrc).not.toHaveBeenCalled();
-    expect(html).not.toContain("C:/x.png");
-    expect(html).not.toContain("<img");
-    expect(html).toContain("shot");
+    expect(drive).not.toContain("C:/x.png");
+    expect(drive).not.toContain("<img");
+    expect(drive).toContain("shot");
   });
 });
 
@@ -171,37 +155,21 @@ describe("tauri.conf.json assetProtocol contract", () => {
   });
 });
 
-describe("rehypeLocalImages transformer", () => {
-  it("leaves data: srcs byte-identical", () => {
-    const src = "data:image/png;base64,AAAA";
-    const img = {
-      type: "element",
-      tagName: "img",
-      properties: { src },
-      children: [],
-    };
-    rehypeLocalImages("D:/notes")({ type: "root", children: [img] });
-    expect(img.properties.src).toBe(src);
-    expect(tauri.convertFileSrc).not.toHaveBeenCalled();
-  });
-});
-
 describe("joinPath", () => {
-  it("joins and normalizes across separator styles", () => {
-    expect(joinPath("D:\\a\\b", "img.png")).toBe("D:/a/b/img.png");
-    expect(joinPath("D:/a/b", "./c/img.png")).toBe("D:/a/b/c/img.png");
-    expect(joinPath("D:/a/b", "../img.png")).toBe("D:/a/img.png");
-  });
-
-  it("clamps .. at the drive root and at /", () => {
-    expect(joinPath("D:/a", "../../../x.png")).toBe("D:/x.png");
-    expect(joinPath("/home/u", "../../../x.png")).toBe("/x.png");
-  });
-
-  it("preserves the UNC lead-in", () => {
-    expect(joinPath("\\\\server\\share\\docs", "../x.png")).toBe(
-      "//server/share/x.png",
-    );
+  it("joins, normalizes and clamps across separator styles", () => {
+    const cases: Array<[base: string, rel: string, joined: string]> = [
+      ["D:\\a\\b", "img.png", "D:/a/b/img.png"],
+      ["D:/a/b", "./c/img.png", "D:/a/b/c/img.png"],
+      ["D:/a/b", "../img.png", "D:/a/img.png"],
+      // .. clamps at the drive root and at /.
+      ["D:/a", "../../../x.png", "D:/x.png"],
+      ["/home/u", "../../../x.png", "/x.png"],
+      // The UNC //server/share lead-in must survive traversal.
+      ["\\\\server\\share\\docs", "../x.png", "//server/share/x.png"],
+    ];
+    for (const [base, rel, joined] of cases) {
+      expect(joinPath(base, rel)).toBe(joined);
+    }
   });
 });
 

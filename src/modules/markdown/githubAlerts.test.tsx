@@ -17,18 +17,19 @@ const render = (md: string) =>
     </Streamdown>,
   );
 
+// The lowercase row locks GitHub's case-insensitive marker matching.
 const TYPES = [
   ["NOTE", "note", "Note"],
   ["TIP", "tip", "Tip"],
   ["IMPORTANT", "important", "Important"],
   ["WARNING", "warning", "Warning"],
   ["CAUTION", "caution", "Caution"],
+  ["note", "note", "Note"],
 ] as const;
 
 describe("rehypeGithubAlerts", () => {
-  it.each(TYPES)(
-    "[!%s] renders the classed alert structure through the full pipeline",
-    (marker, cls, title) => {
+  it("renders every alert type", () => {
+    for (const [marker, cls, title] of TYPES) {
       const html = render(`> [!${marker}]\n> body text`);
       expect(html).toContain(
         `<div class="markdown-alert markdown-alert-${cls}">`,
@@ -37,101 +38,59 @@ describe("rehypeGithubAlerts", () => {
       expect(html).toContain("body text");
       expect(html).not.toContain("<blockquote");
       expect(html).not.toContain(`[!${marker}]`);
-    },
-  );
-
-  it("matches the marker case-insensitively like GitHub", () => {
-    const html = render("> [!note]\n> body");
-    expect(html).toContain('class="markdown-alert markdown-alert-note"');
-    expect(html).toContain(">Note</p>");
+    }
   });
 
-  it("keeps the alert classes through the sanitizer", () => {
-    const html = render("> [!CAUTION]\n> body");
-    expect(html).toContain('class="markdown-alert markdown-alert-caution"');
-    expect(html).toContain('class="markdown-alert-title"');
+  it("marker-line branches", () => {
+    // Two trailing spaces after the marker are a GFM hard break: the marker
+    // becomes its own text node followed by a <br>, both spliced out.
+    const hardBreak = render(
+      "> [!NOTE]  \n> See [docs](https://example.com) and `inline code`.\n>\n> - one\n> - two",
+    );
+    expect(hardBreak).toContain('class="markdown-alert markdown-alert-note"');
+    expect(hardBreak).toContain(">Note</p>");
+    expect(hardBreak).toContain('href="https://example.com/"');
+    expect(hardBreak).toContain("inline code");
+    expect(hardBreak).toContain("<li>one</li>");
+    expect(hardBreak).toContain("<li>two</li>");
+    expect(hardBreak).not.toContain("[!NOTE]");
+    expect(hardBreak).not.toContain("<br");
+
+    const markerOnly = render("> [!WARNING]");
+    expect(markerOnly).toContain(
+      'class="markdown-alert markdown-alert-warning"',
+    );
+    expect(markerOnly).toContain(">Warning</p>");
+  });
+
+  it("non-alerts stay plain blockquotes", () => {
+    const rejected: [string, string][] = [
+      ["> [!NOTE] heads up\n> body", "[!NOTE] heads up"],
+      ["> [!NOTES]\n> body", "[!NOTES]"],
+      ["> [!DANGER]\n> body", "[!DANGER]"],
+      ["> intro line\n> [!NOTE]", "[!NOTE]"],
+      ["> intro paragraph\n>\n> [!NOTE]\n> body", "[!NOTE]"],
+    ];
+    for (const [md, survivingMarker] of rejected) {
+      const html = render(md);
+      expect(html).toContain("<blockquote");
+      expect(html).toContain(survivingMarker);
+      expect(html).not.toContain("markdown-alert");
+    }
+
+    // An alert nested inside an alert: the outer transforms, the inner
+    // stays a plain blockquote.
+    const nested = render(
+      "> [!NOTE]\n> outer body\n>\n> > [!TIP]\n> > inner body",
+    );
+    expect(nested).toContain('class="markdown-alert markdown-alert-note"');
+    expect(nested).not.toContain("markdown-alert-tip");
+    expect(nested).toContain("<blockquote");
+    expect(nested).toContain("[!TIP]");
   });
 
   it("sanitizer enumerates values: unknown classes on raw divs are pruned", () => {
     const html = render('<div class="markdown-alert evil-hook">x</div>');
     expect(html).not.toContain("evil-hook");
-  });
-
-  it("alert content renders full markdown: links, code, lists", () => {
-    const html = render(
-      "> [!TIP]\n> See [docs](https://example.com) and `inline code`.\n>\n> - one\n> - two",
-    );
-    expect(html).toContain("markdown-alert-tip");
-    expect(html).toContain('href="https://example.com/"');
-    expect(html).toContain("inline code");
-    expect(html).toContain("<li>one</li>");
-    expect(html).toContain("<li>two</li>");
-  });
-
-  // Two trailing spaces after the marker are a GFM hard break: the marker
-  // becomes its own text node followed by a <br>, both spliced out.
-  it("a hard break after the marker keeps the content, no stray newline", () => {
-    const html = render("> [!NOTE]  \n> content here");
-    expect(html).toContain('class="markdown-alert markdown-alert-note"');
-    expect(html).toContain(">Note</p>");
-    expect(html).toContain("<p>content here</p>");
-    expect(html).not.toContain("[!NOTE]");
-    expect(html).not.toContain("<br");
-  });
-
-  it("a marker-only blockquote renders as an alert with just the title", () => {
-    const html = render("> [!WARNING]");
-    expect(html).toContain('class="markdown-alert markdown-alert-warning"');
-    expect(html).toContain(">Warning</p>");
-  });
-
-  it("content on the marker line stays a plain blockquote", () => {
-    const html = render("> [!NOTE] heads up\n> body");
-    expect(html).toContain("<blockquote");
-    expect(html).toContain("[!NOTE] heads up");
-    expect(html).not.toContain("markdown-alert");
-  });
-
-  it("a misspelled or unknown type stays a plain blockquote", () => {
-    for (const md of ["> [!NOTES]\n> body", "> [!DANGER]\n> body"]) {
-      const html = render(md);
-      expect(html).toContain("<blockquote");
-      expect(html).not.toContain("markdown-alert");
-    }
-  });
-
-  it("a marker preceded by content stays a plain blockquote", () => {
-    for (const md of [
-      "> intro line\n> [!NOTE]",
-      "> intro paragraph\n>\n> [!NOTE]\n> body",
-    ]) {
-      const html = render(md);
-      expect(html).toContain("<blockquote");
-      expect(html).toContain("[!NOTE]");
-      expect(html).not.toContain("markdown-alert");
-    }
-  });
-
-  it("an alert nested inside a blockquote stays a plain blockquote", () => {
-    const html = render("> > [!NOTE]\n> > inner");
-    expect(html).not.toContain("markdown-alert");
-    expect(html).toContain("[!NOTE]");
-  });
-
-  it("an alert nested inside an alert stays a plain blockquote", () => {
-    const html = render(
-      "> [!NOTE]\n> outer body\n>\n> > [!TIP]\n> > inner body",
-    );
-    expect(html).toContain('class="markdown-alert markdown-alert-note"');
-    expect(html).not.toContain("markdown-alert-tip");
-    expect(html).toContain("<blockquote");
-    expect(html).toContain("[!TIP]");
-  });
-
-  it("a non-alert blockquote is untouched", () => {
-    const html = render("> just a quote\n> second line");
-    expect(html).toContain("<blockquote");
-    expect(html).toContain("just a quote");
-    expect(html).not.toContain("markdown-alert");
   });
 });

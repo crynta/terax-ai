@@ -15,16 +15,13 @@ const render = (content: string) =>
   renderToStaticMarkup(<RenderedMarkdown content={content} />);
 
 describe("RenderedMarkdown", () => {
-  it("keeps <pre> for plain fences, whitespace preserved", () => {
-    const html = render("```\na\n  b\n```");
-    expect(html).toMatch(/<pre/);
-    expect(html).toContain("a\n  b");
-  });
-
-  it("unwraps language fences so ChatCodeBlock owns the block", () => {
-    const html = render("```ts\nconst x = 1;\n```");
-    expect(html).not.toMatch(/<pre[^>]*><div/);
-    expect(html).toContain("not-prose");
+  it("keeps <pre> for plain fences; language fences unwrap for ChatCodeBlock", () => {
+    const plain = render("```\na\n  b\n```");
+    expect(plain).toMatch(/<pre/);
+    expect(plain).toContain("a\n  b");
+    const fenced = render("```ts\nconst x = 1;\n```");
+    expect(fenced).not.toMatch(/<pre[^>]*><div/);
+    expect(fenced).toContain("not-prose");
   });
 
   it("renders frontmatter keys as the table header row", () => {
@@ -32,6 +29,9 @@ describe("RenderedMarkdown", () => {
     expect(html).toContain("<th>name</th>");
     expect(html).toContain("<th>description</th>");
     expect(html).toContain("Body");
+    // Duplicate keys must keep both columns, never collapse into one.
+    const dup = render("---\nname: a\nname: b\n---\nBody\n");
+    expect(dup.match(/<th>name<\/th>/g)).toHaveLength(2);
   });
 
   it("renders frontmatter values as inert text, never HTML", () => {
@@ -44,11 +44,6 @@ describe("RenderedMarkdown", () => {
     const html = render("```bash\nls -la\n```");
     expect(html).toContain('aria-label="Copy code"');
     expect(html).not.toContain("Run in active terminal");
-  });
-
-  it("renders duplicate frontmatter keys without collapsing entries", () => {
-    const html = render("---\nname: a\nname: b\n---\nBody\n");
-    expect(html.match(/<th>name<\/th>/g)).toHaveLength(2);
   });
 
   it("keeps GFM on through Streamdown's default remark plugins", () => {
@@ -193,7 +188,10 @@ describe("handleLinkClick", () => {
 
   it("scrolls only the pane's scroll container for fragments, never openUrl", () => {
     const scroller = scrollerFake();
-    handleLinkClick("#setup", targetIn({ "user-content-setup": 250 }, scroller));
+    handleLinkClick(
+      "#setup",
+      targetIn({ "user-content-setup": 250 }, scroller),
+    );
     expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 250 - 10 + 40 - 8 });
     expect(opener.openUrl).not.toHaveBeenCalled();
   });
@@ -207,14 +205,11 @@ describe("handleLinkClick", () => {
     ]);
   });
 
-  it("does nothing for file:, relative and missing hrefs", () => {
+  it("does nothing for file:, relative, missing and javascript: hrefs", () => {
     handleLinkClick("file:///etc/passwd", targetIn({}));
     handleLinkClick("docs/guide.md", targetIn({}));
     handleLinkClick(undefined, targetIn({}));
-    expect(opener.openUrl).not.toHaveBeenCalled();
-  });
-
-  it("never opens a javascript: href even if one reached the handler", () => {
+    // Defense in depth: the pipeline strips these, the handler still must not open them.
     handleLinkClick("javascript:alert(1)", targetIn({}));
     handleLinkClick("JaVaScRiPt:alert(1)", targetIn({}));
     expect(opener.openUrl).not.toHaveBeenCalled();
@@ -222,13 +217,10 @@ describe("handleLinkClick", () => {
 });
 
 describe("PreviewErrorBoundary", () => {
-  it("derives the failed state from a render error", () => {
+  it("derives failed state from a render error and shows the Raw-view hint", () => {
     expect(PreviewErrorBoundary.getDerivedStateFromError()).toEqual({
       failed: true,
     });
-  });
-
-  it("failed state renders the Raw-view hint instead of children", () => {
     const boundary = new PreviewErrorBoundary({ children: "content" });
     boundary.state = { failed: true };
     const html = renderToStaticMarkup(boundary.render());

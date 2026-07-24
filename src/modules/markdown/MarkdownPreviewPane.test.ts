@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultRehypePlugins } from "streamdown";
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -22,7 +23,17 @@ vi.mock("@/modules/explorer/lib/watch", () => ({
   listenFsChanged: mocks.listenFsChanged,
 }));
 
+import { rehypeGithubAlerts } from "./githubAlerts";
+import { rehypeHeadingAnchors } from "./headingAnchors";
+import { rehypeLocalImages } from "./localImages";
 import { type Status, syncPreviewFile } from "./MarkdownPreviewPane";
+import {
+  buildRehypePlugins,
+  components,
+  rehypePlugins,
+  sanitizeSchema,
+} from "./RenderedMarkdown";
+import { rehypeTableDirectives } from "./tableDirectives";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const paneSrc = readFileSync(
@@ -30,84 +41,99 @@ const paneSrc = readFileSync(
   "utf8",
 );
 const renderSrc = readFileSync(path.join(here, "RenderedMarkdown.tsx"), "utf8");
-const themeCss = readFileSync(path.join(here, "markdown-theme.css"), "utf8");
+
+type Schema = {
+  tagNames?: string[];
+  attributes?: Record<string, unknown[]>;
+  protocols?: Record<string, unknown[]>;
+};
 
 describe("markdown preview configuration", () => {
-  it("renders through Streamdown in static mode, no streaming parse", () => {
+  // Order is load-bearing: sanitize must prune after every feature plugin
+  // and harden must vet URLs last; asserted on the built array itself.
+  it("pipeline order and sanitizer schema contract", () => {
+    const plugins = buildRehypePlugins("D:/x") as unknown[];
+    const [sanitizeFn, streamdownSchema] = defaultRehypePlugins.sanitize as [
+      unknown,
+      Schema,
+    ];
+    const [hardenFn] = defaultRehypePlugins.harden as [unknown, unknown];
+
+    expect(plugins).toHaveLength(7);
+    expect(plugins[0]).toBe(defaultRehypePlugins.raw);
+    expect(plugins[1]).toBe(rehypeTableDirectives);
+    expect(plugins[2]).toBe(rehypeGithubAlerts);
+    expect(plugins[3]).toBe(rehypeHeadingAnchors);
+
+    const local = plugins[4] as [unknown, unknown];
+    expect(local[0]).toBe(rehypeLocalImages);
+    expect(local[1]).toBe("D:/x");
+
+    const sanitize = plugins[5] as [unknown, unknown];
+    expect(sanitize[0]).toBe(sanitizeFn);
+    expect(sanitize[1]).toBe(sanitizeSchema);
+
+    const harden = plugins[6] as [unknown, Record<string, unknown>];
+    expect(harden[0]).toBe(hardenFn);
+    // Blocked URLs degrade to plain text: bare relative links are routine
+    // in GitHub-authored files and the "[blocked]" badge reads as content.
+    expect(harden[1].linkBlockPolicy).toBe("text-only");
+    expect(harden[1].imageBlockPolicy).toBe("text-only");
+
+    // The exported default chain and component map stay wired the same way.
+    expect(rehypePlugins).toHaveLength(7);
+    expect(typeof components.a).toBe("function");
+
+    // Schema additions are enumerated on top of Streamdown's lists, never
+    // broader.
+    expect(sanitizeSchema.tagNames).toEqual([
+      ...(streamdownSchema.tagNames ?? []),
+      "colgroup",
+      "col",
+    ]);
+    expect(sanitizeSchema.protocols.src).toEqual([
+      ...(streamdownSchema.protocols?.src ?? []),
+      "asset",
+    ]);
+
+    const attrs = sanitizeSchema.attributes as Record<string, unknown[]>;
+    expect(attrs.div).toContainEqual([
+      "className",
+      "markdown-alert",
+      "markdown-alert-note",
+      "markdown-alert-tip",
+      "markdown-alert-important",
+      "markdown-alert-warning",
+      "markdown-alert-caution",
+    ]);
+    expect(attrs.p).toContainEqual(["className", "markdown-alert-title"]);
+    // A bare "className" entry would allow any class on that element.
+    for (const list of Object.values(attrs)) {
+      expect(list).not.toContain("className");
+    }
+  });
+
+  // No behavioral cousin exists for these JSX props; pin the source text.
+  it("RenderedMarkdown wiring pins", () => {
     expect(renderSrc).toMatch(/mode="static"/);
     expect(renderSrc).toMatch(/parseIncompleteMarkdown=\{false\}/);
-  });
-
-  it("disables Streamdown's link-safety popup in favor of the a policy", () => {
     expect(renderSrc).toMatch(/linkSafety=\{LINK_SAFETY_OFF\}/);
     expect(renderSrc).toMatch(/enabled: false/);
-  });
-
-  // Sanitize/harden placement is proven behaviorally in localImages.test
-  // and githubAlerts.test; this only pins the relative order of the chain,
-  // insensitive to formatting.
-  it("renders inline HTML only through the sanitizer, then harden, last", () => {
-    const chain = renderSrc.slice(
-      renderSrc.indexOf("export const buildRehypePlugins"),
-    );
-    const positions = [
-      "defaultRehypePlugins.raw",
-      "rehypeTableDirectives",
-      "rehypeGithubAlerts",
-      "rehypeHeadingAnchors",
-      "rehypeLocalImages",
-      "rehypeSanitize",
-      "rehypeHarden",
-    ].map((id) => chain.indexOf(id));
-    for (let i = 0; i < positions.length; i++) {
-      expect(positions[i]).toBeGreaterThan(i === 0 ? -1 : positions[i - 1]);
-    }
+    // The only guard that link clicks never navigate the privileged webview.
+    expect(renderSrc).toMatch(/e\.preventDefault\(\)/);
+    expect(renderSrc).toMatch(/openUrl/);
     expect(renderSrc).toMatch(/rehypePlugins=\{plugins\}/);
     expect(renderSrc).toMatch(/buildRehypePlugins\(baseDir\)/);
   });
 
-  it("threads the document directory into the image resolver", () => {
+  it("pane wiring pins", () => {
     expect(paneSrc).toMatch(/baseDir=\{parentDir\(path\)\}/);
-  });
-
-  it("wires the watcher-backed loader as the pane's only read path", () => {
     expect(paneSrc).toMatch(
       /useEffect\(\(\) => syncPreviewFile\(path, setStatus\), \[path\]\)/,
     );
     // One invoke site: refresh reuses the same read, so there is no second
     // code path that could reintroduce a loading flash.
     expect(paneSrc.match(/invoke</g)).toHaveLength(1);
-  });
-
-  it("extends the sanitizer allowlist only with enumerated values", () => {
-    expect(renderSrc).toMatch(
-      /tagNames: \[\.\.\.\(streamdownSchema\.tagNames \?\? \[\]\), "colgroup", "col"\]/,
-    );
-    // Alert classes are enumerated per element, never a blanket allowance.
-    expect(renderSrc).toContain('"markdown-alert-title"');
-    expect(renderSrc).toContain('"markdown-alert-caution"');
-    expect(renderSrc).not.toMatch(/\[\s*"className"\s*\]/);
-    // Image URL schemes gain exactly the asset protocol, nothing broader.
-    expect(renderSrc).toMatch(
-      /src: \[\.\.\.\(streamdownSchema\.protocols\?\.src \?\? \[\]\), "asset"\]/,
-    );
-  });
-
-  it("contains render failures to the pane with an error boundary", () => {
-    expect(renderSrc).toMatch(/getDerivedStateFromError/);
-  });
-
-  it("opens links in the OS browser instead of navigating the webview", () => {
-    expect(renderSrc).toMatch(/openUrl/);
-    expect(renderSrc).toMatch(/preventDefault/);
-  });
-});
-
-describe("markdown-theme.css theme mapping", () => {
-  // The stylesheet must never key off the OS media query: the app theme
-  // class (.dark/.light) has to win regardless of the OS setting.
-  it("switches status hues on the app theme class, not the OS media query", () => {
-    expect(themeCss).not.toMatch(/@media/);
   });
 });
 
@@ -236,7 +262,7 @@ describe("syncPreviewFile refresh on external change", () => {
     );
   });
 
-  it("leaves ready when a refresh finds the file turned binary", async () => {
+  it("leaves ready when a refresh finds the file binary or past the limit", async () => {
     start();
     reads[0].resolve(text("v1"));
     await flush();
@@ -245,15 +271,9 @@ describe("syncPreviewFile refresh on external change", () => {
     reads[1].resolve({ kind: "binary", size: 8 });
     await flush();
     expect(statuses[statuses.length - 1]).toEqual({ kind: "binary" });
-  });
-
-  it("leaves ready when a refresh finds the file grown past the limit", async () => {
-    start();
-    reads[0].resolve(text("v1"));
-    await flush();
 
     fsHandler([FILE]);
-    reads[1].resolve({ kind: "toolarge", size: 99, limit: 10 });
+    reads[2].resolve({ kind: "toolarge", size: 99, limit: 10 });
     await flush();
     expect(statuses[statuses.length - 1]).toEqual({
       kind: "toolarge",

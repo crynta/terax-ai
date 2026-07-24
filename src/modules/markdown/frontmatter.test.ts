@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { splitFrontmatter } from "./frontmatter";
 
-describe("splitFrontmatter", () => {
-  it("returns content untouched when there is no frontmatter", () => {
-    const content = "# Title\n\nBody text.\n";
-    expect(splitFrontmatter(content)).toEqual({ entries: [], body: content });
-  });
+type Entries = [string, string][];
 
+describe("splitFrontmatter", () => {
   it("splits a simple mapping into entries and body", () => {
     const { entries, body } = splitFrontmatter(
-      "---\nname: my-skill\ndescription: Does things\n---\n\n# Title\n",
+      "---\n# header comment\nname: my-skill\n\ndescription: Does things\n---\n\n# Title\n",
     );
     expect(entries).toEqual([
       ["name", "my-skill"],
@@ -18,117 +15,114 @@ describe("splitFrontmatter", () => {
     expect(body).toBe("\n# Title\n");
   });
 
-  it("handles CRLF line endings", () => {
-    const { entries, body } = splitFrontmatter(
+  const scalarCases: [string, string, Entries][] = [
+    [
+      "colons inside values stay in the value (strict YAML rejects these)",
+      'description: Use when asked: "write a PRD", or similar',
+      [["description", 'Use when asked: "write a PRD", or similar']],
+    ],
+    [
+      "matching surrounding quotes are stripped",
+      "title: \"Hello: world\"\nalt: 'single'",
+      [
+        ["title", "Hello: world"],
+        ["alt", "single"],
+      ],
+    ],
+    ["empty values stay empty", "empty:", [["empty", ""]]],
+    [
+      "plain scalars stay verbatim strings",
+      "count: 3\nenabled: true",
+      [
+        ["count", "3"],
+        ["enabled", "true"],
+      ],
+    ],
+  ];
+
+  it("parses scalar values", () => {
+    for (const [, yaml, expected] of scalarCases) {
+      const { entries } = splitFrontmatter(`---\n${yaml}\n---\nBody\n`);
+      expect(entries).toEqual(expected);
+    }
+  });
+
+  const blockCases: [string, string, Entries][] = [
+    [
+      "nested maps render as dedented text",
+      "name: x\nmetadata:\n  type: project",
+      [
+        ["name", "x"],
+        ["metadata", "type: project"],
+      ],
+    ],
+    [
+      ">- folds newlines into spaces",
+      "description: >-\n  First line\n  second line.",
+      [["description", "First line second line."]],
+    ],
+    [
+      "| preserves line breaks",
+      "notes: |\n  one\n  two",
+      [["notes", "one\ntwo"]],
+    ],
+  ];
+
+  it("parses block collections and scalars", () => {
+    for (const [, yaml, expected] of blockCases) {
+      const { entries } = splitFrontmatter(`---\n${yaml}\n---\nBody\n`);
+      expect(entries).toEqual(expected);
+    }
+  });
+
+  const fenceCases: [string, string, Entries, string][] = [
+    [
+      "CRLF line endings",
       "---\r\nname: my-skill\r\n---\r\nBody\r\n",
-    );
-    expect(entries).toEqual([["name", "my-skill"]]);
-    expect(body).toBe("Body\r\n");
-  });
-
-  it("rejects the whole block when a later line fails, losing no content", () => {
-    const content =
-      "---\nname: ok\ndesc: text\n  illegal continuation\n---\nBody\n";
-    expect(splitFrontmatter(content)).toEqual({ entries: [], body: content });
-  });
-
-  it("tolerates a leading BOM", () => {
-    const { entries, body } = splitFrontmatter(
+      [["name", "my-skill"]],
+      "Body\r\n",
+    ],
+    [
+      "a leading BOM",
       "\uFEFF---\nname: x\n---\nBody\n",
-    );
-    expect(entries).toEqual([["name", "x"]]);
-    expect(body).toBe("Body\n");
+      [["name", "x"]],
+      "Body\n",
+    ],
+    [
+      "a closing fence as the last line of the file",
+      "---\nname: x\n---",
+      [["name", "x"]],
+      "",
+    ],
+  ];
+
+  it("accepts fence variants", () => {
+    for (const [, content, expected, expectedBody] of fenceCases) {
+      const { entries, body } = splitFrontmatter(content);
+      expect(entries).toEqual(expected);
+      expect(body).toBe(expectedBody);
+    }
   });
 
-  it("accepts colons inside values (strict YAML rejects these)", () => {
-    const { entries } = splitFrontmatter(
-      '---\ndescription: Use when asked: "write a PRD", or similar\n---\nBody\n',
-    );
-    expect(entries).toEqual([
-      ["description", 'Use when asked: "write a PRD", or similar'],
-    ]);
-  });
+  const rejectionCases: [string, string][] = [
+    ["there is no frontmatter", "# Title\n\nBody text.\n"],
+    [
+      "a later line fails, losing no content",
+      "---\nname: ok\ndesc: text\n  illegal continuation\n---\nBody\n",
+    ],
+    [
+      "the first line is not a key: value pair",
+      "---\n{ not: valid: yaml\n---\nBody\n",
+    ],
+    [
+      "the fence is not on the very first line",
+      "intro\n---\nname: x\n---\nBody\n",
+    ],
+  ];
 
-  it("strips matching surrounding quotes", () => {
-    const { entries } = splitFrontmatter(
-      "---\ntitle: \"Hello: world\"\nalt: 'single'\n---\nBody\n",
-    );
-    expect(entries).toEqual([
-      ["title", "Hello: world"],
-      ["alt", "single"],
-    ]);
-  });
-
-  it("renders nested blocks as dedented text", () => {
-    const { entries } = splitFrontmatter(
-      "---\nname: x\nmetadata:\n  type: project\n---\nBody\n",
-    );
-    expect(entries).toEqual([
-      ["name", "x"],
-      ["metadata", "type: project"],
-    ]);
-  });
-
-  it("renders list values as dedented text", () => {
-    const { entries } = splitFrontmatter(
-      "---\ntags:\n  - alpha\n  - beta\n---\nBody\n",
-    );
-    expect(entries).toEqual([["tags", "- alpha\n- beta"]]);
-  });
-
-  it("folds >- block scalars into a single line", () => {
-    const { entries } = splitFrontmatter(
-      "---\ndescription: >-\n  First line\n  second line.\n---\nBody\n",
-    );
-    expect(entries).toEqual([["description", "First line second line."]]);
-  });
-
-  it("preserves line breaks in | block scalars", () => {
-    const { entries } = splitFrontmatter(
-      "---\nnotes: |\n  one\n  two\n---\nBody\n",
-    );
-    expect(entries).toEqual([["notes", "one\ntwo"]]);
-  });
-
-  it("keeps empty values empty and plain scalars verbatim", () => {
-    const { entries } = splitFrontmatter(
-      "---\ncount: 3\nenabled: true\nempty:\n---\nBody\n",
-    );
-    expect(entries).toEqual([
-      ["count", "3"],
-      ["enabled", "true"],
-      ["empty", ""],
-    ]);
-  });
-
-  it("skips blank lines and comments between entries", () => {
-    const { entries } = splitFrontmatter(
-      "---\n# header comment\nname: x\n\ndescription: y\n---\nBody\n",
-    );
-    expect(entries).toEqual([
-      ["name", "x"],
-      ["description", "y"],
-    ]);
-  });
-
-  it("leaves structurally invalid blocks in the body", () => {
-    const content = "---\n{ not: valid: yaml\n---\nBody\n";
-    expect(splitFrontmatter(content)).toEqual({ entries: [], body: content });
-  });
-
-  it("leaves scalar documents in the body (setext heading case)", () => {
-    const content = "---\nJust a heading\n---\nBody\n";
-    expect(splitFrontmatter(content)).toEqual({ entries: [], body: content });
-  });
-
-  it("only recognizes frontmatter on the very first line", () => {
-    const content = "intro\n---\nname: x\n---\nBody\n";
-    expect(splitFrontmatter(content)).toEqual({ entries: [], body: content });
-  });
-
-  it("accepts a closing fence as the last line of the file", () => {
-    const { entries, body } = splitFrontmatter("---\nname: x\n---");
-    expect(entries).toEqual([["name", "x"]]);
-    expect(body).toBe("");
+  it("leaves non-mappings and misplaced blocks in the body", () => {
+    for (const [, content] of rejectionCases) {
+      expect(splitFrontmatter(content)).toEqual({ entries: [], body: content });
+    }
   });
 });
