@@ -202,6 +202,42 @@ describe("scrollToFragment", () => {
     expect(s.scrollTo).toHaveBeenCalledWith({ top: 0 });
   });
 
+  // CSS zoom (Ctrl+=, .zoom-content) makes getBoundingClientRect report
+  // VISUAL px while scrollTop/offsetHeight stay LAYOUT px. A 1.25x scroller
+  // reports rect height 625 over offsetHeight 500; the visual anchor delta
+  // (250-10)=240 must be divided by 1.25 -> 192 layout px before adding the
+  // layout scrollTop and cushion: 40 + 192 - 8 = 224. These node fakes prove
+  // only the arithmetic; the real webview proves the pixels line up.
+  it("divides the visual anchor delta by CSS zoom scale", () => {
+    const s = {
+      scrollTop: 40,
+      offsetHeight: 500,
+      getBoundingClientRect: () => ({ top: 10, height: 625 }),
+      scrollTo: vi.fn(),
+    };
+    scrollToFragment(
+      linkIn(paneOver({ "user-content-live-refresh": blockTarget(250) }, s)),
+      "live-refresh",
+    );
+    expect(s.scrollTo).toHaveBeenCalledWith({ top: 224 });
+  });
+
+  // offsetHeight 0 (detached/unmeasured scroller) would divide by zero; the
+  // guard forces scale 1 so the unzoomed math still holds.
+  it("falls back to scale 1 when the scroller has no layout height", () => {
+    const s = {
+      scrollTop: 40,
+      offsetHeight: 0,
+      getBoundingClientRect: () => ({ top: 10, height: 625 }),
+      scrollTo: vi.fn(),
+    };
+    scrollToFragment(
+      linkIn(paneOver({ "user-content-x": blockTarget(250) }, s)),
+      "x",
+    );
+    expect(s.scrollTo).toHaveBeenCalledWith({ top: 250 - 10 + 40 - 8 });
+  });
+
   it("does nothing when the fragment does not resolve", () => {
     const s = scroller();
     scrollToFragment(linkIn(paneOver({}, s)), "missing");

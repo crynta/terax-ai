@@ -95,6 +95,18 @@ const SCROLL_CUSHION = 8;
  * including the pane's overflow-hidden wrapper and the tab stack above it;
  * hidden-overflow boxes ignore the wheel, so the user could never scroll
  * those back and the pane stayed visually sheared with a blank bottom.
+ *
+ * Ctrl+= zoom is CSS `zoom: var(--app-zoom)` on an ancestor (globals.css
+ * .zoom-content, App.tsx <main>), not native webview zoom. Under CSS zoom
+ * Chromium splits its geometry: getBoundingClientRect reports VISUAL
+ * (zoom-scaled) px, but scrollTop/scrollTo and offsetHeight stay in LAYOUT
+ * (unzoomed) px. Feeding a visual rect delta into a layout scrollTop
+ * overshot by the zoom factor, so the landing drifted further the more the
+ * user zoomed. Divide the visual delta by the scroller's own scale (its
+ * visual height over its layout height, both border-box, exactly the zoom,
+ * 1 when unzoomed) to convert back to layout scroll units. offsetHeight not
+ * clientHeight: a wide table's horizontal scrollbar shrinks clientHeight and
+ * would poison the ratio.
  */
 export function scrollToFragment(link: Element, fragment: string): void {
   const target = resolveFragment(link, fragment);
@@ -102,10 +114,12 @@ export function scrollToFragment(link: Element, fragment: string): void {
   const scroller = link.closest(".markdown-body")?.parentElement;
   if (!scroller) return;
   const anchor = target.closest(BLOCK_ANCHOR) ?? target;
+  const box = scroller.getBoundingClientRect();
+  const layoutHeight = scroller.offsetHeight;
+  const scale = layoutHeight > 0 ? box.height / layoutHeight : 1;
   const top =
-    anchor.getBoundingClientRect().top -
-    scroller.getBoundingClientRect().top +
-    scroller.scrollTop -
+    scroller.scrollTop +
+    (anchor.getBoundingClientRect().top - box.top) / scale -
     SCROLL_CUSHION;
   scroller.scrollTo({ top: Math.max(0, top) });
 }
