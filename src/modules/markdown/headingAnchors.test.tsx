@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { Streamdown } from "streamdown";
-import { describe, expect, it } from "vitest";
-import { resolveFragment } from "./headingAnchors";
+import { describe, expect, it, vi } from "vitest";
+import { resolveFragment, scrollToFragment } from "./headingAnchors";
 import {
   components,
   RenderedMarkdown,
@@ -138,5 +138,46 @@ describe("resolveFragment", () => {
 
   it("returns null when the link sits outside a preview pane", () => {
     expect(resolveFragment(linkIn(null), "setup")).toBeNull();
+  });
+});
+
+// Targets expose ONLY getBoundingClientRect: a regression back to
+// target.scrollIntoView (which shears every scrollable ancestor, including
+// the overflow-hidden pane wrapper the user cannot scroll back) throws here.
+describe("scrollToFragment", () => {
+  const scroller = () => ({
+    scrollTop: 40,
+    getBoundingClientRect: () => ({ top: 10 }),
+    scrollTo: vi.fn(),
+  });
+
+  const paneOver = (ids: Record<string, number>, parent: unknown) =>
+    ({
+      parentElement: parent,
+      querySelector: (sel: string) => {
+        const id = JSON.parse(sel.slice("[id=".length, -1)) as string;
+        return id in ids
+          ? { getBoundingClientRect: () => ({ top: ids[id] }) }
+          : null;
+      },
+    }) as unknown as Element;
+
+  it("scrolls the pane's own scroll container, not the target", () => {
+    const s = scroller();
+    scrollToFragment(
+      linkIn(paneOver({ "user-content-live-refresh": 250 }, s)),
+      "live-refresh",
+    );
+    expect(s.scrollTo).toHaveBeenCalledWith({ top: 250 - 10 + 40 });
+  });
+
+  it("does nothing when the fragment does not resolve", () => {
+    const s = scroller();
+    scrollToFragment(linkIn(paneOver({}, s)), "missing");
+    expect(s.scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the pane has no scroll container", () => {
+    scrollToFragment(linkIn(paneOver({ "user-content-x": 5 }, null)), "x");
   });
 });

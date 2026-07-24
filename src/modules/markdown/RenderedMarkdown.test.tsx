@@ -163,15 +163,30 @@ describe("Streamdown internal plugin shape (2.5.0 tuple contract)", () => {
   });
 });
 
-// Node-environment fakes: handleLinkClick only needs closest/querySelector
-// on the current target, mirroring the resolveFragment fakes in
-// headingAnchors.test.tsx.
-const targetIn = (ids: Record<string, { scrollIntoView: () => void }>) =>
+// Node-environment fakes: handleLinkClick resolves the fragment via
+// closest/querySelector and scrolls the pane's parent scroll container,
+// mirroring the fakes in headingAnchors.test.tsx. Targets carry ONLY
+// getBoundingClientRect: a regression back to target.scrollIntoView (which
+// shears every scrollable ancestor, including overflow-hidden ones the user
+// cannot scroll back) would throw here.
+const scrollerFake = () => ({
+  scrollTop: 40,
+  getBoundingClientRect: () => ({ top: 10 }),
+  scrollTo: vi.fn(),
+});
+
+const targetIn = (
+  ids: Record<string, number>,
+  scroller: ReturnType<typeof scrollerFake> | null = scrollerFake(),
+) =>
   ({
     closest: () => ({
+      parentElement: scroller,
       querySelector: (sel: string) => {
         const id = JSON.parse(sel.slice("[id=".length, -1)) as string;
-        return ids[id] ?? null;
+        return id in ids
+          ? { getBoundingClientRect: () => ({ top: ids[id] }) }
+          : null;
       },
     }),
   }) as unknown as Element;
@@ -181,10 +196,10 @@ describe("handleLinkClick", () => {
     opener.openUrl.mockClear();
   });
 
-  it("scrolls fragment hrefs via resolveFragment, never openUrl", () => {
-    const el = { scrollIntoView: vi.fn() };
-    handleLinkClick("#setup", targetIn({ "user-content-setup": el }));
-    expect(el.scrollIntoView).toHaveBeenCalledOnce();
+  it("scrolls only the pane's scroll container for fragments, never openUrl", () => {
+    const scroller = scrollerFake();
+    handleLinkClick("#setup", targetIn({ "user-content-setup": 250 }, scroller));
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 250 - 10 + 40 });
     expect(opener.openUrl).not.toHaveBeenCalled();
   });
 

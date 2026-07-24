@@ -74,3 +74,23 @@ export function resolveFragment(
     pane.querySelector(`[id=${JSON.stringify(id)}]`)
   );
 }
+
+/**
+ * Scrolls the pane's own scroll container (the markdown-body article's
+ * parent, the overflow-auto div) so the fragment's heading lands at the
+ * top. Element.scrollIntoView would scroll EVERY scrollable ancestor,
+ * including the pane's overflow-hidden wrapper and the tab stack above it;
+ * hidden-overflow boxes ignore the wheel, so the user could never scroll
+ * those back and the pane stayed visually sheared with a blank bottom.
+ */
+export function scrollToFragment(link: Element, fragment: string): void {
+  const target = resolveFragment(link, fragment);
+  if (!target) return;
+  const scroller = link.closest(".markdown-body")?.parentElement;
+  if (!scroller) return;
+  const top =
+    target.getBoundingClientRect().top -
+    scroller.getBoundingClientRect().top +
+    scroller.scrollTop;
+  scroller.scrollTo({ top });
+}

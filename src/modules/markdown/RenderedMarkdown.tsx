@@ -9,7 +9,7 @@ import {
 } from "streamdown";
 import { splitFrontmatter } from "./frontmatter";
 import { rehypeGithubAlerts } from "./githubAlerts";
-import { rehypeHeadingAnchors, resolveFragment } from "./headingAnchors";
+import { rehypeHeadingAnchors, scrollToFragment } from "./headingAnchors";
 import { rehypeLocalImages } from "./localImages";
 import { rehypeTableDirectives } from "./tableDirectives";
 import "./markdown-base.css";
@@ -21,7 +21,7 @@ type Components = NonNullable<StreamdownProps["components"]>;
 type RehypePlugins = NonNullable<StreamdownProps["rehypePlugins"]>;
 
 // Click policy for preview links, after the anchor's preventDefault: an
-// in-page fragment scrolls within the clicking link's own pane (never an
+// in-page fragment scrolls the pane's own scroll container (never an
 // external destination, so it never reaches openUrl and never navigates the
 // webview); http(s)/mailto open in the OS browser; anything else (file:,
 // bare relative paths) does nothing.
@@ -31,7 +31,7 @@ export function handleLinkClick(
 ): void {
   if (!href) return;
   if (href.startsWith("#")) {
-    resolveFragment(currentTarget, href.slice(1))?.scrollIntoView();
+    scrollToFragment(currentTarget, href.slice(1));
   } else if (OPENABLE_URL.test(href)) {
     void openUrl(href).catch(console.error);
   }
