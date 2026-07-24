@@ -24,14 +24,18 @@ describe("RenderedMarkdown", () => {
     expect(fenced).toContain("not-prose");
   });
 
-  it("renders frontmatter keys as the table header row", () => {
+  it("renders frontmatter as one key/value row per entry, like GitHub", () => {
     const html = render("---\nname: demo\ndescription: A thing\n---\nBody\n");
-    expect(html).toContain("<th>name</th>");
-    expect(html).toContain("<th>description</th>");
+    expect(html).toMatch(
+      /<tr><th scope="row">name<\/th><td[^>]*>demo<\/td><\/tr>/,
+    );
+    expect(html).toMatch(
+      /<tr><th scope="row">description<\/th><td[^>]*>A thing<\/td><\/tr>/,
+    );
     expect(html).toContain("Body");
-    // Duplicate keys must keep both columns, never collapse into one.
+    // Duplicate keys must keep both rows, never collapse into one.
     const dup = render("---\nname: a\nname: b\n---\nBody\n");
-    expect(dup.match(/<th>name<\/th>/g)).toHaveLength(2);
+    expect(dup.match(/<th scope="row">name<\/th>/g)).toHaveLength(2);
   });
 
   it("renders frontmatter values as inert text, never HTML", () => {

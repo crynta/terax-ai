@@ -9,8 +9,8 @@ const FRONTMATTER_RE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 const KEY_RE = /^([A-Za-z0-9_][\w.-]*):(?:[ \t]+(.*))?$/;
 
-// GitHub renders a leading YAML frontmatter block as a table with keys as
-// the header row; anything not a flat mapping stays in the body untouched.
+// GitHub renders a leading YAML frontmatter block as a table with one
+// key/value row per entry; anything not a flat mapping stays in the body.
 export function splitFrontmatter(content: string): SplitResult {
   const m = FRONTMATTER_RE.exec(content);
   if (!m) return { entries: [], body: content };

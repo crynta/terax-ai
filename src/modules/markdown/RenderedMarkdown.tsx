@@ -204,26 +204,14 @@ function RenderedMarkdownInner({ content, baseDir }: RenderedMarkdownProps) {
     <>
       {entries.length > 0 && (
         <table>
-          <thead>
-            <tr>
-              {entries.map(([key], i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: entries are immutable per mount; index disambiguates duplicate keys
-                <th key={`${key}-${i}`}>{key}</th>
-              ))}
-            </tr>
-          </thead>
           <tbody>
-            <tr>
-              {entries.map(([key, value], i) => (
-                <td
-                  // biome-ignore lint/suspicious/noArrayIndexKey: entries are immutable per mount; index disambiguates duplicate keys
-                  key={`${key}-${i}`}
-                  className="whitespace-pre-wrap align-top"
-                >
-                  {value}
-                </td>
-              ))}
-            </tr>
+            {entries.map(([key, value], i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: entries are immutable per mount; index disambiguates duplicate keys
+              <tr key={`${key}-${i}`}>
+                <th scope="row">{key}</th>
+                <td className="whitespace-pre-wrap align-top">{value}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}
