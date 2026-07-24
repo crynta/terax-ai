@@ -98,7 +98,7 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
     >
       <MarkdownViewToggle mode="rendered" onChange={onSetView} />
       <div className="flex-1 overflow-auto">
-        <article className="markdown-body mx-auto max-w-[980px] select-text px-8 py-6">
+        <article className="markdown-body select-text px-8 py-6">
           {status.kind === "loading" && (
             <p className="text-[12px] text-muted-foreground">Loading…</p>
           )}

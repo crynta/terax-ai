@@ -2,6 +2,13 @@
  * semantic theme tokens, keyed off the .light/.dark root class rather than
  * the OS color-scheme query so custom themes win. Must load after
  * markdown-base.css to beat its media-query blocks in the cascade. */
+
+.markdown-body {
+  max-width: 980px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .markdown-body {
   --fontStack-sansSerif: var(--font-sans, "Inter Variable", sans-serif);
   --fontStack-monospace: "JetBrains Mono", ui-monospace, SFMono-Regular,
