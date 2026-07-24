@@ -22,50 +22,30 @@ import { GeneralSection } from "./sections/GeneralSection";
 import { ModelsSection } from "./sections/ModelsSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { ThemesSection } from "./sections/ThemesSection";
+import {
+  useI18nStore,
+  useTranslation,
+  AVAILABLE_LOCALES,
+  type Locale,
+  type TranslationKey,
+} from "@/i18n";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Globe02Icon } from "@hugeicons/core-free-icons";
 
-const TABS: {
-  id: SettingsTab;
-  label: string;
-  icon: typeof Settings01Icon;
-  component: () => JSX.Element;
-}[] = [
-  {
-    id: "general",
-    label: "General",
-    icon: Settings01Icon,
-    component: GeneralSection,
-  },
-  {
-    id: "editor",
-    label: "Editor",
-    icon: SourceCodeIcon,
-    component: EditorSection,
-  },
-  {
-    id: "themes",
-    label: "Themes",
-    icon: PaintBoardIcon,
-    component: ThemesSection,
-  },
-  {
-    id: "shortcuts",
-    label: "Shortcuts",
-    icon: KeyboardIcon,
-    component: ShortcutsSection,
-  },
-  { id: "models", label: "Models", icon: AiScanIcon, component: ModelsSection },
-  {
-    id: "agents",
-    label: "Agents",
-    icon: UserMultiple02Icon,
-    component: AgentsSection,
-  },
-  {
-    id: "about",
-    label: "About",
-    icon: InformationCircleIcon,
-    component: AboutSection,
-  },
+const TABS: { id: SettingsTab; labelKey: TranslationKey; icon: typeof Settings01Icon; component: () => JSX.Element }[] = [
+  { id: "general", labelKey: "settings.tabs.general", icon: Settings01Icon, component: GeneralSection },
+  { id: "editor", labelKey: "settings.tabs.editor", icon: SourceCodeIcon, component: EditorSection },
+  { id: "themes", labelKey: "settings.tabs.themes", icon: PaintBoardIcon, component: ThemesSection },
+  { id: "shortcuts", labelKey: "settings.tabs.shortcuts", icon: KeyboardIcon, component: ShortcutsSection },
+  { id: "models", labelKey: "settings.tabs.models", icon: AiScanIcon, component: ModelsSection },
+  { id: "agents", labelKey: "settings.tabs.agents", icon: UserMultiple02Icon, component: AgentsSection },
+  { id: "about", labelKey: "settings.tabs.about", icon: InformationCircleIcon, component: AboutSection },
 ];
 
 const VALID_TABS: SettingsTab[] = [
@@ -91,7 +71,10 @@ function readInitialTab(): SettingsTab {
 export function SettingsApp() {
   const [active, setActive] = useState<SettingsTab>(readInitialTab);
   const init = usePreferencesStore((s) => s.init);
-  const ActiveSection = TABS.find((t) => t.id === active)?.component;
+  const ActiveSection = TABS.find((tab) => tab.id === active)?.component;
+  const t = useTranslation();
+  const currentLocale = useI18nStore((s) => s.locale);
+  const setLocale = useI18nStore((s) => s.setLocale);
 
   useEffect(() => {
     void init();
@@ -132,18 +115,47 @@ export function SettingsApp() {
           data-tauri-drag-region
         >
           <TabsList className="mx-auto h-7 bg-muted/40 px-2">
-            {TABS.map((t) => (
+            {TABS.map((t_item) => (
               <TabsTrigger
-                key={t.id}
-                value={t.id}
+                key={t_item.id}
+                value={t_item.id}
                 className="h-6 gap-1.5 px-2.5 text-[11.5px]"
               >
-                <HugeiconsIcon icon={t.icon} size={12} strokeWidth={1.75} />
-                <span>{t.label}</span>
+                <HugeiconsIcon icon={t_item.icon} size={12} strokeWidth={1.75} />
+                <span>{t(t_item.labelKey)}</span>
               </TabsTrigger>
             ))}
           </TabsList>
         </Tabs>
+        
+        {/* Language Selector */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="mr-2 size-7 text-muted-foreground hover:text-foreground"
+              title={t("settings.language")}
+            >
+              <HugeiconsIcon icon={Globe02Icon} size={14} strokeWidth={1.75} />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-32 p-1">
+            {AVAILABLE_LOCALES.map((locale) => (
+              <DropdownMenuItem
+                key={locale.value}
+                onSelect={() => setLocale(locale.value as Locale)}
+                className="flex items-center justify-between gap-2 text-[12px]"
+              >
+                <span>{locale.label}</span>
+                {currentLocale === locale.value && (
+                  <span className="text-[10px] text-muted-foreground">✓</span>
+                )}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         {USE_CUSTOM_WINDOW_CONTROLS && <WindowControls closeOnly />}
       </header>
 
