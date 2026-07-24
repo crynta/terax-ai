@@ -1,5 +1,6 @@
 use tauri::{AppHandle, Manager};
 
+use crate::modules::git::discover;
 use crate::modules::git::operations;
 use crate::modules::git::types::{
     DiscardEntry, GitBranchListResult, GitCommitFileChange, GitCommitResult,
@@ -306,6 +307,29 @@ pub async fn git_checkout_branch(
     let workspace = WorkspaceEnv::from_option(workspace);
     blocking(app, move |r| {
         operations::checkout_branch(r, &repo_root, &branch, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_discover_repos(
+    workspace_root: String,
+    max_depth: Option<u32>,
+    max_results: Option<usize>,
+    timeout_ms: Option<u64>,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<discover::DiscoverResult, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        discover::discover_repos(
+            r,
+            &workspace_root,
+            &workspace,
+            max_depth.unwrap_or(3),
+            max_results.unwrap_or(20),
+            timeout_ms.unwrap_or(150),
+        )
     })
     .await
 }

@@ -119,6 +119,17 @@ export type GitPanelSnapshot = {
   status: GitStatusSnapshot | null;
 };
 
+export type DiscoveredRepo = {
+  repoRoot: string;
+  name: string;
+  type: "root" | "submodule" | "nested";
+};
+
+export type DiscoverResult = {
+  repos: DiscoveredRepo[];
+  timedOut: boolean;
+};
+
 export type GitDiscardEntry = {
   path: string;
   untracked: boolean;
@@ -379,6 +390,21 @@ export const native = {
     invoke<void>("git_checkout_branch", {
       repoRoot,
       branch,
+      workspace: currentWorkspaceEnv(),
+    }),
+  discoverRepos: (
+    workspaceRoot: string,
+    options?: {
+      maxDepth?: number;
+      maxResults?: number;
+      timeoutMs?: number;
+    },
+  ) =>
+    invoke<DiscoverResult>("git_discover_repos", {
+      workspaceRoot,
+      maxDepth: options?.maxDepth ?? null,
+      maxResults: options?.maxResults ?? null,
+      timeoutMs: options?.timeoutMs ?? null,
       workspace: currentWorkspaceEnv(),
     }),
 };

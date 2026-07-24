@@ -93,6 +93,7 @@ import {
 } from "@/modules/terminal";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
+import { useRepoDiscovery } from "@/modules/repo";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -326,6 +327,8 @@ export default function App() {
   );
 
   useWindowTitle(activeTab, explorerRoot);
+
+  const { detectedRepos, currentRepoRoot, onRepoChange } = useRepoDiscovery(explorerRoot ?? null);
 
   useEffect(() => {
     setActiveSearchAddon(
@@ -660,6 +663,7 @@ export default function App() {
       tabs,
       activeTerminalLeafCwd,
       explorerRoot,
+      selectedRepoRoot: currentRepoRoot,
       launchCwd,
       launchCwdResolved,
       home,
@@ -1310,6 +1314,9 @@ export default function App() {
                       onOpenCommitFile={openCommitFileDiffTab}
                       onGitHistorySearchHandle={setGitHistoryHandle}
                       onSetMarkdownView={setMarkdownView}
+                      detectedRepos={detectedRepos}
+                      currentRepoRoot={currentRepoRoot}
+                      onRepoChange={onRepoChange}
                     />
                   </div>
 
