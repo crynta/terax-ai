@@ -1,17 +1,22 @@
-import { MarkdownCode } from "@/components/ai-elements/markdown-code";
 import { cn } from "@/lib/utils";
+import {
+  listenFsChanged,
+  watchAdd,
+  watchRemove,
+} from "@/modules/explorer/lib/watch";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import { Streamdown } from "streamdown";
+import { parentDir } from "./localImages";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
+import { RenderedMarkdown } from "./RenderedMarkdown";
 
 type ReadResult =
   | { kind: "text"; content: string; size: number }
   | { kind: "binary"; size: number }
   | { kind: "toolarge"; size: number; limit: number };
 
-type Status =
+export type Status =
   | { kind: "loading" }
   | { kind: "ready"; content: string }
   | { kind: "binary" }
@@ -24,20 +29,28 @@ type Props = {
   onSetView: (mode: "rendered" | "raw") => void;
 };
 
-const components = { code: MarkdownCode };
+/**
+ * Loads the file and keeps it fresh: the fs watcher (dir-level, the backend
+ * only watches directories, same as useEditorFileSync) triggers re-reads on
+ * external change. Refresh reads never pass through "loading", so the pane
+ * keeps the previous render (and scroll position) until new content lands;
+ * only a failed read (e.g. file deleted) leaves the "ready" state.
+ */
+export function syncPreviewFile(
+  path: string,
+  setStatus: (status: Status) => void,
+): () => void {
+  let cancelled = false;
+  let latest = 0;
 
-export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
-  const [status, setStatus] = useState<Status>({ kind: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    setStatus({ kind: "loading" });
+  const read = () => {
+    const seq = ++latest;
     invoke<ReadResult>("fs_read_file", {
       path,
       workspace: currentWorkspaceEnv(),
     })
       .then((res) => {
-        if (cancelled) return;
+        if (cancelled || seq !== latest) return;
         if (res.kind === "text") {
           setStatus({ kind: "ready", content: res.content });
         } else if (res.kind === "binary") {
@@ -47,12 +60,37 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
         }
       })
       .catch((e) => {
-        if (!cancelled) setStatus({ kind: "error", message: String(e) });
+        if (cancelled || seq !== latest) return;
+        setStatus({ kind: "error", message: String(e) });
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [path]);
+  };
+
+  setStatus({ kind: "loading" });
+  read();
+
+  const dir = parentDir(path);
+  watchAdd([dir]);
+  const target = path.replace(/\\/g, "/");
+  let unlisten: (() => void) | undefined;
+  void listenFsChanged((paths) => {
+    if (cancelled) return;
+    if (paths.some((p) => p.replace(/\\/g, "/") === target)) read();
+  }).then((un) => {
+    if (cancelled) un();
+    else unlisten = un;
+  });
+
+  return () => {
+    cancelled = true;
+    unlisten?.();
+    watchRemove([dir]);
+  };
+}
+
+export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
+  const [status, setStatus] = useState<Status>({ kind: "loading" });
+
+  useEffect(() => syncPreviewFile(path, setStatus), [path]);
 
   return (
     <div
@@ -63,7 +101,7 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
     >
       <MarkdownViewToggle mode="rendered" onChange={onSetView} />
       <div className="flex-1 overflow-auto">
-        <div className="px-8 py-6">
+        <article className="markdown-body mx-auto max-w-[980px] select-text px-8 py-6">
           {status.kind === "loading" && (
             <p className="text-[12px] text-muted-foreground">Loading…</p>
           )}
@@ -74,7 +112,7 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
           )}
           {status.kind === "binary" && (
             <p className="text-[12px] text-muted-foreground">
-              Binary file — cannot render as markdown.
+              Binary file, cannot render as markdown.
             </p>
           )}
           {status.kind === "toolarge" && (
@@ -83,16 +121,12 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
             </p>
           )}
           {status.kind === "ready" && (
-            <Streamdown
-              className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-              components={components}
-              mode="static"
-              parseIncompleteMarkdown={false}
-            >
-              {status.content}
-            </Streamdown>
+            <RenderedMarkdown
+              content={status.content}
+              baseDir={parentDir(path)}
+            />
           )}
-        </div>
+        </article>
       </div>
     </div>
   );
