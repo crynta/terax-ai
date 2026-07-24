@@ -5,7 +5,7 @@ const ST_FINAL: u8 = b'\\';
 
 const OSC_MAX: usize = 2048;
 
-const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini", "pi"];
+const DEFAULT_AGENTS: &[&str] = &["claude", "codex", "gemini", "pi", "opencode", "grok"];
 
 // OSC 777 marker our agent hooks emit. Legacy 3-field `notify;Terax;<event>`
 // (Claude) or 4-field `notify;Terax;<agent>;<event>` (Codex/Gemini/Pi).
@@ -290,6 +290,17 @@ mod tests {
     fn arms_on_pi_command() {
         let mut d = AgentDetector::new();
         assert_eq!(run(&mut d, &osc("133;C;pi")), vec![started("pi")]);
+    }
+
+    #[test]
+    fn arms_on_opencode_and_grok_commands() {
+        for agent in ["opencode", "grok"] {
+            let mut d = AgentDetector::new();
+            assert_eq!(
+                run(&mut d, &osc(&format!("133;C;{agent}"))),
+                vec![started(agent)]
+            );
+        }
     }
 
     #[test]
