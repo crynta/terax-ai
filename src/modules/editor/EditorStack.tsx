@@ -1,15 +1,18 @@
-import { cn, isMarkdownPath } from "@/lib/utils";
-import { MarkdownViewToggle } from "@/modules/markdown";
+import { cn } from "@/lib/utils";
 import type { EditorTab, Tab } from "@/modules/tabs";
+import { leafIds } from "@/modules/terminal";
 import { useEffect, useRef } from "react";
-import { EditorPane, type EditorPaneHandle } from "./EditorPane";
+import { EditorPaneTreeView, type EditorLeafBundle } from "./EditorPaneTreeView";
+import type { EditorPaneHandle } from "./EditorPane";
 
 type Props = {
   tabs: Tab[];
   activeId: number;
-  onDirtyChange: (id: number, dirty: boolean) => void;
-  registerHandle: (id: number, handle: EditorPaneHandle | null) => void;
+  onDirtyChange: (leafId: number, dirty: boolean) => void;
+  registerHandle: (leafId: number, handle: EditorPaneHandle | null) => void;
   onCloseTab: (id: number) => void;
+  onClosePaneLeaf: (leafId: number) => void;
+  onFocusLeaf: (tabId: number, leafId: number) => void;
   onSetMarkdownView: (id: number, mode: "rendered" | "raw") => void;
 };
 
@@ -19,20 +22,27 @@ export function EditorStack({
   onDirtyChange,
   registerHandle,
   onCloseTab,
+  onClosePaneLeaf,
+  onFocusLeaf,
   onSetMarkdownView,
 }: Props) {
   const editors = tabs.filter(
     (t): t is EditorTab => t.kind === "editor" && !t.cold,
   );
 
-  // Stable per-tab callbacks. Inline arrows in `ref` and `onDirtyChange`
-  // change identity every render, which makes React detach+reattach the ref
-  // callback and re-invoke `onDirtyChange`, triggering setState loops in
-  // the parent. Memoizing per id keeps each callback's identity stable.
+  // Stable per-leaf callbacks. Same pattern as the original per-tab callbacks —
+  // memoizing by id keeps identity stable so EditorPane (memo-wrapped) skips
+  // re-renders on unrelated state changes.
+  const tabsRef = useRef(tabs);
   const registerRef = useRef(registerHandle);
   const dirtyRef = useRef(onDirtyChange);
-  const closeRef = useRef(onCloseTab);
+  const closeTabRef = useRef(onCloseTab);
+  const closePaneLeafRef = useRef(onClosePaneLeaf);
+  const markdownViewRef = useRef(onSetMarkdownView);
 
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
   useEffect(() => {
     registerRef.current = registerHandle;
   }, [registerHandle]);
@@ -40,51 +50,83 @@ export function EditorStack({
     dirtyRef.current = onDirtyChange;
   }, [onDirtyChange]);
   useEffect(() => {
-    closeRef.current = onCloseTab;
+    closeTabRef.current = onCloseTab;
   }, [onCloseTab]);
+  useEffect(() => {
+    closePaneLeafRef.current = onClosePaneLeaf;
+  }, [onClosePaneLeaf]);
+  useEffect(() => {
+    markdownViewRef.current = onSetMarkdownView;
+  }, [onSetMarkdownView]);
 
   const refCallbacks = useRef(
     new Map<number, (h: EditorPaneHandle | null) => void>(),
   );
   const dirtyCallbacks = useRef(new Map<number, (dirty: boolean) => void>());
   const closeCallbacks = useRef(new Map<number, () => void>());
+  const markdownViewCallbacks = useRef(
+    new Map<number, (mode: "rendered" | "raw") => void>(),
+  );
 
-  const getRefCallback = (id: number) => {
-    let cb = refCallbacks.current.get(id);
+  const getRefCallback = (leafId: number) => {
+    let cb = refCallbacks.current.get(leafId);
     if (!cb) {
-      cb = (h: EditorPaneHandle | null) => registerRef.current(id, h);
-      refCallbacks.current.set(id, cb);
+      cb = (h: EditorPaneHandle | null) => registerRef.current(leafId, h);
+      refCallbacks.current.set(leafId, cb);
     }
     return cb;
   };
-  const getDirtyCallback = (id: number) => {
-    let cb = dirtyCallbacks.current.get(id);
+  const getDirtyCallback = (leafId: number) => {
+    let cb = dirtyCallbacks.current.get(leafId);
     if (!cb) {
-      cb = (dirty: boolean) => dirtyRef.current(id, dirty);
-      dirtyCallbacks.current.set(id, cb);
+      cb = (dirty: boolean) => dirtyRef.current(leafId, dirty);
+      dirtyCallbacks.current.set(leafId, cb);
     }
     return cb;
   };
-  const getCloseCallback = (id: number) => {
-    let cb = closeCallbacks.current.get(id);
+  const getCloseCallback = (tabId: number, leafId: number) => {
+    let cb = closeCallbacks.current.get(leafId);
     if (!cb) {
-      cb = () => closeRef.current(id);
-      closeCallbacks.current.set(id, cb);
+      cb = () => {
+        const tab = tabsRef.current.find((x) => x.id === tabId);
+        if (tab?.kind === "editor" && leafIds(tab.paneTree).length > 1) {
+          closePaneLeafRef.current(leafId);
+        } else {
+          closeTabRef.current(tabId);
+        }
+      };
+      closeCallbacks.current.set(leafId, cb);
+    }
+    return cb;
+  };
+  const getMarkdownViewCallback = (tabId: number) => {
+    let cb = markdownViewCallbacks.current.get(tabId);
+    if (!cb) {
+      cb = (mode: "rendered" | "raw") => markdownViewRef.current(tabId, mode);
+      markdownViewCallbacks.current.set(tabId, cb);
     }
     return cb;
   };
 
-  // Drop callback entries for closed tabs to avoid unbounded growth.
+  // Drop callback entries for closed leaves/tabs to avoid unbounded growth.
   useEffect(() => {
-    const live = new Set(editors.map((t) => t.id));
+    const liveLeaves = new Set<number>();
+    const liveTabs = new Set<number>();
+    for (const t of editors) {
+      liveTabs.add(t.id);
+      for (const id of leafIds(t.paneTree)) liveLeaves.add(id);
+    }
     for (const id of refCallbacks.current.keys()) {
-      if (!live.has(id)) refCallbacks.current.delete(id);
+      if (!liveLeaves.has(id)) refCallbacks.current.delete(id);
     }
     for (const id of dirtyCallbacks.current.keys()) {
-      if (!live.has(id)) dirtyCallbacks.current.delete(id);
+      if (!liveLeaves.has(id)) dirtyCallbacks.current.delete(id);
     }
     for (const id of closeCallbacks.current.keys()) {
-      if (!live.has(id)) closeCallbacks.current.delete(id);
+      if (!liveLeaves.has(id)) closeCallbacks.current.delete(id);
+    }
+    for (const id of markdownViewCallbacks.current.keys()) {
+      if (!liveTabs.has(id)) markdownViewCallbacks.current.delete(id);
     }
   }, [editors]);
 
@@ -93,6 +135,14 @@ export function EditorStack({
     <div className="relative h-full w-full">
       {editors.map((t) => {
         const visible = t.id === activeId;
+        const getBundle = (leafId: number): EditorLeafBundle => ({
+          setRef: getRefCallback(leafId),
+          onDirtyChange: getDirtyCallback(leafId),
+          onClose: getCloseCallback(t.id, leafId),
+          tabId: t.id,
+          tabDirty: t.dirty,
+          onSetMarkdownView: getMarkdownViewCallback(t.id),
+        });
         return (
           <div
             key={t.id}
@@ -102,26 +152,17 @@ export function EditorStack({
             )}
             aria-hidden={!visible}
           >
-            <div className="relative h-full overflow-hidden rounded-md border border-border/60 bg-background">
-              {isMarkdownPath(t.path) && (
-                <MarkdownViewToggle
-                  mode="raw"
-                  onChange={(mode) => onSetMarkdownView(t.id, mode)}
-                  renderedDisabled={t.dirty}
-                  renderedHint="Save to preview"
-                />
-              )}
-              <EditorPane
-                ref={getRefCallback(t.id)}
-                path={t.path}
-                overrideLanguage={t.overrideLanguage}
-                onDirtyChange={getDirtyCallback(t.id)}
-                onClose={getCloseCallback(t.id)}
-              />
-            </div>
+            <EditorPaneTreeView
+              node={t.paneTree}
+              activeLeafId={t.activeLeafId}
+              overrideLanguage={t.overrideLanguage}
+              onFocusLeaf={(leafId) => onFocusLeaf(t.id, leafId)}
+              getBundle={getBundle}
+            />
           </div>
         );
       })}
     </div>
   );
 }
+

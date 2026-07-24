@@ -5,6 +5,7 @@ import {
 } from "@/modules/agents/lib/launcher";
 import {
   findLeafCwd,
+  findLeafPath,
   hasLeaf,
   leafIds,
   nextLeafId,
@@ -12,9 +13,10 @@ import {
   type PaneDirection,
   type PaneNode,
   removeLeaf,
-  type SplitDir,
   setLeafCwd as setLeafCwdInTree,
+  setLeafPath as setLeafPathInTree,
   siblingLeafOf,
+  type SplitDir,
   splitLeaf,
   swapLeafInDirection,
 } from "@/modules/terminal/lib/panes";
@@ -48,6 +50,7 @@ export type EditorTab = TabBase & {
   id: number;
   kind: "editor";
   title: string;
+  /** Active leaf's path — kept in sync with `paneTree`'s active leaf. */
   path: string;
   dirty: boolean;
   /**
@@ -57,6 +60,8 @@ export type EditorTab = TabBase & {
    */
   preview: boolean;
   overrideLanguage?: string | null;
+  paneTree: PaneNode;
+  activeLeafId: number;
 };
 
 export type PreviewTab = TabBase & {
@@ -608,6 +613,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           return curr;
         }
         const id = nextIdRef.current++;
+        const leafId = nextIdRef.current++;
         targetId = id;
         return [
           ...curr,
@@ -619,6 +625,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
             path,
             dirty: false,
             preview: false,
+            paneTree: { kind: "leaf", id: leafId, path },
+            activeLeafId: leafId,
           } satisfies EditorTab,
         ];
       } else {
@@ -645,6 +653,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           (t) => t.kind === "editor" && (t as EditorTab).preview,
         );
         const id = nextIdRef.current++;
+        const leafId = nextIdRef.current++;
         targetId = id;
         const tab: EditorTab = {
           id,
@@ -654,6 +663,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           path,
           dirty: false,
           preview: true,
+          paneTree: { kind: "leaf", id: leafId, path },
+          activeLeafId: leafId,
         };
         if (previewIdx === -1) return [...curr, tab];
         const next = [...curr];
@@ -821,6 +832,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           )
             return t;
           if (mode === "raw" && t.kind === "markdown") {
+            const leafId = nextIdRef.current++;
             return {
               ...t,
               kind: "editor" as const,
@@ -829,6 +841,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
               overrideLanguage:
                 (t as { overrideLanguage?: string | null }).overrideLanguage ??
                 null,
+              paneTree: { kind: "leaf" as const, id: leafId, path: t.path },
+              activeLeafId: leafId,
             };
           }
           if (mode === "rendered" && t.kind === "editor") {
@@ -1015,9 +1029,21 @@ export function useTabs(initial?: Partial<TerminalTab>) {
           patch.dirty === true && (x as EditorTab).preview
             ? { preview: false }
             : {};
+        // When path is patched (e.g. file rename), keep the active leaf in sync.
+        const paneUpdate =
+          patch.path !== undefined
+            ? {
+                paneTree: setLeafPathInTree(
+                  (x as EditorTab).paneTree,
+                  (x as EditorTab).activeLeafId,
+                  patch.path,
+                ),
+              }
+            : {};
         return {
           ...x,
           ...autoPin,
+          ...paneUpdate,
           ...(patch.title !== undefined && { title: patch.title }),
           ...(patch.dirty !== undefined && { dirty: patch.dirty }),
           ...(patch.path !== undefined && { path: patch.path }),
@@ -1060,18 +1086,49 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     });
   }, []);
 
+  /** Update a leaf's path in an editor tab; mirrors `path` and `title` on the
+   * tab when the leaf is active. No-op when nothing changed. */
+  const setLeafPath = useCallback((leafId: number, path: string) => {
+    setTabs((curr) => {
+      let changed = false;
+      const next = curr.map((t) => {
+        if (t.kind !== "editor" || !hasLeaf(t.paneTree, leafId)) return t;
+        const paneTree = setLeafPathInTree(t.paneTree, leafId, path);
+        const isActive = t.activeLeafId === leafId;
+        const pathChanged = isActive && t.path !== path;
+        if (paneTree === t.paneTree && !pathChanged) return t;
+        changed = true;
+        return {
+          ...t,
+          paneTree,
+          ...(pathChanged && { path, title: basename(path) }),
+        };
+      });
+      return changed ? next : curr;
+    });
+  }, []);
+
   const focusPane = useCallback((tabId: number, leafId: number) => {
     setTabs((curr) =>
       curr.map((t) => {
-        if (t.id !== tabId || t.kind !== "terminal") return t;
-        if (!hasLeaf(t.paneTree, leafId)) return t;
-        if (t.activeLeafId === leafId) return t;
-        const cwd = findLeafCwd(t.paneTree, leafId);
-        return {
-          ...t,
-          activeLeafId: leafId,
-          ...(cwd !== undefined && { cwd }),
-        };
+        if (t.id !== tabId) return t;
+        if (t.kind === "terminal") {
+          if (!hasLeaf(t.paneTree, leafId)) return t;
+          if (t.activeLeafId === leafId) return t;
+          const cwd = findLeafCwd(t.paneTree, leafId);
+          return { ...t, activeLeafId: leafId, ...(cwd !== undefined && { cwd }) };
+        }
+        if (t.kind === "editor") {
+          if (!hasLeaf(t.paneTree, leafId)) return t;
+          if (t.activeLeafId === leafId) return t;
+          const leafPath = findLeafPath(t.paneTree, leafId);
+          return {
+            ...t,
+            activeLeafId: leafId,
+            ...(leafPath !== undefined && { path: leafPath, title: basename(leafPath) }),
+          };
+        }
+        return t;
       }),
     );
   }, []);
@@ -1079,11 +1136,24 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const focusNextPaneInTab = useCallback((tabId: number, delta: 1 | -1) => {
     setTabs((curr) =>
       curr.map((t) => {
-        if (t.id !== tabId || t.kind !== "terminal") return t;
-        const next = nextLeafId(t.paneTree, t.activeLeafId, delta);
-        if (next === t.activeLeafId) return t;
-        const cwd = findLeafCwd(t.paneTree, next);
-        return { ...t, activeLeafId: next, ...(cwd !== undefined && { cwd }) };
+        if (t.id !== tabId) return t;
+        if (t.kind === "terminal") {
+          const next = nextLeafId(t.paneTree, t.activeLeafId, delta);
+          if (next === t.activeLeafId) return t;
+          const cwd = findLeafCwd(t.paneTree, next);
+          return { ...t, activeLeafId: next, ...(cwd !== undefined && { cwd }) };
+        }
+        if (t.kind === "editor") {
+          const next = nextLeafId(t.paneTree, t.activeLeafId, delta);
+          if (next === t.activeLeafId) return t;
+          const leafPath = findLeafPath(t.paneTree, next);
+          return {
+            ...t,
+            activeLeafId: next,
+            ...(leafPath !== undefined && { path: leafPath, title: basename(leafPath) }),
+          };
+        }
+        return t;
       }),
     );
   }, []);
@@ -1112,20 +1182,43 @@ export function useTabs(initial?: Partial<TerminalTab>) {
       let newLeafId: number | null = null;
       setTabs((curr) =>
         curr.map((t) => {
-          if (t.id !== tabId || t.kind !== "terminal" || t.blocks) return t;
-          if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
-          const splitId = nextIdRef.current++;
-          const leafId = nextIdRef.current++;
-          newLeafId = leafId;
-          const paneTree = splitLeaf(
-            t.paneTree,
-            t.activeLeafId,
-            splitId,
-            leafId,
-            dir,
-            t.cwd,
-          );
-          return { ...t, paneTree, activeLeafId: leafId };
+          if (t.id !== tabId) return t;
+          if (t.kind === "terminal") {
+            if (t.blocks) return t;
+            if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
+            const splitId = nextIdRef.current++;
+            const leafId = nextIdRef.current++;
+            newLeafId = leafId;
+            const paneTree = splitLeaf(
+              t.paneTree,
+              t.activeLeafId,
+              splitId,
+              leafId,
+              dir,
+              t.cwd,
+            );
+            return { ...t, paneTree, activeLeafId: leafId };
+          }
+          if (t.kind === "editor") {
+            // Preview tabs are not splittable.
+            if (t.preview) return t;
+            if (leafIds(t.paneTree).length >= MAX_PANES_PER_TAB) return t;
+            const splitId = nextIdRef.current++;
+            const leafId = nextIdRef.current++;
+            newLeafId = leafId;
+            const activeLeafPath = findLeafPath(t.paneTree, t.activeLeafId) ?? t.path;
+            const paneTree = splitLeaf(
+              t.paneTree,
+              t.activeLeafId,
+              splitId,
+              leafId,
+              dir,
+              undefined,
+              activeLeafPath,
+            );
+            return { ...t, paneTree, activeLeafId: leafId };
+          }
+          return t;
         }),
       );
       return newLeafId;
@@ -1136,31 +1229,64 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const closePaneByLeaf = useCallback((leafId: number): void => {
     let didRemove = false;
     setTabs((curr) => {
-      const tab = curr.find(
+      // Check terminal tabs first.
+      const termTab = curr.find(
         (t) => t.kind === "terminal" && hasLeaf(t.paneTree, leafId),
       );
-      if (tab?.kind !== "terminal") return curr;
-      const newTree = removeLeaf(tab.paneTree, leafId);
-      if (newTree === null) {
-        const fallback = nextActiveInSpace(curr, tab.id);
-        if (fallback === null) return curr;
-        const next = curr.filter((x) => x.id !== tab.id);
-        setActiveId((active) => (active === tab.id ? fallback : active));
+      if (termTab?.kind === "terminal") {
+        const newTree = removeLeaf(termTab.paneTree, leafId);
+        if (newTree === null) {
+          const fallback = nextActiveInSpace(curr, termTab.id);
+          if (fallback === null) return curr;
+          setActiveId((active) => (active === termTab.id ? fallback : active));
+          didRemove = true;
+          return curr.filter((x) => x.id !== termTab.id);
+        }
+        const remaining = leafIds(newTree);
+        let newActive = termTab.activeLeafId;
+        if (termTab.activeLeafId === leafId) {
+          const sib = siblingLeafOf(termTab.paneTree, leafId);
+          newActive = sib && remaining.includes(sib) ? sib : remaining[0];
+        }
         didRemove = true;
-        return next;
+        return curr.map((x) =>
+          x.id === termTab.id
+            ? { ...x, paneTree: newTree, activeLeafId: newActive }
+            : x,
+        );
       }
-      const remaining = leafIds(newTree);
-      let newActive = tab.activeLeafId;
-      if (tab.activeLeafId === leafId) {
-        const sib = siblingLeafOf(tab.paneTree, leafId);
-        newActive = sib && remaining.includes(sib) ? sib : remaining[0];
-      }
-      didRemove = true;
-      return curr.map((x) =>
-        x.id === tab.id
-          ? { ...x, paneTree: newTree, activeLeafId: newActive }
-          : x,
+      // Check editor tabs (no PTY to dispose).
+      const editorTab = curr.find(
+        (t) => t.kind === "editor" && hasLeaf(t.paneTree, leafId),
       );
+      if (editorTab?.kind === "editor") {
+        const newTree = removeLeaf(editorTab.paneTree, leafId);
+        if (newTree === null) {
+          const fallback = nextActiveInSpace(curr, editorTab.id);
+          if (fallback === null) return curr;
+          setActiveId((active) => (active === editorTab.id ? fallback : active));
+          return curr.filter((x) => x.id !== editorTab.id);
+        }
+        const remaining = leafIds(newTree);
+        let newActive = editorTab.activeLeafId;
+        if (editorTab.activeLeafId === leafId) {
+          const sib = siblingLeafOf(editorTab.paneTree, leafId);
+          newActive = sib && remaining.includes(sib) ? sib : remaining[0];
+        }
+        const newActivePath = findLeafPath(newTree, newActive) ?? editorTab.path;
+        return curr.map((x) =>
+          x.id === editorTab.id
+            ? {
+                ...x,
+                paneTree: newTree,
+                activeLeafId: newActive,
+                path: newActivePath,
+                title: basename(newActivePath),
+              }
+            : x,
+        );
+      }
+      return curr;
     });
     if (didRemove) disposeSession(leafId);
   }, []);
@@ -1170,27 +1296,56 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     let removedLeaf: number | null = null;
     setTabs((curr) => {
       const t = curr.find((x) => x.id === tabId);
-      if (t?.kind !== "terminal") return curr;
-      const target = t.activeLeafId;
-      const newTree = removeLeaf(t.paneTree, target);
-      if (newTree === null) {
-        const fallback = nextActiveInSpace(curr, tabId);
-        if (fallback === null) return curr;
-        const next = curr.filter((x) => x.id !== tabId);
-        setActiveId((active) => (active === tabId ? fallback : active));
-        closedTab = true;
+      if (t?.kind === "terminal") {
+        const target = t.activeLeafId;
+        const newTree = removeLeaf(t.paneTree, target);
+        if (newTree === null) {
+          const fallback = nextActiveInSpace(curr, tabId);
+          if (fallback === null) return curr;
+          const next = curr.filter((x) => x.id !== tabId);
+          setActiveId((active) => (active === tabId ? fallback : active));
+          closedTab = true;
+          removedLeaf = target;
+          return next;
+        }
+        const remaining = leafIds(newTree);
+        const sib = siblingLeafOf(t.paneTree, target);
+        const newActive = sib && remaining.includes(sib) ? sib : remaining[0];
         removedLeaf = target;
-        return next;
+        return curr.map((x) =>
+          x.id === tabId
+            ? { ...x, paneTree: newTree, activeLeafId: newActive }
+            : x,
+        );
       }
-      const remaining = leafIds(newTree);
-      const sib = siblingLeafOf(t.paneTree, target);
-      const newActive = sib && remaining.includes(sib) ? sib : remaining[0];
-      removedLeaf = target;
-      return curr.map((x) =>
-        x.id === tabId
-          ? { ...x, paneTree: newTree, activeLeafId: newActive }
-          : x,
-      );
+      if (t?.kind === "editor") {
+        const target = t.activeLeafId;
+        const newTree = removeLeaf(t.paneTree, target);
+        if (newTree === null) {
+          const fallback = nextActiveInSpace(curr, tabId);
+          if (fallback === null) return curr;
+          const next = curr.filter((x) => x.id !== tabId);
+          setActiveId((active) => (active === tabId ? fallback : active));
+          closedTab = true;
+          return next;
+        }
+        const remaining = leafIds(newTree);
+        const sib = siblingLeafOf(t.paneTree, target);
+        const newActive = sib && remaining.includes(sib) ? sib : remaining[0];
+        const newActivePath = findLeafPath(newTree, newActive) ?? t.path;
+        return curr.map((x) =>
+          x.id === tabId
+            ? {
+                ...x,
+                paneTree: newTree,
+                activeLeafId: newActive,
+                path: newActivePath,
+                title: basename(newActivePath),
+              }
+            : x,
+        );
+      }
+      return curr;
     });
     if (removedLeaf !== null) disposeSession(removedLeaf);
     return closedTab;
@@ -1258,6 +1413,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     updateTab,
     selectByIndex,
     setLeafCwd,
+    setLeafPath,
     focusPane,
     focusNextPaneInTab,
     swapActivePaneInDirection,
