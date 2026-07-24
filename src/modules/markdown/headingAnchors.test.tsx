@@ -8,9 +8,8 @@ import {
   rehypePlugins,
 } from "./RenderedMarkdown";
 
-// Uses the real pipeline exported by RenderedMarkdown, so the slugs and the
-// sanitizer's user-content- clobber cannot drift from what the preview
-// actually emits.
+// The real exported pipeline, so slugs and the sanitizer's user-content-
+// clobber cannot drift from what the preview actually emits.
 const render = (md: string) =>
   renderToStaticMarkup(
     <Streamdown
@@ -63,12 +62,10 @@ describe("rehypeHeadingAnchors", () => {
     );
   });
 
-  // Unicode letters survive via \p{L}; GitHub drops the emoji but keeps
-  // the following space's hyphen (#-launch). Decomposed combining marks
-  // and ZWJ sequences are the documented slugger ceiling.
+  // GitHub drops the emoji but keeps the following space's hyphen.
   it("keeps unicode letters and drops leading emoji like GitHub", () => {
     expect(render("## Héllo Wörld")).toContain('id="user-content-héllo-wörld"');
-    expect(render("## 🚀 Launch")).toContain('id="user-content--launch"');
+    expect(render("## \u{1F680} Launch")).toContain('id="user-content--launch"');
   });
 
   it("covers h1 through h6", () => {
@@ -96,9 +93,8 @@ describe("rehypeHeadingAnchors", () => {
   });
 });
 
-// Node-environment fakes: resolveFragment only needs closest/querySelector,
-// and its selector strings are plain [id="..."] attribute selectors the
-// fake can parse back with JSON.parse.
+// Node-environment fakes: resolveFragment's selectors are plain [id="..."]
+// forms the fake can parse back with JSON.parse.
 const paneWith = (ids: string[]) =>
   ({
     querySelector: (sel: string) => {
@@ -142,8 +138,7 @@ describe("resolveFragment", () => {
 });
 
 // Targets expose ONLY getBoundingClientRect: a regression back to
-// target.scrollIntoView (which shears every scrollable ancestor, including
-// the overflow-hidden pane wrapper the user cannot scroll back) throws here.
+// target.scrollIntoView (which shears overflow-hidden ancestors) throws here.
 describe("scrollToFragment", () => {
   const scroller = () => ({
     scrollTop: 40,
@@ -151,9 +146,8 @@ describe("scrollToFragment", () => {
     scrollTo: vi.fn(),
   });
 
-  // A block target (heading) is its own closest() match; an inline target
-  // (footnote sup anchor) resolves to its enclosing block's rect instead,
-  // so the line containing it is never clipped at the container edge.
+  // A block target is its own closest() match; an inline target resolves
+  // to its enclosing block's rect instead.
   const blockTarget = (top: number) => {
     const el = {
       getBoundingClientRect: () => ({ top }),
@@ -202,12 +196,8 @@ describe("scrollToFragment", () => {
     expect(s.scrollTo).toHaveBeenCalledWith({ top: 0 });
   });
 
-  // CSS zoom (Ctrl+=, .zoom-content) makes getBoundingClientRect report
-  // VISUAL px while scrollTop/offsetHeight stay LAYOUT px. A 1.25x scroller
-  // reports rect height 625 over offsetHeight 500; the visual anchor delta
-  // (250-10)=240 must be divided by 1.25 -> 192 layout px before adding the
-  // layout scrollTop and cushion: 40 + 192 - 8 = 224. These node fakes prove
-  // only the arithmetic; the real webview proves the pixels line up.
+  // Under CSS zoom rects are visual px, scrollTop/offsetHeight layout px:
+  // scale 625/500 = 1.25, so (250-10)/1.25 + 40 - 8 = 224.
   it("divides the visual anchor delta by CSS zoom scale", () => {
     const s = {
       scrollTop: 40,

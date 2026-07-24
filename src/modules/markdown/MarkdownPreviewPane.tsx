@@ -29,14 +29,8 @@ type Props = {
   onSetView: (mode: "rendered" | "raw") => void;
 };
 
-/**
- * Loads the file and keeps it fresh: the fs watcher (dir-level, the backend
- * only watches directories, same as useEditorFileSync) triggers re-reads on
- * external change. Refresh reads never pass through "loading", so the pane
- * keeps the previous render (and scroll position) until new content lands;
- * "ready" only ends when a refresh stops yielding text: a failed read (e.g.
- * file deleted), binary content, or a file grown past the size limit.
- */
+// Re-reads on external change via the dir-level fs watcher; refreshes skip
+// "loading" so the pane keeps the previous render and scroll position.
 export function syncPreviewFile(
   path: string,
   setStatus: (status: Status) => void,

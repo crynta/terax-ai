@@ -1,14 +1,5 @@
-/**
- * Heading anchors: h1-h6 get GitHub-style slug ids so a README's TOC links
- * ([Section](#section)) jump within the preview. Slug rules match GitHub:
- * lowercase text content (code spans included), punctuation stripped except
- * hyphens and underscores, spaces to hyphens, duplicate slugs suffixed -1,
- * -2 per document.
- *
- * Runs before rehype-sanitize on purpose: the sanitizer's default schema
- * clobbers every id to user-content-<slug>, which is exactly the form
- * GitHub serves, and resolveFragment looks the prefixed form up first.
- */
+// GitHub-style heading slug ids. Runs before rehype-sanitize, which
+// clobbers every id to user-content-<slug>, the form GitHub serves.
 import type { HNode } from "./tableDirectives";
 
 const HEADING = /^h[1-6]$/;
@@ -37,10 +28,8 @@ function textOf(node: HNode): string {
   return (node.children ?? []).map(textOf).join("");
 }
 
-// ponytail: ASCII-first take on GitHub's slugger. \p{L}\p{N} keeps plain
-// unicode letters the way GitHub does, but exotic cases (decomposed
-// combining marks, emoji ZWJ sequences) can differ from GitHub's full
-// regex; extend only if a real document hits one.
+// Simplified GitHub slugger; exotic unicode (combining marks, ZWJ
+// sequences) can differ.
 function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -48,15 +37,9 @@ function slugify(text: string): string {
     .replace(/ /g, "-");
 }
 
-/**
- * Resolves an in-page fragment within the clicking link's own preview pane.
- * Multiple panes stay mounted at once (hidden ones are merely invisible),
- * so heading ids duplicate across panes and a global getElementById could
- * hit the wrong document; closest(".markdown-body") scopes the lookup.
- * The sanitizer's clobbered form wins over the bare fragment, matching
- * GitHub. JSON.stringify yields a valid quoted CSS string, so no CSS.escape
- * (which the node test environment lacks).
- */
+// Hidden panes stay mounted and ids duplicate across documents, so scope
+// to the link's own pane. JSON.stringify quotes the id (no CSS.escape in
+// the node test environment).
 export function resolveFragment(
   link: Element,
   fragment: string,
@@ -75,39 +58,17 @@ export function resolveFragment(
   );
 }
 
-// Fragment targets can be inline elements, like a footnote reference's
-// raised sup anchor (line-height 0 and a -0.5em relative shift in the
-// GitHub stylesheet). Aligning that rect to the exact container top clips
-// the line that contains it, so the view appears to land below the
-// reference. Scrolling the enclosing block instead keeps the whole line
-// visible; a heading is its own closest() match, so block targets are
-// unaffected.
+// Inline fragment targets (a footnote's raised sup anchor) sit above their
+// line box; landing on the enclosing block keeps the whole line visible.
 const BLOCK_ANCHOR = "p, li, h1, h2, h3, h4, h5, h6, td, th, blockquote, pre";
 
-// Breathing room above the landing block, so text never sits flush against
-// the clipped edge of the scroll container.
+// Breathing room above the landing block.
 const SCROLL_CUSHION = 8;
 
-/**
- * Scrolls the pane's own scroll container (the markdown-body article's
- * parent, the overflow-auto div) so the fragment's target lands at the
- * top. Element.scrollIntoView would scroll EVERY scrollable ancestor,
- * including the pane's overflow-hidden wrapper and the tab stack above it;
- * hidden-overflow boxes ignore the wheel, so the user could never scroll
- * those back and the pane stayed visually sheared with a blank bottom.
- *
- * Ctrl+= zoom is CSS `zoom: var(--app-zoom)` on an ancestor (globals.css
- * .zoom-content, App.tsx <main>), not native webview zoom. Under CSS zoom
- * Chromium splits its geometry: getBoundingClientRect reports VISUAL
- * (zoom-scaled) px, but scrollTop/scrollTo and offsetHeight stay in LAYOUT
- * (unzoomed) px. Feeding a visual rect delta into a layout scrollTop
- * overshot by the zoom factor, so the landing drifted further the more the
- * user zoomed. Divide the visual delta by the scroller's own scale (its
- * visual height over its layout height, both border-box, exactly the zoom,
- * 1 when unzoomed) to convert back to layout scroll units. offsetHeight not
- * clientHeight: a wide table's horizontal scrollbar shrinks clientHeight and
- * would poison the ratio.
- */
+// scrollIntoView would also scroll overflow-hidden ancestors the user
+// cannot scroll back. Under CSS zoom rects are visual px but scrollTop is
+// layout px: divide by the scroller's visual/layout height ratio
+// (offsetHeight, so a horizontal scrollbar cannot skew it).
 export function scrollToFragment(link: Element, fragment: string): void {
   const target = resolveFragment(link, fragment);
   if (!target) return;

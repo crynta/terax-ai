@@ -103,16 +103,14 @@ describe("RenderedMarkdown", () => {
     expect(html).not.toContain("data-streamdown");
   });
 
-  // The unified pipeline recurses per nesting level; pathological depth
-  // overflows the call stack during render, which the pane's error boundary
-  // converts to the Raw-view hint in the client. Static server rendering
-  // has no boundaries, so the throw itself is the observable here.
+  // Pathological depth overflows the call stack during render; the client
+  // shows the error boundary, but here the throw itself is the observable.
   it("pathological nesting fails inside the render, not past it", () => {
     const deep = `${"> ".repeat(2000)}x`;
     expect(() => render(deep)).toThrow();
   });
 
-  it("7k-line document stays a one-time static parse (#913 class)", () => {
+  it("7k-line document stays a one-time static parse", () => {
     const lines: string[] = [];
     for (let i = 0; i < 7000; i++) {
       lines.push(
@@ -126,9 +124,8 @@ describe("RenderedMarkdown", () => {
       `[markdown perf] 7000-line static render: ${Math.round(ms)}ms`,
     );
     expect(html).toContain("Heading 6950");
-    // Coarse guard only: the static path lands well under a second here;
-    // the streaming path #913 removed measured ~3.3s on a comparable doc.
-    // The threshold splits the two regimes without being CI-flaky.
+    // Coarse guard: static lands well under a second; the removed
+    // streaming path measured ~3.3s on a comparable document.
     expect(ms).toBeLessThan(3000);
   });
 
@@ -144,10 +141,8 @@ describe("RenderedMarkdown", () => {
   });
 });
 
-// Streamdown exposes its sanitize/harden entries as [plugin, options]
-// tuples; RenderedMarkdown destructures them to extend the schema. A minor
-// release reshaping these internals must fail loudly here, not silently
-// drop sanitization.
+// RenderedMarkdown destructures Streamdown's [plugin, options] tuples; a
+// release reshaping them must fail loudly here, not silently drop sanitizing.
 describe("Streamdown internal plugin shape (2.5.0 tuple contract)", () => {
   it("sanitize and harden are [function, object] tuples", () => {
     for (const entry of [
@@ -163,12 +158,9 @@ describe("Streamdown internal plugin shape (2.5.0 tuple contract)", () => {
   });
 });
 
-// Node-environment fakes: handleLinkClick resolves the fragment via
-// closest/querySelector and scrolls the pane's parent scroll container,
-// mirroring the fakes in headingAnchors.test.tsx. Targets carry ONLY
-// getBoundingClientRect: a regression back to target.scrollIntoView (which
-// shears every scrollable ancestor, including overflow-hidden ones the user
-// cannot scroll back) would throw here.
+// Node-environment fakes mirroring headingAnchors.test.tsx. Targets carry
+// ONLY getBoundingClientRect: a regression back to target.scrollIntoView
+// would throw here.
 const scrollerFake = () => ({
   scrollTop: 40,
   getBoundingClientRect: () => ({ top: 10 }),

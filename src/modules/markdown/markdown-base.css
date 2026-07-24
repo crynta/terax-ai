@@ -2,11 +2,8 @@
  * https://github.com/sindresorhus/github-markdown-css
  * Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
  *
- * Auto-generated from GitHub Primer's markdown styles. Vendored (rather
- * than a dependency) so the preview's look can evolve independently of
- * GitHub's. Color variables are re-pointed at Terax theme tokens in
- * markdown-theme.css, which must load after this file (import order in
- * RenderedMarkdown.tsx). */
+ * Color variables are re-pointed at Terax theme tokens in
+ * markdown-theme.css, which must load after this file. */
 
 .markdown-body {
   --base-size-16: 1rem;

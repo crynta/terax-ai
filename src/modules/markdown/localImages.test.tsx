@@ -5,10 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Streamdown } from "streamdown";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// convertFileSrc mirrors Tauri's internals: the whole path is
-// percent-encoded and served from http://asset.localhost/ on Windows
-// (asset://localhost/ elsewhere; one test switches the implementation to
-// lock the asset scheme through the sanitizer).
+// The fake mirrors Tauri's convertFileSrc: percent-encoded path served from
+// http://asset.localhost/ on Windows, asset://localhost/ elsewhere.
 const tauri = vi.hoisted(() => ({
   convertFileSrc: vi.fn<(path: string, protocol?: string) => string>(),
 }));
@@ -140,9 +138,8 @@ describe("rehypeLocalImages through the full pipeline", () => {
     expect(html).not.toContain("<img");
   });
 
-  // A drive-letter src parses as a URL with a "c:" scheme, so the resolver
-  // leaves it alone and the sanitizer's protocol allowlist strips it; the
-  // image degrades to its alt text through harden's text-only policy.
+  // A drive-letter src parses as a URL with a "c:" scheme; the resolver
+  // leaves it alone and the sanitizer strips it.
   it("a bare drive-letter src (C:/x.png) is stripped, alt text remains", () => {
     const html = render("![shot](C:/x.png)", "D:\\notes");
     expect(tauri.convertFileSrc).not.toHaveBeenCalled();
@@ -152,11 +149,9 @@ describe("rehypeLocalImages through the full pipeline", () => {
   });
 });
 
-// The traversal-stays-allowed policy above (and the comment in
-// localImages.ts) leans on the shipped assetProtocol scope of ["**"]: the
-// asset protocol already serves any path, so the preview adds no new
-// reachability. If the maintainer ever tightens that scope, this must fail
-// so the joinPath traversal policy gets revisited alongside it.
+// The traversal-stays-allowed policy leans on the shipped assetProtocol
+// scope of ["**"]; if that scope is ever tightened, this must fail so the
+// joinPath traversal policy gets revisited alongside it.
 describe("tauri.conf.json assetProtocol contract", () => {
   it("asset protocol is enabled with the wildcard scope", () => {
     const here = path.dirname(fileURLToPath(import.meta.url));

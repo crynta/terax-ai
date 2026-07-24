@@ -33,7 +33,7 @@ const renderSrc = readFileSync(path.join(here, "RenderedMarkdown.tsx"), "utf8");
 const themeCss = readFileSync(path.join(here, "markdown-theme.css"), "utf8");
 
 describe("markdown preview configuration", () => {
-  it("renders through Streamdown in static mode (#913 invariant)", () => {
+  it("renders through Streamdown in static mode, no streaming parse", () => {
     expect(renderSrc).toMatch(/mode="static"/);
     expect(renderSrc).toMatch(/parseIncompleteMarkdown=\{false\}/);
   });

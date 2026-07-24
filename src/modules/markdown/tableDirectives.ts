@@ -1,37 +1,14 @@
-/**
- * Table layout directives: an HTML comment immediately before a table
- * translates into the standard markup markdown-theme.css honors
- * (`<table width>` + `<colgroup>`), so authoring stays a plain pipe table.
- *
- *   <!-- table width="100%" -->              full width, content-sized columns
- *   <!-- table cols="equal" -->              equal columns, natural table width
- *   <!-- table width="100%" cols="equal" --> full width, equal columns
- *   <!-- table cols="12%, auto, 25%" -->     per-column widths
- *
- * width and cols are independent; combine them in one comment or stack
- * comments (later ones win on conflicts). Attribute values take double,
- * single, or no quotes. "100%" is the only width value the preview
- * stylesheet honors. cols entries are positional (the Nth entry sizes the
- * Nth column) and accept percentages ("25%") or bare pixel counts ("160");
- * the HTML width attribute takes nothing else, and its legacy parser
- * silently truncates units like "12ch" to pixels. "equal" expands to
- * (100/N)% per column. Entries beyond the actual column count are dropped;
- * missing ones leave columns auto-sized. Without width="100%" the browser's
- * auto layout treats column widths as hints, so strict sizing needs the
- * full-width form. GitHub ignores HTML comments, so files degrade to a
- * normal table there.
- *
- * Runs after rehype-raw (which materializes comment nodes) and before
- * rehype-sanitize: the sanitizer strips the comment itself and vets the
- * injected markup, so directives cannot bypass it.
- */
+// An HTML comment directly above a table, e.g.
+// <!-- table width="100%" cols="12%, auto, 25%" --> ("equal" divides
+// evenly), sets width and column sizing; GitHub ignores it. Runs after
+// rehype-raw and before rehype-sanitize, which strips the comment and vets
+// the injected markup.
 
 const DIRECTIVE = /^\s*table\s+(\S[\s\S]*)$/;
 const ATTR = /(\w+)=(?:"([^"]*)"|'([^']*)'|([^\s"']+))/g;
 
-// Minimal structural view of hast nodes; avoids depending on the transitive
-// @types/hast package. Shared by the other hand-rolled rehype plugins in
-// this module.
+// Minimal structural view of hast nodes, shared by this module's plugins;
+// avoids depending on the transitive @types/hast package.
 export type HNode = {
   type: string;
   tagName?: string;
@@ -102,15 +79,12 @@ function applyToNextTable(
   table.children = [colgroup, ...(table.children ?? [])];
 }
 
-/* (100/N)% per column: equalizes under fixed layout and, as far as content
- * allows, under auto layout. */
 function equalWidths(count: number): string[] {
   if (count === 0) return [];
   const pct = Math.round(100000 / count) / 1000;
   return Array<string>(count).fill(`${pct}%`);
 }
 
-/** Next element sibling; skips comments and whitespace-only text. */
 function nextElement(siblings: HNode[], from: number): HNode | null {
   for (let i = from; i < siblings.length; i++) {
     const n = siblings[i];

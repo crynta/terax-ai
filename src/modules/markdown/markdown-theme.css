@@ -1,11 +1,7 @@
-/* markdown-base.css (vendored GitHub markdown styles) provides the layout
- * (spacing, headings, tables) but switches palettes on the OS
- * prefers-color-scheme media query. Terax instead defines semantic tokens on
- * <html> (stylesheet defaults in globals.css, overridden per theme by
- * applyTheme() for non-default and custom themes) and toggles a .light/.dark
- * root class, so this file re-points the base stylesheet's color variables
- * at those tokens. It must load after markdown-base.css (import order in
- * RenderedMarkdown.tsx) to win the cascade over its media-query blocks. */
+/* Re-points the vendored base stylesheet's color variables at Terax's
+ * semantic theme tokens, keyed off the .light/.dark root class rather than
+ * the OS color-scheme query so custom themes win. Must load after
+ * markdown-base.css to beat its media-query blocks in the cascade. */
 .markdown-body {
   --fontStack-sansSerif: var(--font-sans, "Inter Variable", sans-serif);
   --fontStack-monospace: "JetBrains Mono", ui-monospace, SFMono-Regular,

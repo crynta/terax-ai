@@ -1,7 +1,5 @@
 export type SplitResult = {
-  /** Key/value pairs for the frontmatter table; empty when none was found. */
   entries: [string, string][];
-  /** Markdown content with the frontmatter block removed. */
   body: string;
 };
 
@@ -9,16 +7,10 @@ export type SplitResult = {
 // GitHub. Closing fence may be the last line of the file.
 const FRONTMATTER_RE = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
-// Conventional frontmatter keys: word characters, dots, dashes.
 const KEY_RE = /^([A-Za-z0-9_][\w.-]*):(?:[ \t]+(.*))?$/;
 
-/**
- * GitHub renders a leading YAML frontmatter block in .md previews as a table
- * with the keys as the header row. Mirror that: split the block off and hand
- * back displayable key/value pairs. Anything that does not look like a
- * key/value mapping is left in the body untouched so it renders as ordinary
- * markdown.
- */
+// GitHub renders a leading YAML frontmatter block as a table with keys as
+// the header row; anything not a flat mapping stays in the body untouched.
 export function splitFrontmatter(content: string): SplitResult {
   const m = FRONTMATTER_RE.exec(content);
   if (!m) return { entries: [], body: content };
@@ -27,19 +19,9 @@ export function splitFrontmatter(content: string): SplitResult {
   return { entries, body: content.slice(m[0].length) };
 }
 
-/**
- * Deliberately minimal YAML-subset parser: a full YAML library (the yaml
- * package measures ~25 kB gzipped) is too expensive against the total-JS
- * size budget (.size-limit.json) for what this table needs. Supports what
- * frontmatter uses in practice: flat `key: value` pairs, quoted values,
- * `key:` followed by an indented block (nested maps / lists, displayed as
- * dedented text), and `|` / `>` block scalars. One deliberate leniency
- * beyond strict YAML: a colon followed by a space inside a plain value is
- * accepted (strict YAML rejects it), since that is the most common
- * frontmatter mistake and the intent is unambiguous. Structurally
- * unrecognized input returns null so the whole block falls back to
- * rendering as markdown.
- */
+// Hand-rolled YAML subset: a real YAML dep is ~25 kB gzip against the size
+// budget. Lenient on ": " in plain values; unrecognized structure returns
+// null so the block renders as ordinary markdown.
 function parseMapping(text: string): [string, string][] | null {
   const lines = text.split(/\r?\n/);
   const entries: [string, string][] = [];

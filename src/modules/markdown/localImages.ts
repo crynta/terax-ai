@@ -1,17 +1,6 @@
-/**
- * Local image resolution: a relative img src in a previewed file (img.png,
- * ./a/b.png, ../x.png) resolves against the document's directory and loads
- * through Tauri's asset protocol via convertFileSrc, the maintainer-preferred
- * zero-copy path (#572, #314; EditorPane precedent). http(s), data: and any
- * other absolute URL stay untouched.
- *
- * Runs before rehype-sanitize/rehype-harden on purpose: harden blocks
- * relative srcs (imageBlockPolicy "text-only"), so the rewrite must happen
- * first. The converted URL then survives sanitize through its protocol
- * allowlist (http on Windows, the enumerated asset scheme elsewhere) and
- * harden's wildcard prefixes. A missing file is served as a protocol error
- * the img element renders as the standard broken-image/alt state.
- */
+// Relative img srcs resolve against the document's directory and load
+// through Tauri's asset protocol. Must run before sanitize/harden, which
+// would block relative srcs; the rewritten URL passes the allowlist.
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { HNode } from "./tableDirectives";
 
@@ -36,14 +25,9 @@ function visit(node: HNode, baseDir: string): void {
   }
 }
 
-// Anything that parses as a URL has a scheme (http, https, data, asset,
-// mailto; a Windows drive path like C:/x.png parses with a "c:" scheme) and
-// stays untouched; the sanitizer's protocol allowlist decides its fate.
-// ponytail: root-absolute srcs ("/assets/x.png") resolve against the repo
-// root on GitHub, but no workspace-root path is available in this module,
-// so they pass through unresolved and render as the browser's silent
-// broken-image/alt state; resolve against the workspace root if a root
-// store ever lands.
+// Anything with a scheme (http, data, even a C:/ drive path) is left for
+// the sanitizer's protocol allowlist to vet. Root-absolute srcs ("/x.png")
+// would need a workspace root to resolve like GitHub; unresolved for now.
 function isRelative(src: string): boolean {
   if (src.startsWith("/")) return false;
   try {
@@ -54,9 +38,8 @@ function isRelative(src: string): boolean {
   }
 }
 
-// Markdown authors percent-encode spaces and # in paths (my%20shot.png);
-// the joined filesystem path needs the real file name, and convertFileSrc
-// re-encodes it for the URL, so decode exactly once before joining.
+// Authors percent-encode paths (my%20shot.png); decode exactly once before
+// joining, convertFileSrc re-encodes for the URL.
 function decodeSrc(src: string): string {
   try {
     return decodeURIComponent(src);
@@ -66,13 +49,9 @@ function decodeSrc(src: string): string {
   }
 }
 
-/**
- * Lexical join + normalize with forward slashes throughout (Tauri accepts
- * them on Windows). ".." never climbs past the root (drive letter, UNC
- * lead-in or "/"); traversal above the workspace stays allowed on purpose,
- * matching the editor's preview of arbitrary paths under the shipped
- * assetProtocol scope of ["**"].
- */
+// Lexical join/normalize with forward slashes (Tauri accepts them on
+// Windows). ".." never climbs past a root; traversal above the workspace is
+// deliberate, matching the editor under the shipped assetProtocol ["**"].
 export function joinPath(dir: string, rel: string): string {
   const parts = `${dir}/${rel}`.replace(/\\/g, "/").split("/");
   const out: string[] = [];
@@ -95,7 +74,7 @@ export function joinPath(dir: string, rel: string): string {
   return out.join("/");
 }
 
-/** Directory of a file path; handles / and \ separators. "" when none. */
+/** Parent directory; "" when the path has no separator. */
 export function parentDir(path: string): string {
   const i = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   if (i < 0) return "";

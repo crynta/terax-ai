@@ -1,23 +1,6 @@
-/**
- * GFM alerts: a blockquote whose first line is exactly one of [!NOTE],
- * [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION] becomes the structure the
- * vendored GitHub stylesheet (markdown-base.css) already styles:
- *
- *   <div class="markdown-alert markdown-alert-note">
- *     <p class="markdown-alert-title">Note</p>
- *     ...the blockquote's remaining content, unchanged...
- *   </div>
- *
- * GitHub semantics: the marker is case-insensitive and must sit alone on
- * the blockquote's first line with nothing before it. Content on the marker
- * line, an unknown type, or a marker arriving after other content leaves
- * the blockquote untouched, so the text renders literally like on GitHub.
- *
- * Runs after rehype-raw and before rehype-sanitize, which vets the injected
- * markup and prunes class names to the enumerated allowlist in
- * RenderedMarkdown.tsx. Title icons are CSS mask data URIs in
- * markdown-theme.css, so the sanitizer never admits svg/path elements.
- */
+// GFM alert blockquotes ([!NOTE] etc.) become the div structure
+// markdown-base.css styles; runs after rehype-raw and before
+// rehype-sanitize, which vets the injected markup.
 import type { HNode } from "./tableDirectives";
 
 const MARKER = /^\[!(note|tip|important|warning|caution)\][^\S\n]*(?:\n|$)/i;
@@ -28,8 +11,7 @@ export function rehypeGithubAlerts() {
   };
 }
 
-// ponytail: GitHub-parity ceiling, alerts never nest. A marker blockquote
-// inside another blockquote (or inside an alert) stays a plain blockquote.
+// Alerts never nest, like GitHub.
 function visit(node: HNode, insideQuote: boolean): void {
   const quote = node.type === "element" && node.tagName === "blockquote";
   if (quote && !insideQuote) tryTransform(node);
