@@ -21,6 +21,11 @@ import { highlight, isHighlightable, type HighlightedNode } from "./chat-code-le
 const StreamingCtx = createContext(false);
 export const ChatStreamingProvider = StreamingCtx.Provider;
 
+// Run-in-terminal targets the active tab's PTY, which only exists in chat;
+// document previews disable it via this context.
+const RunActionCtx = createContext(true);
+export const CodeRunActionProvider = RunActionCtx.Provider;
+
 const POSIX_SHELL = new Set([
   "bash",
   "sh",
@@ -179,6 +184,7 @@ const HighlightedPre = memo(function HighlightedPre({
 function CommandCard({ code, lang }: { code: string; lang: string }) {
   const isMultiline = code.includes("\n");
   const prompt = shellPrompt(lang);
+  const runEnabled = useContext(RunActionCtx);
   return (
     <div className="not-prose my-2 overflow-hidden rounded-lg border border-border/50 bg-muted/40">
       <div className="flex items-center justify-between gap-2 px-3 py-1.5">
@@ -186,7 +192,7 @@ function CommandCard({ code, lang }: { code: string; lang: string }) {
           {normalizeLangLabel(lang)}
         </span>
         <div className="flex items-center gap-1">
-          <RunInTerminalButton command={code} />
+          {runEnabled && <RunInTerminalButton command={code} />}
           <CopyButton text={code} />
         </div>
       </div>

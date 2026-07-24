@@ -18,11 +18,8 @@ export function markdownCodeText(children?: ReactNode): string {
   return "";
 }
 
-/**
- * Streamdown `components.code` override. Handles both inline (`code`) and
- * fenced blocks (className "language-X"). Fenced blocks delegate to the
- * Lezer-based renderer; inline stays a plain pill.
- */
+// `components.code` override shared by the chat and markdown preview
+// Streamdown renderers.
 export function MarkdownCode({
   className,
   children,
