@@ -1,6 +1,15 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { RenderedMarkdown } from "./RenderedMarkdown";
+import { defaultRehypePlugins } from "streamdown";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const opener = vi.hoisted(() => ({ openUrl: vi.fn(() => Promise.resolve()) }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: opener.openUrl }));
+
+import {
+  handleLinkClick,
+  PreviewErrorBoundary,
+  RenderedMarkdown,
+} from "./RenderedMarkdown";
 
 const render = (content: string) =>
   renderToStaticMarkup(<RenderedMarkdown content={content} />);
@@ -121,5 +130,99 @@ describe("RenderedMarkdown", () => {
     // the streaming path #913 removed measured ~3.3s on a comparable doc.
     // The threshold splits the two regimes without being CI-flaky.
     expect(ms).toBeLessThan(3000);
+  });
+
+  it("neutralizes javascript: hrefs through the real pipeline", () => {
+    for (const md of [
+      "[x](javascript:alert(1))",
+      "[y](JaVaScRiPt:alert(1))",
+      '<a href="javascript:alert(1)">z</a>',
+    ]) {
+      const html = render(md);
+      expect(html.toLowerCase()).not.toContain("javascript:");
+    }
+  });
+});
+
+// Streamdown exposes its sanitize/harden entries as [plugin, options]
+// tuples; RenderedMarkdown destructures them to extend the schema. A minor
+// release reshaping these internals must fail loudly here, not silently
+// drop sanitization.
+describe("Streamdown internal plugin shape (2.5.0 tuple contract)", () => {
+  it("sanitize and harden are [function, object] tuples", () => {
+    for (const entry of [
+      defaultRehypePlugins.sanitize,
+      defaultRehypePlugins.harden,
+    ] as unknown[]) {
+      expect(Array.isArray(entry)).toBe(true);
+      const [plugin, options] = entry as [unknown, unknown];
+      expect(typeof plugin).toBe("function");
+      expect(typeof options).toBe("object");
+      expect(options).not.toBeNull();
+    }
+  });
+});
+
+// Node-environment fakes: handleLinkClick only needs closest/querySelector
+// on the current target, mirroring the resolveFragment fakes in
+// headingAnchors.test.tsx.
+const targetIn = (ids: Record<string, { scrollIntoView: () => void }>) =>
+  ({
+    closest: () => ({
+      querySelector: (sel: string) => {
+        const id = JSON.parse(sel.slice("[id=".length, -1)) as string;
+        return ids[id] ?? null;
+      },
+    }),
+  }) as unknown as Element;
+
+describe("handleLinkClick", () => {
+  beforeEach(() => {
+    opener.openUrl.mockClear();
+  });
+
+  it("scrolls fragment hrefs via resolveFragment, never openUrl", () => {
+    const el = { scrollIntoView: vi.fn() };
+    handleLinkClick("#setup", targetIn({ "user-content-setup": el }));
+    expect(el.scrollIntoView).toHaveBeenCalledOnce();
+    expect(opener.openUrl).not.toHaveBeenCalled();
+  });
+
+  it("opens https and mailto hrefs in the OS browser", () => {
+    handleLinkClick("https://example.com/x", targetIn({}));
+    handleLinkClick("mailto:a@b.c", targetIn({}));
+    expect(opener.openUrl.mock.calls).toEqual([
+      ["https://example.com/x"],
+      ["mailto:a@b.c"],
+    ]);
+  });
+
+  it("does nothing for file:, relative and missing hrefs", () => {
+    handleLinkClick("file:///etc/passwd", targetIn({}));
+    handleLinkClick("docs/guide.md", targetIn({}));
+    handleLinkClick(undefined, targetIn({}));
+    expect(opener.openUrl).not.toHaveBeenCalled();
+  });
+
+  it("never opens a javascript: href even if one reached the handler", () => {
+    handleLinkClick("javascript:alert(1)", targetIn({}));
+    handleLinkClick("JaVaScRiPt:alert(1)", targetIn({}));
+    expect(opener.openUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe("PreviewErrorBoundary", () => {
+  it("derives the failed state from a render error", () => {
+    expect(PreviewErrorBoundary.getDerivedStateFromError()).toEqual({
+      failed: true,
+    });
+  });
+
+  it("failed state renders the Raw-view hint instead of children", () => {
+    const boundary = new PreviewErrorBoundary({ children: "content" });
+    boundary.state = { failed: true };
+    const html = renderToStaticMarkup(boundary.render());
+    expect(html).toContain("Use the Raw view");
+    expect(html).not.toContain("content");
   });
 });

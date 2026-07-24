@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Streamdown } from "streamdown";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -116,10 +119,60 @@ describe("rehypeLocalImages through the full pipeline", () => {
     );
   });
 
+  it("the asset scheme form resolves ../ traversal and encoded spaces", () => {
+    tauri.convertFileSrc.mockImplementation(
+      (path) => `asset://localhost/${encodeURIComponent(path)}`,
+    );
+    const up = render("![x](../x.png)", "/home/u/docs");
+    expect(up).toContain(
+      `src="asset://localhost/${encodeURIComponent("/home/u/x.png")}"`,
+    );
+    const spaced = render("![s](my%20shot.png)", "/home/u");
+    expect(spaced).toContain(
+      `src="asset://localhost/${encodeURIComponent("/home/u/my shot.png")}"`,
+    );
+    expect(spaced).not.toContain("%2520");
+  });
+
   it("no other scheme sneaks into img src through the sanitizer", () => {
     const html = render('<img src="foo://x/y.png" alt="f">', "D:\\notes");
     expect(html).not.toContain("foo://");
     expect(html).not.toContain("<img");
+  });
+
+  // A drive-letter src parses as a URL with a "c:" scheme, so the resolver
+  // leaves it alone and the sanitizer's protocol allowlist strips it; the
+  // image degrades to its alt text through harden's text-only policy.
+  it("a bare drive-letter src (C:/x.png) is stripped, alt text remains", () => {
+    const html = render("![shot](C:/x.png)", "D:\\notes");
+    expect(tauri.convertFileSrc).not.toHaveBeenCalled();
+    expect(html).not.toContain("C:/x.png");
+    expect(html).not.toContain("<img");
+    expect(html).toContain("shot");
+  });
+});
+
+// The traversal-stays-allowed policy above (and the comment in
+// localImages.ts) leans on the shipped assetProtocol scope of ["**"]: the
+// asset protocol already serves any path, so the preview adds no new
+// reachability. If the maintainer ever tightens that scope, this must fail
+// so the joinPath traversal policy gets revisited alongside it.
+describe("tauri.conf.json assetProtocol contract", () => {
+  it("asset protocol is enabled with the wildcard scope", () => {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const conf = JSON.parse(
+      readFileSync(
+        path.join(here, "../../../src-tauri/tauri.conf.json"),
+        "utf8",
+      ),
+    ) as {
+      app: {
+        security: { assetProtocol?: { enable?: boolean; scope?: string[] } };
+      };
+    };
+    const assetProtocol = conf.app.security.assetProtocol;
+    expect(assetProtocol?.enable).toBe(true);
+    expect(assetProtocol?.scope).toContain("**");
   });
 });
 

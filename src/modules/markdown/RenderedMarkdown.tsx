@@ -20,6 +20,23 @@ const OPENABLE_URL = /^(https?:|mailto:)/i;
 type Components = NonNullable<StreamdownProps["components"]>;
 type RehypePlugins = NonNullable<StreamdownProps["rehypePlugins"]>;
 
+// Click policy for preview links, after the anchor's preventDefault: an
+// in-page fragment scrolls within the clicking link's own pane (never an
+// external destination, so it never reaches openUrl and never navigates the
+// webview); http(s)/mailto open in the OS browser; anything else (file:,
+// bare relative paths) does nothing.
+export function handleLinkClick(
+  href: string | undefined,
+  currentTarget: Element,
+): void {
+  if (!href) return;
+  if (href.startsWith("#")) {
+    resolveFragment(currentTarget, href.slice(1))?.scrollIntoView();
+  } else if (OPENABLE_URL.test(href)) {
+    void openUrl(href).catch(console.error);
+  }
+}
+
 export const components: Components = {
   // Links open in the OS browser like every other Terax surface (terminal,
   // editor, git history); a plain anchor would navigate the privileged
@@ -33,15 +50,7 @@ export const components: Components = {
       title={href}
       onClick={(e) => {
         e.preventDefault();
-        if (!href) return;
-        // In-page TOC links scroll within this pane only; a fragment is
-        // not an external destination, so it never reaches openUrl and
-        // never navigates the webview.
-        if (href.startsWith("#")) {
-          resolveFragment(e.currentTarget, href.slice(1))?.scrollIntoView();
-        } else if (OPENABLE_URL.test(href)) {
-          void openUrl(href).catch(console.error);
-        }
+        handleLinkClick(href, e.currentTarget);
       }}
     >
       {children}
@@ -63,15 +72,17 @@ export const components: Components = {
       Array.isArray(cls) && cls.some((c) => String(c).startsWith("language-"));
     return fenced ? children : <pre {...props}>{children}</pre>;
   },
-  // The rest pins Streamdown's chat chrome back to plain elements so the
-  // vendored GitHub stylesheet owns the look. Per tag: table gets wrapped in
-  // a bordered card with copy/download/fullscreen controls; thead/tbody/tr/
-  // th/td repaint header background, row dividers, cell padding and a 14px
-  // cell font; ul/ol/li use inside markers, li padding and inlined
-  // paragraphs; blockquote italicizes and recolors; strong renders a <span>
-  // GitHub's element selectors miss; sub/sup fix the font-size the browser
-  // sizes relatively; img gets a rounded card with a hover download button;
-  // p unwraps images from paragraphs, changing GitHub spacing. Untouched
+  // The rest removes Streamdown's chat chrome by pinning each tag back to
+  // the plain element; the GitHub look then comes from the vendored
+  // stylesheet, not these components. What each Streamdown default would
+  // otherwise add: table wraps itself in a bordered card with copy/download/
+  // fullscreen controls; thead/tbody/tr/th/td repaint header background,
+  // row dividers, cell padding and a 14px cell font; ul/ol/li use inside
+  // markers, li padding and inlined paragraphs; blockquote italicizes and
+  // recolors; strong renders a <span> GitHub's element selectors miss;
+  // sub/sup override the font-size the browser already sizes relatively;
+  // img wraps itself in a rounded card with a hover download button; p
+  // unwraps images from paragraphs, changing GitHub spacing. Untouched
   // defaults (headings, hr, section footnote cleanup) only carry utility
   // classes that the unlayered GitHub stylesheet already outranks.
   table: "table",
@@ -99,6 +110,9 @@ export const components: Components = {
 // The GFM alert classes emitted by rehypeGithubAlerts are allowlisted as
 // enumerated className values on the exact elements that carry them; never
 // a blanket className allowance (the MPE CVE-2025-65716 lesson).
+// These destructurings rely on Streamdown's internal [plugin, options]
+// tuple shape as of 2.5.0 (caret range; a minor reshaping these internals
+// is caught by the tuple-shape guard test).
 const [rehypeSanitize, streamdownSchema] = defaultRehypePlugins.sanitize as [
   unknown,
   {
@@ -187,13 +201,16 @@ const LINK_SAFETY_OFF = { enabled: false };
 // (thousands of nested blockquotes or divs) and the app mounts no error
 // boundary of its own; contain failures to the pane so the Raw toggle
 // survives.
-class PreviewErrorBoundary extends Component<
+export class PreviewErrorBoundary extends Component<
   { children: ReactNode },
   { failed: boolean }
 > {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error("[markdown-preview] render failed", error);
   }
   render() {
     if (this.state.failed) {

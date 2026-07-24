@@ -68,6 +68,18 @@ describe("rehypeGithubAlerts", () => {
     expect(html).toContain("<li>two</li>");
   });
 
+  // Two trailing spaces after the marker are a GFM hard break: the marker
+  // becomes its own text node followed by a <br>, the branch that splices
+  // both out and strips the leading newline from the remaining content.
+  it("a hard break after the marker keeps the content, no stray newline", () => {
+    const html = render("> [!NOTE]  \n> content here");
+    expect(html).toContain('class="markdown-alert markdown-alert-note"');
+    expect(html).toContain(">Note</p>");
+    expect(html).toContain("<p>content here</p>");
+    expect(html).not.toContain("[!NOTE]");
+    expect(html).not.toContain("<br");
+  });
+
   it("a marker-only blockquote renders as an alert with just the title", () => {
     const html = render("> [!WARNING]");
     expect(html).toContain('class="markdown-alert markdown-alert-warning"');

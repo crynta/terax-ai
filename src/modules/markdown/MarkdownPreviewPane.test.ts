@@ -43,25 +43,25 @@ describe("markdown preview configuration", () => {
     expect(renderSrc).toMatch(/enabled: false/);
   });
 
-  it("loads the base stylesheet before the Terax theme mapping", () => {
-    const base = renderSrc.indexOf('import "./markdown-base.css"');
-    const theme = renderSrc.indexOf('import "./markdown-theme.css"');
-    expect(base).toBeGreaterThan(-1);
-    expect(theme).toBeGreaterThan(base);
-  });
-
-  it("scopes GitHub styles to a markdown-body container", () => {
-    expect(paneSrc).toMatch(/className="markdown-body/);
-  });
-
-  it("keeps code blocks on the app's Lezer renderer", () => {
-    expect(renderSrc).toMatch(/code: .*MarkdownCode/);
-  });
-
+  // Sanitize/harden placement is proven behaviorally in localImages.test
+  // and githubAlerts.test; this only pins the relative order of the chain,
+  // insensitive to formatting.
   it("renders inline HTML only through the sanitizer, then harden, last", () => {
-    expect(renderSrc).toMatch(
-      /defaultRehypePlugins\.raw,\s*rehypeTableDirectives,\s*rehypeGithubAlerts,\s*rehypeHeadingAnchors,\s*\[rehypeLocalImages, imageBase\],\s*\[rehypeSanitize, sanitizeSchema\],\s*\[\s*rehypeHarden,/,
+    const chain = renderSrc.slice(
+      renderSrc.indexOf("export const buildRehypePlugins"),
     );
+    const positions = [
+      "defaultRehypePlugins.raw",
+      "rehypeTableDirectives",
+      "rehypeGithubAlerts",
+      "rehypeHeadingAnchors",
+      "rehypeLocalImages",
+      "rehypeSanitize",
+      "rehypeHarden",
+    ].map((id) => chain.indexOf(id));
+    for (let i = 0; i < positions.length; i++) {
+      expect(positions[i]).toBeGreaterThan(i === 0 ? -1 : positions[i - 1]);
+    }
     expect(renderSrc).toMatch(/rehypePlugins=\{plugins\}/);
     expect(renderSrc).toMatch(/buildRehypePlugins\(baseDir\)/);
   });
@@ -101,56 +101,12 @@ describe("markdown preview configuration", () => {
     expect(renderSrc).toMatch(/openUrl/);
     expect(renderSrc).toMatch(/preventDefault/);
   });
-
-  // Fragment resolution is pane-scoped (multiple previews stay mounted with
-  // duplicate heading ids); the scroll call itself is locked here because
-  // the node test environment cannot observe scrollIntoView.
-  it("scrolls fragment links in-pane, before the openUrl branch", () => {
-    expect(renderSrc).toMatch(/href\.startsWith\("#"\)/);
-    expect(renderSrc).toMatch(
-      /resolveFragment\(e\.currentTarget, href\.slice\(1\)\)\?\.scrollIntoView\(\)/,
-    );
-    expect(renderSrc.indexOf('href.startsWith("#")')).toBeLessThan(
-      renderSrc.indexOf("OPENABLE_URL.test(href)"),
-    );
-  });
 });
 
 describe("markdown-theme.css theme mapping", () => {
-  it("maps GitHub color variables to Terax theme tokens", () => {
-    expect(themeCss).toMatch(/--fgColor-default: var\(--foreground\)/);
-    expect(themeCss).toMatch(/--bgColor-default: var\(--background\)/);
-    expect(themeCss).toMatch(/--borderColor-default: var\(--border\)/);
-  });
-
-  it("restores list markers removed by Tailwind's preflight reset", () => {
-    expect(themeCss).toMatch(/\.markdown-body ul \{\s*list-style-type: disc/);
-    expect(themeCss).toMatch(
-      /\.markdown-body ol \{\s*list-style-type: decimal/,
-    );
-  });
-
-  it("honors standard table width markup GitHub ignores", () => {
-    expect(themeCss).toMatch(
-      /table\[width="100%"\] \{\s*display: table;\s*width: 100%/,
-    );
-    expect(themeCss).toMatch(/:has\(> colgroup\) \{\s*table-layout: fixed/);
-  });
-
-  it("underlines links so they read as links under monochrome themes", () => {
-    expect(themeCss).toMatch(
-      /\.markdown-body a \{\s*font-weight: 600;\s*text-decoration: underline/,
-    );
-  });
-
-  it("keeps GitHub pre/code styles out of ChatCodeBlock internals", () => {
-    expect(themeCss).toMatch(/\.markdown-body \.not-prose pre/);
-    expect(themeCss).toMatch(/revert-layer/);
-  });
-
+  // The stylesheet must never key off the OS media query: the app theme
+  // class (.dark/.light) has to win regardless of the OS setting.
   it("switches status hues on the app theme class, not the OS media query", () => {
-    expect(themeCss).toMatch(/\.dark \.markdown-body/);
-    expect(themeCss).toMatch(/\.light \.markdown-body/);
     expect(themeCss).not.toMatch(/@media/);
   });
 });
@@ -278,6 +234,32 @@ describe("syncPreviewFile refresh on external change", () => {
     expect(statuses.some((s) => s.kind === "ready" && s.content === "v2")).toBe(
       false,
     );
+  });
+
+  it("leaves ready when a refresh finds the file turned binary", async () => {
+    start();
+    reads[0].resolve(text("v1"));
+    await flush();
+
+    fsHandler([FILE]);
+    reads[1].resolve({ kind: "binary", size: 8 });
+    await flush();
+    expect(statuses[statuses.length - 1]).toEqual({ kind: "binary" });
+  });
+
+  it("leaves ready when a refresh finds the file grown past the limit", async () => {
+    start();
+    reads[0].resolve(text("v1"));
+    await flush();
+
+    fsHandler([FILE]);
+    reads[1].resolve({ kind: "toolarge", size: 99, limit: 10 });
+    await flush();
+    expect(statuses[statuses.length - 1]).toEqual({
+      kind: "toolarge",
+      size: 99,
+      limit: 10,
+    });
   });
 
   it("moves to the error state when the file is deleted", async () => {

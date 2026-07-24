@@ -45,6 +45,18 @@ describe("rehypeHeadingAnchors", () => {
     expect(html).toContain('id="user-content-setup-2"');
   });
 
+  // A literal "Setup 1" heading collides with the -1 suffix the second
+  // "Setup" already claimed, so it gets suffixed again: setup-1-1.
+  it("resolves suffix collisions: Setup, Setup, 'Setup 1'", () => {
+    const html = render("# Setup\n\n## Setup\n\n### Setup 1");
+    const ids = [...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toEqual([
+      "user-content-setup",
+      "user-content-setup-1",
+      "user-content-setup-1-1",
+    ]);
+  });
+
   it("includes code span text in the slug", () => {
     expect(render("## Use `pnpm test` now")).toContain(
       'id="user-content-use-pnpm-test-now"',

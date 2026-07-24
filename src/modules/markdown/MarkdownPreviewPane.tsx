@@ -34,7 +34,8 @@ type Props = {
  * only watches directories, same as useEditorFileSync) triggers re-reads on
  * external change. Refresh reads never pass through "loading", so the pane
  * keeps the previous render (and scroll position) until new content lands;
- * only a failed read (e.g. file deleted) leaves the "ready" state.
+ * "ready" only ends when a refresh stops yielding text: a failed read (e.g.
+ * file deleted), binary content, or a file grown past the size limit.
  */
 export function syncPreviewFile(
   path: string,
@@ -75,10 +76,12 @@ export function syncPreviewFile(
   void listenFsChanged((paths) => {
     if (cancelled) return;
     if (paths.some((p) => p.replace(/\\/g, "/") === target)) read();
-  }).then((un) => {
-    if (cancelled) un();
-    else unlisten = un;
-  });
+  })
+    .then((un) => {
+      if (cancelled) un();
+      else unlisten = un;
+    })
+    .catch((e) => console.error("[markdown-preview] fs listen failed", e));
 
   return () => {
     cancelled = true;
