@@ -5,7 +5,11 @@ import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
 import { isLeaf, type PaneNode } from "@/modules/terminal/lib/panes";
 import { parseWorkspaceScopeKey, type WorkspaceEnv } from "@/modules/workspace";
 import { useEffect, useRef } from "react";
-import { activeSpaceEnv, freshTabCwd } from "./activeSpace";
+import {
+  activeSpaceEnv,
+  applyExplicitLaunchDir,
+  freshTabCwd,
+} from "./activeSpace";
 import { freshTerminalTab, hydrateTabs } from "./serialize";
 import { loadAll, type SpaceMeta, saveActiveId, saveSpacesList } from "./store";
 import { useSpaces } from "./useSpaces";
@@ -13,6 +17,7 @@ import { useSpaces } from "./useSpaces";
 type Params = {
   ready: boolean;
   launchCwd: string | null;
+  explicitLaunchDir: string | null;
   home: string | null;
   allocId: () => number;
   replaceTabs: (tabs: Tab[], activeId: number) => void;
@@ -37,6 +42,7 @@ function uniqueCwds(tabs: Tab[]): string[] {
 export function useSpacesBoot({
   ready,
   launchCwd,
+  explicitLaunchDir,
   home,
   allocId,
   replaceTabs,
@@ -65,9 +71,11 @@ export function useSpacesBoot({
             id: DEFAULT_SPACE_ID,
             name: "Default",
             root,
-            env: parseWorkspaceScopeKey(
-              usePreferencesStore.getState().defaultWorkspaceEnv,
-            ),
+            env: explicitLaunchDir
+              ? { kind: "local" }
+              : parseWorkspaceScopeKey(
+                  usePreferencesStore.getState().defaultWorkspaceEnv,
+                ),
             createdAt: Date.now(),
             updatedAt: Date.now(),
           };
@@ -89,6 +97,39 @@ export function useSpacesBoot({
           activeId && spaces.some((s) => s.id === activeId)
             ? activeId
             : spaces[0].id;
+
+        const initialActiveIndex: Record<string, number> = {};
+        for (const [id, st] of states)
+          initialActiveIndex[id] = st.activeTabIndex;
+
+        if (explicitLaunchDir) {
+          const launched = applyExplicitLaunchDir({
+            spaces,
+            tabs: restored,
+            launchDir: explicitLaunchDir,
+            allocId,
+          });
+          setActiveSpaceForNewTabs(launched.activeSpaceId);
+          await adoptWorkspaceEnv({ kind: "local" });
+          await saveSpacesList(launched.spaces);
+          await saveActiveId(launched.activeSpaceId);
+          await native.workspaceAuthorize(explicitLaunchDir);
+          await Promise.allSettled(
+            uniqueCwds(launched.tabs).map((cwd) =>
+              native.workspaceAuthorize(cwd),
+            ),
+          );
+          useSpaces
+            .getState()
+            .hydrate(
+              launched.spaces,
+              launched.activeSpaceId,
+              initialActiveIndex,
+            );
+          replaceTabs(launched.tabs, launched.activeTabId);
+          return;
+        }
+
         setActiveSpaceForNewTabs(active);
 
         // Apply the space's env+home before the fresh-tab fallback and spawns
@@ -106,9 +147,6 @@ export function useSpacesBoot({
           uniqueCwds(restored).map((cwd) => native.workspaceAuthorize(cwd)),
         );
 
-        const initialActiveIndex: Record<string, number> = {};
-        for (const [id, st] of states)
-          initialActiveIndex[id] = st.activeTabIndex;
         useSpaces.getState().hydrate(spaces, active, initialActiveIndex);
 
         const inActive = restored.filter((t) => t.spaceId === active);
@@ -124,6 +162,7 @@ export function useSpacesBoot({
   }, [
     ready,
     launchCwd,
+    explicitLaunchDir,
     home,
     allocId,
     replaceTabs,
