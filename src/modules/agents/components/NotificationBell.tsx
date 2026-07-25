@@ -19,6 +19,7 @@ import { useMemo, useState } from "react";
 import { useSpaces } from "@/modules/spaces";
 import { AgentIcon } from "../lib/agentIcon";
 import { displayAgent } from "../lib/format";
+import { formatNotificationDestination } from "../lib/notificationDestination";
 import type { AgentNotification, AgentStatus } from "../lib/types";
 import { useAgentStore } from "../store/agentStore";
 
@@ -142,6 +143,10 @@ function NotificationRow({
   const spaceMeta = n.spaceId
     ? useSpaces.getState().spaces.find((s) => s.id === n.spaceId)
     : undefined;
+  const destination = formatNotificationDestination({
+    spaceName: spaceMeta?.name,
+    tabTitle: n.tabTitle,
+  });
 
   return (
     <button
@@ -167,35 +172,30 @@ function NotificationRow({
         )}
       </span>
       <div className="min-w-0 flex-1">
-        {/* Location above agent name: space · tab title */}
-        {(spaceMeta || n.tabTitle) && (
-          <div className="flex items-center gap-1.5 text-[11px] mb-1">
-            {spaceMeta && (
-              <>
-                <HugeiconsIcon
-                  icon={Notification03Icon}
-                  size={10}
-                  strokeWidth={2}
-                  className="shrink-0 text-muted-foreground/60"
-                />
-                <span className="font-semibold text-foreground/80">
-                  {spaceMeta.name}
-                </span>
-              </>
+        {destination.hasDestination && (
+          <div className="mb-1 flex min-w-0 items-center gap-1.5">
+            {destination.spaceLabel && (
+              <span className="max-w-20 shrink-0 truncate rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold leading-none tracking-wide text-primary">
+                {destination.spaceLabel}
+              </span>
             )}
-            {spaceMeta && n.tabTitle && (
-              <span className="text-muted-foreground/30">·</span>
-            )}
-            {n.tabTitle && (
-              <span className="truncate text-muted-foreground/70">
-                {n.tabTitle}
+            {destination.tabTitle && (
+              <span className="min-w-0 truncate text-xs font-semibold leading-tight text-foreground/90">
+                {destination.tabTitle}
               </span>
             )}
           </div>
         )}
-        <div className="flex items-center gap-1.5 text-sm text-foreground">
-          {displayAgent(n.agent)}{" "}
-          <span className="text-muted-foreground">{NOTIF_LABEL[n.kind]}</span>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 text-sm text-foreground",
+            destination.hasDestination && "text-xs text-muted-foreground",
+          )}
+        >
+          <span className="truncate">{displayAgent(n.agent)}</span>{" "}
+          <span className="shrink-0 text-muted-foreground">
+            {NOTIF_LABEL[n.kind]}
+          </span>
         </div>
       </div>
       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
