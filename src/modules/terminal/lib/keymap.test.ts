@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   terminalDeleteSequence,
   terminalLineNavigationSequence,
+  terminalReadlineSequence,
   terminalWordNavigationSequence,
   type TerminalKeyEvent,
 } from "./keymap";
@@ -132,6 +133,47 @@ describe("terminalDeleteSequence", () => {
         evt({ key: "Backspace", code: "Backspace" }),
         { isMac: true },
       ),
+    ).toBeNull();
+  });
+});
+
+describe("terminalReadlineSequence", () => {
+  const remaps = [
+    [
+      "line navigation",
+      evt({ metaKey: true, key: "ArrowLeft", code: "ArrowLeft" }),
+      "\x01",
+    ],
+    [
+      "word navigation",
+      evt({ altKey: true, key: "ArrowRight", code: "ArrowRight" }),
+      "\x1bf",
+    ],
+    [
+      "deletion",
+      evt({ metaKey: true, key: "Backspace", code: "Backspace" }),
+      "\x15",
+    ],
+  ] as const;
+
+  it.each(remaps)(
+    "applies %s on the normal screen",
+    (_name, event, sequence) => {
+      expect(
+        terminalReadlineSequence(event, {
+          isMac: true,
+          isAlternateScreen: false,
+        }),
+      ).toBe(sequence);
+    },
+  );
+
+  it.each(remaps)("suppresses %s on the alternate screen", (_name, event) => {
+    expect(
+      terminalReadlineSequence(event, {
+        isMac: true,
+        isAlternateScreen: true,
+      }),
     ).toBeNull();
   });
 });

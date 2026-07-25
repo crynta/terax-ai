@@ -11,8 +11,11 @@ import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
 import { isMarkdownPath } from "@/lib/utils";
 import {
+  type AgentLaunchRequest,
   AgentNotificationsBridge,
+  findAgentLauncher,
   nextAttentionTarget,
+  validateAgentLaunchCommand,
 } from "@/modules/agents";
 import {
   AgentRunBridge,
@@ -85,11 +88,13 @@ import {
   type PaneBounds,
   type TerminalPaneHandle,
   useTerminalFileDrop,
+  whenSessionReady,
   writeToSession,
 } from "@/modules/terminal";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
@@ -121,6 +126,7 @@ export default function App() {
     newTab,
     newBlockTab,
     newAgentTab,
+    newAgentGroupTab,
     newPrivateTab,
     openFileTab,
     pinTab,
@@ -170,7 +176,7 @@ export default function App() {
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   useApplyEditorFontSize();
-  useTerminalFileDrop();
+  const terminalPathDropTarget = useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
 
   // Drives session disposal off the pane tree, not React lifecycles —
@@ -507,6 +513,45 @@ export default function App() {
   const openNewBlockTab = useCallback(() => {
     newBlockTab(inheritedCwdForNewTab());
   }, [newBlockTab, inheritedCwdForNewTab]);
+
+  const launchAgentGroup = useCallback(
+    (request: AgentLaunchRequest) => {
+      const command = validateAgentLaunchCommand(request.command);
+      if (!command.ok) return;
+      const launcher = findAgentLauncher(request.agent);
+      const title =
+        request.instances === 1
+          ? launcher.label
+          : `${launcher.label} × ${request.instances}`;
+      const { leafIds: agentLeafIds } = newAgentGroupTab(
+        inheritedCwdForNewTab(),
+        title,
+        request.instances,
+      );
+      const hooksReady = launcher.supportsHooks
+        ? invoke("agent_enable_hooks", {
+            agent: request.agent,
+          }).catch((error) => {
+            console.warn(
+              `[terax] could not enable ${request.agent} notifications:`,
+              error,
+            );
+          })
+        : Promise.resolve();
+
+      for (const leafId of agentLeafIds) {
+        void (async () => {
+          await Promise.all([whenSessionReady(leafId), hooksReady]);
+          if (!writeToSession(leafId, `${command.command}\r`)) {
+            console.error(
+              `[terax] agent terminal ${leafId} closed before launch`,
+            );
+          }
+        })();
+      }
+    },
+    [inheritedCwdForNewTab, newAgentGroupTab],
+  );
 
   const sendCd = useCallback(
     (path: string) => {
@@ -1165,6 +1210,7 @@ export default function App() {
               onNewPreview={() => openPreviewTab("")}
               onNewEditor={() => setNewEditorOpen(true)}
               onNewGitGraph={openGitGraphFromContext}
+              onLaunchAgents={launchAgentGroup}
               onClose={handleClose}
               onPin={pinTab}
               onRename={handleRenameTab}
@@ -1221,6 +1267,7 @@ export default function App() {
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
+                        pathDropTarget={terminalPathDropTarget}
                       />
                     ) : (
                       <SourceControlPanel

@@ -75,6 +75,64 @@ describe("validateTheme", () => {
     });
   });
 
+  it("accepts optional terminal font settings", () => {
+    const result = validateTheme(
+      baseTheme({
+        variants: {
+          dark: {
+            terminal: {
+              fontFamily: "  JetBrainsMono Nerd Font  ",
+              fontWeight: "600",
+              fontSize: 16,
+            },
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.theme.variants.dark?.terminal).toEqual({
+        fontFamily: "JetBrainsMono Nerd Font",
+        fontWeight: "600",
+        fontSize: 16,
+      });
+    }
+  });
+
+  it("rejects invalid terminal font settings", () => {
+    expect(
+      validateTheme(
+        baseTheme({
+          variants: { dark: { terminal: { fontFamily: "  " } } },
+        }),
+      ),
+    ).toEqual({
+      ok: false,
+      error: "variants.dark.terminal.fontFamily must be a non-empty string",
+    });
+    expect(
+      validateTheme(
+        baseTheme({
+          variants: { dark: { terminal: { fontWeight: "heavy" } } },
+        }),
+      ),
+    ).toEqual({
+      ok: false,
+      error:
+        "variants.dark.terminal.fontWeight must be normal, bold, or a weight from 100 to 900",
+    });
+    expect(
+      validateTheme(
+        baseTheme({
+          variants: { dark: { terminal: { fontSize: 100 } } },
+        }),
+      ),
+    ).toEqual({
+      ok: false,
+      error: "variants.dark.terminal.fontSize must be an integer from 8 to 32",
+    });
+  });
+
   it("captures optional author, description, and editor theme", () => {
     const result = validateTheme(
       baseTheme({

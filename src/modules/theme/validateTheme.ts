@@ -22,6 +22,21 @@ const COLOR_KEYS: readonly (keyof ThemeColors)[] = [
 ];
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{1,63}$/;
+const TERMINAL_FONT_WEIGHTS = new Set([
+  "normal",
+  "bold",
+  "100",
+  "200",
+  "300",
+  "400",
+  "500",
+  "600",
+  "700",
+  "800",
+  "900",
+]);
+const TERMINAL_FONT_SIZE_MIN = 8;
+const TERMINAL_FONT_SIZE_MAX = 32;
 
 function isObj(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -69,6 +84,29 @@ function parseTerminal(raw: unknown, path: string): TerminalPalette | string {
   if (raw.selection !== undefined) {
     if (!isStr(raw.selection)) return `${path}.selection must be a string`;
     out.selection = raw.selection;
+  }
+  if (raw.fontFamily !== undefined) {
+    if (!isStr(raw.fontFamily) || raw.fontFamily.trim().length === 0) {
+      return `${path}.fontFamily must be a non-empty string`;
+    }
+    out.fontFamily = raw.fontFamily.trim();
+  }
+  if (raw.fontWeight !== undefined) {
+    if (!isStr(raw.fontWeight) || !TERMINAL_FONT_WEIGHTS.has(raw.fontWeight)) {
+      return `${path}.fontWeight must be normal, bold, or a weight from 100 to 900`;
+    }
+    out.fontWeight = raw.fontWeight;
+  }
+  if (raw.fontSize !== undefined) {
+    if (
+      typeof raw.fontSize !== "number" ||
+      !Number.isInteger(raw.fontSize) ||
+      raw.fontSize < TERMINAL_FONT_SIZE_MIN ||
+      raw.fontSize > TERMINAL_FONT_SIZE_MAX
+    ) {
+      return `${path}.fontSize must be an integer from ${TERMINAL_FONT_SIZE_MIN} to ${TERMINAL_FONT_SIZE_MAX}`;
+    }
+    out.fontSize = raw.fontSize;
   }
   if (raw.ansi !== undefined) {
     if (!Array.isArray(raw.ansi) || raw.ansi.length !== 16) {

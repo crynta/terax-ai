@@ -2,7 +2,14 @@ import { ensureMonoFontsLoaded } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchAddon } from "@xterm/addon-search";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   BlockDecorations,
   type BlockMatch,
@@ -23,10 +30,8 @@ import {
   acquireSlot,
   applyBackgroundActive,
   applyCursorBlink,
-  applyFontFamily,
-  applyFontSize,
-  applyFontWeight,
   applyLetterSpacing,
+  applyTerminalFont,
   applyTheme as applyPoolTheme,
   applyScrollback,
   applyWebglPreference,
@@ -44,6 +49,7 @@ import {
   releaseSlot,
   setSlotFocused,
 } from "./rendererPool";
+import { useTerminalFont } from "./useTerminalFont";
 
 type Callbacks = {
   onSearchReady?: (addon: SearchAddon) => void;
@@ -875,21 +881,15 @@ export function useTerminalSession({
     };
   }, [leafId, blocks]);
 
-  const fontSize = usePreferencesStore((p) => p.terminalFontSize);
+  const { fontFamily, fontWeight, fontSize } = useTerminalFont();
   const zoomLevel = usePreferencesStore((p) => p.zoomLevel);
-  useEffect(() => {
-    applyFontSize(Math.max(4, Math.round(fontSize * zoomLevel)));
-  }, [fontSize, zoomLevel]);
-
-  const fontFamily = usePreferencesStore((p) => p.terminalFontFamily);
-  useEffect(() => {
-    applyFontFamily(fontFamily);
-  }, [fontFamily]);
-
-  const fontWeight = usePreferencesStore((p) => p.terminalFontWeight);
-  useEffect(() => {
-    applyFontWeight(fontWeight);
-  }, [fontWeight]);
+  useLayoutEffect(() => {
+    applyTerminalFont({
+      fontFamily,
+      fontWeight,
+      fontSize: Math.max(4, Math.round(fontSize * zoomLevel)),
+    });
+  }, [fontFamily, fontWeight, fontSize, zoomLevel]);
 
   const letterSpacing = usePreferencesStore((p) => p.terminalLetterSpacing);
   useEffect(() => {
