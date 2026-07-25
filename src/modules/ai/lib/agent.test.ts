@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ATLASCLOUD_DEFAULT_BASE_URL } from "../config";
+import { ATLASCLOUD_DEFAULT_BASE_URL } from "@/modules/ai/config";
 import { buildLanguageModel } from "./agent";
 import type { ProviderKeys } from "./keyring";
 
