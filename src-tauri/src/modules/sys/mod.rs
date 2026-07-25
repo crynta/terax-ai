@@ -14,6 +14,7 @@ pub mod windows;
 
 /// Snapshot of system resources at poll time.
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SysResources {
     /// System-wide CPU utilization, 0.0–100.0.
     pub cpu_percent: f32,

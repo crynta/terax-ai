@@ -16,6 +16,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { invoke } from "@tauri-apps/api/core";
 import { useMemo, useState } from "react";
+import { useSpaces } from "@/modules/spaces";
 import { AgentIcon } from "../lib/agentIcon";
 import { displayAgent } from "../lib/format";
 import type { AgentNotification, AgentStatus } from "../lib/types";
@@ -138,6 +139,10 @@ function NotificationRow({
   n: AgentNotification;
   onClick: () => void;
 }) {
+  const spaceMeta = n.spaceId
+    ? useSpaces.getState().spaces.find((s) => s.id === n.spaceId)
+    : undefined;
+
   return (
     <button
       type="button"
@@ -167,10 +172,29 @@ function NotificationRow({
           <span className="text-muted-foreground">{NOTIF_LABEL[n.kind]}</span>
         </div>
         {n.tabTitle && (
-          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground">
-            <span className="truncate flex-1">{n.tabTitle}</span>
-            {n.spaceId && (
-              <span className="shrink-0 opacity-60">· {n.spaceId.slice(0, 8)}</span>
+          <div className="flex items-center gap-1.5 mt-0.5 text-[11px]">
+            <HugeiconsIcon
+              icon={Notification03Icon}
+              size={10}
+              strokeWidth={2}
+              className="shrink-0 text-muted-foreground/60"
+            />
+            <span className="truncate font-semibold text-foreground/90">
+              {n.tabTitle}
+            </span>
+            {spaceMeta && (
+              <>
+                <span className="text-muted-foreground/30">·</span>
+                <HugeiconsIcon
+                  icon={Notification03Icon}
+                  size={10}
+                  strokeWidth={2}
+                  className="shrink-0 text-muted-foreground/60"
+                />
+                <span className="font-semibold text-foreground/80">
+                  {spaceMeta.name}
+                </span>
+              </>
             )}
           </div>
         )}

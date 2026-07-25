@@ -25,13 +25,13 @@ export function SysStatusPill() {
   const resources = useSysResources();
   if (!resources) return null;
 
-  const cpu = Math.round(resources.cpu_percent);
-  const ramText = `${formatBytes(resources.mem_used_bytes)} / ${formatBytes(
-    resources.mem_total_bytes,
+  const cpu = Math.round(resources.cpuPercent);
+  const ramText = `${formatBytes(resources.memUsedBytes)} / ${formatBytes(
+    resources.memTotalBytes,
   )}`;
   const modelText =
-    resources.model_process && resources.model_mem_bytes != null
-      ? `${resources.model_process} · ${formatBytes(resources.model_mem_bytes)}`
+    resources.modelProcess && resources.modelMemBytes != null
+      ? `${resources.modelProcess} · ${formatBytes(resources.modelMemBytes)}`
       : null;
 
   return (
@@ -39,7 +39,7 @@ export function SysStatusPill() {
       <TooltipTrigger asChild>
         <span className={PILL_CLASS}>
           <span
-            className={`size-1.5 rounded-full ${cpuColor(resources.cpu_percent)}`}
+            className={`size-1.5 rounded-full ${cpuColor(resources.cpuPercent)}`}
           />
           <span>CPU {cpu}%</span>
           <span className="text-border">·</span>

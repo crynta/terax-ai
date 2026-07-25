@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 
 /** Mirrors the `SysResources` struct returned by the `sys_resources` command. */
 export type SysResources = {
-  cpu_percent: number;
-  mem_total_bytes: number;
-  mem_used_bytes: number;
-  model_process: string | null;
-  model_mem_bytes: number | null;
+  cpuPercent: number;
+  memTotalBytes: number;
+  memUsedBytes: number;
+  modelProcess: string | null;
+  modelMemBytes: number | null;
 };
 
 const POLL_MS = 3000;
