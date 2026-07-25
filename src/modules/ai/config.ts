@@ -600,7 +600,6 @@ export const MODELS = [
     capabilities: { intelligence: 3, speed: 3, cost: 3 },
   },
 
-  // -- Atlas Cloud (OpenAI-compatible) ----------------------------------------
   {
     id: "deepseek-ai/deepseek-v4-pro",
     provider: "atlascloud",
