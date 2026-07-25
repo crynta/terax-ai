@@ -127,8 +127,21 @@ fn memory_bytes() -> (u64, u64) {
         return (total, 0);
     }
 
-    let free = info.free_count as u64 * pages;
-    let used = total.saturating_sub(free);
+    // Match Activity Monitor: "Memory Used" = Active + Wired + Compressed - Purgeable.
+    // This excludes inactive/file-cache pages (reclaimable) and truly free pages.
+    //   - active_count  includes pages currently mapped by processes
+    //   - wire_count    includes pages pinned by the kernel (can't be paged)
+    //   - compressor_page_count includes pages compressed in memory
+    //   - purgeable_count is a subset of active that processes have marked as discardable
+    let active = info.active_count as u64;
+    let wired = info.wire_count as u64;
+    let compressed = info.compressor_page_count as u64;
+    let purgeable = info.purgeable_count as u64;
+
+    let used = active.saturating_add(wired)
+        .saturating_add(compressed)
+        .saturating_sub(purgeable)
+        .saturating_mul(pages);
     (total, used)
 }
 

@@ -90,31 +90,32 @@ const OPENCODE_PLUGIN_FILE: &str = "terax-notify.ts";
 const OPENCODE_PLUGIN_MARKER: &str = "terax-opencode-notifications-v1";
 const OPENCODE_STATUS_NEEDLES: [&str; 4] = [
     OPENCODE_PLUGIN_MARKER,
-    "session.created",
     "session.idle",
+    "terax-opencode-notify",
     "notify;Terax;opencode;${event}",
 ];
 const OPENCODE_PLUGIN: &str = r#"// terax-opencode-notifications-v1
-import { definePlugin } from "opencode";
+import type { Plugin } from "@opencode-ai/plugin"
 
-export default definePlugin({
-  name: "terax-notify",
-  setup() {
-    const emit = (event: "working" | "finished") => {
-      if (process.env.TERAX_TERMINAL) {
-        process.stdout.write(`\u001b]777;notify;Terax;opencode;${event}\u0007`);
+const emit = (event: "working" | "finished") => {
+  if (process.env.TERAX_TERMINAL) {
+    process.stdout.write(`\u001b]777;notify;Terax;opencode;${event}\u0007`);
+  }
+};
+
+export const teraxOpencodeNotify: Plugin = async () => {
+  // Signal to Terax that OpenCode has started.
+  emit("working");
+
+  return {
+    event: async ({ event }) => {
+      // terax-opencode-notify
+      if (event.type === "session.idle" || event.type === "session.deleted") {
+        emit("finished");
       }
-    };
-
-    return {
-      hooks: {
-        "session.created": () => emit("working"),
-        "session.idle": () => emit("finished"),
-        "session.deleted": () => emit("finished"),
-      },
-    };
-  },
-});
+    },
+  };
+};
 "#;
 
 // Substrings identifying a hook command as ours, across every form we've ever

@@ -167,24 +167,11 @@ function NotificationRow({
         )}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 text-sm text-foreground">
-          {displayAgent(n.agent)}{" "}
-          <span className="text-muted-foreground">{NOTIF_LABEL[n.kind]}</span>
-        </div>
-        {n.tabTitle && (
-          <div className="flex items-center gap-1.5 mt-0.5 text-[11px]">
-            <HugeiconsIcon
-              icon={Notification03Icon}
-              size={10}
-              strokeWidth={2}
-              className="shrink-0 text-muted-foreground/60"
-            />
-            <span className="truncate font-semibold text-foreground/90">
-              {n.tabTitle}
-            </span>
+        {/* Location above agent name: space · tab title */}
+        {(spaceMeta || n.tabTitle) && (
+          <div className="flex items-center gap-1.5 text-[11px] mb-1">
             {spaceMeta && (
               <>
-                <span className="text-muted-foreground/30">·</span>
                 <HugeiconsIcon
                   icon={Notification03Icon}
                   size={10}
@@ -196,8 +183,20 @@ function NotificationRow({
                 </span>
               </>
             )}
+            {spaceMeta && n.tabTitle && (
+              <span className="text-muted-foreground/30">·</span>
+            )}
+            {n.tabTitle && (
+              <span className="truncate text-muted-foreground/70">
+                {n.tabTitle}
+              </span>
+            )}
           </div>
         )}
+        <div className="flex items-center gap-1.5 text-sm text-foreground">
+          {displayAgent(n.agent)}{" "}
+          <span className="text-muted-foreground">{NOTIF_LABEL[n.kind]}</span>
+        </div>
       </div>
       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
         {relativeTime(n.at)}

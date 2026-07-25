@@ -1,0 +1,256 @@
+<style>
+  .terax-preview {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+  }
+
+  .option.card {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .mock-bell-panel {
+    background: #0d0f12;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 16px;
+    padding: 10px;
+    color: #eef0f3;
+    box-shadow: 0 18px 50px rgba(0,0,0,.28);
+  }
+
+  .mock-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 5px 6px 10px;
+    border-bottom: 1px solid rgba(255,255,255,.07);
+    margin-bottom: 6px;
+  }
+
+  .mock-panel-header strong {
+    font-size: 12px;
+    letter-spacing: .01em;
+  }
+
+  .mock-panel-header span {
+    font-size: 10px;
+    color: rgba(238,240,243,.48);
+  }
+
+  .notif-row {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: start;
+    border-radius: 11px;
+    padding: 9px 7px;
+    margin: 2px 0;
+    background: rgba(255,255,255,.035);
+  }
+
+  .notif-row.secondary {
+    opacity: .62;
+    background: transparent;
+  }
+
+  .status-dot, .status-check {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    margin-top: 2px;
+  }
+
+  .status-dot {
+    background: #8b5cf6;
+    box-shadow: 0 0 0 4px rgba(139,92,246,.14);
+  }
+
+  .status-check {
+    border: 1px solid rgba(238,240,243,.42);
+    color: rgba(238,240,243,.72);
+  }
+
+  .row-time {
+    font-size: 10px;
+    color: rgba(238,240,243,.45);
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+
+  .agent-line {
+    font-size: 13px;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .agent-line span {
+    color: rgba(238,240,243,.58);
+  }
+
+  .location-line {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    font-size: 11px;
+    line-height: 1.2;
+    margin-bottom: 4px;
+    color: rgba(238,240,243,.62);
+  }
+
+  .space-pill {
+    max-width: 86px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #f3f4f6;
+    font-weight: 650;
+  }
+
+  .tab-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .destination-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+  }
+
+  .space-badge {
+    font-size: 10px;
+    line-height: 1;
+    padding: 4px 6px;
+    border-radius: 999px;
+    background: rgba(139,92,246,.18);
+    color: #d8c7ff;
+    border: 1px solid rgba(139,92,246,.28);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .tab-strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #f4f5f7;
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .route-line {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 4px;
+    font-size: 11px;
+    color: rgba(238,240,243,.58);
+    min-width: 0;
+  }
+
+  .route-line strong {
+    color: rgba(238,240,243,.84);
+  }
+
+  .card-body { padding: 14px; }
+
+  @media (max-width: 900px) {
+    .terax-preview { grid-template-columns: 1fr; }
+  }
+</style>
+
+<h2>Dialing in the Terax bell dropdown</h2>
+<p class="subtitle">Pick the row style that makes it clearest where clicking the notification will take you.</p>
+
+<div class="terax-preview">
+  <div class="option card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="mock-bell-panel">
+      <div class="mock-panel-header"><strong>Agent notifications</strong><span>Clear</span></div>
+      <div class="notif-row">
+        <div class="status-dot"></div>
+        <div>
+          <div class="location-line"><span>📍</span><span class="space-pill">Main</span><span>·</span><span class="tab-title">Space_Terax</span></div>
+          <div class="agent-line">codex <span>needs input</span></div>
+        </div>
+        <div class="row-time">now</div>
+      </div>
+      <div class="notif-row secondary">
+        <div class="status-check">✓</div>
+        <div>
+          <div class="location-line"><span>📍</span><span class="space-pill">School</span><span>·</span><span class="tab-title">lesson-04</span></div>
+          <div class="agent-line">opencode <span>finished</span></div>
+        </div>
+        <div class="row-time">3m</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Simple location-above</h3>
+      <p>Closest to what we already started: location sits quietly above the agent/status line.</p>
+    </div>
+  </div>
+
+  <div class="option card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="mock-bell-panel">
+      <div class="mock-panel-header"><strong>Agent notifications</strong><span>Clear</span></div>
+      <div class="notif-row">
+        <div class="status-dot"></div>
+        <div>
+          <div class="destination-strip"><span class="space-badge">MAIN</span><span class="tab-strong">Space_Terax</span></div>
+          <div class="agent-line">codex <span>needs input</span></div>
+        </div>
+        <div class="row-time">now</div>
+      </div>
+      <div class="notif-row secondary">
+        <div class="status-check">✓</div>
+        <div>
+          <div class="destination-strip"><span class="space-badge">SCHOOL</span><span class="tab-strong">lesson-04</span></div>
+          <div class="agent-line">opencode <span>finished</span></div>
+        </div>
+        <div class="row-time">3m</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Destination-first</h3>
+      <p>Most scannable: space is a pill, tab is prominent, agent/action is secondary. My recommendation.</p>
+    </div>
+  </div>
+
+  <div class="option card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="mock-bell-panel">
+      <div class="mock-panel-header"><strong>Agent notifications</strong><span>Clear</span></div>
+      <div class="notif-row">
+        <div class="status-dot"></div>
+        <div>
+          <div class="agent-line">codex <span>needs input</span></div>
+          <div class="route-line"><strong>Main</strong><span>→</span><span class="tab-title">Space_Terax</span></div>
+        </div>
+        <div class="row-time">now</div>
+      </div>
+      <div class="notif-row secondary">
+        <div class="status-check">✓</div>
+        <div>
+          <div class="agent-line">opencode <span>finished</span></div>
+          <div class="route-line"><strong>School</strong><span>→</span><span class="tab-title">lesson-04</span></div>
+        </div>
+        <div class="row-time">3m</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Agent-first + route</h3>
+      <p>Keeps agent identity first, then shows destination as a route underneath.</p>
+    </div>
+  </div>
+</div>
