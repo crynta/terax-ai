@@ -1,6 +1,6 @@
 import type { WorkspaceEnv } from "@/modules/workspace";
 import type { Tab } from "@/modules/tabs/lib/useTabs";
-import { freshTerminalTab } from "./serialize";
+import { basename, freshTerminalTab } from "./serialize";
 import { newSpaceId as makeDefaultSpaceId, type SpaceMeta } from "./store";
 
 export function findActiveSpace(
@@ -30,11 +30,6 @@ export function freshTabCwd(
   home: string | null,
 ): string | null {
   return restoredHome ?? (env.kind === "local" ? (launchCwd ?? home) : null);
-}
-
-function basename(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts.length ? parts[parts.length - 1] : path;
 }
 
 function localPathKey(path: string | null): string | null {
