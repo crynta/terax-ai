@@ -27,8 +27,8 @@ export function useSysResources(): SysResources | null {
         .then((value) => {
           if (!cancelled) setResources(value);
         })
-        .catch(() => {
-          // Backend not ready or unsupported platform; keep last value.
+        .catch((err) => {
+          console.error("sys_resources failed:", err);
         });
     };
 
