@@ -21,10 +21,10 @@ type Ctx = {
 function tabInfo(
   tabs: Tab[],
   leafId: number,
-): { tabId: number; title: string } | null {
+): { tabId: number; title: string; spaceId: string } | null {
   for (const t of tabs) {
     if (t.kind === "terminal" && hasLeaf(t.paneTree, leafId)) {
-      return { tabId: t.id, title: t.title };
+      return { tabId: t.id, title: t.title, spaceId: t.spaceId };
     }
   }
   return null;
@@ -52,6 +52,8 @@ function route(
     allowToast: kind === "attention",
     tabId: session.tabId,
     leafId: session.leafId,
+    tabTitle: info?.title,
+    spaceId: info?.spaceId,
     onActivate: () => ctx.onActivate(session.tabId, session.leafId),
   });
 }

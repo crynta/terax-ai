@@ -17,6 +17,10 @@ type RouteArgs = {
   allowToast: boolean;
   tabId?: number;
   leafId?: number;
+  /** Title of the tab where the agent is running. */
+  tabTitle?: string;
+  /** Space ID for multi-window context. */
+  spaceId?: string;
   onActivate: () => void;
 };
 
@@ -31,12 +35,14 @@ export function routeAgentNotification({
   allowToast,
   tabId = 0,
   leafId = 0,
+  tabTitle,
+  spaceId,
   onActivate,
 }: RouteArgs): void {
   if (!usePreferencesStore.getState().agentNotifications) return;
   if (focused && visible) return;
 
-  useAgentStore.getState().pushNotification({ source, agent, kind, tabId, leafId });
+  useAgentStore.getState().pushNotification({ source, agent, kind, tabId, leafId, tabTitle, spaceId });
 
   if (!focused) {
     void osNotify(title, body ?? agent);

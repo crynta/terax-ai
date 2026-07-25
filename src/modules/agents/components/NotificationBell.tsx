@@ -79,7 +79,7 @@ const NOTIF_LABEL: Record<AgentNotification["kind"], string> = {
   error: "failed",
 };
 
-const HOOK_AGENTS = ["claude", "codex", "gemini", "pi"] as const;
+const HOOK_AGENTS = ["claude", "codex", "gemini", "opencode", "pi"] as const;
 
 function HookAgentRow({
   id,
@@ -142,9 +142,9 @@ function NotificationRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent"
+      className="flex w-full items-start gap-2.5 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent"
     >
-      <span className="flex w-4 shrink-0 items-center justify-center">
+      <span className="flex w-4 shrink-0 items-center justify-center mt-0.5">
         {n.kind === "finished" ? (
           <HugeiconsIcon
             icon={CheckmarkCircle02Icon}
@@ -161,10 +161,20 @@ function NotificationRow({
           />
         )}
       </span>
-      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-        {displayAgent(n.agent)}{" "}
-        <span className="text-muted-foreground">{NOTIF_LABEL[n.kind]}</span>
-      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 text-sm text-foreground">
+          {displayAgent(n.agent)}{" "}
+          <span className="text-muted-foreground">{NOTIF_LABEL[n.kind]}</span>
+        </div>
+        {n.tabTitle && (
+          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-muted-foreground">
+            <span className="truncate flex-1">{n.tabTitle}</span>
+            {n.spaceId && (
+              <span className="shrink-0 opacity-60">· {n.spaceId.slice(0, 8)}</span>
+            )}
+          </div>
+        )}
+      </div>
       <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
         {relativeTime(n.at)}
       </span>

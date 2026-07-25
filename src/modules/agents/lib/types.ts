@@ -34,6 +34,10 @@ export type AgentNotification = {
   kind: NotificationKind;
   at: number;
   read: boolean;
+  /** Title of the tab where the agent is running. */
+  tabTitle?: string;
+  /** Space ID for multi-window context. */
+  spaceId?: string;
 };
 
 export type NotificationKind = "attention" | "finished" | "error";
