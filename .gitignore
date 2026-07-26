@@ -26,3 +26,10 @@ stats.html
 *.sw?
 
 *.tsbuildinfo
+
+# Native speech bridge build products
+native/**/.build/
+native/**/build/
+native/**/build-*/
+native/.deps/
+native/dist/

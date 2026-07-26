@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import { useChatStore } from "../store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { transcribeAudio, type SttOptions } from "../lib/stt";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import type { SttProvider } from "../config";
+import { type SttOptions, transcribeAudio } from "../lib/stt";
+import { useChatStore } from "../store/chatStore";
 
 const MIME_CANDIDATES = [
   "audio/webm;codecs=opus",
@@ -21,7 +21,7 @@ function pickMime(): string | undefined {
 }
 
 function providerNeedsKey(provider: SttProvider): boolean {
-  return provider !== "whispercpp";
+  return provider === "openai" || provider === "groq";
 }
 
 function getApiKeyForStt(
@@ -42,6 +42,7 @@ export function useWhisperRecording({
 }) {
   const apiKeys = useChatStore((s) => s.apiKeys);
   const sttProvider = usePreferencesStore((s) => s.sttProvider);
+  const nativeSpeechProfile = usePreferencesStore((s) => s.nativeSpeechProfile);
   const groqSttModel = usePreferencesStore((s) => s.groqSttModel);
   const whispercppBaseURL = usePreferencesStore((s) => s.whispercppBaseURL);
   const [state, setState] = useState<State>("idle");
@@ -58,15 +59,21 @@ export function useWhisperRecording({
     !!navigator.mediaDevices?.getUserMedia &&
     typeof MediaRecorder !== "undefined";
 
-  const sttOptions: SttOptions = {
-    groqSttModel,
-    whispercppBaseURL,
-  };
+  const sttOptions = useMemo<SttOptions>(
+    () => ({
+      groqSttModel,
+      whispercppBaseURL,
+      nativeSpeechProfile,
+    }),
+    [groqSttModel, nativeSpeechProfile, whispercppBaseURL],
+  );
 
-  const teardownStream = () => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+  const teardownStream = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => {
+      track.stop();
+    });
     streamRef.current = null;
-  };
+  }, []);
 
   const stop = useCallback(() => {
     const rec = recRef.current;
@@ -79,7 +86,10 @@ export function useWhisperRecording({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       const mimeType = pickMime();
-      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const rec = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined,
+      );
       chunksRef.current = [];
       rec.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -96,7 +106,12 @@ export function useWhisperRecording({
         }
         setState("transcribing");
         try {
-          const text = await transcribeAudio(blob, sttProvider, apiKeys, sttOptions);
+          const text = await transcribeAudio(
+            blob,
+            sttProvider,
+            apiKeys,
+            sttOptions,
+          );
           if (text.trim()) onResult(text.trim());
         } catch (e) {
           console.error("stt.transcribe", e);
@@ -114,14 +129,23 @@ export function useWhisperRecording({
       teardownStream();
       setState("idle");
     }
-  }, [apiKeys, sttProvider, sttOptions, onResult, state, supported, hasKey]);
+  }, [
+    apiKeys,
+    sttProvider,
+    sttOptions,
+    onResult,
+    state,
+    supported,
+    hasKey,
+    teardownStream,
+  ]);
 
   useEffect(() => {
     return () => {
       recRef.current?.stop();
       teardownStream();
     };
-  }, []);
+  }, [teardownStream]);
 
   return {
     state,

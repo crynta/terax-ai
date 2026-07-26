@@ -44,10 +44,22 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 bytes = "1"
 futures-util = "0.3"
-tokio = { version = "1", default-features = false, features = ["rt"] }
+tokio = { version = "1", default-features = false, features = [
+	"fs",
+	"io-util",
+	"rt",
+	"sync",
+	"time",
+] }
 tempfile = "3"
 notify = "8.2.0"
 which = "8.0.4"
+base64 = "0.22"
+minisign-verify = "0.2.5"
+sha2 = "0.10"
+zip = { version = "4.6.1", default-features = false, features = [
+	"deflate-flate2",
+] }
 
 [dev-dependencies]
 proptest = "1"

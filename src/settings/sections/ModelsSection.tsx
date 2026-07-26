@@ -16,11 +16,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 import {
-  getBindingTokens,
-  SHORTCUTS,
-} from "@/modules/shortcuts/shortcuts";
+  ARCH_ID,
+  IS_LINUX,
+  IS_MAC,
+  IS_WINDOWS,
+  OS_VERSION_ID,
+} from "@/lib/platform";
+import { cn } from "@/lib/utils";
 import {
   type CustomEndpoint,
   compatModelIdForEndpoint,
@@ -30,16 +33,20 @@ import {
   getModel,
   getProvider,
   isCompatModelId,
+  isNativeSpeechProfile,
   MODELS,
   type ModelId,
+  NATIVE_SPEECH_PROFILE_LABELS,
+  NATIVE_SPEECH_PROFILES,
   PROVIDERS,
   type ProviderId,
   type ProviderInfo,
   providerNeedsKey,
   STT_PROVIDER_LABELS,
-  type SttProvider,
+  sttProvidersForPlatform,
   WHISPERCPP_DEFAULT_BASE_URL,
 } from "@/modules/ai/config";
+import { useNativeSpeechInstall } from "@/modules/ai/hooks/useNativeSpeechInstall";
 import {
   type CustomEndpointKeys,
   clearCustomEndpointKey,
@@ -66,6 +73,7 @@ import {
   setLmstudioModelId,
   setMlxBaseURL,
   setMlxModelId,
+  setNativeSpeechProfile,
   setOllamaBaseURL,
   setOllamaModelId,
   setOpenaiCompatibleBaseURL,
@@ -76,6 +84,7 @@ import {
   setSttProvider,
   setWhispercppBaseURL,
 } from "@/modules/settings/store";
+import { getBindingTokens, SHORTCUTS } from "@/modules/shortcuts/shortcuts";
 import {
   Add01Icon,
   ArrowDown01Icon,
@@ -94,6 +103,19 @@ import { ProviderKeyCard } from "../components/ProviderKeyCard";
 import { SectionHeader } from "../components/SectionHeader";
 
 type KeysMap = Record<ProviderId, string | null>;
+
+const STT_PLATFORM = IS_MAC
+  ? "macos"
+  : IS_LINUX
+    ? "linux"
+    : IS_WINDOWS
+      ? "windows"
+      : "unknown";
+const AVAILABLE_STT_PROVIDERS = sttProvidersForPlatform(
+  STT_PLATFORM,
+  ARCH_ID,
+  OS_VERSION_ID,
+);
 
 const isLocalProvider = (id: ProviderId): boolean => !providerNeedsKey(id);
 
@@ -390,31 +412,26 @@ export function ModelsSection() {
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {visibleProviders.map((p) =>
-              p.id === "openrouter" ? (
-                <LocalProviderCard
-                  key={p.id}
-                  provider={p}
-                  configured={configuredIds.has(p.id)}
-                  config={localConfig(p.id)!}
-                  meta={LOCAL_META[p.id]!}
-                  compatKey={keys[p.id]}
-                  onSaveKey={(v) => onSaveKey(p.id, v)}
-                  onClearKey={() => onClearKey(p.id)}
-                  onRemove={() => removeProvider(p.id)}
-                />
-              ) : isLocalProvider(p.id) ? (
-                <LocalProviderCard
-                  key={p.id}
-                  provider={p}
-                  configured={configuredIds.has(p.id)}
-                  config={localConfig(p.id)!}
-                  meta={LOCAL_META[p.id]!}
-                  onSaveKey={(v) => onSaveKey(p.id, v)}
-                  onClearKey={() => onClearKey(p.id)}
-                  onRemove={() => removeProvider(p.id)}
-                />
-              ) : (
+            {visibleProviders.map((p) => {
+              if (p.id === "openrouter" || isLocalProvider(p.id)) {
+                const config = localConfig(p.id);
+                const meta = LOCAL_META[p.id];
+                if (!config || !meta) return null;
+                return (
+                  <LocalProviderCard
+                    key={p.id}
+                    provider={p}
+                    configured={configuredIds.has(p.id)}
+                    config={config}
+                    meta={meta}
+                    compatKey={p.id === "openrouter" ? keys[p.id] : undefined}
+                    onSaveKey={(v) => onSaveKey(p.id, v)}
+                    onClearKey={() => onClearKey(p.id)}
+                    onRemove={() => removeProvider(p.id)}
+                  />
+                );
+              }
+              return (
                 <ProviderKeyCard
                   key={p.id}
                   provider={p}
@@ -423,8 +440,8 @@ export function ModelsSection() {
                   onClear={() => onClearKey(p.id)}
                   onRemove={() => removeProvider(p.id)}
                 />
-              ),
-            )}
+              );
+            })}
             {customEndpoints.map((ep) => (
               <CustomEndpointCard
                 key={ep.id}
@@ -964,7 +981,7 @@ function LocalProviderCard({
                 value={contextDraft}
                 onChange={(e) => setContextDraft(e.target.value)}
                 onBlur={() => {
-                  const v = parseInt(contextDraft);
+                  const v = parseInt(contextDraft, 10);
                   if (Number.isFinite(v) && v >= 1000) void setContextLimit(v);
                   else setContextDraft(String(contextLimit ?? ""));
                 }}
@@ -1200,7 +1217,7 @@ function CustomEndpointCard({
                 value={contextDraft}
                 onChange={(e) => setContextDraft(e.target.value)}
                 onBlur={() => {
-                  const v = parseInt(contextDraft);
+                  const v = parseInt(contextDraft, 10);
                   if (Number.isFinite(v) && v >= 1000)
                     void onUpdate({ contextLimit: v });
                   else setContextDraft(String(endpoint.contextLimit ?? ""));
@@ -1314,13 +1331,30 @@ function StatusLine({
 
 function VoiceBlock() {
   const sttProvider = usePreferencesStore((s) => s.sttProvider);
+  const nativeSpeechProfile = usePreferencesStore((s) => s.nativeSpeechProfile);
   const groqSttModel = usePreferencesStore((s) => s.groqSttModel);
   const whispercppBaseURL = usePreferencesStore((s) => s.whispercppBaseURL);
   const [urlDraft, setUrlDraft] = useState(whispercppBaseURL);
   const [groqModelDraft, setGroqModelDraft] = useState(groqSttModel);
 
+  const providerChoices = AVAILABLE_STT_PROVIDERS.includes(sttProvider)
+    ? AVAILABLE_STT_PROVIDERS
+    : [sttProvider, ...AVAILABLE_STT_PROVIDERS];
+  const supportedOnDevice = AVAILABLE_STT_PROVIDERS.includes(sttProvider);
+  const nativeInstall = useNativeSpeechInstall(
+    sttProvider === "native" && supportedOnDevice,
+    nativeSpeechProfile,
+  );
+
   useEffect(() => setUrlDraft(whispercppBaseURL), [whispercppBaseURL]);
   useEffect(() => setGroqModelDraft(groqSttModel), [groqSttModel]);
+
+  const profileInstalled =
+    nativeSpeechProfile === "nemotron"
+      ? nativeInstall.status?.nemotronInstalled === true
+      : nativeInstall.status?.parakeetInstalled === true;
+  const nativeReady =
+    nativeInstall.status?.runtimeInstalled === true && profileInstalled;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-card/60 px-3 py-2.5">
@@ -1346,7 +1380,7 @@ function VoiceBlock() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44 p-1">
-            {(Object.keys(STT_PROVIDER_LABELS) as SttProvider[]).map((p) => (
+            {providerChoices.map((p) => (
               <DropdownMenuItem
                 key={p}
                 onSelect={() => void setSttProvider(p)}
@@ -1363,12 +1397,17 @@ function VoiceBlock() {
       </FieldRow>
 
       <p className="text-[10.5px] leading-relaxed text-muted-foreground">
+        {!supportedOnDevice &&
+          "This provider is not supported on the current platform or architecture."}
         {sttProvider === "openai" &&
           "Uses your official OpenAI API key and the Whisper model for transcription."}
         {sttProvider === "groq" &&
           "Uses your official Groq API key and Groq's Whisper endpoint for transcription."}
         {sttProvider === "whispercpp" &&
           "Connects to a local Whisper.cpp server for fully offline transcription."}
+        {sttProvider === "native" &&
+          supportedOnDevice &&
+          "Runs through Speech Swift on Apple silicon or Speech Core on Linux and Windows. Terax manages the native runtime and model without a server, PATH lookup, or temporary audio files."}
       </p>
 
       {sttProvider === "groq" && (
@@ -1406,8 +1445,91 @@ function VoiceBlock() {
           </FieldRow>
         </div>
       )}
+
+      {sttProvider === "native" && supportedOnDevice && (
+        <div className="flex flex-col gap-2.5">
+          <FieldRow label="Profile">
+            <Select
+              value={nativeSpeechProfile}
+              disabled={nativeInstall.installing}
+              onValueChange={(value) => {
+                if (isNativeSpeechProfile(value)) {
+                  nativeInstall.clearFeedback();
+                  void setNativeSpeechProfile(value);
+                }
+              }}
+            >
+              <SelectTrigger className="h-8 flex-1 text-[11.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {NATIVE_SPEECH_PROFILES.map((profile) => (
+                  <SelectItem key={profile} value={profile}>
+                    {NATIVE_SPEECH_PROFILE_LABELS[profile]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FieldRow>
+          <p className="text-[10.5px] leading-relaxed text-muted-foreground">
+            {nativeSpeechProfile === "nemotron"
+              ? "Default. Multilingual 0.6B model with the strongest accuracy. Downloads about 620 to 730 MB and can use 1 GB or more while loaded."
+              : "Low-memory English 120M profile for lighter systems. Downloads about 115 to 150 MB and uses substantially less memory than Nemotron."}
+          </p>
+          <div className="flex items-center justify-between gap-3 rounded-md border border-border/50 bg-background/30 px-2.5 py-2 text-[10.5px]">
+            <span
+              className={cn(
+                "min-w-0 text-muted-foreground",
+                nativeInstall.error && "text-destructive/80",
+              )}
+            >
+              {nativeInstall.error ||
+                (nativeInstall.installing
+                  ? `${nativeInstall.phase}${formatInstallProgress(nativeInstall.progress)}`
+                  : nativeInstall.status === null
+                    ? "Checking the managed runtime..."
+                    : !nativeInstall.status.supported
+                      ? "Native speech is not supported on this system."
+                      : nativeReady
+                        ? `${NATIVE_SPEECH_PROFILE_LABELS[nativeSpeechProfile]} is ready${nativeInstall.status.runtimeSource === "development" ? " (development runtime)" : ""}.`
+                        : "Runtime or selected model is not installed.")}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0 px-2.5 text-[10.5px]"
+              disabled={
+                nativeInstall.installing ||
+                (nativeInstall.status === null && !nativeInstall.error) ||
+                nativeInstall.status?.supported === false ||
+                nativeReady
+              }
+              onClick={() => void nativeInstall.install()}
+            >
+              {nativeInstall.installing
+                ? "Installing..."
+                : nativeReady
+                  ? "Installed"
+                  : "Install"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function formatInstallProgress(
+  progress: { downloaded: number; total: number } | null,
+): string {
+  if (!progress || progress.total <= 0) return "";
+  const percent = Math.min(
+    100,
+    Math.round((progress.downloaded / progress.total) * 100),
+  );
+  const downloaded = (progress.downloaded / (1024 * 1024)).toFixed(0);
+  const total = (progress.total / (1024 * 1024)).toFixed(0);
+  return `: ${percent}% (${downloaded} of ${total} MiB)`;
 }
 
 function Label({ children }: { children: React.ReactNode }) {

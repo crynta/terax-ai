@@ -109,7 +109,8 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     label: "MLX",
     keyringAccount: "",
     keyPrefix: null,
-    consoleUrl: "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md",
+    consoleUrl:
+      "https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md",
   },
   {
     id: "ollama",
@@ -883,16 +884,72 @@ export function getAutocompleteEligibleModels(): readonly ModelInfo[] {
   );
 }
 
-export type SttProvider = "openai" | "groq" | "whispercpp";
+export const STT_PROVIDERS = [
+  "openai",
+  "groq",
+  "whispercpp",
+  "native",
+] as const;
+
+export type SttProvider = (typeof STT_PROVIDERS)[number];
 
 export const STT_PROVIDER_LABELS: Record<SttProvider, string> = {
   openai: "OpenAI Whisper",
   groq: "Groq Whisper",
   whispercpp: "Whisper.cpp (local)",
+  native: "Terax Native (local)",
 };
+
+export const NATIVE_SPEECH_PROFILES = ["nemotron", "parakeet"] as const;
+export type NativeSpeechProfile = (typeof NATIVE_SPEECH_PROFILES)[number];
+export const DEFAULT_NATIVE_SPEECH_PROFILE: NativeSpeechProfile = "nemotron";
+export const NATIVE_SPEECH_PROFILE_LABELS: Record<NativeSpeechProfile, string> =
+  {
+    nemotron: "Nemotron",
+    parakeet: "Parakeet (low memory, English)",
+  };
+
+export function isNativeSpeechProfile(
+  value: unknown,
+): value is NativeSpeechProfile {
+  return NATIVE_SPEECH_PROFILES.includes(value as NativeSpeechProfile);
+}
+
+export type SttPlatform = "macos" | "linux" | "windows" | "unknown";
+
+export function isSttProvider(value: unknown): value is SttProvider {
+  return STT_PROVIDERS.includes(value as SttProvider);
+}
+
+export function sttProvidersForPlatform(
+  platform: SttPlatform,
+  arch = "",
+  osVersion = "",
+): SttProvider[] {
+  const providers: SttProvider[] = ["openai", "groq", "whispercpp"];
+  const macosMajor = Number.parseInt(osVersion.split(".")[0] ?? "", 10);
+  if (
+    platform === "macos" &&
+    (arch === "aarch64" || arch === "arm64") &&
+    macosMajor >= 15
+  ) {
+    providers.push("native");
+  } else if (
+    (platform === "linux" || platform === "windows") &&
+    (arch === "x86_64" || arch === "amd64")
+  ) {
+    providers.push("native");
+  }
+  return providers;
+}
 
 export const DEFAULT_STT_PROVIDER: SttProvider = "openai";
 export const WHISPERCPP_DEFAULT_BASE_URL = "http://127.0.0.1:8080";
+
+export function coerceSttProvider(value: unknown): SttProvider {
+  if (value === "speech-swift" || value === "speech-core") return "native";
+  return isSttProvider(value) ? value : DEFAULT_STT_PROVIDER;
+}
 export const LMSTUDIO_DEFAULT_BASE_URL = "http://localhost:1234/v1";
 export const MLX_DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1";
 export const OLLAMA_DEFAULT_BASE_URL = "http://localhost:11434/v1";
