@@ -187,7 +187,7 @@ function isUnderProtected(cmp: string, dir: string): boolean {
   //   "/users/me/.ssh/config" + "/" → contains "/.ssh/" ✓
   //   "/users/me/.ssh"        + "/" → contains "/.ssh/" ✓
   //   "/users/me/.sshx/file"  + "/" → does not contain "/.ssh/" ✓
-  return (cmp + "/").includes(dir + "/");
+  return `${cmp}/`.includes(`${dir}/`);
 }
 
 function describeProtected(dir: string): string {

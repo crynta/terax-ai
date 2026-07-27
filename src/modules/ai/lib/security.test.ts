@@ -219,10 +219,13 @@ describe("checkShellCommand — control-character / newline injection", () => {
 });
 
 describe("checkShellCommand — home directory rm guard", () => {
-  it("blocks rm -rf with ${HOME} (braces variant)", () => {
-    expect(checkShellCommand("rm -rf ${HOME}")).toMatchObject({ ok: false });
-    expect(checkShellCommand('rm -rf "${HOME}"')).toMatchObject({ ok: false });
-    expect(checkShellCommand("rm -rf ${HOME}/")).toMatchObject({ ok: false });
+  it(`blocks rm -rf with \${HOME} (braces variant)`, () => {
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional test data
+    expect(checkShellCommand("rm -rf " + "${HOME}")).toMatchObject({ ok: false });
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional test data
+    expect(checkShellCommand('rm -rf "' + "${HOME}" + '"')).toMatchObject({ ok: false });
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional test data
+    expect(checkShellCommand("rm -rf " + "${HOME}/")).toMatchObject({ ok: false });
   });
 
   it("blocks rm -rf on home subdirectories", () => {
@@ -233,7 +236,8 @@ describe("checkShellCommand — home directory rm guard", () => {
   it("blocks rm -rf when the home target is immediately followed by a pipe", () => {
     expect(checkShellCommand("rm -rf ~|cat")).toMatchObject({ ok: false });
     expect(checkShellCommand("rm -rf $HOME|cat")).toMatchObject({ ok: false });
-    expect(checkShellCommand("rm -rf ${HOME}|cat")).toMatchObject({ ok: false });
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional test data
+    expect(checkShellCommand("rm -rf " + "${HOME}" + "|cat")).toMatchObject({ ok: false });
   });
 
   it("does not block rm -rf on explicit absolute paths", () => {

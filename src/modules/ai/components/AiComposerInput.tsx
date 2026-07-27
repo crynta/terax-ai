@@ -81,7 +81,7 @@ export function AiComposerInput() {
 
   useEffect(() => {
     autoresize(c.textareaRef.current);
-  }, [c.value, c.textareaRef]);
+  }, [c.textareaRef]);
 
   const updateTrigger = () => {
     const el = c.textareaRef.current;
@@ -133,13 +133,15 @@ export function AiComposerInput() {
     return out;
   }, [fileTrigger, fileQuery, workspaceFiles.files]);
 
-  const fileTriggerOpen = fileTrigger !== null;
   const snippetTriggerOpen = trigger !== null;
+  const fileTriggerOpen = fileTrigger !== null;
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset index when picker opens/closes
   useEffect(() => {
     setActiveIndex(0);
-  }, [snippetTriggerOpen, fileTriggerOpen, fileQuery]);
+  }, [snippetTriggerOpen, fileTriggerOpen]);
 
-  const pickerOpen = trigger !== null || fileTrigger !== null;
+  const pickerOpen = snippetTriggerOpen || fileTriggerOpen;
 
   const onPickItem = (item: PickerItem) => {
     if (!trigger) return;

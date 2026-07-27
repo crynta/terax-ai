@@ -203,9 +203,9 @@ function ShortcutRow({
             >
               {hasBindings ? (
                 <KbdGroup>
-                  {getBindingTokens(bindings[0]).map((t, i) => (
+                  {getBindingTokens(bindings[0]).map((t, idx) => (
                     <Kbd
-                      key={`${t}-${i}`}
+                      key={`${t}-${idx}`}
                       className="group-hover:bg-accent group-hover:text-accent-foreground transition-colors"
                     >
                       {t}

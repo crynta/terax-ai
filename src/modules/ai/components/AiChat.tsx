@@ -122,9 +122,9 @@ const ContextChips = memo(function ContextChips({
 }) {
   return (
     <div className="mb-1 flex flex-wrap gap-1">
-      {chips.map((c, i) => (
+      {chips.map((c) => (
         <span
-          key={i}
+          key={`${c.kind}-${"name" in c ? (c as {name:string}).name : "source" in c ? (c as {source:string}).source : ""}`}
           className="inline-flex items-center gap-1 rounded-md border border-border/50 bg-card/60 px-1.5 py-0.5 text-[10.5px] text-muted-foreground"
         >
           {chipIcon(c)}
@@ -326,6 +326,10 @@ const RenderedMessage = memo(function RenderedMessage({
   onApproval: (id: string, approved: boolean) => void;
   streaming: boolean;
 }) {
+  const groups = useMemo(() => buildPartGroups(message.parts as AnyPart[]), [
+    message.parts,
+  ]);
+
   // Index of the trailing text part — only that one is "live" mid-stream.
   // Earlier text parts (separated by tool calls) are already finalized.
   let lastTextIdx = -1;
@@ -362,10 +366,6 @@ const RenderedMessage = memo(function RenderedMessage({
       </Message>
     );
   }
-
-  const groups = useMemo(() => buildPartGroups(message.parts as AnyPart[]), [
-    message.parts,
-  ]);
 
   return (
     <Message from={message.role}>
@@ -441,7 +441,7 @@ function buildPartGroups(parts: AnyPart[]): Group[] {
       });
     } else {
       run.parts.forEach((p, k) => {
-        const idx = run!.startIdx + k;
+        const idx = (run?.startIdx ?? 0) + k;
         out.push({ kind: "single", part: p, idx, key: partKey(p, idx) });
       });
     }
