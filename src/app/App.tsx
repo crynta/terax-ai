@@ -863,7 +863,7 @@ export default function App() {
         );
         if (!inTerminal) return false;
         const sel = captureActiveSelection();
-        return !sel || !sel.trim();
+        return !sel?.trim();
       }
       if (id === "terminal.clear") {
         // Only intercept ⌘K while a terminal is focused; elsewhere let the key
@@ -894,7 +894,7 @@ export default function App() {
       }
       return false;
     },
-    [activeTab],
+    [activeTab, captureActiveSelection],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });

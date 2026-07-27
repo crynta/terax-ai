@@ -141,6 +141,7 @@ export function ThemesSection() {
         description="Theme, background image, and customization."
       />
 
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop zone */}
       <div
         role="presentation"
         className="flex flex-col gap-2"
@@ -242,8 +243,8 @@ export function ThemesSection() {
                 </div>
                 {isCustom ? (
                   <span className="ml-1 flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-                    <span
-                      role="button"
+                    <button
+                      type="button"
                       aria-label={`Edit ${t.name}`}
                       className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
                       onClick={(e) => {
@@ -256,10 +257,9 @@ export function ThemesSection() {
                         size={12}
                         strokeWidth={1.75}
                       />
-                    </span>
-                    <span
-                      role="button"
-                      tabIndex={0}
+                    </button>
+                    <button
+                      type="button"
                       aria-label={`Remove ${t.name}`}
                       className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
                       onClick={(e) => {
@@ -268,7 +268,7 @@ export function ThemesSection() {
                       }}
                     >
                       ×
-                    </span>
+                    </button>
                   </span>
                 ) : null}
               </button>
@@ -318,6 +318,7 @@ export function ThemesSection() {
         </div>
       </div>
 
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: drag-and-drop zone */}
       <div
         role="presentation"
         className="flex flex-col gap-2"

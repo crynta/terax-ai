@@ -218,12 +218,13 @@ export function GeneralSection() {
               <TooltipProvider delayDuration={200}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span
+                    <button
+                      type="button"
                       className="cursor-help text-[11px] text-muted-foreground/70 leading-none"
                       aria-label="More info about WebGL renderer"
                     >
                       ⓘ
-                    </span>
+                    </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-65 text-[11px]">
                     xterm's WebGL renderer caches glyphs in a GPU texture atlas.

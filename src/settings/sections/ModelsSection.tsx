@@ -396,8 +396,8 @@ export function ModelsSection() {
                   key={p.id}
                   provider={p}
                   configured={configuredIds.has(p.id)}
-                  config={localConfig(p.id)!}
-                  meta={LOCAL_META[p.id]!}
+                  config={localConfig(p.id) as LocalConfig}
+                  meta={LOCAL_META[p.id] as LocalMeta}
                   compatKey={keys[p.id]}
                   onSaveKey={(v) => onSaveKey(p.id, v)}
                   onClearKey={() => onClearKey(p.id)}
@@ -408,8 +408,8 @@ export function ModelsSection() {
                   key={p.id}
                   provider={p}
                   configured={configuredIds.has(p.id)}
-                  config={localConfig(p.id)!}
-                  meta={LOCAL_META[p.id]!}
+                  config={localConfig(p.id) as LocalConfig}
+                  meta={LOCAL_META[p.id] as LocalMeta}
                   onSaveKey={(v) => onSaveKey(p.id, v)}
                   onClearKey={() => onClearKey(p.id)}
                   onRemove={() => removeProvider(p.id)}
@@ -963,8 +963,7 @@ function LocalProviderCard({
               <Input
                 value={contextDraft}
                 onChange={(e) => setContextDraft(e.target.value)}
-                onBlur={() => {
-                  const v = parseInt(contextDraft);
+                onBlur={() => {                   const v = parseInt(contextDraft, 10);
                   if (Number.isFinite(v) && v >= 1000) void setContextLimit(v);
                   else setContextDraft(String(contextLimit ?? ""));
                 }}
@@ -1199,8 +1198,7 @@ function CustomEndpointCard({
               <Input
                 value={contextDraft}
                 onChange={(e) => setContextDraft(e.target.value)}
-                onBlur={() => {
-                  const v = parseInt(contextDraft);
+                onBlur={() => {                   const v = parseInt(contextDraft, 10);
                   if (Number.isFinite(v) && v >= 1000)
                     void onUpdate({ contextLimit: v });
                   else setContextDraft(String(endpoint.contextLimit ?? ""));
