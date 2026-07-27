@@ -51,18 +51,17 @@ pub fn discover_repos(
 
     // Walk subdirectories for additional repos
     if repos.len() < max_results {
-        timed_out = discover_recursive(
-            &canonical_root,
-            &canonical_root,
+        let mut ctx = DiscoverCtx {
+            workspace_root: &canonical_root,
             registry,
-            0,
             max_depth,
             max_results,
             deadline_ms,
-            &start,
-            &mut seen,
-            &mut repos,
-        );
+            start: &start,
+            seen: &mut seen,
+            repos: &mut repos,
+        };
+        timed_out = discover_recursive(&canonical_root, &mut ctx, 0);
     }
 
     // Sort: root first, then submodule, then nested; alphabetically within each tier
@@ -147,21 +146,23 @@ fn check_git_repo(
     }
 }
 
-/// Recursively discover git repos under `dir`.
-/// Returns true if the deadline was hit (timed out).
-fn discover_recursive(
-    dir: &Path,
-    workspace_root: &Path,
-    registry: &WorkspaceRegistry,
-    depth: u32,
+/// Bundles the shared parameters for recursive discovery to reduce
+/// argument count and satisfy `clippy::too-many-arguments`.
+struct DiscoverCtx<'a> {
+    workspace_root: &'a Path,
+    registry: &'a WorkspaceRegistry,
     max_depth: u32,
     max_results: usize,
     deadline_ms: u64,
-    start: &Instant,
-    seen: &mut HashSet<String>,
-    repos: &mut Vec<DiscoveredRepo>,
-) -> bool {
-    if depth > max_depth || repos.len() >= max_results {
+    start: &'a Instant,
+    seen: &'a mut HashSet<String>,
+    repos: &'a mut Vec<DiscoveredRepo>,
+}
+
+/// Recursively discover git repos under `dir`.
+/// Returns true if the deadline was hit (timed out).
+fn discover_recursive(dir: &Path, ctx: &mut DiscoverCtx<'_>, depth: u32) -> bool {
+    if depth > ctx.max_depth || ctx.repos.len() >= ctx.max_results {
         return false;
     }
 
@@ -171,10 +172,10 @@ fn discover_recursive(
     };
 
     for entry in entries.flatten() {
-        if repos.len() >= max_results {
+        if ctx.repos.len() >= ctx.max_results {
             return true; // Hit limit
         }
-        if start.elapsed().as_millis() >= deadline_ms as u128 {
+        if ctx.start.elapsed().as_millis() >= ctx.deadline_ms as u128 {
             return true; // Timed out
         }
 
@@ -209,38 +210,48 @@ fn discover_recursive(
         let entry_path = entry.path();
 
         // Check if this directory IS a git repo
-        if let Some(info) = check_git_repo(&entry_path, workspace_root, registry) {
-            if seen.insert(info.repo_root.clone()) {
-                repos.push(info);
+        if let Some(info) = check_git_repo(&entry_path, ctx.workspace_root, ctx.registry) {
+            if ctx.seen.insert(info.repo_root.clone()) {
+                ctx.repos.push(info);
             }
         }
 
         // Recurse into subdirectory
-        if repos.len() < max_results
-            && start.elapsed().as_millis() < deadline_ms as u128
+        if ctx.repos.len() < ctx.max_results
+            && ctx.start.elapsed().as_millis() < ctx.deadline_ms as u128
         {
-            discover_recursive(
-                &entry_path,
-                workspace_root,
-                registry,
-                depth + 1,
-                max_depth,
-                max_results,
-                deadline_ms,
-                start,
-                seen,
-                repos,
-            );
+            discover_recursive(&entry_path, ctx, depth + 1);
         }
     }
 
     false
 }
 
+/// Normalize a path by resolving `..` and `.` components without touching the
+/// filesystem. This prevents `/workspace/../other` from matching `/workspace`.
+fn normalize_components(path: &Path) -> PathBuf {
+    let mut out: Vec<std::path::Component<'_>> = Vec::new();
+    for comp in path.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                // Pop the last Normal component if one exists.
+                if matches!(out.last(), Some(std::path::Component::Normal(_))) {
+                    out.pop();
+                }
+            }
+            std::path::Component::CurDir => { /* skip "." */ }
+            other => out.push(other),
+        }
+    }
+    out.iter().collect()
+}
+
 /// Check if `path` is within `workspace` using path components (not string prefix).
 /// This prevents `/workspace2` from matching `/workspace`.
+/// Paths are normalized before comparison so that `..` segments are resolved.
 fn is_within_workspace(path: &Path, workspace: &Path) -> bool {
-    path.starts_with(workspace) || path == workspace
+    let normalized = normalize_components(path);
+    normalized.starts_with(workspace) || normalized == workspace
 }
 
 /// Get the file name component of a path.
