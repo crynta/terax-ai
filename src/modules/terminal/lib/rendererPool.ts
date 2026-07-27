@@ -72,6 +72,13 @@ export type Slot = {
 const slots: Slot[] = [];
 let recyclerEl: HTMLDivElement | null = null;
 let adapter: SlotAdapter | null = null;
+let configuredFont: RendererFont | null = null;
+
+type RendererFont = {
+  fontFamily: string;
+  fontWeight: string;
+  fontSize: number;
+};
 
 let windowActive =
   typeof document === "undefined" || (!document.hidden && document.hasFocus());
@@ -167,11 +174,16 @@ function bgActive(
 
 function termOptions() {
   const prefs = usePreferencesStore.getState();
-  return {
+  const font = configuredFont ?? {
     fontFamily: resolveFontFamily(prefs.terminalFontFamily),
-    fontWeight: prefs.terminalFontWeight as FontWeight,
-    letterSpacing: prefs.terminalLetterSpacing,
+    fontWeight: prefs.terminalFontWeight,
     fontSize: Math.max(4, Math.round(prefs.terminalFontSize * prefs.zoomLevel)),
+  };
+  return {
+    fontFamily: font.fontFamily,
+    fontWeight: font.fontWeight as FontWeight,
+    letterSpacing: prefs.terminalLetterSpacing,
+    fontSize: font.fontSize,
     theme: buildTerminalTheme(),
     cursorBlink: false,
     cursorStyle: "bar" as const,
@@ -880,14 +892,6 @@ function refitSlot(slot: Slot): void {
     ?.resizePty(slot.term.cols, slot.term.rows);
 }
 
-export function applyFontSize(size: number): void {
-  for (const slot of slots) {
-    if (slot.term.options.fontSize === size) continue;
-    slot.term.options.fontSize = size;
-    refitSlot(slot);
-  }
-}
-
 export function applyLetterSpacing(spacing: number): void {
   for (const slot of slots) {
     if (slot.term.options.letterSpacing === spacing) continue;
@@ -896,19 +900,27 @@ export function applyLetterSpacing(spacing: number): void {
   }
 }
 
-export function applyFontFamily(family: string): void {
-  const resolved = resolveFontFamily(family);
+export function applyTerminalFont(font: RendererFont): void {
+  const next = {
+    fontFamily: resolveFontFamily(font.fontFamily),
+    fontWeight: font.fontWeight,
+    fontSize: font.fontSize,
+  };
+  configuredFont = next;
   for (const slot of slots) {
-    if (slot.term.options.fontFamily === resolved) continue;
-    slot.term.options.fontFamily = resolved;
-    refitSlot(slot);
-  }
-}
-
-export function applyFontWeight(weight: string): void {
-  for (const slot of slots) {
-    if (slot.term.options.fontWeight === weight) continue;
-    slot.term.options.fontWeight = weight as FontWeight;
+    let refit = false;
+    if (slot.term.options.fontFamily !== next.fontFamily) {
+      slot.term.options.fontFamily = next.fontFamily;
+      refit = true;
+    }
+    if (slot.term.options.fontSize !== next.fontSize) {
+      slot.term.options.fontSize = next.fontSize;
+      refit = true;
+    }
+    if (slot.term.options.fontWeight !== next.fontWeight) {
+      slot.term.options.fontWeight = next.fontWeight as FontWeight;
+    }
+    if (refit) refitSlot(slot);
   }
 }
 

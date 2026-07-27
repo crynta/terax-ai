@@ -5,7 +5,6 @@ import { ChipsRow } from "@/modules/ai/components/ChipsRow";
 import { useComposer } from "@/modules/ai/lib/composer";
 import { useBlockController } from "@/modules/terminal/lib/blockController";
 import { focusLeafInput } from "@/modules/terminal/lib/useTerminalSession";
-import { useTheme } from "@/modules/theme";
 import {
   AiContentGenerator02Icon,
   CommandLineIcon,
@@ -52,8 +51,6 @@ export function WorkspaceInputBar({
   onConnect,
 }: Props) {
   const c = useComposer();
-  const { resolvedMode, themeId, customThemes } = useTheme();
-  const themeKey = `${resolvedMode}:${themeId}:${customThemes.length}`;
   const { os, shell } = useSystemInfo();
 
   const controller = useBlockController(isBlockTab ? activeLeafId : null);
@@ -157,7 +154,6 @@ export function WorkspaceInputBar({
                       leafId={activeLeafId}
                       mode={blockMode}
                       focused={effectiveMode === "shell"}
-                      themeKey={themeKey}
                       onSubmit={controller.submitCommand}
                       onInterrupt={controller.interrupt}
                       getCwd={controller.getCwd}

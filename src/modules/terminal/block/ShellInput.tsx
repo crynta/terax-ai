@@ -1,7 +1,7 @@
 import { resolveFontFamily } from "@/lib/fonts";
 import { fmtShortcut, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
-import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useTheme } from "@/modules/theme";
 import { useEffect, useRef } from "react";
 import {
   clearLeafBlockSelection,
@@ -11,6 +11,7 @@ import {
   setLeafInputActivity,
   setLeafInputFocus,
 } from "../lib/useTerminalSession";
+import { useTerminalFont } from "../lib/useTerminalFont";
 import {
   historyCommands,
   historyList,
@@ -25,8 +26,6 @@ type Props = {
   leafId: number;
   mode: BlockMode;
   focused: boolean;
-  /** Changes when the active theme changes, so the editor re-themes. */
-  themeKey: string;
   onSubmit: (text: string) => void;
   onInterrupt: () => void;
   getCwd: () => string | null;
@@ -36,7 +35,6 @@ export default function ShellInput({
   leafId,
   mode,
   focused,
-  themeKey,
   onSubmit,
   onInterrupt,
   getCwd,
@@ -62,11 +60,15 @@ export default function ShellInput({
     };
   }, []);
 
-  const fontFamilyPref = usePreferencesStore((p) => p.terminalFontFamily);
-  const fontSize = usePreferencesStore((p) => p.terminalFontSize);
+  const {
+    fontFamily: fontFamilyPref,
+    fontSize,
+    fontWeight,
+  } = useTerminalFont();
+  const { activeTheme, resolvedMode } = useTheme();
   const fontFamily = resolveFontFamily(fontFamilyPref);
-  const fontRef = useRef({ fontFamily, fontSize });
-  fontRef.current = { fontFamily, fontSize };
+  const fontRef = useRef({ fontFamily, fontSize, fontWeight });
+  fontRef.current = { fontFamily, fontSize, fontWeight };
 
   useEffect(() => {
     const host = hostRef.current;
@@ -75,6 +77,7 @@ export default function ShellInput({
       parent: host,
       fontFamily: fontRef.current.fontFamily,
       fontSize: fontRef.current.fontSize,
+      fontWeight: fontRef.current.fontWeight,
       placeholderText: `Run a command  -  ↑ history  ${fmtShortcut(MOD_KEY, "U")} switch to AI`,
       commandNames: () => commandsRef.current,
       getCwd: () => cbRef.current.getCwd(),
@@ -121,9 +124,10 @@ export default function ShellInput({
   }, [leafId]);
 
   useEffect(() => {
-    void themeKey;
-    handleRef.current?.retheme(fontFamily, fontSize);
-  }, [fontFamily, fontSize, themeKey]);
+    void activeTheme;
+    void resolvedMode;
+    handleRef.current?.retheme(fontFamily, fontSize, fontWeight);
+  }, [fontFamily, fontSize, fontWeight, activeTheme, resolvedMode]);
 
   useEffect(() => {
     const handle = handleRef.current;
@@ -154,7 +158,12 @@ export default function ShellInput({
     >
       <span
         className="select-none pt-px text-primary/80"
-        style={{ fontFamily, fontSize: `${fontSize}px`, lineHeight: 1.5 }}
+        style={{
+          fontFamily,
+          fontSize: `${fontSize}px`,
+          fontWeight,
+          lineHeight: 1.5,
+        }}
       >
         ❯
       </span>
