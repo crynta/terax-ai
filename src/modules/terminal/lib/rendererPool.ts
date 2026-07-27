@@ -8,6 +8,7 @@ import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { type FontWeight, Terminal } from "@xterm/xterm";
+import { imeReconstruct } from "./ime";
 import { shouldCursorBlink } from "./cursorBlink";
 import {
   readTerminalClipboard,
@@ -67,6 +68,10 @@ export type Slot = {
   lastW: number;
   lastH: number;
   lastUsedAt: number;
+  imeUnit: string; // last uncommitted macOS IME syllable (see attachImeInput)
+  // Set once a compositionstart is seen: this webview fires real composition
+  // events, so xterm handles IME natively and our reconstruction must defer.
+  imeNative: boolean;
 };
 
 const slots: Slot[] = [];
@@ -202,6 +207,44 @@ export function applyBackgroundActive(active: boolean): void {
   }
 }
 
+// macOS WKWebView sends no composition events for Hangul/CJK, only `input`
+// events; reconstruct them here (the sole PTY writer for typed text on macOS).
+function attachImeInput(slot: Slot): void {
+  if (!IS_MAC) return;
+  const ta = slot.host.querySelector(
+    ".xterm-helper-textarea",
+  ) as HTMLTextAreaElement | null;
+  if (!ta) return;
+  const write = (data: string) => {
+    const leafId = slot.currentLeafId;
+    if (leafId === null) return;
+    adapter?.resolveLeaf(leafId)?.writeToPty(data);
+  };
+  // A real compositionstart means this webview delivers proper composition
+  // events, so xterm assembles the syllable itself and emits the committed text
+  // through onData — defer to it and stop reconstructing.
+  ta.addEventListener("compositionstart", () => {
+    slot.imeNative = true;
+  });
+  ta.addEventListener("input", (e) => {
+    if (slot.imeNative) return;
+    const ev = e as InputEvent;
+    const step = imeReconstruct(slot.imeUnit, ev.inputType, ev.data ?? "");
+    if (!step) return;
+    if (step.send) write(step.send);
+    slot.imeUnit = step.unit;
+  });
+}
+
+function isPrintableOnly(data: string): boolean {
+  if (!data) return false;
+  for (const ch of data) {
+    const c = ch.codePointAt(0) ?? 0;
+    if (c < 0x20 || c === 0x7f) return false;
+  }
+  return true;
+}
+
 function createSlot(): Slot {
   const term = new Terminal(termOptions());
   const fitAddon = new FitAddon();
@@ -244,17 +287,15 @@ function createSlot(): Slot {
     lastW: 0,
     lastH: 0,
     lastUsedAt: 0,
+    imeUnit: "",
+    imeNative: false,
   };
 
+  attachImeInput(slot);
+
   term.attachCustomKeyEventHandler((event) => {
-    // During IME composition the browser is assembling a multi-keystroke
-    // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
-    // Raw keydown events — including the Enter that commits a candidate —
-    // must NOT be forwarded to the PTY; xterm will receive the final
-    // composed string through its own compositionend handler instead.
-    // keyCode 229 ("Process") is what Chromium reports for every key
-    // pressed inside an active IME session when isComposing is not yet set.
-    if (event.isComposing || event.keyCode === 229) return false;
+    // macOS: attachImeInput handles composition; elsewhere xterm does.
+    if (event.isComposing || event.keyCode === 229) return !IS_MAC;
 
     const leafId = slot.currentLeafId;
     if (leafId === null) return false;
@@ -296,6 +337,12 @@ function createSlot(): Slot {
   });
 
   term.onData((data) => {
+    // Only when the webview does NOT fire composition events (imeNative false)
+    // do we reconstruct — and there we drop xterm's spurious re-delivered
+    // printable so it can't double the jamo. When composition events DO fire,
+    // xterm's onData IS the correct committed text; let it through.
+    if (IS_MAC && !slot.imeNative && isPrintableOnly(data)) return;
+    slot.imeUnit = "";
     const leafId = slot.currentLeafId;
     if (leafId === null) return;
     adapter?.resolveLeaf(leafId)?.writeToPty(data);
