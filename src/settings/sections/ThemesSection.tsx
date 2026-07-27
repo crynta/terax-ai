@@ -259,6 +259,7 @@ export function ThemesSection() {
                     </span>
                     <span
                       role="button"
+                      tabIndex={0}
                       aria-label={`Remove ${t.name}`}
                       className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
                       onClick={(e) => {
