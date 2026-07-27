@@ -89,6 +89,7 @@ function build(view: EditorView): DecorationSet {
     const text = view.state.sliceDoc(from, to);
     COLOR_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
+    // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop pattern
     while ((m = COLOR_RE.exec(text)) !== null) {
       const start = from + m.index;
       const end = start + m[0].length;

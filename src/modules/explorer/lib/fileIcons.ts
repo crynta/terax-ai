@@ -2660,14 +2660,17 @@ const { languageIds, fileExtensions, fileNames } = Object.entries(
   ({ languageIds, fileExtensions, fileNames }, [name, icon]) => ({
     languageIds: {
       ...languageIds,
+      // biome-ignore lint/performance/noAccumulatingSpread: icon definitions are built once at module load
       ...icon.languageIds?.reduce((a, c) => ({ ...a, [c]: name }), {}),
     },
     fileExtensions: {
       ...fileExtensions,
+      // biome-ignore lint/performance/noAccumulatingSpread: icon definitions are built once at module load
       ...icon.fileExtensions?.reduce((a, c) => ({ ...a, [c]: name }), {}),
     },
     fileNames: {
       ...fileNames,
+      // biome-ignore lint/performance/noAccumulatingSpread: icon definitions are built once at module load
       ...icon.fileNames?.reduce((a, c) => ({ ...a, [c]: name }), {}),
     },
   }),

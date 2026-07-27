@@ -193,7 +193,7 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [active, key, source]);
+  }, [active, source]);
 
   const path = source.path;
   const repoRoot = source.repoRoot;

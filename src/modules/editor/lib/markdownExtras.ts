@@ -66,6 +66,7 @@ function urlAt(view: EditorView, pos: number): string | null {
   const line = view.state.doc.lineAt(pos);
   URL_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
+  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex exec loop pattern
   while ((m = URL_RE.exec(line.text)) !== null) {
     const from = line.from + m.index;
     if (from > pos) break;

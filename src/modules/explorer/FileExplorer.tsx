@@ -112,7 +112,7 @@ function buildRows(
 
   const walk = (parent: string, depth: number, parentIgnored: boolean) => {
     const node = tree.nodes[parent];
-    if (!node || node.status !== "loaded") return;
+    if (node?.status !== "loaded") return;
     for (const entry of node.entries) {
       const path = tree.joinPath(parent, entry.name);
       const isDir = entry.kind === "dir";
@@ -222,7 +222,6 @@ export const FileExplorer = memo(
       tree.nodes,
       tree.expanded,
       tree.renaming,
-      tree.pendingCreate,
       lookupGitStatus,
     ]);
 
@@ -490,8 +489,8 @@ export const FileExplorer = memo(
     return (
       <div
         ref={containerRef}
+        role="tree"
         className="flex h-full flex-col outline-none"
-        tabIndex={0}
         onKeyDown={handleKeyDown}
       >
         <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">

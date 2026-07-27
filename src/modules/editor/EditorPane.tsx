@@ -425,7 +425,7 @@ export const EditorPane = memo(
       return () => {
         cancelled = true;
       };
-    }, [path, doc.status, overrideLanguage]);
+    }, [path, doc.status, overrideLanguage, doc.size]);
 
     useImperativeHandle(
       ref,

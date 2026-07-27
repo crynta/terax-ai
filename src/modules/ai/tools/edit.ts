@@ -50,6 +50,7 @@ async function applyEdits(
       // Recover count via direct search to avoid divide-by-zero edge cases.
       let n = 0;
       let i = 0;
+      // biome-ignore lint/suspicious/noAssignInExpressions: standard indexOf loop pattern
       while ((i = before.indexOf(e.old_string, i)) !== -1) {
         n++;
         i += e.old_string.length;

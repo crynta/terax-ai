@@ -567,6 +567,7 @@ const { folderNames } = Object.entries(folderIcons).reduce(
   ({ folderNames }, [name, icon]) => ({
     folderNames: {
       ...folderNames,
+      // biome-ignore lint/performance/noAccumulatingSpread: icon definitions are built once at module load
       ...icon.folderNames?.reduce(
         (a, c) => ({ ...a, [c]: `folder_${name}` }),
         {},

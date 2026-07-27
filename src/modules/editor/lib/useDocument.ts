@@ -221,7 +221,7 @@ export function useDocument({ path, onDirtyChange }: Options) {
     [clearAutoSaveTimer, saveNow],
   );
 
-  useEffect(() => clearAutoSaveTimer, [path, clearAutoSaveTimer]);
+  useEffect(() => clearAutoSaveTimer, [clearAutoSaveTimer]);
 
   return { doc, dirty, onChange, save, reload, adoptDiskText, openAnyway };
 }
