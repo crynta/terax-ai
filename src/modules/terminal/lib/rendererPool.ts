@@ -72,17 +72,18 @@ export type Slot = {
 const slots: Slot[] = [];
 let recyclerEl: HTMLDivElement | null = null;
 let adapter: SlotAdapter | null = null;
-let configuredFont: RendererFont | null = null;
-// Raw (pre-resolution) family behind configuredFont, kept for local()
-// FontFace registration: registerLocalFont needs a single family name, and
-// configuredFont.fontFamily is already resolved into a stack.
-let configuredRawFamily: string | null = null;
+let configuredFont: ConfiguredFont | null = null;
 
 type RendererFont = {
   fontFamily: string;
   fontWeight: string;
   fontSize: number;
 };
+
+// rawFamily keeps the pre-resolution family for local() FontFace
+// registration: registerLocalFont needs a single family name, and fontFamily
+// is already resolved into a stack.
+type ConfiguredFont = RendererFont & { rawFamily: string };
 
 let windowActive =
   typeof document === "undefined" || (!document.hidden && document.hasFocus());
@@ -812,7 +813,8 @@ function attachWebgl(slot: Slot): void {
     // via applyTerminalFont wins over the preference), then rebuild the atlas
     // so it re-rasterizes in the correct font.
     const fam =
-      configuredRawFamily ?? usePreferencesStore.getState().terminalFontFamily;
+      configuredFont?.rawFamily ??
+      usePreferencesStore.getState().terminalFontFamily;
     void registerLocalFont(fam).then(() => {
       if (slot.webglAddon === webgl) clearWebglAtlas(slot);
     });
@@ -828,8 +830,6 @@ function attachWebgl(slot: Slot): void {
 function clearWebglAtlas(slot: Slot): void {
   try {
     slot.term.clearTextureAtlas();
-  } catch {}
-  try {
     slot.term.refresh(0, slot.term.rows - 1);
   } catch {}
 }
@@ -928,13 +928,14 @@ export function applyLetterSpacing(spacing: number): void {
 }
 
 export function applyTerminalFont(font: RendererFont): void {
-  const next = {
+  const next: ConfiguredFont = {
     fontFamily: resolveFontFamily(font.fontFamily),
     fontWeight: font.fontWeight,
     fontSize: font.fontSize,
+    rawFamily: font.fontFamily,
   };
+  const familyChanged = configuredFont?.rawFamily !== next.rawFamily;
   configuredFont = next;
-  configuredRawFamily = font.fontFamily;
   for (const slot of slots) {
     let refit = false;
     if (slot.term.options.fontFamily !== next.fontFamily) {
@@ -955,9 +956,11 @@ export function applyTerminalFont(font: RendererFont): void {
   // baked in the old/fallback font get re-rasterized (#898). Use the raw
   // pre-resolution family: registerLocalFont skips stacks, and the resolved
   // value is always a stack.
-  void registerLocalFont(font.fontFamily).then(() => {
-    for (const slot of slots) clearWebglAtlas(slot);
-  });
+  if (familyChanged) {
+    void registerLocalFont(next.rawFamily).then(() => {
+      for (const slot of slots) clearWebglAtlas(slot);
+    });
+  }
 }
 
 export function applyScrollback(value: number): void {

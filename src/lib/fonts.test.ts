@@ -34,11 +34,7 @@ describe("resolveFontFamily", () => {
   });
 });
 
-type FakeStyle = {
-  id: string;
-  textContent: string;
-  appendChild: (node: { text: string }) => void;
-};
+type FakeStyle = { id: string; textContent: string };
 
 // vitest runs in the node environment (no DOM), so stub a minimal document to
 // observe what registerLocalFont injects into the FontFaceSet.
@@ -61,17 +57,7 @@ function installFakeDocument() {
       return children.find((c) => c.id === id) ?? null;
     },
     createElement(_tag: string): FakeStyle {
-      const style: FakeStyle = {
-        id: "",
-        textContent: "",
-        appendChild(node) {
-          style.textContent += node.text;
-        },
-      };
-      return style;
-    },
-    createTextNode(text: string) {
-      return { text };
+      return { id: "", textContent: "" };
     },
   };
   vi.stubGlobal("document", doc);
@@ -79,7 +65,8 @@ function installFakeDocument() {
 }
 
 describe("registerLocalFont", () => {
-  // Reset modules between tests so the module-level dedup Set starts empty.
+  // Reset modules between tests so the module-level registration cache starts
+  // empty.
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.resetModules();
@@ -136,7 +123,7 @@ describe("registerLocalFont", () => {
     const style = children[0];
     expect(style.textContent.match(/@font-face/g)).toHaveLength(2);
     expect(style.textContent).toContain('local("Fira Code")');
-    // load() still runs for both invocations (a no-op once cached).
-    expect(loaded).toHaveLength(4);
+    // The second invocation returns the cached load promise.
+    expect(loaded).toHaveLength(2);
   });
 });
