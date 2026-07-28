@@ -34,6 +34,48 @@ export function ensureMonoFontsLoaded(): Promise<void> {
   return monoReady;
 }
 
+const registeredLocal = new Set<string>();
+
+// macOS WKWebView won't expose a system-installed font to the canvas/WebGL
+// glyph-atlas rasterizer unless it's a registered FontFace — only the DOM
+// renderer can reach raw system fonts (see #820). Declaring an @font-face that
+// points at the installed font via local() registers it in the FontFaceSet
+// without bundling any file, so the WebGL renderer resolves it the same way it
+// already resolves the bundled JetBrains Mono. Resolves once the faces have
+// loaded, so callers can rebuild stale glyph atlases afterwards.
+export function registerLocalFont(userInput: string): Promise<void> {
+  const name = userInput.trim();
+  // Blank = auto-detected font; a comma = a full stack — neither is a single
+  // local family we can register.
+  if (!name || name.includes(",")) return Promise.resolve();
+  if (typeof document === "undefined" || !document.fonts?.load) {
+    return Promise.resolve();
+  }
+  const family = name.replace(/['"]/g, "");
+  if (!registeredLocal.has(family)) {
+    registeredLocal.add(family);
+    const STYLE_ID = "terax-local-fonts";
+    let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null;
+    if (!style) {
+      style = document.createElement("style");
+      style.id = STYLE_ID;
+      document.head.appendChild(style);
+    }
+    style.appendChild(
+      document.createTextNode(
+        `@font-face{font-family:"${family}";font-weight:400;src:local("${family}");}` +
+          `@font-face{font-family:"${family}";font-weight:700;src:local("${family}");}`,
+      ),
+    );
+  }
+  // With an @font-face now backing the family, these actually load it into the
+  // FontFaceSet (a no-op once cached).
+  return Promise.allSettled([
+    document.fonts.load(`400 14px "${family}"`),
+    document.fonts.load(`700 14px "${family}"`),
+  ]).then(() => undefined);
+}
+
 export function resolveFontFamily(userInput: string): string {
   const name = userInput.trim();
   if (!name) return detectMonoFontFamily();
