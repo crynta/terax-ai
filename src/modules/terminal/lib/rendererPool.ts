@@ -944,6 +944,14 @@ export function applyTerminalFont(font: RendererFont): void {
     }
     if (refit) refitSlot(slot);
   }
+  // Register the new family as a local FontFace so the WebGL atlas can resolve
+  // it (WKWebView won't otherwise), then rebuild any stale atlases so glyphs
+  // baked in the old/fallback font get re-rasterized (#898). Use the raw
+  // pre-resolution family: registerLocalFont skips stacks, and the resolved
+  // value is always a stack.
+  void registerLocalFont(font.fontFamily).then(() => {
+    for (const slot of slots) clearWebglAtlas(slot);
+  });
 }
 
 export function applyScrollback(value: number): void {
