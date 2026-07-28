@@ -73,6 +73,10 @@ const slots: Slot[] = [];
 let recyclerEl: HTMLDivElement | null = null;
 let adapter: SlotAdapter | null = null;
 let configuredFont: RendererFont | null = null;
+// Raw (pre-resolution) family behind configuredFont, kept for local()
+// FontFace registration: registerLocalFont needs a single family name, and
+// configuredFont.fontFamily is already resolved into a stack.
+let configuredRawFamily: string | null = null;
 
 type RendererFont = {
   fontFamily: string;
@@ -804,9 +808,11 @@ function attachWebgl(slot: Slot): void {
     slot.webglCanvases = added;
     // WKWebView hides system fonts from the WebGL atlas rasterizer unless they
     // are registered FontFaces, so some cells bake as the fallback font — the
-    // "two fonts" effect (#898). Register the configured font, then rebuild the
-    // atlas so it re-rasterizes in the correct font.
-    const fam = usePreferencesStore.getState().terminalFontFamily;
+    // "two fonts" effect (#898). Register the effective font (theme override
+    // via applyTerminalFont wins over the preference), then rebuild the atlas
+    // so it re-rasterizes in the correct font.
+    const fam =
+      configuredRawFamily ?? usePreferencesStore.getState().terminalFontFamily;
     void registerLocalFont(fam).then(() => {
       if (slot.webglAddon === webgl) clearWebglAtlas(slot);
     });
@@ -928,6 +934,7 @@ export function applyTerminalFont(font: RendererFont): void {
     fontSize: font.fontSize,
   };
   configuredFont = next;
+  configuredRawFamily = font.fontFamily;
   for (const slot of slots) {
     let refit = false;
     if (slot.term.options.fontFamily !== next.fontFamily) {
