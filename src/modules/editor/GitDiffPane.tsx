@@ -143,7 +143,7 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
     active ? loadStateFromCache(source) : { kind: "idle" },
   );
 
-  const key = cacheKey(source);
+  const _key = cacheKey(source);
 
   useEffect(() => {
     if (!active) return;

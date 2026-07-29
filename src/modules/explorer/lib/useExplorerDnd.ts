@@ -83,19 +83,19 @@ export function useExplorerDnd({
   const optsRef = useRef({ rootPath, isDir, onMove, pathDropTarget });
   optsRef.current = { rootPath, isDir, onMove, pathDropTarget };
 
-  const placeGhost = (x: number, y: number) => {
+  const placeGhost = useCallback((x: number, y: number) => {
     lastPosRef.current = { x, y };
     const g = ghostElRef.current;
     if (g) {
       g.style.left = `${x + 12}px`;
       g.style.top = `${y + 8}px`;
     }
-  };
+  }, []);
 
   const ghostRef = useCallback((el: HTMLDivElement | null) => {
     ghostElRef.current = el;
     if (el) placeGhost(lastPosRef.current.x, lastPosRef.current.y);
-  }, []);
+  }, [placeGhost]);
 
   const onPointerDown = useCallback((e: ReactPointerEvent) => {
     if (e.button !== 0) return;
@@ -168,7 +168,7 @@ export function useExplorerDnd({
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", cancel);
     cleanupRef.current = detach;
-  }, []);
+  }, [placeGhost]);
 
   const onClickCapture = useCallback((e: React.MouseEvent) => {
     if (suppressClickRef.current) {

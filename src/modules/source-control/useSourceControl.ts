@@ -177,6 +177,7 @@ export function useSourceControl(
     enabledRef.current = enabled;
   }, [enabled]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset all state when workspace changes
   useEffect(() => {
     requestIdRef.current++;
     inflightRef.current = null;
@@ -341,7 +342,7 @@ export function useSourceControl(
         lastRefreshAtRef.current = Date.now();
       }
     },
-    [contextPath, workspaceKey],
+    [contextPath],
   );
 
   const refresh = useCallback(
@@ -453,7 +454,7 @@ export function useSourceControl(
         window.clearTimeout(idle as number);
       }
     };
-  }, [refresh, contextPath, enabled, workspaceKey]);
+  }, [refresh, contextPath, enabled]);
 
   useEffect(() => {
     if (!enabled) return;

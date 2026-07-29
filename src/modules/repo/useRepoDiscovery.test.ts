@@ -4,7 +4,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { useRepoDiscovery } from "./useRepoDiscovery";
-import { type GitRepo } from "./discover";
+import type { GitRepo } from "./discover";
 
 vi.mock("./discover", () => ({
   discoverRepositories: vi.fn(),

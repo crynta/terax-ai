@@ -256,7 +256,7 @@ export function useFileTree(rootPath: string | null, options?: Options) {
     // `nodes` is intentionally omitted so ordinary tree edits don't refetch
     // every expanded directory.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showHidden, gitDecorations, rootPath, fetchChildren]);
+  }, [rootPath, fetchChildren, nodes]);
 
   const toggle = useCallback(
     (path: string) => {

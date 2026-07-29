@@ -114,7 +114,8 @@ export const GraphRail = memo(function GraphRail({
       width={width}
       height={rowHeight}
       viewBox={`0 0 ${width} ${rowHeight}`}
-      aria-hidden
+      role="img"
+      aria-label="Commit graph"
       className="shrink-0 overflow-visible"
     >
       {row.topEdges.map((e) => renderTopEdge(e, midY))}
