@@ -135,9 +135,10 @@ export function TabBar({
     setPill(el ? { left: el.offsetLeft, width: el.offsetWidth } : null);
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeId triggers pill re-measurement on tab switch
   useLayoutEffect(() => {
     measurePill();
-  }, [measurePill, activeId, tabs]);
+  }, [measurePill, activeId]);
 
   useEffect(() => {
     const list = listRef.current;
@@ -363,6 +364,7 @@ export function TabBar({
                       >
                         <DropdownMenuTrigger asChild>
                           {/* span, not button: a button nested in the TabsTrigger button is invalid DOM and breaks WebKit focus. */}
+                          {/* biome-ignore lint/a11y/useSemanticElements: button-in-button is invalid DOM; span with role is intentional */}
                           <span
                             role="button"
                             tabIndex={-1}
@@ -459,19 +461,27 @@ export function TabBar({
                     </span>
                     {t.kind === "editor" && t.dirty ? (
                       <span
-                        aria-label="Unsaved changes"
+                        aria-hidden="true"
                         className="size-1.5 shrink-0 rounded-full bg-foreground/70"
                       />
                     ) : null}
                   </span>
-                  {tabs.length > 1 && (
+                  {tabs.length > 1 ? (
+                    /* biome-ignore lint/a11y/useSemanticElements: button-in-button is invalid DOM; span with role is intentional */
                     <span
                       role="button"
                       aria-label="Close tab"
+                      tabIndex={0}
                       data-no-drag
                       onClick={(e) => {
                         e.stopPropagation();
                         onClose(t.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onClose(t.id);
+                        }
                       }}
                       className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent hover:opacity-100 group-hover:opacity-60"
                     >
@@ -481,7 +491,7 @@ export function TabBar({
                         strokeWidth={2}
                       />
                     </span>
-                  )}
+                  ) : null}
                 </TabsTrigger>
               );
 

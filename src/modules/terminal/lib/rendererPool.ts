@@ -362,8 +362,8 @@ function pickSlotFor(leafId: number): PickResult {
       best = s;
     }
   }
-  const chosen = best!;
-  return { slot: chosen, previousLeafId: chosen.currentLeafId };
+  if (!best) return { slot: slots[0], previousLeafId: null };
+  return { slot: best, previousLeafId: best.currentLeafId };
 }
 
 export type AcquireParams = {

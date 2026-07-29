@@ -67,6 +67,7 @@ export const TerminalPane = memo(
       onCwd: (c) => onCwd?.(leafId, c),
     });
 
+    // biome-ignore lint/correctness/useExhaustiveDependencies: resolvedMode/activeTheme intentionally re-trigger theme application
     useEffect(() => {
       // Defer one frame so CSS-variable token resolution sees the new class.
       const id = requestAnimationFrame(() => session.applyTheme());

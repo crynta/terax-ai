@@ -32,6 +32,7 @@ export function PaneTreeView(props: Props) {
     const focused = node.id === activeLeafId;
     const b = getBundle(node.id);
     return (
+      // biome-ignore lint/a11y/noStaticElementInteractions: terminal pane wrapper; focus routed via onMouseDownCapture and onFocus
       <div
         onMouseDownCapture={() => {
           if (!focused) onFocusLeaf(node.id);
