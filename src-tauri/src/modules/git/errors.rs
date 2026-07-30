@@ -107,3 +107,73 @@ impl From<GitError> for String {
 }
 
 pub type Result<T> = std::result::Result<T, GitError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_builds_command_failed() {
+        let err = GitError::command("git status", "fatal: not a repo");
+        match &err {
+            GitError::CommandFailed { context, detail } => {
+                assert_eq!(*context, "git status");
+                assert_eq!(detail, "fatal: not a repo");
+            }
+            other => panic!("expected CommandFailed, got {other:?}"),
+        }
+        assert_eq!(err.to_string(), "git status: fatal: not a repo");
+    }
+
+    #[test]
+    fn command_failed_without_detail_omits_the_colon() {
+        let err = GitError::command("git status", "");
+        assert_eq!(err.to_string(), "git status");
+    }
+
+    #[test]
+    fn too_old_names_found_and_required_versions() {
+        let msg = GitError::TooOld {
+            found: "2.20.0".into(),
+            required: "2.23",
+        }
+        .to_string();
+        assert!(msg.contains("2.20.0"));
+        assert!(msg.contains("2.23"));
+    }
+
+    #[test]
+    fn file_too_large_reports_size_max_and_path() {
+        let msg = GitError::FileTooLarge {
+            path: PathBuf::from("/repo/big.bin"),
+            size: 999,
+            max: 100,
+        }
+        .to_string();
+        assert!(msg.contains("999"));
+        assert!(msg.contains("100"));
+        assert!(msg.contains("big.bin"));
+    }
+
+    #[test]
+    fn timed_out_includes_the_operation() {
+        assert_eq!(
+            GitError::TimedOut("git fetch").to_string(),
+            "git fetch timed out"
+        );
+    }
+
+    #[test]
+    fn empty_commit_message_is_fixed() {
+        assert_eq!(
+            GitError::EmptyCommitMessage.to_string(),
+            "commit message cannot be empty"
+        );
+    }
+
+    #[test]
+    fn converts_into_string_via_display() {
+        let s: String = GitError::NoUpstream.into();
+        assert_eq!(s, GitError::NoUpstream.to_string());
+    }
+}
