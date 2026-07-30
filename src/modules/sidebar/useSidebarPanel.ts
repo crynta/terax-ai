@@ -15,6 +15,13 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "terax.sidebar.width";
 const SIDEBAR_VIEW_STORAGE_KEY = "terax.sidebar.view";
 const SIDEBAR_COLLAPSED_STORAGE_KEY = "terax.sidebar.collapsed";
 
+export function shouldPersistSidebarWidth(
+  width: number,
+  isUserInteraction: boolean,
+): boolean {
+  return isUserInteraction && width > 0;
+}
+
 function clampSidebarWidth(width: number): number {
   return Math.min(
     SIDEBAR_MAX_WIDTH,
@@ -116,20 +123,24 @@ export function useSidebarPanel(
     [persistSidebarView, sidebarView],
   );
 
-  const persistSidebarWidth = useCallback((next: number) => {
-    sidebarWidthRef.current = next;
-    if (sidebarWidthWriteTimerRef.current) {
-      window.clearTimeout(sidebarWidthWriteTimerRef.current);
-    }
-    sidebarWidthWriteTimerRef.current = window.setTimeout(() => {
-      sidebarWidthWriteTimerRef.current = 0;
-      try {
-        window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(next));
-      } catch {
-        // ignore
+  const persistSidebarWidth = useCallback(
+    (next: number, isUserInteraction: boolean) => {
+      if (!shouldPersistSidebarWidth(next, isUserInteraction)) return;
+      sidebarWidthRef.current = next;
+      if (sidebarWidthWriteTimerRef.current) {
+        window.clearTimeout(sidebarWidthWriteTimerRef.current);
       }
-    }, 200);
-  }, []);
+      sidebarWidthWriteTimerRef.current = window.setTimeout(() => {
+        sidebarWidthWriteTimerRef.current = 0;
+        try {
+          window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(next));
+        } catch {
+          // ignore
+        }
+      }, 200);
+    },
+    [],
+  );
 
   useEffect(() => {
     return () => {
