@@ -408,7 +408,7 @@ function AgentEditorDialog({
             disabled={!canSave}
             onClick={() => onSave({ ...draft, builtIn: false })}
           >
-            {t("models.save")}
+            {t("common.save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -516,7 +516,7 @@ function SnippetEditorDialog({
             {t("agents.cancel")}
           </Button>
           <Button size="sm" disabled={!canSave} onClick={() => onSave(draft)}>
-            {t("models.save")}
+            {t("common.save")}
           </Button>
         </DialogFooter>
       </DialogContent>
