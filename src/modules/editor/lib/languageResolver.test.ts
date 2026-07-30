@@ -1,3 +1,5 @@
+import { syntaxTree } from "@codemirror/language";
+import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 import { resolveDisplayName, resolveLanguage } from "./languageResolver";
 
@@ -7,6 +9,7 @@ describe("resolveDisplayName", () => {
     expect(resolveDisplayName("main.go")).toBe("Go");
     expect(resolveDisplayName("README.md")).toBe("Markdown");
     expect(resolveDisplayName("query.sql")).toBe("SQL");
+    expect(resolveDisplayName("Component.svelte")).toBe("Svelte");
   });
 
   it("strips directories before resolving", () => {
@@ -36,6 +39,24 @@ describe("resolveDisplayName", () => {
     expect(result?.name).toBe("Dotenv");
     expect(result?.id).toBe("env");
     expect(result?.ext).toBeTruthy();
+  });
+
+  // `.svelte` used to resolve to HTML, which left blocks and directives as
+  // plain text and made the svelte-ls preset unreachable (langId drives both).
+  it("loads Svelte files with their dedicated language mode", async () => {
+    const result = await resolveLanguage("/project/Component.svelte");
+    if (!result) throw new Error("Svelte language failed to load");
+
+    expect(result.name).toBe("Svelte");
+    expect(result.id).toBe("svelte");
+
+    const state = EditorState.create({
+      doc: "{#if ready}<button on:click={run}>{label}</button>{/if}",
+      extensions: [result.ext],
+    });
+    const tree = syntaxTree(state).toString();
+    expect(tree).toContain("IfBlock");
+    expect(tree).toContain("DirectiveOn");
   });
 
   // The prefix fallback must not let extension languages capture lookalike

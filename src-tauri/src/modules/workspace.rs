@@ -623,6 +623,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decode_command_output_reads_plain_utf8() {
+        assert_eq!(decode_command_output(b"hello world"), "hello world");
+    }
+
+    #[test]
+    fn decode_command_output_strips_utf16le_bom() {
+        // BOM (FF FE) followed by "hi" as little-endian UTF-16.
+        let bytes = [0xff, 0xfe, 0x68, 0x00, 0x69, 0x00];
+        assert_eq!(decode_command_output(&bytes), "hi");
+    }
+
+    #[test]
+    fn decode_command_output_detects_bomless_utf16le() {
+        // "test" as little-endian UTF-16, no BOM; the odd-position NULs trip the
+        // heuristic.
+        let bytes = [0x74, 0x00, 0x65, 0x00, 0x73, 0x00, 0x74, 0x00];
+        assert_eq!(decode_command_output(&bytes), "test");
+    }
+
+    #[test]
+    fn decode_command_output_keeps_ascii_without_nuls_as_utf8() {
+        assert_eq!(decode_command_output(b"C:\\Users"), "C:\\Users");
+    }
+
+    #[test]
     fn distro_validator_accepts_real_names() {
         assert!(is_safe_distro_name("Ubuntu"));
         assert!(is_safe_distro_name("Ubuntu-22.04"));
