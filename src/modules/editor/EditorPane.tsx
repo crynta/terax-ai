@@ -392,12 +392,14 @@ export const EditorPane = memo(
       void resolveLanguage(resolvePath).catch(() => {});
     }, [path, overrideLanguage]);
 
+    // Extract size for the dependency array (doc.size isn't available on all DocumentState variants)
+    const docSize = "size" in doc ? doc.size : undefined;
     useEffect(() => {
       const ext =
         overrideLanguage || (path.split(".").pop()?.toLowerCase() ?? null);
       languageRef.current = ext;
       if (doc.status !== "ready") return;
-      if (doc.size > SYNTAX_MAX_BYTES) {
+      if (docSize !== undefined && docSize > SYNTAX_MAX_BYTES) {
         setLangId(null);
         const view = cmRef.current?.view;
         view?.dispatch({ effects: languageCompartment.reconfigure([]) });
@@ -425,7 +427,7 @@ export const EditorPane = memo(
       return () => {
         cancelled = true;
       };
-    }, [path, doc.status, overrideLanguage, "size" in doc ? doc.size : undefined]);
+    }, [path, doc.status, overrideLanguage, docSize]);
 
     useImperativeHandle(
       ref,
