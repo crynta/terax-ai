@@ -58,6 +58,7 @@ function __terax_install_prompt
     # framework preserves Terax indirectly.
     if not set -q TERAX_BLOCKS
         and functions -q __fish_prompt_orig
+        and functions fish_prompt | string match -q '*__fish_prompt_orig*'
         and functions __fish_prompt_orig | string match -q '*__terax_user_prompt*'
         return
     end
