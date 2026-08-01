@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { runSubagent } from "../agents/runSubagent";
 import { SUBAGENTS, type SubagentType } from "../agents/registry";
+import { runSubagent } from "../agents/runSubagent";
 import { useChatStore } from "../store/chatStore";
 import type { ToolContext } from "./context";
 

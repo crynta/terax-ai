@@ -8,7 +8,7 @@ import { TabIcon } from "./TabBar";
 function subtitleFor(tab: Tab): string | null {
   if (tab.kind === "terminal")
     return tab.cwd
-      ? (tab.cwd.split(/[\\/]/).filter(Boolean).slice(-2).join("/") || tab.cwd)
+      ? tab.cwd.split(/[\\/]/).filter(Boolean).slice(-2).join("/") || tab.cwd
       : null;
   if (tab.kind === "editor" || tab.kind === "markdown")
     return tab.path.split(/[\\/]/).filter(Boolean).slice(-2, -1)[0] ?? null;

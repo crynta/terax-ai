@@ -40,8 +40,22 @@ export type TerminalPalette = Partial<{
   fontWeight: string;
   fontSize: number;
   ansi: readonly [
-    string, string, string, string, string, string, string, string,
-    string, string, string, string, string, string, string, string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
   ];
 }>;
 

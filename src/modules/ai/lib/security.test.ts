@@ -42,9 +42,11 @@ describe("checkReadable — secret basenames", () => {
     expect(checkReadable("/home/me/Documents/id_rsa_old")).toMatchObject({
       ok: false,
     });
-    expect(checkReadable("/home/me/Documents/id_ed25519-backup")).toMatchObject({
-      ok: false,
-    });
+    expect(checkReadable("/home/me/Documents/id_ed25519-backup")).toMatchObject(
+      {
+        ok: false,
+      },
+    );
     expect(checkReadable("/home/me/Documents/id_rsa.pub")).toMatchObject({
       ok: false,
     });
@@ -227,16 +229,22 @@ describe("checkShellCommand — home directory rm guard", () => {
 
   it("blocks rm -rf on home subdirectories", () => {
     expect(checkShellCommand("rm -rf ~/subdir")).toMatchObject({ ok: false });
-    expect(checkShellCommand("rm -rf ~/subdir && ls")).toMatchObject({ ok: false });
+    expect(checkShellCommand("rm -rf ~/subdir && ls")).toMatchObject({
+      ok: false,
+    });
   });
 
   it("blocks rm -rf when the home target is immediately followed by a pipe", () => {
     expect(checkShellCommand("rm -rf ~|cat")).toMatchObject({ ok: false });
     expect(checkShellCommand("rm -rf $HOME|cat")).toMatchObject({ ok: false });
-    expect(checkShellCommand("rm -rf ${HOME}|cat")).toMatchObject({ ok: false });
+    expect(checkShellCommand("rm -rf ${HOME}|cat")).toMatchObject({
+      ok: false,
+    });
   });
 
   it("does not block rm -rf on explicit absolute paths", () => {
-    expect(checkShellCommand("rm -rf /home/me/safe")).toMatchObject({ ok: true });
+    expect(checkShellCommand("rm -rf /home/me/safe")).toMatchObject({
+      ok: true,
+    });
   });
 });

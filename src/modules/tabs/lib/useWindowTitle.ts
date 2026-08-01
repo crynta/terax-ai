@@ -1,6 +1,6 @@
-import { useEffect } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { findLeafCwd } from "@/modules/terminal/lib/panes";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect } from "react";
 import type { Tab } from "./useTabs";
 
 const APP_NAME = "Terax";

@@ -229,15 +229,6 @@ fn pi_extension_contents(
     Ok(PI_EXTENSION)
 }
 
-fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String> {
-    let tmp = path.with_extension("terax-tmp");
-    std::fs::write(&tmp, contents).map_err(|e| format!("write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("rename into {}: {e}", path.display())
-    })
-}
-
 fn pi_extension_write_path(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
@@ -266,6 +257,29 @@ fn enable_pi_extension() -> Result<(), String> {
     enable_pi_extension_at(&pi_extension_path()?)
 }
 
+/// tmp + fsync + rename: unique tmp name (two toggles can't clobber each
+/// other's tmp), fsync so a power cut right after rename can't leave a
+/// truncated file on ext4-class filesystems.
+fn write_atomic(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    use std::io::Write as _;
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("terax-tmp-{}-{seq}", std::process::id()));
+    let write = (|| -> std::io::Result<()> {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(contents.as_bytes())?;
+        f.sync_all()
+    })();
+    if let Err(e) = write {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(format!("write {}: {e}", tmp.display()));
+    }
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("rename into {}: {e}", path.display())
+    })
+}
+
 #[tauri::command]
 pub fn agent_enable_hooks(agent: String) -> Result<(), String> {
     if agent == "pi" {
@@ -282,8 +296,68 @@ pub fn agent_enable_hooks(agent: String) -> Result<(), String> {
         Err(e) => return Err(format!("read {}: {e}", path.display())),
     };
 
-    let merged = merge_hooks(existing, spec);
+    let merged = merge_hooks(existing.clone(), spec);
+    if merged == existing {
+        // Already installed — don't rewrite (and reformat) the user's file.
+        return Ok(());
+    }
     let out = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())?;
+    write_atomic(&path, &out)
+}
+
+// Strips our hook groups back out of the config; foreign hooks are kept.
+fn remove_hooks(mut root: Value, spec: &AgentSpec) -> Value {
+    {
+        let Some(obj) = root.as_object_mut() else {
+            return root;
+        };
+        let mut drop_hooks = false;
+        if let Some(hooks) = obj.get_mut("hooks").and_then(Value::as_object_mut) {
+            for (event, _) in spec.events {
+                let emptied_by_us =
+                    if let Some(arr) = hooks.get_mut(*event).and_then(Value::as_array_mut) {
+                        if arr.is_empty() {
+                            // The user's own deliberate "Event": [] — we
+                            // never touched it, leave it alone.
+                            continue;
+                        }
+                        arr.retain(|g| !is_ours(g) && !is_empty_group(g));
+                        arr.is_empty()
+                    } else {
+                        false
+                    };
+                // Only drop keys WE emptied; foreign events stay untouched.
+                if emptied_by_us {
+                    hooks.remove(*event);
+                }
+            }
+            drop_hooks = hooks.is_empty();
+        }
+        if drop_hooks {
+            obj.remove("hooks");
+        }
+    }
+    root
+}
+
+#[tauri::command]
+pub fn agent_disable_hooks(agent: String) -> Result<(), String> {
+    let spec = find(&agent)?;
+    let path = settings_path(spec)?;
+
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(s) => existing_config(Some(&s), &path)?,
+        // Nothing installed, nothing to remove.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("read {}: {e}", path.display())),
+    };
+
+    let cleaned = remove_hooks(existing.clone(), spec);
+    if cleaned == existing {
+        // Nothing of ours present — don't rewrite (and reformat) the file.
+        return Ok(());
+    }
+    let out = serde_json::to_string_pretty(&cleaned).map_err(|e| e.to_string())?;
     write_atomic(&path, &out)
 }
 
@@ -550,5 +624,63 @@ mod tests {
             existing_config(Some(r#"{"permissions":{}}"#), p).unwrap(),
             json!({ "permissions": {} })
         );
+    }
+
+    #[test]
+    fn remove_hooks_round_trips_merge_and_keeps_foreign_config() {
+        let user = json!({
+            "permissions": { "allow": ["Bash"] },
+            "hooks": {
+                "Stop": [
+                    { "hooks": [{ "type": "command", "command": "my-own-hook" }] }
+                ],
+                "PreToolUse": [
+                    { "hooks": [{ "type": "command", "command": "lint" }] }
+                ]
+            }
+        });
+        let s = spec("claude");
+        let merged = merge_hooks(user.clone(), s);
+        assert_eq!(remove_hooks(merged, s), user);
+    }
+
+    #[test]
+    fn remove_hooks_drops_only_events_we_emptied() {
+        let s = spec("claude");
+        let merged = merge_hooks(json!({}), s);
+        let cleaned = remove_hooks(merged, s);
+        // Everything we installed is gone, including the hooks object itself.
+        assert_eq!(cleaned, json!({}));
+
+        // The user's own deliberate "Stop": [] stays untouched.
+        let deliberate = json!({ "hooks": { "Stop": [] } });
+        assert_eq!(remove_hooks(deliberate.clone(), spec("claude")), deliberate);
+    }
+
+    #[test]
+    fn write_atomic_replaces_contents_and_leaves_no_tmp_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "terax-agent-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+
+        write_atomic(&path, "{\"a\":1}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":1}");
+        write_atomic(&path, "{\"a\":2}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":2}");
+
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != "settings.json")
+            .collect();
+        assert!(leftovers.is_empty(), "stray tmp files: {leftovers:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

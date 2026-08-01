@@ -17,19 +17,21 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 
 const ICON_BY_PROVIDER = {
-  openai: ChatGptIcon,
-  anthropic: ClaudeIcon,
-  google: GoogleGeminiIcon,
-  xai: Grok02Icon,
-  cerebras: CpuIcon,
-  groq: FlashIcon,
-  deepseek: DeepseekIcon,
-  mistral: MistralIcon,
-  openrouter: GlobeIcon,
+  "openai": ChatGptIcon,
+  "anthropic": ClaudeIcon,
+  "google": GoogleGeminiIcon,
+  "xai": Grok02Icon,
+  "cerebras": CpuIcon,
+  "groq": FlashIcon,
+  "deepseek": DeepseekIcon,
+  "mistral": MistralIcon,
+  "openrouter": GlobeIcon,
   "openai-compatible": PlugIcon,
-  lmstudio: ComputerIcon,
-  mlx: AppleIcon,
-  ollama: ServerStack01Icon,
+  "lmstudio": ComputerIcon,
+  "mlx": AppleIcon,
+  "ollama": ServerStack01Icon,
+  "claude-code": ClaudeIcon,
+  "codex": ChatGptIcon,
 } as const satisfies Record<ProviderId, typeof ChatGptIcon>;
 
 type Props = {

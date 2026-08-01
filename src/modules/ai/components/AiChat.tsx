@@ -20,8 +20,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { HugeiconsIcon } from "@hugeicons/react";
 import {
   ArrowRight01Icon,
   CodeIcon,
@@ -29,10 +29,7 @@ import {
   HashtagIcon,
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
-import { SLASH_COMMANDS, TERAX_CMD_RE } from "../lib/slashCommands";
-import { Spinner } from "@/components/ui/spinner";
-import { useChatStore } from "../store/chatStore";
-import { sendMessage } from "../store/chatRuntime";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type {
   ChatStatus,
   DynamicToolUIPart,
@@ -41,6 +38,9 @@ import type {
   UIMessagePart,
 } from "ai";
 import { memo, useCallback, useMemo } from "react";
+import { SLASH_COMMANDS, TERAX_CMD_RE } from "../lib/slashCommands";
+import { sendMessage } from "../store/chatRuntime";
+import { useChatStore } from "../store/chatStore";
 import { AiToolApproval } from "./AiToolApproval";
 
 function CommandSnippet({ name }: { name: string }) {
@@ -79,8 +79,7 @@ type ContextChip =
 
 const SELECTION_RE =
   /<selection\s+source="(terminal|editor)">\n?([\s\S]*?)\n?<\/selection>/g;
-const FILE_RE =
-  /<file\s+name="([^"]+)"[^>]*>\n?([\s\S]*?)\n?<\/file>/g;
+const FILE_RE = /<file\s+name="([^"]+)"[^>]*>\n?([\s\S]*?)\n?<\/file>/g;
 const SNIPPET_RE = /<snippet\s+name="([^"]+)">\n?[\s\S]*?\n?<\/snippet>/g;
 
 function countLines(s: string): number {
@@ -200,7 +199,8 @@ export function AiChatView({
     !isBusy && hitStepCap && lastMessage?.role === "assistant";
 
   const onApproval = useCallback(
-    (id: string, approved: boolean) => addToolApprovalResponse({ id, approved }),
+    (id: string, approved: boolean) =>
+      addToolApprovalResponse({ id, approved }),
     [addToolApprovalResponse],
   );
 
@@ -363,9 +363,10 @@ const RenderedMessage = memo(function RenderedMessage({
     );
   }
 
-  const groups = useMemo(() => buildPartGroups(message.parts as AnyPart[]), [
-    message.parts,
-  ]);
+  const groups = useMemo(
+    () => buildPartGroups(message.parts as AnyPart[]),
+    [message.parts],
+  );
 
   return (
     <Message from={message.role}>
@@ -534,9 +535,7 @@ const ReadGroup = memo(function ReadGroup({ parts }: { parts: AnyPart[] }) {
                 strokeWidth={1.75}
                 className="shrink-0 opacity-60"
               />
-              <span className="truncate text-foreground">
-                {basename(path)}
-              </span>
+              <span className="truncate text-foreground">{basename(path)}</span>
               <span className="truncate opacity-60">{path}</span>
             </li>
           ))}
@@ -552,7 +551,7 @@ const PartAppear = memo(function PartAppear({
   children: React.ReactNode;
 }) {
   return (
-    <div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-200 ease-out">
+    <div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-[calc(200ms*var(--terax-anim,1))] ease-out">
       {children}
     </div>
   );

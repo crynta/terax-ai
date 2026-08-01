@@ -35,6 +35,12 @@ export type ShortcutId =
   | "search.focus"
   | "explorer.search"
   | "explorer.focus"
+  | "explorer.newFile"
+  | "explorer.newFolder"
+  | "explorer.refresh"
+  | "git.fetch"
+  | "git.pull"
+  | "git.refresh"
   | "view.zoomIn"
   | "view.zoomOut"
   | "view.zoomReset"
@@ -45,6 +51,7 @@ export type ShortcutId =
   | "agent.focusAttention"
   | "settings.open"
   | "sidebar.toggle"
+  | "statusbar.toggle"
   | "editor.undo"
   | "editor.redo"
   | "editor.aiComplete"
@@ -57,6 +64,7 @@ export type ShortcutGroup =
   | "Panes"
   | "Terminal"
   | "Search"
+  | "Git"
   | "AI"
   | "View"
   | "Editor";
@@ -303,10 +311,52 @@ export const SHORTCUTS: Shortcut[] = [
     ],
   },
   {
+    id: "statusbar.toggle",
+    label: "Toggle status bar",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "j" }],
+  },
+  {
     id: "explorer.focus",
     label: "Toggle file explorer focus",
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "e" }],
+  },
+  {
+    id: "explorer.newFile",
+    label: "Explorer: new file",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, key: "n" }],
+  },
+  {
+    id: "explorer.newFolder",
+    label: "Explorer: new folder",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "n" }],
+  },
+  {
+    id: "explorer.refresh",
+    label: "Explorer: refresh",
+    group: "View",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "r" }],
+  },
+  {
+    id: "git.fetch",
+    label: "Git: fetch from remote",
+    group: "Git",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "u" }],
+  },
+  {
+    id: "git.pull",
+    label: "Git: pull (fast-forward)",
+    group: "Git",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "l" }],
+  },
+  {
+    id: "git.refresh",
+    label: "Git: refresh status",
+    group: "Git",
+    defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "g" }],
   },
   {
     id: "view.zoomIn",
@@ -340,11 +390,10 @@ export const SHORTCUTS: Shortcut[] = [
     group: "View",
     defaultBindings: [{ [MOD_PROP]: true, shift: true, key: "'" }],
   },
-  // Editor entries are display-only: CodeMirror's historyKeymap binds these
-  // keys natively. We register them here so the shortcuts dialog can surface
-  // them — they don't have App-level handlers, so `useGlobalShortcuts` falls
-  // through without `preventDefault`, leaving CodeMirror to handle the event.
-  // Also excluded from the customization UI in ShortcutsSection.
+  // Editor history. App routes these to the focused editor pane's
+  // undo()/redo() (see App's shortcut handlers; disabled outside editor
+  // tabs so the keys fall through to the terminal/shell untouched).
+  // Customizable in ShortcutsSection like every other entry.
   {
     id: "editor.undo",
     label: "Undo",
@@ -374,10 +423,12 @@ export const SHORTCUTS: Shortcut[] = [
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   "General",
   "Tabs",
+  "Spaces",
   "Panes",
   "Terminal",
   "View",
   "Search",
+  "Git",
   "AI",
   "Editor",
 ];
@@ -411,7 +462,7 @@ function keyFromCode(code: string): string | null {
 export function matchBinding(
   e: KeyboardEvent,
   binding: KeyBinding,
-  id?: ShortcutId
+  id?: ShortcutId,
 ): boolean {
   const eventKey = e.key.toLowerCase();
   const bindingKey = binding.key.toLowerCase();

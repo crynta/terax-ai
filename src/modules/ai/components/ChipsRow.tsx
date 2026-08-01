@@ -1,4 +1,8 @@
-import { CodeIcon, HashtagIcon, TerminalIcon } from "@hugeicons/core-free-icons";
+import {
+  CodeIcon,
+  HashtagIcon,
+  TerminalIcon,
+} from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import type { ReactNode } from "react";
 import type { FileAttachment } from "../lib/composer";
@@ -16,6 +20,8 @@ type Props = {
   onRemoveCommand: (name: string) => void;
   /** Passive chips rendered before the attachment chips (e.g. cwd + branch). */
   leading?: ReactNode;
+  /** Right-aligned controls rendered at the end of the row. */
+  trailing?: ReactNode;
 };
 
 export function ChipsRow({
@@ -26,10 +32,11 @@ export function ChipsRow({
   commands,
   onRemoveCommand,
   leading,
+  trailing,
 }: Props) {
   const hasAttachments =
     files.length > 0 || snippets.length > 0 || commands.length > 0;
-  if (!leading && !hasAttachments) return null;
+  if (!leading && !hasAttachments && !trailing) return null;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {leading}
@@ -68,13 +75,20 @@ export function ChipsRow({
           ) : null}
         </Chip>
       ))}
+      {trailing ? <div className="ml-auto">{trailing}</div> : null}
     </div>
   );
 }
 
 function fileIcon(f: FileAttachment): ReactNode {
   if (f.kind === "image" && f.url) {
-    return <img src={f.url} alt="" className="size-4 shrink-0 rounded object-cover" />;
+    return (
+      <img
+        src={f.url}
+        alt=""
+        className="size-4 shrink-0 rounded object-cover"
+      />
+    );
   }
   if (f.kind === "selection") {
     return (

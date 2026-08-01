@@ -14,7 +14,10 @@ export function computeRange(
   return { start: start.line, end: Math.max(start.line, end.line) };
 }
 
-export function blockIndexAt(ranges: (LineRange | null)[], line: number): number {
+export function blockIndexAt(
+  ranges: (LineRange | null)[],
+  line: number,
+): number {
   for (let i = ranges.length - 1; i >= 0; i--) {
     const r = ranges[i];
     if (r && line >= r.start && line <= r.end) return i;

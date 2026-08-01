@@ -1,15 +1,14 @@
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { Chat, type UIMessage } from "@ai-sdk/react";
 import {
   type ChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
 } from "ai";
-import { getModel, providerNeedsKey, type ModelId } from "../config";
-import { usePreferencesStore } from "@/modules/settings/preferences";
+import { getModel, type ModelId, providerNeedsKey } from "../config";
 import { BUILTIN_AGENTS } from "../lib/agents";
-import { useAgentsStore } from "./agentsStore";
-import { usePlanStore } from "./planStore";
 import { createContextAwareTransport } from "../lib/transport";
 import type { ToolContext } from "../tools/tools";
+import { useAgentsStore } from "./agentsStore";
 import {
   chats,
   getActiveProviderKey,
@@ -17,6 +16,7 @@ import {
   touchChat,
   useChatStore,
 } from "./chatStore";
+import { usePlanStore } from "./planStore";
 
 function makeChat(sessionId: string): Chat<UIMessage> {
   const readCache = new Map<string, { size: number; hash: number }>();

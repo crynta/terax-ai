@@ -15,8 +15,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
+import type { PresenceState } from "@/lib/usePresence";
 import { cn } from "@/lib/utils";
-import { useChat, type UIMessage } from "@ai-sdk/react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { type UIMessage, useChat } from "@ai-sdk/react";
 import {
   Add01Icon,
   AlertCircleIcon,
@@ -27,18 +29,19 @@ import {
   TerminalIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { PresenceState } from "@/lib/usePresence";
 import { useEffect, useMemo } from "react";
-import { estimateCost, getModel, getModelContextLimit, type ModelId } from "../config";
+import {
+  estimateCost,
+  getModel,
+  getModelContextLimit,
+  type ModelId,
+} from "../config";
 import type { ResizeDir } from "../lib/miniWindowGeometry";
 import type { SessionMeta } from "../lib/sessions";
 import { useMiniWindowGeometry } from "../lib/useMiniWindowGeometry";
-import { useAgentsStore } from "../store/agentsStore";
-import { useChatStore } from "../store/chatStore";
 import { getOrCreateChat } from "../store/chatRuntime";
-import { usePreferencesStore } from "@/modules/settings/preferences";
+import { useChatStore } from "../store/chatStore";
 import { usePlanStore } from "../store/planStore";
-import { AgentSwitcher } from "./AgentSwitcher";
 import { AiChatView } from "./AiChat";
 import { PlanDiffReview } from "./PlanDiffReview";
 import { TodoStrip } from "./TodoStrip";
@@ -95,12 +98,16 @@ export function AiMiniWindow({ state }: { state: PresenceState }) {
       data-ai-mini-window
       className={cn(
         "no-scrollbar-deep fixed z-40 flex flex-col overflow-hidden",
-        "rounded-2xl border border-border/60 bg-card text-[12px]",
+        "rounded-xl border border-border/60 bg-card text-[12px]",
         "shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset,0_24px_48px_-12px_rgba(0,0,0,0.45),0_8px_16px_-8px_rgba(0,0,0,0.3)]",
         "ring-1 ring-black/5 dark:ring-white/5",
-        "duration-200 ease-out",
-        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-bottom-2",
-        "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-bottom-2",
+        // Grows out of the docked composer: scale anchored to the bottom-right
+        // corner (where the input sits) instead of the window center.
+        "origin-bottom-right duration-[calc(200ms*var(--terax-anim,1))] ease-out",
+        "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-90 data-[state=open]:slide-in-from-bottom-3",
+        // fill-mode-forwards: without it the exit animation snaps back to
+        // fully visible for the frames between animation end and unmount.
+        "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-90 data-[state=closed]:slide-out-to-bottom-3 data-[state=closed]:fill-mode-forwards",
       )}
     >
       <div
@@ -153,7 +160,10 @@ function ResizeHandle({
     <div
       data-no-drag
       onPointerDown={onPointerDown}
-      className={cn("absolute z-50 touch-none select-none", RESIZE_HANDLE_CLASS[dir])}
+      className={cn(
+        "absolute z-50 touch-none select-none",
+        RESIZE_HANDLE_CLASS[dir],
+      )}
     />
   );
 }
@@ -275,16 +285,15 @@ function Header({
   messages?: UIMessage[];
   onHeaderPointerDown: (e: React.PointerEvent) => void;
 }) {
-  const customAgents = useAgentsStore((s) => s.customAgents);
-  void customAgents;
-
+  // Agent switching lives in the composer right below — the header keeps
+  // only what's window-specific: session, context usage, busy state, close.
   return (
     <div
       onPointerDown={onHeaderPointerDown}
-      className="relative flex h-11 shrink-0 cursor-grab items-center justify-between gap-2 border-b border-border/60 px-3 active:cursor-grabbing"
+      className="relative flex h-9 shrink-0 cursor-grab items-center justify-between gap-2 border-b border-border/60 px-2 active:cursor-grabbing"
     >
       <div className="flex min-w-0 items-center gap-1.5">
-        <AgentSwitcher isMiniWindow />
+        <SessionPicker />
         {messages !== undefined ? (
           <ContextIndicator messages={messages} />
         ) : null}
@@ -296,13 +305,12 @@ function Header({
             <span className="max-w-32 truncate">{step ?? "Thinking…"}</span>
           </span>
         ) : null}
-        <SessionPicker />
         <Button
           type="button"
           size="icon"
           variant="ghost"
           onClick={onClose}
-          className="size-5"
+          className="size-6 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
           aria-label="Close"
           title="Close (Esc)"
         >
@@ -362,9 +370,20 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
       ? Math.round((tokens.cachedInputTokens / tokens.inputTokens) * 100)
       : 0;
 
+  const usedPct = max > 0 ? used / max : 0;
+
   return (
     <Context usedTokens={used} maxTokens={max}>
-      <ContextTrigger className="h-6 gap-1 px-0 text-[10.5px]" />
+      <ContextTrigger>
+        <button
+          type="button"
+          aria-label="Model context usage"
+          className="flex h-6 shrink-0 cursor-default items-center gap-1.5 rounded-md border border-border/50 bg-muted/40 px-2 text-[10.5px] font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+        >
+          <ContextRing pct={usedPct} />
+          <span className="tabular-nums">{Math.round(usedPct * 100)}%</span>
+        </button>
+      </ContextTrigger>
       <ContextContent className="w-64 text-[11px]">
         <ContextContentHeader />
         <ContextContentBody>
@@ -403,7 +422,9 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
               {tokens.cachedInputTokens > 0 && (
                 <div className="flex items-center justify-between text-muted-foreground">
                   <span>Cache hit</span>
-                  <span className="font-mono text-foreground">{cacheRate}%</span>
+                  <span className="font-mono text-foreground">
+                    {cacheRate}%
+                  </span>
                 </div>
               )}
               {cost != null && (
@@ -435,6 +456,51 @@ function ContextIndicator({ messages }: { messages: UIMessage[] }) {
   );
 }
 
+function ContextRing({ pct }: { pct: number }) {
+  const r = 5;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.min(1, Math.max(0, pct));
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 14 14"
+      role="img"
+      aria-label="Context usage ring"
+      className={cn(
+        "shrink-0",
+        clamped > 0.85
+          ? "text-destructive"
+          : clamped > 0.6
+            ? "text-amber-500"
+            : "text-muted-foreground",
+      )}
+    >
+      <circle
+        cx="7"
+        cy="7"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        opacity="0.25"
+      />
+      <circle
+        cx="7"
+        cy="7"
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeDasharray={`${c} ${c}`}
+        strokeDashoffset={c * (1 - clamped)}
+        strokeLinecap="round"
+        style={{ transform: "rotate(-90deg)", transformOrigin: "center" }}
+      />
+    </svg>
+  );
+}
+
 function SessionPicker() {
   const sessions = useChatStore((s) => s.sessions);
   const activeId = useChatStore((s) => s.activeSessionId);
@@ -453,9 +519,9 @@ function SessionPicker() {
         <button
           type="button"
           className={cn(
-            "flex min-w-0 max-w-48 items-center gap-1 rounded-md px-1.5 py-1",
+            "flex h-6 min-w-0 max-w-48 items-center gap-1 rounded-md border border-border/60 bg-card px-2",
             "text-[11px] text-muted-foreground transition-colors",
-            "hover:bg-accent hover:text-foreground",
+            "hover:border-border hover:bg-accent hover:text-foreground",
           )}
           title="Switch session"
         >
@@ -539,40 +605,39 @@ function SessionRow({
 
 function EmptyState({ onPick }: { onPick: (text: string) => void }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8 py-10 text-center">
-      <img src="/logo.png" alt="Terax" className="size-14 opacity-90" />
-      <div className="space-y-1.5">
-        <p className="text-[14px] font-semibold tracking-tight">
-          Ask Terax anything
-        </p>
-        <p className="max-w-[18rem] text-[11.5px] leading-relaxed text-muted-foreground">
-          Terax sees the active terminal — cwd, recent commands, and output.
-        </p>
-      </div>
-      <div className="flex w-full flex-col gap-2.5">
-        {SUGGESTIONS.map((s) => (
-          <button
-            key={s.label}
-            type="button"
-            onClick={() => onPick(s.text)}
-            className={cn(
-              "group flex items-center gap-2.5 bg-card/70 rounded-lg px-2.5 py-2 border border-border text-left",
-              "transition-colors hover:bg-muted/50 hover:text-foreground",
-            )}
-          >
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted/70 text-muted-foreground transition-colors group-hover:bg-foreground/5 group-hover:text-foreground">
-              <HugeiconsIcon icon={s.icon} size={13} strokeWidth={1.75} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[12px] font-medium text-foreground">
-                {s.label}
-              </div>
-              <div className="text-[10.5px] text-muted-foreground">
-                {s.hint}
-              </div>
-            </div>
-          </button>
-        ))}
+    <div className="flex flex-1 flex-col justify-end gap-0.5 px-2 pb-2">
+      <p className="px-2 pb-1.5 text-[11px] leading-relaxed text-muted-foreground">
+        Terax sees the active terminal — cwd, recent commands, and output.
+      </p>
+      {SUGGESTIONS.map((s) => (
+        <button
+          key={s.label}
+          type="button"
+          onClick={() => onPick(s.text)}
+          className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/50"
+        >
+          <HugeiconsIcon
+            icon={s.icon}
+            size={13}
+            strokeWidth={1.75}
+            className="shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+          />
+          <span className="shrink-0 text-[12px] font-medium text-foreground/85 group-hover:text-foreground">
+            {s.label}
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[10.5px] text-muted-foreground">
+            {s.hint}
+          </span>
+        </button>
+      ))}
+      <div className="mt-1.5 flex items-center gap-1.5 border-t border-border/40 px-2 pt-2 text-[10.5px] text-muted-foreground">
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
+          size={11}
+          strokeWidth={2}
+          className="shrink-0"
+        />
+        Type in the input below — this window shows the conversation.
       </div>
     </div>
   );

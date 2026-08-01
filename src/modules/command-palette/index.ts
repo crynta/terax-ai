@@ -1,6 +1,6 @@
 export { CommandPalette } from "./CommandPalette";
 export {
-  createCommandItems,
   type CommandPaletteActionContext,
+  createCommandItems,
 } from "./commands";
 export type { PaletteItem } from "./types";

@@ -20,12 +20,21 @@ function counterFrom(start: number) {
 describe("planSpaceRemoval", () => {
   it("returns null when the space has no tabs", () => {
     const tabs = [term(1, "a"), term(2, "a")];
-    expect(planSpaceRemoval(tabs, 1, "b", "a", undefined, counterFrom(100))).toBeNull();
+    expect(
+      planSpaceRemoval(tabs, 1, "b", "a", undefined, counterFrom(100)),
+    ).toBeNull();
   });
 
   it("drops every tab of the deleted space and disposes their leaves", () => {
     const tabs = [term(1, "a"), term(2, "a"), term(3, "b")];
-    const plan = planSpaceRemoval(tabs, 1, "a", "b", undefined, counterFrom(100));
+    const plan = planSpaceRemoval(
+      tabs,
+      1,
+      "a",
+      "b",
+      undefined,
+      counterFrom(100),
+    );
     expect(plan).not.toBeNull();
     expect(plan?.tabs.map((t) => t.id)).toEqual([3]);
     expect(plan?.disposeLeafIds).toEqual([10, 20]);
@@ -33,13 +42,27 @@ describe("planSpaceRemoval", () => {
 
   it("repoints active to the fallback space's last tab when the active tab is removed", () => {
     const tabs = [term(1, "a"), term(2, "b"), term(3, "b")];
-    const plan = planSpaceRemoval(tabs, 1, "a", "b", undefined, counterFrom(100));
+    const plan = planSpaceRemoval(
+      tabs,
+      1,
+      "a",
+      "b",
+      undefined,
+      counterFrom(100),
+    );
     expect(plan?.activeId).toBe(3);
   });
 
   it("keeps the active tab when it survives the removal", () => {
     const tabs = [term(1, "a"), term(2, "b"), term(3, "b")];
-    const plan = planSpaceRemoval(tabs, 3, "a", "b", undefined, counterFrom(100));
+    const plan = planSpaceRemoval(
+      tabs,
+      3,
+      "a",
+      "b",
+      undefined,
+      counterFrom(100),
+    );
     expect(plan?.activeId).toBe(3);
   });
 

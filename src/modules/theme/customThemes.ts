@@ -30,7 +30,9 @@ export async function deleteCustomTheme(id: string): Promise<void> {
   await emit(CHANGED_EVENT);
 }
 
-export async function onCustomThemesChange(cb: () => void): Promise<UnlistenFn> {
+export async function onCustomThemesChange(
+  cb: () => void,
+): Promise<UnlistenFn> {
   const unsubLocal = await store.onChange((key) => {
     if (key === KEY) cb();
   });

@@ -1,11 +1,11 @@
-import { native, type GitStatusSnapshot } from "@/modules/ai/lib/native";
+import { type GitStatusSnapshot, native } from "@/modules/ai/lib/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   bubbleUpDirectoryStatuses,
   buildGitStatusMap,
+  type GitStatusCode,
   lookupGitStatus,
   normalizePath,
-  type GitStatusCode,
 } from "./gitStatusUtils";
 
 const EMPTY = new Map<string, GitStatusCode>();

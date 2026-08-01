@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
 import type { Terminal } from "@xterm/xterm";
+import { describe, expect, it, vi } from "vitest";
 import {
   createShellIntegrationState,
   registerCwdHandler,
@@ -26,7 +26,9 @@ function makeFakeTerm() {
         return { dispose: () => handlers.delete(code) };
       },
     },
-    registerMarker: vi.fn().mockReturnValue({ isDisposed: false, dispose: vi.fn() }),
+    registerMarker: vi
+      .fn()
+      .mockReturnValue({ isDisposed: false, dispose: vi.fn() }),
   } as unknown as Terminal;
   return { term, handlers };
 }
@@ -97,6 +99,17 @@ describe("OSC 7 cwd handler — gated by OSC 133 in-command state", () => {
     expect(onCwd).toHaveBeenCalledWith("/home/me/new-cwd");
   });
 
+  it("reports a bare 'D;' exit code as null, not 0", () => {
+    const { term, handlers } = makeFakeTerm();
+    const state = createShellIntegrationState();
+    const onCommandState = vi.fn();
+    registerPromptTracker(term, state, onCommandState);
+
+    handlers.get(133)?.("D;");
+
+    expect(onCommandState).toHaveBeenCalledWith(false, undefined, null);
+  });
+
   it("works without state for backwards compatibility (legacy callers)", () => {
     // The state parameter is optional — when omitted, OSC 7 is always
     // honored (legacy behavior). Tests must confirm we didn't break this.
@@ -129,9 +142,10 @@ describe("OSC 133 command-state tracking", () => {
     handlers.get(133)?.("B");
     expect(onCommandState).toHaveBeenCalledTimes(1);
     handlers.get(133)?.("C;claude");
-    expect(onCommandState).toHaveBeenLastCalledWith(true);
+    expect(onCommandState).toHaveBeenLastCalledWith(true, "claude");
     handlers.get(133)?.("D;0");
-    expect(onCommandState).toHaveBeenLastCalledWith(false);
+    // D carries the exit status through as the third argument.
+    expect(onCommandState).toHaveBeenLastCalledWith(false, undefined, 0);
   });
 
   it("clears running state on a bare new prompt when D was lost", () => {
@@ -140,7 +154,7 @@ describe("OSC 133 command-state tracking", () => {
     registerPromptTracker(term, undefined, onCommandState);
 
     handlers.get(133)?.("C;vim");
-    expect(onCommandState).toHaveBeenLastCalledWith(true);
+    expect(onCommandState).toHaveBeenLastCalledWith(true, "vim");
     handlers.get(133)?.("A");
     expect(onCommandState).toHaveBeenLastCalledWith(false);
   });

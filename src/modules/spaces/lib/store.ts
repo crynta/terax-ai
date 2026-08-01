@@ -1,5 +1,5 @@
-import { LazyStore } from "@tauri-apps/plugin-store";
 import type { WorkspaceEnv } from "@/modules/workspace";
+import { LazyStore } from "@tauri-apps/plugin-store";
 import type { SerializedTab } from "./serialize";
 
 export type SpaceMeta = {

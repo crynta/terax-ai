@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-import type { PaneNode } from "@/modules/terminal/lib/panes";
 import type { Tab } from "@/modules/tabs/lib/useTabs";
-import { hydrateTabs, serializeTabs, type SerializedTab } from "./serialize";
+import type { PaneNode } from "@/modules/terminal/lib/panes";
+import { describe, expect, it } from "vitest";
+import { hydrateTabs, type SerializedTab, serializeTabs } from "./serialize";
 
 function counter(start = 100): () => number {
   let n = start;

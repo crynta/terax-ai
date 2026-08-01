@@ -23,7 +23,9 @@ export function buildTerminalTools(ctx: ToolContext) {
         // Reject control bytes — the user inserts via click, but the rendered
         // command must reflect exactly what will land at the prompt.
         if (/[\n\r\x00\x1b\x07]/.test(command)) {
-          return { error: "command must be a single line without control bytes" };
+          return {
+            error: "command must be a single line without control bytes",
+          };
         }
         return { command, explanation };
       },
@@ -52,10 +54,13 @@ export function buildTerminalTools(ctx: ToolContext) {
         if (!buffer) return { output: "", note: "no active terminal" };
         const n = lines ?? 80;
         const parts = buffer.split("\n");
-        const sliced = parts.length <= n ? buffer : parts.slice(parts.length - n).join("\n");
+        const sliced =
+          parts.length <= n ? buffer : parts.slice(parts.length - n).join("\n");
         const MAX = 24_000;
         const capped =
-          sliced.length > MAX ? `…[truncated]…\n${sliced.slice(sliced.length - MAX)}` : sliced;
+          sliced.length > MAX
+            ? `…[truncated]…\n${sliced.slice(sliced.length - MAX)}`
+            : sliced;
         return { output: capped, lines_returned: Math.min(parts.length, n) };
       },
     }),
@@ -100,6 +105,5 @@ export function buildTerminalTools(ctx: ToolContext) {
         return { url, ok: true };
       },
     }),
-
   } as const;
 }

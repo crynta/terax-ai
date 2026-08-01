@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
-
 import {
+  type TerminalKeyEvent,
   terminalDeleteSequence,
   terminalLineNavigationSequence,
   terminalReadlineSequence,
   terminalWordNavigationSequence,
-  type TerminalKeyEvent,
 } from "./keymap";
 
 const evt = (partial: Partial<TerminalKeyEvent>): TerminalKeyEvent => ({
@@ -74,7 +73,12 @@ describe("terminalLineNavigationSequence", () => {
   it("does not remap Cmd+Option+Arrow (selection-style combos pass through)", () => {
     expect(
       terminalLineNavigationSequence(
-        evt({ metaKey: true, altKey: true, key: "ArrowLeft", code: "ArrowLeft" }),
+        evt({
+          metaKey: true,
+          altKey: true,
+          key: "ArrowLeft",
+          code: "ArrowLeft",
+        }),
         { isMac: true },
       ),
     ).toBeNull();
@@ -129,10 +133,9 @@ describe("terminalDeleteSequence", () => {
 
   it("does not remap plain Backspace", () => {
     expect(
-      terminalDeleteSequence(
-        evt({ key: "Backspace", code: "Backspace" }),
-        { isMac: true },
-      ),
+      terminalDeleteSequence(evt({ key: "Backspace", code: "Backspace" }), {
+        isMac: true,
+      }),
     ).toBeNull();
   });
 });

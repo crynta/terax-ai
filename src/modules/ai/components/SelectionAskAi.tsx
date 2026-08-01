@@ -45,7 +45,7 @@ export function SelectionAskAi({
       data-selection-ask-ai
       data-state={state}
       style={{ top: pos.current.top, left: pos.current.left, width: W }}
-      className="fixed z-50 duration-150 ease-out data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-bottom-1"
+      className="fixed z-50 duration-[calc(150ms*var(--terax-anim,1))] ease-out data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=open]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-bottom-1"
     >
       <button
         type="button"

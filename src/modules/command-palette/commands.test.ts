@@ -41,6 +41,7 @@ function baseContext(
     focusSearch: noop,
     focusExplorerSearch: noop,
     toggleSidebar: noop,
+    toggleStatusBar: noop,
     toggleAi: noop,
     askAiSelection: noop,
     openSettings: noop,
@@ -48,6 +49,9 @@ function baseContext(
     openSpacesOverview: noop,
     newSpace: noop,
     switchSpace: noop,
+    sshHosts: [],
+    openSsh: noop,
+    openMultiSsh: noop,
     ...over,
   };
 }

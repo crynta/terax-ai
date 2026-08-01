@@ -18,10 +18,15 @@ ReactDOM.createRoot(
   </ThemeProvider>,
 );
 
-const showWindow = () => {
-  getCurrentWindow()
-    .show()
-    .catch((e) => console.error("settings show failed:", e));
-};
-setTimeout(showWindow, 50);
-setTimeout(showWindow, 500);
+// Pre-warmed instances (?prewarm) stay hidden — Rust shows the window when
+// the user actually opens Settings; self-showing here would flash it over
+// the app at startup.
+if (!new URLSearchParams(window.location.search).has("prewarm")) {
+  const showWindow = () => {
+    getCurrentWindow()
+      .show()
+      .catch((e) => console.error("settings show failed:", e));
+  };
+  setTimeout(showWindow, 50);
+  setTimeout(showWindow, 500);
+}

@@ -8,7 +8,10 @@ const marker = (line: number, isDisposed = false): MarkerLike => ({
 
 describe("computeRange", () => {
   it("derives the range from current marker positions", () => {
-    expect(computeRange(marker(10), marker(14))).toEqual({ start: 10, end: 14 });
+    expect(computeRange(marker(10), marker(14))).toEqual({
+      start: 10,
+      end: 14,
+    });
   });
 
   it("tracks markers after the buffer scrolls (eviction shifts lines down)", () => {
@@ -34,11 +37,7 @@ describe("computeRange", () => {
 });
 
 describe("blockIndexAt", () => {
-  const ranges = [
-    { start: 0, end: 4 },
-    null,
-    { start: 5, end: 9 },
-  ];
+  const ranges = [{ start: 0, end: 4 }, null, { start: 5, end: 9 }];
 
   it("finds the block containing a line", () => {
     expect(blockIndexAt(ranges, 2)).toBe(0);
@@ -54,8 +53,14 @@ describe("blockIndexAt", () => {
   });
 
   it("resolves to the newest block on overlap", () => {
-    expect(blockIndexAt([{ start: 0, end: 10 }, { start: 5, end: 10 }], 7)).toBe(
-      1,
-    );
+    expect(
+      blockIndexAt(
+        [
+          { start: 0, end: 10 },
+          { start: 5, end: 10 },
+        ],
+        7,
+      ),
+    ).toBe(1);
   });
 });

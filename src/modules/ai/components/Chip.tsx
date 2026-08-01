@@ -55,9 +55,9 @@ export function Chip({
     <div
       title={title}
       className={cn(
-        "group inline-flex h-[22px] items-center gap-1.5 rounded-md border text-[11px] leading-none",
-        children ? "px-2" : "px-1.5",
-        "animate-in fade-in-0 zoom-in-95 duration-150",
+        "group inline-flex h-6 items-center gap-1.5 rounded-md border text-[11.5px] leading-none",
+        children ? "px-2.5" : "px-2",
+        "animate-in fade-in-0 zoom-in-95 duration-[calc(150ms*var(--terax-anim,1))]",
         !onRemove && "pointer-events-none select-none",
         TONES[tone].box,
       )}
@@ -66,7 +66,7 @@ export function Chip({
         (icon && (
           <HugeiconsIcon
             icon={icon}
-            size={11}
+            size={12}
             strokeWidth={1.75}
             className={cn("shrink-0", TONES[tone].icon)}
           />

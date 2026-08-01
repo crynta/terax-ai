@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
-import type { SpaceMeta } from "./lib/store";
 import { accentFor, spaceInitial } from "./lib/spaceColor";
+import type { SpaceMeta } from "./lib/store";
 
 type Size = "sm" | "md";
 

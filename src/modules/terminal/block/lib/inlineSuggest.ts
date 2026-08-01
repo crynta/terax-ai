@@ -18,7 +18,9 @@ const suggestionField = StateField.define<string>({
     if (tr.docChanged) {
       if (!value) return value;
       const doc = tr.state.doc.toString();
-      return doc.length > 0 && value.startsWith(doc) && value.length > doc.length
+      return doc.length > 0 &&
+        value.startsWith(doc) &&
+        value.length > doc.length
         ? value
         : "";
     }
@@ -108,7 +110,9 @@ function fetcherPlugin(fetch: (line: string) => Promise<string | null>) {
   );
 }
 
-export function inlineSuggestion(fetch: (line: string) => Promise<string | null>) {
+export function inlineSuggestion(
+  fetch: (line: string) => Promise<string | null>,
+) {
   return [
     suggestionField,
     ghostDecorations,

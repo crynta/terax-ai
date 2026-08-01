@@ -10,7 +10,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useState } from "react";
-import { usePlanStore, type QueuedEdit } from "../store/planStore";
+import { type QueuedEdit, usePlanStore } from "../store/planStore";
 
 function basename(p: string): string {
   const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
@@ -111,11 +111,7 @@ function PlanRow({
   const stats = isDir
     ? null
     : diffStats(item.originalContent, item.proposedContent);
-  const Icon = isDir
-    ? FolderAddIcon
-    : isNew
-      ? FilePlusIcon
-      : FileEditIcon;
+  const Icon = isDir ? FolderAddIcon : isNew ? FilePlusIcon : FileEditIcon;
 
   return (
     <li className="group/row overflow-hidden rounded-md border border-border/50 bg-card">

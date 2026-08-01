@@ -7,6 +7,10 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
+import {
+  useAnimationScale,
+  useAnimationScaleFactor,
+} from "@/lib/useAnimationScale";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
 import { isMarkdownPath } from "@/lib/utils";
@@ -47,6 +51,7 @@ import { setLspNavigator } from "@/modules/lsp";
 import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { chromeHideMode } from "@/modules/settings/store";
 import {
   shouldDisablePaneSwapShortcut,
   type ShortcutHandlers,
@@ -69,7 +74,7 @@ import {
   useSpaces,
   useSpacesBoot,
 } from "@/modules/spaces";
-import { StatusBar } from "@/modules/statusbar";
+import { StatusBar, useStatusBarCollapsed } from "@/modules/statusbar";
 import {
   TabSwitcherHud,
   useTabSwitcher,
@@ -77,7 +82,10 @@ import {
   useWindowTitle,
   useWorkspaceCwd,
 } from "@/modules/tabs";
-import { DEFAULT_SPACE_ID } from "@/modules/tabs/lib/useTabs";
+import {
+  DEFAULT_SPACE_ID,
+  MAX_PANES_PER_TAB,
+} from "@/modules/tabs/lib/useTabs";
 import {
   clearFocusedTerminal,
   disposeSession,
@@ -93,6 +101,12 @@ import {
   whenSessionReady,
   writeToSession,
 } from "@/modules/terminal";
+import { setBroadcastGroup } from "@/modules/terminal/lib/rendererPool";
+import { useShellToolStore } from "@/modules/terminal/lib/shellToolStore";
+import {
+  type CommandDoneDetail,
+  submitToLeaf,
+} from "@/modules/terminal/lib/useTerminalSession";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
@@ -101,7 +115,9 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { CloseDialogs } from "./components/CloseDialogs";
+import { MultiSshDialog } from "./components/MultiSshDialog";
 import {
   TOGGLE_BLOCK_INPUT_EVENT,
   WorkspaceInputBar,
@@ -110,6 +126,18 @@ import { WorkspaceSurface } from "./components/WorkspaceSurface";
 import { useAppCloseGuard } from "./hooks/useAppCloseGuard";
 import { useTabCloseGuards } from "./hooks/useTabCloseGuards";
 import { useWorkspaceSwitcher } from "./hooks/useWorkspaceSwitcher";
+
+/** Owns the mini-window open state so toggling it re-renders only this
+ *  host, not the whole App tree — that full re-render was a visible delay
+ *  between pressing the toggle and the window appearing. */
+function MiniWindowHost() {
+  const miniOpen = useChatStore((s) => s.mini.open);
+  // Exit must outlive the scaled close animation (200ms × speed factor),
+  // else the window unmounts mid-animation or lingers after it.
+  const animFactor = useAnimationScaleFactor();
+  const presence = usePresence(miniOpen, Math.round(200 * animFactor) + 40);
+  return presence.mounted ? <AiMiniWindow state={presence.state} /> : null;
+}
 
 export default function App() {
   const {
@@ -179,6 +207,7 @@ export default function App() {
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   useApplyEditorFontSize();
   const terminalPathDropTarget = useTerminalFileDrop();
+  useAnimationScale();
   const explorerRef = useRef<FileExplorerHandle>(null);
 
   // Drives session disposal off the pane tree, not React lifecycles —
@@ -280,9 +309,11 @@ export default function App() {
     sidebarWidthRef,
     sidebarView,
     initialSidebarCollapsed,
+    sidebarCollapsed,
     persistSidebarView,
     persistSidebarCollapsed,
     toggleSidebar,
+    setSidebarOpen,
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
@@ -300,8 +331,6 @@ export default function App() {
     },
     [],
   );
-  const miniOpen = useChatStore((s) => s.mini.open);
-  const miniPresence = usePresence(miniOpen, 200);
   const openMini = useChatStore((s) => s.openMini);
   const toggleMini = useChatStore((s) => s.toggleMini);
   const focusInput = useChatStore((s) => s.focusInput);
@@ -591,6 +620,78 @@ export default function App() {
     [newTab],
   );
 
+  // SSH profiles from ~/.ssh/config for the command palette.
+  const [sshHosts, setSshHosts] = useState<string[]>([]);
+  const [multiSshOpen, setMultiSshOpen] = useState(false);
+  const sshPaletteEnabled = usePreferencesStore((s) => s.sshPaletteEnabled);
+  useEffect(() => {
+    if (!sshPaletteEnabled) {
+      setSshHosts([]);
+      return;
+    }
+    // Stale-response guard: disabling the pref mid-flight must not let the
+    // resolving promise repopulate the list afterwards.
+    let cancelled = false;
+    invoke<string[]>("ssh_list_hosts")
+      .then((hosts) => {
+        if (!cancelled) setSshHosts(hosts);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sshPaletteEnabled]);
+
+  const openSsh = useCallback(
+    (host: string) => {
+      const tabId = newTab();
+      // Wait one tick for the tab state to land; submitToLeaf queues the
+      // command until the PTY is ready, so no further racing.
+      setTimeout(() => {
+        const tab = tabsRef.current.find((x) => x.id === tabId);
+        if (!tab || tab.kind !== "terminal") return;
+        submitToLeaf(tab.activeLeafId, `ssh -- ${quoteShellArg(host)}`);
+      }, 80);
+    },
+    [newTab],
+  );
+
+  const connectMultiSsh = useCallback(
+    (hosts: string[], broadcast: boolean) => {
+      if (hosts.length === 0) return;
+      // Hard cap: splitActivePane silently no-ops past MAX_PANES_PER_TAB —
+      // never let the user believe they are broadcasting to unreached hosts.
+      const capped = hosts.slice(0, MAX_PANES_PER_TAB);
+      if (capped.length < hosts.length) {
+        toast.warning(
+          `Only ${MAX_PANES_PER_TAB} panes per tab — skipped: ${hosts
+            .slice(MAX_PANES_PER_TAB)
+            .join(", ")}`,
+        );
+      }
+      const tabId = newTab();
+      setTimeout(() => {
+        for (let i = 1; i < capped.length; i++) {
+          // Alternate split direction for a rough grid.
+          splitActivePane(tabId, i % 2 === 1 ? "row" : "col");
+        }
+        setTimeout(() => {
+          const tab = tabsRef.current.find((x) => x.id === tabId);
+          if (!tab || tab.kind !== "terminal") return;
+          const leaves = leafIds(tab.paneTree);
+          leaves.forEach((leafId, i) => {
+            const host = capped[i];
+            if (host) submitToLeaf(leafId, `ssh -- ${quoteShellArg(host)}`);
+          });
+          if (broadcast && leaves.length > 1) {
+            setBroadcastGroup(leaves, true);
+          }
+        }, 80);
+      }, 80);
+    },
+    [newTab, splitActivePane],
+  );
+
   const handleOpenFile = useCallback(
     (path: string, pin?: boolean) => {
       // Markdown opens in its rendered view by default; a per-tab toggle flips
@@ -751,6 +852,47 @@ export default function App() {
     [setActiveId, focusPane],
   );
 
+  // Long command finished in a hidden tab → toast with a jump action.
+  useEffect(() => {
+    const onDone = (e: Event) => {
+      if (!usePreferencesStore.getState().commandDoneToasts) return;
+      const d = (e as CustomEvent<CommandDoneDetail>).detail;
+      const tab = tabsRef.current.find(
+        (t) => t.kind === "terminal" && leafIds(t.paneTree).includes(d.leafId),
+      );
+      const secs = Math.round(d.durationMs / 1000);
+      const title = d.command
+        ? `${d.command.slice(0, 60)} — ${secs}s`
+        : `Command finished (${secs}s)`;
+      const show =
+        d.exitCode === 0 || d.exitCode === null ? toast.success : toast.error;
+      show(title, {
+        description:
+          d.exitCode !== null && d.exitCode !== 0
+            ? `Exited with code ${d.exitCode}`
+            : undefined,
+        action: tab
+          ? {
+              label: "Open",
+              onClick: () => activateAgentTarget(tab.id, d.leafId),
+            }
+          : undefined,
+      });
+    };
+    window.addEventListener("terax:command-done", onDone);
+    return () => window.removeEventListener("terax:command-done", onDone);
+  }, [activateAgentTarget]);
+
+  // Expand the sidebar on the explorer view without toggling it closed when
+  // it's already there (unlike cycleSidebarView's cycle semantics).
+  const revealExplorer = useCallback(() => {
+    persistSidebarView("explorer");
+    const p = sidebarRef.current;
+    if (p && p.getSize().asPercentage <= 0) {
+      p.resize(`${sidebarWidthRef.current}px`);
+    }
+  }, [persistSidebarView, sidebarRef, sidebarWidthRef]);
+
   const shortcutHandlers = useMemo<ShortcutHandlers>(
     () => ({
       "commandPalette.open": () => openCommandPalette("commands"),
@@ -807,7 +949,17 @@ export default function App() {
       },
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
+      "statusbar.toggle": () => useStatusBarCollapsed.getState().toggle(),
       "explorer.focus": toggleExplorerFocus,
+      "explorer.newFile": () => {
+        revealExplorer();
+        requestAnimationFrame(() => explorerRef.current?.newFile());
+      },
+      "explorer.newFolder": () => {
+        revealExplorer();
+        requestAnimationFrame(() => explorerRef.current?.newFolder());
+      },
+      "explorer.refresh": () => explorerRef.current?.refresh(),
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
@@ -841,6 +993,7 @@ export default function App() {
       askFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
+      revealExplorer,
       zoomIn,
       zoomOut,
       zoomReset,
@@ -848,13 +1001,78 @@ export default function App() {
     ],
   );
 
+  // Shell tool (nvim etc.) in the foreground of the active terminal leaf.
+  const activeShellTool = useShellToolStore((s) =>
+    activeLeafId != null ? (s.activeByLeaf[activeLeafId] ?? null) : null,
+  );
+
+  // Mirror the active leaf for imperative consumers (shortcut rebinds).
+  useEffect(() => {
+    useShellToolStore.getState().setActiveLeaf(activeLeafId);
+  }, [activeLeafId]);
+
+  // Chrome mode: the global "disable" preference wins, else the active
+  // shell tool's per-tool override (hide/disable while the tool runs).
+  const sidebarPrefDisabled = usePreferencesStore((s) => s.sidebarDisabled);
+  const statusBarPrefDisabled = usePreferencesStore((s) => s.statusBarDisabled);
+  const statusBarMode = statusBarPrefDisabled
+    ? "disable"
+    : chromeHideMode(activeShellTool?.hideStatusBar);
+  const sidebarMode = sidebarPrefDisabled
+    ? "disable"
+    : chromeHideMode(activeShellTool?.hideSidebar);
+  useEffect(() => {
+    useStatusBarCollapsed
+      .getState()
+      .setToolHidden(statusBarMode !== "off", statusBarMode === "disable");
+  }, [statusBarMode]);
+
+  // Per-tool override: collapse the sidebar for the tool, restore on exit —
+  // but only if we were the ones who closed it.
+  const sidebarHiddenByToolRef = useRef(false);
+  useEffect(() => {
+    if (sidebarMode !== "off") {
+      const p = sidebarRef.current;
+      if (p && p.getSize().asPercentage > 0) {
+        sidebarHiddenByToolRef.current = true;
+        setSidebarOpen(false);
+      }
+    } else if (sidebarHiddenByToolRef.current) {
+      sidebarHiddenByToolRef.current = false;
+      setSidebarOpen(true);
+    }
+  }, [sidebarMode, setSidebarOpen]);
+
   const shortcutsDisabled = useCallback(
     (id: ShortcutId, e: KeyboardEvent) => {
+      const eventInTerminal = (): boolean => {
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        return !!(target as HTMLElement | null)?.closest?.(".xterm");
+      };
+      // Chrome mode "disable" kills the toggles outright while the tool runs.
+      if (id === "statusbar.toggle" && statusBarMode === "disable") return true;
+      if (id === "sidebar.toggle" && sidebarMode === "disable") return true;
       const terminalPaneCount =
         activeTab?.kind === "terminal"
           ? leafIds(activeTab.paneTree).length
           : null;
       if (shouldDisablePaneSwapShortcut(id, terminalPaneCount)) return true;
+      // A configured shell tool owns the terminal: hand keybindings to it
+      // while the terminal is focused. Mode "none" passes everything except
+      // the keep-list; "custom" passes only the picked ones.
+      if (activeShellTool) {
+        const mode =
+          activeShellTool.shortcutMode ??
+          (activeShellTool.blockShortcuts ? "none" : "all");
+        const pass =
+          mode === "none"
+            ? !activeShellTool.allowedShortcuts?.includes(id)
+            : mode === "custom"
+              ? (activeShellTool.blockedShortcuts?.includes(id) ?? false)
+              : false;
+        if (pass && eventInTerminal()) return true;
+      }
       if (
         id === "editor.undo" ||
         id === "editor.redo" ||
@@ -887,22 +1105,15 @@ export default function App() {
       ) {
         return !(activeTab?.kind === "terminal" && activeTab.blocks === true);
       }
-      if (id === "sidebar.toggle") {
-        // Ctrl+B is also Claude Code's "run in background" key. While a terminal
-        // is focused, let Ctrl+B reach the shell/Claude instead of toggling the
-        // sidebar. Ctrl+Shift+B (second binding) still toggles it from anywhere.
-        const target =
-          (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
-          ".xterm",
-        );
-        // Only defer the plain (no-shift) Ctrl/⌘+B binding; the Shift variant
-        // is the always-on toggle and is never claimed by the terminal.
-        return inTerminal && !e.shiftKey;
+      if (id === "sidebar.toggle" || id === "explorer.newFile") {
+        // Plain Ctrl+B is Claude Code's "run in background", Ctrl+N is
+        // readline's next-history. While a terminal is focused let those
+        // reach the shell; Shift variants still fire from anywhere.
+        return eventInTerminal() && !e.shiftKey;
       }
       return false;
     },
-    [activeTab],
+    [activeTab, activeShellTool, statusBarMode, sidebarMode],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
@@ -1133,6 +1344,7 @@ export default function App() {
             focusSearch: () => searchInlineRef.current?.focus(),
             focusExplorerSearch: () => explorerRef.current?.focusSearch(),
             toggleSidebar,
+            toggleStatusBar: () => useStatusBarCollapsed.getState().toggle(),
             toggleAi: togglePanelAndFocus,
             askAiSelection: askFromSelection,
             openSettings: () => void openSettingsWindow(),
@@ -1142,6 +1354,9 @@ export default function App() {
             openSpacesOverview: () => setSwitcherOpen(true),
             newSpace: () => void handleNewSpace(),
             switchSpace: (id) => useSpaces.getState().setActive(id),
+            sshHosts,
+            openSsh,
+            openMultiSsh: () => setMultiSshOpen(true),
           })
         : [],
     [
@@ -1164,6 +1379,8 @@ export default function App() {
       askFromSelection,
       activeSpaceId,
       handleNewSpace,
+      sshHosts,
+      openSsh,
     ],
   );
 
@@ -1299,7 +1516,14 @@ export default function App() {
                   />
                 </div>
               </ResizablePanel>
-              <ResizableHandle withHandle />
+              <ResizableHandle
+                withHandle={!sidebarCollapsed}
+                className={
+                  sidebarCollapsed
+                    ? "data-[separator=hover]:bg-border"
+                    : undefined
+                }
+              />
               <ResizablePanel id="workspace" defaultSize="78%" minSize="30%">
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="relative min-h-0 flex-1">
@@ -1354,6 +1578,7 @@ export default function App() {
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true
               }
+              shellTool={activeShellTool}
             />
           )}
 
@@ -1363,6 +1588,12 @@ export default function App() {
             onActivate={onActivateAgent}
           />
           <Toaster position="bottom-right" />
+          <MultiSshDialog
+            open={multiSshOpen}
+            hosts={sshHosts}
+            onOpenChange={setMultiSshOpen}
+            onConnect={connectMultiSsh}
+          />
 
           {hasComposer ? (
             <>
@@ -1374,9 +1605,7 @@ export default function App() {
             </>
           ) : null}
 
-          {hasComposer && miniPresence.mounted ? (
-            <AiMiniWindow state={miniPresence.state} />
-          ) : null}
+          {hasComposer ? <MiniWindowHost /> : null}
           {askPresence.mounted ? (
             <SelectionAskAi
               state={askPresence.state}

@@ -32,7 +32,12 @@ export function clampGeom(g: Geom, vp: Viewport): Geom {
   };
 }
 
-export function applyDrag(start: Geom, dx: number, dy: number, vp: Viewport): Geom {
+export function applyDrag(
+  start: Geom,
+  dx: number,
+  dy: number,
+  vp: Viewport,
+): Geom {
   return clampGeom({ ...start, x: start.x + dx, y: start.y + dy }, vp);
 }
 

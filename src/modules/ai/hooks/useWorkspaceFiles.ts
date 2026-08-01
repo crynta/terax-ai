@@ -1,6 +1,6 @@
+import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
-import { currentWorkspaceEnv } from "@/modules/workspace";
 
 export type WorkspaceFilesState = {
   files: string[];

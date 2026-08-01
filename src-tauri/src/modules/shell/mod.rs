@@ -38,6 +38,65 @@ pub struct CommandOutput {
 /// the process is force-killed on timeout. We deliberately do NOT pipe into
 /// the user's interactive PTY — that would fight their input. AI tool calls
 /// are presented in chat as their own structured result.
+/// Host aliases from ~/.ssh/config (top-level `Host` lines; wildcard and
+/// negated patterns are skipped — they aren't connectable names).
+#[tauri::command]
+pub fn ssh_list_hosts() -> Vec<String> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    let Ok(content) = std::fs::read_to_string(home.join(".ssh/config")) else {
+        return Vec::new();
+    };
+    let mut hosts: Vec<String> = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        // OpenSSH accepts `Host foo`, `Host\tfoo` and `Host=foo`.
+        let lower = line.to_ascii_lowercase();
+        if !lower.starts_with("host") {
+            continue;
+        }
+        let rest = line[4..].trim_start();
+        let rest = match rest.strip_prefix('=') {
+            Some(r) => r.trim_start(),
+            // "hostname ..." etc. also start with "host" — require a
+            // separator right after the keyword.
+            None if line[4..].starts_with([' ', '\t', '=']) => rest,
+            None => continue,
+        };
+        // Patterns may be double-quoted (spaces inside); split on whitespace
+        // outside quotes and strip the quotes from the result.
+        let mut patterns: Vec<String> = Vec::new();
+        let mut cur = String::new();
+        let mut in_quotes = false;
+        for ch in rest.chars() {
+            match ch {
+                '"' => in_quotes = !in_quotes,
+                c if c.is_whitespace() && !in_quotes => {
+                    if !cur.is_empty() {
+                        patterns.push(std::mem::take(&mut cur));
+                    }
+                }
+                c => cur.push(c),
+            }
+        }
+        if !cur.is_empty() {
+            patterns.push(cur);
+        }
+        for h in patterns {
+            // Wildcards/negations aren't connectable; a leading '-' would be
+            // parsed by ssh as an option — never surface those.
+            if h.contains('*') || h.contains('?') || h.starts_with('!') || h.starts_with('-') {
+                continue;
+            }
+            if !hosts.iter().any(|e| e == &h) {
+                hosts.push(h);
+            }
+        }
+    }
+    hosts
+}
+
 #[tauri::command]
 pub async fn shell_run_command(
     command: String,

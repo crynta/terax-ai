@@ -1,8 +1,3 @@
-import {
-  isLeaf,
-  type PaneNode,
-  type SplitDir,
-} from "@/modules/terminal/lib/panes";
 import type {
   EditorTab,
   MarkdownTab,
@@ -10,6 +5,11 @@ import type {
   Tab,
   TerminalTab,
 } from "@/modules/tabs/lib/useTabs";
+import {
+  isLeaf,
+  type PaneNode,
+  type SplitDir,
+} from "@/modules/terminal/lib/panes";
 
 export type SerializedNode =
   | { kind: "leaf"; cwd?: string; active?: boolean }

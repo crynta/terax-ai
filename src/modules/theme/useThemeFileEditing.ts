@@ -1,9 +1,9 @@
-import { type RefObject, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { setThemeId as persistThemeId } from "@/modules/settings/store";
 import type { Tab } from "@/modules/tabs";
 import { currentWorkspaceEnv } from "@/modules/workspace";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { type RefObject, useEffect } from "react";
 import { listCustomThemes, saveCustomTheme } from "./customThemes";
 import {
   isThemeFilePath,

@@ -1,6 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { newTodoId, validateTodos, type Todo } from "../lib/todos";
+import { newTodoId, type Todo, validateTodos } from "../lib/todos";
 import { useTodosStore } from "../store/todoStore";
 import type { ToolContext } from "./context";
 
