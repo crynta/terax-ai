@@ -1,3 +1,7 @@
+export {
+  resolveTerminalFont,
+  type TerminalFont,
+} from "./resolveTerminalFont";
 export { resolveEditorThemeId } from "./resolveEditorTheme";
 export { type Theme, ThemeProvider, useTheme } from "./ThemeProvider";
 export { listBuiltinThemes } from "./themes";

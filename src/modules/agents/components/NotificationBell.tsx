@@ -78,7 +78,7 @@ const NOTIF_LABEL: Record<AgentNotification["kind"], string> = {
   error: "failed",
 };
 
-const HOOK_AGENTS = ["claude", "codex", "gemini"] as const;
+const HOOK_AGENTS = ["claude", "codex", "gemini", "pi"] as const;
 
 /** One agent = one icon; its name slides out on hover (same affordance as
  *  the keybinding chips). Enabled: full-color with a check dot; click turns

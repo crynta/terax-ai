@@ -35,6 +35,8 @@ type Props = {
   onCd: (path: string) => void;
   onWorkspaceChange: (env: WorkspaceEnv) => void;
   onOpenMini: () => void;
+  /** Opens the panel, or Settings > Models when no API key is loaded. */
+  onOpenAi: () => void;
   /** Only rendered when the AI panel is open and a key is loaded. */
   hasComposer: boolean;
   privateActive: boolean;
@@ -49,12 +51,12 @@ export function StatusBar({
   onCd,
   onWorkspaceChange,
   onOpenMini,
+  onOpenAi,
   hasComposer,
   privateActive,
   shellTool,
 }: Props) {
   const panelOpen = useChatStore((s) => s.panelOpen);
-  const openPanel = useChatStore((s) => s.openPanel);
   const collapsed = useStatusBarCollapsed((s) => s.collapsed);
   const toolHidden = useStatusBarCollapsed((s) => s.toolHidden);
   const hintsOn = usePreferencesStore((s) => s.hoverKeybindHints);
@@ -131,7 +133,7 @@ export function StatusBar({
           {panelOpen && hasComposer ? (
             <AiStatusBarControls />
           ) : (
-            <AiOpenButton onOpen={openPanel} />
+            <AiOpenButton onOpen={onOpenAi} />
           )}
           <span className="mx-0.5 h-4 w-px shrink-0 bg-border/60" aria-hidden />
           <ShortcutTip label="Hide status bar" shortcutId="statusbar.toggle">

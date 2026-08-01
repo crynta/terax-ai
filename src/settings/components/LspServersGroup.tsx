@@ -26,11 +26,14 @@ import {
 import { Delete02Icon, Refresh01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useEffect, useId, useState } from "react";
+import { LspInstallDialog } from "./LspInstallDialog";
+import { resolveLspSwitchState } from "./lspSwitchState";
 import { SettingRow } from "./SettingRow";
 
 export function LspServersGroup() {
   const activation = usePreferencesStore((s) => s.lspActivation);
   const customServers = usePreferencesStore((s) => s.lspCustomServers);
+  const [installTarget, setInstallTarget] = useState<LspPreset | null>(null);
   const servers = allServers(customServers);
 
   return (
@@ -46,8 +49,14 @@ export function LspServersGroup() {
           enabled={activation[server.id] === "enabled"}
           custom={customServers.some((c) => c.id === server.id)}
           customServers={customServers}
+          onInstall={() => setInstallTarget(server)}
         />
       ))}
+      <LspInstallDialog
+        key={installTarget?.id ?? "closed"}
+        server={installTarget}
+        onClose={() => setInstallTarget(null)}
+      />
     </div>
   );
 }
@@ -57,11 +66,13 @@ function ServerRow({
   enabled,
   custom,
   customServers,
+  onInstall,
 }: {
   server: LspPreset;
   enabled: boolean;
   custom: boolean;
   customServers: LspCustomServer[];
+  onInstall: () => void;
 }) {
   const detected = useLspRuntimeStore((s) => s.detected[server.command]);
 
@@ -76,6 +87,7 @@ function ServerRow({
       : detected
         ? detected
         : "not found on PATH";
+  const switchState = resolveLspSwitchState(enabled, detected);
 
   return (
     <SettingRow
@@ -114,10 +126,20 @@ function ServerRow({
           </button>
         ) : null}
         <Switch
-          checked={enabled}
-          onCheckedChange={(v) =>
-            void setLspActivation(server.id, v ? "enabled" : "dismissed")
-          }
+          checked={switchState.checked}
+          disabled={switchState.checking}
+          aria-label={`${switchState.checked ? "Disable" : "Enable"} ${server.name} language server`}
+          onCheckedChange={(checked) => {
+            if (!checked) {
+              void setLspActivation(server.id, "dismissed");
+              return;
+            }
+            if (switchState.enableAction === "enable") {
+              void setLspActivation(server.id, "enabled");
+            } else if (switchState.enableAction === "install") {
+              onInstall();
+            }
+          }}
         />
       </div>
     </SettingRow>

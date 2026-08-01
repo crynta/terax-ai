@@ -3,6 +3,7 @@ import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
 import { useIsFullscreen } from "@/lib/useIsFullscreen";
 import { NotificationBell } from "@/modules/agents";
+import type { AgentLaunchRequest } from "@/modules/agents/lib/launcher";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { chromeHideMode } from "@/modules/settings/store";
 import { ShortcutTip } from "@/modules/shortcuts/ShortcutTip";
@@ -38,6 +39,7 @@ type Props = {
   onNewPreview: () => void;
   onNewEditor: () => void;
   onNewGitGraph: () => void;
+  onLaunchAgents: (request: AgentLaunchRequest) => void;
   onClose: (id: number) => void;
   /** Promote a preview (transient) tab to persistent. */
   onPin: (id: number) => void;
@@ -68,6 +70,7 @@ export function Header({
   onNewPreview,
   onNewEditor,
   onNewGitGraph,
+  onLaunchAgents,
   onClose,
   onPin,
   onRename,
@@ -198,6 +201,7 @@ export function Header({
           onNewPreview={onNewPreview}
           onNewEditor={onNewEditor}
           onNewGitGraph={onNewGitGraph}
+          onLaunchAgents={onLaunchAgents}
           onClose={onClose}
           onPin={onPin}
           onRename={onRename}

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Static eager-import tracer. BFS from an entry following only *static* value
 // imports (`import ... from "x"`, `export ... from "x"`). `import type` /
 // `export type` are erased by the compiler, and `import("x")` /

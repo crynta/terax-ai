@@ -59,6 +59,7 @@ import {
   setStatusBarVisible,
   setTabProgressEnabled,
   setTerminalCursorBlink,
+  setTerminalCursorStyle,
   setTerminalFontFamily,
   setTerminalFontSize,
   setTerminalFontWeight,
@@ -126,6 +127,12 @@ const ANIMATION_SPEEDS: { value: AnimationSpeed; label: string }[] = [
   { value: "slow", label: "Slow" },
   { value: "custom", label: "Custom" },
 ];
+
+const TERMINAL_CURSOR_STYLES = [
+  { value: "bar", label: "Bar" },
+  { value: "block", label: "Block" },
+  { value: "underline", label: "Underline" },
+] as const;
 
 const LETTER_SPACINGS = [-4, -3, -2, -1, 0, 1, 2, 3, 4] as const;
 
@@ -831,6 +838,7 @@ export function TerminalSettingsSection() {
     (s) => s.terminalWebglEnabled,
   );
   const terminalCursorBlink = usePreferencesStore((s) => s.terminalCursorBlink);
+  const terminalCursorStyle = usePreferencesStore((s) => s.terminalCursorStyle);
   const terminalFontFamily = usePreferencesStore((s) => s.terminalFontFamily);
   const terminalFontWeight = usePreferencesStore((s) => s.terminalFontWeight);
   const terminalShell = usePreferencesStore((s) => s.terminalShell);
@@ -1035,6 +1043,30 @@ export function TerminalSettingsSection() {
             checked={terminalCursorBlink}
             onCheckedChange={(v) => void setTerminalCursorBlink(v)}
           />
+        </SettingRow>
+        <SettingRow
+          title="Cursor style"
+          description="Shape of the terminal cursor."
+        >
+          <Select
+            value={terminalCursorStyle}
+            onValueChange={(v) => void setTerminalCursorStyle(v)}
+          >
+            <SelectTrigger className="h-8 w-28 text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TERMINAL_CURSOR_STYLES.map((style) => (
+                <SelectItem
+                  key={style.value}
+                  value={style.value}
+                  className="text-[12px]"
+                >
+                  {style.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </SettingRow>
       </div>
 

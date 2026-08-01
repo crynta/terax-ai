@@ -115,6 +115,8 @@ export default defineConfig(async ({ mode }): Promise<UserConfig> => ({
             const m = id.match(/@codemirror\/legacy-modes\/mode\/([\w-]+)/);
             if (m) return `cm-legacy-${m[1]}`;
           }
+          if (id.includes("@replit/codemirror-lang-svelte"))
+            return "cm-lang-svelte";
           if (
             id.includes("@codemirror/") ||
             id.includes("@uiw/codemirror") ||

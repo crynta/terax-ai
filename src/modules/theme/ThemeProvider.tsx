@@ -32,6 +32,7 @@ type ThemeProviderState = {
   mode: ThemePref;
   resolvedMode: "dark" | "light";
   themeId: string;
+  activeTheme: Theme;
   customThemes: Theme[];
   setMode: (mode: ThemePref) => void;
   setThemeId: (id: string) => void;
@@ -151,13 +152,17 @@ export function ThemeProvider({
   }, [resolvedMode]);
 
   const effectiveId = previewId ?? themeId;
+  const activeTheme = useMemo(
+    () => resolveTheme(effectiveId, customThemes),
+    [effectiveId, customThemes],
+  );
   useEffect(() => {
     if (effectiveId === DEFAULT_THEME_ID) {
       clearTheme();
       return;
     }
-    applyTheme(resolveTheme(effectiveId, customThemes), resolvedMode);
-  }, [effectiveId, resolvedMode, customThemes]);
+    applyTheme(activeTheme, resolvedMode);
+  }, [effectiveId, activeTheme, resolvedMode]);
 
   const setMode = useCallback((next: ThemePref) => {
     setModeState(next);
@@ -181,6 +186,7 @@ export function ThemeProvider({
       mode,
       resolvedMode,
       themeId,
+      activeTheme,
       customThemes,
       setMode,
       setThemeId,
@@ -190,6 +196,7 @@ export function ThemeProvider({
       mode,
       resolvedMode,
       themeId,
+      activeTheme,
       customThemes,
       setMode,
       setThemeId,

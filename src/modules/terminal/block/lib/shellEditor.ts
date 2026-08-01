@@ -44,6 +44,7 @@ export type ShellEditorOptions = {
   parent: HTMLElement;
   fontFamily: string;
   fontSize: number;
+  fontWeight: string;
   placeholderText?: string;
   onSubmit: (text: string) => void;
   onInterrupt: () => void;
@@ -68,7 +69,7 @@ export type ShellEditorHandle = {
   setValue(text: string): void;
   clear(): void;
   setEditable(editable: boolean): void;
-  retheme(fontFamily: string, fontSize: number): void;
+  retheme(fontFamily: string, fontSize: number, fontWeight: string): void;
   destroy(): void;
 };
 
@@ -290,7 +291,7 @@ function highlightStyle(): HighlightStyle {
   ]);
 }
 
-function baseTheme(fontFamily: string, fontSize: number) {
+function baseTheme(fontFamily: string, fontSize: number, fontWeight: string) {
   const c = buildTerminalTheme();
   const caret = c.cursor ?? c.foreground ?? "currentColor";
   return EditorView.theme({
@@ -303,6 +304,7 @@ function baseTheme(fontFamily: string, fontSize: number) {
     ".cm-content": {
       padding: "0 2px",
       fontFamily,
+      fontWeight,
       caretColor: caret,
       lineHeight: "1.5",
       minHeight: "1.5em",
@@ -439,7 +441,7 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
           ]
         : []),
       editableComp.of(EditorView.editable.of(true)),
-      themeComp.of(baseTheme(opts.fontFamily, opts.fontSize)),
+      themeComp.of(baseTheme(opts.fontFamily, opts.fontSize, opts.fontWeight)),
     ],
   });
 
@@ -459,10 +461,10 @@ export function createShellEditor(opts: ShellEditorOptions): ShellEditorHandle {
       view.dispatch({
         effects: editableComp.reconfigure(EditorView.editable.of(editable)),
       }),
-    retheme: (fontFamily, fontSize) =>
+    retheme: (fontFamily, fontSize, fontWeight) =>
       view.dispatch({
         effects: [
-          themeComp.reconfigure(baseTheme(fontFamily, fontSize)),
+          themeComp.reconfigure(baseTheme(fontFamily, fontSize, fontWeight)),
           highlightComp.reconfigure(syntaxHighlighting(highlightStyle())),
         ],
       }),
