@@ -144,7 +144,7 @@ export async function requestShellSuggestion(
   deps: CompletionDeps,
   signal: AbortSignal,
 ): Promise<string[]> {
-  const { model } = await buildAutocompleteModel(deps);
+  const { model, modelId } = await buildAutocompleteModel(deps);
   const recent = req.recent.slice(0, 15).join("\n");
   const ctx = `${req.cwd ? `CWD: ${req.cwd}\n` : ""}${
     recent ? `RECENT:\n${recent}\n` : ""
@@ -173,7 +173,9 @@ Output the candidate full command lines, one per line.`;
     maxOutputTokens: nl ? 300 : 160,
     maxRetries: 0,
     abortSignal: signal,
-    temperature: 0.2,
+    ...(modelSupportsTemperature(deps.provider, modelId)
+      ? { temperature: 0.2 }
+      : {}),
   });
   const seen = new Set<string>();
   const out: string[] = [];
@@ -207,7 +209,7 @@ export async function requestCommandFix(
   deps: CompletionDeps,
   signal: AbortSignal,
 ): Promise<string> {
-  const { model } = await buildAutocompleteModel(deps);
+  const { model, modelId } = await buildAutocompleteModel(deps);
   const output =
     req.output.length > 1500 ? req.output.slice(-1500) : req.output;
   const prompt = `${req.cwd ? `CWD: ${req.cwd}\n` : ""}COMMAND: ${req.command}
@@ -225,7 +227,9 @@ Output the corrected command.`;
     maxOutputTokens: 200,
     maxRetries: 0,
     abortSignal: signal,
-    temperature: 0.2,
+    ...(modelSupportsTemperature(deps.provider, modelId)
+      ? { temperature: 0.2 }
+      : {}),
   });
   return firstLine(cleanCompletion(text)).replace(/^\$\s+/, "");
 }

@@ -80,13 +80,9 @@ fn build_args(agent: &str, session_id: Option<&str>) -> Vec<String> {
 }
 
 // GUI apps don't inherit the user's interactive PATH (nvm, homebrew, …), so
-// ask their login shell where the binary lives. Cached after the first hit.
-fn resolve_bin(state: &ClaudeCodeState, agent: &str) -> Result<String, String> {
-    let bin = bin_name(agent)?;
-    if let Some(path) = state.resolved_bins.lock().unwrap().get(agent).cloned() {
-        return Ok(path);
-    }
-
+// ask their login shell where the binary lives. Blocking: seconds with heavy
+// shell inits — must run on the blocking pool, never a tokio worker.
+fn lookup_bin_blocking(bin: &'static str) -> Result<String, String> {
     #[cfg(unix)]
     let lookup = {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
@@ -109,6 +105,19 @@ fn resolve_bin(state: &ClaudeCodeState, agent: &str) -> Result<String, String> {
             "{bin} CLI not found. Install it and sign in (`{bin}` in a terminal) first."
         ));
     }
+    Ok(path)
+}
+
+// Cached after the first hit; the miss path is offloaded so the login-shell
+// lookup can't starve the async runtime that serves every other command.
+async fn resolve_bin(state: &ClaudeCodeState, agent: &str) -> Result<String, String> {
+    let bin = bin_name(agent)?;
+    if let Some(path) = state.resolved_bins.lock().unwrap().get(agent).cloned() {
+        return Ok(path);
+    }
+    let path = tauri::async_runtime::spawn_blocking(move || lookup_bin_blocking(bin))
+        .await
+        .map_err(|e| format!("{bin} CLI lookup task failed: {e}"))??;
     state
         .resolved_bins
         .lock()
@@ -134,7 +143,7 @@ pub async fn cli_agent_run(
     session_id: Option<String>,
     cwd: Option<String>,
 ) -> Result<(), String> {
-    let bin = resolve_bin(&state, &agent)?;
+    let bin = resolve_bin(&state, &agent).await?;
     let args = build_args(&agent, session_id.as_deref().filter(|s| !s.is_empty()));
 
     let mut cmd = Command::new(&bin);
@@ -249,5 +258,5 @@ pub async fn cli_agent_available(
     state: State<'_, ClaudeCodeState>,
     agent: String,
 ) -> Result<bool, String> {
-    Ok(resolve_bin(&state, &agent).is_ok())
+    Ok(resolve_bin(&state, &agent).await.is_ok())
 }

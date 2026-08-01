@@ -463,17 +463,28 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   }, [sourceControl]);
 
   // Panel-scoped: these fire only while the source-control view is mounted.
-  useGlobalShortcuts({
-    "git.fetch": () => {
-      if (canFetch) handleFetch();
+  useGlobalShortcuts(
+    {
+      "git.fetch": () => {
+        if (canFetch) handleFetch();
+      },
+      "git.pull": () => {
+        if (canPull) handlePull();
+      },
+      "git.refresh": () => {
+        if (!isRefreshing && !scm.actionBusy) handleRefresh();
+      },
     },
-    "git.pull": () => {
-      if (canPull) handlePull();
+    {
+      // A focused terminal owns the keyboard; never steal keys from the
+      // shell (the listener preventDefaults on window in capture phase).
+      isDisabled: (_id, e) => {
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        return !!(target as HTMLElement | null)?.closest?.(".xterm");
+      },
     },
-    "git.refresh": () => {
-      if (!isRefreshing && !scm.actionBusy) handleRefresh();
-    },
-  });
+  );
 
   const rows = useMemo<RowDescriptor[]>(() => {
     const result: RowDescriptor[] = [];

@@ -284,6 +284,70 @@ export function chromeHideMode(
   return v === "disable" ? "disable" : v ? "hide" : "off";
 }
 
+function isKeyBinding(v: unknown): v is KeyBinding {
+  return (
+    !!v &&
+    typeof v === "object" &&
+    typeof (v as KeyBinding).key === "string" &&
+    (v as KeyBinding).key.length > 0
+  );
+}
+
+function sanitizeShortcutIds(v: unknown): ShortcutId[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v.filter((id): id is ShortcutId => typeof id === "string");
+}
+
+/** Persisted shell tools feed the keydown matcher (`shortcutOverrides`)
+ *  directly, so a hand-edited or corrupted store entry must not be able to
+ *  crash the hot path. Same contract as the vimKeymaps load-time filter. */
+export function sanitizeShellTools(stored: unknown): ShellTool[] | null {
+  if (!Array.isArray(stored)) return null;
+  const tools: ShellTool[] = [];
+  for (const raw of stored) {
+    if (!raw || typeof raw !== "object") continue;
+    const t = raw as ShellTool;
+    if (typeof t.id !== "string" || typeof t.name !== "string") continue;
+    if (!Array.isArray(t.patterns)) continue;
+    const tool: ShellTool = {
+      ...t,
+      patterns: t.patterns.filter((p): p is string => typeof p === "string"),
+      blockShortcuts: t.blockShortcuts === true,
+    };
+    if (
+      tool.shortcutMode !== undefined &&
+      tool.shortcutMode !== "all" &&
+      tool.shortcutMode !== "none" &&
+      tool.shortcutMode !== "custom"
+    ) {
+      delete tool.shortcutMode;
+    }
+    tool.blockedShortcuts = sanitizeShortcutIds(t.blockedShortcuts);
+    tool.allowedShortcuts = sanitizeShortcutIds(t.allowedShortcuts);
+    if (t.shortcutOverrides && typeof t.shortcutOverrides === "object") {
+      const overrides: Partial<Record<ShortcutId, KeyBinding[]>> = {};
+      for (const [id, bindings] of Object.entries(t.shortcutOverrides)) {
+        if (!Array.isArray(bindings)) continue;
+        const valid = bindings.filter(isKeyBinding);
+        if (valid.length > 0) overrides[id as ShortcutId] = valid;
+      }
+      tool.shortcutOverrides = overrides;
+    } else {
+      delete tool.shortcutOverrides;
+    }
+    if (typeof t.padding === "number" && Number.isFinite(t.padding)) {
+      tool.padding = clampTerminalPadding(t.padding);
+    } else {
+      delete tool.padding;
+    }
+    if (t.fontSize !== undefined && !Number.isFinite(t.fontSize)) {
+      delete tool.fontSize;
+    }
+    tools.push(tool);
+  }
+  return tools;
+}
+
 export const ANIMATION_CUSTOM_MIN = 0;
 export const ANIMATION_CUSTOM_MAX = 2.5;
 
@@ -816,7 +880,8 @@ export async function loadPreferences(): Promise<Preferences> {
       get<LspCustomServer[]>(KEY_LSP_CUSTOM_SERVERS) ??
       DEFAULT_PREFERENCES.lspCustomServers,
     shellTools:
-      get<ShellTool[]>(KEY_SHELL_TOOLS) ?? DEFAULT_PREFERENCES.shellTools,
+      sanitizeShellTools(get<ShellTool[]>(KEY_SHELL_TOOLS)) ??
+      DEFAULT_PREFERENCES.shellTools,
   };
 }
 

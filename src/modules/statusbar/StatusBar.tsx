@@ -71,6 +71,9 @@ export function StatusBar({
         className={`flex shrink-0 items-center justify-between gap-3 overflow-hidden border-border/60 bg-card/60 px-3 text-[11px] transition-[height] duration-[calc(200ms*var(--terax-anim,1))] ease-out ${
           hidden ? "h-0 border-t-0" : "h-10 border-t"
         }`}
+        // inert drops the whole collapsed bar out of tab order and the
+        // accessibility tree; aria-hidden alone left controls tabbable.
+        inert={hidden}
         aria-hidden={hidden}
       >
         <div className="flex min-w-0 flex-1 items-center gap-2">

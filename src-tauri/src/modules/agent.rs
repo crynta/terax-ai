@@ -625,4 +625,62 @@ mod tests {
             json!({ "permissions": {} })
         );
     }
+
+    #[test]
+    fn remove_hooks_round_trips_merge_and_keeps_foreign_config() {
+        let user = json!({
+            "permissions": { "allow": ["Bash"] },
+            "hooks": {
+                "Stop": [
+                    { "hooks": [{ "type": "command", "command": "my-own-hook" }] }
+                ],
+                "PreToolUse": [
+                    { "hooks": [{ "type": "command", "command": "lint" }] }
+                ]
+            }
+        });
+        let s = spec("claude");
+        let merged = merge_hooks(user.clone(), s);
+        assert_eq!(remove_hooks(merged, s), user);
+    }
+
+    #[test]
+    fn remove_hooks_drops_only_events_we_emptied() {
+        let s = spec("claude");
+        let merged = merge_hooks(json!({}), s);
+        let cleaned = remove_hooks(merged, s);
+        // Everything we installed is gone, including the hooks object itself.
+        assert_eq!(cleaned, json!({}));
+
+        // The user's own deliberate "Stop": [] stays untouched.
+        let deliberate = json!({ "hooks": { "Stop": [] } });
+        assert_eq!(remove_hooks(deliberate.clone(), spec("claude")), deliberate);
+    }
+
+    #[test]
+    fn write_atomic_replaces_contents_and_leaves_no_tmp_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "terax-agent-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.json");
+
+        write_atomic(&path, "{\"a\":1}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":1}");
+        write_atomic(&path, "{\"a\":2}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":2}");
+
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name() != "settings.json")
+            .collect();
+        assert!(leftovers.is_empty(), "stray tmp files: {leftovers:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

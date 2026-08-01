@@ -235,7 +235,14 @@ export function createClassicSuggest(opts: {
   const accept = (index: number) => {
     const c = candidates[index];
     if (!c) return;
-    const line = currentLine() ?? lastLine;
+    // currentLine() is null exactly when the terminal left the state we can
+    // reason about (alt screen, cursor off the input row). Backspacing from
+    // stale lastLine would emit DEL bytes into whatever runs now — bail.
+    const line = currentLine();
+    if (line === null) {
+      hideMenu();
+      return;
+    }
     dismissedLine = c.text;
     hideMenu();
     if (c.text === line) return;

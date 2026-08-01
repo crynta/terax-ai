@@ -90,7 +90,9 @@ export function createContextAwareTransport(deps: Deps) {
         kind: cliKind,
         messages: options.messages,
         sessionKey: deps.toolContext.getSessionId() ?? "default",
-        cwd: live.workspaceRoot ?? live.cwd ?? null,
+        // Terminal cwd first: the user works where their shell is, the
+        // workspace root is only a fallback for non-terminal contexts.
+        cwd: live.cwd ?? live.workspaceRoot ?? null,
         abortSignal: options.abortSignal,
         onStep: deps.onStep,
       });

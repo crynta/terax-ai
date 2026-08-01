@@ -31,7 +31,9 @@ export function MultiSshDialog({
   onConnect,
 }: Props) {
   const [picked, setPicked] = useState<string[]>([]);
-  const [broadcast, setBroadcast] = useState(true);
+  // Opt-in: broadcast fans every keystroke out to all hosts, so one mistyped
+  // destructive command would run everywhere at once.
+  const [broadcast, setBroadcast] = useState(false);
 
   const toggle = (h: string) =>
     setPicked((p) =>
