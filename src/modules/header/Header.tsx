@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { WindowControls } from "@/components/WindowControls";
 import { IS_MAC, USE_CUSTOM_WINDOW_CONTROLS } from "@/lib/platform";
+import { useIsFullscreen } from "@/lib/useIsFullscreen";
 import { NotificationBell } from "@/modules/agents";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { chromeHideMode } from "@/modules/settings/store";
@@ -83,6 +84,9 @@ export function Header({
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
+  // macOS fullscreen hides the traffic lights, so drop the space reserved
+  // for them and let the sidebar toggle take the left edge.
+  const isFullscreen = useIsFullscreen();
   // Global pref or shell-tool chrome mode "disable" removes the toggle.
   const sidebarPrefDisabled = usePreferencesStore((s) => s.sidebarDisabled);
   const toolSidebarMode = chromeHideMode(useActiveShellTool()?.hideSidebar);
@@ -145,7 +149,7 @@ export function Header({
         document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       }}
       className={`flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card select-none ${
-        IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
+        IS_MAC ? (isFullscreen ? "pr-2 pl-2" : "pr-2 pl-20") : "pr-0 pl-2"
       }`}
     >
       <div className="flex shrink-0 items-center gap-0.5">

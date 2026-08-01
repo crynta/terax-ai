@@ -47,6 +47,31 @@ fn install_titlebar_toolbar(window: &tauri::WebviewWindow) {
     }
 }
 
+/// In native fullscreen AppKit keeps an attached toolbar visible as an empty
+/// opaque bar pinned over the top of the content view, covering the HTML
+/// header. Hide it while fullscreen; restore on exit so the traffic lights
+/// stay vertically centered in the windowed titlebar.
+#[cfg(target_os = "macos")]
+fn set_titlebar_toolbar_visible(window: &tauri::WebviewWindow, visible: bool) {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::NSWindow;
+
+    let Ok(ptr) = window.ns_window() else {
+        return;
+    };
+    if MainThreadMarker::new().is_none() {
+        return;
+    }
+    unsafe {
+        let ns_window = &*(ptr as *const NSWindow);
+        if let Some(toolbar) = ns_window.toolbar() {
+            if toolbar.isVisible() != visible {
+                toolbar.setVisible(visible);
+            }
+        }
+    }
+}
+
 #[tauri::command]
 fn get_launch_dir(state: State<'_, LaunchDir>) -> Option<String> {
     state.0.lock().expect("LaunchDir mutex poisoned").take()
@@ -294,6 +319,13 @@ pub fn run() {
                                 if settings.is_visible().unwrap_or(false) {
                                     let _ = settings.set_always_on_top(true);
                                 }
+                            }
+                        }
+                        #[cfg(target_os = "macos")]
+                        WindowEvent::Resized(_) => {
+                            if let Some(main) = handle.get_webview_window("main") {
+                                let fullscreen = main.is_fullscreen().unwrap_or(false);
+                                set_titlebar_toolbar_visible(&main, !fullscreen);
                             }
                         }
                         _ => {}
