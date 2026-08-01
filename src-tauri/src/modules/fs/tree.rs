@@ -59,49 +59,70 @@ fn git_non_ignored_names(dir: &Path, show_hidden: bool) -> HashSet<String> {
         .collect()
 }
 
-/// Natural (numeric-aware) case-insensitive ordering, so `"file10"` sorts after
-/// `"file9"` instead of after `"file1"`. Runs of ASCII digits compare as numbers
-/// (leading zeros ignored, then original length breaks the tie for stability);
-/// everything else compares one char at a time, lowercased. Non-ASCII (e.g.
-/// Hangul) falls back to code-point order, matching the previous behavior.
-fn natural_cmp(a: &str, b: &str) -> Ordering {
-    let mut ai = a.chars().peekable();
-    let mut bi = b.chars().peekable();
+fn natural_cmp_inner(a: &str, b: &str) -> Ordering {
+    let a = a.as_bytes();
+    let b = b.as_bytes();
+    let mut ai = 0;
+    let mut bi = 0;
+
     loop {
-        match (ai.peek().copied(), bi.peek().copied()) {
+        match (a.get(ai).copied(), b.get(bi).copied()) {
             (None, None) => return Ordering::Equal,
             (None, Some(_)) => return Ordering::Less,
             (Some(_), None) => return Ordering::Greater,
-            (Some(ca), Some(cb)) => {
-                if ca.is_ascii_digit() && cb.is_ascii_digit() {
-                    let na: String =
-                        std::iter::from_fn(|| ai.next_if(char::is_ascii_digit)).collect();
-                    let nb: String =
-                        std::iter::from_fn(|| bi.next_if(char::is_ascii_digit)).collect();
-                    let ta = na.trim_start_matches('0');
-                    let tb = nb.trim_start_matches('0');
-                    // Longer significant run = larger number; same length -> lexical.
-                    let ord = ta.len().cmp(&tb.len()).then_with(|| ta.cmp(tb));
+            (Some(ac), Some(bc)) => {
+                if ac.is_ascii_digit() && bc.is_ascii_digit() {
+                    let a_end = ai
+                        + a[ai..]
+                            .iter()
+                            .take_while(|byte| byte.is_ascii_digit())
+                            .count();
+                    let b_end = bi
+                        + b[bi..]
+                            .iter()
+                            .take_while(|byte| byte.is_ascii_digit())
+                            .count();
+                    let a_run = &a[ai..a_end];
+                    let b_run = &b[bi..b_end];
+                    let a_zeros = a_run.iter().take_while(|byte| **byte == b'0').count();
+                    let b_zeros = b_run.iter().take_while(|byte| **byte == b'0').count();
+                    let a_number = &a_run[a_zeros..];
+                    let b_number = &b_run[b_zeros..];
+
+                    let ord = a_number.len().cmp(&b_number.len());
                     if ord != Ordering::Equal {
                         return ord;
                     }
-                    // Equal value: fewer leading zeros first, for a stable total order.
-                    let ord = na.len().cmp(&nb.len());
+                    let ord = a_number.cmp(b_number);
                     if ord != Ordering::Equal {
                         return ord;
                     }
+                    let ord = a_run.len().cmp(&b_run.len());
+                    if ord != Ordering::Equal {
+                        return ord;
+                    }
+                    ai = a_end;
+                    bi = b_end;
                 } else {
-                    let la = ca.to_ascii_lowercase();
-                    let lb = cb.to_ascii_lowercase();
-                    if la != lb {
-                        return la.cmp(&lb);
+                    let ord = ac.to_ascii_lowercase().cmp(&bc.to_ascii_lowercase());
+                    if ord != Ordering::Equal {
+                        return ord;
                     }
-                    ai.next();
-                    bi.next();
+                    ai += 1;
+                    bi += 1;
                 }
             }
         }
     }
+}
+
+fn natural_cmp(a: &str, b: &str) -> Ordering {
+    let a_folded = (!a.is_ascii()).then(|| a.to_lowercase());
+    let b_folded = (!b.is_ascii()).then(|| b.to_lowercase());
+    natural_cmp_inner(
+        a_folded.as_deref().unwrap_or(a),
+        b_folded.as_deref().unwrap_or(b),
+    )
 }
 
 /// Lists immediate children of `path`. Dirs first, then files, each sorted
@@ -253,10 +274,16 @@ mod tests {
     }
 
     #[test]
-    fn case_insensitive_and_hangul_stable() {
+    fn case_insensitive() {
         assert_eq!(natural_cmp("Apple", "apple"), Ordering::Equal);
+        assert_eq!(natural_cmp("École", "école"), Ordering::Equal);
+        assert_eq!(natural_cmp("Б2", "б2"), Ordering::Equal);
         assert_eq!(sorted(vec!["b", "A", "c"]), vec!["A", "b", "c"]);
-        // Hangul falls back to code-point order, deterministic.
+        assert_eq!(sorted(vec!["École", "éclair"]), vec!["éclair", "École"]);
+    }
+
+    #[test]
+    fn non_cased_unicode_keeps_code_point_order() {
         assert_eq!(sorted(vec!["나", "가", "다"]), vec!["가", "나", "다"]);
     }
 
@@ -266,5 +293,33 @@ mod tests {
         assert_eq!(natural_cmp("007", "7"), Ordering::Greater);
         assert_eq!(natural_cmp("7", "007"), Ordering::Less);
         assert_eq!(sorted(vec!["v007", "v7", "v08"]), vec!["v7", "v007", "v08"]);
+    }
+
+    #[test]
+    fn long_numbers_compare_without_overflow() {
+        assert_eq!(
+            natural_cmp("file99999999999999999999", "file100000000000000000000"),
+            Ordering::Less,
+        );
+    }
+
+    #[test]
+    fn comparator_is_antisymmetric_and_transitive() {
+        let names = [
+            "", "A", "a", "É", "é", "Б", "б", "0", "00", "1", "file2", "file02", "file10", "가",
+        ];
+
+        for a in names {
+            for b in names {
+                assert_eq!(natural_cmp(a, b), natural_cmp(b, a).reverse());
+                for c in names {
+                    if natural_cmp(a, b) != Ordering::Greater
+                        && natural_cmp(b, c) != Ordering::Greater
+                    {
+                        assert_ne!(natural_cmp(a, c), Ordering::Greater);
+                    }
+                }
+            }
+        }
     }
 }
