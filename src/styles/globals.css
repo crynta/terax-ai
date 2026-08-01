@@ -5,6 +5,7 @@
 @import "./code-highlight.css";
 
 @source "../../node_modules/streamdown/dist/index.js";
+@source "../../node_modules/@streamdown/math/dist/index.js";
 
 @custom-variant dark (&:is(.dark *));
 

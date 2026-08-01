@@ -1,3 +1,5 @@
+import { math } from "@streamdown/math";
+import "katex/dist/katex.min.css";
 import { MarkdownCode } from "@/components/ai-elements/markdown-code";
 import { cn } from "@/lib/utils";
 import { currentWorkspaceEnv } from "@/modules/workspace";
@@ -25,6 +27,7 @@ type Props = {
 };
 
 const components = { code: MarkdownCode };
+const plugins = { math };
 
 export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
@@ -86,6 +89,7 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
             <Streamdown
               className="select-text [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
               components={components}
+              plugins={plugins}
               mode="static"
               parseIncompleteMarkdown={false}
             >
