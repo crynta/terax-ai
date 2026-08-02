@@ -8,7 +8,7 @@ import {
 } from "./osc-handlers";
 
 // git-bash path mapping is Windows-only; exercise that branch.
-vi.mock("@/lib/platform", () => ({ IS_WINDOWS: true }));
+vi.mock("@/lib/platform", () => ({ IS_LINUX: false, IS_WINDOWS: true }));
 
 /**
  * Minimal in-memory fake of the xterm `Terminal` surface we touch — just

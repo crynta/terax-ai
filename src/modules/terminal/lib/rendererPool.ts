@@ -874,6 +874,9 @@ export function applyWebglPreference(enabled: boolean): void {
     } else if (slot.webglAddon) {
       cancelWebglReap(slot);
       disposeSlotWebgl(slot);
+      try {
+        slot.term.refresh(0, slot.term.rows - 1);
+      } catch {}
     }
   }
 }

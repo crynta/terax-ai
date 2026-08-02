@@ -19,6 +19,7 @@ import {
   DEFAULT_AGENT_LAUNCH_COMMANDS,
   normalizeAgentLaunchCommands,
 } from "@/modules/agents/lib/launcher";
+import { IS_LINUX } from "@/lib/platform";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -30,6 +31,10 @@ export const DEFAULT_THEME_ID = "terax-default";
 export type BackgroundKind = "none" | "image";
 
 export type TerminalCursorStyle = "bar" | "block" | "underline";
+
+export function defaultTerminalWebglEnabled(isLinux: boolean): boolean {
+  return !isLinux;
+}
 
 export const EDITOR_THEMES = [
   "kanagawa",
@@ -329,7 +334,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   editorWordWrap: false,
   showHidden: false,
   explorerGitDecorations: true,
-  terminalWebglEnabled: true,
+  terminalWebglEnabled: defaultTerminalWebglEnabled(IS_LINUX),
   terminalCursorBlink: false,
   terminalCursorStyle: "bar",
   terminalFontFamily: "",
