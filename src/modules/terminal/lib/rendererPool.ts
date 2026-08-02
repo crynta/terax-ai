@@ -874,11 +874,17 @@ export function applyWebglPreference(enabled: boolean): void {
     } else if (slot.webglAddon) {
       cancelWebglReap(slot);
       disposeSlotWebgl(slot);
-      try {
-        slot.term.refresh(0, slot.term.rows - 1);
-      } catch {}
+      refreshAfterWebglDispose(slot.term);
     }
   }
+}
+
+export function refreshAfterWebglDispose(
+  term: Pick<Terminal, "refresh" | "rows">,
+): void {
+  try {
+    term.refresh(0, term.rows - 1);
+  } catch {}
 }
 
 // Parked and retained slots can't be measured (display:none); poison lastW
