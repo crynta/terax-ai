@@ -26,7 +26,9 @@ type Palette = {
   type: string;
   operator: string;
   tag: string;
+  tagBracket?: string;
   attr: string;
+  attrValue?: string;
   heading: string;
   link: string;
   invalid: string;
@@ -104,8 +106,10 @@ function build(p: Palette): Extension {
         ],
         color: p.operator,
       },
-      { tag: [t.tagName, t.angleBracket], color: p.tag },
-      { tag: [t.attributeName, t.attributeValue], color: p.attr },
+      { tag: [t.tagName], color: p.tag },
+      { tag: [t.angleBracket], color: p.tagBracket ?? p.tag },
+      { tag: [t.attributeName], color: p.attr },
+      { tag: [t.attributeValue], color: p.attrValue ?? p.attr },
       { tag: [t.heading], color: p.heading, fontWeight: "bold" },
       { tag: [t.link, t.url], color: p.link, textDecoration: "underline" },
       { tag: [t.emphasis], fontStyle: "italic" },
@@ -135,8 +139,10 @@ export const kanagawa = build({
   property: "#e6c384",
   type: "#7aa89f",
   operator: "#c0a36e",
-  tag: "#e46876",
-  attr: "#7fb4ca",
+  tag: "#7aa89f",
+  tagBracket: "#9cabca",
+  attr: "#957fb8",
+  attrValue: "#98bb6c",
   heading: "#7e9cd8",
   link: "#7fb4ca",
   invalid: "#e82424",

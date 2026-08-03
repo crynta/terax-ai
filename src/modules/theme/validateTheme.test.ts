@@ -1,0 +1,151 @@
+import { describe, expect, it } from "vitest";
+import { validateTheme } from "./validateTheme";
+
+function baseTheme(over: Record<string, unknown> = {}) {
+  return {
+    id: "ok-id",
+    name: "Cool Theme",
+    variants: { dark: { colors: { background: "#000" } } },
+    ...over,
+  };
+}
+
+describe("validateTheme", () => {
+  it("rejects a non-object payload", () => {
+    expect(validateTheme("nope")).toEqual({
+      ok: false,
+      error: "Theme must be a JSON object",
+    });
+  });
+
+  it("rejects ids that are not kebab-case or too short", () => {
+    expect(validateTheme(baseTheme({ id: "Foo" })).ok).toBe(false);
+    expect(validateTheme(baseTheme({ id: "a" })).ok).toBe(false);
+    expect(validateTheme(baseTheme({ id: "has space" })).ok).toBe(false);
+  });
+
+  it("requires a non-empty name and trims it", () => {
+    expect(validateTheme(baseTheme({ name: "  " })).ok).toBe(false);
+    const result = validateTheme(baseTheme({ name: "  Padded  " }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.theme.name).toBe("Padded");
+  });
+
+  it("requires a variants object with at least one of light or dark", () => {
+    expect(validateTheme(baseTheme({ variants: undefined })).ok).toBe(false);
+    expect(validateTheme(baseTheme({ variants: {} }))).toEqual({
+      ok: false,
+      error: "variants must contain at least one of: light, dark",
+    });
+  });
+
+  it("accepts a minimal single-variant theme", () => {
+    const result = validateTheme({
+      id: "ok-id",
+      name: "X",
+      variants: { dark: {} },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects unrecognized color keys", () => {
+    const result = validateTheme(
+      baseTheme({ variants: { dark: { colors: { nope: "#fff" } } } }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: "variants.dark.colors.nope is not a recognized color key",
+    });
+  });
+
+  it("rejects empty color values", () => {
+    const result = validateTheme(
+      baseTheme({ variants: { dark: { colors: { background: "" } } } }),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("requires the terminal ansi palette to have exactly 16 entries", () => {
+    const result = validateTheme(
+      baseTheme({ variants: { dark: { terminal: { ansi: ["#000"] } } } }),
+    );
+    expect(result).toEqual({
+      ok: false,
+      error: "variants.dark.terminal.ansi must be an array of 16 strings",
+    });
+  });
+
+  it("accepts optional terminal font settings", () => {
+    const result = validateTheme(
+      baseTheme({
+        variants: {
+          dark: {
+            terminal: {
+              fontFamily: "  JetBrainsMono Nerd Font  ",
+              fontWeight: "600",
+              fontSize: 16,
+            },
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.theme.variants.dark?.terminal).toEqual({
+        fontFamily: "JetBrainsMono Nerd Font",
+        fontWeight: "600",
+        fontSize: 16,
+      });
+    }
+  });
+
+  it("rejects invalid terminal font settings", () => {
+    expect(
+      validateTheme(
+        baseTheme({
+          variants: { dark: { terminal: { fontFamily: "  " } } },
+        }),
+      ),
+    ).toEqual({
+      ok: false,
+      error: "variants.dark.terminal.fontFamily must be a non-empty string",
+    });
+    expect(
+      validateTheme(
+        baseTheme({
+          variants: { dark: { terminal: { fontWeight: "heavy" } } },
+        }),
+      ),
+    ).toEqual({
+      ok: false,
+      error:
+        "variants.dark.terminal.fontWeight must be normal, bold, or a weight from 100 to 900",
+    });
+    expect(
+      validateTheme(
+        baseTheme({
+          variants: { dark: { terminal: { fontSize: 100 } } },
+        }),
+      ),
+    ).toEqual({
+      ok: false,
+      error: "variants.dark.terminal.fontSize must be an integer from 8 to 32",
+    });
+  });
+
+  it("captures optional author, description, and editor theme", () => {
+    const result = validateTheme(
+      baseTheme({
+        author: "me",
+        description: "a theme",
+        editorTheme: { dark: "tokyo" },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.theme.author).toBe("me");
+      expect(result.theme.description).toBe("a theme");
+      expect(result.theme.editorTheme).toEqual({ dark: "tokyo" });
+    }
+  });
+});

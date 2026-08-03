@@ -5,14 +5,17 @@ import {
 } from "@/components/ui/resizable";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { getLaunchDir } from "@/lib/launchDir";
+import { consumeLaunchFiles, getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { usePresence } from "@/lib/usePresence";
 import { useZoom } from "@/lib/useZoom";
 import { isMarkdownPath } from "@/lib/utils";
 import {
+  type AgentLaunchRequest,
   AgentNotificationsBridge,
+  findAgentLauncher,
   nextAttentionTarget,
+  validateAgentLaunchCommand,
 } from "@/modules/agents";
 import {
   AgentRunBridge,
@@ -30,6 +33,7 @@ import { CommandPalette, createCommandItems } from "@/modules/command-palette";
 import {
   type EditorPaneHandle,
   NewEditorDialog,
+  useApplyEditorFontSize,
   useEditorFileSync,
 } from "@/modules/editor";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
@@ -44,6 +48,7 @@ import type { PreviewPaneHandle } from "@/modules/preview";
 import { openSettingsWindow } from "@/modules/settings/openSettingsWindow";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
+  shouldDisablePaneSwapShortcut,
   type ShortcutHandlers,
   type ShortcutId,
   useGlobalShortcuts,
@@ -80,8 +85,12 @@ import {
   hasLeaf,
   leafIds,
   navigateFocusedBlocks,
+  ptyIdForLeaf,
+  type PaneBounds,
   type TerminalPaneHandle,
+  useAgentActivityStore,
   useTerminalFileDrop,
+  whenSessionReady,
   writeToSession,
 } from "@/modules/terminal";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
@@ -92,6 +101,8 @@ import {
   VoiceHud,
 } from "@/modules/voice";
 import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SearchAddon } from "@xterm/addon-search";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -122,6 +133,7 @@ export default function App() {
     newTab,
     newBlockTab,
     newAgentTab,
+    newAgentGroupTab,
     newPrivateTab,
     openFileTab,
     pinTab,
@@ -140,6 +152,7 @@ export default function App() {
     setLeafCwd,
     focusPane,
     focusNextPaneInTab,
+    swapActivePaneInDirection,
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
@@ -169,7 +182,8 @@ export default function App() {
   const [gitHistoryHandle, setGitHistoryHandle] =
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
-  useTerminalFileDrop();
+  useApplyEditorFontSize();
+  const terminalPathDropTarget = useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
 
   // Drives session disposal off the pane tree, not React lifecycles —
@@ -421,6 +435,16 @@ export default function App() {
       if (!live.has(k)) searchAddons.current.delete(k);
   }, [tabs]);
 
+  useEffect(() => {
+    const tab = tabsRef.current.find((t) => t.id === activeId);
+    if (tab?.kind !== "terminal") return;
+    const ptyIds = leafIds(tab.paneTree).flatMap((leafId) => {
+      const ptyId = ptyIdForLeaf(leafId);
+      return ptyId === null ? [] : [ptyId];
+    });
+    useAgentActivityStore.getState().acknowledgeAttention(ptyIds);
+  }, [activeId]);
+
   // Most-recently-used tab ids, most recent first, pruned to live tabs. Drives
   // the Ctrl+Tab quick switcher so it cycles by recency, not strip order.
   const mruRef = useRef<number[]>([activeId]);
@@ -545,6 +569,45 @@ export default function App() {
     newBlockTab(inheritedCwdForNewTab());
   }, [newBlockTab, inheritedCwdForNewTab]);
 
+  const launchAgentGroup = useCallback(
+    (request: AgentLaunchRequest) => {
+      const command = validateAgentLaunchCommand(request.command);
+      if (!command.ok) return;
+      const launcher = findAgentLauncher(request.agent);
+      const title =
+        request.instances === 1
+          ? launcher.label
+          : `${launcher.label} × ${request.instances}`;
+      const { leafIds: agentLeafIds } = newAgentGroupTab(
+        inheritedCwdForNewTab(),
+        title,
+        request.instances,
+      );
+      const hooksReady = launcher.supportsHooks
+        ? invoke("agent_enable_hooks", {
+            agent: request.agent,
+          }).catch((error) => {
+            console.warn(
+              `[terax] could not enable ${request.agent} notifications:`,
+              error,
+            );
+          })
+        : Promise.resolve();
+
+      for (const leafId of agentLeafIds) {
+        void (async () => {
+          await Promise.all([whenSessionReady(leafId), hooksReady]);
+          if (!writeToSession(leafId, `${command.command}\r`)) {
+            console.error(
+              `[terax] agent terminal ${leafId} closed before launch`,
+            );
+          }
+        })();
+      }
+    },
+    [inheritedCwdForNewTab, newAgentGroupTab],
+  );
+
   const sendCd = useCallback(
     (path: string) => {
       if (activeLeafId === null) return;
@@ -581,6 +644,23 @@ export default function App() {
     },
     [openFileTab, newMarkdownTab],
   );
+
+  // "Open With" files arrive via the event (warm start) and get_launch_files
+  // (cold start, before this listener attaches). Backend already authorized
+  // each parent; openFileTab dedupes by path, so both paths can't double-open.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    const openAll = (paths: string[]) => {
+      for (const path of paths) handleOpenFile(path, true);
+    };
+    (async () => {
+      unlisten = await listen<string[]>("terax:open-file", (e) => {
+        openAll(e.payload);
+      });
+      openAll(await consumeLaunchFiles());
+    })();
+    return () => unlisten?.();
+  }, [handleOpenFile]);
 
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
@@ -667,6 +747,28 @@ export default function App() {
     [activeId, splitActivePane],
   );
 
+  const livePaneBounds = useCallback((tabId: number): PaneBounds[] => {
+    const tab = document.querySelector<HTMLElement>(
+      `[data-terminal-tab="${tabId}"]`,
+    );
+    if (!tab) return [];
+    return [...tab.querySelectorAll<HTMLElement>("[data-pane-leaf]")].flatMap(
+      (element) => {
+        const id = Number(element.dataset.paneLeaf);
+        if (!Number.isFinite(id)) return [];
+        const { left, right, top, bottom } = element.getBoundingClientRect();
+        return [{ id, left, right, top, bottom }];
+      },
+    );
+  }, []);
+
+  const swapActivePane = useCallback(
+    (direction: "left" | "right" | "up" | "down") => {
+      swapActivePaneInDirection(activeId, direction, livePaneBounds(activeId));
+    },
+    [activeId, livePaneBounds, swapActivePaneInDirection],
+  );
+
   const handleCloseTabOrPane = useCallback(() => {
     const t = tabsRef.current.find((x) => x.id === activeId);
     if (t?.kind === "terminal" && leafIds(t.paneTree).length > 1) {
@@ -716,6 +818,10 @@ export default function App() {
       "pane.splitDown": () => splitActivePaneInActiveTab("col"),
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
+      "pane.swapLeft": () => swapActivePane("left"),
+      "pane.swapRight": () => swapActivePane("right"),
+      "pane.swapUp": () => swapActivePane("up"),
+      "pane.swapDown": () => swapActivePane("down"),
       "pane.source": toggleSourceControl,
       "terminal.clear": () => {
         clearFocusedTerminal();
@@ -724,7 +830,11 @@ export default function App() {
         window.dispatchEvent(new CustomEvent(TOGGLE_BLOCK_INPUT_EVENT)),
       "blocks.prev": () => navigateFocusedBlocks(-1),
       "blocks.next": () => navigateFocusedBlocks(1),
-      "search.focus": () => searchInlineRef.current?.focus(),
+      "search.focus": () => {
+        const editor = editorRefs.current.get(activeId);
+        if (editor) editor.openSearch();
+        else searchInlineRef.current?.focus();
+      },
       "ai.toggle": togglePanelAndFocus,
       "ai.toggleMini": () => {
         if (!hasComposer) {
@@ -747,6 +857,10 @@ export default function App() {
       "view.zenMode": () => setZenMode((v) => !v),
       "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
       "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
+      "editor.aiComplete": () =>
+        editorRefs.current.get(activeId)?.triggerAiComplete(),
+      "editor.codeComplete": () =>
+        editorRefs.current.get(activeId)?.triggerCodeComplete(),
     }),
     [
       activeId,
@@ -762,6 +876,7 @@ export default function App() {
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
+      swapActivePane,
       toggleSourceControl,
       hasComposer,
       togglePanelAndFocus,
@@ -778,7 +893,17 @@ export default function App() {
 
   const shortcutsDisabled = useCallback(
     (id: ShortcutId, e: KeyboardEvent) => {
-      if (id === "editor.undo" || id === "editor.redo") {
+      const terminalPaneCount =
+        activeTab?.kind === "terminal"
+          ? leafIds(activeTab.paneTree).length
+          : null;
+      if (shouldDisablePaneSwapShortcut(id, terminalPaneCount)) return true;
+      if (
+        id === "editor.undo" ||
+        id === "editor.redo" ||
+        id === "editor.aiComplete" ||
+        id === "editor.codeComplete"
+      ) {
         return activeTab?.kind !== "editor";
       }
       if (id === "ai.askSelection") {
@@ -1140,6 +1265,7 @@ export default function App() {
               onNewPreview={() => openPreviewTab("")}
               onNewEditor={() => setNewEditorOpen(true)}
               onNewGitGraph={openGitGraphFromContext}
+              onLaunchAgents={launchAgentGroup}
               onClose={handleClose}
               onPin={pinTab}
               onRename={handleRenameTab}
@@ -1160,6 +1286,10 @@ export default function App() {
             <ResizablePanelGroup
               orientation="horizontal"
               className="min-h-0 flex-1"
+              onLayoutChanged={(_, { isUserInteraction }) => {
+                const width = sidebarRef.current?.getSize().inPixels ?? 0;
+                persistSidebarWidth(width, isUserInteraction);
+              }}
             >
               <ResizablePanel
                 id="sidebar"
@@ -1174,7 +1304,6 @@ export default function App() {
                 collapsible
                 collapsedSize={0}
                 onResize={(size) => {
-                  if (size.inPixels > 0) persistSidebarWidth(size.inPixels);
                   persistSidebarCollapsed(size.inPixels <= 0);
                 }}
               >
@@ -1196,6 +1325,7 @@ export default function App() {
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}
                         onAttachToAgent={handleAttachFileToAgent}
+                        pathDropTarget={terminalPathDropTarget}
                       />
                     ) : (
                       <SourceControlPanel
@@ -1265,6 +1395,7 @@ export default function App() {
               onCd={sendCd}
               onWorkspaceChange={handleWorkspaceChange}
               onOpenMini={openMini}
+              onOpenAi={togglePanelAndFocus}
               hasComposer={hasComposer}
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true

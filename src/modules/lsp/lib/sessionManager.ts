@@ -66,7 +66,11 @@ export async function acquireDocExtension(
 ): Promise<LspDocHandle | null> {
   if (currentWorkspaceEnv().kind !== "local") return null;
   const prefs = usePreferencesStore.getState();
-  const preset = serverForLanguage(langId, prefs.lspCustomServers);
+  const preset = serverForLanguage(
+    langId,
+    prefs.lspCustomServers,
+    prefs.lspActivation,
+  );
   if (!preset) return null;
   if (prefs.lspActivation[preset.id] !== "enabled") return null;
   if (!(await detectBinary(preset.command))) return null;
@@ -119,6 +123,7 @@ export async function acquireDocExtension(
     mod.lspInteractions({
       client: managed.client,
       documentUri: uri,
+      rootPath: managed.root.replace(/\\/g, "/"),
       onExternal: (extUri, line) => {
         const target = fileUriToPath(extUri);
         if (target) getLspNavigator()?.openFile(target, line);
@@ -360,10 +365,12 @@ export async function stopPresetSessions(presetId: string): Promise<void> {
   }
 }
 
-export async function lspFormatDocument(view: EditorView): Promise<void> {
-  if (sessions.size === 0) return;
+export async function lspFormatDocument(
+  view: EditorView,
+): Promise<"done" | "unsupported"> {
+  if (sessions.size === 0) return "unsupported";
   const { formatDocumentAndWait } = await import("./client");
-  await formatDocumentAndWait(view);
+  return formatDocumentAndWait(view);
 }
 
 // Open docs re-acquire automatically via the generation bump, so a stop

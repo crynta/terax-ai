@@ -7,8 +7,12 @@ import { EditorView } from "@codemirror/view";
 import { Cancel01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { useEffect, useMemo, useRef } from "react";
-import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  buildSharedExtensions,
+  DEFAULT_INDENT,
+  languageCompartment,
+} from "./lib/extensions";
 import { resolveLanguage, resolveLanguageSync } from "./lib/languageResolver";
 import { useEditorThemeExt } from "./lib/useEditorThemeExt";
 
@@ -93,11 +97,27 @@ export function AiDiffPane({
   const cmRef = useRef<ReactCodeMirrorRef>(null);
   const themeExt = useEditorThemeExt();
 
-  const initialLang = useMemo(() => resolveLanguageSync(path), [path]);
+  // Language resolves before mount; reconfiguring after would leave the
+  // merge view's deleted-chunk widgets unhighlighted.
+  const [lang, setLang] = useState<Extension | null>(
+    () => resolveLanguageSync(path)?.ext ?? null,
+  );
+  useEffect(() => {
+    if (lang) return;
+    let cancelled = false;
+    resolveLanguage(path).then((res) => {
+      if (!cancelled && res) setLang(res.ext);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path, lang]);
+
   const extensions = useMemo(
     () => [
       ...SHARED_EXT,
-      languageCompartment.of(initialLang?.ext ?? []),
+      DEFAULT_INDENT,
+      languageCompartment.of(lang ?? []),
       ...READONLY_EXT,
       unifiedMergeView({
         original: originalContent,
@@ -109,24 +129,8 @@ export function AiDiffPane({
       }),
       DIFF_THEME,
     ],
-    [originalContent, initialLang],
+    [originalContent, lang],
   );
-
-  useEffect(() => {
-    if (initialLang) return;
-    let cancelled = false;
-    resolveLanguage(path).then((res) => {
-      if (cancelled) return;
-      const view = cmRef.current?.view;
-      if (!view) return;
-      view.dispatch({
-        effects: languageCompartment.reconfigure(res?.ext ?? []),
-      });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [path, initialLang]);
 
   const stats = useMemo(
     () => computeLineStats(originalContent, proposedContent),

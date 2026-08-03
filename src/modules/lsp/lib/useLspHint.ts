@@ -33,10 +33,9 @@ export function useLspHint(filePath: string | null): LspHint | null {
   }, [filePath]);
 
   const customServers = usePreferencesStore((s) => s.lspCustomServers);
-  const preset = serverForLanguage(langId, customServers);
-  const activation = usePreferencesStore((s) =>
-    preset ? s.lspActivation[preset.id] : undefined,
-  );
+  const lspActivation = usePreferencesStore((s) => s.lspActivation);
+  const preset = serverForLanguage(langId, customServers, lspActivation);
+  const activation = preset ? lspActivation[preset.id] : undefined;
   const detected = useLspRuntimeStore((s) =>
     preset ? s.detected[preset.command] : undefined,
   );

@@ -1,5 +1,7 @@
+import { syntaxTree } from "@codemirror/language";
+import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { resolveDisplayName } from "./languageResolver";
+import { resolveDisplayName, resolveLanguage } from "./languageResolver";
 
 describe("resolveDisplayName", () => {
   it("resolves real extensions", () => {
@@ -7,6 +9,7 @@ describe("resolveDisplayName", () => {
     expect(resolveDisplayName("main.go")).toBe("Go");
     expect(resolveDisplayName("README.md")).toBe("Markdown");
     expect(resolveDisplayName("query.sql")).toBe("SQL");
+    expect(resolveDisplayName("Component.svelte")).toBe("Svelte");
   });
 
   it("strips directories before resolving", () => {
@@ -16,7 +19,7 @@ describe("resolveDisplayName", () => {
 
   it("matches fixed filenames", () => {
     expect(resolveDisplayName("Dockerfile")).toBe("Dockerfile");
-    expect(resolveDisplayName(".env")).toBe("Properties");
+    expect(resolveDisplayName(".env")).toBe("Dotenv");
     expect(resolveDisplayName(".eslintrc")).toBe("JSON");
   });
 
@@ -26,6 +29,34 @@ describe("resolveDisplayName", () => {
     expect(resolveDisplayName("Dockerfile.web")).toBe("Dockerfile");
     expect(resolveDisplayName("Dockerfile.dev")).toBe("Dockerfile");
     expect(resolveDisplayName("web.dockerfile")).toBe("Dockerfile");
+    expect(resolveDisplayName(".env.local")).toBe("Dotenv");
+    expect(resolveDisplayName(".env.production.local")).toBe("Dotenv");
+    expect(resolveDisplayName("example.env")).toBe("Dotenv");
+  });
+
+  it("loads dotenv files with their language mode", async () => {
+    const result = await resolveLanguage("/project/.env.local");
+    expect(result?.name).toBe("Dotenv");
+    expect(result?.id).toBe("env");
+    expect(result?.ext).toBeTruthy();
+  });
+
+  // `.svelte` used to resolve to HTML, which left blocks and directives as
+  // plain text and made the svelte-ls preset unreachable (langId drives both).
+  it("loads Svelte files with their dedicated language mode", async () => {
+    const result = await resolveLanguage("/project/Component.svelte");
+    if (!result) throw new Error("Svelte language failed to load");
+
+    expect(result.name).toBe("Svelte");
+    expect(result.id).toBe("svelte");
+
+    const state = EditorState.create({
+      doc: "{#if ready}<button on:click={run}>{label}</button>{/if}",
+      extensions: [result.ext],
+    });
+    const tree = syntaxTree(state).toString();
+    expect(tree).toContain("IfBlock");
+    expect(tree).toContain("DirectiveOn");
   });
 
   // The prefix fallback must not let extension languages capture lookalike
