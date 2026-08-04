@@ -10,18 +10,17 @@ describe("MarkdownLink", () => {
     vi.clearAllMocks();
   });
 
-  it("opens through the native opener and settles after success", async () => {
+  it.each([
+    "https://chatgpt.com/codex/settings/usage",
+    "mailto:support@example.com",
+    "tel:+16045550123",
+  ])("opens supported links natively: %s", async (href) => {
     openUrl.mockResolvedValue(undefined);
     const onSettled = vi.fn();
 
-    await openExternalUrl(
-      "https://chatgpt.com/codex/settings/usage",
-      onSettled,
-    );
+    await openExternalUrl(href, onSettled);
 
-    expect(openUrl).toHaveBeenCalledWith(
-      "https://chatgpt.com/codex/settings/usage",
-    );
+    expect(openUrl).toHaveBeenCalledWith(href);
     expect(onSettled).toHaveBeenCalledOnce();
   });
 
