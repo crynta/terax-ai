@@ -5,6 +5,7 @@ const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 
 import { openMarkdownLink } from "./markdown-link";
+import { openExternalUrl } from "@/lib/external-link";
 
 describe("MarkdownLink", () => {
   afterEach(() => {
@@ -29,6 +30,15 @@ describe("MarkdownLink", () => {
 
     await openMarkdownLink("https://example.com", onSettled);
 
+    expect(onSettled).toHaveBeenCalledOnce();
+  });
+
+  it("does not invoke the native opener for unsupported schemes", async () => {
+    const onSettled = vi.fn();
+
+    await openExternalUrl("javascript:alert(1)", onSettled);
+
+    expect(openUrl).not.toHaveBeenCalled();
     expect(onSettled).toHaveBeenCalledOnce();
   });
 });

@@ -1,5 +1,5 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ComponentProps, MouseEventHandler } from "react";
+import { isExternalUrl, openExternalUrl } from "@/lib/external-link";
 
 export type MarkdownLinkProps = ComponentProps<"a"> & {
   node?: unknown;
@@ -7,19 +7,11 @@ export type MarkdownLinkProps = ComponentProps<"a"> & {
   onSettled?: () => void;
 };
 
-function isExternalMarkdownUrl(href: string): boolean {
-  return /^(?:https?:|mailto:|tel:)/i.test(href);
-}
-
 export function openMarkdownLink(
   href: string,
   onSettled?: () => void,
 ): Promise<void> {
-  return openUrl(href)
-    .catch((error) => {
-      console.error("[terax] failed to open Markdown link:", error);
-    })
-    .finally(() => onSettled?.());
+  return openExternalUrl(href, onSettled);
 }
 
 /**
@@ -36,7 +28,7 @@ export function MarkdownLink({
 }: MarkdownLinkProps) {
   const handleClick: MouseEventHandler<HTMLAnchorElement> = (event) => {
     onClick?.(event);
-    if (event.defaultPrevented || !href || !isExternalMarkdownUrl(href)) return;
+    if (event.defaultPrevented || !href || !isExternalUrl(href)) return;
 
     event.preventDefault();
     void openMarkdownLink(href, onSettled);

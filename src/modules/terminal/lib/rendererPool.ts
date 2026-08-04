@@ -1,7 +1,7 @@
 import { resolveFontFamily } from "@/lib/fonts";
+import { openExternalUrl } from "@/lib/external-link";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -191,7 +191,19 @@ export function applyBackgroundActive(active: boolean): void {
 }
 
 function createSlot(): Slot {
-  const term = new Terminal(termOptions());
+  let focusTerminal = () => {};
+  const term = new Terminal({
+    ...termOptions(),
+    // xterm's default OSC 8 handler uses window.confirm/window.open. In the
+    // Tauri webview that shows the navigation warning and can leave the
+    // terminal without focus after confirmation.
+    linkHandler: {
+      activate: (_event, uri) => {
+        void openExternalUrl(uri, focusTerminal);
+      },
+    },
+  });
+  focusTerminal = () => term.focus();
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
   const serializeAddon = new SerializeAddon();
@@ -199,7 +211,9 @@ function createSlot(): Slot {
   term.loadAddon(searchAddon);
   term.loadAddon(serializeAddon);
   term.loadAddon(
-    new WebLinksAddon((_e, uri) => openUrl(uri).catch(console.error)),
+    new WebLinksAddon((_e, uri) => {
+      void openExternalUrl(uri, () => term.focus());
+    }),
   );
 
   const host = document.createElement("div");
