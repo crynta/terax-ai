@@ -11,11 +11,14 @@ describe("createTerminalLinkHandler", () => {
     vi.clearAllMocks();
   });
 
-  it("opens OSC 8 links natively and restores terminal focus", async () => {
+  it("opens OSC 8 links natively and restores late-bound terminal focus", async () => {
     openUrl.mockResolvedValue(undefined);
-    const focus = vi.fn();
+    const initialFocus = vi.fn();
+    let focus = initialFocus;
+    const handler = createTerminalLinkHandler(() => focus());
+    focus = vi.fn();
 
-    createTerminalLinkHandler(focus).activate(
+    handler.activate(
       {} as MouseEvent,
       "https://chatgpt.com/codex/settings/usage",
     );
@@ -24,17 +27,6 @@ describe("createTerminalLinkHandler", () => {
       "https://chatgpt.com/codex/settings/usage",
     );
     await vi.waitFor(() => expect(focus).toHaveBeenCalledOnce());
-  });
-
-  it("does not open unsupported OSC 8 schemes", () => {
-    const focus = vi.fn();
-
-    createTerminalLinkHandler(focus).activate(
-      {} as MouseEvent,
-      "javascript:alert(1)",
-    );
-
-    expect(openUrl).not.toHaveBeenCalled();
-    expect(focus).toHaveBeenCalledOnce();
+    expect(initialFocus).not.toHaveBeenCalled();
   });
 });

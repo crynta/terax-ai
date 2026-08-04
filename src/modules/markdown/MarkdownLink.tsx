@@ -6,13 +6,6 @@ export type MarkdownLinkProps = ComponentProps<"a"> & {
   onSettled?: () => void;
 };
 
-export function openMarkdownLink(
-  href: string,
-  onSettled?: () => void,
-): Promise<void> {
-  return openExternalUrl(href, onSettled);
-}
-
 export function MarkdownLink({
   children,
   href,
@@ -26,7 +19,7 @@ export function MarkdownLink({
     if (event.defaultPrevented || !href || !isExternalUrl(href)) return;
 
     event.preventDefault();
-    void openMarkdownLink(href, onSettled);
+    void openExternalUrl(href, onSettled);
   };
 
   return (

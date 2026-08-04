@@ -195,7 +195,7 @@ function createSlot(): Slot {
   let focusTerminal = () => {};
   const term = new Terminal({
     ...termOptions(),
-    linkHandler: createTerminalLinkHandler(focusTerminal),
+    linkHandler: createTerminalLinkHandler(() => focusTerminal()),
   });
   focusTerminal = () => term.focus();
   const fitAddon = new FitAddon();

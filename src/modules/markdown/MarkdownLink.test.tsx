@@ -5,8 +5,6 @@ const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 
-import { openMarkdownLink } from "./MarkdownLink";
-
 describe("MarkdownLink", () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -16,7 +14,7 @@ describe("MarkdownLink", () => {
     openUrl.mockResolvedValue(undefined);
     const onSettled = vi.fn();
 
-    await openMarkdownLink(
+    await openExternalUrl(
       "https://chatgpt.com/codex/settings/usage",
       onSettled,
     );
@@ -31,7 +29,7 @@ describe("MarkdownLink", () => {
     openUrl.mockRejectedValue(new Error("browser unavailable"));
     const onSettled = vi.fn();
 
-    await openMarkdownLink("https://example.com", onSettled);
+    await openExternalUrl("https://example.com", onSettled);
 
     expect(onSettled).toHaveBeenCalledOnce();
   });
