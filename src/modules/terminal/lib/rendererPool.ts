@@ -15,6 +15,7 @@ import {
 } from "./terminalClipboard";
 import { pasteIntoTerminal } from "./terminalPaste";
 import { terminalReadlineSequence } from "./keymap";
+import { createTerminalLinkHandler } from "./terminalLinks";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -194,14 +195,7 @@ function createSlot(): Slot {
   let focusTerminal = () => {};
   const term = new Terminal({
     ...termOptions(),
-    // xterm's default OSC 8 handler uses window.confirm/window.open. In the
-    // Tauri webview that shows the navigation warning and can leave the
-    // terminal without focus after confirmation.
-    linkHandler: {
-      activate: (_event, uri) => {
-        void openExternalUrl(uri, focusTerminal);
-      },
-    },
+    linkHandler: createTerminalLinkHandler(focusTerminal),
   });
   focusTerminal = () => term.focus();
   const fitAddon = new FitAddon();

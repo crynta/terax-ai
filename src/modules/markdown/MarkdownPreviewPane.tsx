@@ -1,10 +1,10 @@
 import { MarkdownCode } from "@/components/ai-elements/markdown-code";
-import { MarkdownLink } from "@/components/ai-elements/markdown-link";
 import { cn } from "@/lib/utils";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
+import { MarkdownLink } from "./MarkdownLink";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
 
 type ReadResult =

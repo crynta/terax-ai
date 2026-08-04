@@ -1,9 +1,8 @@
-import type { ComponentProps, MouseEventHandler } from "react";
 import { isExternalUrl, openExternalUrl } from "@/lib/external-link";
+import type { ComponentProps, MouseEventHandler } from "react";
 
 export type MarkdownLinkProps = ComponentProps<"a"> & {
   node?: unknown;
-  /** Called after the external-open attempt settles. */
   onSettled?: () => void;
 };
 
@@ -14,10 +13,6 @@ export function openMarkdownLink(
   return openExternalUrl(href, onSettled);
 }
 
-/**
- * Open rendered Markdown links through the native opener instead of letting
- * the Tauri webview navigate to an external origin.
- */
 export function MarkdownLink({
   children,
   href,

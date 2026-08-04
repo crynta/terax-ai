@@ -1,11 +1,11 @@
+import { openExternalUrl } from "@/lib/external-link";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
 
-import { openMarkdownLink } from "./markdown-link";
-import { openExternalUrl } from "@/lib/external-link";
+import { openMarkdownLink } from "./MarkdownLink";
 
 describe("MarkdownLink", () => {
   afterEach(() => {
@@ -16,7 +16,10 @@ describe("MarkdownLink", () => {
     openUrl.mockResolvedValue(undefined);
     const onSettled = vi.fn();
 
-    await openMarkdownLink("https://chatgpt.com/codex/settings/usage", onSettled);
+    await openMarkdownLink(
+      "https://chatgpt.com/codex/settings/usage",
+      onSettled,
+    );
 
     expect(openUrl).toHaveBeenCalledWith(
       "https://chatgpt.com/codex/settings/usage",
