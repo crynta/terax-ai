@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { ButtonGroup, ButtonGroupText } from "@/components/ui/button-group";
+import { useChatStore } from "@/modules/ai/store/chatStore";
 import {
   Tooltip,
   TooltipContent,
@@ -25,6 +26,7 @@ import {
 import { Streamdown } from "streamdown";
 import { ChatStreamingProvider } from "./chat-code";
 import { MarkdownCode } from "./markdown-code";
+import { MarkdownLink, type MarkdownLinkProps } from "./markdown-link";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -321,7 +323,15 @@ export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
   streaming?: boolean;
 };
 
-const streamdownComponents = { code: MarkdownCode };
+const streamdownComponents = {
+  a: (props: MarkdownLinkProps) => (
+    <MarkdownLink
+      {...props}
+      onSettled={() => useChatStore.getState().focusInput()}
+    />
+  ),
+  code: MarkdownCode,
+};
 
 export const MessageResponse = memo(
   ({ className, streaming = false, ...props }: MessageResponseProps) => (
