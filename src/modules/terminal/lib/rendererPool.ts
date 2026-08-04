@@ -10,12 +10,12 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { type FontWeight, Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
+import { terminalReadlineSequence } from "./keymap";
 import {
   readTerminalClipboard,
   writeTerminalClipboard,
 } from "./terminalClipboard";
 import { pasteIntoTerminal } from "./terminalPaste";
-import { terminalReadlineSequence } from "./keymap";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -257,6 +257,10 @@ function createSlot(): Slot {
   // one with DEL, then write the refined syllable — so the shell mirrors what
   // the IME shows. `pendingGlyph` tracks the last uncommitted glyph so the
   // next replacement knows how many code points to erase.
+  const lastCodePoint = (s: string): string => {
+    const cps = [...s];
+    return cps.length ? cps[cps.length - 1] : "";
+  };
   let pendingGlyph = "";
   {
     const ta = slot.term.textarea;
@@ -265,9 +269,35 @@ function createSlot(): Slot {
         const e = ev as InputEvent;
         if (slot.currentLeafId === null) return;
         if (e.inputType === "insertText") {
-          // xterm already forwarded this glyph; just remember it so a
-          // following replacement knows what to erase.
-          pendingGlyph = e.data ?? "";
+          // Only the last code point can still be refined by the IME —
+          // anything before it is already committed and must never be
+          // erased again.
+          pendingGlyph = lastCodePoint(e.data ?? "");
+          // xterm's capture-phase input handler drops insertText whenever
+          // _keyDownSeen is set (keydown seen, keyup not yet). The macOS IME
+          // fires input BEFORE keydown, so during fast typing the previous
+          // key's keyup hasn't landed and committed syllables vanish.
+          // Replicate xterm's drop condition and forward the data ourselves.
+          const core = (
+            slot.term as unknown as {
+              _core?: { _keyDownSeen?: boolean; _keyPressHandled?: boolean };
+            }
+          )._core;
+          // ASCII input (space, English letters) reaches the PTY through
+          // xterm's keydown/keypress path — never compensate it or it
+          // doubles. IME text (Hangul/jamo) never fires keypress, so the
+          // stale _keyPressHandled flag must not veto it: forward whenever
+          // either flag would make xterm's _inputEvent drop the event.
+          const isImeText = /[^\x20-\x7e]/.test(e.data ?? "");
+          if (
+            e.data &&
+            e.composed &&
+            isImeText &&
+            (core?._keyDownSeen || core?._keyPressHandled)
+          ) {
+            const bridge = adapter?.resolveLeaf(slot.currentLeafId);
+            bridge?.writeToPty(e.data);
+          }
           return;
         }
         if (e.inputType === "insertReplacementText" && e.data) {
@@ -275,8 +305,19 @@ function createSlot(): Slot {
           if (!bridge) return;
           const erase = "\x7f".repeat([...pendingGlyph].length);
           bridge.writeToPty(erase + e.data);
-          pendingGlyph = e.data;
+          // A replacement can carry a commit plus a new composition in one
+          // event (jamo carry-over: "간" + ㅏ → "가나"). Track only the final
+          // code point — the next replacement targets just that glyph, and
+          // erasing more would swallow the committed character.
+          pendingGlyph = lastCodePoint(e.data);
         }
+      });
+      // Composition is over: the glyph is final, nothing left to refine.
+      ta.addEventListener("compositionend", () => {
+        pendingGlyph = "";
+      });
+      ta.addEventListener("blur", () => {
+        pendingGlyph = "";
       });
     }
   }
@@ -321,7 +362,8 @@ function createSlot(): Slot {
       if (event.type === "keydown") {
         const targetLeafId = slot.currentLeafId;
         void readTerminalClipboard().then((text) => {
-          if (text && slot.currentLeafId === targetLeafId) slot.term.paste(text);
+          if (text && slot.currentLeafId === targetLeafId)
+            slot.term.paste(text);
         });
       }
       event.preventDefault();
