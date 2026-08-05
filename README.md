@@ -117,6 +117,10 @@ Terax is a lightweight open-source terminal-first AI-native development environm
 
 Latest installers are on the [Releases](https://github.com/crynta/terax-ai/releases/latest) page. Terax auto-updates from there.
 
+### macOS notes
+
+- **Homebrew:** `brew install --cask terax`
+
 ### Windows notes
 
 - Default shell detection: `pwsh.exe` (PowerShell 7+) -> `powershell.exe` (Windows PowerShell 5.1) -> `cmd.exe`.
