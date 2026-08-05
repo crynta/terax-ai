@@ -75,4 +75,12 @@ if [ -z "$__TERAX_HOOKS_LOADED" ]; then
 
   _terax_precmd
 fi
+
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  if [[ -x /opt/homebrew/bin/brew ]] && [[ ":$PATH:" != *":/opt/homebrew/bin:"* ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]] && [[ ":$PATH:" != *":/usr/local/bin:"* ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+fi
 :
