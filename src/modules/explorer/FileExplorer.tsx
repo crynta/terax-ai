@@ -558,6 +558,7 @@ export const FileExplorer = memo(
           onActiveChange={setIsSearchActive}
           onRevealInTerminal={onRevealInTerminal}
           onAttachToAgent={onAttachToAgent}
+          onOpenMarkdownPreview={onOpenMarkdownPreview}
         />
 
         {!isSearchActive ? (
