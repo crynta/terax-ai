@@ -317,6 +317,12 @@ export const native = {
       message,
       workspace: currentWorkspaceEnv(),
     }),
+  gitUndoCommit: (repoRoot: string, expectedHeadSha: string) =>
+    invoke<void>("git_undo_commit", {
+      repoRoot,
+      expectedHeadSha,
+      workspace: currentWorkspaceEnv(),
+    }),
   gitFetch: (repoRoot: string) =>
     invoke<void>("git_fetch", {
       repoRoot,
