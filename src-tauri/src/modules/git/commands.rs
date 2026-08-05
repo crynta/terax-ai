@@ -48,6 +48,19 @@ pub async fn git_panel_snapshot(
 }
 
 #[tauri::command]
+pub async fn git_discover_repos(
+    cwd: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<Vec<String>, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::discover_repos(r, &cwd, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn git_status(
     repo_root: String,
     workspace: Option<WorkspaceEnv>,

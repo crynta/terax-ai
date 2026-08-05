@@ -107,5 +107,10 @@ export function useSourceControlContext({
     sourceControlContextPath,
   ]);
 
-  return { sourceControl, toggleSourceControl, openGitGraphFromContext };
+  return {
+    sourceControl,
+    sourceControlPath,
+    toggleSourceControl,
+    openGitGraphFromContext,
+  };
 }
