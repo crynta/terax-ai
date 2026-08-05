@@ -169,6 +169,9 @@
 html[data-chrome="borderless"] .terax-bg-surface {
   border-radius: 12px;
 }
+body[data-dialog-open] .terax-bg-surface {
+  z-index: 40 !important;
+}
 .zoom-content {
   zoom: var(--app-zoom);
 }
