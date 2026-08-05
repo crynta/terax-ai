@@ -75,7 +75,13 @@ import {
   setRecentModelIds,
   setSttProvider,
   setWhispercppBaseURL,
+  setVoiceHoldEnabled,
+  setVoiceHoldUseFn,
+  setVoiceHoldMods,
+  setVoiceCleanupEnabled,
+  type VoiceHoldMods,
 } from "@/modules/settings/store";
+import { IS_MAC } from "@/lib/platform";
 import {
   Add01Icon,
   ArrowDown01Icon,
@@ -1312,10 +1318,40 @@ function StatusLine({
   );
 }
 
+const MOD_PRESETS: { label: string; mods: VoiceHoldMods }[] = [
+  { label: IS_MAC ? "Control + Option" : "Ctrl + Alt", mods: { ctrl: true, alt: true } },
+  { label: IS_MAC ? "Control + Shift" : "Ctrl + Shift", mods: { ctrl: true, shift: true } },
+  { label: IS_MAC ? "Option + Shift" : "Alt + Shift", mods: { alt: true, shift: true } },
+];
+
+function modsEqual(a: VoiceHoldMods, b: VoiceHoldMods): boolean {
+  return (
+    !!a.ctrl === !!b.ctrl &&
+    !!a.alt === !!b.alt &&
+    !!a.shift === !!b.shift &&
+    !!a.meta === !!b.meta
+  );
+}
+
+function modsLabel(m: VoiceHoldMods): string {
+  const preset = MOD_PRESETS.find((p) => modsEqual(p.mods, m));
+  if (preset) return preset.label;
+  const parts: string[] = [];
+  if (m.ctrl) parts.push(IS_MAC ? "Control" : "Ctrl");
+  if (m.alt) parts.push(IS_MAC ? "Option" : "Alt");
+  if (m.shift) parts.push("Shift");
+  if (m.meta) parts.push(IS_MAC ? "Command" : "Win");
+  return parts.length ? parts.join(" + ") : "None";
+}
+
 function VoiceBlock() {
   const sttProvider = usePreferencesStore((s) => s.sttProvider);
   const groqSttModel = usePreferencesStore((s) => s.groqSttModel);
   const whispercppBaseURL = usePreferencesStore((s) => s.whispercppBaseURL);
+  const holdEnabled = usePreferencesStore((s) => s.voiceHoldEnabled);
+  const holdUseFn = usePreferencesStore((s) => s.voiceHoldUseFn);
+  const holdMods = usePreferencesStore((s) => s.voiceHoldMods);
+  const cleanupEnabled = usePreferencesStore((s) => s.voiceCleanupEnabled);
   const [urlDraft, setUrlDraft] = useState(whispercppBaseURL);
   const [groqModelDraft, setGroqModelDraft] = useState(groqSttModel);
 
@@ -1404,6 +1440,85 @@ function VoiceBlock() {
               className="h-8 font-mono text-[11.5px]"
             />
           </FieldRow>
+        </div>
+      )}
+
+      <div className="h-px bg-border/60" />
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col">
+          <span className="text-[12px] font-medium">Push-to-talk</span>
+          <span className="text-[10.5px] leading-relaxed text-muted-foreground">
+            Hold a key to dictate; release to insert the transcript wherever you
+            are typing.
+          </span>
+        </div>
+        <Switch
+          checked={holdEnabled}
+          onCheckedChange={(v) => void setVoiceHoldEnabled(v)}
+        />
+      </div>
+
+      {holdEnabled && (
+        <div className="flex flex-col gap-2.5">
+          {IS_MAC && (
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[11.5px]">Use the Globe / Fn key</span>
+              <Switch
+                checked={holdUseFn}
+                onCheckedChange={(v) => void setVoiceHoldUseFn(v)}
+              />
+            </div>
+          )}
+
+          {(!IS_MAC || !holdUseFn) && (
+            <FieldRow label="Hold keys">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-8 flex-1 justify-between gap-2 px-2.5 text-[11.5px]"
+                  >
+                    <span>{modsLabel(holdMods)}</span>
+                    <HugeiconsIcon
+                      icon={ArrowDown01Icon}
+                      size={11}
+                      strokeWidth={2}
+                      className="opacity-70"
+                    />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-44 p-1">
+                  {MOD_PRESETS.map((p) => (
+                    <DropdownMenuItem
+                      key={p.label}
+                      onSelect={() => void setVoiceHoldMods(p.mods)}
+                      className={cn(
+                        "flex items-center gap-2 text-[12px]",
+                        modsEqual(p.mods, holdMods) && "bg-accent/50",
+                      )}
+                    >
+                      <span>{p.label}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </FieldRow>
+          )}
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-[11.5px]">Auto-edit with AI</span>
+              <span className="text-[10.5px] leading-relaxed text-muted-foreground">
+                Clean up filler words and punctuation with your default model
+                before inserting.
+              </span>
+            </div>
+            <Switch
+              checked={cleanupEnabled}
+              onCheckedChange={(v) => void setVoiceCleanupEnabled(v)}
+            />
+          </div>
         </div>
       )}
     </div>
