@@ -104,7 +104,12 @@ export async function buildLanguageModel(
     }
     case "anthropic": {
       const { createAnthropic } = await import("@ai-sdk/anthropic");
-      built = createAnthropic({ apiKey: key })(resolvedModelId);
+      // Webview fetch sends an Origin header; Anthropic's API rejects such
+      // "browser" requests unless this header opts in. ponytail: required flag.
+      built = createAnthropic({
+        apiKey: key,
+        headers: { "anthropic-dangerous-direct-browser-access": "true" },
+      })(resolvedModelId);
       break;
     }
     case "google": {
