@@ -1,4 +1,4 @@
-import { resolveFontFamily } from "@/lib/fonts";
+import { registerLocalFont, resolveFontFamily } from "@/lib/fonts";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import type { TerminalCursorStyle } from "@/modules/settings/store";
 import { buildTerminalTheme } from "@/styles/terminalTheme";
@@ -73,13 +73,18 @@ export type Slot = {
 const slots: Slot[] = [];
 let recyclerEl: HTMLDivElement | null = null;
 let adapter: SlotAdapter | null = null;
-let configuredFont: RendererFont | null = null;
+let configuredFont: ConfiguredFont | null = null;
 
 type RendererFont = {
   fontFamily: string;
   fontWeight: string;
   fontSize: number;
 };
+
+// rawFamily keeps the pre-resolution family for local() FontFace
+// registration: registerLocalFont needs a single family name, and fontFamily
+// is already resolved into a stack.
+type ConfiguredFont = RendererFont & { rawFamily: string };
 
 let windowActive =
   typeof document === "undefined" || (!document.hidden && document.hasFocus());
@@ -803,9 +808,31 @@ function attachWebgl(slot: Slot): void {
     for (const c of after) if (!before.has(c)) added.push(c);
     slot.webglAddon = webgl;
     slot.webglCanvases = added;
+    // WKWebView hides system fonts from the WebGL atlas rasterizer unless they
+    // are registered FontFaces, so some cells bake as the fallback font — the
+    // "two fonts" effect (#898). Register the effective font (theme override
+    // via applyTerminalFont wins over the preference), then rebuild the atlas
+    // so it re-rasterizes in the correct font.
+    const fam =
+      configuredFont?.rawFamily ??
+      usePreferencesStore.getState().terminalFontFamily;
+    void registerLocalFont(fam).then(() => {
+      if (slot.webglAddon === webgl) clearWebglAtlas(slot);
+    });
   } catch (e) {
     console.warn("[terax-webgl] unavailable:", e);
   }
+}
+
+// Rebuild a slot's GPU glyph atlas so any fallback glyphs baked in before the
+// configured font was resident get re-rasterized in the correct font.
+// Terminal.clearTextureAtlas (xterm 6.0.0) drops the active renderer's atlas;
+// the refresh then repaints it against the now-registered font.
+function clearWebglAtlas(slot: Slot): void {
+  try {
+    slot.term.clearTextureAtlas();
+    slot.term.refresh(0, slot.term.rows - 1);
+  } catch {}
 }
 
 function disposeSlotWebgl(slot: Slot): void {
@@ -902,11 +929,13 @@ export function applyLetterSpacing(spacing: number): void {
 }
 
 export function applyTerminalFont(font: RendererFont): void {
-  const next = {
+  const next: ConfiguredFont = {
     fontFamily: resolveFontFamily(font.fontFamily),
     fontWeight: font.fontWeight,
     fontSize: font.fontSize,
+    rawFamily: font.fontFamily,
   };
+  const familyChanged = configuredFont?.rawFamily !== next.rawFamily;
   configuredFont = next;
   for (const slot of slots) {
     let refit = false;
@@ -922,6 +951,16 @@ export function applyTerminalFont(font: RendererFont): void {
       slot.term.options.fontWeight = next.fontWeight as FontWeight;
     }
     if (refit) refitSlot(slot);
+  }
+  // Register the new family as a local FontFace so the WebGL atlas can resolve
+  // it (WKWebView won't otherwise), then rebuild any stale atlases so glyphs
+  // baked in the old/fallback font get re-rasterized (#898). Use the raw
+  // pre-resolution family: registerLocalFont skips stacks, and the resolved
+  // value is always a stack.
+  if (familyChanged) {
+    void registerLocalFont(next.rawFamily).then(() => {
+      for (const slot of slots) clearWebglAtlas(slot);
+    });
   }
 }
 
