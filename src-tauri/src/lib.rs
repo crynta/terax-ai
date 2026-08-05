@@ -85,6 +85,8 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
     };
 
     if let Some(window) = app.get_webview_window("settings") {
+        // macOS has no parent() (see below), so re-assert the float there.
+        #[cfg(target_os = "macos")]
         let _ = window.set_always_on_top(true);
         let _ = window.show();
         let _ = window.set_focus();
@@ -101,10 +103,15 @@ async fn open_settings_window(app: tauri::AppHandle, tab: Option<String>) -> Res
         .inner_size(900.0, 700.0)
         .min_inner_size(820.0, 620.0)
         .resizable(true)
-        .visible(false)
-        // Keep settings above the main app window so it doesn't get hidden
-        // when the user clicks back into the editor or terminal (#33).
-        .always_on_top(true);
+        .visible(false);
+
+    // Keep settings above the main app window so it doesn't get hidden when
+    // the user clicks back into the editor or terminal (#33). On macOS that
+    // needs always_on_top; on Windows/Linux the parent()/owner relationship
+    // below already does it, and always_on_top would wrongly float settings
+    // above OTHER applications too.
+    #[cfg(target_os = "macos")]
+    let builder = builder.always_on_top(true);
 
     // Tie lifecycle to the main window so settings minimizes/closes with it.
     // macOS: skip parent() — child + always_on_top leaves the settings webview
