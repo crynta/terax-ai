@@ -1,0 +1,156 @@
+[1mdiff --git a/src/app/App.tsx b/src/app/App.tsx[m
+[1mindex 6fc9a1a..45f49c6 100644[m
+[1m--- a/src/app/App.tsx[m
+[1m+++ b/src/app/App.tsx[m
+[36m@@ -137,7 +137,7 @@[m [mexport default function App({ initialSession }: { initialSession?: SessionState[m
+     closeActivePane,[m
+     closePaneByLeaf,[m
+     resetWorkspace,[m
+[31m-  } = useTabs(initialSession, getLaunchDir() ? { cwd: getLaunchDir() } : undefined);[m
+[32m+[m[32m  } = useTabs(initialSession, getLaunchDir().path ? { cwd: getLaunchDir().path } : undefined);[m
+ [m
+   // Mirror `tabs` into a ref so callbacks scheduled with `setTimeout`[m
+   // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.[m
+[36m@@ -217,6 +217,7 @@[m [mexport default function App({ initialSession }: { initialSession?: SessionState[m
+     markBooted,[m
+     setActiveSpaceForNewTabs,[m
+     adoptWorkspaceEnv,[m
+[32m+[m[32m    restoredSession: !!initialSession,[m
+   });[m
+ [m
+   useSpacePersistence({[m
+[1mdiff --git a/src/lib/launchDir.ts b/src/lib/launchDir.ts[m
+[1mindex c61298f..b4b7bc0 100644[m
+[1m--- a/src/lib/launchDir.ts[m
+[1m+++ b/src/lib/launchDir.ts[m
+[36m@@ -1,14 +1,17 @@[m
+ import { invoke } from "@tauri-apps/api/core";[m
+ [m
+[31m-let cached: string | undefined;[m
+[32m+[m[32mlet cached: { path: string | undefined; isExplicit: boolean } = { path: undefined, isExplicit: false };[m
+ [m
+ export async function initLaunchDir(): Promise<void> {[m
+[31m-  const dir =[m
+[31m-    (await invoke<string | null>("get_launch_dir").catch(() => null)) ??[m
+[31m-    (await invoke<string>("workspace_current_dir").catch(() => null));[m
+[31m-  cached = dir ? dir.replace(/\\/g, "/") : undefined;[m
+[32m+[m[32m  const explicitDir = await invoke<string | null>("get_launch_dir").catch(() => null);[m
+[32m+[m[32m  const fallbackDir = await invoke<string>("workspace_current_dir").catch(() => null);[m
+[32m+[m[32m  const dir = explicitDir ?? fallbackDir;[m
+[32m+[m[32m  cached = {[m
+[32m+[m[32m    path: dir ? dir.replace(/\\/g, "/") : undefined,[m
+[32m+[m[32m    isExplicit: !!explicitDir,[m
+[32m+[m[32m  };[m
+ }[m
+ [m
+[31m-export function getLaunchDir(): string | undefined {[m
+[32m+[m[32mexport function getLaunchDir(): { path: string | undefined; isExplicit: boolean } {[m
+   return cached;[m
+ }[m
+[1mdiff --git a/src/main.tsx b/src/main.tsx[m
+[1mindex 04aa384..7207239 100644[m
+[1m--- a/src/main.tsx[m
+[1m+++ b/src/main.tsx[m
+[36m@@ -27,7 +27,15 @@[m [mawait invoke("pty_close_all").catch(() => {});[m
+ await initLaunchDir();[m
+ [m
+ // Only restore session if we weren't launched with a specific directory argument.[m
+[31m-const session = getLaunchDir() ? null : await loadSession();[m
+[32m+[m[32mconst { isExplicit } = getLaunchDir();[m
+[32m+[m[32mlet session = null;[m
+[32m+[m[32mif (!isExplicit) {[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    session = await loadSession();[m
+[32m+[m[32m  } catch (err) {[m
+[32m+[m[32m    console.error("Failed to load session:", err);[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+ [m
+ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render([m
+   <App initialSession={session} />,[m
+[1mdiff --git a/src/modules/spaces/lib/useSpacesBoot.ts b/src/modules/spaces/lib/useSpacesBoot.ts[m
+[1mindex da8cd16..62d74d1 100644[m
+[1m--- a/src/modules/spaces/lib/useSpacesBoot.ts[m
+[1m+++ b/src/modules/spaces/lib/useSpacesBoot.ts[m
+[36m@@ -18,6 +18,7 @@[m [mtype Params = {[m
+   markBooted: () => void;[m
+   setActiveSpaceForNewTabs: (id: string) => void;[m
+   adoptWorkspaceEnv: (env: WorkspaceEnv) => Promise<string | null>;[m
+[32m+[m[32m  restoredSession?: boolean;[m
+ };[m
+ [m
+ function uniqueCwds(tabs: Tab[]): string[] {[m
+[36m@@ -42,6 +43,7 @@[m [mexport function useSpacesBoot({[m
+   markBooted,[m
+   setActiveSpaceForNewTabs,[m
+   adoptWorkspaceEnv,[m
+[32m+[m[32m  restoredSession,[m
+ }: Params) {[m
+   const done = useRef(false);[m
+ [m
+[36m@@ -106,7 +108,9 @@[m [mexport function useSpacesBoot({[m
+         const inActive = restored.filter((t) => t.spaceId === active);[m
+         const idx = states.get(active)?.activeTabIndex ?? 0;[m
+         const activeTab = inActive[idx] ?? inActive[0] ?? restored[0];[m
+[31m-        replaceTabs(restored, activeTab.id);[m
+[32m+[m[32m        if (!restoredSession) {[m
+[32m+[m[32m          replaceTabs(restored, activeTab.id);[m
+[32m+[m[32m        }[m
+       } catch (e) {[m
+         console.error("[terax] spaces boot failed:", e);[m
+       } finally {[m
+[36m@@ -122,5 +126,6 @@[m [mexport function useSpacesBoot({[m
+     markBooted,[m
+     setActiveSpaceForNewTabs,[m
+     adoptWorkspaceEnv,[m
+[32m+[m[32m    restoredSession,[m
+   ]);[m
+ }[m
+[1mdiff --git a/src/modules/tabs/lib/sessionStore.ts b/src/modules/tabs/lib/sessionStore.ts[m
+[1mindex 33dbc21..0153841 100644[m
+[1m--- a/src/modules/tabs/lib/sessionStore.ts[m
+[1m+++ b/src/modules/tabs/lib/sessionStore.ts[m
+[36m@@ -36,6 +36,9 @@[m [mexport async function saveSession(tabs: Tab[], activeId: number): Promise<void>[m
+     if (t.kind === "terminal") {[m
+       return { ...t, cold: true };[m
+     }[m
+[32m+[m[32m    if (t.kind === "editor") {[m
+[32m+[m[32m      return { ...t, dirty: false };[m
+[32m+[m[32m    }[m
+     return t;[m
+   });[m
+ [m
+[36m@@ -48,8 +51,31 @@[m [mexport async function saveSession(tabs: Tab[], activeId: number): Promise<void>[m
+   await store.save();[m
+ }[m
+ [m
+[32m+[m[32mfunction isSessionState(state: any): state is SessionState {[m
+[32m+[m[32m  if (!state || typeof state !== "object") return false;[m
+[32m+[m[32m  if (!Array.isArray(state.tabs) || state.tabs.length === 0) return false;[m
+[32m+[m[41m  [m
+[32m+[m[32m  const supportedKinds = ["terminal", "editor", "preview", "ai-diff", "git-diff", "git-history", "git-commit-file"];[m
+[32m+[m[41m  [m
+[32m+[m[32m  for (const t of state.tabs) {[m
+[32m+[m[32m    if (!t || typeof t !== "object") return false;[m
+[32m+[m[32m    if (typeof t.id !== "number") return false;[m
+[32m+[m[32m    if (!supportedKinds.includes(t.kind)) return false;[m
+[32m+[m[41m    [m
+[32m+[m[32m    if (t.kind === "terminal") {[m
+[32m+[m[32m      if (!t.paneTree || typeof t.paneTree !== "object") return false;[m
+[32m+[m[32m      if (typeof t.activeLeafId !== "number") return false;[m
+[32m+[m[32m    }[m
+[32m+[m[32m  }[m
+[32m+[m[41m  [m
+[32m+[m[32m  if (typeof state.activeId !== "number") return false;[m
+[32m+[m[32m  if (!state.tabs.some((t: any) => t.id === state.activeId)) return false;[m
+[32m+[m[41m  [m
+[32m+[m[32m  return true;[m
+[32m+[m[32m}[m
+[32m+[m
+ export async function loadSession(): Promise<SessionState | null> {[m
+[31m-  const state = await store.get<SessionState>(KEY_SESSION);[m
+[31m-  if (!state || !state.tabs || state.tabs.length === 0) return null;[m
+[32m+[m[32m  const state = await store.get<any>(KEY_SESSION);[m
+[32m+[m[32m  if (!isSessionState(state)) return null;[m
+   return state;[m
+ }[m
