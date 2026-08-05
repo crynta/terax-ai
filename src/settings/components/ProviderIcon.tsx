@@ -26,6 +26,7 @@ const ICON_BY_PROVIDER = {
   deepseek: DeepseekIcon,
   mistral: MistralIcon,
   openrouter: GlobeIcon,
+  requesty: PlugIcon,
   "openai-compatible": PlugIcon,
   lmstudio: ComputerIcon,
   mlx: AppleIcon,

@@ -10,6 +10,7 @@ export type ProviderId =
   | "deepseek"
   | "mistral"
   | "openrouter"
+  | "requesty"
   | "openai-compatible"
   | "lmstudio"
   | "mlx"
@@ -88,6 +89,13 @@ export const PROVIDERS: readonly ProviderInfo[] = [
     keyringAccount: "openrouter-api-key",
     keyPrefix: "sk-or-",
     consoleUrl: "https://openrouter.ai/keys",
+  },
+  {
+    id: "requesty",
+    label: "Requesty",
+    keyringAccount: "requesty-api-key",
+    keyPrefix: "rqsty-sk-",
+    consoleUrl: "https://app.requesty.ai/api-keys",
   },
   {
     id: "openai-compatible",
@@ -591,6 +599,16 @@ export const MODELS = [
     capabilities: { intelligence: 3, speed: 3, cost: 3 },
   },
 
+  // ── Requesty (gateway; model id is user-supplied at runtime) ──────────────
+  {
+    id: "requesty-custom",
+    provider: "requesty",
+    label: "Requesty",
+    hint: "Configurable",
+    description: "Any model on Requesty by id.",
+    capabilities: { intelligence: 3, speed: 3, cost: 3 },
+  },
+
   // ── Generic OpenAI-compatible (user-defined endpoint) ─────────────────────
   {
     id: "openai-compatible-custom",
@@ -675,6 +693,7 @@ export function isKnownModelId(id: string): id is ModelId {
 
 const FREEFORM_PROVIDERS: ReadonlySet<ProviderId> = new Set([
   "openrouter",
+  "requesty",
   "openai-compatible",
   "lmstudio",
   "mlx",
@@ -757,6 +776,7 @@ export const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   "llama-3.3-70b-versatile": 128_000,
   "deepseek-r1-distill-llama-70b": 128_000,
   "openrouter-custom": 256_000,
+  "requesty-custom": 256_000,
   "openai-compatible-custom": 128_000,
   "lmstudio-local": 32_000,
   "mlx-local": 32_000,
@@ -873,6 +893,7 @@ export const DEFAULT_AUTOCOMPLETE_MODEL: Partial<Record<ProviderId, string>> = {
   xai: "grok-4.3",
   deepseek: "deepseek-v4-flash",
   openrouter: "openai/gpt-5.4-mini",
+  requesty: "openai/gpt-4o-mini",
   "openai-compatible": "",
 };
 
