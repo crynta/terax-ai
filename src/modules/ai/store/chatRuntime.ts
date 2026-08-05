@@ -3,7 +3,12 @@ import {
   type ChatTransport,
   lastAssistantMessageIsCompleteWithApprovalResponses,
 } from "ai";
-import { getModel, providerNeedsKey, type ModelId } from "../config";
+import {
+  getModel,
+  isCompatModelId,
+  providerNeedsKey,
+  type ModelId,
+} from "../config";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { BUILTIN_AGENTS } from "../lib/agents";
 import { useAgentsStore } from "./agentsStore";
@@ -132,7 +137,10 @@ export async function sendMessage(text: string): Promise<boolean> {
   const state = useChatStore.getState();
   const sessionId = state.activeSessionId;
   if (!sessionId) return false;
+  // Custom-endpoint (compat-*) models aren't in the built-in MODELS table, so
+  // getModel() would throw; they carry their own auth via getActiveProviderKey.
   if (
+    !isCompatModelId(state.selectedModelId) &&
     providerNeedsKey(getModel(state.selectedModelId as ModelId).provider) &&
     !getActiveProviderKey()
   )
