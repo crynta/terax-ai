@@ -22,6 +22,7 @@ export const EMPTY_PROVIDER_KEYS: ProviderKeys = {
   mistral: null,
   openrouter: null,
   "openai-compatible": null,
+  "opencode-go": null,
   lmstudio: null,
   mlx: null,
   ollama: null,
