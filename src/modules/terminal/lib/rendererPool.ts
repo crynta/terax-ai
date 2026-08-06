@@ -283,7 +283,7 @@ function createSlot(): Slot {
       event.preventDefault();
       return false;
     }
-    if (isTerminalPaste(event)) {
+    if (isTerminalPaste(event, slot)) {
       if (event.type === "keydown") {
         const targetLeafId = slot.currentLeafId;
         void readTerminalClipboard().then((text) => {
@@ -1059,15 +1059,21 @@ function isTerminalCopy(e: KeyboardEvent): boolean {
   );
 }
 
-function isTerminalPaste(e: KeyboardEvent): boolean {
-  return (
-    !IS_MAC &&
+function isTerminalPaste(e: KeyboardEvent, s: Slot): boolean {
+  if (IS_MAC) return false;
+  const classic =
     e.ctrlKey &&
     e.shiftKey &&
     !e.altKey &&
     !e.metaKey &&
-    (e.code === "KeyV" || e.key === "v" || e.key === "V")
-  );
+    (e.code === "KeyV" || e.key === "v" || e.key === "V");
+  const plainCtrlV =
+    e.ctrlKey &&
+    !e.shiftKey &&
+    !e.altKey &&
+    !e.metaKey &&
+    (e.code === "KeyV" || e.key === "v" || e.key === "V");
+  return classic || (plainCtrlV && !isAltScreen(s));
 }
 
 function isShiftEnter(e: KeyboardEvent): boolean {
