@@ -69,16 +69,23 @@ export function createCommandItems(
 ): PaletteItem[] {
   const activeTab = ctx.tabs.find((tab) => tab.id === ctx.activeId);
   const activeTerminalTab = activeTab?.kind === "terminal" ? activeTab : null;
-  const activePaneCount = activeTerminalTab
-    ? leafIds(activeTerminalTab.paneTree).length
-    : 0;
+  const activeEditorTab = activeTab?.kind === "editor" ? activeTab : null;
+  const activePaneCount =
+    activeTerminalTab
+      ? leafIds(activeTerminalTab.paneTree).length
+      : activeEditorTab
+        ? leafIds(activeEditorTab.paneTree).length
+        : 0;
   const onlyOneTab = ctx.tabs.length < 2;
   const noWorkspaceRoot = !ctx.explorerRoot && !ctx.home;
-  const splitDisabled = !activeTerminalTab
-    ? "No terminal tab"
-    : activePaneCount >= MAX_PANES_PER_TAB
-      ? "Pane limit"
-      : undefined;
+  const splitDisabled =
+    !activeTerminalTab && !activeEditorTab
+      ? "No splittable tab"
+      : activeEditorTab?.preview
+        ? "Preview tabs cannot be split"
+        : activePaneCount >= MAX_PANES_PER_TAB
+          ? "Pane limit"
+          : undefined;
   const closeDisabled =
     onlyOneTab && activePaneCount < 2 ? "Last tab" : undefined;
 

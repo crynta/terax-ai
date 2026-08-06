@@ -25,6 +25,8 @@ type Props = {
   registerEditorHandle: EditorStackProps["registerHandle"];
   onEditorDirtyChange: EditorStackProps["onDirtyChange"];
   onEditorCloseTab: EditorStackProps["onCloseTab"];
+  onEditorClosePaneLeaf: EditorStackProps["onClosePaneLeaf"];
+  onEditorFocusLeaf: EditorStackProps["onFocusLeaf"];
   registerPreviewHandle: PreviewStackProps["registerHandle"];
   onPreviewUrlChange: PreviewStackProps["onUrlChange"];
   onAiDiffAccept: AiDiffStackProps["onAccept"];
@@ -51,6 +53,8 @@ export function WorkspaceSurface({
   registerEditorHandle,
   onEditorDirtyChange,
   onEditorCloseTab,
+  onEditorClosePaneLeaf,
+  onEditorFocusLeaf,
   registerPreviewHandle,
   onPreviewUrlChange,
   onAiDiffAccept,
@@ -100,6 +104,8 @@ export function WorkspaceSurface({
           registerHandle={registerEditorHandle}
           onDirtyChange={onEditorDirtyChange}
           onCloseTab={onEditorCloseTab}
+          onClosePaneLeaf={onEditorClosePaneLeaf}
+          onFocusLeaf={onEditorFocusLeaf}
           onSetMarkdownView={onSetMarkdownView}
         />
       </div>

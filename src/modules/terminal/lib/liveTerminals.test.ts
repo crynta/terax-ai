@@ -38,6 +38,8 @@ describe("selectLiveTerminals", () => {
         path: "/x.ts",
         dirty: false,
         preview: false,
+        paneTree: { kind: "leaf", id: 4, path: "/x.ts" },
+        activeLeafId: 4,
       },
     ];
     expect(selectLiveTerminals(tabs).map((t) => t.id)).toEqual([1, 2]);
