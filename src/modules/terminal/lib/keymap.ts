@@ -1,6 +1,6 @@
 export type TerminalKeyEvent = Pick<
   KeyboardEvent,
-  "altKey" | "ctrlKey" | "metaKey" | "key" | "code"
+  "altKey" | "ctrlKey" | "metaKey" | "shiftKey" | "key" | "code"
 >;
 
 export type PlatformOpts = { isMac: boolean };
@@ -54,4 +54,32 @@ export function terminalReadlineSequence(
     terminalWordNavigationSequence(event) ??
     terminalDeleteSequence(event, opts)
   );
+}
+
+export type TerminalPasteKind = "classic" | "plain";
+
+/** Paste chord classification:
+ *   non-macOS  Ctrl+Shift+V → "classic" (always pastes, even on the alt screen)
+ *   Windows    Ctrl+V       → "plain"   (pastes only outside the alt screen.
+ *                             On Linux Ctrl+V is a native readline shortcut,
+ *                             On macOS Cmd+V is handled natively)
+ */
+export function terminalPasteKind(
+  event: TerminalKeyEvent,
+  opts: PlatformOpts & { isWindows: boolean },
+): TerminalPasteKind | null {
+  const isV = event.code === "KeyV" || event.key === "v" || event.key === "V";
+  if (!isV || !event.ctrlKey || event.altKey || event.metaKey) return null;
+  if (event.shiftKey) return opts.isMac ? null : "classic";
+  return opts.isWindows ? "plain" : null;
+}
+
+/** Plain Ctrl+V must not paste into alt-screen TUIs (vim, htop, ...), where
+ * Ctrl+V has its own meaning. Called both on keydown and again after the
+ * asynchronous clipboard read, since the screen state may change in between. */
+export function shouldTerminalPaste(
+  kind: TerminalPasteKind,
+  isAlternateScreen: boolean,
+): boolean {
+  return kind === "classic" || !isAlternateScreen;
 }

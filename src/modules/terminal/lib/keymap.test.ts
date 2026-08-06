@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  shouldTerminalPaste,
   terminalDeleteSequence,
   terminalLineNavigationSequence,
+  terminalPasteKind,
   terminalReadlineSequence,
   terminalWordNavigationSequence,
   type TerminalKeyEvent,
@@ -12,6 +14,7 @@ const evt = (partial: Partial<TerminalKeyEvent>): TerminalKeyEvent => ({
   altKey: false,
   ctrlKey: false,
   metaKey: false,
+  shiftKey: false,
   key: "",
   code: "",
   ...partial,
@@ -175,5 +178,63 @@ describe("terminalReadlineSequence", () => {
         isAlternateScreen: true,
       }),
     ).toBeNull();
+  });
+});
+
+describe("terminalPasteKind", () => {
+  const plainCtrlV = evt({ ctrlKey: true, key: "v", code: "KeyV" });
+  const ctrlShiftV = evt({
+    ctrlKey: true,
+    shiftKey: true,
+    key: "V",
+    code: "KeyV",
+  });
+
+  const windows = { isMac: false, isWindows: true };
+  const linux = { isMac: false, isWindows: false };
+  const mac = { isMac: true, isWindows: false };
+
+  it("classifies plain Ctrl+V as a paste on Windows only", () => {
+    expect(terminalPasteKind(plainCtrlV, windows)).toBe("plain");
+    expect(terminalPasteKind(plainCtrlV, linux)).toBeNull();
+    expect(terminalPasteKind(plainCtrlV, mac)).toBeNull();
+  });
+
+  it("classifies Ctrl+Shift+V as a paste on Windows and Linux", () => {
+    expect(terminalPasteKind(ctrlShiftV, windows)).toBe("classic");
+    expect(terminalPasteKind(ctrlShiftV, linux)).toBe("classic");
+    expect(terminalPasteKind(ctrlShiftV, mac)).toBeNull();
+  });
+
+  it("ignores Ctrl+V with extra modifiers", () => {
+    expect(
+      terminalPasteKind(
+        evt({ ctrlKey: true, altKey: true, key: "v", code: "KeyV" }),
+        windows,
+      ),
+    ).toBeNull();
+    expect(
+      terminalPasteKind(
+        evt({ ctrlKey: true, metaKey: true, key: "v", code: "KeyV" }),
+        windows,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("shouldTerminalPaste", () => {
+  it("pastes plain Ctrl+V only outside the alternate screen", () => {
+    expect(shouldTerminalPaste("plain", false)).toBe(true);
+    expect(shouldTerminalPaste("plain", true)).toBe(false);
+  });
+
+  it("pastes Ctrl+Shift+V regardless of alternate-screen state", () => {
+    expect(shouldTerminalPaste("classic", false)).toBe(true);
+    expect(shouldTerminalPaste("classic", true)).toBe(true);
+  });
+
+  it("blocks plain Ctrl+V when the alt screen engages after the async clipboard read", () => {
+    expect(shouldTerminalPaste("plain", false)).toBe(true);
+    expect(shouldTerminalPaste("plain", true)).toBe(false);
   });
 });
