@@ -11,11 +11,16 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { type FontWeight, Terminal } from "@xterm/xterm";
 import { shouldCursorBlink } from "./cursorBlink";
 import {
+  createImeBridgeState,
+  imeBridgeInput,
+  resetImeBridge,
+} from "./imeBridge";
+import { terminalReadlineSequence } from "./keymap";
+import {
   readTerminalClipboard,
   writeTerminalClipboard,
 } from "./terminalClipboard";
 import { pasteIntoTerminal } from "./terminalPaste";
-import { terminalReadlineSequence } from "./keymap";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -247,6 +252,37 @@ function createSlot(): Slot {
     lastUsedAt: 0,
   };
 
+  // Bridge macOS WebKit IME input to the PTY (see imeBridge.ts for why).
+  // The bridge decides what to write; this block only wires DOM events and
+  // reads xterm's private key-tracking flags at the moment each event fires.
+  {
+    const ta = slot.term.textarea;
+    if (ta) {
+      const imeState = createImeBridgeState();
+      ta.addEventListener("input", (ev) => {
+        const e = ev as InputEvent;
+        if (slot.currentLeafId === null) return;
+        const core = (
+          slot.term as unknown as {
+            _core?: { _keyDownSeen?: boolean; _keyPressHandled?: boolean };
+          }
+        )._core;
+        const out = imeBridgeInput(
+          imeState,
+          slot.currentLeafId,
+          { inputType: e.inputType, data: e.data, composed: e.composed },
+          {
+            keyDownSeen: core?._keyDownSeen ?? false,
+            keyPressHandled: core?._keyPressHandled ?? false,
+          },
+        );
+        if (out) adapter?.resolveLeaf(slot.currentLeafId)?.writeToPty(out);
+      });
+      ta.addEventListener("compositionend", () => resetImeBridge(imeState));
+      ta.addEventListener("blur", () => resetImeBridge(imeState));
+    }
+  }
+
   term.attachCustomKeyEventHandler((event) => {
     // During IME composition the browser is assembling a multi-keystroke
     // character (Chinese pinyin → hanzi, Korean jamo → syllable, etc.).
@@ -287,7 +323,8 @@ function createSlot(): Slot {
       if (event.type === "keydown") {
         const targetLeafId = slot.currentLeafId;
         void readTerminalClipboard().then((text) => {
-          if (text && slot.currentLeafId === targetLeafId) slot.term.paste(text);
+          if (text && slot.currentLeafId === targetLeafId)
+            slot.term.paste(text);
         });
       }
       event.preventDefault();
