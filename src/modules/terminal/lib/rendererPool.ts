@@ -15,7 +15,12 @@ import {
   writeTerminalClipboard,
 } from "./terminalClipboard";
 import { pasteIntoTerminal } from "./terminalPaste";
-import { terminalReadlineSequence } from "./keymap";
+import {
+  shouldTerminalPaste,
+  terminalPasteKind,
+  terminalReadlineSequence,
+} from "./keymap";
+import { IS_MAC, IS_WINDOWS } from "@/lib/platform";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -287,7 +292,13 @@ function createSlot(): Slot {
       if (event.type === "keydown") {
         const targetLeafId = slot.currentLeafId;
         void readTerminalClipboard().then((text) => {
-          if (text && slot.currentLeafId === targetLeafId) slot.term.paste(text);
+          if (
+            text &&
+            slot.currentLeafId === targetLeafId &&
+            isTerminalPaste(event, slot)
+          ) {
+            slot.term.paste(text);
+          }
         });
       }
       event.preventDefault();
@@ -1044,9 +1055,6 @@ export function getLiveSlotForLeaf(leafId: number): Slot | null {
   );
 }
 
-const IS_MAC =
-  typeof navigator !== "undefined" &&
-  /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 function isTerminalCopy(e: KeyboardEvent): boolean {
   return (
@@ -1060,20 +1068,8 @@ function isTerminalCopy(e: KeyboardEvent): boolean {
 }
 
 function isTerminalPaste(e: KeyboardEvent, s: Slot): boolean {
-  if (IS_MAC) return false;
-  const classic =
-    e.ctrlKey &&
-    e.shiftKey &&
-    !e.altKey &&
-    !e.metaKey &&
-    (e.code === "KeyV" || e.key === "v" || e.key === "V");
-  const plainCtrlV =
-    e.ctrlKey &&
-    !e.shiftKey &&
-    !e.altKey &&
-    !e.metaKey &&
-    (e.code === "KeyV" || e.key === "v" || e.key === "V");
-  return classic || (plainCtrlV && !isAltScreen(s));
+  const kind = terminalPasteKind(e, { isMac: IS_MAC, isWindows: IS_WINDOWS });
+  return kind !== null && shouldTerminalPaste(kind, isAltScreen(s));
 }
 
 function isShiftEnter(e: KeyboardEvent): boolean {
