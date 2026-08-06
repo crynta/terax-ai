@@ -17,6 +17,7 @@ import {
 import { pasteIntoTerminal } from "./terminalPaste";
 import { terminalReadlineSequence } from "./keymap";
 import { createTerminalLinkHandler } from "./terminalLinks";
+import { activateUnicode11 } from "./unicodeWidth";
 
 export const POOL_MAX_SIZE = 5;
 const FIT_DEBOUNCE_MS = 8;
@@ -222,6 +223,7 @@ function createSlot(): Slot {
       void openExternalUrl(uri, () => term.focus());
     }),
   );
+  activateUnicode11(term);
 
   const host = document.createElement("div");
   host.style.cssText = "width:100%;height:100%;";
