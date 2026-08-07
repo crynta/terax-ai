@@ -61,6 +61,7 @@ import {
 } from "@/modules/sidebar";
 import {
   SourceControlPanel,
+  useRepositoryTargeting,
   useSourceControlContext,
 } from "@/modules/source-control";
 import {
@@ -95,7 +96,11 @@ import {
 } from "@/modules/terminal";
 import { ThemeProvider, useThemeFileEditing } from "@/modules/theme";
 import { UpdaterDialog } from "@/modules/updater";
-import { useWorkspaceEnvStore, type WorkspaceEnv } from "@/modules/workspace";
+import {
+  useWorkspaceEnvStore,
+  workspaceScopeKey,
+  type WorkspaceEnv,
+} from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -213,6 +218,7 @@ export default function App() {
 
   const activeSpaceId = useSpaces((s) => s.activeId);
   const spacesHydrated = useSpaces((s) => s.hydrated);
+  const sourceControlSpaceId = activeSpaceId ?? DEFAULT_SPACE_ID;
 
   const handleWorkspaceChange = useCallback(
     async (env: WorkspaceEnv) => {
@@ -284,6 +290,7 @@ export default function App() {
     persistSidebarCollapsed,
     toggleSidebar,
     cycleSidebarView,
+    openSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
   } = useSidebarPanel(explorerRef);
@@ -666,6 +673,32 @@ export default function App() {
     activeTab?.kind === "editor" || activeTab?.kind === "markdown"
       ? activeTab.path
       : null;
+  const isRepositoryContextCurrent = useCallback(
+    (spaceId: string, workspaceKey: string) => {
+      const currentSpaceId =
+        useSpaces.getState().activeId ?? DEFAULT_SPACE_ID;
+      const currentWorkspaceKey = workspaceScopeKey(
+        useWorkspaceEnvStore.getState().env,
+      );
+      return spaceId === currentSpaceId && workspaceKey === currentWorkspaceKey;
+    },
+    [],
+  );
+  const openSourceControl = useCallback(() => {
+    openSidebarView("source-control");
+  }, [openSidebarView]);
+  const {
+    repositoryTarget: sourceControlRepositoryTarget,
+    openInSourceControl: handleOpenRepositoryInSourceControl,
+    openGitHistory: handleOpenGitHistoryForPath,
+    followActiveContext: handleFollowRepositoryContext,
+  } = useRepositoryTargeting({
+    spaceId: sourceControlSpaceId,
+    workspaceKey: workspaceScopeKey(workspaceEnv),
+    isContextCurrent: isRepositoryContextCurrent,
+    openSourceControl,
+    openCommitHistoryTab,
+  });
   const { sourceControl, toggleSourceControl, openGitGraphFromContext } =
     useSourceControlContext({
       activeTab,
@@ -676,6 +709,7 @@ export default function App() {
       launchCwdResolved,
       home,
       sidebarView,
+      repositoryTarget: sourceControlRepositoryTarget,
       cycleSidebarView,
       openCommitHistoryTab,
     });
@@ -1281,6 +1315,10 @@ export default function App() {
                         onPathRenamed={handlePathRenamed}
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}
+                        onOpenInSourceControl={
+                          handleOpenRepositoryInSourceControl
+                        }
+                        onOpenGitHistory={handleOpenGitHistoryForPath}
                         onAttachToAgent={handleAttachFileToAgent}
                         pathDropTarget={terminalPathDropTarget}
                       />
@@ -1292,6 +1330,10 @@ export default function App() {
                         onOpenGitGraph={openGitGraphFromContext}
                         onOpenFile={handleOpenFile}
                         onNavigateToPath={cdInNewTab}
+                        repositoryTarget={sourceControlRepositoryTarget}
+                        onFollowRepositoryContext={
+                          handleFollowRepositoryContext
+                        }
                       />
                     )}
                   </div>

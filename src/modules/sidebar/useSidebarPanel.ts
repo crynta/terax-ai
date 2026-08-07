@@ -123,6 +123,17 @@ export function useSidebarPanel(
     [persistSidebarView, sidebarView],
   );
 
+  const openSidebarView = useCallback(
+    (view: SidebarViewId) => {
+      const panel = sidebarRef.current;
+      if (panel && panel.getSize().asPercentage <= 0) {
+        panel.resize(`${sidebarWidthRef.current}px`);
+      }
+      if (view !== sidebarView) persistSidebarView(view);
+    },
+    [persistSidebarView, sidebarView],
+  );
+
   const persistSidebarWidth = useCallback(
     (next: number, isUserInteraction: boolean) => {
       if (!shouldPersistSidebarWidth(next, isUserInteraction)) return;
@@ -191,6 +202,7 @@ export function useSidebarPanel(
     persistSidebarCollapsed,
     toggleSidebar,
     cycleSidebarView,
+    openSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
   };

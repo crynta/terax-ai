@@ -276,6 +276,45 @@ export function planGitDiffOpen(
   return { tabs: next, targetId: id };
 }
 
+export function planCommitHistoryOpen(
+  tabs: Tab[],
+  input: { repoRoot: string; branch?: string | null },
+  spaceId: string,
+  allocId: () => number,
+): { tabs: Tab[]; targetId: number } {
+  const existing = tabs.find(
+    (tab) =>
+      tab.kind === "git-history" &&
+      tab.spaceId === spaceId &&
+      tab.repoRoot === input.repoRoot,
+  );
+  const title = input.branch ? `History · ${input.branch}` : "Git History";
+  if (existing) {
+    if (existing.title === title) return { tabs, targetId: existing.id };
+    return {
+      tabs: tabs.map((tab) =>
+        tab.id === existing.id ? { ...existing, title } : tab,
+      ),
+      targetId: existing.id,
+    };
+  }
+
+  const id = allocId();
+  return {
+    tabs: [
+      ...tabs,
+      {
+        id,
+        kind: "git-history",
+        spaceId,
+        title,
+        repoRoot: input.repoRoot,
+      } satisfies GitHistoryTab,
+    ],
+    targetId: id,
+  };
+}
+
 function coldTerminalTab(
   tabId: number,
   leafId: number,
@@ -873,34 +912,18 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   const openCommitHistoryTab = useCallback(
     (input: { repoRoot: string; branch?: string | null }) => {
       const curr = tabsRef.current;
-      const existing = curr.find(
-        (t) => t.kind === "git-history" && t.repoRoot === input.repoRoot,
+      const plan = planCommitHistoryOpen(
+        curr,
+        input,
+        activeSpaceIdRef.current,
+        () => nextIdRef.current++,
       );
-      const title = input.branch ? `History · ${input.branch}` : "Git History";
-      if (existing) {
-        const nextTabs = curr.map((t) =>
-          t.id === existing.id ? { ...t, title } : t,
-        );
-        tabsRef.current = nextTabs;
-        setTabs(nextTabs);
-        setActiveId(existing.id);
-        return existing.id;
+      if (plan.tabs !== curr) {
+        tabsRef.current = plan.tabs;
+        setTabs(plan.tabs);
       }
-      const id = nextIdRef.current++;
-      const nextTabs = [
-        ...curr,
-        {
-          id,
-          kind: "git-history",
-          spaceId: activeSpaceIdRef.current,
-          title,
-          repoRoot: input.repoRoot,
-        } satisfies GitHistoryTab,
-      ];
-      tabsRef.current = nextTabs;
-      setTabs(nextTabs);
-      setActiveId(id);
-      return id;
+      setActiveId(plan.targetId);
+      return plan.targetId;
     },
     [],
   );
