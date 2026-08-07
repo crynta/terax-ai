@@ -60,6 +60,7 @@ import { ACCEPTED_FILES, useComposer } from "../lib/composer";
 import { toggleFavoriteModel } from "../lib/modelPrefs";
 import { useChatStore } from "../store/chatStore";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import { setAiBypassPermissions } from "@/modules/settings/store";
 
 const PROVIDER_ICON = {
   openai: ChatGptIcon,
@@ -155,6 +156,8 @@ export function AiStatusBarControls() {
       )}
 
       <ModelDropdown />
+
+      <YoloToggle />
 
       <span className="mx-1 h-8 w-px bg-border" aria-hidden />
       <Button
@@ -684,6 +687,26 @@ function CapBar({
         ))}
       </span>
     </span>
+  );
+}
+
+function YoloToggle() {
+  const bypass = usePreferencesStore((s) => s.aiBypassPermissions);
+  return (
+    <IconBtn
+      title={
+        bypass
+          ? "Bypass approvals ON. Edits and commands auto-run (click to require approval)"
+          : "Approvals required (click to bypass)"
+      }
+      onClick={() => void setAiBypassPermissions(!bypass)}
+      className={cn(
+        bypass &&
+          "bg-destructive/10 text-destructive hover:bg-destructive/15 hover:text-destructive",
+      )}
+    >
+      <HugeiconsIcon icon={FlashIcon} size={13} strokeWidth={1.75} />
+    </IconBtn>
   );
 }
 

@@ -169,6 +169,7 @@ export type Preferences = {
   agentNotifications: boolean;
   agentLaunchCommands: AgentLaunchCommands;
   defaultWorkspaceEnv: string;
+  aiBypassPermissions: boolean;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
   editorAutoSave: boolean;
   editorAutoSaveDelay: number;
@@ -260,6 +261,7 @@ const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_AGENT_LAUNCH_COMMANDS = "agentLaunchCommands";
 const KEY_DEFAULT_WORKSPACE_ENV = "defaultWorkspaceEnv";
+const KEY_AI_BYPASS_PERMISSIONS = "aiBypassPermissions";
 const KEY_SHORTCUTS = "shortcuts";
 const KEY_EDITOR_AUTO_SAVE = "editorAutoSave";
 const KEY_EDITOR_AUTO_SAVE_DELAY = "editorAutoSaveDelay";
@@ -343,6 +345,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   agentNotifications: true,
   agentLaunchCommands: DEFAULT_AGENT_LAUNCH_COMMANDS,
   defaultWorkspaceEnv: "local",
+  aiBypassPermissions: false,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
   editorAutoSave: false,
   editorAutoSaveDelay: 1000,
@@ -518,6 +521,9 @@ export async function loadPreferences(): Promise<Preferences> {
     defaultWorkspaceEnv:
       get<string>(KEY_DEFAULT_WORKSPACE_ENV) ??
       DEFAULT_PREFERENCES.defaultWorkspaceEnv,
+    aiBypassPermissions:
+      get<boolean>(KEY_AI_BYPASS_PERMISSIONS) ??
+      DEFAULT_PREFERENCES.aiBypassPermissions,
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
@@ -878,6 +884,10 @@ export async function setDefaultWorkspaceEnv(value: string): Promise<void> {
   await writePref(KEY_DEFAULT_WORKSPACE_ENV, value);
 }
 
+export async function setAiBypassPermissions(value: boolean): Promise<void> {
+  await writePref(KEY_AI_BYPASS_PERMISSIONS, value);
+}
+
 export async function setShortcuts(
   value: Record<ShortcutId, KeyBinding[]> | {},
 ): Promise<void> {
@@ -945,6 +955,7 @@ export async function onPreferencesChange(
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
     [KEY_AGENT_LAUNCH_COMMANDS]: "agentLaunchCommands",
     [KEY_DEFAULT_WORKSPACE_ENV]: "defaultWorkspaceEnv",
+    [KEY_AI_BYPASS_PERMISSIONS]: "aiBypassPermissions",
     [KEY_SHORTCUTS]: "shortcuts",
     [KEY_EDITOR_AUTO_SAVE]: "editorAutoSave",
     [KEY_EDITOR_AUTO_SAVE_DELAY]: "editorAutoSaveDelay",

@@ -35,6 +35,8 @@ export function buildManagedAgentTools(ctx: ToolContext) {
             "The full, self-contained task prompt for the Claude Code agent.",
           ),
       }),
+      // Always require approval, even under bypass: spawning an autonomous
+      // agent has no in-execute deny-list, so the prompt is the only gate.
       needsApproval: true,
       execute: async ({ prompt }) => {
         const sessionId = ctx.getSessionId();
@@ -67,6 +69,7 @@ export function buildManagedAgentTools(ctx: ToolContext) {
             "One clear, self-contained instruction for the agent. No control characters.",
           ),
       }),
+      // Always require approval, even under bypass (steers an autonomous agent).
       needsApproval: true,
       execute: async ({ instruction }) => {
         const sessionId = ctx.getSessionId();
