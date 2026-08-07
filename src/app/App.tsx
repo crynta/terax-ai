@@ -800,7 +800,7 @@ export default function App() {
         }
         toggleMini();
       },
-      "ai.askSelection": askFromSelection,
+      "ai.askSelection": onAskFromSelection,
       "agent.focusAttention": () => {
         const t = nextAttentionTarget();
         if (t) activateAgentTarget(t.tabId, t.leafId);
@@ -838,7 +838,7 @@ export default function App() {
       hasComposer,
       togglePanelAndFocus,
       toggleMini,
-      askFromSelection,
+      onAskFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
       zoomIn,
