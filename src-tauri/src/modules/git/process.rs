@@ -411,9 +411,11 @@ mod tests {
     #[cfg(windows)]
     use super::build_git_command;
     use super::{
-        parse_git_version, prune_expired_availability_entries, version_meets_minimum, Availability,
-        AvailabilityCache, AVAILABILITY_TTL,
+        classify_auth_error, decode_text, parse_git_version, prune_expired_availability_entries,
+        version_meets_minimum, Availability, AvailabilityCache, AVAILABILITY_TTL,
     };
+    use crate::modules::git::errors::GitError;
+    use crate::modules::git::types::TextSource;
     #[cfg(windows)]
     use crate::modules::workspace::WorkspaceEnv;
     use std::collections::HashMap;
@@ -518,5 +520,98 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("unsafe WSL distro name"));
+    }
+
+    #[test]
+    fn detects_common_auth_failures_case_insensitively() {
+        for stderr in [
+            "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+            "error: could not read Password for 'https://example.com': No such device",
+            "remote: authentication failed for the repository",
+            "git@github.com: Permission denied (publickey).",
+            "fatal: Invalid credentials for 'https://github.com'",
+        ] {
+            let err = classify_auth_error(stderr).expect("auth error detected");
+            assert!(matches!(err, GitError::AuthRequired(_)));
+        }
+    }
+
+    #[test]
+    fn auth_error_carries_first_stderr_line() {
+        let err =
+            classify_auth_error("remote: denied\nfatal: could not read username\nmore detail")
+                .expect("auth error");
+        match err {
+            GitError::AuthRequired(line) => assert_eq!(line, "remote: denied"),
+            other => panic!("expected AuthRequired, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classifies_host_key_verification_failure() {
+        assert!(matches!(
+            classify_auth_error("fatal: Host key verification failed."),
+            Some(GitError::HostKeyUnverified)
+        ));
+    }
+
+    #[test]
+    fn leaves_unrelated_stderr_untouched() {
+        assert!(
+            classify_auth_error("fatal: not a git repository (or any of the parent directories)")
+                .is_none()
+        );
+        assert!(classify_auth_error("").is_none());
+        assert!(
+            classify_auth_error("error: RPC failed because the HTTP client could not connect")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn decode_text_flags_nulls_as_binary() {
+        let mut bytes = b"hello".to_vec();
+        bytes.push(0);
+        bytes.extend_from_slice(b"world");
+        assert!(matches!(decode_text(bytes), TextSource::Binary));
+    }
+
+    #[test]
+    fn decode_text_passes_ascii_through() {
+        let expected = "main\n5c2f4cd fix(ai): route status-bar AI button\n";
+        let bytes = expected.as_bytes().to_vec();
+        match decode_text(bytes) {
+            TextSource::Text(text) => assert_eq!(text, expected),
+            TextSource::Binary => panic!("expected text, got binary"),
+            TextSource::Missing => panic!("expected text, got missing"),
+        }
+    }
+
+    #[test]
+    fn decode_text_lossy_for_invalid_utf8() {
+        let bytes = vec![b'a', 0xFF, b'b'];
+        match decode_text(bytes) {
+            TextSource::Text(s) => assert_eq!(s, "a\u{FFFD}b"),
+            TextSource::Binary => panic!("expected text, got binary"),
+            TextSource::Missing => panic!("expected text, got missing"),
+        }
+    }
+
+    #[test]
+    fn decode_text_binary_sniff_is_bounded() {
+        let mut bytes = vec![b'a'; 8192];
+        bytes.push(0);
+        match decode_text(bytes) {
+            TextSource::Text(_) => {}
+            TextSource::Binary => panic!("null beyond the sniff window must not be detected"),
+            TextSource::Missing => panic!("expected text, got missing"),
+        }
+    }
+
+    #[test]
+    fn decode_text_null_at_sniff_boundary() {
+        let mut within = vec![b'a'; 8191];
+        within.push(0);
+        assert!(matches!(decode_text(within), TextSource::Binary));
     }
 }
