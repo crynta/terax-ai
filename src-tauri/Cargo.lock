@@ -5335,6 +5335,7 @@ dependencies = [
  "bytes",
  "dirs 6.0.0",
  "futures-util",
+ "getrandom 0.3.4",
  "globset",
  "grep-matcher",
  "grep-regex",
@@ -5366,9 +5367,28 @@ dependencies = [
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
  "tempfile",
+ "terax-control-protocol",
  "tokio",
  "which",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "terax-cli"
+version = "0.8.6"
+dependencies = [
+ "dirs 6.0.0",
+ "serde_json",
+ "tempfile",
+ "terax-control-protocol",
+]
+
+[[package]]
+name = "terax-control-protocol"
+version = "0.8.6"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

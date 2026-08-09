@@ -9,6 +9,8 @@
     "node": ">=22"
   },
   "scripts": {
+    "build:cli": "node scripts/build-cli.mjs --release",
+    "build:cli:dev": "node scripts/build-cli.mjs",
     "dev": "vite",
     "dev:inspect": "INSPECT=true vite",
     "build": "tsc && vite build",
