@@ -11,6 +11,12 @@
   unset _terax_user_zdotdir
 }
 
+if [[ -n "$TERAX_CLI" && -x "$TERAX_CLI" ]]; then
+  terax() {
+    command "$TERAX_CLI" "$@"
+  }
+fi
+
 # Re-source guard within a single shell (e.g. user runs `source ~/.zshrc`).
 # This is NOT exported, so each nested zsh installs its own hooks — desired,
 # since every interactive shell needs its own prompt integration.
