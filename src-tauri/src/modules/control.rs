@@ -6,14 +6,14 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, SyncSender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
 use terax_control_protocol::{
     ControlDescriptor, ControlRequest, ControlResponse, FrontendRequest, FrontendResponse,
     OpenParams, MAX_MESSAGE_BYTES, METHODS, METHOD_CAPABILITIES, METHOD_IDENTIFY, METHOD_OPEN,
-    METHOD_PING, PROTOCOL_VERSION,
+    METHOD_PING, PROTOCOL_VERSION, SERVER_RESPONSE_ID,
 };
 
 use crate::modules::{fs, workspace};
@@ -25,6 +25,7 @@ const MAX_PENDING_REQUESTS: usize = 32;
 const MAX_CONNECTIONS: usize = 32;
 const LISTENER_STACK_BYTES: usize = 256 * 1024;
 const REQUEST_STACK_BYTES: usize = 512 * 1024;
+const STALE_LAUNCHER_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 #[derive(Clone)]
 struct RuntimeInfo {
@@ -69,7 +70,13 @@ pub struct ShellControlEnv {
 
 impl ControlState {
     pub fn shell_env(&self, pane_id: u32) -> Option<ShellControlEnv> {
+        if self.0.shutting_down.load(Ordering::Acquire) {
+            return None;
+        }
         let runtime = self.0.runtime.get()?;
+        if self.0.shutting_down.load(Ordering::Acquire) {
+            return None;
+        }
         Some(ShellControlEnv {
             address: runtime.address.clone(),
             token: runtime.token.clone(),
@@ -107,6 +114,7 @@ pub fn start(app: tauri::AppHandle, state: ControlState) -> Result<(), String> {
         .to_string();
     let token = generate_token()?;
     let descriptor_path = descriptor_path()?;
+    sweep_stale_launcher_dirs(&descriptor_path);
     let cli_path = find_bundled_cli();
     let launcher_dir = cli_path.as_deref().and_then(|cli_path| {
         match prepare_cli_launcher(&descriptor_path, cli_path) {
@@ -180,8 +188,11 @@ fn accept_loop(listener: TcpListener, app: tauri::AppHandle, state: ControlState
         if state.0.active_connections.fetch_add(1, Ordering::AcqRel) >= MAX_CONNECTIONS {
             state.release_connection();
             let mut stream = stream;
-            let response =
-                ControlResponse::failure("", "server_busy", "too many concurrent control requests");
+            let response = ControlResponse::failure(
+                SERVER_RESPONSE_ID,
+                "server_busy",
+                "too many concurrent control requests",
+            );
             let _ = write_response(&mut stream, &response);
             continue;
         }
@@ -214,10 +225,13 @@ fn handle_connection(mut stream: TcpStream, app: &tauri::AppHandle, state: &Cont
     let _ = stream.set_read_timeout(Some(IO_TIMEOUT));
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
 
-    let request = match read_request(&mut stream) {
+    let request = match read_request(&mut BufReader::new(&mut stream)) {
         Ok(request) => request,
-        Err((code, message)) => {
-            let _ = write_response(&mut stream, &ControlResponse::failure("", code, message));
+        Err(error) => {
+            let _ = write_response(
+                &mut stream,
+                &ControlResponse::failure(error.response_id, error.code, error.message),
+            );
             return;
         }
     };
@@ -225,28 +239,53 @@ fn handle_connection(mut stream: TcpStream, app: &tauri::AppHandle, state: &Cont
     let _ = write_response(&mut stream, &response);
 }
 
-fn read_request(stream: &mut TcpStream) -> Result<ControlRequest, (&'static str, String)> {
-    let mut reader = BufReader::new(stream);
+struct ReadRequestError {
+    response_id: String,
+    code: &'static str,
+    message: String,
+}
+
+fn read_request(reader: &mut impl BufRead) -> Result<ControlRequest, ReadRequestError> {
     let mut bytes = Vec::new();
     reader
         .by_ref()
         .take((MAX_MESSAGE_BYTES + 1) as u64)
         .read_until(b'\n', &mut bytes)
-        .map_err(|error| ("io_error", format!("read request: {error}")))?;
+        .map_err(|error| ReadRequestError {
+            response_id: SERVER_RESPONSE_ID.to_string(),
+            code: "io_error",
+            message: format!("read request: {error}"),
+        })?;
     if bytes.len() > MAX_MESSAGE_BYTES {
-        return Err((
-            "message_too_large",
-            format!("request exceeds {MAX_MESSAGE_BYTES} bytes"),
-        ));
+        return Err(ReadRequestError {
+            response_id: SERVER_RESPONSE_ID.to_string(),
+            code: "message_too_large",
+            message: format!("request exceeds {MAX_MESSAGE_BYTES} bytes"),
+        });
     }
     if bytes.last() != Some(&b'\n') {
-        return Err((
-            "invalid_request",
-            "request must end with a newline".to_string(),
-        ));
+        return Err(ReadRequestError {
+            response_id: SERVER_RESPONSE_ID.to_string(),
+            code: "invalid_request",
+            message: "request must end with a newline".to_string(),
+        });
     }
-    serde_json::from_slice(&bytes)
-        .map_err(|error| ("invalid_json", format!("invalid request JSON: {error}")))
+    let value: Value = serde_json::from_slice(&bytes).map_err(|error| ReadRequestError {
+        response_id: SERVER_RESPONSE_ID.to_string(),
+        code: "invalid_json",
+        message: format!("invalid request JSON: {error}"),
+    })?;
+    let response_id = value
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| valid_request_id(id))
+        .unwrap_or(SERVER_RESPONSE_ID)
+        .to_string();
+    serde_json::from_value(value).map_err(|error| ReadRequestError {
+        response_id,
+        code: "invalid_json",
+        message: format!("invalid request JSON: {error}"),
+    })
 }
 
 fn route_request(
@@ -256,7 +295,7 @@ fn route_request(
 ) -> ControlResponse {
     if !valid_request_id(&request.id) {
         return ControlResponse::failure(
-            request.id,
+            SERVER_RESPONSE_ID,
             "invalid_request",
             "request id must be 1-128 safe ASCII characters",
         );
@@ -326,18 +365,47 @@ fn route_request(
                 Err((code, message)) => ControlResponse::failure(request.id, code, message),
             }
         }
-        _ => ControlResponse::failure(
-            request.id,
-            "unknown_method",
-            format!("unknown method '{}'", request.method),
-        ),
+        _ => ControlResponse::failure(request.id, "unknown_method", "unknown control method"),
     }
 }
 
 fn validate_open_params(
-    mut params: OpenParams,
+    params: OpenParams,
     app: &tauri::AppHandle,
 ) -> Result<OpenParams, (&'static str, String)> {
+    let (mut params, canonical) = normalize_open_target(params)?;
+    let registry = app
+        .try_state::<workspace::WorkspaceRegistry>()
+        .ok_or_else(|| {
+            (
+                "internal_error",
+                "workspace registry is unavailable".to_string(),
+            )
+        })?;
+    require_authorized_open_target(&registry, &canonical)?;
+    params.path = fs::to_canon(canonical);
+    Ok(params)
+}
+
+fn require_authorized_open_target(
+    registry: &workspace::WorkspaceRegistry,
+    canonical: &Path,
+) -> Result<(), (&'static str, String)> {
+    if !registry.is_authorized(canonical) {
+        return Err((
+            "path_not_accessible",
+            format!(
+                "path is outside the authorized workspace: {}",
+                canonical.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_open_target(
+    params: OpenParams,
+) -> Result<(OpenParams, PathBuf), (&'static str, String)> {
     if params.path.is_empty() || params.path.len() > 16 * 1024 {
         return Err((
             "invalid_params",
@@ -360,25 +428,7 @@ fn validate_open_params(
             format!("path is not a regular file: {}", canonical.display()),
         ));
     }
-    let parent = canonical.parent().ok_or_else(|| {
-        (
-            "path_not_accessible",
-            "file has no parent directory".to_string(),
-        )
-    })?;
-    let registry = app
-        .try_state::<workspace::WorkspaceRegistry>()
-        .ok_or_else(|| {
-            (
-                "internal_error",
-                "workspace registry is unavailable".to_string(),
-            )
-        })?;
-    registry
-        .authorize(parent)
-        .map_err(|error| ("path_not_accessible", error.to_string()))?;
-    params.path = fs::to_canon(canonical);
-    Ok(params)
+    Ok((params, canonical))
 }
 
 fn forward_to_frontend(
@@ -482,9 +532,9 @@ pub fn control_respond(
 }
 
 fn write_response(stream: &mut TcpStream, response: &ControlResponse) -> std::io::Result<()> {
-    serde_json::to_writer(&mut *stream, response)?;
-    stream.write_all(b"\n")?;
-    stream.flush()
+    let mut bytes = serde_json::to_vec(response).map_err(std::io::Error::other)?;
+    bytes.push(b'\n');
+    stream.write_all(&bytes)
 }
 
 fn valid_request_id(id: &str) -> bool {
@@ -596,6 +646,81 @@ fn is_cli_candidate(path: &Path) -> bool {
     std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
 }
 
+fn sweep_stale_launcher_dirs(descriptor: &Path) {
+    let Some(control_dir) = descriptor.parent() else {
+        return;
+    };
+    let run_root = control_dir.join("run");
+    let Ok(entries) = std::fs::read_dir(&run_root) else {
+        return;
+    };
+    let now = SystemTime::now();
+    for entry in entries.flatten() {
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let modified = entry
+            .metadata()
+            .ok()
+            .and_then(|metadata| metadata.modified().ok());
+        if launcher_dir_is_stale(&name, modified, now, process_is_alive) {
+            if let Err(error) = std::fs::remove_dir_all(entry.path()) {
+                log::warn!(
+                    "could not remove stale CLI launcher {}: {error}",
+                    entry.path().display()
+                );
+            }
+        }
+    }
+}
+
+fn launcher_dir_is_stale(
+    name: &str,
+    modified: Option<SystemTime>,
+    now: SystemTime,
+    is_alive: impl Fn(u32) -> bool,
+) -> bool {
+    match name.parse::<u32>() {
+        Ok(pid) => !is_alive(pid),
+        Err(_) => modified
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= STALE_LAUNCHER_MAX_AGE),
+    }
+}
+
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    if pid <= 0 {
+        return false;
+    }
+    let result = unsafe { libc::kill(pid, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(windows)]
+fn process_is_alive(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED};
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    if pid == 0 {
+        return false;
+    }
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if !handle.is_null() {
+            CloseHandle(handle);
+            true
+        } else {
+            GetLastError() == ERROR_ACCESS_DENIED
+        }
+    }
+}
+
 fn prepare_cli_launcher(descriptor: &Path, cli_path: &Path) -> Result<PathBuf, String> {
     let control_dir = descriptor
         .parent()
@@ -643,6 +768,23 @@ fn remove_launcher_dir(bin_dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+
+    fn open_params(path: String) -> OpenParams {
+        OpenParams {
+            path,
+            line: None,
+            column: None,
+            focus: true,
+        }
+    }
+
+    fn read_error(bytes: Vec<u8>) -> ReadRequestError {
+        match read_request(&mut Cursor::new(bytes)) {
+            Ok(_) => panic!("request was unexpectedly accepted"),
+            Err(error) => error,
+        }
+    }
 
     #[test]
     fn request_ids_are_bounded_and_log_safe() {
@@ -658,6 +800,120 @@ mod tests {
         assert!(constant_time_eq(b"abcdef", b"abcdef"));
         assert!(!constant_time_eq(b"abcdef", b"abcdeg"));
         assert!(!constant_time_eq(b"short", b"longer"));
+    }
+
+    #[test]
+    fn request_reader_enforces_framing_and_size_boundaries() {
+        let mut exact = vec![b' '; MAX_MESSAGE_BYTES];
+        exact[MAX_MESSAGE_BYTES - 1] = b'\n';
+        let error = read_error(exact);
+        assert_eq!(error.code, "invalid_json");
+
+        let mut oversized = vec![b' '; MAX_MESSAGE_BYTES];
+        oversized.push(b'\n');
+        let error = read_error(oversized);
+        assert_eq!(error.code, "message_too_large");
+
+        let error = read_error(b"{}".to_vec());
+        assert_eq!(error.code, "invalid_request");
+    }
+
+    #[test]
+    fn request_reader_preserves_a_safe_id_for_shape_errors() {
+        let bytes = br#"{"id":"shape-test","protocol":"bad"}
+"#;
+        let error = read_error(bytes.to_vec());
+        assert_eq!(error.code, "invalid_json");
+        assert_eq!(error.response_id, "shape-test");
+    }
+
+    #[test]
+    fn open_target_validation_rejects_invalid_bounds_and_directories() {
+        let error = normalize_open_target(open_params(String::new())).expect_err("reject empty");
+        assert_eq!(error.0, "invalid_params");
+
+        let error = normalize_open_target(open_params("x".repeat(16 * 1024 + 1)))
+            .expect_err("reject oversized path");
+        assert_eq!(error.0, "invalid_params");
+
+        let mut params = open_params("unused".into());
+        params.line = Some(0);
+        let error = normalize_open_target(params).expect_err("reject zero line");
+        assert_eq!(error.0, "invalid_params");
+
+        let temp = tempfile::tempdir().expect("temp directory");
+        let error = normalize_open_target(open_params(temp.path().to_string_lossy().into_owned()))
+            .expect_err("reject directory");
+        assert_eq!(error.0, "not_a_file");
+    }
+
+    #[test]
+    fn open_authorization_is_read_only() {
+        let authorized = tempfile::tempdir().expect("authorized directory");
+        let outside = tempfile::tempdir().expect("outside directory");
+        let outside_file = outside.path().join("outside.rs");
+        std::fs::write(&outside_file, b"fn main() {}\n").expect("write outside file");
+        let outside_file = std::fs::canonicalize(outside_file).expect("canonical outside file");
+        let registry = workspace::WorkspaceRegistry::default();
+        registry
+            .authorize(authorized.path())
+            .expect("authorize workspace");
+
+        let error = require_authorized_open_target(&registry, &outside_file)
+            .expect_err("reject outside file");
+
+        assert_eq!(error.0, "path_not_accessible");
+        assert!(!registry.is_authorized(&outside_file));
+    }
+
+    #[test]
+    fn shutdown_stops_advertising_shell_credentials() {
+        let state = ControlState::default();
+        assert!(state
+            .0
+            .runtime
+            .set(RuntimeInfo {
+                address: "127.0.0.1:4312".into(),
+                token: "a".repeat(64),
+                descriptor_path: PathBuf::from("unused-control.json"),
+                cli_path: None,
+                launcher_dir: None,
+            })
+            .is_ok());
+        assert!(state.shell_env(7).is_some());
+        state.shutdown();
+        assert!(state.shell_env(7).is_none());
+    }
+
+    #[test]
+    fn launcher_cleanup_preserves_live_pids_and_expires_other_stale_entries() {
+        let now = SystemTime::UNIX_EPOCH + STALE_LAUNCHER_MAX_AGE * 2;
+        assert!(!launcher_dir_is_stale(
+            "42",
+            Some(SystemTime::UNIX_EPOCH),
+            now,
+            |pid| pid == 42
+        ));
+        assert!(launcher_dir_is_stale("43", Some(now), now, |_| false));
+        assert!(launcher_dir_is_stale(
+            "invalid",
+            Some(SystemTime::UNIX_EPOCH),
+            now,
+            |_| true
+        ));
+        assert!(!launcher_dir_is_stale("invalid", Some(now), now, |_| true));
+    }
+
+    #[test]
+    fn stale_pid_launcher_directories_are_removed() {
+        let temp = tempfile::tempdir().expect("temp directory");
+        let descriptor = temp.path().join("control.json");
+        let stale = temp.path().join("run").join(u32::MAX.to_string());
+        std::fs::create_dir_all(stale.join("bin")).expect("create stale launcher");
+
+        sweep_stale_launcher_dirs(&descriptor);
+
+        assert!(!stale.exists());
     }
 
     #[test]

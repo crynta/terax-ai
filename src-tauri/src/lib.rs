@@ -203,7 +203,9 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .setup(move |_app| {
-            control::start(_app.handle().clone(), control_for_setup.clone())?;
+            if let Err(error) = control::start(_app.handle().clone(), control_for_setup.clone()) {
+                log::warn!("could not start Terax control server: {error}");
+            }
             // macOS skips parent() for the settings window, so tie its lifecycle
             // to the main window here instead. Other platforms keep parent().
             #[cfg(target_os = "macos")]

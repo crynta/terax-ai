@@ -24,6 +24,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -239,40 +240,63 @@ export const EditorPane = memo(
     const pathRef = useRef(path);
     pathRef.current = path;
 
-    const pendingLineRef = useRef<{ line: number; focus: boolean } | null>(
-      null,
-    );
-    const pendingFocusRef = useRef(false);
+    const pendingLineRef = useRef<{
+      path: string;
+      line: number;
+      focus: boolean;
+    } | null>(null);
+    const pendingFocusRef = useRef<string | null>(null);
     const statusRef = useRef(doc.status);
-    statusRef.current = doc.status;
+    useLayoutEffect(() => {
+      statusRef.current = doc.status;
+    }, [doc.status]);
 
-    const focusWhenRendered = useCallback((view: EditorView) => {
-      requestAnimationFrame(() => {
-        if (cmRef.current?.view === view) view.focus();
-      });
-    }, []);
+    useEffect(() => {
+      if (pendingLineRef.current?.path !== path) {
+        pendingLineRef.current = null;
+      }
+      if (pendingFocusRef.current !== path) {
+        pendingFocusRef.current = null;
+      }
+    }, [path]);
+
+    const focusWhenRendered = useCallback(
+      (view: EditorView, targetPath: string) => {
+        requestAnimationFrame(() => {
+          if (cmRef.current?.view === view && pathRef.current === targetPath) {
+            view.focus();
+          }
+        });
+      },
+      [],
+    );
 
     const applyPendingGoto = useCallback(() => {
       const view = cmRef.current?.view;
       const pending = pendingLineRef.current;
       if (!view || pending == null || statusRef.current !== "ready") return;
+      if (pending.path !== path) {
+        pendingLineRef.current = null;
+        return;
+      }
       const target = Math.max(1, Math.min(pending.line, view.state.doc.lines));
       const at = view.state.doc.line(target).from;
       view.dispatch({
         selection: { anchor: at },
         effects: EditorView.scrollIntoView(at, { y: "center" }),
       });
-      if (pending.focus) focusWhenRendered(view);
+      if (pending.focus) focusWhenRendered(view, pending.path);
       pendingLineRef.current = null;
-    }, [focusWhenRendered]);
+    }, [focusWhenRendered, path]);
 
     const applyPendingFocus = useCallback(() => {
       const view = cmRef.current?.view;
-      if (!view || !pendingFocusRef.current || statusRef.current !== "ready")
+      const pendingPath = pendingFocusRef.current;
+      if (!view || pendingPath === null || statusRef.current !== "ready")
         return;
-      pendingFocusRef.current = false;
-      focusWhenRendered(view);
-    }, [focusWhenRendered]);
+      pendingFocusRef.current = null;
+      if (pendingPath === path) focusWhenRendered(view, pendingPath);
+    }, [focusWhenRendered, path]);
 
     useEffect(() => {
       if (doc.status !== "ready") return;
@@ -479,7 +503,7 @@ export const EditorPane = memo(
           if (view) openSearchPanel(view);
         },
         focus: () => {
-          pendingFocusRef.current = true;
+          pendingFocusRef.current = path;
           applyPendingFocus();
         },
         getSelection: () => {
@@ -492,7 +516,11 @@ export const EditorPane = memo(
         getPath: () => path,
         reload: () => reloadRef.current(),
         gotoLine: (line: number, options) => {
-          pendingLineRef.current = { line, focus: options?.focus ?? true };
+          pendingLineRef.current = {
+            path,
+            line,
+            focus: options?.focus ?? true,
+          };
           applyPendingGoto();
         },
         undo: () => {

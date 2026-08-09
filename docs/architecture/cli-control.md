@@ -38,7 +38,8 @@ Security properties:
 - Messages are newline-delimited JSON and capped at 64 KiB.
 - Request ids are bounded and restricted to log-safe ASCII.
 - Connections and pending UI requests are capped at 32, with bounded read, write, and UI response timeouts.
-- File paths are canonicalized and required to reference a regular file in the Rust process before the editor is opened.
+- The CLI verifies that a cache descriptor still names a live Terax process before sending its token.
+- File paths are canonicalized and required to reference a regular file inside an authorized workspace before the editor is opened.
 - The descriptor is removed only when it still belongs to the exiting process, so an older instance cannot delete a newer instance's endpoint.
 
 The token is injected into Terax-spawned native shells together with `TERAX_PANE_ID`. Child coding agents inherit the caller context intentionally, which gives them the same local UI-control capability as the terminal that launched them. Tokens must never be logged or added to command output.
@@ -48,6 +49,8 @@ The token is injected into Terax-spawned native shells together with `TERAX_PANE
 The packaged helper is named `terax-cli` because a macOS app bundle places sidecars beside the GUI executable, which is already named `terax`. At app startup Terax creates a user-private, per-process `bin/terax` hard link to the packaged helper, falling back to a symlink on Unix or a copy on Windows. That directory is prepended to the PTY `PATH`.
 
 Existing Bash, Zsh, Fish, and PowerShell integration also defines an interactive `terax` function that executes `$TERAX_CLI`. The real PATH entry is still required because non-interactive child shells do not reliably inherit shell functions.
+
+Launcher directories for exited processes are removed at the next control-server startup. Live process ids are preserved regardless of directory age.
 
 ## Packaging and size
 

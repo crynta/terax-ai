@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  planFileTabOpen,
   type EditorTab,
+  planFileTabOpen,
   type Tab,
   type TerminalTab,
 } from "./useTabs";
@@ -63,6 +63,21 @@ describe("planFileTabOpen", () => {
 
     expect(plan.tabId).toBe(4);
     expect(plan.tabs).toBe(tabs);
+  });
+
+  it("promotes an existing preview only in the requested space", () => {
+    const preview = editor(3, "/repo/main.rs", "one", true);
+    const otherPreview = editor(4, "/repo/main.rs", "two", true);
+    const tabs: Tab[] = [terminal, preview, otherPreview];
+
+    const plan = planFileTabOpen(tabs, "/repo/main.rs", true, "one", () => 5);
+
+    expect(plan.tabId).toBe(3);
+    expect(plan.tabs).not.toBe(tabs);
+    expect(plan.tabs).toContainEqual(
+      expect.objectContaining({ id: 3, preview: false }),
+    );
+    expect(plan.tabs).toContain(otherPreview);
   });
 
   it("replaces only the target space preview slot", () => {

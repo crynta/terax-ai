@@ -2,8 +2,9 @@ import { DEFAULT_SPACE_ID, type Tab } from "@/modules/tabs/lib/useTabs";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, type RefObject } from "react";
+import { type RefObject, useEffect } from "react";
 import { resolveControlContext } from "./lib/context";
+import { createReadinessQueue } from "./lib/readiness";
 
 type ControlError = {
   code: string;
@@ -48,7 +49,7 @@ class RequestError extends Error {
   }
 }
 
-function parseOpenRequest(params: unknown): OpenRequest {
+export function parseOpenRequest(params: unknown): OpenRequest {
   if (typeof params !== "object" || params === null) {
     throw new RequestError("invalid_params", "open parameters are required");
   }
@@ -68,12 +69,19 @@ function parseOpenRequest(params: unknown): OpenRequest {
       "column targeting is not supported yet",
     );
   }
+  if (value.focus !== undefined && typeof value.focus !== "boolean") {
+    throw new RequestError("invalid_params", "focus must be a boolean");
+  }
   return {
     path: value.path,
     line: value.line as number | undefined,
-    focus: value.focus !== false,
+    focus: (value.focus as boolean | undefined) ?? true,
   };
 }
+
+const setFrontendReady = createReadinessQueue((ready) =>
+  invoke("control_frontend_ready", { ready }),
+);
 
 async function respond(
   requestId: string,
@@ -132,7 +140,9 @@ export function useControlBridge({
               "Terax could not create an editor tab",
             );
           }
-          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => resolve()),
+          );
           await respond(request.id, {
             ok: true,
             result: {
@@ -172,7 +182,7 @@ export function useControlBridge({
           return;
         }
         unlisten = stop;
-        return invoke("control_frontend_ready", { ready: true });
+        return setFrontendReady(true);
       })
       .catch((error) => {
         console.error("[terax] control bridge setup failed:", error);
@@ -181,7 +191,9 @@ export function useControlBridge({
     return () => {
       disposed = true;
       unlisten?.();
-      void invoke("control_frontend_ready", { ready: false });
+      void setFrontendReady(false).catch((error) => {
+        console.error("[terax] control bridge cleanup failed:", error);
+      });
     };
   }, [ready, tabsRef, activeTabIdRef, activeSpaceIdRef, onOpen]);
 }

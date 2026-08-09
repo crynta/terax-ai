@@ -5378,9 +5378,11 @@ name = "terax-cli"
 version = "0.8.6"
 dependencies = [
  "dirs 6.0.0",
+ "libc",
  "serde_json",
  "tempfile",
  "terax-control-protocol",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

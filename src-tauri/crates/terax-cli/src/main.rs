@@ -11,7 +11,7 @@ use serde_json::{json, Value};
 use terax_control_protocol::{
     CallerContext, ControlDescriptor, ControlRequest, ControlResponse, OpenParams,
     MAX_MESSAGE_BYTES, METHOD_CAPABILITIES, METHOD_IDENTIFY, METHOD_OPEN, METHOD_PING,
-    PROTOCOL_VERSION,
+    PROTOCOL_VERSION, SERVER_RESPONSE_ID,
 };
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
@@ -267,14 +267,17 @@ fn usage_error(message: impl Into<String>) -> CliError {
 fn load_endpoint() -> Result<ControlDescriptor, CliError> {
     let env_address = env::var("TERAX_CONTROL_ADDR").ok();
     let env_token = env::var("TERAX_CONTROL_TOKEN").ok();
-    let descriptor = match (env_address, env_token) {
-        (Some(address), Some(token)) => ControlDescriptor {
-            protocol: PROTOCOL_VERSION,
-            address,
-            token,
-            pid: 0,
-            app_version: String::new(),
-        },
+    let (descriptor, require_live_process) = match (env_address, env_token) {
+        (Some(address), Some(token)) => (
+            ControlDescriptor {
+                protocol: PROTOCOL_VERSION,
+                address,
+                token,
+                pid: 0,
+                app_version: String::new(),
+            },
+            false,
+        ),
         (None, None) => {
             let path = dirs::cache_dir()
                 .map(|dir| dir.join("terax").join("control.json"))
@@ -292,13 +295,14 @@ fn load_endpoint() -> Result<ControlDescriptor, CliError> {
                     EXIT_UNAVAILABLE,
                 )
             })?;
-            serde_json::from_slice(&bytes).map_err(|error| {
+            let descriptor = serde_json::from_slice(&bytes).map_err(|error| {
                 CliError::new(
                     "invalid_descriptor",
                     format!("invalid Terax control descriptor: {error}"),
                     EXIT_PROTOCOL,
                 )
-            })?
+            })?;
+            (descriptor, true)
         }
         _ => {
             return Err(CliError::new(
@@ -308,10 +312,13 @@ fn load_endpoint() -> Result<ControlDescriptor, CliError> {
             ));
         }
     };
-    validate_endpoint(descriptor)
+    validate_endpoint(descriptor, require_live_process)
 }
 
-fn validate_endpoint(descriptor: ControlDescriptor) -> Result<ControlDescriptor, CliError> {
+fn validate_endpoint(
+    descriptor: ControlDescriptor,
+    require_live_process: bool,
+) -> Result<ControlDescriptor, CliError> {
     if descriptor.protocol != PROTOCOL_VERSION {
         return Err(CliError::new(
             "unsupported_protocol",
@@ -335,7 +342,45 @@ fn validate_endpoint(descriptor: ControlDescriptor) -> Result<ControlDescriptor,
         ));
     }
     parse_loopback_address(&descriptor.address)?;
+    if require_live_process && !process_is_alive(descriptor.pid) {
+        return Err(CliError::new(
+            "invalid_endpoint",
+            "Terax control process is not running",
+            EXIT_PROTOCOL,
+        ));
+    }
     Ok(descriptor)
+}
+
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    if pid <= 0 {
+        return false;
+    }
+    let result = unsafe { libc::kill(pid, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(windows)]
+fn process_is_alive(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ACCESS_DENIED};
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    if pid == 0 {
+        return false;
+    }
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if !handle.is_null() {
+            CloseHandle(handle);
+            true
+        } else {
+            GetLastError() == ERROR_ACCESS_DENIED
+        }
+    }
 }
 
 fn send_request(address: &str, request: &ControlRequest) -> Result<ControlResponse, CliError> {
@@ -416,7 +461,9 @@ fn read_response(
             EXIT_PROTOCOL,
         )
     })?;
-    if response.protocol != PROTOCOL_VERSION || response.id != request.id {
+    let matched_id =
+        response.id == request.id || (!response.ok && response.id == SERVER_RESPONSE_ID);
+    if response.protocol != PROTOCOL_VERSION || !matched_id {
         return Err(CliError::new(
             "invalid_response",
             "Terax returned a mismatched protocol version or request id",
@@ -597,10 +644,26 @@ mod tests {
             pid: 1,
             app_version: "test".into(),
         };
-        let Err(error) = validate_endpoint(descriptor) else {
+        let Err(error) = validate_endpoint(descriptor, false) else {
             panic!("accepted invalid token");
         };
         assert_eq!(error.code, "invalid_endpoint");
+    }
+
+    #[test]
+    fn endpoint_validation_rejects_a_stale_descriptor_process() {
+        let descriptor = ControlDescriptor {
+            protocol: PROTOCOL_VERSION,
+            address: "127.0.0.1:4312".into(),
+            token: "a".repeat(64),
+            pid: u32::MAX,
+            app_version: "test".into(),
+        };
+        let Err(error) = validate_endpoint(descriptor, true) else {
+            panic!("accepted stale process");
+        };
+        assert_eq!(error.code, "invalid_endpoint");
+        assert!(process_is_alive(std::process::id()));
     }
 
     #[test]
@@ -633,5 +696,22 @@ mod tests {
         let bytes = vec![b'x'; MAX_MESSAGE_BYTES + 1];
         let error = read_response(&mut Cursor::new(bytes), &request).expect_err("reject response");
         assert_eq!(error.code, "message_too_large");
+    }
+
+    #[test]
+    fn protocol_framing_accepts_server_errors_without_a_parsed_request_id() {
+        let request = ControlRequest {
+            protocol: PROTOCOL_VERSION,
+            id: "busy-test".into(),
+            token: "test-token".into(),
+            method: METHOD_PING.into(),
+            params: json!({}),
+            caller: CallerContext::default(),
+        };
+        let response = ControlResponse::failure(SERVER_RESPONSE_ID, "server_busy", "busy");
+        let mut bytes = serde_json::to_vec(&response).expect("encode response");
+        bytes.push(b'\n');
+        let response = read_response(&mut Cursor::new(bytes), &request).expect("read response");
+        assert!(!response.ok);
     }
 }
