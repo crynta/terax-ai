@@ -130,6 +130,7 @@ export default function App() {
     activeId,
     setActiveId,
     allocId,
+    booted,
     replaceTabs,
     moveTabToSpace,
     reorderTab,
@@ -623,22 +624,44 @@ export default function App() {
     [openFileTab, newMarkdownTab],
   );
 
-  // "Open With" files arrive via the event (warm start) and get_launch_files
-  // (cold start, before this listener attaches). Backend already authorized
-  // each parent; openFileTab dedupes by path, so both paths can't double-open.
+  const openLaunchFiles = useCallback(
+    (paths: string[]) => {
+      for (const path of paths) handleOpenFile(path, true);
+    },
+    [handleOpenFile],
+  );
+
+  // Warm start: the backend emits once the window already exists. Attach on
+  // mount so an "Open With" that lands mid-restore isn't dropped — the backend
+  // also seeds the drain-once state, so the boot drain below is the safety net.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    const openAll = (paths: string[]) => {
-      for (const path of paths) handleOpenFile(path, true);
-    };
+    let disposed = false;
     (async () => {
-      unlisten = await listen<string[]>("terax:open-file", (e) => {
-        openAll(e.payload);
+      const off = await listen<string[]>("terax:open-file", (e) => {
+        openLaunchFiles(e.payload);
       });
-      openAll(await consumeLaunchFiles());
+      if (disposed) off();
+      else unlisten = off;
     })();
-    return () => unlisten?.();
-  }, [handleOpenFile]);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [openLaunchFiles]);
+
+  // Cold start: files arrive as CLI args (Linux/Windows) or the macOS open-files
+  // event, and get_launch_files drains them once. Wait for `booted` — the spaces
+  // restore ends in replaceTabs(), which overwrites the whole tab list and would
+  // discard a launch tab opened before it, making the file flash open and vanish.
+  // Booting first also lands the tab in the restored active space, and lets
+  // openFileTab dedupe against a session that already had the file open.
+  useEffect(() => {
+    if (!booted) return;
+    void (async () => {
+      openLaunchFiles(await consumeLaunchFiles());
+    })();
+  }, [booted, openLaunchFiles]);
 
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
