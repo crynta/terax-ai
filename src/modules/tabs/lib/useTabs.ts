@@ -839,31 +839,32 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     return id;
   }, []);
 
+  // Mirrors tabsRef like openFileTab instead of using a functional update: a
+  // batch that opens a markdown file before a regular one (multi-file "Open
+  // With") would otherwise have the queued markdown update clobbered by
+  // openFileTab's setTabs(plan.tabs), which is built from the stale ref.
   const newMarkdownTab = useCallback((path: string) => {
-    let targetId: number | null = null;
-    setTabs((curr) => {
-      const existing = curr.find(
-        (t) => t.kind === "markdown" && t.path === path,
-      );
-      if (existing) {
-        targetId = existing.id;
-        return curr;
-      }
-      const id = nextIdRef.current++;
-      targetId = id;
-      return [
-        ...curr,
-        {
-          id,
-          kind: "markdown",
-          spaceId: activeSpaceIdRef.current,
-          title: basename(path),
-          path,
-        },
-      ];
-    });
-    if (targetId !== null) setActiveId(targetId);
-    return targetId;
+    const curr = tabsRef.current;
+    const existing = curr.find((t) => t.kind === "markdown" && t.path === path);
+    if (existing) {
+      setActiveId(existing.id);
+      return existing.id;
+    }
+    const id = nextIdRef.current++;
+    const next: Tab[] = [
+      ...curr,
+      {
+        id,
+        kind: "markdown",
+        spaceId: activeSpaceIdRef.current,
+        title: basename(path),
+        path,
+      },
+    ];
+    tabsRef.current = next;
+    setTabs(next);
+    setActiveId(id);
+    return id;
   }, []);
 
   const setOverrideLanguage = useCallback((id: number, lang: string | null) => {
