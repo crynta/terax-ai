@@ -160,4 +160,23 @@ describe("planMarkdownTabOpen", () => {
       ]),
     );
   });
+
+  it("normalizes path separators when reusing a markdown tab", () => {
+    const tabs: Tab[] = [
+      terminal,
+      {
+        id: 3,
+        kind: "markdown",
+        spaceId: "one",
+        title: "README.md",
+        path: "C:\\repo\\README.md",
+      },
+    ];
+
+    const plan = planMarkdownTabOpen(tabs, "C:/repo/README.md", "one", () => {
+      throw new Error("should not allocate");
+    });
+
+    expect(plan).toEqual({ tabs, tabId: 3 });
+  });
 });

@@ -159,9 +159,12 @@ export function planMarkdownTabOpen(
   spaceId: string,
   allocId: () => number,
 ): { tabs: Tab[]; tabId: number } {
+  const pathKey = path.replace(/\\/g, "/");
   const existing = tabs.find(
     (tab) =>
-      tab.kind === "markdown" && tab.spaceId === spaceId && tab.path === path,
+      tab.kind === "markdown" &&
+      tab.spaceId === spaceId &&
+      tab.path.replace(/\\/g, "/") === pathKey,
   );
   if (existing) return { tabs, tabId: existing.id };
 
@@ -527,6 +530,8 @@ export function useTabs(initial?: Partial<TerminalTab>) {
 
   const replaceTabs = useCallback((next: Tab[], nextActiveId: number) => {
     if (next.length === 0) return;
+    tabsRef.current = next;
+    activeIdRef.current = nextActiveId;
     setTabs(next);
     setActiveId(nextActiveId);
   }, []);
