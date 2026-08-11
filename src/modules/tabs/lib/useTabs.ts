@@ -153,6 +153,34 @@ export type OpenFileTabOptions = {
   activate?: boolean;
 };
 
+export function planMarkdownTabOpen(
+  tabs: Tab[],
+  path: string,
+  spaceId: string,
+  allocId: () => number,
+): { tabs: Tab[]; tabId: number } {
+  const existing = tabs.find(
+    (tab) =>
+      tab.kind === "markdown" && tab.spaceId === spaceId && tab.path === path,
+  );
+  if (existing) return { tabs, tabId: existing.id };
+
+  const tabId = allocId();
+  return {
+    tabs: [
+      ...tabs,
+      {
+        id: tabId,
+        kind: "markdown",
+        spaceId,
+        title: basename(path),
+        path,
+      },
+    ],
+    tabId,
+  };
+}
+
 export function planFileTabOpen(
   tabs: Tab[],
   path: string,
@@ -845,26 +873,18 @@ export function useTabs(initial?: Partial<TerminalTab>) {
   // openFileTab's setTabs(plan.tabs), which is built from the stale ref.
   const newMarkdownTab = useCallback((path: string) => {
     const curr = tabsRef.current;
-    const existing = curr.find((t) => t.kind === "markdown" && t.path === path);
-    if (existing) {
-      setActiveId(existing.id);
-      return existing.id;
+    const plan = planMarkdownTabOpen(
+      curr,
+      path,
+      activeSpaceIdRef.current,
+      () => nextIdRef.current++,
+    );
+    if (plan.tabs !== curr) {
+      tabsRef.current = plan.tabs;
+      setTabs(plan.tabs);
     }
-    const id = nextIdRef.current++;
-    const next: Tab[] = [
-      ...curr,
-      {
-        id,
-        kind: "markdown",
-        spaceId: activeSpaceIdRef.current,
-        title: basename(path),
-        path,
-      },
-    ];
-    tabsRef.current = next;
-    setTabs(next);
-    setActiveId(id);
-    return id;
+    setActiveId(plan.tabId);
+    return plan.tabId;
   }, []);
 
   const setOverrideLanguage = useCallback((id: number, lang: string | null) => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type EditorTab,
   planFileTabOpen,
+  planMarkdownTabOpen,
   type Tab,
   type TerminalTab,
 } from "./useTabs";
@@ -99,6 +100,64 @@ describe("planFileTabOpen", () => {
         spaceId: "one",
         preview: true,
       }),
+    );
+  });
+});
+
+describe("planMarkdownTabOpen", () => {
+  it("reuses markdown tabs only within the requested space", () => {
+    const tabs: Tab[] = [
+      terminal,
+      {
+        id: 3,
+        kind: "markdown",
+        spaceId: "two",
+        title: "README.md",
+        path: "/repo/README.md",
+      },
+    ];
+
+    const reused = planMarkdownTabOpen(tabs, "/repo/README.md", "two", () => {
+      throw new Error("should not allocate");
+    });
+    const plan = planMarkdownTabOpen(tabs, "/repo/README.md", "one", () => 4);
+
+    expect(reused).toEqual({ tabs, tabId: 3 });
+    expect(plan.tabId).toBe(4);
+    expect(plan.tabs).toContainEqual(
+      expect.objectContaining({
+        id: 4,
+        kind: "markdown",
+        path: "/repo/README.md",
+        spaceId: "one",
+      }),
+    );
+    expect(plan.tabs).toContain(tabs[1]);
+  });
+
+  it("preserves markdown and regular files in a mixed launch batch", () => {
+    const markdownPlan = planMarkdownTabOpen(
+      [terminal],
+      "/repo/README.md",
+      "one",
+      () => 3,
+    );
+    const filePlan = planFileTabOpen(
+      markdownPlan.tabs,
+      "/repo/main.rs",
+      true,
+      "one",
+      () => 4,
+    );
+
+    expect(filePlan.tabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "markdown",
+          path: "/repo/README.md",
+        }),
+        expect.objectContaining({ kind: "editor", path: "/repo/main.rs" }),
+      ]),
     );
   });
 });
