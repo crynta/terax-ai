@@ -3,7 +3,7 @@ import { z } from "zod";
 import { native } from "../lib/native";
 import { checkWritableCanonical } from "../lib/security";
 import { newQueuedEditId, usePlanStore } from "../store/planStore";
-import { resolvePath, type ToolContext } from "./context";
+import { gateApproval, resolvePath, type ToolContext } from "./context";
 
 type EditResult =
   | { ok: true; replacements: number; bytesWritten: number; path: string }
@@ -130,7 +130,7 @@ export function buildEditTools(ctx: ToolContext) {
         new_string: z.string().describe("Replacement substring."),
         replace_all: z.boolean().optional(),
       }),
-      needsApproval: true,
+      needsApproval: gateApproval,
       execute: async ({ path, old_string, new_string, replace_all }) => {
         const reqPath = resolvePath(path, ctx.getCwd());
         const safety = await checkWritableCanonical(reqPath, native.canonicalize);
@@ -167,7 +167,7 @@ export function buildEditTools(ctx: ToolContext) {
           )
           .min(1),
       }),
-      needsApproval: true,
+      needsApproval: gateApproval,
       execute: async ({ path, edits }) => {
         const reqPath = resolvePath(path, ctx.getCwd());
         const safety = await checkWritableCanonical(reqPath, native.canonicalize);
